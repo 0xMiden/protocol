@@ -7,19 +7,19 @@
 //!
 //! It covers:
 //!
-//! - The binding checks themselves: a mint note whose amount, tag, or note type does not match
-//!   what the attestation committed to is rejected. (The recipient binding is tested alongside the
+//! - The binding checks themselves: a mint note whose amount, tag, or note type does not match what
+//!   the attestation committed to is rejected. (The recipient binding is tested alongside the
 //!   replay and fee cases in the recomposition end-to-end suite.)
 //! - Recipient extraction: the attested `remoteRecipient` is a 32-byte field carrying a Miden
 //!   account id in its low bytes, so the leading pad must be zero and each id half must be below
 //!   the field modulus. Both guards get their own reject cases — a non-canonical value must fail,
 //!   never be silently reduced into a different, valid account id.
-//! - Transport shape: the merged scheme-4 attachment's layout (attestation section, deposit
-//!   intent) and every way it can be wrong — an attachment missing, doubled or extra, a truncated
+//! - Transport shape: the merged scheme-4 attachment's layout (attestation section, deposit intent)
+//!   and every way it can be wrong — an attachment missing, doubled or extra, a truncated
 //!   attachment, a length that disagrees with the payload, and each sub-region tampered with
 //!   independently.
-//! - The pause halt, the routing proof on a MockChain, and the restatement that a mint path with
-//!   no policy installed cannot mint at all.
+//! - The pause halt, the routing proof on a MockChain, and the restatement that a mint path with no
+//!   policy installed cannot mint at all.
 //!
 //! Every negative asserts its exact error rather than merely failing, and the payload-driven
 //! rejects also assert fail-closure — nothing minted, no nonce consumed.
@@ -34,6 +34,7 @@ use miden_protocol::errors::tx_kernel::{
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachmentScheme, NoteTag, NoteType};
+use miden_protocol::{Felt, Word};
 use miden_standards::note::{NetworkAccountTarget, P2idNote, P2idNoteStorage};
 use miden_testing::assert_transaction_executor_error;
 use rstest::rstest;
@@ -42,8 +43,6 @@ use support::*;
 use xusdc_encoding::account::xreserve::XReserveFaucetExtension;
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
 use xusdc_encoding::xreserve::encoding::{DepositIntent, MintIntent, Signature};
-
-use miden_protocol::{Felt, Word};
 
 // ASSERT-MATCH — the note-supplied values must EQUAL their attested derivations
 // ================================================================================================
@@ -105,13 +104,8 @@ async fn mint_rejects_a_tag_mismatch() -> Result<()> {
         &AttachmentPlan::default(),
         87,
     )?;
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_MINT_TAG_MISMATCH"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_MINT_TAG_MISMATCH"))
+        .await
 }
 
 /// A PRIVATE-mode mint note (opaque recipient digest, private output note) rejects: the attested
@@ -231,11 +225,8 @@ async fn the_honest_note_carries_the_merged_transport_and_the_routing_target() -
 
     let transport_scheme =
         NoteAttachmentScheme::new(TRANSPORT_SCHEME).expect("scheme 4 is a valid attachment scheme");
-    let schemes: Vec<NoteAttachmentScheme> = note
-        .attachments()
-        .iter()
-        .map(|a| a.attachment_scheme())
-        .collect();
+    let schemes: Vec<NoteAttachmentScheme> =
+        note.attachments().iter().map(|a| a.attachment_scheme()).collect();
     assert_eq!(
         schemes.len(),
         2,
@@ -391,15 +382,7 @@ async fn mint_rejects_a_third_attachment(
     let mut pf = fixture()?;
     bring_up(&mut pf, 1).await?;
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, nonce_variant);
-    let note = tampered_mint_note(
-        &pf,
-        &payload,
-        &honest_storage(&pf),
-        1,
-        None,
-        &plan,
-        rng_seed,
-    )?;
+    let note = tampered_mint_note(&pf, &payload, &honest_storage(&pf), 1, None, &plan, rng_seed)?;
     expect_reject(
         &mut pf,
         note,
@@ -473,15 +456,7 @@ async fn mint_rejects_a_transport_length_mismatch(
     let mut pf = fixture()?;
     bring_up(&mut pf, 1).await?;
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, nonce_variant);
-    let note = tampered_mint_note(
-        &pf,
-        &payload,
-        &honest_storage(&pf),
-        1,
-        None,
-        &plan,
-        rng_seed,
-    )?;
+    let note = tampered_mint_note(&pf, &payload, &honest_storage(&pf), 1, None, &plan, rng_seed)?;
     expect_reject(
         &mut pf,
         note,
@@ -554,13 +529,8 @@ async fn tampered_sub_region_note(
 async fn mint_rejects_a_tampered_attestation_pubkey() -> Result<()> {
     let (mut pf, note, payload) =
         tampered_sub_region_note(ATTESTATION_PUBKEY_FELT_OFF, 34, 101).await?;
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"))
+        .await
 }
 
 #[tokio::test]
@@ -593,13 +563,8 @@ async fn mint_rejects_a_non_u32_signature_limb() -> Result<()> {
         },
         193,
     )?;
-    expect_reject_u32_assert(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_SIG_LIMB"),
-    )
-    .await
+    expect_reject_u32_assert(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_SIG_LIMB"))
+        .await
 }
 
 /// The other half of the isolation proof: a tampered INTENT byte — the attestation section left
@@ -640,13 +605,8 @@ async fn mint_halts_while_paused() -> Result<()> {
     bring_up(&mut pf, 2).await?; // set_attester + pause
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 28);
     let note = honest_note(&pf, &payload, 97)?;
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        &MasmError::from_static_str("the contract is paused"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, &MasmError::from_static_str("the contract is paused"))
+        .await
 }
 
 // WITHOUT THE ATTESTED TRANSPORT THERE IS NO ACCEPTABLE MINT
@@ -736,11 +696,7 @@ async fn mint_note_routes_to_the_faucet_network_account() -> Result<()> {
         NoteTag::with_account_target(pf.faucet_id),
         "the mint note's own tag is the faucet account target (stock MintNote conversion)"
     );
-    assert_eq!(
-        note.metadata().note_type(),
-        NoteType::Public,
-        "network notes are public"
-    );
+    assert_eq!(note.metadata().note_type(), NoteType::Public, "network notes are public");
     let target = note
         .attachments()
         .iter()
@@ -855,11 +811,7 @@ async fn mint_rejects_a_forged_signature_the_host_tries_to_rescue() -> Result<()
     emit_note_with_attachments(&mut pf.mock_chain, pf.producer_id, &note).await?;
 
     let rescue = ecdsa_advice_witness(&gen_attester(1, &carried));
-    assert_eq!(
-        rescue.len(),
-        32,
-        "the verifier consumes exactly 32 elements"
-    );
+    assert_eq!(rescue.len(), 32, "the verifier consumes exactly 32 elements");
     let result =
         consume_note_with_advice(&pf.mock_chain, pf.faucet_id, note.id(), Some(rescue)).await;
     assert_ecdsa_verify_reject(result);

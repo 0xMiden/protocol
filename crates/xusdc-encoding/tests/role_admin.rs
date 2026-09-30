@@ -60,7 +60,8 @@ fn err_sender_lacks_role() -> MasmError {
 
 // PRODUCTION FIXTURES (both compose via XReserveStablecoinBuilder::build_components — never the
 // burn-oracle replica). Recreated from public support helpers per the established per-file pattern
-// (set_attester.rs `guarded_faucet`, pause_admin.rs `guarded_mint_ready` are private to their files).
+// (set_attester.rs `guarded_faucet`, pause_admin.rs `guarded_mint_ready` are private to their
+// files).
 // ================================================================================================
 
 /// Placeholder domain configuration. These tests reach the account through role-administration
@@ -108,7 +109,8 @@ fn production_faucet() -> Result<GuardedMint> {
 }
 
 // FIXTURES FOR THE CAPABILITY SEAMS — a real attested mint through the real note transport, so a
-// pause can be shown to halt something that would otherwise succeed (same shape as mint_policy_e2e.rs)
+// pause can be shown to halt something that would otherwise succeed (same shape as
+// mint_policy_e2e.rs)
 // ================================================================================================
 
 // the DC-14 rows are the ones whose localToken / localDepositor are address-shaped,
@@ -135,9 +137,9 @@ fn mi(id: &str) -> &'static MiVector {
 
 /// The canonical accept payload with the wire amount / maxFee spliced in, `remoteRecipient`
 /// replaced by the real recipient wallet, `remoteToken` replaced by
-/// `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()` (the own-id key the mint path derives, so the identifier
-/// compare passes), and one nonce byte perturbed per variant so each mint consumes
-/// a nonce the replay guard has not seen.
+/// `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()` (the own-id key the mint path
+/// derives, so the identifier compare passes), and one nonce byte perturbed per variant so each
+/// mint consumes a nonce the replay guard has not seen.
 fn payload_for(
     recipient: AccountId,
     amount: u64,
@@ -194,10 +196,7 @@ fn grant_role_note(
     role_action_note(
         sender,
         faucet_id,
-        RbacConfig::GrantRole {
-            role: pauser_sym(),
-            account: member,
-        },
+        RbacConfig::GrantRole { role: pauser_sym(), account: member },
         seed,
     )
 }
@@ -212,10 +211,7 @@ fn revoke_role_note(
     role_action_note(
         sender,
         faucet_id,
-        RbacConfig::RevokeRole {
-            role: pauser_sym(),
-            account: member,
-        },
+        RbacConfig::RevokeRole { role: pauser_sym(), account: member },
         seed,
     )
 }
@@ -224,8 +220,9 @@ fn revoke_role_note(
 /// rotated role can and cannot do.
 ///
 /// It uses the real note transport and the account's own network authentication, allowlists one
-/// attester, and adds whatever extra admin notes the caller needs. Everything is seeded at genesis so each admin transaction can be proved
-/// into its own block. The same shape is used by `mint_policy_e2e.rs`.
+/// attester, and adds whatever extra admin notes the caller needs. Everything is seeded at genesis
+/// so each admin transaction can be proved into its own block. The same shape is used by
+/// `mint_policy_e2e.rs`.
 fn mint_fixture(extra_notes: impl Fn(AccountId) -> Vec<Note>) -> Result<ProductionFaucet> {
     setup_production_faucet(0, |recipient, faucet_id| {
         let commitment =
@@ -280,9 +277,7 @@ async fn consume_note(
 
 /// Consumes a committed note expecting success, committing a block.
 async fn consume_and_commit(pf: &mut ProductionFaucet, note: &Note, what: &str) -> Result<()> {
-    let tx = consume_note(pf, note)
-        .await
-        .map_err(|e| anyhow::anyhow!("{what}: {e}"))?;
+    let tx = consume_note(pf, note).await.map_err(|e| anyhow::anyhow!("{what}: {e}"))?;
     pf.mock_chain.add_pending_executed_transaction(&tx)?;
     pf.mock_chain.prove_next_block()?;
     Ok(())
@@ -336,7 +331,8 @@ async fn administrator_grants_pauser_then_new_pauser_halts_mint() -> Result<()> 
     let grant_note = pf.seeded_notes[1].clone();
     let pause_note = pf.seeded_notes[2].clone();
 
-    // Pre-grant: the candidate's pause REJECTS — the capability is genuinely absent before the grant.
+    // Pre-grant: the candidate's pause REJECTS — the capability is genuinely absent before the
+    // grant.
     let pre = consume_note(&pf, &pause_note).await;
     assert_transaction_executor_error!(pre, err_sender_lacks_role());
 
@@ -392,11 +388,7 @@ async fn administrator_revokes_pauser_then_pause_rejects() -> Result<()> {
         "the revoked member's membership flag is cleared"
     );
     let config = read_role_config(&evolved, &pauser_sym())?;
-    assert_eq!(
-        config[0],
-        Felt::ZERO,
-        "DOM_PAUSER member_count decremented to 0"
-    );
+    assert_eq!(config[0], Felt::ZERO, "DOM_PAUSER member_count decremented to 0");
     assert_eq!(
         config[1],
         Felt::ZERO,
@@ -438,12 +430,8 @@ async fn administrator_rotates_pauser_revoke_then_grant() -> Result<()> {
     let old_pause_note = pf.seeded_notes[3].clone();
     let new_pause_note = pf.seeded_notes[4].clone();
 
-    consume_and_commit(
-        &mut pf,
-        &revoke_note,
-        "the rotation's revoke leg must pass under ADMIN",
-    )
-    .await?;
+    consume_and_commit(&mut pf, &revoke_note, "the rotation's revoke leg must pass under ADMIN")
+        .await?;
     consume_and_commit(
         &mut pf,
         &grant_note,

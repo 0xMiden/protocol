@@ -44,10 +44,10 @@ impl Signature {
         &self.0
     }
 
-    /// Packs the signature into the 17 u32-LE field elements the on-chain attestation surface reads,
-    /// four bytes per element, with `v` carried in felt 16 (byte 64, upper three bytes zero-filled)
-    /// and unused on-chain. Infallible: every element is a `u32` and the length comes from the
-    /// fixed-size array, not from input.
+    /// Packs the signature into the 17 u32-LE field elements the on-chain attestation surface
+    /// reads, four bytes per element, with `v` carried in felt 16 (byte 64, upper three bytes
+    /// zero-filled) and unused on-chain. Infallible: every element is a `u32` and the length
+    /// comes from the fixed-size array, not from input.
     pub fn to_elements(&self) -> [Felt; 17] {
         bytes_to_packed_u32_elements(&self.0)
             .try_into()
@@ -85,30 +85,15 @@ mod tests {
         for v in &load().families.att {
             let pk = v.public_key().to_elements();
             assert_eq!(pk.len(), PUBKEY_FELTS, "{}: pubkey felt width", v.id);
-            assert_eq!(
-                pk.as_slice(),
-                v.packed_felts_values().as_slice(),
-                "{}: pubkey felts",
-                v.id
-            );
+            assert_eq!(pk.as_slice(), v.packed_felts_values().as_slice(), "{}: pubkey felts", v.id);
 
             let d = keccak_digest_felts(&v.digest());
             assert_eq!(d.len(), 8, "{}: digest felt width", v.id);
-            assert_eq!(
-                d.as_slice(),
-                v.digest_felts_values().as_slice(),
-                "{}: digest felts",
-                v.id
-            );
+            assert_eq!(d.as_slice(), v.digest_felts_values().as_slice(), "{}: digest felts", v.id);
 
             let s = Signature::new(v.sig()).to_elements();
             assert_eq!(s.len(), 17, "{}: signature felt width", v.id);
-            assert_eq!(
-                s.as_slice(),
-                v.sig_felts_values().as_slice(),
-                "{}: signature felts",
-                v.id
-            );
+            assert_eq!(s.as_slice(), v.sig_felts_values().as_slice(), "{}: signature felts", v.id);
         }
     }
 
@@ -150,12 +135,7 @@ mod tests {
                 v.payload().len()
             );
             // the input is the raw 65-byte r||s||v signature, NOT an EIP-712 typed-data sig.
-            assert_eq!(
-                v.sig().len(),
-                65,
-                "{}: raw r||s||v signature is 65 bytes",
-                v.id
-            );
+            assert_eq!(v.sig().len(), 65, "{}: raw r||s||v signature is 65 bytes", v.id);
             assert_eq!(
                 Signature::new(v.sig()).to_elements()[16],
                 Felt::from(u32::from(v.v_byte)),
@@ -171,11 +151,7 @@ mod tests {
         for v in &load().families.att {
             let digest = v.digest();
             let actual: [u8; 32] = Keccak256::digest(v.payload()).into();
-            assert_eq!(
-                actual, digest,
-                "{}: digest must equal keccak256 of the full payload",
-                v.id
-            );
+            assert_eq!(actual, digest, "{}: digest must equal keccak256 of the full payload", v.id);
 
             let pubkey = v.pubkey();
             let key = VerifyingKey::from_sec1_bytes(&pubkey)

@@ -215,8 +215,8 @@ pub struct BnVector {
     pub dest_domain: Option<CircleDomain>,
     #[serde(default)]
     pub dest_recipient: Option<String>,
-    /// Accept: the 9-felt burn-payload golden layout (carried in note attachment scheme 6). Reject:
-    /// the malformed felts.
+    /// Accept: the 9-felt burn-payload golden layout (carried in note attachment scheme 6).
+    /// Reject: the malformed felts.
     pub items: Vec<String>,
     #[serde(default)]
     pub expected_variant: Option<String>,
@@ -288,20 +288,11 @@ impl B32Vector {
 impl AmtVector {
     /// The vector's uint256 in the wire domain type the reducer consumes.
     pub fn amount(&self) -> EthAmount {
-        EthAmount::new(parse_hex32(
-            self.uint256_be
-                .as_deref()
-                .expect("vector carries uint256_be"),
-        ))
+        EthAmount::new(parse_hex32(self.uint256_be.as_deref().expect("vector carries uint256_be")))
     }
 
     pub fn expected_amount(&self) -> miden_protocol::asset::AssetAmount {
-        let y: u64 = self
-            .expected_y
-            .as_deref()
-            .expect("accept vector")
-            .parse()
-            .expect("u64");
+        let y: u64 = self.expected_y.as_deref().expect("accept vector").parse().expect("u64");
         miden_protocol::asset::AssetAmount::new(y).expect("vector amount within bounds")
     }
 }
@@ -321,10 +312,7 @@ impl DiVector {
     }
 
     pub fn preimage_values(&self) -> Vec<Felt> {
-        self.preimage_felts
-            .iter()
-            .map(|s| felt_from_hex(s))
-            .collect()
+        self.preimage_felts.iter().map(|s| felt_from_hex(s)).collect()
     }
 }
 
@@ -348,17 +336,11 @@ impl MiVector {
     }
 
     pub fn carried_values(&self) -> Vec<Felt> {
-        self.carried_felts
-            .iter()
-            .map(|s| felt_from_hex(s))
-            .collect()
+        self.carried_felts.iter().map(|s| felt_from_hex(s)).collect()
     }
 
     pub fn rebuilt_preimage_values(&self) -> Vec<Felt> {
-        self.rebuilt_preimage_felts
-            .iter()
-            .map(|s| felt_from_hex(s))
-            .collect()
+        self.rebuilt_preimage_felts.iter().map(|s| felt_from_hex(s)).collect()
     }
 }
 
@@ -379,10 +361,7 @@ impl AttVector {
     /// making every caller handle an impossible error.
     pub fn public_key(&self) -> PublicKey {
         PublicKey::read_from_bytes(&self.pubkey()).unwrap_or_else(|e| {
-            panic!(
-                "vector {}: pubkey does not decode to a curve point: {e}",
-                self.id
-            )
+            panic!("vector {}: pubkey does not decode to a curve point: {e}", self.id)
         })
     }
 
@@ -433,9 +412,7 @@ impl DiFields {
 impl BnVector {
     pub fn dest_recipient(&self) -> crate::xreserve::encoding::ForeignChainAddress {
         crate::xreserve::encoding::ForeignChainAddress::new(parse_hex32(
-            self.dest_recipient
-                .as_deref()
-                .expect("accept vector carries dest_recipient"),
+            self.dest_recipient.as_deref().expect("accept vector carries dest_recipient"),
         ))
     }
 
@@ -467,11 +444,8 @@ mod tests {
     fn artifact_guard() {
         // guard-only vectors that intentionally trace to no spec row; they pin harness and trap
         // mechanics instead.
-        const TV_TAG_ALLOWLIST: [&str; 3] = [
-            "amt-guard-limb-not-u32",
-            "amt-rej-witness-over",
-            "amt-rej-witness-under",
-        ];
+        const TV_TAG_ALLOWLIST: [&str; 3] =
+            ["amt-guard-limb-not-u32", "amt-rej-witness-over", "amt-rej-witness-under"];
 
         let v = load();
         assert_eq!(v.version, 1);
@@ -486,92 +460,36 @@ mod tests {
         let tv_ok = |id: &str, tv: &[String]| !tv.is_empty() || TV_TAG_ALLOWLIST.contains(&id);
         let kind_ok = |kind: &str| kind == "accept" || kind == "reject";
         for e in &v.families.b32 {
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
         for e in &v.families.amt {
             assert!(kind_ok(&e.kind), "{}: kind", e.id);
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
         for e in &v.families.aid {
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
         for e in &v.families.di {
             assert!(kind_ok(&e.kind), "{}: kind", e.id);
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
         for e in &v.families.att {
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
         for e in &v.families.bn {
             assert!(kind_ok(&e.kind), "{}: kind", e.id);
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
         for e in &v.families.mi {
             assert!(kind_ok(&e.kind), "{}: kind", e.id);
-            assert!(
-                !no_provenance(&e.cite, &e.derivation),
-                "{} provenance",
-                e.id
-            );
-            assert!(
-                tv_ok(&e.id, &e.tv),
-                "{}: empty tv tags and not allowlisted",
-                e.id
-            );
+            assert!(!no_provenance(&e.cite, &e.derivation), "{} provenance", e.id);
+            assert!(tv_ok(&e.id, &e.tv), "{}: empty tv tags and not allowlisted", e.id);
         }
     }
 }

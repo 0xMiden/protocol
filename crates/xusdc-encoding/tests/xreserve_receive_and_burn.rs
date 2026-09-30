@@ -12,9 +12,9 @@
 //!   - The faucet's own MASM tree contains no supply surface at all: no file calls the standard
 //!     burn primitive, and no file writes — or even names — the faucet's token-config slot. All
 //!     supply arithmetic lives in the standard library code.
-//!   - The built account's active burn-policy storage slot holds the custom burn policy's root, so the one decrement path that does exist is policy-gated. A companion test
-//!     shows the assertion is not vacuous by building a faucet with an allow-all policy and
-//!     watching it fail.
+//!   - The built account's active burn-policy storage slot holds the custom burn policy's root, so
+//!     the one decrement path that does exist is policy-gated. A companion test shows the assertion
+//!     is not vacuous by building a faucet with an allow-all policy and watching it fail.
 //!
 //! The remaining tests re-confirm the composition end to end with a real note: a valid burn lowers
 //! supply exactly once, and a burn below the configured minimum traps with the standard library's
@@ -27,8 +27,16 @@ use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteRecipient,
-    NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
@@ -39,7 +47,9 @@ use support::*;
 use xusdc_encoding::account::xreserve::builder::XRESERVE_BURN_POLICY_PROC_PATH;
 use xusdc_encoding::account::xreserve::XReserveStablecoinBuilder;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote, XUsdcBurnAttachment, FIXED_XUSDC_BURN_TAG,
+    XReserveBurnNote,
+    XUsdcBurnAttachment,
+    FIXED_XUSDC_BURN_TAG,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
 };
 use xusdc_encoding::xreserve::encoding::{CircleDomain, ForeignChainAddress, XReserveBurnItems};
@@ -75,7 +85,7 @@ fn note_rng(seed: u64) -> RandomCoin {
 fn items() -> XReserveBurnItems {
     XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
-        dest_recipient: ForeignChainAddress::new([0xABu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
     }
 }
 
@@ -92,11 +102,7 @@ fn raw_burn_note(
         NoteAssets::new(vec![asset.into()]).expect("one burn asset"),
         PartialNoteMetadata::new(sender, NoteType::Public)
             .with_tag(NoteTag::new(FIXED_XUSDC_BURN_TAG)),
-        NoteRecipient::new(
-            Word::from([1u32, 2, 3, 4]),
-            XReserveBurnNote::script(),
-            storage,
-        ),
+        NoteRecipient::new(Word::from([1u32, 2, 3, 4]), XReserveBurnNote::script(), storage),
         NoteAttachments::new(attachments).expect("attachments within protocol limits"),
     )
 }
@@ -133,11 +139,7 @@ async fn burn_rejects_a_wrong_withdrawal_word_count() -> Result<()> {
             vec![Word::empty(); 4],
         )
         .expect("four-word attachment");
-        vec![raw_burn_note(
-            sender,
-            faucet_id,
-            vec![routing.into(), withdrawal],
-        )]
+        vec![raw_burn_note(sender, faucet_id, vec![routing.into(), withdrawal])]
     })?;
     let result = pf
         .mock_chain
@@ -164,11 +166,7 @@ async fn burn_rejects_an_extra_attachment() -> Result<()> {
             vec![Word::empty()],
         )
         .expect("one-word attachment");
-        vec![raw_burn_note(
-            sender,
-            faucet_id,
-            vec![routing.into(), withdrawal, extra],
-        )]
+        vec![raw_burn_note(sender, faucet_id, vec![routing.into(), withdrawal, extra])]
     })?;
     let result = pf
         .mock_chain
@@ -188,11 +186,7 @@ async fn burn_rejects_an_extra_attachment() -> Result<()> {
 async fn burn_rejects_a_missing_routing_attachment() -> Result<()> {
     let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
         let withdrawal = NoteAttachment::from(&XUsdcBurnAttachment::new(items()));
-        vec![raw_burn_note(
-            sender,
-            faucet_id,
-            vec![withdrawal.clone(), withdrawal],
-        )]
+        vec![raw_burn_note(sender, faucet_id, vec![withdrawal.clone(), withdrawal])]
     })?;
     let result = pf
         .mock_chain
@@ -316,7 +310,8 @@ async fn run_set_min_burn_then_consume(
 ///
 /// The amount used (5,000) passes at the seeded floor of 1,000 and fails at the new floor of
 /// 10,000, so the only thing that changed between accept and reject is the setter's write. This is
-/// the direction that matters for safety: the administrator can tighten the limit and it binds at once.
+/// the direction that matters for safety: the administrator can tighten the limit and it binds at
+/// once.
 #[tokio::test]
 async fn set_min_burn_raise_then_below_new_min_rejects() -> Result<()> {
     let result = run_set_min_burn_then_consume(MIN_BURN_SIZE, 10_000, VALID_BURN).await?;

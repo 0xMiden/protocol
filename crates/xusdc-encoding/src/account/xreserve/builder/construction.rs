@@ -2,12 +2,18 @@
 //! faucet, the crate-root `Account` constructor, and [`XReserveStablecoinBuilder::build_account`].
 //!
 //! Split out of `builder/mod.rs` (which composes the component SET) so the two separable concerns —
-//! composing the components vs. turning them into the deployable `Account` — live apart and each file
-//! stays within the Rust file-size ceiling.
+//! composing the components vs. turning them into the deployable `Account` — live apart and each
+//! file stays within the Rust file-size ceiling.
 
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
-    Account, AccountComponent, AccountId, AccountType, StorageMap, StorageMapKey, StorageSlot,
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::{AssetAmount, AssetId, TokenSymbol};
@@ -21,7 +27,10 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::FeePolicyManager;
 
 use super::{
-    XReserveStablecoinBuilder, XReserveStablecoinBuilderError, USDCX_DECIMALS, USDCX_TOKEN_SYMBOL,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
+    USDCX_DECIMALS,
+    USDCX_TOKEN_SYMBOL,
 };
 use crate::xreserve::encoding::{CircleDomain, DepositNonce};
 
@@ -100,10 +109,7 @@ impl XReserveFaucetExtension {
     /// [`StorageMapError::DuplicateKey`] if a key is listed twice.
     pub fn new(domain: CircleDomain, attesters: &[PublicKey]) -> Result<Self, StorageMapError> {
         let attesters = StorageMap::with_entries(attesters.iter().map(|key| {
-            (
-                StorageMapKey::new(key.to_commitment()),
-                Word::from(ATTESTER_ENABLED_MARKER),
-            )
+            (StorageMapKey::new(key.to_commitment()), Word::from(ATTESTER_ENABLED_MARKER))
         }))?;
         Ok(Self { domain, attesters })
     }
@@ -165,9 +171,9 @@ impl XReserveStablecoinBuilder {
         .expect("the burn policy binds with no storage slots")
     }
 
-    /// Builds the final composed faucet [`Account`] from `init_seed`: [`Self::build_components`] plus
-    /// the production keyless-network `AuthNetworkAccount` auth component ([`Self::auth_component`]),
-    /// assembled as `AccountType::Public`, with asset
+    /// Builds the final composed faucet [`Account`] from `init_seed`: [`Self::build_components`]
+    /// plus the production keyless-network `AuthNetworkAccount` auth component
+    /// ([`Self::auth_component`]), assembled as `AccountType::Public`, with asset
     /// callbacks enabled iff the composition installs the transfer-policy callback slots (it does:
     /// xUSDC is a policed asset).
     ///
@@ -182,13 +188,9 @@ impl XReserveStablecoinBuilder {
         for component in components {
             builder = builder.with_component(component);
         }
-        builder = builder.with_components(Self::auth_component(
-            self.fee_parameters.clone(),
-            self.fee_asset_id,
-        )?);
-        builder
-            .build()
-            .map_err(XReserveStablecoinBuilderError::AccountComposition)
+        builder = builder
+            .with_components(Self::auth_component(self.fee_parameters.clone(), self.fee_asset_id)?);
+        builder.build().map_err(XReserveStablecoinBuilderError::AccountComposition)
     }
 
     /// Builds the faucet for inclusion in a genesis block.
@@ -207,10 +209,7 @@ impl XReserveStablecoinBuilder {
         let fee_asset_id = AssetId::new_fungible(account.id());
         let (id, vault, mut storage, code, _nonce, _seed) = account.into_parts();
         storage
-            .set_item(
-                FeePolicyManager::fee_asset_id_slot(),
-                fee_asset_id.to_word(),
-            )
+            .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
             .map_err(XReserveStablecoinBuilderError::AccountComposition)?;
         Account::new(id, vault, storage, code, Felt::ONE, None)
             .map_err(XReserveStablecoinBuilderError::AccountComposition)
@@ -250,8 +249,8 @@ pub fn record_used_nonces(
 /// Crate-root constructor for the final xUSDC faucet [`Account`]: builds the fixed-identity USDCx
 /// faucet (`is_max_supply_mutable(true)` — the mutability invariant enforced BY CONSTRUCTION rather
 /// than a runtime reject), then composes it into the attestation-gated keyless network account via
-/// [`XReserveStablecoinBuilder`]. It is the single entry point that turns deploy parameters into the
-/// deployable account, so account construction is traceable from the library root (the agglayer
+/// [`XReserveStablecoinBuilder`]. It is the single entry point that turns deploy parameters into
+/// the deployable account, so account construction is traceable from the library root (the agglayer
 /// `create_bridge_account` pattern). `init_seed` seeds the account id. The optional inputs (the
 /// min-burn floor and the build-seeded attesters) keep their defaults here and are set through
 /// [`XReserveStablecoinBuilder::builder`].
@@ -286,7 +285,8 @@ pub fn build_faucet_account(
 /// [`USDCX_DECIMALS`] decimals, the supply cap at [`AssetAmount::MAX`], and
 /// `is_max_supply_mutable(true)` so the deployed `set_max_supply`
 /// stays operable. The identity fields are constants (the `.expect`s are invariants); setting the
-/// mutability flag here is what guarantees it by construction, replacing the removed runtime reject.
+/// mutability flag here is what guarantees it by construction, replacing the removed runtime
+/// reject.
 pub(super) fn build_usdcx_faucet(
     token_supply: AssetAmount,
 ) -> Result<FungibleFaucet, XReserveStablecoinBuilderError> {

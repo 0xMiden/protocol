@@ -10,17 +10,27 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::Word;
 use miden_testing::{Auth, MockChain};
 use support::mint_transport::{
-    administrator, bring_up, consume_note, honest_note, note_rng, payload_for,
+    administrator,
+    bring_up,
+    consume_note,
+    honest_note,
+    note_rng,
+    payload_for,
 };
 use support::*;
 use xusdc_encoding::note::costs::{
-    XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES, XUSDC_BURN_CONSUMPTION_CYCLES,
+    XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES,
+    XUSDC_BURN_CONSUMPTION_CYCLES,
     XUSDC_MINT_CONSUMPTION_CYCLES,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_burn::XReserveBurnNote;
 use xusdc_encoding::xreserve::encoding::{
-    CircleDomain, DepositIntentField, ForeignChainAddress, HookData, XReserveBurnItems,
+    CircleDomain,
+    DepositIntentField,
+    ForeignChainAddress,
+    HookData,
+    XReserveBurnItems,
 };
 
 const BURN_AMOUNT: u64 = 5_000;
@@ -83,12 +93,7 @@ fn priced_fixture_with(
     )?;
     builder.add_account(faucet.clone())?;
 
-    let payload = payload_for(
-        recipient.id(),
-        faucet.id(),
-        support::mint_transport::MINT_AMOUNT,
-        0,
-    );
+    let payload = payload_for(recipient.id(), faucet.id(), support::mint_transport::MINT_AMOUNT, 0);
     let mut notes = vec![XReserveSetAttesterNote::create(
         administrator(),
         faucet.id(),
@@ -175,7 +180,7 @@ async fn burn_cycles() -> Result<u32> {
         AssetAmount::new(BURN_AMOUNT)?,
         XReserveBurnItems {
             dest_domain: CircleDomain::new(9),
-            dest_recipient: ForeignChainAddress::new([0xAB; 32]),
+            dest_recipient: ForeignChainAddress::new([0xab; 32]),
         },
         builder.rng_mut(),
     )?;
@@ -203,10 +208,6 @@ async fn checked_in_costs_match_benchmarked_transactions() -> Result<()> {
 
     assert_cost("xUSDC MINT", mint, XUSDC_MINT_CONSUMPTION_CYCLES);
     assert_cost("xUSDC BURN", burn, XUSDC_BURN_CONSUMPTION_CYCLES);
-    assert_cost(
-        "xUSDC set-attester",
-        set_attester,
-        XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES,
-    );
+    assert_cost("xUSDC set-attester", set_attester, XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES);
     Ok(())
 }

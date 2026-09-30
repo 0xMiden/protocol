@@ -17,15 +17,23 @@ use miden_protocol::note::NoteAttachmentScheme;
 use miden_standards::note::NetworkAccountTarget;
 use xusdc_encoding::account::xreserve::XReserveFaucetExtension;
 use xusdc_encoding::note::xreserve_burn::{
-    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME, XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
+    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
 };
 use xusdc_encoding::note::xreserve_mint::{
-    XUSDC_MINT_ATTESTATION_NUM_WORDS, XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME,
+    XUSDC_MINT_ATTESTATION_NUM_WORDS,
+    XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME,
     XUSDC_MINT_TRANSPORT_PAYLOAD_WORD_OFF,
 };
 use xusdc_encoding::xreserve::encoding::{
-    DepositIntent, DepositIntentField, DepositIntentHeader, MintIntent, ACCOUNT_ID_BYTES,
-    ASSET_AMOUNT_BYTES, BYTES32_LEN, PUBKEY_FELTS,
+    DepositIntent,
+    DepositIntentField,
+    DepositIntentHeader,
+    MintIntent,
+    ACCOUNT_ID_BYTES,
+    ASSET_AMOUNT_BYTES,
+    BYTES32_LEN,
+    PUBKEY_FELTS,
 };
 /// The shipped MASM sources, read here as TEXT so the constants written in them can be compared
 /// against their Rust counterparts. This is the only thing in the crate that reads MASM source: the
@@ -33,7 +41,8 @@ use xusdc_encoding::xreserve::encoding::{
 const DEPOSIT_INTENT_MASM: &str = include_str!("../asm/xreserve/deposit_intent.masm");
 const MINT_INTENT_MASM: &str = include_str!("../asm/xreserve/mint_intent.masm");
 
-/// The faucet attestation verification attestation-verify shell module source, read test-side by reference.
+/// The faucet attestation verification attestation-verify shell module source, read test-side by
+/// reference.
 const ATTESTATION_VERIFY_MASM: &str = include_str!("../asm/xreserve/attestation_verify.masm");
 
 /// The attestation mint policy module source (the ACTIVE mint policy; owns the merged attachment
@@ -52,27 +61,21 @@ const PACKED_MEM_MASM: &str = include_str!("../asm/xreserve/packed_mem.masm");
 /// Expected `word("…")` slot-name constants of the shell module (MASM const name → label), pinned
 /// against the production slot names.
 fn expected_deposit_intent_word_consts() -> Vec<(&'static str, &'static str)> {
-    vec![(
-        "DOMAIN_CONFIG_SLOT",
-        XReserveFaucetExtension::domain_config_slot().as_str(),
-    )]
+    vec![("DOMAIN_CONFIG_SLOT", XReserveFaucetExtension::domain_config_slot().as_str())]
 }
 
 /// Expected `word("…")` slot-name constant of the mint-intent module: the nonce registry the
 /// replay guard reads, declared beside the nonce it keys on.
 fn expected_mint_intent_word_consts() -> Vec<(&'static str, &'static str)> {
-    vec![(
-        "USED_NONCES_SLOT",
-        XReserveFaucetExtension::used_nonces_slot().as_str(),
-    )]
+    vec![("USED_NONCES_SLOT", XReserveFaucetExtension::used_nonces_slot().as_str())]
 }
 
 /// Expected `word("…")` slot-name constant of the set_attester admin module — the single MASM-side
-/// declaration of the slot the attestation verification read path also keys; the shared name is the single Rust source.
-/// (The `ATTESTER_ENABLED_MARKER` / `ATTESTER_DISABLED_MARKER` Word array literals are not
-/// parity-parsed, like `NONCE_USED_MARKER`; the builder's Rust mirror of the enabled marker is
-/// checked by execution in `build_seeded_attesters.rs`, where the MASM read path accepts the row
-/// the builder wrote.)
+/// declaration of the slot the attestation verification read path also keys; the shared name is the
+/// single Rust source. (The `ATTESTER_ENABLED_MARKER` / `ATTESTER_DISABLED_MARKER` Word array
+/// literals are not parity-parsed, like `NONCE_USED_MARKER`; the builder's Rust mirror of the
+/// enabled marker is checked by execution in `build_seeded_attesters.rs`, where the MASM read path
+/// accepts the row the builder wrote.)
 fn expected_attester_admin_word_consts() -> Vec<(&'static str, &'static str)> {
     vec![(
         "XRESERVE_ATTESTERS_SLOT",
@@ -210,10 +213,7 @@ fn eval_masm_num(value: &str, known: &BTreeMap<String, u64>) -> Option<u64> {
             let term = term.trim();
             match term.strip_prefix("0x") {
                 Some(hex) => u64::from_str_radix(hex, 16).ok(),
-                None => term
-                    .parse::<u64>()
-                    .ok()
-                    .or_else(|| known.get(term).copied()),
+                None => term.parse::<u64>().ok().or_else(|| known.get(term).copied()),
             }
         })
         .try_fold(0u64, |acc, term| acc.checked_add(term?))
@@ -223,20 +223,13 @@ fn eval_masm_num(value: &str, known: &BTreeMap<String, u64>) -> Option<u64> {
 /// Returns (numeric constants, string constants, word("…") slot-name constants).
 fn parse_masm_consts(
     src: &str,
-) -> (
-    BTreeMap<String, u64>,
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-) {
+) -> (BTreeMap<String, u64>, BTreeMap<String, String>, BTreeMap<String, String>) {
     let mut nums = BTreeMap::new();
     let mut strs = BTreeMap::new();
     let mut words = BTreeMap::new();
     for line in src.lines() {
         let line = line.trim();
-        let rest = match line
-            .strip_prefix("pub const ")
-            .or_else(|| line.strip_prefix("const "))
-        {
+        let rest = match line.strip_prefix("pub const ").or_else(|| line.strip_prefix("const ")) {
             Some(r) => r,
             None => continue,
         };
@@ -260,9 +253,7 @@ fn parse_masm_consts(
 }
 
 fn num(nums: &BTreeMap<String, u64>, name: &str, file: &str) -> u64 {
-    *nums
-        .get(name)
-        .unwrap_or_else(|| panic!("{file} must define const {name}"))
+    *nums.get(name).unwrap_or_else(|| panic!("{file} must define const {name}"))
 }
 
 /// DC-1 relation: every MASM felt offset × 4 equals the Rust byte offset, the packed
@@ -271,8 +262,8 @@ fn num(nums: &BTreeMap<String, u64>, name: &str, file: &str) -> u64 {
 /// limb base plus the merged transport's scheme / section-width / scale rows.
 #[test]
 fn masm_rust_constant_parity() {
-    let (nums, _, _) = parse_masm_consts(DEPOSIT_INTENT_MASM);
-    let (mi_nums, _, _) = parse_masm_consts(MINT_INTENT_MASM);
+    let (nums, ..) = parse_masm_consts(DEPOSIT_INTENT_MASM);
+    let (mi_nums, ..) = parse_masm_consts(MINT_INTENT_MASM);
 
     let offsets: [(&str, DepositIntentField); 12] = [
         ("MAGIC_FELT_OFF", DepositIntentField::Magic),
@@ -280,15 +271,9 @@ fn masm_rust_constant_parity() {
         ("AMOUNT_FELT_OFF", DepositIntentField::Amount),
         ("REMOTE_DOMAIN_FELT_OFF", DepositIntentField::RemoteDomain),
         ("REMOTE_TOKEN_FELT_OFF", DepositIntentField::RemoteToken),
-        (
-            "REMOTE_RECIPIENT_FELT_OFF",
-            DepositIntentField::RemoteRecipient,
-        ),
+        ("REMOTE_RECIPIENT_FELT_OFF", DepositIntentField::RemoteRecipient),
         ("LOCAL_TOKEN_FELT_OFF", DepositIntentField::LocalToken),
-        (
-            "LOCAL_DEPOSITOR_FELT_OFF",
-            DepositIntentField::LocalDepositor,
-        ),
+        ("LOCAL_DEPOSITOR_FELT_OFF", DepositIntentField::LocalDepositor),
         ("MAX_FEE_FELT_OFF", DepositIntentField::MaxFee),
         ("NONCE_FELT_OFF", DepositIntentField::Nonce),
         ("HOOK_DATA_LEN_FELT_OFF", DepositIntentField::HookDataLen),
@@ -308,11 +293,7 @@ fn masm_rust_constant_parity() {
         "packed magic must be the u32-LE reinterpretation of the BE wire magic"
     );
     assert_eq!(
-        num(
-            &nums,
-            "DEPOSIT_INTENT_VERSION_PACKED",
-            "deposit_intent.masm"
-        ),
+        num(&nums, "DEPOSIT_INTENT_VERSION_PACKED", "deposit_intent.masm"),
         u32::from_le_bytes(DepositIntentHeader::VERSION.to_be_bytes()) as u64,
         "packed version must be the u32-LE reinterpretation of the BE wire version"
     );
@@ -359,7 +340,7 @@ fn masm_rust_constant_parity() {
 
     // the stride `store_account_id` advances by between the two u64 halves it writes. An
     // `AssetAmount` is that same u64, which is why the two constants must agree.
-    let (packed_mem_nums, _, _) = parse_masm_consts(PACKED_MEM_MASM);
+    let (packed_mem_nums, ..) = parse_masm_consts(PACKED_MEM_MASM);
     assert_eq!(
         num(&packed_mem_nums, "U64_PACKED_LIMBS", "packed_mem.masm") * 4,
         ASSET_AMOUNT_BYTES as u64,
@@ -370,27 +351,15 @@ fn masm_rust_constant_parity() {
     // edit that lands on only one side moves the offsets apart and fails here.
     let payload_offsets: [(&str, usize); 8] = [
         ("MINT_INTENT_NONCE_FELT_OFF", MintIntent::NONCE_FELT_OFF),
-        (
-            "MINT_INTENT_LOCAL_TOKEN_FELT_OFF",
-            MintIntent::LOCAL_TOKEN_FELT_OFF,
-        ),
-        (
-            "MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF",
-            MintIntent::LOCAL_DEPOSITOR_FELT_OFF,
-        ),
-        (
-            "MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF",
-            MintIntent::REMOTE_RECIPIENT_FELT_OFF,
-        ),
+        ("MINT_INTENT_LOCAL_TOKEN_FELT_OFF", MintIntent::LOCAL_TOKEN_FELT_OFF),
+        ("MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF", MintIntent::LOCAL_DEPOSITOR_FELT_OFF),
+        ("MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF", MintIntent::REMOTE_RECIPIENT_FELT_OFF),
         (
             "MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF",
             MintIntent::REMOTE_RECIPIENT_SUFFIX_FELT_OFF,
         ),
         ("MINT_INTENT_MAX_FEE_FELT_OFF", MintIntent::MAX_FEE_FELT_OFF),
-        (
-            "MINT_INTENT_HOOK_DATA_LEN_FELT_OFF",
-            MintIntent::HOOK_DATA_LEN_FELT_OFF,
-        ),
+        ("MINT_INTENT_HOOK_DATA_LEN_FELT_OFF", MintIntent::HOOK_DATA_LEN_FELT_OFF),
         ("MINT_INTENT_FELTS", MintIntent::NUM_FELTS),
     ];
     for (masm_name, rust_value) in payload_offsets {
@@ -409,7 +378,7 @@ fn masm_rust_constant_parity() {
     );
 
     // extra row: the affine-pubkey felt count
-    let (att_nums, _, _) = parse_masm_consts(ATTESTATION_VERIFY_MASM);
+    let (att_nums, ..) = parse_masm_consts(ATTESTATION_VERIFY_MASM);
     assert_eq!(
         num(&att_nums, "PUBKEY_FELTS", "attestation_verify.masm"),
         PUBKEY_FELTS as u64,
@@ -425,22 +394,14 @@ fn masm_rust_constant_parity() {
     // `builder_api.rs` (`RoleSymbol::new(DOM_PAUSER_ROLE)` / `RoleSymbol::new(BLK_MANAGER_ROLE)`)
     // and the materialized map in `w2admin_production_admin_effects.rs`.
 
-    let (burn_nums, _, _) = parse_masm_consts(BURN_POLICY_MASM);
+    let (burn_nums, ..) = parse_masm_consts(BURN_POLICY_MASM);
     assert_eq!(
-        num(
-            &burn_nums,
-            "XUSDC_BURN_WITHDRAWAL_ATTACHMENT_SCHEME",
-            "burn_policy.masm"
-        ),
+        num(&burn_nums, "XUSDC_BURN_WITHDRAWAL_ATTACHMENT_SCHEME", "burn_policy.masm"),
         XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME as u64,
         "withdrawal attachment scheme parity (MASM policy == Rust factory)"
     );
     assert_eq!(
-        num(
-            &burn_nums,
-            "XUSDC_BURN_WITHDRAWAL_ATTACHMENT_NUM_WORDS",
-            "burn_policy.masm"
-        ),
+        num(&burn_nums, "XUSDC_BURN_WITHDRAWAL_ATTACHMENT_NUM_WORDS", "burn_policy.masm"),
         XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS as u64,
         "withdrawal attachment word-count parity (MASM policy == Rust factory)"
     );
@@ -449,22 +410,14 @@ fn masm_rust_constant_parity() {
     // builds exactly what the attestation policy locates (find_attachment by scheme), sub-divides
     // at the attestation offset, and reduces at (scale 0). A one-sided edit — the exact mutation
     // check (e) — fails here.
-    let (policy_nums, _, _) = parse_masm_consts(MINT_POLICY_MASM);
+    let (policy_nums, ..) = parse_masm_consts(MINT_POLICY_MASM);
     assert_eq!(
-        num(
-            &policy_nums,
-            "XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME",
-            "mint_policy.masm"
-        ),
+        num(&policy_nums, "XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME", "mint_policy.masm"),
         XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME as u64,
         "transport attachment scheme parity (MASM policy == Rust factory)"
     );
     assert_eq!(
-        num(
-            &policy_nums,
-            "XUSDC_MINT_ATTESTATION_NUM_WORDS",
-            "mint_policy.masm"
-        ),
+        num(&policy_nums, "XUSDC_MINT_ATTESTATION_NUM_WORDS", "mint_policy.masm"),
         XUSDC_MINT_ATTESTATION_NUM_WORDS as u64,
         "attestation section word-count parity (MASM policy == Rust factory)"
     );
@@ -473,11 +426,7 @@ fn masm_rust_constant_parity() {
     // the MASM operand is what keeps the two layouts one layout.
     assert_eq!(
         XUSDC_MINT_TRANSPORT_PAYLOAD_WORD_OFF as u64,
-        num(
-            &policy_nums,
-            "XUSDC_MINT_ATTESTATION_NUM_WORDS",
-            "mint_policy.masm"
-        ),
+        num(&policy_nums, "XUSDC_MINT_ATTESTATION_NUM_WORDS", "mint_policy.masm"),
         "the carried payload's word offset must be the attestation width on BOTH sides"
     );
     // DC-5 has no cross-language parity row left: the MASM side no longer HAS a scale, because the
@@ -489,11 +438,7 @@ fn masm_rust_constant_parity() {
     // "none" value 1 and the standard values 2 (NetworkAccountTarget, carried on this very
     // note) and 3 (Pswap). Executable so a scheme regression cannot slip in one-sided.
     assert!(
-        num(
-            &policy_nums,
-            "XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME",
-            "mint_policy.masm"
-        ) >= 4,
+        num(&policy_nums, "XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME", "mint_policy.masm") >= 4,
         "the transport scheme must be >= 4 (rider A8: off the reserved/standard values)"
     );
     assert_ne!(
@@ -532,8 +477,8 @@ fn masm_constants_bidirectional() {
             expected_deposit_intent_word_consts(),
         ),
         // attestation_verify: NO slot consts of its own. It imports `XRESERVE_ATTESTERS_SLOT` (and
-        // the enabled marker) from the setter module rather than redeclaring them, so the two sides
-        // cannot drift by construction.
+        // the enabled marker) from the setter module rather than redeclaring them, so the two
+        // sides cannot drift by construction.
         (
             "attestation_verify.masm",
             ATTESTATION_VERIFY_MASM,
@@ -544,20 +489,11 @@ fn masm_constants_bidirectional() {
         // shell errors via SHELL_ERR_TABLE) and the covered/parity-asserted numeric consts; its
         // slot consts stay IMPORTED (USED_NONCES from mint_intent) — no word("…")
         // consts of its own (the NONCE_USED_MARKER Word array literal is not parity-parsed).
-        (
-            "mint_policy.masm",
-            MINT_POLICY_MASM,
-            MINT_POLICY_COVERED_NUMS,
-            Vec::new(),
-        ),
-        (
-            "burn_policy.masm",
-            BURN_POLICY_MASM,
-            BURN_POLICY_COVERED_NUMS,
-            Vec::new(),
-        ),
+        ("mint_policy.masm", MINT_POLICY_MASM, MINT_POLICY_COVERED_NUMS, Vec::new()),
+        ("burn_policy.masm", BURN_POLICY_MASM, BURN_POLICY_COVERED_NUMS, Vec::new()),
         // set_attester: pins XRESERVE_ATTESTERS_SLOT to the shared name (no numeric consts;
-        // the authority-gate traps reuse the stock ADMIN-role and pause errors, not declared here).
+        // the authority-gate traps reuse the stock ADMIN-role and pause errors, not declared
+        // here).
         (
             "attester_admin.masm",
             ATTESTER_ADMIN_MASM,
@@ -566,12 +502,7 @@ fn masm_constants_bidirectional() {
         ),
         // packed_mem: the layout-agnostic copy/store primitives. It declares the limb guard's
         // error (a known shell error) and one width; no slot consts.
-        (
-            "packed_mem.masm",
-            PACKED_MEM_MASM,
-            PACKED_MEM_COVERED_NUMS,
-            Vec::new(),
-        ),
+        ("packed_mem.masm", PACKED_MEM_MASM, PACKED_MEM_COVERED_NUMS, Vec::new()),
     ];
     for (file, src, covered_nums, expected_words) in sources {
         let (nums, strs, words) = parse_masm_consts(src);
@@ -610,8 +541,8 @@ fn masm_constants_bidirectional() {
 /// role map load-bearing — the pause and blocklist managers resolve to their assigned roles, and
 /// every other gated procedure (`set_attester`, the stock `set_min_burn_amount` / `set_max_supply`,
 /// the policy setters) falls back to the administrator role. Drifting the installed mode fails
-/// here: under the administrator-controlled mode the role map would be ignored and pausing would land back
-/// on the administrator, the one identity Circle's model keeps it away from.
+/// here: under the administrator-controlled mode the role map would be ignored and pausing would
+/// land back on the administrator, the one identity Circle's model keeps it away from.
 #[test]
 fn rbac_controlled_authority_parity() -> anyhow::Result<()> {
     use miden_standards::account::access::Authority;

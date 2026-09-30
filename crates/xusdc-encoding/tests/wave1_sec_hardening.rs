@@ -25,7 +25,8 @@ use miden_standards::account::policies::MinBurnAmount;
 use support::mint_transport::*;
 use support::*;
 use xusdc_encoding::note::xreserve_admin::{
-    XReserveMinBurnAmountNote, XReserveMinBurnAmountNoteError,
+    XReserveMinBurnAmountNote,
+    XReserveMinBurnAmountNoteError,
 };
 
 /// The stock `MinBurnAmount` floor-slot word for a floor `v` (`[v,0,0,0]`), read-back oracle.

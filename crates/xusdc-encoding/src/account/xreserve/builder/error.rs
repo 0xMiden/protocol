@@ -12,21 +12,26 @@ use miden_standards::account::policies::{BurnPolicyError, MintPolicyError};
 use miden_tx::NotePricingError;
 
 use super::{
-    ATTESTATION_MINT_POLICY_PROC_PATH, MIN_BURN_SIZE_FLOOR, XRESERVE_BURN_POLICY_PROC_PATH,
+    ATTESTATION_MINT_POLICY_PROC_PATH,
+    MIN_BURN_SIZE_FLOOR,
+    XRESERVE_BURN_POLICY_PROC_PATH,
 };
 
 /// Errors returned while composing the xUSDC faucet account.
 #[derive(Debug)]
 pub enum XReserveStablecoinBuilderError {
-    /// The fixed-identity USDCx [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet)
-    /// could not be constructed from the supplied supply parameters (the crate-root
-    /// `build_faucet_account` path). Carries the stock faucet error.
+    /// The fixed-identity USDCx
+    /// [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet) could not be
+    /// constructed from the supplied supply parameters (the crate-root `build_faucet_account`
+    /// path). Carries the stock faucet error.
     FaucetComposition(FungibleFaucetError),
-    /// The production `AuthNetworkAccount` auth component could not be assembled from the note-script
-    /// allowlist (the crate-root `build_account` path). Carries the stock allowlist error.
+    /// The production `AuthNetworkAccount` auth component could not be assembled from the
+    /// note-script allowlist (the crate-root `build_account` path). Carries the stock
+    /// allowlist error.
     NetworkAuth(NetworkAccountNoteAllowlistError),
-    /// The composed faucet [`Account`](miden_protocol::account::Account) could not be built from the
-    /// component set (the crate-root `build_account` path). Carries the stock account error.
+    /// The composed faucet [`Account`](miden_protocol::account::Account) could not be built from
+    /// the component set (the crate-root `build_account` path). Carries the stock account
+    /// error.
     AccountComposition(AccountError),
     /// The xUSDC fee schedule could not be priced from the supplied network fee parameters.
     FeePricing(NotePricingError),

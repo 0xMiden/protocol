@@ -27,10 +27,7 @@ fn required_fee_roots() -> [(&'static str, Word); 2] {
             "ConstantFeePolicyConfigNote",
             ConstantFeePolicyConfigNote::script_root().as_word(),
         ),
-        (
-            "FeeSponsorshipNote",
-            FeeSponsorshipNote::script_root().as_word(),
-        ),
+        ("FeeSponsorshipNote", FeeSponsorshipNote::script_root().as_word()),
     ]
 }
 
@@ -56,16 +53,12 @@ fn allowlisted_keys(component: &AccountComponent, slot: &StorageSlotName) -> BTr
 fn builder_allowlist_exposes_only_the_fee_config_surface() {
     let allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
     assert!(
-        !allowlist
-            .iter()
-            .any(|root| root.as_word() == forbidden_root()),
+        !allowlist.iter().any(|root| root.as_word() == forbidden_root()),
         "NetworkAccountConfigNote must stay out of the builder allowlist",
     );
     for (name, root) in required_fee_roots() {
         assert!(
-            allowlist
-                .iter()
-                .any(|candidate| candidate.as_word() == root),
+            allowlist.iter().any(|candidate| candidate.as_word() == root),
             "the {name} script root must be present",
         );
     }
@@ -95,10 +88,7 @@ fn auth_component_materializes_the_exact_fee_enabled_allowlist() -> Result<()> {
         "NetworkAccountConfigNote must stay absent",
     );
     for (name, root) in required_fee_roots() {
-        assert!(
-            note_keys.contains(&root),
-            "the auth component must allow {name}",
-        );
+        assert!(note_keys.contains(&root), "the auth component must allow {name}",);
     }
     Ok(())
 }
@@ -116,11 +106,8 @@ fn built_account_materializes_the_exact_fee_enabled_allowlist() -> Result<()> {
 
     let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
         .map_err(|e| anyhow::anyhow!("the faucet must carry the allowlist slot: {e}"))?;
-    let roots: BTreeSet<Word> = allowlist
-        .allowed_script_roots()
-        .iter()
-        .map(|r| r.as_word())
-        .collect();
+    let roots: BTreeSet<Word> =
+        allowlist.allowed_script_roots().iter().map(|r| r.as_word()).collect();
 
     assert_eq!(
         roots.len(),

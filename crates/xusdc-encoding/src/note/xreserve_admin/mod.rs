@@ -31,7 +31,14 @@ use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachments, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteAttachments,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
     PartialNoteMetadata,
 };
 use miden_protocol::Felt;
@@ -43,10 +50,11 @@ pub use min_burn_amount::{XReserveMinBurnAmountNote, XReserveMinBurnAmountNoteEr
 pub use set_attester::{XReserveSetAttesterNote, XReserveSetAttesterNoteStorage};
 
 /// Assembles an admin note from its fixed-root `script` + the creator-committed storage `items`,
-/// carrying the scheme-2 `NetworkAccountTarget` routing bind to `faucet_id` (routing-only). Shared by
-/// every admin-note factory: the notes differ only in their script + the felt payload they commit;
-/// the metadata (PUBLIC, faucet-tagged), the serial draw, the empty asset set, and the routing
-/// attachment are identical. `sender` is the (kernel-forced) admin party the wrapped proc's gate reads.
+/// carrying the scheme-2 `NetworkAccountTarget` routing bind to `faucet_id` (routing-only). Shared
+/// by every admin-note factory: the notes differ only in their script + the felt payload they
+/// commit; the metadata (PUBLIC, faucet-tagged), the serial draw, the empty asset set, and the
+/// routing attachment are identical. `sender` is the (kernel-forced) admin party the wrapped proc's
+/// gate reads.
 pub(super) fn build_admin_note<R: FeltRng>(
     sender: AccountId,
     faucet_id: AccountId,

@@ -34,12 +34,20 @@ use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_standards::account::access::{
-    Pausable, PausableManager, RoleBasedAccessControl, RoleConfig,
+    Pausable,
+    PausableManager,
+    RoleBasedAccessControl,
+    RoleConfig,
 };
 use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::account::policies::{
-    BlocklistManager, BurnPolicy, MinBurnAmount, MintPolicy, TokenPolicyManager, TransferPolicy,
+    BlocklistManager,
+    BurnPolicy,
+    MinBurnAmount,
+    MintPolicy,
+    TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_standards::account::upgrade::UpgradeManager;
 
@@ -63,11 +71,11 @@ pub const DOM_UNPAUSER_ROLE: &str = "DOM_UNPAUSER";
 /// The dedicated blocklist-administration RoleSymbol this faucet seeds under the ratified
 /// transfer-blocklist decision: `BLK_MANAGER` is held by an EXTERNAL entity that
 /// manages the transfer blocklist for Miden and has NO other admin capability (capability isolation
-/// is two-way — the holder can ONLY block/unblock, and the administrator, lacking the role, cannot). The
-/// stock `BlocklistManager`'s `block_account` / `unblock_account` roots are assigned this symbol by
-/// [`XReserveAdminAuthority`], which is what keeps the capability off the administrator — the
-/// owner-gated `BlocklistOwnerControlled` variant is the wrong identity and is not installed. Its
-/// admin is left unset → resolves to the built-in `ADMIN`, so Miden rotates
+/// is two-way — the holder can ONLY block/unblock, and the administrator, lacking the role,
+/// cannot). The stock `BlocklistManager`'s `block_account` / `unblock_account` roots are assigned
+/// this symbol by [`XReserveAdminAuthority`], which is what keeps the capability off the
+/// administrator — the owner-gated `BlocklistOwnerControlled` variant is the wrong identity and is
+/// not installed. Its admin is left unset → resolves to the built-in `ADMIN`, so Miden rotates
 /// or revokes the external entity through the allowlisted standard role-action note —
 /// no new rotation machinery. `BLK_MANAGER` is seeded role id 4.
 pub const BLK_MANAGER_ROLE: &str = "BLK_MANAGER";
@@ -90,7 +98,8 @@ pub const XRESERVE_BURN_POLICY_PROC_PATH: &str =
 /// policy
 /// asserts `min <= amount` ONLY (its authority-gated stock setter even accepts `0`), so the
 /// zero-burn reject is enforced at note-building time: the builder rejects a floor below this at
-/// construction, and the [`XReserveMinBurnAmountNote`](crate::note::xreserve_admin::XReserveMinBurnAmountNote)
+/// construction, and the
+/// [`XReserveMinBurnAmountNote`](crate::note::xreserve_admin::XReserveMinBurnAmountNote)
 /// factory refuses a sub-floor value before assembling the standard config note.
 pub const MIN_BURN_SIZE_FLOOR: u64 = 1;
 
@@ -107,9 +116,9 @@ pub const USDCX_DECIMALS: u8 = 6;
 /// Composes the xUSDC faucet account: `FungibleFaucet` + the assembled `xreserve` library
 /// component (attestation mint policy, admin procs) + a `TokenPolicyManager`
 /// with the attestation mint policy and a burn policy that checks the required attachments
-/// and the minimum amount stored by [`MinBurnAmount`], plus [`PausableManager`], [`BlocklistManager`], and
-/// [`ConstantFeeManager`] components + a seeded `RoleBasedAccessControl` governed by
-/// [`XReserveAdminAuthority`]'s `Authority::RbacControlled`.
+/// and the minimum amount stored by [`MinBurnAmount`], plus [`PausableManager`],
+/// [`BlocklistManager`], and [`ConstantFeeManager`] components + a seeded `RoleBasedAccessControl`
+/// governed by [`XReserveAdminAuthority`]'s `Authority::RbacControlled`.
 ///
 /// Construct with the generated [`Self::builder`] (the faucet supply parameters, the `owner` and
 /// role holders, the network fee parameters, and the build-seeded domain; the
@@ -158,9 +167,9 @@ impl XReserveStablecoinBuilder {
     /// `attest_admin_holder`, `pauser_holder` and `unpauser_holder` seeded as the sole members of
     /// `ATTEST_ADMIN`, `DOM_PAUSER` and `DOM_UNPAUSER`, and the
     /// `blocklist_manager_holder` seeded as the sole member of `BLK_MANAGER` (the external
-    /// transfer-blocklist administrator), the network `fee_parameters` and `fee_asset_id`, plus the BUILD-SEEDED
-    /// `domain`. The domain is required because a faucet without it would ship a domain
-    /// compare that reads an empty slot. `attesters` (default empty) are allowlisted at
+    /// transfer-blocklist administrator), the network `fee_parameters` and `fee_asset_id`, plus the
+    /// BUILD-SEEDED `domain`. The domain is required because a faucet without it would ship a
+    /// domain compare that reads an empty slot. `attesters` (default empty) are allowlisted at
     /// composition time.
     ///
     /// The faucet is NOT a parameter: it has a fixed identity — name `USDCx`, symbol
@@ -240,8 +249,8 @@ impl XReserveStablecoinBuilder {
     /// Production composition: seeds the build-time domain,
     /// then composes the account components. The
     /// faucet's `max_supply` mutability is guaranteed by construction (the crate-root
-    /// [`Self::build_account`] path builds the faucet `is_max_supply_mutable(true)`), so there is no
-    /// runtime mutability reject. Public for the integration suite, which composes
+    /// [`Self::build_account`] path builds the faucet `is_max_supply_mutable(true)`), so there is
+    /// no runtime mutability reject. Public for the integration suite, which composes
     /// these components under a TEST auth account; [`Self::build_account`] is the production path.
     pub fn build_components(
         &self,
@@ -258,9 +267,9 @@ impl XReserveStablecoinBuilder {
             ("DOM_UNPAUSER", &self.unpauser_holders),
         ] {
             if overlaps(&self.blocklist_manager_holders, holders) {
-                return Err(
-                    XReserveStablecoinBuilderError::BlocklistManagerNotIsolated { collides_with },
-                );
+                return Err(XReserveStablecoinBuilderError::BlocklistManagerNotIsolated {
+                    collides_with,
+                });
             }
         }
         // No DOM_PAUSER member may hold another role; BLK_MANAGER collisions were checked above.
@@ -291,10 +300,7 @@ impl XReserveStablecoinBuilder {
             )
             .active_burn_policy(BurnPolicy::custom(
                 burn_root,
-                [
-                    burn_policy_component,
-                    MinBurnAmount::new(self.min_burn_amount).into(),
-                ],
+                [burn_policy_component, MinBurnAmount::new(self.min_burn_amount).into()],
             )?)
             .active_send_policy(TransferPolicy::empty_basic_blocklist())
             .active_receive_policy(TransferPolicy::empty_basic_blocklist())

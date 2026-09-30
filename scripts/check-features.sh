@@ -21,6 +21,7 @@ declare -ra PACKAGES=(
     miden-testing
     miden-block-prover
     miden-tx-batch
+    xusdc-encoding
 )
 
 for package in "${PACKAGES[@]}"; do

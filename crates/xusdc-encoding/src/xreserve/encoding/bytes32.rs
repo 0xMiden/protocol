@@ -6,7 +6,8 @@
 //! map, and the serial number of
 //! the attested output note the mint sends. A nonce carries no guarantee that it fits a field
 //! element, so it cannot be reinterpreted as a Word directly; a value whose limbs exceed the field
-//! modulus would have to be rejected or reduced, and reducing would let two distinct nonces collide.
+//! modulus would have to be rejected or reduced, and reducing would let two distinct nonces
+//! collide.
 //!
 //! The canonical answer is to HASH instead of reinterpret: pack the bytes into eight
 //! u32-little-endian field elements and take their Poseidon2 hash. That is total — every possible
@@ -18,10 +19,10 @@
 
 use miden_protocol::account::StorageMapKey;
 use miden_protocol::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
-use miden_protocol::{Felt, Hasher};
 // `Word` is only named by the test-only lossless conversion and the unit tests.
 #[cfg(test)]
 use miden_protocol::Word;
+use miden_protocol::{Felt, Hasher};
 
 use super::error::EncodingError;
 
@@ -117,12 +118,7 @@ mod tests {
             vec.id
         );
         let key = bytes32_to_storage_map_key(&vec.bytes32());
-        assert_eq!(
-            Word::from(key),
-            word_from_hex(&vec.expected_key),
-            "vector {}",
-            vec.id
-        );
+        assert_eq!(Word::from(key), word_from_hex(&vec.expected_key), "vector {}", vec.id);
     }
 
     /// TV-B32-3 (replay/determinism): same input → identical key twice.
@@ -145,12 +141,7 @@ mod tests {
             let felts = bytes32_to_packed_felts(&vec.bytes32());
             assert_eq!(felts.len(), 8, "vector {}: packing width", vec.id);
             let expected: Vec<Felt> = vec.packed_felts_values();
-            assert_eq!(
-                felts.as_slice(),
-                expected.as_slice(),
-                "vector {}: limbs",
-                vec.id
-            );
+            assert_eq!(felts.as_slice(), expected.as_slice(), "vector {}: limbs", vec.id);
         }
     }
 
@@ -164,12 +155,7 @@ mod tests {
             let felts = bytes32_to_packed_felts(&b);
             let back = packed_felts_to_bytes32(&felts).expect("valid u32 limbs round-trip");
             assert_eq!(back, b, "vector {}: inverse round-trip", vec.id);
-            assert_eq!(
-                bytes32_to_packed_felts(&back),
-                felts,
-                "vector {}: forward∘inverse",
-                vec.id
-            );
+            assert_eq!(bytes32_to_packed_felts(&back), felts, "vector {}: forward∘inverse", vec.id);
         }
     }
 

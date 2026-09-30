@@ -4,8 +4,8 @@
 //! The note is built fresh per burn, following the same shape as the standard pay-to-id note, but
 //! it is consumed by the faucet's stock `receive_and_burn` script rather than by a wallet. It is
 //! always `NoteType::Public`, always carries the fixed xUSDC burn tag, keeps the stock 8-felt asset
-//! layout in `NoteStorage` (so the stock script's stored-vs-carried asset check passes), and carries
-//! its `(destDomain, destRecipient)` withdrawal payload in a scheme-tagged note
+//! layout in `NoteStorage` (so the stock script's stored-vs-carried asset check passes), and
+//! carries its `(destDomain, destRecipient)` withdrawal payload in a scheme-tagged note
 //! ATTACHMENT encoded with the shared codec, so on-chain bytes and off-chain decode never drift.
 //!
 //! Public and tagged is the whole point: the off-chain listener finds these notes by tag, and
@@ -33,7 +33,9 @@ use miden_testing::{Auth, MockChain};
 use miden_tx::LocalTransactionProver;
 use support::*;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote, FIXED_XUSDC_BURN_TAG, XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
+    FIXED_XUSDC_BURN_TAG,
+    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
 };
 use xusdc_encoding::vectors::load;
@@ -57,7 +59,7 @@ fn note_rng(seed: u64) -> RandomCoin {
 fn sample_items() -> XReserveBurnItems {
     XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
-        dest_recipient: ForeignChainAddress::new([0xABu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
     }
 }
 
@@ -131,7 +133,8 @@ async fn emitted_items_for(items: &XReserveBurnItems) -> anyhow::Result<Vec<Felt
         items.clone(),
         builder.rng_mut(),
     )?;
-    // The asset the emit moves equals the note's own NoteAssets asset (single-sourced from the amount).
+    // The asset the emit moves equals the note's own NoteAssets asset (single-sourced from the
+    // amount).
     let note_asset = seed_asset;
     let chain = builder.build()?;
 
@@ -161,11 +164,7 @@ fn burn_note_is_public_with_fixed_tag() {
     .expect("constructing the burn note");
 
     // Direct (NOT payload-inferred) assertions — a wrong tag or a Private note fails HERE.
-    assert_eq!(
-        note.metadata().note_type(),
-        NoteType::Public,
-        "burn note must be Public"
-    );
+    assert_eq!(note.metadata().note_type(), NoteType::Public, "burn note must be Public");
     assert_eq!(
         note.metadata().tag().as_u32(),
         FIXED_XUSDC_BURN_TAG,
@@ -226,23 +225,12 @@ fn burn_note_payload_schema() {
     let payload_felts = withdrawal_payload(note.attachments());
     assert_eq!(payload_felts.len(), 9, "DC-7 payload is exactly 9 felts");
     let decoded = XReserveBurnItems::decode(&payload_felts).expect("decoding DC-7 items");
-    assert_eq!(
-        decoded, items,
-        "attachment payload decode == input items (DC-7 order)"
-    );
+    assert_eq!(decoded, items, "attachment payload decode == input items (DC-7 order)");
 
     // NoteAssets carries the burned xUSDC FungibleAsset with the separately supplied amount.
-    let asset = note
-        .assets()
-        .iter_fungible()
-        .next()
-        .expect("note carries one fungible asset");
+    let asset = note.assets().iter_fungible().next().expect("note carries one fungible asset");
     assert_eq!(asset.faucet_id(), faucet, "asset issued by the faucet");
-    assert_eq!(
-        asset.amount(),
-        amount,
-        "NoteAssets amount == the supplied amount"
-    );
+    assert_eq!(asset.amount(), amount, "NoteAssets amount == the supplied amount");
 
     // NoteStorage now holds the STOCK 8-felt asset layout (ASSET_ID(4) + ASSET_VALUE(4)) the stock
     // burn script asserts the carried asset against — the payload no longer lives here.
@@ -256,11 +244,7 @@ fn burn_note_payload_schema() {
     // Note metadata exposes only the burner as sender. The destination domain and recipient stay
     // in the withdrawal-payload attachment, so they are read from the payload the listener decodes
     // rather than inferred from a metadata field that means something else.
-    assert_eq!(
-        note.metadata().sender(),
-        sender,
-        "metadata.sender == depositor"
-    );
+    assert_eq!(note.metadata().sender(), sender, "metadata.sender == depositor");
 }
 
 // 3 — PRODUCING SIDE: the constructor can only make Public notes (it takes no note-type argument)
@@ -278,16 +262,8 @@ fn burn_note_is_never_private() {
             &mut note_rng(seed),
         )
         .expect("constructing the burn note");
-        assert_eq!(
-            note.metadata().note_type(),
-            NoteType::Public,
-            "R-BURN-6: always Public"
-        );
-        assert_ne!(
-            note.metadata().note_type(),
-            NoteType::Private,
-            "R-BURN-6: never Private"
-        );
+        assert_eq!(note.metadata().note_type(), NoteType::Public, "R-BURN-6: always Public");
+        assert_ne!(note.metadata().note_type(), NoteType::Private, "R-BURN-6: never Private");
     }
 }
 
@@ -296,12 +272,7 @@ fn burn_note_is_never_private() {
 
 #[tokio::test]
 async fn burn_note_emitted_items_match_codec_vectors() -> anyhow::Result<()> {
-    let accept: Vec<_> = load()
-        .families
-        .bn
-        .iter()
-        .filter(|v| v.kind == "accept")
-        .collect();
+    let accept: Vec<_> = load().families.bn.iter().filter(|v| v.kind == "accept").collect();
     assert!(!accept.is_empty(), "BN accept vectors present");
     for vec in accept {
         let items = vec.expected_struct();
@@ -344,7 +315,7 @@ async fn burn_note_consumed_by_faucet_decrements() -> anyhow::Result<()> {
     // The REAL XReserveBurnNote with the same faucet + user + amount as the harness asset.
     let items = XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
-        dest_recipient: ForeignChainAddress::new([0xABu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
     };
     let note = XReserveBurnNote::create(
         h.user_id,
@@ -355,14 +326,12 @@ async fn burn_note_consumed_by_faucet_decrements() -> anyhow::Result<()> {
     )?;
 
     let mut chain = h.chain;
-    assert_eq!(
-        committed_token_supply(&chain, h.faucet_id)?,
-        AssetAmount::new(TOKEN_SUPPLY)?
-    );
+    assert_eq!(committed_token_supply(&chain, h.faucet_id)?, AssetAmount::new(TOKEN_SUPPLY)?);
 
     // The note is emitted in one block and consumed in the next — a burn note consumed in its own
     // block is erased instead (covered at the end of this file). Consuming runs the stock
-    // `receive_and_burn`, which applies the faucet's minimum-burn policy before destroying the asset.
+    // `receive_and_burn`, which applies the faucet's minimum-burn policy before destroying the
+    // asset.
     let tx1 = run_burn_consume(&mut chain, &note, &h.asset, h.faucet_id, h.user_id)
         .await
         .expect("faucet consumes the XReserveBurnNote via receive_and_burn → CMP-A10");
@@ -400,7 +369,7 @@ async fn burn_note_insufficient_balance_rejects_create() -> anyhow::Result<()> {
     let over = HELD + 1;
     let items = XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
-        dest_recipient: ForeignChainAddress::new([0xABu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
     };
     let note = XReserveBurnNote::create(
         h.user_id,
@@ -460,10 +429,7 @@ async fn recipient_burns_full_balance() -> anyhow::Result<()> {
     chain.prove_next_block()?;
 
     assert_eq!(
-        chain
-            .committed_account(h.user_id)?
-            .vault()
-            .get_balance(h.asset.id())?,
+        chain.committed_account(h.user_id)?.vault().get_balance(h.asset.id())?,
         AssetAmount::new(0)?,
         "the full-balance emit leaves the holder's vault EMPTY"
     );
@@ -551,20 +517,14 @@ async fn production_burn_note_same_block_consume_is_erased() -> anyhow::Result<(
 
     // The canary erasure quad, on the production note.
     assert!(
-        block
-            .body()
-            .output_notes()
-            .all(|(_, on)| on.id() != note.id()),
+        block.body().output_notes().all(|(_, on)| on.id() != note.id()),
         "the production burn note is erased from the block's output notes"
     );
     assert!(
         chain.get_public_note(&note.id()).is_none(),
         "the erased note is not retrievable"
     );
-    assert!(
-        !chain.is_note_committed(&note.id()),
-        "the erased note is not committed"
-    );
+    assert!(!chain.is_note_committed(&note.id()), "the erased note is not committed");
     assert!(
         !chain.is_note_consumed(&note.nullifier()),
         "no nullifier is created for the erased note"

@@ -13,8 +13,7 @@ mod support;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
-use miden_protocol::account::AccountStorage;
-use miden_protocol::account::{AccountComponent, RoleSymbol, StorageSlotName};
+use miden_protocol::account::{AccountComponent, AccountStorage, RoleSymbol, StorageSlotName};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, PausableManager};
 use miden_standards::account::policies::BlocklistManager;
@@ -241,11 +240,8 @@ fn the_managers_install_no_storage_of_their_own() {
 #[test]
 fn the_admin_authority_installs_the_config_word_and_the_role_map() {
     let component: AccountComponent = XReserveAdminAuthority::new().into();
-    let names: BTreeSet<&StorageSlotName> = component
-        .storage_slots()
-        .iter()
-        .map(|slot| slot.name())
-        .collect();
+    let names: BTreeSet<&StorageSlotName> =
+        component.storage_slots().iter().map(|slot| slot.name()).collect();
 
     assert!(
         names.contains(Authority::authority_slot()),

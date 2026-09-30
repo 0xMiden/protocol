@@ -53,21 +53,13 @@ async fn stock_mint_note_mints_the_attested_amount() -> Result<()> {
         .iter_fungible()
         .next()
         .ok_or_else(|| anyhow::anyhow!("the recipient note carries a fungible asset"))?;
-    assert_eq!(
-        asset.faucet_id(),
-        pf.faucet_id,
-        "the asset is this faucet's"
-    );
+    assert_eq!(asset.faucet_id(), pf.faucet_id, "the asset is this faucet's");
     assert_eq!(
         u64::from(asset.amount()),
         MINT_AMOUNT,
         "the minted amount is EXACTLY the attested wire amount (scale-0 identity)"
     );
-    assert_eq!(
-        out.metadata().note_type(),
-        NoteType::Public,
-        "the recipient note is Public"
-    );
+    assert_eq!(out.metadata().note_type(), NoteType::Public, "the recipient note is Public");
     assert_eq!(
         out.metadata().tag(),
         NoteTag::with_account_target(pf.recipient_id),

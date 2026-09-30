@@ -7,9 +7,9 @@
 //!
 //! Authority follows Circle's admin model: this setter carries no role of its own, so the
 //! account-wide role-based authority resolves it to the built-in `ADMIN` role, seeded on the
-//! administrator's account. The account also seeds separate Domain Pauser and Unpauser roles, but neither may
-//! set the floor, and their own powers are tested in the pause and role suites. `ADMIN` membership
-//! is account-bound: it is the faucet's only authority handle.
+//! administrator's account. The account also seeds separate Domain Pauser and Unpauser roles, but
+//! neither may set the floor, and their own powers are tested in the pause and role suites. `ADMIN`
+//! membership is account-bound: it is the faucet's only authority handle.
 //!
 //! The authorization gate itself is the standard setter's, and it is driven through the production
 //! note in `f5_admin_notes.rs`. What is left here is what belongs to this repository: that the
@@ -51,12 +51,7 @@ const SEED_MIN: u64 = 1_000;
 
 // Stock RBAC map-key encodings (miden-testing/tests/scripts/rbac.rs:57-63).
 fn role_membership_key(role: &RoleSymbol, id: AccountId) -> Word {
-    Word::from([
-        Felt::ZERO,
-        Felt::from(role),
-        id.suffix(),
-        id.prefix().as_felt(),
-    ])
+    Word::from([Felt::ZERO, Felt::from(role), id.suffix(), id.prefix().as_felt()])
 }
 
 /// The STOCK `MinBurnAmount` floor-slot value word for a floor `v` (`[v,0,0,0]`) — the read-back
@@ -105,7 +100,8 @@ fn probe_stock_min_burn_setter_installed() -> Result<()> {
     Ok(())
 }
 
-// THE SETTER IS NOT PAUSE-GATED: the administrator may update the minimum while the faucet is paused
+// THE SETTER IS NOT PAUSE-GATED: the administrator may update the minimum while the faucet is
+// paused
 // ================================================================================================
 
 /// After the Domain Pauser pauses the faucet (the stock `PausableManager`, role-gated), an
@@ -160,10 +156,7 @@ async fn support_replica_matches_the_production_role_seed() -> Result<()> {
             .find(|slot| slot.name() == name)
             .context("the production composition carries the RBAC slot")?;
         assert_eq!(
-            account
-                .storage()
-                .get(name)
-                .context("the replica carries the RBAC slot")?,
+            account.storage().get(name).context("the replica carries the RBAC slot")?,
             expected,
             "the replica must match the production {name} seed"
         );
@@ -171,8 +164,8 @@ async fn support_replica_matches_the_production_role_seed() -> Result<()> {
 
     // And the replica must not carry an authority handle the shipped account has retired: the
     // ownership component is gone from production, so a replica that still installs it would give
-    // the suites running against it an administrator slot and five callable procedures the real faucet does
-    // not have — the divergence that makes a replica stop being evidence.
+    // the suites running against it an administrator slot and five callable procedures the real
+    // faucet does not have — the divergence that makes a replica stop being evidence.
     assert!(
         Ownable2Step::try_from_storage(account.storage()).is_err(),
         "the replica must carry no owner-config slot — the shipped composition installs no          ownership component, and the built-in ADMIN role is its only authority handle"
@@ -180,8 +173,8 @@ async fn support_replica_matches_the_production_role_seed() -> Result<()> {
     Ok(())
 }
 
-/// A wrong-key membership read stays EMPTY: a non-member id is not a `DOM_PAUSER` member (proves the
-/// seed is keyed on the intended holder, not blanket-true).
+/// A wrong-key membership read stays EMPTY: a non-member id is not a `DOM_PAUSER` member (proves
+/// the seed is keyed on the intended holder, not blanket-true).
 #[tokio::test]
 async fn dom_non_member_reads_empty() -> Result<()> {
     let pauser = RoleSymbol::new(DOM_PAUSER_SYMBOL).expect("DOM_PAUSER is a valid role symbol");
@@ -192,10 +185,6 @@ async fn dom_non_member_reads_empty() -> Result<()> {
         RoleBasedAccessControl::role_membership_slot(),
         StorageMapKey::new(role_membership_key(&pauser, plain_non_administrator())),
     )?;
-    assert_eq!(
-        non[0],
-        Felt::ZERO,
-        "a non-member id is not a DOM_PAUSER member"
-    );
+    assert_eq!(non[0], Felt::ZERO, "a non-member id is not a DOM_PAUSER member");
     Ok(())
 }

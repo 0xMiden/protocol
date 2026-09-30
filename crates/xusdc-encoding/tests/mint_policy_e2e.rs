@@ -14,9 +14,9 @@
 //! cap, and raising it again).
 //!
 //! The other half of the matrix — how the note's fields bind to what is actually minted, recipient
-//! extraction, transport shape, pause behavior, and routing — lives in `mint_policy_binding_e2e.rs`.
-//! Both share the transport harness in `support::mint_transport`, which owns the fixtures and the
-//! tampering helpers.
+//! extraction, transport shape, pause behavior, and routing — lives in
+//! `mint_policy_binding_e2e.rs`. Both share the transport harness in `support::mint_transport`,
+//! which owns the fixtures and the tampering helpers.
 //!
 //! Two rules hold throughout: every negative asserts its exact error rather than merely failing,
 //! and the security-critical rejects also assert fail-closure — no nonce consumed, no supply
@@ -53,13 +53,8 @@ async fn mint_rejects_a_non_allowlisted_attester() -> Result<()> {
         &AttachmentPlan::default(),
         81,
     )?;
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"))
+        .await
 }
 
 /// An allowlisted attester's key paired with a signature over different bytes is refused: the
@@ -111,13 +106,8 @@ async fn mint_rejects_a_removed_attester() -> Result<()> {
     bring_up(&mut pf, 2).await?; // set_attester(enable) + set_attester(REMOVE)
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 30);
     let note = honest_note(&pf, &payload, 99)?; // attested by the (now removed) attester 1
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"))
+        .await
 }
 
 /// Attester ROTATION: attester 1 is rotated OUT (removed) and attester 2 rotated IN. A mint
@@ -246,13 +236,8 @@ async fn mint_rejects_an_amount_below_max_fee() -> Result<()> {
     let mut payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 33);
     payload[MAX_FEE_BYTE_OFF..MAX_FEE_BYTE_OFF + 32].copy_from_slice(&uint256_be(MINT_AMOUNT + 1)); // maxFee = amount + 1 -> amount < maxFee
     let note = honest_note(&pf, &payload, 102)?;
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_AMOUNT_BELOW_FEE"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_AMOUNT_BELOW_FEE"))
+        .await
 }
 
 // SUPPLY CAP — the STOCK mint_and_send discipline (the policy carries no supply arithmetic)
@@ -282,10 +267,8 @@ async fn mint_rejects_an_over_cap_amount() -> Result<()> {
 #[tokio::test]
 async fn mint_rejects_after_the_administrator_lowers_max_supply_below_the_amount() -> Result<()> {
     let mut pf = fixture_with(0, |_, faucet_id| {
-        vec![
-            stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT - 1, 957)
-                .expect("building the administrator lower-cap note"),
-        ]
+        vec![stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT - 1, 957)
+            .expect("building the administrator lower-cap note")]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(lower)
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 34);
@@ -299,10 +282,8 @@ async fn mint_rejects_after_the_administrator_lowers_max_supply_below_the_amount
 #[tokio::test]
 async fn mint_accepts_at_the_exact_raised_cap_boundary() -> Result<()> {
     let mut pf = fixture_with(0, |_, faucet_id| {
-        vec![
-            stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT, 958)
-                .expect("building the administrator set-to-boundary note"),
-        ]
+        vec![stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT, 958)
+            .expect("building the administrator set-to-boundary note")]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(= amount)
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 35);
@@ -334,7 +315,8 @@ async fn mint_accepts_after_the_administrator_raises_max_supply() -> Result<()> 
                 .expect("building the administrator raise-cap note"),
         ]
     })?;
-    bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(lower) — the raise stays unconsumed
+    bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(lower) — the raise stays
+                                 // unconsumed
 
     // under the lowered cap the attested amount rejects (the cap binds pre-raise)
     let payload_low = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 36);

@@ -82,9 +82,7 @@ fn account_via_component_path() -> Account {
         XReserveStablecoinBuilder::auth_component(test_fee_parameters(), test_fee_asset_id())
             .expect("the auth component must build"),
     );
-    builder
-        .build()
-        .expect("the component-path composition must build the account")
+    builder.build().expect("the component-path composition must build the account")
 }
 
 /// Composes the account through the crate-root `build_faucet_account` constructor, at the
@@ -108,10 +106,7 @@ fn account_via_crate_root_constructor() -> Account {
 /// The crate-root faucet-account constructor matches the recorded commitments.
 #[test]
 fn crate_root_constructor_matches_the_golden() {
-    assert_matches_golden(
-        &account_via_crate_root_constructor(),
-        "build_faucet_account",
-    );
+    assert_matches_golden(&account_via_crate_root_constructor(), "build_faucet_account");
 }
 
 /// The component path matches the recorded commitments.
@@ -140,7 +135,8 @@ fn the_two_construction_paths_agree() {
 
 /// xUSDC is a policed asset: the composition installs the transfer-policy callback slots, so the
 /// crate-root constructor must build the account with the Enabled asset-callback flag (a Disabled
-/// flag would silently never fire the blocklist callbacks). Locks the constructor's flag derivation.
+/// flag would silently never fire the blocklist callbacks). Locks the constructor's flag
+/// derivation.
 #[test]
 fn crate_root_account_carries_the_policed_asset_callback_flag() {
     let account = account_via_crate_root_constructor();
@@ -152,10 +148,10 @@ fn crate_root_account_carries_the_policed_asset_callback_flag() {
 }
 
 /// Enforce-by-construction (16b): the crate-root constructor builds the faucet with a MUTABLE
-/// `max_supply`, so the deployed `set_max_supply` admin function stays operable. This is the POSITIVE
-/// lock that replaces the removed `ImmutableMaxSupply` runtime reject — a constructor that built the
-/// faucet immutable would flip the flag felt and fail here. The `mutability_config` word layout is
-/// `[is_desc, is_logo, is_extlink, is_max_supply]`, so the max-supply flag is element 3.
+/// `max_supply`, so the deployed `set_max_supply` admin function stays operable. This is the
+/// POSITIVE lock that replaces the removed `ImmutableMaxSupply` runtime reject — a constructor that
+/// built the faucet immutable would flip the flag felt and fail here. The `mutability_config` word
+/// layout is `[is_desc, is_logo, is_extlink, is_max_supply]`, so the max-supply flag is element 3.
 #[test]
 fn crate_root_faucet_max_supply_is_mutable_by_construction() {
     const MUTABILITY_CONFIG_SLOT: &str = "miden::standards::faucets::mutability_config";

@@ -3,14 +3,12 @@
 //! ceiling. `account_callable_surface.rs` holds the
 //! freeze/unfreeze disposition + the asset-callback (transfer-blocklist-live) proof; THIS file
 //! holds:
-//!   * `authority::get_authority` is READ-ONLY in execution (executed bounding, not
-//!     documentation);
+//!   * `authority::get_authority` is READ-ONLY in execution (executed bounding, not documentation);
 //!   * 13 mutator, upgrade and fee procedures in three reachability tiers. Tier A contains five
 //!     unreachable procedures: the four allowlist mutators and the upgrade hook. Tier B contains
-//!     six fee procedures and the `compute_note_fee` callback;
-//!     these have no direct external entry point but are used by the internal fee-estimation path.
-//!     Tier C contains `set_note_fee`, which is reached through the fee configuration note and
-//!     authorized by `ADMIN`.
+//!     six fee procedures and the `compute_note_fee` callback; these have no direct external entry
+//!     point but are used by the internal fee-estimation path. Tier C contains `set_note_fee`,
+//!     which is reached through the fee configuration note and authorized by `ADMIN`.
 //!
 //! The small conformance helpers (`production_components`/`component_surface`) are duplicated
 //! here so this module is self-contained; both copies are single-sourced from

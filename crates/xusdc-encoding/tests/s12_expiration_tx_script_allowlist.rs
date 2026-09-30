@@ -8,8 +8,8 @@
 //!
 //! This file checks that from the SOURCE side — the builder's auth component, read as component
 //! storage — which is a different vantage point from `f5_network_account_auth.rs`, where the same
-//! property is read off a finalized account. Both matter: the builder is where the value is decided,
-//! the account is where it is enforced.
+//! property is read off a finalized account. Both matter: the builder is where the value is
+//! decided, the account is where it is enforced.
 //!
 //! Three things are asserted:
 //!
@@ -139,7 +139,7 @@ async fn expiration_is_admitted_and_every_other_tx_script_is_rejected() -> Resul
         .execute()
         .await;
     match admitted {
-        Ok(_) => {}
+        Ok(_) => {},
         Err(TransactionExecutorError::TransactionProgramExecutionFailed(actual)) => assert!(
             !ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED.matches_execution_error(&actual),
             "the canonical ExpirationTransactionScript must be ADMITTED by the S12 allowlist, but \
@@ -147,7 +147,7 @@ async fn expiration_is_admitted_and_every_other_tx_script_is_rejected() -> Resul
         ),
         Err(other) => {
             panic!("the expiration tx failed with an unexpected non-execution error: {other}")
-        }
+        },
     }
     Ok(())
 }

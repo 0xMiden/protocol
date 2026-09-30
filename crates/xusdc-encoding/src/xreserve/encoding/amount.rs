@@ -55,20 +55,11 @@ mod tests {
     #[test]
     fn tv_amt_1_in_bound() {
         let v = load();
-        for vec in v
-            .families
-            .amt
-            .iter()
-            .filter(|v| v.kind == "accept" && v.id != "amt-cap-accept")
+        for vec in v.families.amt.iter().filter(|v| v.kind == "accept" && v.id != "amt-cap-accept")
         {
             let y = uint256_to_asset_amount(vec.amount())
                 .unwrap_or_else(|e| panic!("vector {}: must accept, got {e}", vec.id));
-            assert_eq!(
-                y,
-                vec.expected_amount(),
-                "vector {}: reduced amount",
-                vec.id
-            );
+            assert_eq!(y, vec.expected_amount(), "vector {}: reduced amount", vec.id);
         }
     }
 
@@ -77,20 +68,11 @@ mod tests {
     #[test]
     fn tv_amt_2_cap_boundary_accept() {
         let v = load();
-        let vec = v
-            .families
-            .amt
-            .iter()
-            .find(|v| v.id == "amt-cap-accept")
-            .expect("vector");
+        let vec = v.families.amt.iter().find(|v| v.id == "amt-cap-accept").expect("vector");
         let y = uint256_to_asset_amount(vec.amount())
             .unwrap_or_else(|e| panic!("vector {}: must accept at cap, got {e}", vec.id));
         assert_eq!(y, vec.expected_amount(), "vector {}: cap boundary", vec.id);
-        assert_eq!(
-            y,
-            AssetAmount::MAX,
-            "cap boundary must equal AssetAmount::MAX"
-        );
+        assert_eq!(y, AssetAmount::MAX, "cap boundary must equal AssetAmount::MAX");
     }
 
     /// TV-AMT-3/4 (negative, parametrized): rejects pin their SPECIFIC variants — cap exceeded /
@@ -100,20 +82,15 @@ mod tests {
     #[case::tv_amt_4_limb_overflow("amt-rej-limb-overflow")]
     fn tv_amt_rejects(#[case] id: &str) {
         let v = load();
-        let vec = v
-            .families
-            .amt
-            .iter()
-            .find(|v| v.id == id)
-            .expect("vector present");
+        let vec = v.families.amt.iter().find(|v| v.id == id).expect("vector present");
         let result = uint256_to_asset_amount(vec.amount());
         match vec.expected_variant.as_deref() {
             Some("AmountOverCap") => {
                 assert_matches!(result, Err(EncodingError::AmountOverCap), "vector {id}")
-            }
+            },
             Some("AmountTooLarge") => {
                 assert_matches!(result, Err(EncodingError::AmountTooLarge), "vector {id}")
-            }
+            },
             other => panic!("vector {id}: unexpected expected_variant {other:?}"),
         }
     }

@@ -17,12 +17,13 @@
 //! pending Circle confirmation):
 //! Circle's on-wire deposit `amount` is denominated in xUSDC smallest units (6 decimals) and the
 //! Miden xUSDC asset is 6-decimal, so the faucet mints `y = x` — `DEPOSIT_SCALE_EXP = 0`,
-//! `y = floor(x / 10^0)`, an identity with no rescale and no dust. Just-inside/just-outside intuition: at `DEPOSIT_SCALE_EXP = 0` a wire amount of
-//! `100_000_000` (= 100.000000 USDC) mints `100_000_000` smallest units (GREEN); at the former
-//! placeholder `= 6` the same deposit would mint `100_000_000 / 10^6 = 100` smallest units — a
-//! 100-USDC deposit landing as 0.000100 xUSDC, 10^6 too small (RED). The non-round amounts below
-//! sharpen it further: any nonzero scale floors the low digits away, so `123_456_789` mints
-//! `123` at `= 6` and `12_345_678` at `= 1`; only `= 0` returns the input verbatim.
+//! `y = floor(x / 10^0)`, an identity with no rescale and no dust. Just-inside/just-outside
+//! intuition: at `DEPOSIT_SCALE_EXP = 0` a wire amount of `100_000_000` (= 100.000000 USDC) mints
+//! `100_000_000` smallest units (GREEN); at the former placeholder `= 6` the same deposit would
+//! mint `100_000_000 / 10^6 = 100` smallest units — a 100-USDC deposit landing as 0.000100 xUSDC,
+//! 10^6 too small (RED). The non-round amounts below sharpen it further: any nonzero scale floors
+//! the low digits away, so `123_456_789` mints `123` at `= 6` and `12_345_678` at `= 1`; only `= 0`
+//! returns the input verbatim.
 
 mod support;
 
@@ -126,9 +127,8 @@ fn payload_for(
 
 /// The usedNonces key for a payload's nonce bytes.
 fn nonce_key_of_payload(payload: &[u8]) -> Word {
-    let nonce: [u8; 32] = payload[NONCE_BYTE_OFF..NONCE_BYTE_OFF + 32]
-        .try_into()
-        .expect("32 nonce bytes");
+    let nonce: [u8; 32] =
+        payload[NONCE_BYTE_OFF..NONCE_BYTE_OFF + 32].try_into().expect("32 nonce bytes");
     Word::from(bytes32_to_storage_map_key(&nonce))
 }
 
@@ -152,11 +152,9 @@ fn marker() -> Word {
 /// The allowlisted attester is `gen_attester(1, ..)`, whose commitment is payload-independent.
 fn fixture() -> Result<ProductionFaucet> {
     setup_production_faucet(0, |recipient, faucet_id| {
-        let commitment = gen_attester(
-            1,
-            &payload_for(recipient, faucet_id, CIRCLE_DEPOSIT_100_USDC, 0),
-        )
-        .commitment;
+        let commitment =
+            gen_attester(1, &payload_for(recipient, faucet_id, CIRCLE_DEPOSIT_100_USDC, 0))
+                .commitment;
         vec![XReserveSetAttesterNote::create(
             administrator(),
             faucet_id,
@@ -216,10 +214,7 @@ fn commit(chain: &mut MockChain, tx: &ExecutedTransaction) -> Result<()> {
 }
 
 fn committed(chain: &MockChain, id: AccountId) -> Result<Account> {
-    Ok(chain
-        .committed_account(id)
-        .context("fetching the committed account")?
-        .clone())
+    Ok(chain.committed_account(id).context("fetching the committed account")?.clone())
 }
 
 fn committed_token_supply(chain: &MockChain, faucet_id: AccountId) -> Result<u64> {
@@ -246,8 +241,9 @@ fn wallet_balance(account: &Account, faucet_id: AccountId) -> u64 {
         .sum()
 }
 
-/// Emits a REAL stock mint note (the `XUsdcMintNote` factory) for `payload` and consumes it on the faucet, returning the
-/// minted transaction. Every scale decision inside is the production faucet's own.
+/// Emits a REAL stock mint note (the `XUsdcMintNote` factory) for `payload` and consumes it on the
+/// faucet, returning the minted transaction. Every scale decision inside is the production faucet's
+/// own.
 async fn mint_via_production_note(
     pf: &mut ProductionFaucet,
     payload: &[u8],
@@ -284,11 +280,7 @@ fn minted_amount(tx: &ExecutedTransaction, faucet_id: AccountId) -> u64 {
         faucet_id,
         "the recipient note's asset was minted by this faucet"
     );
-    assert_eq!(
-        note.metadata().note_type(),
-        NoteType::Public,
-        "the recipient note is Public"
-    );
+    assert_eq!(note.metadata().note_type(), NoteType::Public, "the recipient note is Public");
     u64::from(asset.amount())
 }
 
@@ -299,8 +291,8 @@ fn minted_amount(tx: &ExecutedTransaction, faucet_id: AccountId) -> u64 {
 /// in the recipient's wallet as EXACTLY 100_000_000 xUSDC smallest units.
 ///
 /// This assertion is load-bearing precisely because nothing here supplies a scale: the value used
-/// is whatever the amount/fee stage applies from `DEPOSIT_SCALE_EXP`. At `= 0` (correct) the mint is
-/// an identity and this passes; at the former placeholder `= 6` the faucet mints
+/// is whatever the amount/fee stage applies from `DEPOSIT_SCALE_EXP`. At `= 0` (correct) the mint
+/// is an identity and this passes; at the former placeholder `= 6` the faucet mints
 /// `100_000_000 / 10^6 = 100` and this fails on the amount assertion — a 100-USDC deposit
 /// delivered as 0.000100 xUSDC.
 #[tokio::test]
@@ -383,7 +375,8 @@ async fn production_mint_is_an_identity_across_circle_amounts() -> Result<()> {
 
     let mut expected_supply = 0u64;
     for (i, amount) in CIRCLE_DEPOSITS.iter().copied().enumerate() {
-        // A distinct nonce byte per case, so the replay guard never fires; the amount is spliced verbatim.
+        // A distinct nonce byte per case, so the replay guard never fires; the amount is spliced
+        // verbatim.
         let payload = payload_for(pf.recipient_id, pf.faucet_id, amount, (i as u8) + 1);
         let minted = mint_via_production_note(&mut pf, &payload, 70 + i as u64)
             .await
@@ -425,19 +418,11 @@ async fn production_mint_leaves_no_fractional_remainder() -> Result<()> {
     let mut pf = fixture()?;
     bring_up(&mut pf).await?;
 
-    let payload = payload_for(
-        pf.recipient_id,
-        pf.faucet_id,
-        CIRCLE_DEPOSIT_NON_ROUND,
-        0x5A,
-    );
+    let payload = payload_for(pf.recipient_id, pf.faucet_id, CIRCLE_DEPOSIT_NON_ROUND, 0x5a);
     let minted = mint_via_production_note(&mut pf, &payload, 80).await?;
     let delivered = minted_amount(&minted, pf.faucet_id);
 
-    assert_eq!(
-        delivered, CIRCLE_DEPOSIT_NON_ROUND,
-        "the full wire amount is delivered"
-    );
+    assert_eq!(delivered, CIRCLE_DEPOSIT_NON_ROUND, "the full wire amount is delivered");
     assert_eq!(
         CIRCLE_DEPOSIT_NON_ROUND - delivered,
         0,
@@ -495,12 +480,12 @@ fn shipped_faucet_writes_the_amount_at_the_identity_scale() -> Result<()> {
 // consume
 // ================================================================================================
 
-/// The blocked-recipient mint semantics, on the REAL attested-mint path: the mint fires the SEND callback with
-/// the native account = the FAUCET (never blocked), so a mint to a BLOCKED recipient still creates the
-/// P2ID (the target is not inspected at mint time). The blocked recipient then CANNOT consume it —
-/// the receive callback traps the exact stock `"account is blocked"` and the minted funds STRAND
-/// (unspent, recipient vault empty). Uses the production fixture but seeds a third bring-up note that
-/// blocks the recipient before the mint.
+/// The blocked-recipient mint semantics, on the REAL attested-mint path: the mint fires the SEND
+/// callback with the native account = the FAUCET (never blocked), so a mint to a BLOCKED recipient
+/// still creates the P2ID (the target is not inspected at mint time). The blocked recipient then
+/// CANNOT consume it — the receive callback traps the exact stock `"account is blocked"` and the
+/// minted funds STRAND (unspent, recipient vault empty). Uses the production fixture but seeds a
+/// third bring-up note that blocks the recipient before the mint.
 #[tokio::test]
 async fn mint_to_a_blocked_recipient_succeeds_then_strands() -> anyhow::Result<()> {
     use miden_protocol::errors::MasmError;
@@ -509,11 +494,9 @@ async fn mint_to_a_blocked_recipient_succeeds_then_strands() -> anyhow::Result<(
     // A fixture that additionally seeds a BLK_MANAGER block note targeting the recipient; bring_up
     // consumes set_attester AND the block note (so the recipient is blocked pre-mint).
     let mut pf = setup_production_faucet(0, |recipient, faucet_id| {
-        let commitment = gen_attester(
-            1,
-            &payload_for(recipient, faucet_id, CIRCLE_DEPOSIT_100_USDC, 0),
-        )
-        .commitment;
+        let commitment =
+            gen_attester(1, &payload_for(recipient, faucet_id, CIRCLE_DEPOSIT_100_USDC, 0))
+                .commitment;
         vec![
             XReserveSetAttesterNote::create(
                 administrator(),
@@ -532,11 +515,9 @@ async fn mint_to_a_blocked_recipient_succeeds_then_strands() -> anyhow::Result<(
     // MINT to the (now blocked) recipient — the mint SUCCEEDS: the send callback's native is the
     // faucet, so the recipient's block does not stop note creation.
     let payload = payload_for(pf.recipient_id, pf.faucet_id, CIRCLE_DEPOSIT_100_USDC, 0);
-    let minted = mint_via_production_note(&mut pf, &payload, 61)
-        .await
-        .context(
-            "the mint to a blocked recipient must SUCCEED (the target is not checked at mint)",
-        )?;
+    let minted = mint_via_production_note(&mut pf, &payload, 61).await.context(
+        "the mint to a blocked recipient must SUCCEED (the target is not checked at mint)",
+    )?;
     assert_eq!(
         minted.output_notes().num_notes(),
         1,

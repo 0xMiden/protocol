@@ -44,10 +44,9 @@ impl fmt::Display for XReserveMinBurnAmountNoteError {
                 "refusing to build a note that sets the burn floor to {min_burn_amount}, below \
                  the floor {MIN_BURN_SIZE_FLOOR}; a zero floor would admit zero-amount burn notes"
             ),
-            Self::Note(_) => write!(
-                f,
-                "the standard min-burn-amount config note could not be built"
-            ),
+            Self::Note(_) => {
+                write!(f, "the standard min-burn-amount config note could not be built")
+            },
         }
     }
 }

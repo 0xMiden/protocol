@@ -1,11 +1,11 @@
 //! The production faucet's admin surface after the standard managers replaced the hand-rolled
-//! role-gated wrappers: what the shipped account exposes, what its authority enforces, and what each
-//! admin action does on chain.
+//! role-gated wrappers: what the shipped account exposes, what its authority enforces, and what
+//! each admin action does on chain.
 //!
 //! Pausing and blocking used to run through two custom procedures that hard-coded a role symbol in
 //! MASM and wrapped the unauthenticated standard primitive. They now run through the standard pause
-//! and blocklist managers, gated by the account-wide authority in its role-based mode, driven by the
-//! two standard config notes. The role that opens each action is unchanged; only the mechanism
+//! and blocklist managers, gated by the account-wide authority in its role-based mode, driven by
+//! the two standard config notes. The role that opens each action is unchanged; only the mechanism
 //! moved, from a MASM literal into the account's procedure-role map.
 //!
 //! This is the effects proof for that swap on the REAL composition — the same components the deploy
@@ -19,12 +19,19 @@ use miden_protocol::note::Note;
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{
-    Authority, Ownable2Step, PausableManager, RoleBasedAccessControl,
+    Authority,
+    Ownable2Step,
+    PausableManager,
+    RoleBasedAccessControl,
 };
 use miden_standards::account::policies::BlocklistManager;
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::config::{
-    AllowlistConfigNote, BlocklistConfigNote, PauseConfig, PauseConfigNote, RbacConfigNote,
+    AllowlistConfigNote,
+    BlocklistConfigNote,
+    PauseConfig,
+    PauseConfigNote,
+    RbacConfigNote,
 };
 use miden_tx::TransactionExecutorError;
 use support::w2admin::*;
@@ -252,10 +259,7 @@ async fn the_administrator_role_is_the_bootstrap_administrator_account() -> Resu
     ]);
     let membership = account
         .storage()
-        .get_map_item(
-            RoleBasedAccessControl::role_membership_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(RoleBasedAccessControl::role_membership_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading the administrator membership: {e}"))?;
 
     assert_eq!(
@@ -275,11 +279,7 @@ async fn the_pauser_pauses_the_faucet_through_the_standard_note() -> Result<()> 
     })?;
     let note = pf.seeded_notes[0].clone();
     let before = pf.mock_chain.committed_account(pf.faucet_id)?.clone();
-    assert_eq!(
-        read_paused(&before)?,
-        Word::empty(),
-        "the faucet starts unpaused"
-    );
+    assert_eq!(read_paused(&before)?, Word::empty(), "the faucet starts unpaused");
 
     let after = consume_and_commit(&mut pf, &note, "a pause from the pause-role holder").await?;
     assert_eq!(
@@ -352,11 +352,7 @@ async fn the_blocklist_manager_blocks_a_target_through_the_standard_note() -> Re
     })?;
     let note = pf.seeded_notes[0].clone();
     let before = pf.mock_chain.committed_account(pf.faucet_id)?.clone();
-    assert_eq!(
-        read_blocked(&before, target)?,
-        Word::empty(),
-        "the target starts unblocked"
-    );
+    assert_eq!(read_blocked(&before, target)?, Word::empty(), "the target starts unblocked");
 
     let after = consume_and_commit(&mut pf, &note, "a block from the blocklist manager").await?;
     assert_eq!(
@@ -380,11 +376,7 @@ async fn the_blocklist_manager_unblocks_a_target_through_the_standard_note() -> 
     let (block, unblock) = (pf.seeded_notes[0].clone(), pf.seeded_notes[1].clone());
 
     let blocked = consume_and_commit(&mut pf, &block, "a block").await?;
-    assert_eq!(
-        read_blocked(&blocked, target)?,
-        set_word(),
-        "the block must land"
-    );
+    assert_eq!(read_blocked(&blocked, target)?, set_word(), "the block must land");
 
     let unblocked = consume_and_commit(&mut pf, &unblock, "an unblock").await?;
     assert_eq!(
@@ -395,10 +387,10 @@ async fn the_blocklist_manager_unblocks_a_target_through_the_standard_note() -> 
     Ok(())
 }
 
-/// The administrator has no pause path. That was true before the swap because the standard manager was not
-/// installed at all; it is true after the swap because the manager is installed and the role map
-/// gates it on the pause role, which the administrator does not hold. Same outcome, different reason — and
-/// the reason is exactly what the role map is for.
+/// The administrator has no pause path. That was true before the swap because the standard manager
+/// was not installed at all; it is true after the swap because the manager is installed and the
+/// role map gates it on the pause role, which the administrator does not hold. Same outcome,
+/// different reason — and the reason is exactly what the role map is for.
 #[tokio::test]
 async fn the_owner_still_has_no_pause_path() -> Result<()> {
     let pf = admin_faucet(|id| {
@@ -429,8 +421,8 @@ async fn the_owner_still_has_no_unpause_path() -> Result<()> {
     Ok(())
 }
 
-/// The administrator has no blocklist path. The blocklist belongs to an external administrator holding
-/// nothing else, and the administrator — who holds everything else — is kept out of it.
+/// The administrator has no blocklist path. The blocklist belongs to an external administrator
+/// holding nothing else, and the administrator — who holds everything else — is kept out of it.
 #[tokio::test]
 async fn the_owner_still_has_no_blocklist_path() -> Result<()> {
     let pf = admin_faucet(|id| {

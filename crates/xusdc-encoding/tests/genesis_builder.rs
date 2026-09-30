@@ -27,12 +27,8 @@ const TOKEN_SUPPLY: u64 = 0;
 fn genesis_build_rebinds_the_fee_asset_and_promotes_to_nonce_one() {
     let builder = production_builder(TOKEN_SUPPLY, TEST_DOMAIN)
         .expect("the production builder must construct");
-    let genesis = builder
-        .build_genesis_account(SEED)
-        .expect("the genesis build must succeed");
-    let plain = builder
-        .build_account(SEED)
-        .expect("the plain build must succeed");
+    let genesis = builder.build_genesis_account(SEED).expect("the genesis build must succeed");
+    let plain = builder.build_account(SEED).expect("the plain build must succeed");
 
     assert_eq!(
         genesis.id(),
@@ -77,9 +73,7 @@ fn record_used_nonces_marks_the_nonce_and_keeps_the_genesis_form() {
     let builder = production_builder(TOKEN_SUPPLY, TEST_DOMAIN)
         .expect("the production builder must construct");
     let consumed = DepositNonce::new([0x55; 32]);
-    let genesis = builder
-        .build_genesis_account(SEED)
-        .expect("the genesis build must succeed");
+    let genesis = builder.build_genesis_account(SEED).expect("the genesis build must succeed");
     let recorded =
         record_used_nonces(genesis.clone(), &[consumed]).expect("recording a nonce must succeed");
 
@@ -88,11 +82,7 @@ fn record_used_nonces_marks_the_nonce_and_keeps_the_genesis_form() {
         genesis.id(),
         "recording a consumed nonce must not change the account id",
     );
-    assert_eq!(
-        recorded.nonce(),
-        Felt::ONE,
-        "the account must stay at nonce one"
-    );
+    assert_eq!(recorded.nonce(), Felt::ONE, "the account must stay at nonce one");
     assert!(recorded.seed().is_none(), "the account must stay seedless");
     let slot = XReserveFaucetExtension::used_nonces_slot();
     assert_eq!(

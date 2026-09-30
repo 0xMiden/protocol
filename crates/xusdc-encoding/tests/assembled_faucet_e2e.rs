@@ -7,15 +7,14 @@
 //! on ONE evolving MockChain. The stages, in the order the S-labels below number them:
 //!
 //! - S0 the build-seeded config read-backs;
-//! - S3 admin bring-up: attester, max_supply, and min_burn, each
-//!   with its non-administrator reject;
+//! - S3 admin bring-up: attester, max_supply, and min_burn, each with its non-administrator reject;
 //! - S4-S6 a REAL attested mint through the STOCK `MintNote` transport (the `XUsdcMintNote`
-//!   factory: the merged scheme-4 transport + scheme-2 routing), then the nonce replay
-//!   trap, then the tx-script `mint_and_send` leg — the stock path IS the attestation-gated path,
-//!   so a policy-less tx-script mint traps in the kernel;
-//! - S7-S9 the holder wallet consumes the minted P2ID note (custody-traced funds), a below-min
-//!   burn rejects on the stock `MinBurnAmount` policy, and a real burn goes through (two-block
-//!   consume, burn-item schema asserted);
+//!   factory: the merged scheme-4 transport + scheme-2 routing), then the nonce replay trap, then
+//!   the tx-script `mint_and_send` leg — the stock path IS the attestation-gated path, so a
+//!   policy-less tx-script mint traps in the kernel;
+//! - S7-S9 the holder wallet consumes the minted P2ID note (custody-traced funds), a below-min burn
+//!   rejects on the stock `MinBurnAmount` policy, and a real burn goes through (two-block consume,
+//!   burn-item schema asserted);
 //! - S10-S11 DOM_PAUSER pause halts BOTH mint and burn (and the administrator has NO pause path);
 //!   unpause resumes BOTH, and the SAME halted mint note lands;
 //! - S12 role rotation: ADMIN grant → the new pauser pauses; revoke → rejected;
@@ -51,16 +50,24 @@ use miden_testing::{assert_transaction_executor_error, MockChain};
 use miden_tx::TransactionExecutorError;
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveFaucetExtension, DOM_PAUSER_ROLE, DOM_UNPAUSER_ROLE,
+    XReserveFaucetExtension,
+    DOM_PAUSER_ROLE,
+    DOM_UNPAUSER_ROLE,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote, FIXED_XUSDC_BURN_TAG, XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
+    FIXED_XUSDC_BURN_TAG,
+    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
 };
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
 use xusdc_encoding::vectors::{load, MiVector};
 use xusdc_encoding::xreserve::encoding::{
-    bytes32_to_storage_map_key, DepositIntent, ForeignChainAddress, Signature, XReserveBurnItems,
+    bytes32_to_storage_map_key,
+    DepositIntent,
+    ForeignChainAddress,
+    Signature,
+    XReserveBurnItems,
 };
 
 // ACTORS (the builder seeds ADMIN / ATTEST_ADMIN = id(1), DOM_PAUSER = id(2),
@@ -108,7 +115,8 @@ const NEW_MAX_SUPPLY: u64 = 500_000;
 const MIN_BURN: u64 = 10;
 const BURN_LOW: u64 = 5; // < MIN_BURN -> the stock MinBurnAmount reject
 const BURN_OK: u64 = 20;
-const BURN_PAUSED: u64 = 10; // the paused-era emit traps (S10b); burned for real after unpause (S11b)
+const BURN_PAUSED: u64 = 10; // the paused-era emit traps (S10b); burned for real after unpause
+                             // (S11b)
 
 /// First byte of the 32-byte `remoteRecipient` field (felt 19 x 4 bytes of the fixed header).
 const REMOTE_RECIPIENT_BYTE_OFF: usize = 19 * 4;
@@ -153,10 +161,10 @@ fn the_lifecycle_deposit_names_a_non_evm_source_chain() -> Result<()> {
 
 /// The canonical accept payload with amount/maxFee spliced, `remoteRecipient` REPLACED by the REAL
 /// target wallet's right-aligned bytes32 (so the emitted P2ID note targets an account that exists
-/// on this chain and can consume it), `remoteToken` REPLACED by `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()`
-/// (the own-id key the mint path derives, so the identifier compare passes), and
-/// one nonce byte XOR-perturbed per `nonce_variant` so each mint consumes a nonce the replay guard
-/// has not seen.
+/// on this chain and can consume it), `remoteToken` REPLACED by
+/// `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()` (the own-id key the mint path
+/// derives, so the identifier compare passes), and one nonce byte XOR-perturbed per `nonce_variant`
+/// so each mint consumes a nonce the replay guard has not seen.
 fn payload_for(
     recipient: AccountId,
     amount: u64,
@@ -176,9 +184,8 @@ fn payload_for(
 
 /// The usedNonces key (== the attested P2ID serial) for a payload's nonce bytes.
 fn nonce_key_of_payload(payload: &[u8]) -> Word {
-    let nonce: [u8; 32] = payload[NONCE_BYTE_OFF..NONCE_BYTE_OFF + 32]
-        .try_into()
-        .expect("32 nonce bytes");
+    let nonce: [u8; 32] =
+        payload[NONCE_BYTE_OFF..NONCE_BYTE_OFF + 32].try_into().expect("32 nonce bytes");
     Word::from(bytes32_to_storage_map_key(&nonce))
 }
 
@@ -212,7 +219,8 @@ fn stock_role_action_note<R: miden_protocol::crypto::rand::FeltRng>(
     Ok(Note::from(note))
 }
 
-/// The allowlisted (seed 1) attester's `DepositAttestation` over `payload` — the wire-form signature
+/// The allowlisted (seed 1) attester's `DepositAttestation` over `payload` — the wire-form
+/// signature
 /// + pubkey the `XUsdcMintNote` factory embeds in the merged transport's attestation section.
 fn attestation_for(seed: u64, payload: &[u8]) -> DepositAttestation {
     let attester = gen_attester(seed, payload);
@@ -250,10 +258,7 @@ fn commit(chain: &mut MockChain, tx: &ExecutedTransaction) -> Result<()> {
 }
 
 fn committed(chain: &MockChain, id: AccountId) -> Result<Account> {
-    Ok(chain
-        .committed_account(id)
-        .context("fetching the committed account")?
-        .clone())
+    Ok(chain.committed_account(id).context("fetching the committed account")?.clone())
 }
 
 /// Consumes a COMMITTED note (by id) with `account` as the executing/consuming account — the
@@ -274,11 +279,12 @@ async fn consume_committed_note(
         .await
 }
 
-/// Consumes a COMMITTED P2ID note carrying POLICED xUSDC with a NON-faucet `account` as the consumer.
-/// The receive callback (`on_before_asset_added_to_account`) fires with the consumer as the native
-/// account, so the kernel dyncalls the issuing faucet to run `basic_blocklist::check_policy` — the
-/// faucet MUST be attached as a foreign account (the policed-asset client-side coupling). This is what a
-/// real wallet consuming policed xUSDC has to do; the coupling is pinned executable by
+/// Consumes a COMMITTED P2ID note carrying POLICED xUSDC with a NON-faucet `account` as the
+/// consumer. The receive callback (`on_before_asset_added_to_account`) fires with the consumer as
+/// the native account, so the kernel dyncalls the issuing faucet to run
+/// `basic_blocklist::check_policy` — the faucet MUST be attached as a foreign account (the
+/// policed-asset client-side coupling). This is what a real wallet consuming policed xUSDC has to
+/// do; the coupling is pinned executable by
 /// `transfer_blocklist_e2e::send_without_faucet_foreign_account_fails`.
 async fn consume_committed_note_with_faucet_foreign(
     chain: &MockChain,
@@ -429,8 +435,8 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // legitimate self-relay.
     let holder_id = pf.producer_id;
     let payload1 = payload_for(holder_id, MINT_AMOUNT, 0, faucet_id);
-    let payload2 = payload_for(holder_id, MINT_AMOUNT, 0x5A, faucet_id);
-    let payload3 = payload_for(holder_id, MINT_AMOUNT, 0xA5, faucet_id);
+    let payload2 = payload_for(holder_id, MINT_AMOUNT, 0x5a, faucet_id);
+    let payload3 = payload_for(holder_id, MINT_AMOUNT, 0xa5, faucet_id);
     let attester1 = gen_attester(1, &payload1);
     let pauser_sym = RoleSymbol::new(DOM_PAUSER_ROLE).expect("valid role symbol");
     let unpauser_sym = RoleSymbol::new(DOM_UNPAUSER_ROLE).expect("valid role symbol");
@@ -438,9 +444,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // S0 read-backs: the BUILD-SEEDED domain config, supply 0, the
     // directly administered roles, the stock MinBurnAmount builder-default floor.
     let faucet0 = committed(&pf.mock_chain, faucet_id)?;
-    let domain0 = faucet0
-        .storage()
-        .get_item(XReserveFaucetExtension::domain_config_slot())?;
+    let domain0 = faucet0.storage().get_item(XReserveFaucetExtension::domain_config_slot())?;
     assert_eq!(
         domain0,
         Word::from([TEST_DOMAIN.as_u32(), 0, 0, 0]),
@@ -535,20 +539,15 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         "S3c: the stock MinBurnAmount floor slot reads [10,0,0,0]"
     );
     // ── S4 — ATTESTED MINT: a REAL stock MintNote (the XUsdcMintNote factory) emitted by the
-    // producer and consumed by the faucet drives the FULL attestation policy chain (full validation pipeline).
+    // producer and consumed by the faucet drives the FULL attestation policy chain (full validation
+    // pipeline).
     let note_m1 = production_mint_note(producer_id, faucet_id, &payload1, 61)?;
     emit_note_with_attachments(&mut pf.mock_chain, producer_id, &note_m1).await?;
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let minted = consume_committed_note(&pf.mock_chain, &faucet, note_m1.id())
-        .await
-        .expect(
-            "S4: a fully valid deposit intent + attestation must mint on the production faucet",
-        );
-    assert_eq!(
-        minted.output_notes().num_notes(),
-        1,
-        "S4: exactly one recipient note"
+    let minted = consume_committed_note(&pf.mock_chain, &faucet, note_m1.id()).await.expect(
+        "S4: a fully valid deposit intent + attestation must mint on the production faucet",
     );
+    assert_eq!(minted.output_notes().num_notes(), 1, "S4: exactly one recipient note");
     let note = minted.output_notes().get_note(0);
     let mint_note_id = note.id();
     let asset = note
@@ -561,14 +560,8 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         MINT_AMOUNT,
         "S4: note asset == the attested amount (DEV-5 scale-0 identity)"
     );
-    assert_eq!(
-        asset.faucet_id(),
-        faucet_id,
-        "S4: asset minted by this faucet"
-    );
-    let recipient_digest = note
-        .recipient()
-        .expect("S4: public output note carries its recipient");
+    assert_eq!(asset.faucet_id(), faucet_id, "S4: asset minted by this faucet");
+    let recipient_digest = note.recipient().expect("S4: public output note carries its recipient");
     assert_eq!(
         recipient_digest.serial_num(),
         nonce_key_of_payload(&payload1),
@@ -584,11 +577,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         NoteTag::with_account_target(holder_id),
         "S4: the recipient note is tagged for the attested recipient (account target)"
     );
-    assert_eq!(
-        note.metadata().note_type(),
-        NoteType::Public,
-        "S4: recipient note is Public"
-    );
+    assert_eq!(note.metadata().note_type(), NoteType::Public, "S4: recipient note is Public");
     commit(&mut pf.mock_chain, &minted)?;
     assert_supply(&pf.mock_chain, faucet_id, MINT_AMOUNT, "S4 after mint")?;
     assert_eq!(
@@ -608,12 +597,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     let faucet = committed(&pf.mock_chain, faucet_id)?;
     let result = consume_committed_note(&pf.mock_chain, &faucet, replay_note.id()).await;
     assert_transaction_executor_error!(result, shell_error_by_name("ERR_XRESERVE_NONCE_REPLAY"));
-    assert_supply(
-        &pf.mock_chain,
-        faucet_id,
-        MINT_AMOUNT,
-        "S5 after replay reject",
-    )?;
+    assert_supply(&pf.mock_chain, faucet_id, MINT_AMOUNT, "S5 after replay reject")?;
 
     // ── S6 — NO POLICY-LESS MINT: a tx-script `mint_and_send` (no active
     // note, no attachments) CANNOT mint — the attestation policy's transport reads trap in the
@@ -661,12 +645,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         result.is_err(),
         "S6: a tx-script mint_and_send must NOT mint on the attestation-gated faucet"
     );
-    assert_supply(
-        &pf.mock_chain,
-        faucet_id,
-        MINT_AMOUNT,
-        "S6 after the policy-less mint attempt",
-    )?;
+    assert_supply(&pf.mock_chain, faucet_id, MINT_AMOUNT, "S6 after the policy-less mint attempt")?;
 
     // ── S7 — P2ID CONSUME: the holder wallet consumes the minted note (custody-traced funds).
     let holder = committed(&pf.mock_chain, holder_id)?;
@@ -695,7 +674,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // burn-policy gate, not a transfer gate).
     let low_items = XReserveBurnItems {
         dest_domain: TEST_SOURCE_DOMAIN,
-        dest_recipient: ForeignChainAddress::new([0xABu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
     };
     let low_note = XReserveBurnNote::create(
         holder_id,
@@ -712,18 +691,13 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     let faucet = committed(&pf.mock_chain, faucet_id)?;
     let result = consume_committed_note(&pf.mock_chain, &faucet, low_note.id()).await;
     assert_transaction_executor_error!(result, err_burn_below_min_burn_amount());
-    assert_supply(
-        &pf.mock_chain,
-        faucet_id,
-        MINT_AMOUNT,
-        "S8 after below-min reject",
-    )?;
+    assert_supply(&pf.mock_chain, faucet_id, MINT_AMOUNT, "S8 after below-min reject")?;
 
     // ── S9 — BURN: a real burn of the minted funds; burn-item schema asserted; two-block consume;
     // supply -= amount exactly (whole-arc conservation).
     let items = XReserveBurnItems {
         dest_domain: TEST_SOURCE_DOMAIN,
-        dest_recipient: ForeignChainAddress::new([0xCDu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xcdu8; 32]),
     };
     let burn_note = XReserveBurnNote::create(
         holder_id,
@@ -732,21 +706,13 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         items.clone(),
         &mut note_rng(42),
     )?;
-    assert_eq!(
-        burn_note.metadata().note_type(),
-        NoteType::Public,
-        "S9: burn note is Public"
-    );
+    assert_eq!(burn_note.metadata().note_type(), NoteType::Public, "S9: burn note is Public");
     assert_eq!(
         burn_note.metadata().tag().as_u32(),
         FIXED_XUSDC_BURN_TAG,
         "S9: the fixed full-32-bit xUSDC burn tag"
     );
-    assert_eq!(
-        burn_note.metadata().sender(),
-        holder_id,
-        "S9: metadata.sender == depositor"
-    );
+    assert_eq!(burn_note.metadata().sender(), holder_id, "S9: metadata.sender == depositor");
     // The withdrawal payload rides the scheme-6 attachment, zero-padded to the word boundary.
     let mut payload_felts = burn_note
         .attachments()
@@ -762,23 +728,15 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         "S9: the withdrawal-payload attachment carries the exact DC-7 payload"
     );
     let burn_asset = FungibleAsset::new(faucet_id, BURN_OK)?;
-    let emit = try_emit_burn_note(
-        &pf.mock_chain,
-        &burn_note,
-        &burn_asset,
-        faucet_id,
-        holder_id,
-    )
-    .await
-    .expect("S9: emitting the burn note (block N)");
+    let emit = try_emit_burn_note(&pf.mock_chain, &burn_note, &burn_asset, faucet_id, holder_id)
+        .await
+        .expect("S9: emitting the burn note (block N)");
     commit(&mut pf.mock_chain, &emit)?;
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let consume = consume_committed_note(&pf.mock_chain, &faucet, burn_note.id())
-        .await
-        .expect(
-            "S9: the faucet consumes the burn note at block >= N+1 (receive_and_burn -> the stock \
+    let consume = consume_committed_note(&pf.mock_chain, &faucet, burn_note.id()).await.expect(
+        "S9: the faucet consumes the burn note at block >= N+1 (receive_and_burn -> the stock \
              MinBurnAmount policy)",
-        );
+    );
     commit(&mut pf.mock_chain, &consume)?;
     assert_supply(
         &pf.mock_chain,
@@ -787,7 +745,8 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         "S9: supply == amount_minted - amount_burned (arc conservation)",
     )?;
 
-    // ── S10 — PAUSE: DOM_PAUSER pauses; the halt is real on BOTH paths; the administrator has NO path.
+    // ── S10 — PAUSE: DOM_PAUSER pauses; the halt is real on BOTH paths; the administrator has NO
+    // path.
     let faucet = committed(&pf.mock_chain, faucet_id)?;
     let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(6))
         .await
@@ -825,7 +784,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     let paused_asset = FungibleAsset::new(faucet_id, BURN_PAUSED)?;
     let paused_items = XReserveBurnItems {
         dest_domain: TEST_SOURCE_DOMAIN,
-        dest_recipient: ForeignChainAddress::new([0xEFu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xefu8; 32]),
     };
     let paused_note = XReserveBurnNote::create(
         holder_id,
@@ -834,18 +793,12 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         paused_items,
         &mut note_rng(43),
     )?;
-    let result = try_emit_burn_note(
-        &pf.mock_chain,
-        &paused_note,
-        &paused_asset,
-        faucet_id,
-        holder_id,
-    )
-    .await;
+    let result =
+        try_emit_burn_note(&pf.mock_chain, &paused_note, &paused_asset, faucet_id, holder_id).await;
     assert_transaction_executor_error!(result, err_paused());
-    // S10c: the administrator has NO direct pause path. The stock manager IS installed, so the rejection is
-    // the role assertion rather than a missing procedure: the procedure-role map gates pause on the
-    // Domain pauser, which the administrator does not hold.
+    // S10c: the administrator has NO direct pause path. The stock manager IS installed, so the
+    // rejection is the role assertion rather than a missing procedure: the procedure-role map
+    // gates pause on the Domain pauser, which the administrator does not hold.
     let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(7)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
     // S10d: a second non-DOM_PAUSER pause attempt is rejected with the same exact role error.
@@ -868,11 +821,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     let minted2 = consume_committed_note(&pf.mock_chain, &faucet, note_m2.id())
         .await
         .expect("S11a: after unpause the second attested mint must succeed");
-    assert_eq!(
-        minted2.output_notes().num_notes(),
-        1,
-        "S11a: one recipient note"
-    );
+    assert_eq!(minted2.output_notes().num_notes(), 1, "S11a: one recipient note");
     commit(&mut pf.mock_chain, &minted2)?;
     assert_supply(
         &pf.mock_chain,
@@ -885,7 +834,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // created then; this fresh burn proves the whole holder→note→faucet path is live again.)
     let resumed_items = XReserveBurnItems {
         dest_domain: TEST_SOURCE_DOMAIN,
-        dest_recipient: ForeignChainAddress::new([0xEFu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xefu8; 32]),
     };
     let resumed_note = XReserveBurnNote::create(
         holder_id,
@@ -894,15 +843,12 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         resumed_items,
         &mut note_rng(44),
     )?;
-    let emit = try_emit_burn_note(
-        &pf.mock_chain,
-        &resumed_note,
-        &paused_asset,
-        faucet_id,
-        holder_id,
-    )
-    .await
-    .expect("S11b: after unpause the holder can emit a burn note again (send callback passes)");
+    let emit =
+        try_emit_burn_note(&pf.mock_chain, &resumed_note, &paused_asset, faucet_id, holder_id)
+            .await
+            .expect(
+                "S11b: after unpause the holder can emit a burn note again (send callback passes)",
+            );
     commit(&mut pf.mock_chain, &emit)?;
     let faucet = committed(&pf.mock_chain, faucet_id)?;
     let consume = consume_committed_note(&pf.mock_chain, &faucet, resumed_note.id())
@@ -972,9 +918,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         "S13 final: 100 + 100 - 20 - 10 = 170",
     )?;
     assert_eq!(
-        faucet
-            .storage()
-            .get_item(XReserveFaucetExtension::domain_config_slot())?,
+        faucet.storage().get_item(XReserveFaucetExtension::domain_config_slot())?,
         domain0,
         "S13: the domain word is byte-identical to its build-seed"
     );
@@ -1066,7 +1010,7 @@ async fn second_mint_to_distinct_recipient() -> Result<()> {
     let recipient1_id = pf.recipient_id;
     let recipient2_id = pf.producer_id; // the second, DISTINCT P2ID target
     let payload1 = payload_for(recipient1_id, MINT_AMOUNT, 0, faucet_id);
-    let payload2 = payload_for(recipient2_id, SECOND_MINT_AMOUNT, 0x5A, faucet_id);
+    let payload2 = payload_for(recipient2_id, SECOND_MINT_AMOUNT, 0x5a, faucet_id);
 
     // Bring-up: set_attester (the production path), committed a block each.
     for (i, note) in pf.seeded_notes.clone().iter().enumerate() {
@@ -1084,11 +1028,7 @@ async fn second_mint_to_distinct_recipient() -> Result<()> {
     let mint1 = consume_committed_note(&pf.mock_chain, &faucet, note1.id())
         .await
         .expect("mint #1 (recipient1) must pass");
-    assert_eq!(
-        mint1.output_notes().num_notes(),
-        1,
-        "mint #1: exactly one recipient note"
-    );
+    assert_eq!(mint1.output_notes().num_notes(), 1, "mint #1: exactly one recipient note");
     let p2id1_id = mint1.output_notes().get_note(0).id();
     assert_eq!(
         mint1.output_notes().get_note(0).metadata().tag(),
@@ -1104,11 +1044,7 @@ async fn second_mint_to_distinct_recipient() -> Result<()> {
     let mint2 = consume_committed_note(&pf.mock_chain, &faucet, note2.id())
         .await
         .expect("mint #2 (the DISTINCT recipient2) must pass");
-    assert_eq!(
-        mint2.output_notes().num_notes(),
-        1,
-        "mint #2: exactly one recipient note"
-    );
+    assert_eq!(mint2.output_notes().num_notes(), 1, "mint #2: exactly one recipient note");
     let p2id2_id = mint2.output_notes().get_note(0).id();
     assert_eq!(
         mint2.output_notes().get_note(0).metadata().tag(),
@@ -1116,12 +1052,7 @@ async fn second_mint_to_distinct_recipient() -> Result<()> {
         "mint #2's note targets the DISTINCT recipient2"
     );
     commit(&mut pf.mock_chain, &mint2)?;
-    assert_supply(
-        &pf.mock_chain,
-        faucet_id,
-        MINT_AMOUNT + SECOND_MINT_AMOUNT,
-        "after both mints",
-    )?;
+    assert_supply(&pf.mock_chain, faucet_id, MINT_AMOUNT + SECOND_MINT_AMOUNT, "after both mints")?;
 
     // Each recipient consumes ITS note; each holds exactly its own minted amount.
     let r1 = committed(&pf.mock_chain, recipient1_id)?;

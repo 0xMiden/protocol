@@ -1,5 +1,6 @@
 //! `build_components` refuses a DOM_PAUSER holder that holds any other role.
-//! It also isolates BLK_MANAGER from every other holder; ADMIN, ATTEST_ADMIN and DOM_UNPAUSER may overlap.
+//! It also isolates BLK_MANAGER from every other holder; ADMIN, ATTEST_ADMIN and DOM_UNPAUSER may
+//! overlap.
 
 mod support;
 
@@ -9,7 +10,8 @@ use miden_protocol::asset::AssetAmount;
 use rstest::rstest;
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveStablecoinBuilder, XReserveStablecoinBuilderError,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
 };
 
 fn builder_with_holders(
@@ -56,7 +58,7 @@ fn build_rejects_blk_manager_colliding_with_a_privileged_role(
                 collides_with, expected_role,
                 "the rejection must name the collided privileged role"
             );
-        }
+        },
         other => panic!("expected BlocklistManagerNotIsolated{{{expected_role}}}, got {other:?}"),
     }
     Ok(())
@@ -71,21 +73,14 @@ fn build_rejects_dom_pauser_colliding_with_any_other_holder(
     #[case] pauser: AccountId,
     #[case] expected_role: &str,
 ) -> Result<()> {
-    let err = builder_with_holders(
-        test_account_id(5),
-        pauser,
-        test_account_id(3),
-        test_account_id(4),
-    )?
-    .build_components()
-    .expect_err("a DOM_PAUSER holder colliding with another role must be rejected");
+    let err =
+        builder_with_holders(test_account_id(5), pauser, test_account_id(3), test_account_id(4))?
+            .build_components()
+            .expect_err("a DOM_PAUSER holder colliding with another role must be rejected");
     match err {
         XReserveStablecoinBuilderError::PauserNotIsolated { collides_with } => {
-            assert_eq!(
-                collides_with, expected_role,
-                "the rejection must name the collided role"
-            );
-        }
+            assert_eq!(collides_with, expected_role, "the rejection must name the collided role");
+        },
         other => panic!("expected PauserNotIsolated{{{expected_role}}}, got {other:?}"),
     }
     Ok(())
@@ -177,7 +172,7 @@ fn build_rejects_a_duplicate_role_member() -> Result<()> {
     match err {
         XReserveStablecoinBuilderError::DuplicateRoleMember { role } => {
             assert_eq!(role, "DOM_PAUSER", "the rejection must name the role");
-        }
+        },
         other => panic!("expected DuplicateRoleMember{{DOM_PAUSER}}, got {other:?}"),
     }
     Ok(())
@@ -204,7 +199,7 @@ fn build_rejects_a_secondary_pauser_colliding_with_another_role() -> Result<()> 
     match err {
         XReserveStablecoinBuilderError::PauserNotIsolated { collides_with } => {
             assert_eq!(collides_with, "DOM_UNPAUSER");
-        }
+        },
         other => panic!("expected PauserNotIsolated{{DOM_UNPAUSER}}, got {other:?}"),
     }
     Ok(())

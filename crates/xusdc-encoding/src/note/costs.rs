@@ -43,14 +43,8 @@ impl NoteConsumptionCost for XReserveSetAttesterNote {
 /// Returns the xUSDC-specific costs keyed by script root.
 pub(crate) fn note_costs() -> [(NoteScriptRoot, NoteCost); 3] {
     [
-        (
-            XUsdcMintNote::script_root(),
-            NoteCost::of::<XUsdcMintNote>(),
-        ),
-        (
-            XReserveBurnNote::script_root(),
-            NoteCost::of::<XReserveBurnNote>(),
-        ),
+        (XUsdcMintNote::script_root(), NoteCost::of::<XUsdcMintNote>()),
+        (XReserveBurnNote::script_root(), NoteCost::of::<XReserveBurnNote>()),
         (
             XReserveSetAttesterNote::script_root(),
             NoteCost::of::<XReserveSetAttesterNote>(),

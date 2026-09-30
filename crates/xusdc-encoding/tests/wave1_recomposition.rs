@@ -5,20 +5,17 @@
 //! The file is the permanent posture tripwire set:
 //!
 //! - The sole-supply-surface invariant (restated): every supply increase passes the attestation
-//!   mint policy —
-//!   the active mint policy IS `xreserve::mint_policy::check_policy`, the allowed-mint map is
-//!   EXACTLY that one root, and a build with any other active mint policy is rejected with the
-//!   CONCRETE `MissingAttestationMintPolicy` builder variant.
-//! - There is NO mint-deny guard (nothing needs trapping: the
-//!   stock path IS the attestation-gated path).
-//! - The burn floor: the burn policy reads the stock `MinBurnAmount` slot, which is
-//!   seeded `>= 1` (the zero-burn reject preserved by construction: `amount >= min >= 1`),
-//!   the builder REJECTS `min_burn_size < 1` with the CONCRETE `MinBurnSizeBelowFloor` variant,
-//!   and the admin note (targeting the stock `set_min_burn_amount`) asserts
-//!   `new_min >= 1` before calling it.
-//! - The note-script allowlist pins the STOCK `MintNote` root and carries NO custom
-//!   mint-note root; there is no four-field `domain_init` surface — the runtime init is the
-//!   minimized
+//!   mint policy — the active mint policy IS `xreserve::mint_policy::check_policy`, the
+//!   allowed-mint map is EXACTLY that one root, and a build with any other active mint policy is
+//!   rejected with the CONCRETE `MissingAttestationMintPolicy` builder variant.
+//! - There is NO mint-deny guard (nothing needs trapping: the stock path IS the attestation-gated
+//!   path).
+//! - The burn floor: the burn policy reads the stock `MinBurnAmount` slot, which is seeded `>= 1`
+//!   (the zero-burn reject preserved by construction: `amount >= min >= 1`), the builder REJECTS
+//!   `min_burn_size < 1` with the CONCRETE `MinBurnSizeBelowFloor` variant, and the admin note
+//!   (targeting the stock `set_min_burn_amount`) asserts `new_min >= 1` before calling it.
+//! - The note-script allowlist pins the STOCK `MintNote` root and carries NO custom mint-note root;
+//!   there is no four-field `domain_init` surface — the runtime init is the minimized
 //!   identifier-only init (the identifier is a provable fixpoint of the account id).
 //!
 //! The end-to-end legs that drive the transport for real — a successful mint, the recipient, fee
@@ -34,7 +31,11 @@ mod support;
 use anyhow::{Context, Result};
 use assert_matches::assert_matches;
 use miden_protocol::account::{
-    AccountComponent, StorageMapKey, StorageSlot, StorageSlotContent, StorageSlotName,
+    AccountComponent,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotName,
 };
 use miden_protocol::{Felt, Word};
 use miden_standards::account::policies::{MinBurnAmount, TokenPolicyManager};
@@ -148,10 +149,7 @@ fn allowed_mint_policy_map_is_exactly_the_attestation_root() -> Result<()> {
     let components = production_component_set(0)?;
     let attestation_root = resolve_proc_root(&components, ATTESTATION_MINT_POLICY_PROC_PATH)
         .context("the composed set must carry the attestation mint policy")?;
-    let map = map_slot(
-        &components,
-        TokenPolicyManager::allowed_mint_policies_slot(),
-    )?;
+    let map = map_slot(&components, TokenPolicyManager::allowed_mint_policies_slot())?;
     assert_eq!(
         map.num_entries(),
         1,
@@ -168,8 +166,8 @@ fn allowed_mint_policy_map_is_exactly_the_attestation_root() -> Result<()> {
 }
 
 // The active mint policy is no longer an injectable builder input — it is hard-wired to the
-// attestation policy at composition (there is exactly one mint policy), so a "non-attestation active
-// mint policy" build cannot be expressed through the public API and the former
+// attestation policy at composition (there is exactly one mint policy), so a "non-attestation
+// active mint policy" build cannot be expressed through the public API and the former
 // `builder_rejects_a_non_attestation_mint_policy` tripwire has no injection vector to exercise. The
 // sole-supply-surface invariant is enforced by construction and asserted positively by
 // `production_composition_installs_one_xreserve_and_one_manager` (builder_api.rs) and the frozen
@@ -200,11 +198,7 @@ fn mint_deny_guard_is_fully_dissolved() -> Result<()> {
 #[test]
 fn custom_mint_transport_masm_is_deleted() -> Result<()> {
     let _serial = tripwire_serial_guard_blocking();
-    for gone in [
-        "xreserve_mint.masm",
-        "xreserve_mint_note_entry.masm",
-        "mint_deny_guard.masm",
-    ] {
+    for gone in ["xreserve_mint.masm", "xreserve_mint_note_entry.masm", "mint_deny_guard.masm"] {
         assert!(
             !shipped_masm_path(gone).exists(),
             "asm/xreserve/{gone} must be deleted by the recomposition"
@@ -258,27 +252,15 @@ fn legacy_config_and_burn_masm_are_replaced() -> Result<()> {
 fn burn_policy_has_one_allowed_root_and_a_positive_floor() -> Result<()> {
     let _serial = tripwire_serial_guard_blocking();
     let components = production_component_set(0)?;
-    let map = map_slot(
-        &components,
-        TokenPolicyManager::allowed_burn_policies_slot(),
-    )?;
-    assert_eq!(
-        map.num_entries(),
-        1,
-        "the allowed-burn map must carry exactly one root"
-    );
+    let map = map_slot(&components, TokenPolicyManager::allowed_burn_policies_slot())?;
+    assert_eq!(map.num_entries(), 1, "the allowed-burn map must carry exactly one root");
     let floor = value_slot(&components, MinBurnAmount::slot_name())?;
     assert!(
         floor[0].as_canonical_u64() >= 1,
         "the MinBurnAmount floor slot must ship >= 1 (zero-floor invariant), got {floor}"
     );
     assert_eq!(
-        Word::from([
-            floor[0],
-            Felt::from(0u32),
-            Felt::from(0u32),
-            Felt::from(0u32)
-        ]),
+        Word::from([floor[0], Felt::from(0u32), Felt::from(0u32), Felt::from(0u32)]),
         floor,
         "the floor slot layout is [min_burn_amount, 0, 0, 0]"
     );

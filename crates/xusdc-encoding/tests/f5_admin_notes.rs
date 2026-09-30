@@ -23,7 +23,12 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result};
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
-    Account, AccountId, RoleSymbol, StorageMapKey, StorageSlotName, StorageSlotPatch,
+    Account,
+    AccountId,
+    RoleSymbol,
+    StorageMapKey,
+    StorageSlotName,
+    StorageSlotPatch,
 };
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
@@ -36,7 +41,9 @@ use miden_standards::note::config::{RbacConfig, RbacConfigNote};
 use miden_testing::{assert_transaction_executor_error, MockChain};
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveFaucetExtension, BLK_MANAGER_ROLE, DOM_PAUSER_ROLE,
+    XReserveFaucetExtension,
+    BLK_MANAGER_ROLE,
+    DOM_PAUSER_ROLE,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 
@@ -103,15 +110,7 @@ fn stock_grant_role_note<R: FeltRng>(
     member: AccountId,
     rng: &mut R,
 ) -> Result<Note> {
-    stock_role_note(
-        sender,
-        faucet_id,
-        RbacConfig::GrantRole {
-            role,
-            account: member,
-        },
-        rng,
-    )
+    stock_role_note(sender, faucet_id, RbacConfig::GrantRole { role, account: member }, rng)
 }
 
 /// A standard role-action note revoking `role` from `member`.
@@ -122,15 +121,7 @@ fn stock_revoke_role_note<R: FeltRng>(
     member: AccountId,
     rng: &mut R,
 ) -> Result<Note> {
-    stock_role_note(
-        sender,
-        faucet_id,
-        RbacConfig::RevokeRole {
-            role,
-            account: member,
-        },
-        rng,
-    )
+    stock_role_note(sender, faucet_id, RbacConfig::RevokeRole { role, account: member }, rng)
 }
 
 /// The shipped `set_attester` admin note, consumed against the production network-auth faucet: an
@@ -185,7 +176,8 @@ async fn set_attester_admin_note_admin_writes_and_nonadmin_traps() -> Result<()>
          (storage-param marshaling correct)",
     );
 
-    // Non-administrator-sent: PASSES network auth (allowlisted script) but TRAPS at the proc owner gate.
+    // Non-administrator-sent: PASSES network auth (allowlisted script) but TRAPS at the proc owner
+    // gate.
     let bad = XReserveSetAttesterNote::create(
         test_account_id(9),
         faucet_id,
@@ -254,10 +246,7 @@ async fn min_burn_administrator_writes_slot() -> Result<()> {
         .map_err(|e| {
             anyhow::anyhow!("owner-sent min-burn note must succeed under network auth: {e}")
         })?;
-    let mut evolved = chain
-        .committed_account(faucet_id)
-        .context("committed faucet")?
-        .clone();
+    let mut evolved = chain.committed_account(faucet_id).context("committed faucet")?.clone();
     evolved.apply_patch(tx.account_patch())?;
     assert_eq!(
         read_min_burn_size(&evolved)?,
@@ -324,10 +313,7 @@ async fn min_burn_note_args_are_inert() -> Result<()> {
         .map_err(|e| {
             anyhow::anyhow!("the min-burn note with bogus NOTE_ARGS must still succeed: {e}")
         })?;
-    let mut evolved = chain
-        .committed_account(faucet_id)
-        .context("committed faucet")?
-        .clone();
+    let mut evolved = chain.committed_account(faucet_id).context("committed faucet")?.clone();
     evolved.apply_patch(tx.account_patch())?;
     assert_eq!(
         read_min_burn_size(&evolved)?,
@@ -340,7 +326,8 @@ async fn min_burn_note_args_are_inert() -> Result<()> {
 // PAUSE (allowlist row 6) — DOM_PAUSER-gated emergency halt (owner has NO pause path)
 // ================================================================================================
 
-/// DOM_PAUSER-sent pause PASSES auth (allowlisted) + the proc's DOM_PAUSER gate and sets is_paused=1.
+/// DOM_PAUSER-sent pause PASSES auth (allowlisted) + the proc's DOM_PAUSER gate and sets
+/// is_paused=1.
 #[tokio::test]
 async fn pause_dom_pauser_sets_is_paused() -> Result<()> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
@@ -427,8 +414,9 @@ async fn pause_note_args_are_inert() -> Result<()> {
 // UNPAUSE (allowlist row 7) — DOM_UNPAUSER-gated resume
 // ================================================================================================
 
-/// A production faucet paused by a SEEDED DOM_PAUSER pause note (brought up on-chain), so an unpause
-/// tx has a 1 -> 0 `is_paused` transition to observe. Placeholder PUBLIC routing target (routing-only).
+/// A production faucet paused by a SEEDED DOM_PAUSER pause note (brought up on-chain), so an
+/// unpause tx has a 1 -> 0 `is_paused` transition to observe. Placeholder PUBLIC routing target
+/// (routing-only).
 async fn paused_faucet() -> Result<(MockChain, AccountId)> {
     let pf = setup_production_faucet(0, |_, faucet_id| {
         vec![stock_pause_note(test_account_id(2), faucet_id, 60)
@@ -538,7 +526,8 @@ async fn unpause_note_args_are_inert() -> Result<()> {
 // ================================================================================================
 
 /// Authorized grant: `sender` grants DOM_PAUSER to id(4); the membership map is written. Proves the
-/// note's absolute-path `call` resolves to the installed stock `rbac::grant_role` root (the canary).
+/// note's absolute-path `call` resolves to the installed stock `rbac::grant_role` root (the
+/// canary).
 async fn assert_grant_role_authorized(
     sender: AccountId,
     role: RoleSymbol,
@@ -549,14 +538,8 @@ async fn assert_grant_role_authorized(
     let chain = pf.mock_chain;
     let faucet_id = pf.faucet_id;
     let grantee = test_account_id(4);
-    let note = stock_grant_role_note(
-        sender,
-        faucet_id,
-        role.clone(),
-        grantee,
-        &mut note_rng(seed),
-    )
-    .context("building the grant_role note")?;
+    let note = stock_grant_role_note(sender, faucet_id, role.clone(), grantee, &mut note_rng(seed))
+        .context("building the grant_role note")?;
     let tx = chain
         .build_transaction(faucet_id)
         .unauthenticated_input_note(note.clone())
@@ -567,10 +550,7 @@ async fn assert_grant_role_authorized(
         .map_err(|e| {
             anyhow::anyhow!("authorized grant_role must succeed under network auth: {e}")
         })?;
-    let mut evolved = chain
-        .committed_account(faucet_id)
-        .context("committed faucet")?
-        .clone();
+    let mut evolved = chain.committed_account(faucet_id).context("committed faucet")?.clone();
     evolved.apply_patch(tx.account_patch())?;
     assert_eq!(
         read_role_membership(&evolved, &role, grantee)?,
@@ -639,10 +619,7 @@ async fn grant_role_note_args_are_inert() -> Result<()> {
         .execute()
         .await
         .map_err(|e| anyhow::anyhow!("grant_role with bogus NOTE_ARGS must still succeed: {e}"))?;
-    let mut evolved = chain
-        .committed_account(faucet_id)
-        .context("committed faucet")?
-        .clone();
+    let mut evolved = chain.committed_account(faucet_id).context("committed faucet")?.clone();
     evolved.apply_patch(tx.account_patch())?;
     assert_eq!(
         read_role_membership(&evolved, &pauser_sym(), grantee)?,
@@ -659,8 +636,8 @@ async fn grant_role_note_args_are_inert() -> Result<()> {
 
 const NEW_MAX_SUPPLY: u64 = 2_000_000;
 
-/// Owner-sent set_max_supply PASSES auth + the administrator Authority gate (the production faucet is
-/// max-supply-mutable + unpaused) and writes word[1] (max_supply) of the token_config slot.
+/// Owner-sent set_max_supply PASSES auth + the administrator Authority gate (the production faucet
+/// is max-supply-mutable + unpaused) and writes word[1] (max_supply) of the token_config slot.
 #[tokio::test]
 async fn set_max_supply_administrator_writes_cap() -> Result<()> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
@@ -753,8 +730,9 @@ async fn set_max_supply_note_args_are_inert() -> Result<()> {
 // REVOKE_ROLE (allowlist row 9) — STOCK RBAC revoke (needs a prior grant)
 // ================================================================================================
 
-/// A production faucet where id(4) has been granted DOM_PAUSER by the administrator, applied as a delta to an
-/// evolved (not-committed) account. Returns (chain, faucet_id, evolved account, grantee).
+/// A production faucet where id(4) has been granted DOM_PAUSER by the administrator, applied as a
+/// delta to an evolved (not-committed) account. Returns (chain, faucet_id, evolved account,
+/// grantee).
 async fn faucet_with_granted_role(
     role: RoleSymbol,
     grantor: AccountId,
@@ -766,14 +744,9 @@ async fn faucet_with_granted_role(
     let faucet_id = pf.faucet_id;
     let grantee = test_account_id(4);
     // Every role is administered directly by ADMIN.
-    let grant = stock_grant_role_note(
-        grantor,
-        faucet_id,
-        role.clone(),
-        grantee,
-        &mut note_rng(grant_seed),
-    )
-    .context("building the seeding grant note")?;
+    let grant =
+        stock_grant_role_note(grantor, faucet_id, role.clone(), grantee, &mut note_rng(grant_seed))
+            .context("building the seeding grant note")?;
     let tx = chain
         .build_transaction(faucet_id)
         .unauthenticated_input_note(grant.clone())
@@ -782,10 +755,7 @@ async fn faucet_with_granted_role(
         .execute()
         .await
         .map_err(|e| anyhow::anyhow!("seeding the administrator grant must succeed: {e}"))?;
-    let mut evolved = chain
-        .committed_account(faucet_id)
-        .context("committed faucet")?
-        .clone();
+    let mut evolved = chain.committed_account(faucet_id).context("committed faucet")?.clone();
     evolved.apply_patch(tx.account_patch())?;
     Ok((chain, faucet_id, evolved, grantee))
 }
@@ -829,14 +799,7 @@ async fn assert_revoke_authorized(
 /// The administrator grants and revokes DOM_PAUSER directly.
 #[tokio::test]
 async fn revoke_role_administrator_authorized() -> Result<()> {
-    assert_revoke_authorized(
-        test_account_id(1),
-        pauser_sym(),
-        test_account_id(1),
-        110,
-        100,
-    )
-    .await
+    assert_revoke_authorized(test_account_id(1), pauser_sym(), test_account_id(1), 110, 100).await
 }
 
 /// A third party without ADMIN PASSES auth but TRAPS at the role-administration gate.
@@ -953,10 +916,7 @@ async fn set_role_admin_administrator_authorized() -> Result<()> {
         Felt::from(&blk_manager_sym()),
         "ADMIN must be able to re-point the role it administers",
     );
-    assert_eq!(
-        after[0], before[0],
-        "re-pointing must preserve the role's member count",
-    );
+    assert_eq!(after[0], before[0], "re-pointing must preserve the role's member count",);
     Ok(())
 }
 
@@ -975,10 +935,7 @@ async fn assert_set_role_admin_rejected(sender: AccountId, seed: u64) -> Result<
     let note = stock_role_note(
         sender,
         faucet_id,
-        RbacConfig::SetRoleAdmin {
-            role: pauser_sym(),
-            admin_role: None,
-        },
+        RbacConfig::SetRoleAdmin { role: pauser_sym(), admin_role: None },
         &mut note_rng(seed),
     )
     .context("building the unauthorized set_role_admin note")?;

@@ -23,12 +23,12 @@
 //! test names use the short stage labels the faucet's own comments use. The sequence, defined
 //! here so nothing outside this file has to be consulted:
 //!
-//! - `d5a` — parse the DepositIntent and assert its fields against the faucet configuration
-//!   (the first two sections below).
-//! - `d5b` — reduce `amount` / `maxFee` / `feeAmount` from uint256 to asset amounts and assert
-//!   the relations between them.
-//! - `d5c` — assert the intent's nonce has not been spent (read-only; the marker write is a
-//!   later stage).
+//! - `d5a` — parse the DepositIntent and assert its fields against the faucet configuration (the
+//!   first two sections below).
+//! - `d5b` — reduce `amount` / `maxFee` / `feeAmount` from uint256 to asset amounts and assert the
+//!   relations between them.
+//! - `d5c` — assert the intent's nonce has not been spent (read-only; the marker write is a later
+//!   stage).
 //! - `d5d` — verify the depositor's ECDSA attestation against the attester allowlist.
 //! - `d5e` — the state-changing tail (mint, write the nonce marker); driven end to end in
 //!   `mint_policy_e2e.rs`, not here.
@@ -250,10 +250,7 @@ fn attestation_payload() -> (Vec<Felt>, Vec<u8>, u64) {
 fn seam_keys(payload: &[u8]) -> (AttesterVector, AttesterVector) {
     let a = gen_attester(1, payload);
     let b = gen_attester(2, payload);
-    assert_ne!(
-        a.commitment, b.commitment,
-        "seam keys A and B must have distinct commitments"
-    );
+    assert_ne!(a.commitment, b.commitment, "seam keys A and B must have distinct commitments");
     (a, b)
 }
 
@@ -265,12 +262,7 @@ fn paired_driver_src(
     pubkey_of: &AttesterVector,
     sig_of: &AttesterVector,
 ) -> String {
-    attestation_driver_src(
-        preimage,
-        len_bytes,
-        &pubkey_of.pubkey_felts,
-        &sig_of.sig_felts,
-    )
+    attestation_driver_src(preimage, len_bytes, &pubkey_of.pubkey_felts, &sig_of.sig_felts)
 }
 
 // HAPPY PATH FIRST — an allowlisted attester with its own valid signature

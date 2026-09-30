@@ -12,7 +12,10 @@ use miden_protocol::block::FeeParameters;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::note::config::{
-    BlocklistConfigNote, ConstantFeePolicyConfigNote, FaucetMetadataConfigNote, PauseConfigNote,
+    BlocklistConfigNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
+    PauseConfigNote,
     RbacConfigNote,
 };
 use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
@@ -66,11 +69,7 @@ impl XReserveStablecoinBuilder {
             .note_costs(crate::note::costs::note_costs())
             .build()
             .basic_constant_fee_policy_manager(Self::allowed_note_scripts())?;
-        Ok(
-            AuthNetworkAccount::custom(Self::allowed_note_scripts(), fee_policy_manager)?
-                .with_allowed_tx_scripts(BTreeSet::from([
-                    ExpirationTransactionScript::script_root(),
-                ])),
-        )
+        Ok(AuthNetworkAccount::custom(Self::allowed_note_scripts(), fee_policy_manager)?
+            .with_allowed_tx_scripts(BTreeSet::from([ExpirationTransactionScript::script_root()])))
     }
 }

@@ -122,10 +122,7 @@ end
             id = vec.id,
         );
         run_driver(&h, &src).await.unwrap_or_else(|e| {
-            panic!(
-                "vector {}: MASM hash_nonce must produce the canonical key: {e}",
-                vec.id
-            )
+            panic!("vector {}: MASM hash_nonce must produce the canonical key: {e}", vec.id)
         });
     }
     Ok(())
@@ -246,12 +243,9 @@ end
 #[tokio::test]
 async fn probe_p2_script_executes() -> Result<()> {
     let h = setup()?;
-    run_driver(
-        &h,
-        "@transaction_script\npub proc main\n    push.1 drop\nend\n",
-    )
-    .await
-    .expect("trivial driver must execute");
+    run_driver(&h, "@transaction_script\npub proc main\n    push.1 drop\nend\n")
+        .await
+        .expect("trivial driver must execute");
     Ok(())
 }
 
@@ -356,10 +350,7 @@ fn be32_of_u128(v: u128) -> [u8; 32] {
 async fn tv_circle_differential_real_bytes() -> Result<()> {
     let file: CircleFile =
         serde_json::from_str(CIRCLE_FIXTURE).expect("circle ground-truth fixture parses");
-    assert!(
-        !file.vectors.is_empty(),
-        "circle fixture must carry vectors"
-    );
+    assert!(!file.vectors.is_empty(), "circle fixture must carry vectors");
 
     for v in &file.vectors {
         let raw = circle_hexdec(&v.bytes_hex);
@@ -384,48 +375,18 @@ async fn tv_circle_differential_real_bytes() -> Result<()> {
             "{}: version @4",
             v.id
         );
-        assert_eq!(
-            &raw[8..40],
-            &be32_of_u128(f.amount)[..],
-            "{}: amount @8",
-            v.id
-        );
+        assert_eq!(&raw[8..40], &be32_of_u128(f.amount)[..], "{}: amount @8", v.id);
         assert_eq!(
             u32::from_be_bytes(raw[40..44].try_into().unwrap()) as u64,
             f.remote_domain,
             "{}: remoteDomain @40",
             v.id
         );
-        assert_eq!(
-            circle_hex(&raw[44..76]),
-            f.remote_token,
-            "{}: remoteToken @44",
-            v.id
-        );
-        assert_eq!(
-            circle_hex(&raw[76..108]),
-            f.remote_recipient,
-            "{}: remoteRecipient @76",
-            v.id
-        );
-        assert_eq!(
-            circle_hex(&raw[108..140]),
-            f.local_token,
-            "{}: localToken @108",
-            v.id
-        );
-        assert_eq!(
-            circle_hex(&raw[140..172]),
-            f.local_depositor,
-            "{}: localDepositor @140",
-            v.id
-        );
-        assert_eq!(
-            &raw[172..204],
-            &be32_of_u128(f.max_fee)[..],
-            "{}: maxFee @172",
-            v.id
-        );
+        assert_eq!(circle_hex(&raw[44..76]), f.remote_token, "{}: remoteToken @44", v.id);
+        assert_eq!(circle_hex(&raw[76..108]), f.remote_recipient, "{}: remoteRecipient @76", v.id);
+        assert_eq!(circle_hex(&raw[108..140]), f.local_token, "{}: localToken @108", v.id);
+        assert_eq!(circle_hex(&raw[140..172]), f.local_depositor, "{}: localDepositor @140", v.id);
+        assert_eq!(&raw[172..204], &be32_of_u128(f.max_fee)[..], "{}: maxFee @172", v.id);
         assert_eq!(circle_hex(&raw[204..236]), f.nonce, "{}: nonce @204", v.id);
         assert_eq!(
             u32::from_be_bytes(raw[236..240].try_into().unwrap()) as u64,
@@ -464,7 +425,7 @@ async fn tv_circle_differential_real_bytes() -> Result<()> {
                     "{}: the packed preimage is four wire bytes per felt",
                     v.id
                 );
-            }
+            },
             // an identifier this faucet could never mint to is refused with the reason, not
             // truncated into some nearby account id
             "opaque" => assert_matches!(

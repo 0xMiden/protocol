@@ -75,8 +75,8 @@ impl XReserveSetAttesterNote {
 
     /// Builds a `set_attester` admin note via a `bon` builder
     /// (`XReserveSetAttesterNote::builder().sender(..).faucet_id(..).storage(..).rng(..).build()`):
-    /// `sender` is the admin party (an `ATTEST_ADMIN` role holder, for success), `faucet_id` the target
-    /// faucet (PUBLIC), `storage` the typed [`XReserveSetAttesterNoteStorage`] payload.
+    /// `sender` is the admin party (an `ATTEST_ADMIN` role holder, for success), `faucet_id` the
+    /// target faucet (PUBLIC), `storage` the typed [`XReserveSetAttesterNoteStorage`] payload.
     #[builder]
     pub fn new<R: FeltRng>(
         sender: AccountId,

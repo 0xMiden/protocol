@@ -7,11 +7,12 @@
 //! document under `docs/`.
 //!
 //! The two new admin notes `block_account` / `unblock_account` are gated on the dedicated
-//! `BLK_MANAGER` role held by an EXTERNAL entity, NOT the administrator. A block/unblock from the BLK_MANAGER
-//! holder SUCCEEDS and mutates the `blocked_accounts` map; from a stranger, the OWNER (two-way
-//! capability isolation — the administrator has NO block power), or a DIFFERENT role holder (spoof-proof) it is
-//! REJECTED with the EXACT stock rbac role error; after the administrator (as `ADMIN`) revokes `BLK_MANAGER`
-//! via the EXISTING `revoke_role` note, the former holder is REJECTED — rotation with ZERO new machinery.
+//! `BLK_MANAGER` role held by an EXTERNAL entity, NOT the administrator. A block/unblock from the
+//! BLK_MANAGER holder SUCCEEDS and mutates the `blocked_accounts` map; from a stranger, the OWNER
+//! (two-way capability isolation — the administrator has NO block power), or a DIFFERENT role
+//! holder (spoof-proof) it is REJECTED with the EXACT stock rbac role error; after the
+//! administrator (as `ADMIN`) revokes `BLK_MANAGER` via the EXISTING `revoke_role` note, the former
+//! holder is REJECTED — rotation with ZERO new machinery.
 
 mod support;
 
@@ -49,20 +50,13 @@ fn target() -> AccountId {
 }
 
 /// Reads the `blocked_accounts[account]` word from a committed/evolved faucet account.
-/// `[1,0,0,0]` = blocked, `[0,0,0,0]` = not blocked (the primitive's key is `[0, 0, suffix, prefix]`).
+/// `[1,0,0,0]` = blocked, `[0,0,0,0]` = not blocked (the primitive's key is `[0, 0, suffix,
+/// prefix]`).
 fn read_blocked(faucet: &Account, account: AccountId) -> Result<Word> {
-    let key = Word::from([
-        Felt::ZERO,
-        Felt::ZERO,
-        account.suffix(),
-        account.prefix().as_felt(),
-    ]);
+    let key = Word::from([Felt::ZERO, Felt::ZERO, account.suffix(), account.prefix().as_felt()]);
     faucet
         .storage()
-        .get_map_item(
-            BlocklistStorage::blocked_accounts_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(BlocklistStorage::blocked_accounts_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading blocked_accounts[{account}]: {e}"))
 }
 
@@ -203,10 +197,10 @@ async fn unblock_by_blk_manager_holder_succeeds_and_clears_the_map() -> Result<(
     Ok(())
 }
 
-/// The block gate is BLK_MANAGER-specific: a stranger, the OWNER (two-way capability isolation — the
-/// owner holds no block power), and a DIFFERENT role holder (DOM_UNPAUSER — spoof-proof, only the
-/// hard-coded BLK_MANAGER symbol passes) are ALL rejected with the EXACT stock role error, and the
-/// map is unchanged.
+/// The block gate is BLK_MANAGER-specific: a stranger, the OWNER (two-way capability isolation —
+/// the owner holds no block power), and a DIFFERENT role holder (DOM_UNPAUSER — spoof-proof, only
+/// the hard-coded BLK_MANAGER symbol passes) are ALL rejected with the EXACT stock role error, and
+/// the map is unchanged.
 #[rstest]
 #[case::stranger(stranger())]
 #[case::owner(administrator())]
@@ -255,9 +249,9 @@ async fn unblock_by_non_blk_manager_is_rejected(#[case] sender: AccountId) -> Re
     Ok(())
 }
 
-/// ROTATION with ZERO new machinery: the administrator (as the built-in `ADMIN`, `BLK_MANAGER`'s effective
-/// admin) revokes `BLK_MANAGER` from its holder via the EXISTING `revoke_role` note; the former
-/// holder can then no longer block — the block is rejected with the EXACT role error.
+/// ROTATION with ZERO new machinery: the administrator (as the built-in `ADMIN`, `BLK_MANAGER`'s
+/// effective admin) revokes `BLK_MANAGER` from its holder via the EXISTING `revoke_role` note; the
+/// former holder can then no longer block — the block is rejected with the EXACT role error.
 #[tokio::test]
 async fn former_blk_manager_holder_rejected_after_revoke() -> Result<()> {
     let gm = policed_faucet()?;
@@ -269,7 +263,8 @@ async fn former_blk_manager_holder_rejected_after_revoke() -> Result<()> {
         .await
         .expect("precondition: the BLK_MANAGER holder can block before revoke");
 
-    // The administrator (ADMIN) revokes BLK_MANAGER from its holder via the existing revoke_role note.
+    // The administrator (ADMIN) revokes BLK_MANAGER from its holder via the existing revoke_role
+    // note.
     let revoked = run_revoke_role_against(
         &gm.harness.mock_chain,
         &faucet,

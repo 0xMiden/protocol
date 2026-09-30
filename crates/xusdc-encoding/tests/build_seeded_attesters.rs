@@ -45,11 +45,7 @@ async fn a_build_seeded_attester_mints_with_no_bring_up() -> Result<()> {
     let tx = consume_note(&pf.mock_chain, pf.faucet_id, note.id())
         .await
         .map_err(|e| anyhow::anyhow!("a faucet with a build-seeded attester must mint: {e}"))?;
-    assert_eq!(
-        tx.output_notes().num_notes(),
-        1,
-        "the mint must emit the attested output note"
-    );
+    assert_eq!(tx.output_notes().num_notes(), 1, "the mint must emit the attested output note");
 
     let mut chain = pf.mock_chain;
     commit(&mut chain, &tx)?;
@@ -80,13 +76,8 @@ async fn a_key_the_faucet_was_not_built_with_is_refused() -> Result<()> {
         &AttachmentPlan::default(),
         2012,
     )?;
-    expect_reject(
-        &mut pf,
-        note,
-        &payload,
-        shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"),
-    )
-    .await
+    expect_reject(&mut pf, note, &payload, shell_error_by_name("ERR_XRESERVE_DISALLOWED_PUB_KEY"))
+        .await
 }
 
 /// Listing the same key twice is rejected at construction.

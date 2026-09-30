@@ -5,8 +5,9 @@
 //! how the Rust side HOLDS its values is only safe if the note it EMITS is unchanged: the same id,
 //! the same nullifier, the same recipient recipe, the same attachment words in the same order.
 //!
-//! This suite freezes that emission. For every accept vector in the `mi` family — the empty-hookData
-//! row and the non-empty-hookData row — it builds the production note at a FIXED serial and pins:
+//! This suite freezes that emission. For every accept vector in the `mi` family — the
+//! empty-hookData row and the non-empty-hookData row — it builds the production note at a FIXED
+//! serial and pins:
 //!
 //! - the note's `NoteId`,
 //! - the note's nullifier,
@@ -25,10 +26,10 @@
 //! serialized form gained the protocol's new version bytes. The attachment words and their
 //! commitment — the bytes this crate ENCODES — did not move.
 //!
-//! The vector payload is used verbatim except for `remoteToken`, which is spliced to a deterministic
-//! PUBLIC faucet id: the routing attachment can only bind a public network account, and the
-//! artifact's synthetic faucet id is not one. The attestation bytes come from the frozen `att`
-//! family; this factory never verifies a signature (the faucet does, on-chain), so what the
+//! The vector payload is used verbatim except for `remoteToken`, which is spliced to a
+//! deterministic PUBLIC faucet id: the routing attachment can only bind a public network account,
+//! and the artifact's synthetic faucet id is not one. The attestation bytes come from the frozen
+//! `att` family; this factory never verifies a signature (the faucet does, on-chain), so what the
 //! attestation must be here is well-formed, not valid.
 
 mod support;
@@ -131,34 +132,18 @@ fn assert_anchors(note: &Note, golden: &Anchors) {
     let attachments = note
         .attachments()
         .iter()
-        .map(|a| {
-            format!(
-                "scheme={} words={}",
-                a.attachment_scheme().as_u16(),
-                a.num_words()
-            )
-        })
+        .map(|a| format!("scheme={} words={}", a.attachment_scheme().as_u16(), a.num_words()))
         .collect::<Vec<_>>()
         .join(", ");
 
     let actual: [(&str, String); 6] = [
         ("note id", format!("{}", note.id())),
         ("nullifier", format!("{}", note.nullifier())),
-        (
-            "recipient digest",
-            format!("{:?}", note.recipient().digest()),
-        ),
-        (
-            "attachments commitment",
-            format!("{:?}", note.attachments().to_commitment()),
-        ),
+        ("recipient digest", format!("{:?}", note.recipient().digest())),
+        ("attachments commitment", format!("{:?}", note.attachments().to_commitment())),
         (
             "serialized note",
-            format!(
-                "{} bytes, digest {:?}",
-                serialized.len(),
-                Hasher::hash(&serialized)
-            ),
+            format!("{} bytes, digest {:?}", serialized.len(), Hasher::hash(&serialized)),
         ),
         ("attachment shape", format!("[{attachments}]")),
     ];
@@ -189,10 +174,7 @@ fn assert_anchors(note: &Note, golden: &Anchors) {
 /// The empty-hookData accept row emits the frozen note, byte for byte.
 #[test]
 fn mint_note_bytes_are_frozen_for_the_empty_hookdata_vector() {
-    assert_anchors(
-        &note_for("mi-pos-empty-hookdata", "att-1"),
-        &GOLDEN_EMPTY_HOOKDATA,
-    );
+    assert_anchors(&note_for("mi-pos-empty-hookdata", "att-1"), &GOLDEN_EMPTY_HOOKDATA);
 }
 
 /// The non-empty-hookData accept row emits the frozen note, byte for byte. The hookData tail is
@@ -215,8 +197,5 @@ fn every_mi_accept_vector_is_anchored() {
         .filter(|v| v.kind == "accept")
         .map(|v| v.id.as_str())
         .collect();
-    assert_eq!(
-        accepts, anchored,
-        "every mi accept vector must carry a frozen mint-note anchor",
-    );
+    assert_eq!(accepts, anchored, "every mi accept vector must carry a frozen mint-note anchor",);
 }

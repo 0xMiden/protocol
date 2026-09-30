@@ -36,7 +36,12 @@ use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::bytes_to_packed_u32_elements;
 use miden_protocol::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable, SliceReader,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+    SliceReader,
 };
 use miden_protocol::{Felt, Word, MAX_NOTE_STORAGE_ITEMS};
 use miden_standards::interop::eth::{EthAmount, EthEmbeddedAccountId};
@@ -293,9 +298,8 @@ impl DepositIntentHeader {
     /// The typed decode of the header block, leaving the reader on `hookDataLen`.
     fn read<R: ByteReader>(source: &mut R) -> Result<Self, EncodingError> {
         // the bounds guard necessarily precedes any field read (the TruncatedHeader case)
-        let bytes: [u8; Self::SERIALIZED_SIZE] = source
-            .read_array()
-            .map_err(|_| EncodingError::TruncatedHeader)?;
+        let bytes: [u8; Self::SERIALIZED_SIZE] =
+            source.read_array().map_err(|_| EncodingError::TruncatedHeader)?;
 
         if be_u32(&bytes, DepositIntentField::Magic) != Self::MAGIC {
             return Err(EncodingError::BadMagic);
@@ -336,11 +340,7 @@ impl Serializable for DepositIntentHeader {
         write_u32(&mut bytes, DepositIntentField::Magic, Self::MAGIC);
         write_u32(&mut bytes, DepositIntentField::Version, Self::VERSION);
         write_bytes32(&mut bytes, DepositIntentField::Amount, &widen(self.amount));
-        write_u32(
-            &mut bytes,
-            DepositIntentField::RemoteDomain,
-            self.remote_domain.as_u32(),
-        );
+        write_u32(&mut bytes, DepositIntentField::RemoteDomain, self.remote_domain.as_u32());
         write_bytes32(
             &mut bytes,
             DepositIntentField::RemoteToken,
@@ -351,11 +351,7 @@ impl Serializable for DepositIntentHeader {
             DepositIntentField::RemoteRecipient,
             &EthEmbeddedAccountId::from_account_id(self.remote_recipient).to_bytes32(),
         );
-        write_bytes32(
-            &mut bytes,
-            DepositIntentField::LocalToken,
-            self.local_token.as_bytes(),
-        );
+        write_bytes32(&mut bytes, DepositIntentField::LocalToken, self.local_token.as_bytes());
         write_bytes32(
             &mut bytes,
             DepositIntentField::LocalDepositor,
@@ -416,12 +412,7 @@ impl DepositIntent {
 
     /// The felt count of the u32-LE-packed preimage: `60 + ceil(hookDataLen / 4)`.
     pub fn preimage_felt_len(&self) -> usize {
-        Self::HEADER_NUM_FELTS
-            + self
-                .hook_data
-                .as_bytes()
-                .len()
-                .div_ceil(BYTES_PER_PACKED_FELT)
+        Self::HEADER_NUM_FELTS + self.hook_data.as_bytes().len().div_ceil(BYTES_PER_PACKED_FELT)
     }
 
     /// The u32-LE-packed on-chain preimage — the felts the attestation's digest is taken over.
@@ -449,9 +440,8 @@ impl DepositIntent {
         if hook_data_len > HookData::MAX_LEN {
             return Err(EncodingError::HookDataTooLarge);
         }
-        let hook_data = source
-            .read_vec(hook_data_len)
-            .map_err(|_| EncodingError::LengthMismatch)?;
+        let hook_data =
+            source.read_vec(hook_data_len).map_err(|_| EncodingError::LengthMismatch)?;
         if source.has_more_bytes() {
             return Err(EncodingError::LengthMismatch);
         }
@@ -497,9 +487,7 @@ impl TryFrom<&[u8]> for DepositIntent {
 fn be_u32(bytes: &[u8; DepositIntentHeader::SERIALIZED_SIZE], field: DepositIntentField) -> u32 {
     let offset = field.offset();
     u32::from_be_bytes(
-        bytes[offset..offset + BYTES_PER_PACKED_FELT]
-            .try_into()
-            .expect("4-byte window"),
+        bytes[offset..offset + BYTES_PER_PACKED_FELT].try_into().expect("4-byte window"),
     )
 }
 
@@ -509,9 +497,7 @@ fn bytes32_at(
     field: DepositIntentField,
 ) -> [u8; BYTES32_LEN] {
     let offset = field.offset();
-    bytes[offset..offset + BYTES32_LEN]
-        .try_into()
-        .expect("32-byte window")
+    bytes[offset..offset + BYTES32_LEN].try_into().expect("32-byte window")
 }
 
 /// Copies a 32-byte wire field the scheme requires to be non-zero.
@@ -604,50 +590,23 @@ mod tests {
             let header = intent.header();
             let f = vec.fields.as_ref().expect("accept vector carries fields");
 
-            assert_eq!(
-                header.remote_domain(),
-                f.remote_domain,
-                "vector {}: remoteDomain",
-                vec.id
-            );
+            assert_eq!(header.remote_domain(), f.remote_domain, "vector {}: remoteDomain", vec.id);
             assert_eq!(
                 intent.hook_data().len_u32(),
                 f.hook_data_len,
                 "vector {}: hookDataLen",
                 vec.id
             );
-            assert_eq!(
-                u64::from(header.amount()),
-                f.amount,
-                "vector {}: amount",
-                vec.id
-            );
-            assert_eq!(
-                u64::from(header.max_fee()),
-                f.max_fee,
-                "vector {}: maxFee",
-                vec.id
-            );
+            assert_eq!(u64::from(header.amount()), f.amount, "vector {}: amount", vec.id);
+            assert_eq!(u64::from(header.max_fee()), f.max_fee, "vector {}: maxFee", vec.id);
 
             let written = intent.to_bytes();
             for (name, field, label) in [
                 ("amount", DepositIntentField::Amount, "amount"),
-                (
-                    "remote_token",
-                    DepositIntentField::RemoteToken,
-                    "remoteToken",
-                ),
-                (
-                    "remote_recipient",
-                    DepositIntentField::RemoteRecipient,
-                    "remoteRecipient",
-                ),
+                ("remote_token", DepositIntentField::RemoteToken, "remoteToken"),
+                ("remote_recipient", DepositIntentField::RemoteRecipient, "remoteRecipient"),
                 ("local_token", DepositIntentField::LocalToken, "localToken"),
-                (
-                    "local_depositor",
-                    DepositIntentField::LocalDepositor,
-                    "localDepositor",
-                ),
+                ("local_depositor", DepositIntentField::LocalDepositor, "localDepositor"),
                 ("max_fee", DepositIntentField::MaxFee, "maxFee"),
                 ("nonce", DepositIntentField::Nonce, "nonce"),
             ] {
@@ -687,28 +646,19 @@ mod tests {
     #[case::tv_di_6_truncated_header("di-rej-truncated")]
     fn tv_di_rejects(#[case] id: &str) {
         let v = load();
-        let vec = v
-            .families
-            .di
-            .iter()
-            .find(|v| v.id == id)
-            .expect("vector present");
+        let vec = v.families.di.iter().find(|v| v.id == id).expect("vector present");
         let result = DepositIntent::try_from(vec.bytes().as_slice());
         match vec.expected_variant.as_deref() {
             Some("BadMagic") => assert_matches!(result, Err(EncodingError::BadMagic), "{id}"),
             Some("BadVersion") => assert_matches!(result, Err(EncodingError::BadVersion), "{id}"),
             Some("ZeroField:Amount") => assert_matches!(
                 result,
-                Err(EncodingError::ZeroField {
-                    field: DepositIntentField::Amount
-                }),
+                Err(EncodingError::ZeroField { field: DepositIntentField::Amount }),
                 "{id}"
             ),
             Some("ZeroField:LocalToken") => assert_matches!(
                 result,
-                Err(EncodingError::ZeroField {
-                    field: DepositIntentField::LocalToken
-                }),
+                Err(EncodingError::ZeroField { field: DepositIntentField::LocalToken }),
                 "{id}"
             ),
             Some("ZeroField:LocalDepositor") => assert_matches!(
@@ -720,10 +670,10 @@ mod tests {
             ),
             Some("LengthMismatch") => {
                 assert_matches!(result, Err(EncodingError::LengthMismatch), "{id}")
-            }
+            },
             Some("TruncatedHeader") => {
                 assert_matches!(result, Err(EncodingError::TruncatedHeader), "{id}")
-            }
+            },
             other => panic!("vector {id}: unexpected expected_variant {other:?}"),
         }
     }
@@ -733,17 +683,9 @@ mod tests {
     #[test]
     fn a_payload_short_of_the_fixed_prefix_is_truncated() {
         let v = load();
-        let vec = v
-            .families
-            .di
-            .iter()
-            .find(|v| v.id == "di-pos-empty-hookdata")
-            .expect("vector");
+        let vec = v.families.di.iter().find(|v| v.id == "di-pos-empty-hookdata").expect("vector");
         let bytes = vec.bytes();
-        for len in [
-            DepositIntentHeader::SERIALIZED_SIZE,
-            DepositIntent::HEADER_SIZE - 1,
-        ] {
+        for len in [DepositIntentHeader::SERIALIZED_SIZE, DepositIntent::HEADER_SIZE - 1] {
             assert_matches!(
                 DepositIntent::try_from(&bytes[..len]),
                 Err(EncodingError::TruncatedHeader),
@@ -758,12 +700,7 @@ mod tests {
     #[test]
     fn trailing_bytes_reject() {
         let v = load();
-        let vec = v
-            .families
-            .di
-            .iter()
-            .find(|v| v.id == "di-pos-hookdata")
-            .expect("vector");
+        let vec = v.families.di.iter().find(|v| v.id == "di-pos-hookdata").expect("vector");
         let mut bytes = vec.bytes();
         bytes.push(0x00);
         assert_matches!(
@@ -789,12 +726,7 @@ mod tests {
                 DepositIntent::try_from(vec.bytes().as_slice()).expect("accept vector decodes");
             let felts = intent.to_preimage_felts();
             let expected = vec.preimage_values();
-            assert_eq!(
-                felts.len(),
-                expected.len(),
-                "vector {}: total felts",
-                vec.id
-            );
+            assert_eq!(felts.len(), expected.len(), "vector {}: total felts", vec.id);
             assert_eq!(
                 felts.len(),
                 intent.preimage_felt_len(),
@@ -808,11 +740,7 @@ mod tests {
                 vec.id
             );
             assert_eq!(felts, expected, "vector {}: full preimage", vec.id);
-            assert!(
-                felts.len() <= MAX_NOTE_STORAGE_ITEMS,
-                "vector {}: NoteStorage bound",
-                vec.id
-            );
+            assert!(felts.len() <= MAX_NOTE_STORAGE_ITEMS, "vector {}: NoteStorage bound", vec.id);
         }
         let overflow = v
             .families
@@ -832,12 +760,7 @@ mod tests {
     #[test]
     fn tv_di_8_input_immutable() {
         let v = load();
-        let vec = v
-            .families
-            .di
-            .iter()
-            .find(|v| v.id == "di-pos-hookdata")
-            .expect("vector");
+        let vec = v.families.di.iter().find(|v| v.id == "di-pos-hookdata").expect("vector");
         let bytes = vec.bytes();
         let before = bytes.clone();
         let _ = DepositIntent::try_from(bytes.as_slice());

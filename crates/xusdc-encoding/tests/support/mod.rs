@@ -24,23 +24,34 @@ pub mod w2admin;
 // fixtures; re-exported here so every suite reaches them through `support::*` as before.
 // Each test binary compiles this module separately and pulls in only the helpers it uses, so the
 // re-export is legitimately unused in most of them.
-#[allow(unused_imports)]
-pub use w2admin::{
-    stock_block_note, stock_min_burn_note, stock_pause_action_note, stock_pause_note,
-    stock_set_max_supply_note, stock_unblock_note, stock_unpause_note,
-};
-
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+// Attestation fixtures — deterministic secp256k1 keys and signatures generated IN-TEST (the
+// canonical vector artifact is untouched), mirroring the `gen_vectors` att_* helpers: k256 the
+// keypair+signature, sha3 the keccak digest, miden-crypto `PublicKey::to_commitment` the
+// allowlist-key oracle, miden_protocol `bytes_to_packed_u32_elements` the advice felt packing.
+use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey};
+use miden_crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_crypto::utils::Deserializable;
+use miden_crypto::SequentialCommit;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
-    Account, AccountComponent, AccountId, AccountIdVersion, AccountProcedureRoot, AccountType,
-    AssetCallbackFlag, RoleSymbol, StorageMap, StorageMapKey, StorageSlot,
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountIdVersion,
+    AccountProcedureRoot,
+    AccountType,
+    AssetCallbackFlag,
+    RoleSymbol,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
 };
 use miden_protocol::assembly::Package;
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
@@ -52,18 +63,29 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::utils::bytes_to_packed_u32_elements;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{
-    Pausable, PausableManager, PausableStorage, RoleBasedAccessControl, RoleConfig,
+    Pausable,
+    PausableManager,
+    PausableStorage,
+    RoleBasedAccessControl,
+    RoleConfig,
 };
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
-    BurnPolicy, MinBurnAmount, MintPolicy, TokenPolicyManager,
+    BurnPolicy,
+    MinBurnAmount,
+    MintPolicy,
+    TokenPolicyManager,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::config::{
-    BlocklistConfigNote, ConstantFeePolicyConfigNote, FaucetMetadataConfigNote, PauseConfigNote,
+    BlocklistConfigNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
+    PauseConfigNote,
     RbacConfigNote,
 };
 use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
@@ -71,10 +93,28 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder};
 use miden_tx::TransactionExecutorError;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use sha3::{Digest, Keccak256};
+#[allow(unused_imports)]
+pub use w2admin::{
+    stock_block_note,
+    stock_min_burn_note,
+    stock_pause_action_note,
+    stock_pause_note,
+    stock_set_max_supply_note,
+    stock_unblock_note,
+    stock_unpause_note,
+};
 use xusdc_encoding::account::xreserve::builder::XRESERVE_BURN_POLICY_PROC_PATH;
 use xusdc_encoding::account::xreserve::{
-    XReserveAdminAuthority, XReserveFaucetExtension, XReserveStablecoinBuilder,
-    XReserveStablecoinBuilderError, ATTEST_ADMIN_ROLE, BLK_MANAGER_ROLE, DOM_PAUSER_ROLE,
+    XReserveAdminAuthority,
+    XReserveFaucetExtension,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
+    ATTEST_ADMIN_ROLE,
+    BLK_MANAGER_ROLE,
+    DOM_PAUSER_ROLE,
     DOM_UNPAUSER_ROLE,
 };
 use xusdc_encoding::errors;
@@ -82,22 +122,12 @@ use xusdc_encoding::note::xreserve_admin::{XReserveMinBurnAmountNote, XReserveSe
 use xusdc_encoding::note::xreserve_burn::XReserveBurnNote;
 use xusdc_encoding::note::xreserve_mint::{DepositAttestation, XUsdcMintNote};
 use xusdc_encoding::xreserve::encoding::{
-    CircleDomain, DepositIntent, ForeignChainAddress, XReserveBurnItems,
+    CircleDomain,
+    DepositIntent,
+    ForeignChainAddress,
+    XReserveBurnItems,
 };
 use xusdc_encoding::xreserve_lib::XReserveLibrary;
-
-// Attestation fixtures — deterministic secp256k1 keys and signatures generated IN-TEST (the
-// canonical vector artifact is untouched), mirroring the `gen_vectors` att_* helpers: k256 the
-// keypair+signature, sha3 the keccak digest, miden-crypto `PublicKey::to_commitment` the
-// allowlist-key oracle, miden_protocol `bytes_to_packed_u32_elements` the advice felt packing.
-use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey};
-use miden_crypto::dsa::ecdsa_k256_keccak::PublicKey;
-use miden_crypto::utils::Deserializable;
-use miden_crypto::SequentialCommit;
-use miden_standards::interop::eth::EthEmbeddedAccountId;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use sha3::{Digest, Keccak256};
 
 // TEST-ONLY FAUCET CONFIG (the domain id and the identifier encoding are Circle-owned and OPEN)
 // ================================================================================================
@@ -182,38 +212,14 @@ pub static SHELL_ERR_TABLE: [(&str, MasmError); 23] = [
         "ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS",
         errors::ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS,
     ),
-    (
-        "ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN",
-        errors::ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN,
-    ),
-    (
-        "ERR_XRESERVE_MINT_INTENT_LIMB",
-        errors::ERR_XRESERVE_MINT_INTENT_LIMB,
-    ),
-    (
-        "ERR_XRESERVE_DOMAIN_NOT_U32",
-        errors::ERR_XRESERVE_DOMAIN_NOT_U32,
-    ),
-    (
-        "ERR_XRESERVE_MINT_ZERO_AMOUNT",
-        errors::ERR_XRESERVE_MINT_ZERO_AMOUNT,
-    ),
-    (
-        "ERR_XRESERVE_MINT_AMOUNT_OVER_MAX",
-        errors::ERR_XRESERVE_MINT_AMOUNT_OVER_MAX,
-    ),
-    (
-        "ERR_XRESERVE_AMOUNT_BELOW_FEE",
-        errors::ERR_XRESERVE_AMOUNT_BELOW_FEE,
-    ),
-    (
-        "ERR_XRESERVE_NONCE_REPLAY",
-        errors::ERR_XRESERVE_NONCE_REPLAY,
-    ),
-    (
-        "ERR_XRESERVE_DISALLOWED_PUB_KEY",
-        errors::ERR_XRESERVE_DISALLOWED_PUB_KEY,
-    ),
+    ("ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN", errors::ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN),
+    ("ERR_XRESERVE_MINT_INTENT_LIMB", errors::ERR_XRESERVE_MINT_INTENT_LIMB),
+    ("ERR_XRESERVE_DOMAIN_NOT_U32", errors::ERR_XRESERVE_DOMAIN_NOT_U32),
+    ("ERR_XRESERVE_MINT_ZERO_AMOUNT", errors::ERR_XRESERVE_MINT_ZERO_AMOUNT),
+    ("ERR_XRESERVE_MINT_AMOUNT_OVER_MAX", errors::ERR_XRESERVE_MINT_AMOUNT_OVER_MAX),
+    ("ERR_XRESERVE_AMOUNT_BELOW_FEE", errors::ERR_XRESERVE_AMOUNT_BELOW_FEE),
+    ("ERR_XRESERVE_NONCE_REPLAY", errors::ERR_XRESERVE_NONCE_REPLAY),
+    ("ERR_XRESERVE_DISALLOWED_PUB_KEY", errors::ERR_XRESERVE_DISALLOWED_PUB_KEY),
     ("ERR_XRESERVE_SIG_LIMB", errors::ERR_XRESERVE_SIG_LIMB),
     (
         "ERR_XRESERVE_MINT_NOTE_TRANSPORT_MISSING",
@@ -243,14 +249,8 @@ pub static SHELL_ERR_TABLE: [(&str, MasmError); 23] = [
         "ERR_XRESERVE_MINT_RECIPIENT_MISMATCH",
         errors::ERR_XRESERVE_MINT_RECIPIENT_MISMATCH,
     ),
-    (
-        "ERR_XRESERVE_MINT_AMOUNT_MISMATCH",
-        errors::ERR_XRESERVE_MINT_AMOUNT_MISMATCH,
-    ),
-    (
-        "ERR_XRESERVE_MINT_TAG_MISMATCH",
-        errors::ERR_XRESERVE_MINT_TAG_MISMATCH,
-    ),
+    ("ERR_XRESERVE_MINT_AMOUNT_MISMATCH", errors::ERR_XRESERVE_MINT_AMOUNT_MISMATCH),
+    ("ERR_XRESERVE_MINT_TAG_MISMATCH", errors::ERR_XRESERVE_MINT_TAG_MISMATCH),
     (
         "ERR_XRESERVE_MINT_NOTE_TYPE_NOT_PUBLIC",
         errors::ERR_XRESERVE_MINT_NOTE_TYPE_NOT_PUBLIC,
@@ -515,9 +515,9 @@ pub fn assemble_xreserve_lib() -> Result<Package> {
 }
 
 /// Where the attestation mint policy answers inside the LIBRARY, as opposed to
-/// [`ATTESTATION_MINT_POLICY_PROC_PATH`], which is where the shipped faucet component re-exports it.
-/// Both resolve to the same root; the harnesses below install the library directly, so they have to
-/// ask for it by this path.
+/// [`ATTESTATION_MINT_POLICY_PROC_PATH`], which is where the shipped faucet component re-exports
+/// it. Both resolve to the same root; the harnesses below install the library directly, so they
+/// have to ask for it by this path.
 const LIBRARY_ATTESTATION_MINT_POLICY_PROC_PATH: &str = "xreserve::mint_policy::check_policy";
 
 /// Resolves the attestation mint policy's root from a component carrying the xreserve library.
@@ -591,21 +591,12 @@ pub fn allowlisted_note_scripts() -> Vec<(&'static str, NoteScript)> {
         ("stock_mint_note", MintNote::script()),
         ("stock_burn_note", BurnNote::script()),
         ("set_attester", XReserveSetAttesterNote::script()),
-        (
-            "stock_min_burn_amount_config_note",
-            XReserveMinBurnAmountNote::script(),
-        ),
+        ("stock_min_burn_amount_config_note", XReserveMinBurnAmountNote::script()),
         ("stock_pause_action_note", PauseConfigNote::script()),
-        (
-            "stock_faucet_metadata_config_note",
-            FaucetMetadataConfigNote::script(),
-        ),
+        ("stock_faucet_metadata_config_note", FaucetMetadataConfigNote::script()),
         ("stock_blocklist_config_note", BlocklistConfigNote::script()),
         ("stock_rbac_action_note", RbacConfigNote::script()),
-        (
-            "stock_constant_fee_policy_config_note",
-            ConstantFeePolicyConfigNote::script(),
-        ),
+        ("stock_constant_fee_policy_config_note", ConstantFeePolicyConfigNote::script()),
         ("stock_fee_sponsorship_note", FeeSponsorshipNote::script()),
     ]
 }
@@ -625,10 +616,8 @@ pub fn production_builder_outcome(
         .map(AssetAmount::new)
         .transpose()
         .context("invalid min_burn_size")?;
-    Ok(
-        production_builder_verdict(token_supply, TEST_DOMAIN, min_burn_amount)?
-            .and_then(|builder| builder.build_components()),
-    )
+    Ok(production_builder_verdict(token_supply, TEST_DOMAIN, min_burn_amount)?
+        .and_then(|builder| builder.build_components()))
 }
 
 pub struct ShellHarness {
@@ -688,14 +677,8 @@ fn setup_shell_account_with_lib(
     let xreserve_component = AccountComponent::new(
         library.clone(),
         vec![
-            StorageSlot::with_value(
-                XReserveFaucetExtension::domain_config_slot().clone(),
-                domain,
-            ),
-            StorageSlot::with_map(
-                XReserveFaucetExtension::used_nonces_slot().clone(),
-                nonce_map,
-            ),
+            StorageSlot::with_value(XReserveFaucetExtension::domain_config_slot().clone(), domain),
+            StorageSlot::with_map(XReserveFaucetExtension::used_nonces_slot().clone(), nonce_map),
         ],
         AccountComponentMetadata::new("xusdc-mint-shell-harness"),
     )
@@ -871,7 +854,7 @@ fn validate_driver_src_inner(
                 "    push.{expected} assert_eq.err=\"driver: intent_num_bytes mismatch\""
             )
             .unwrap();
-        }
+        },
         // reject path: balance the would-be output so an unexpected non-trapping run
         // returns cleanly and the test's exact-error assertion reports the mismatch
         None => src.push_str("    drop\n"),
@@ -938,8 +921,9 @@ pub fn rebuild_driver_src(
 /// 44..76, four wire bytes per felt).
 const REMOTE_TOKEN_FELT_OFF: u64 = 11;
 
-/// The eight advice felts [`validate_driver_src_own_token`] splices into a staged intent: the packed
-/// limbs of `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()`, produced by the RUST encoder.
+/// The eight advice felts [`validate_driver_src_own_token`] splices into a staged intent: the
+/// packed limbs of `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()`, produced by the
+/// RUST encoder.
 pub fn own_token_advice(faucet_id: AccountId) -> Vec<Felt> {
     xusdc_encoding::xreserve::encoding::bytes32_to_packed_felts(
         &EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32(),
@@ -1029,17 +1013,11 @@ pub async fn run_call_driver_with_advice(
         .unwrap_or_else(|e| {
             panic!("driver call script failed to compile: {e}\n--- script ---\n{src}")
         });
-    let mut ctx = h
-        .mock_chain
-        .build_transaction(h.account_id)
-        .tx_script(tx_script);
+    let mut ctx = h.mock_chain.build_transaction(h.account_id).tx_script(tx_script);
     if let Some(stack) = advice_stack {
         ctx = ctx.extend_advice_inputs(AdviceInputs::default().with_stack(stack.into()));
     }
-    ctx.build()
-        .expect("building the transaction")
-        .execute()
-        .await
+    ctx.build().expect("building the transaction").execute().await
 }
 
 // D5D ATTESTATION VERIFY HELPERS
@@ -1085,9 +1063,7 @@ pub fn ecdsa_advice_witness(attester: &AttesterVector) -> Vec<Felt> {
 fn native_scalar_limbs(be: &[u8]) -> [Felt; 8] {
     core::array::from_fn(|i| {
         let start = be.len() - 4 * (i + 1);
-        Felt::from(u32::from_be_bytes(
-            be[start..start + 4].try_into().expect("a 4-byte limb"),
-        ))
+        Felt::from(u32::from_be_bytes(be[start..start + 4].try_into().expect("a 4-byte limb")))
     })
 }
 
@@ -1109,9 +1085,8 @@ pub fn gen_attester(seed: u64, payload: &[u8]) -> AttesterVector {
     hasher.update(payload);
     let digest: [u8; 32] = hasher.finalize().into();
 
-    let (sig, recid): (K256Signature, RecoveryId) = sk
-        .sign_prehash_recoverable(&digest)
-        .expect("k256 prehash sign");
+    let (sig, recid): (K256Signature, RecoveryId) =
+        sk.sign_prehash_recoverable(&digest).expect("k256 prehash sign");
     let mut sig65 = [0u8; 65];
     sig65[..64].copy_from_slice(sig.to_bytes().as_ref());
     sig65[64] = recid.to_byte();
@@ -1242,8 +1217,8 @@ pub const AMOUNT_BYTE_OFF: usize = AMOUNT_FELT_OFF * 4;
 pub const MAX_FEE_BYTE_OFF: usize = MAX_FEE_FELT_OFF * 4;
 pub const REMOTE_RECIPIENT_BYTE_OFF: usize = REMOTE_RECIPIENT_FELT_OFF * 4;
 
-/// A `uint256` big-endian 32-byte encoding of a u64 value (24 zero bytes + 8-byte BE) — for splicing
-/// `amount` / `maxFee` into a payload's byte image.
+/// A `uint256` big-endian 32-byte encoding of a u64 value (24 zero bytes + 8-byte BE) — for
+/// splicing `amount` / `maxFee` into a payload's byte image.
 pub fn uint256_be(value: u64) -> [u8; 32] {
     let mut out = [0u8; 32];
     out[24..32].copy_from_slice(&value.to_be_bytes());
@@ -1276,9 +1251,7 @@ pub fn setup_bare_immutable_faucet(
     let account = builder
         .add_existing_account_from_components(Auth::IncrNonce, [faucet.into()])
         .context("adding the bare immutable faucet account")?;
-    let mock_chain = builder
-        .build()
-        .context("building the bare-faucet MockChain")?;
+    let mock_chain = builder.build().context("building the bare-faucet MockChain")?;
     Ok(CompositionHarness {
         mock_chain,
         account_id: account.id(),
@@ -1351,9 +1324,10 @@ pub fn set_attester_note(
         .build()?)
 }
 
-/// Executes a `set_attester` note (sent by `sender`) against the faucet `account`, returning the raw
-/// execution result so callers can assert success or the exact trap. Note building (assemble/compile)
-/// is a test-setup invariant (panics on failure); only the on-chain execution is returned.
+/// Executes a `set_attester` note (sent by `sender`) against the faucet `account`, returning the
+/// raw execution result so callers can assert success or the exact trap. Note building
+/// (assemble/compile) is a test-setup invariant (panics on failure); only the on-chain execution is
+/// returned.
 pub async fn run_set_attester_tx(
     h: &CompositionHarness,
     account: &Account,
@@ -1383,9 +1357,9 @@ pub fn faucet_account(h: &CompositionHarness) -> Account {
 
 /// Builds a note SENT BY `sender` whose script calls the stock `PausableManager::pause`. The
 /// procedure IS installed, so this note is the probe for WHO may use it: sent by the Domain pauser
-/// it pauses the faucet, and sent by anyone else — including the administrator — it traps the role error,
-/// which is what `administrator_has_no_pause_path` pins. It assembles without an xreserve link, since
-/// StandardsLib is pre-linked.
+/// it pauses the faucet, and sent by anyone else — including the administrator — it traps the role
+/// error, which is what `administrator_has_no_pause_path` pins. It assembles without an xreserve
+/// link, since StandardsLib is pre-linked.
 pub fn manager_pause_call_note(sender: AccountId, seed: u64) -> Result<Note> {
     let src = "use miden::standards::access::pausable::manager\n\
                @note_script\n\
@@ -1436,8 +1410,8 @@ pub async fn run_pause_tx(
 /// the account's role-based authority this is what an unauthorized sender gets from EVERY
 /// authority-gated procedure: the ones with a role assigned (the pause and blocklist managers) and
 /// the ones without, which fall back to the administrator role (`set_attester`,
-/// the supply cap, the burn floor, the policy setters). No procedure gates on an administrator slot any
-/// more — the faucet installs no ownership component, so there is no owner error to raise.
+/// the supply cap, the burn floor, the policy setters). No procedure gates on an administrator slot
+/// any more — the faucet installs no ownership component, so there is no owner error to raise.
 pub fn err_sender_lacks_role() -> MasmError {
     MasmError::from_static_str("note sender does not hold the required role")
 }
@@ -1446,8 +1420,9 @@ pub fn err_sender_lacks_role() -> MasmError {
 // ================================================================================================
 
 /// Executes a standard minimum-burn configuration note sent by `sender` against `account` on a bare
-/// `&MockChain` (the burn-policy harness is a `BurnPolicyHarness`, not a `CompositionHarness`). Returns
-/// the raw execution result so callers assert success or the exact trap. Mirrors [`run_pause_against`].
+/// `&MockChain` (the burn-policy harness is a `BurnPolicyHarness`, not a `CompositionHarness`).
+/// Returns the raw execution result so callers assert success or the exact trap. Mirrors
+/// [`run_pause_against`].
 pub async fn run_set_min_burn_amount_against(
     chain: &MockChain,
     account: &Account,
@@ -1482,8 +1457,8 @@ pub fn read_min_burn_size(account: &Account) -> Result<Word> {
 // ================================================================================================
 
 /// The exact stock error `set_max_supply` traps when the faucet's max_supply is immutable
-/// (`fungible.masm:40` ERR_MAX_SUPPLY_NOT_MUTABLE). Constructed inline (a stock protocol error, not an
-/// xusdc shell error, so it is not in `SHELL_ERR_TABLE`).
+/// (`fungible.masm:40` ERR_MAX_SUPPLY_NOT_MUTABLE). Constructed inline (a stock protocol error, not
+/// an xusdc shell error, so it is not in `SHELL_ERR_TABLE`).
 pub fn err_max_supply_not_mutable() -> MasmError {
     MasmError::from_static_str("max supply is not mutable")
 }
@@ -1495,8 +1470,8 @@ pub fn err_new_max_supply_below_token_supply() -> MasmError {
 }
 
 /// Reads the faucet `token_config` value word `[token_supply, max_supply, decimals, token_symbol]`
-/// from a committed/evolved account — the full-word read-back the set_max_supply write-integrity test
-/// uses to prove `set_max_supply` changed ONLY word[1] (max_supply).
+/// from a committed/evolved account — the full-word read-back the set_max_supply write-integrity
+/// test uses to prove `set_max_supply` changed ONLY word[1] (max_supply).
 pub fn read_token_config(account: &Account) -> Result<Word> {
     account
         .storage()
@@ -1561,10 +1536,7 @@ pub fn setup_guarded_mint_account(
     let xreserve_component = AccountComponent::new(
         library.clone(),
         vec![
-            StorageSlot::with_value(
-                XReserveFaucetExtension::domain_config_slot().clone(),
-                domain,
-            ),
+            StorageSlot::with_value(XReserveFaucetExtension::domain_config_slot().clone(), domain),
             StorageSlot::with_map(
                 XReserveFaucetExtension::used_nonces_slot().clone(),
                 map_of(nonce_seed, "usedNonces")?,
@@ -1611,8 +1583,8 @@ pub fn setup_guarded_mint_account(
         .context("failed to build FungibleFaucet")?;
 
     // Resolve the attestation-policy root from the harness component. It carries the whole library,
-    // so the procedure answers to its LIBRARY path here; the shipped faucet component re-exports the
-    // same procedure, and therefore the same root, under its own path.
+    // so the procedure answers to its LIBRARY path here; the shipped faucet component re-exports
+    // the same procedure, and therefore the same root, under its own path.
     let attestation_root: Word = library_attestation_mint_policy_root(&xreserve_component)?;
     let (mut components, policy_root) = match selection {
         // PRODUCTION path: the real builder — attestation policy ONLY (no reserved alternates).
@@ -1626,13 +1598,13 @@ pub fn setup_guarded_mint_account(
                 .build_components()
                 .map_err(|e| anyhow::anyhow!("composing the production attestation faucet: {e}"))?;
             (components, attestation_root)
-        }
+        },
         // TEST-ONLY oracle: allow-all mint + allow-all burn ACTIVE (builder-bypassing contrast).
         GuardSelection::OracleAllowAll => {
             let components = oracle_components(faucet, xreserve_component)
                 .context("composing the oracle allow-all faucet")?;
             (components, Word::from(MintPolicy::allow_all().root()))
-        }
+        },
     };
     components.push(driver_component);
     components.push(probe_component);
@@ -1676,11 +1648,7 @@ fn oracle_components(
         "allow-all-oracle seam: expected the 2 stock allow-all companions, got {}",
         companions.len()
     );
-    let mut components = vec![
-        faucet.into(),
-        Pausable::unpaused().into(),
-        xreserve_component,
-    ];
+    let mut components = vec![faucet.into(), Pausable::unpaused().into(), xreserve_component];
     components.push(manager_component);
     components.extend(companions); // [MintAllowAll, BurnAllowAll]
     Ok(components)
@@ -1691,18 +1659,19 @@ fn felt_from_u64(value: u64) -> Felt {
 }
 
 pub enum BurnGuardSelection {
-    /// TEST-ONLY oracle: the real `burn_policy::check_policy` (`Custom(burn_root)`) ACTIVE, allow-all
-    /// RESERVED. The arm the zero-burn/below-minimum rejects + the valid-burn positive run against.
+    /// TEST-ONLY oracle: the real `burn_policy::check_policy` (`Custom(burn_root)`) ACTIVE,
+    /// allow-all RESERVED. The arm the zero-burn/below-minimum rejects + the valid-burn
+    /// positive run against.
     OracleBurnReal,
-    /// TEST-ONLY oracle: stock `BurnAllowAll` ACTIVE, the real burn policy RESERVED. The non-vacuity
-    /// control: the SAME below-min burn succeeds + decrements here, proving the real arm's trap is
-    /// policy-caused.
+    /// TEST-ONLY oracle: stock `BurnAllowAll` ACTIVE, the real burn policy RESERVED. The
+    /// non-vacuity control: the SAME below-min burn succeeds + decrements here, proving the
+    /// real arm's trap is policy-caused.
     OracleBurnAllowAll,
 }
 
-/// A burn-policy harness: a built [`MockChain`] holding the composed faucet (real burn policy active or
-/// allow-all per [`BurnGuardSelection`]) + a user wallet seeded with the burn asset + the canonical
-/// asset-bearing [`BurnNote`] the tests reproduce in-block and consume via the 2-block
+/// A burn-policy harness: a built [`MockChain`] holding the composed faucet (real burn policy
+/// active or allow-all per [`BurnGuardSelection`]) + a user wallet seeded with the burn asset + the
+/// canonical asset-bearing [`BurnNote`] the tests reproduce in-block and consume via the 2-block
 /// lifecycle.
 pub struct BurnPolicyHarness {
     pub chain: MockChain,
@@ -1809,11 +1778,7 @@ fn oracle_burn_components(
         dup.len(),
         keep.len()
     );
-    let mut components = vec![
-        faucet.into(),
-        Pausable::unpaused().into(),
-        xreserve_component,
-    ];
+    let mut components = vec![faucet.into(), Pausable::unpaused().into(), xreserve_component];
     components.push(manager_component);
     components.extend(keep); // custom burn policy, MinBurnAmount, BurnAllowAll
     components.push(PausableManager.into());
@@ -1828,13 +1793,13 @@ fn oracle_burn_components(
     Ok(components)
 }
 
-/// Builds the burn-policy harness: assembles the `xreserve` component with the full production slot set
-/// (the domain-config value slots, usedNonces/xReserveAttesters map slots, AND the NET-NEW minBurnSize
-/// value slot seeded `[min_burn_size, 0, 0, 0]`), composes the faucet via [`oracle_burn_components`]
-/// (`ADMIN` = `ATTEST_ADMIN` = id(1), `DOM_PAUSER` = id(2), `DOM_UNPAUSER` = id(3),
-/// `BLK_MANAGER` = id(4)), adds a user wallet seeded with the single burn asset, and
-/// creates the canonical [`XReserveBurnNote`]. The faucet is built with `is_max_supply_mutable(true)` + decimals
-/// 6, mirroring the mint composition fixtures.
+/// Builds the burn-policy harness: assembles the `xreserve` component with the full production slot
+/// set (the domain-config value slots, usedNonces/xReserveAttesters map slots, AND the NET-NEW
+/// minBurnSize value slot seeded `[min_burn_size, 0, 0, 0]`), composes the faucet via
+/// [`oracle_burn_components`] (`ADMIN` = `ATTEST_ADMIN` = id(1), `DOM_PAUSER` = id(2),
+/// `DOM_UNPAUSER` = id(3), `BLK_MANAGER` = id(4)), adds a user wallet seeded with the single burn
+/// asset, and creates the canonical [`XReserveBurnNote`]. The faucet is built with
+/// `is_max_supply_mutable(true)` + decimals 6, mirroring the mint composition fixtures.
 pub fn setup_burn_policy_account(
     selection: BurnGuardSelection,
     max_supply: u64,
@@ -1853,7 +1818,8 @@ pub fn setup_burn_policy_account(
             ),
             StorageSlot::with_empty_map(XReserveFaucetExtension::used_nonces_slot().clone()),
             StorageSlot::with_empty_map(XReserveFaucetExtension::xreserve_attesters_slot().clone()),
-            // oracle_burn_components stores the minimum burn amount in the MinBurnAmount component.
+            // oracle_burn_components stores the minimum burn amount in the MinBurnAmount
+            // component.
         ],
         AccountComponentMetadata::new("xusdc-burn-policy-harness"),
     )
@@ -1907,15 +1873,13 @@ pub fn setup_burn_policy_account(
         asset.amount(),
         XReserveBurnItems {
             dest_domain: TEST_SOURCE_DOMAIN,
-            dest_recipient: ForeignChainAddress::new([0xAB; 32]),
+            dest_recipient: ForeignChainAddress::new([0xab; 32]),
         },
         builder.rng_mut(),
     )
     .context("creating the canonical burn note")?;
 
-    let chain = builder
-        .build()
-        .context("building the burn-policy MockChain")?;
+    let chain = builder.build().context("building the burn-policy MockChain")?;
     Ok(BurnPolicyHarness {
         chain,
         faucet_id,
@@ -1931,10 +1895,11 @@ pub fn setup_burn_policy_account(
 /// The user send tx-script that emits `burn_note` exactly (ported from the grounding test
 /// `burn_canary.rs:57-91`): pushes `burn_note`'s recipient digest + the note's OWN metadata
 /// (`note_type` + `tag`, read from `burn_note.metadata()`) into `output_note::create`, then `call`s
-/// the BasicWallet `move_asset_to_note` to draw `fungible_asset` from the executing user's vault into
-/// that note. Reading the note's own metadata keeps the emitted note's id == `burn_note.id()` for BOTH
-/// the stock `BurnNote` (Public + `with_account_target`) and the `XReserveBurnNote` (Public + the fixed
-/// xUSDC burn tag) — NoteId commits to metadata, so a recomputed tag would break id parity.
+/// the BasicWallet `move_asset_to_note` to draw `fungible_asset` from the executing user's vault
+/// into that note. Reading the note's own metadata keeps the emitted note's id == `burn_note.id()`
+/// for BOTH the stock `BurnNote` (Public + `with_account_target`) and the `XReserveBurnNote`
+/// (Public + the fixed xUSDC burn tag) — NoteId commits to metadata, so a recomputed tag would
+/// break id parity.
 pub fn send_burn_note_script(
     burn_note: &Note,
     fungible_asset: &FungibleAsset,
@@ -1949,13 +1914,14 @@ pub fn send_burn_note_script(
     // procedures, so note creation runs in ACCOUNT context — the STOCK wallet's `create_note`
     // (defined in `miden::standards::note::note_creator` and re-exported by the BasicWallet
     // component, so the account exposes its root) for the attachment-less stock BurnNote, and the
-    // user-installed emit helper for the attachment-bearing XReserveBurnNote (whose scheme-2 routing
-    // target AND scheme-tagged withdrawal payload must both be reproduced so the emitted note's id ==
-    // burn_note.id(); NoteId commits to attachments). Every attachment's content is supplied via the
-    // advice map keyed by its commitment (`attachment_advice`, extended in `try_emit_burn_note`). The
-    // first attachment rides the create-plus-one call; each further attachment gets its own
-    // `add_note_attachment` leg. The producer tx creates exactly ONE output note, so its index is 0 —
-    // which feeds move_asset_to_note (re-established after the add legs, which consume it).
+    // user-installed emit helper for the attachment-bearing XReserveBurnNote (whose scheme-2
+    // routing target AND scheme-tagged withdrawal payload must both be reproduced so the
+    // emitted note's id == burn_note.id(); NoteId commits to attachments). Every attachment's
+    // content is supplied via the advice map keyed by its commitment (`attachment_advice`,
+    // extended in `try_emit_burn_note`). The first attachment rides the create-plus-one call;
+    // each further attachment gets its own `add_note_attachment` leg. The producer tx creates
+    // exactly ONE output note, so its index is 0 — which feeds move_asset_to_note
+    // (re-established after the add legs, which consume it).
     let attachments: Vec<_> = burn_note.attachments().iter().collect();
     let create_src = if attachments.is_empty() {
         "    repeat.10 push.0 end\n\
@@ -2023,15 +1989,13 @@ end
     )
 }
 
-/// The advice-map inputs carrying each of `note`'s attachment contents keyed by its commitment — the
-/// witness the `output_note::add_attachment` emit path resolves (the scheme-2 routing target).
+/// The advice-map inputs carrying each of `note`'s attachment contents keyed by its commitment —
+/// the witness the `output_note::add_attachment` emit path resolves (the scheme-2 routing target).
 pub fn attachment_advice(note: &Note) -> AdviceInputs {
     let mut advice = AdviceInputs::default();
     for attachment in note.attachments().iter() {
-        advice = advice.with_map([(
-            attachment.content().to_commitment(),
-            attachment.content().to_elements(),
-        )]);
+        advice = advice
+            .with_map([(attachment.content().to_commitment(), attachment.content().to_elements())]);
     }
     advice
 }
@@ -2045,9 +2009,9 @@ pub fn committed_token_supply(chain: &MockChain, faucet_id: AccountId) -> Result
 
 /// Reads the ACTIVE burn-policy procedure root committed in the faucet account's
 /// `TokenPolicyManager` storage slot (the burn-slot twin of the mint-policy slot). Asserting this
-/// stored root equals the expected `burn_policy_root()` is the storage-COMMITMENT proof that the sole
-/// supply-decrement path (stock `receive_and_burn`) is burn-policy-gated — stronger than resolving
-/// the merely-EXPORTED proc root via `get_procedure_root_by_path`.
+/// stored root equals the expected `burn_policy_root()` is the storage-COMMITMENT proof that the
+/// sole supply-decrement path (stock `receive_and_burn`) is burn-policy-gated — stronger than
+/// resolving the merely-EXPORTED proc root via `get_procedure_root_by_path`.
 pub fn read_active_burn_policy_root(account: &Account) -> Result<Word> {
     account
         .storage()
@@ -2055,10 +2019,10 @@ pub fn read_active_burn_policy_root(account: &Account) -> Result<Word> {
         .map_err(|e| anyhow::anyhow!("reading the active burn policy root slot: {e}"))
 }
 
-/// tx0 ONLY (non-panicking): the user emits `burn_note` in-block (a send tx-script that draws the asset
-/// from the user vault into the note). Returns the raw execution result so callers can observe an
-/// upstream rejection (the zero-amount reachability probe) without the strict-path panic. Used as the
-/// first half of [`run_burn_consume`].
+/// tx0 ONLY (non-panicking): the user emits `burn_note` in-block (a send tx-script that draws the
+/// asset from the user vault into the note). Returns the raw execution result so callers can
+/// observe an upstream rejection (the zero-amount reachability probe) without the strict-path
+/// panic. Used as the first half of [`run_burn_consume`].
 pub async fn try_emit_burn_note(
     chain: &MockChain,
     burn_note: &Note,
@@ -2086,25 +2050,23 @@ pub async fn try_emit_burn_note(
         .expected_output_note(RawOutputNote::Full(burn_note.clone()));
     // A POLICED (callback-Enabled) faucet's asset fires the SEND callback when the holder
     // emits a note moving it out of their vault (native = the holder), so the kernel dyncalls the
-    // issuing faucet to run `basic_blocklist::check_policy` — attach it as a foreign account. A basic
-    // (Disabled) faucet — e.g. the burn oracle fixtures — fires no callback, so it is skipped.
+    // issuing faucet to run `basic_blocklist::check_policy` — attach it as a foreign account. A
+    // basic (Disabled) faucet — e.g. the burn oracle fixtures — fires no callback, so it is
+    // skipped.
     if faucet_id.asset_callback_flag() == AssetCallbackFlag::Enabled {
         let foreign = chain
             .get_foreign_account_inputs(faucet_id)
             .expect("faucet foreign-account inputs (committed)");
         ctx = ctx.foreign_accounts([foreign]);
     }
-    ctx.build()
-        .expect("building the user emit tx")
-        .execute()
-        .await
+    ctx.build().expect("building the user emit tx").execute().await
 }
 
 /// Runs the 2-block burn lifecycle against `chain`: the user emits `burn_note` at block N (tx0,
 /// a test-setup invariant — panics on failure), the block is proven, then the FAUCET consumes the
-/// now-committed note at block N+1 via stock `receive_and_burn`. Returns the faucet-consume RESULT so
-/// the caller asserts the policy trap (`assert_transaction_executor_error!`) or the success+decrement
-/// (`committed_token_supply` after committing the returned tx).
+/// now-committed note at block N+1 via stock `receive_and_burn`. Returns the faucet-consume RESULT
+/// so the caller asserts the policy trap (`assert_transaction_executor_error!`) or the
+/// success+decrement (`committed_token_supply` after committing the returned tx).
 pub async fn run_burn_consume(
     chain: &mut MockChain,
     burn_note: &Note,
@@ -2115,13 +2077,11 @@ pub async fn run_burn_consume(
     let tx0 = try_emit_burn_note(chain, burn_note, asset, faucet_id, user_id)
         .await
         .expect("the user emit tx0 succeeds (test-setup invariant)");
-    chain
-        .add_pending_executed_transaction(&tx0)
-        .expect("queuing tx0 into block N");
+    chain.add_pending_executed_transaction(&tx0).expect("queuing tx0 into block N");
     chain.prove_next_block().expect("proving block N");
 
-    // tx1: the faucet consumes the committed burn note (runs receive_and_burn -> execute_burn_policy ->
-    // the active burn policy).
+    // tx1: the faucet consumes the committed burn note (runs receive_and_burn ->
+    // execute_burn_policy -> the active burn policy).
     chain
         .build_transaction(faucet_id)
         .authenticated_input_note(burn_note.id())
@@ -2131,11 +2091,11 @@ pub async fn run_burn_consume(
         .await
 }
 
-/// Executes a stock `PausableManager::pause` note SENT BY `sender` against the faucet `account` on a
-/// bare `&MockChain` (the note is provided unauthenticated). Under the Domain-Pauser-only model the
-/// stock proc is NOT installed — this is the NEGATIVE PROBE `administrator_has_no_pause_path` drives: the tx
-/// must trap `UnknownAccountProcedure` and never flip `is_paused`. To actually pause, use
-/// [`run_dom_pauser_pause`] (the DOM_PAUSER custom proc — the only pause surface).
+/// Executes a stock `PausableManager::pause` note SENT BY `sender` against the faucet `account` on
+/// a bare `&MockChain` (the note is provided unauthenticated). Under the Domain-Pauser-only model
+/// the stock proc is NOT installed — this is the NEGATIVE PROBE `administrator_has_no_pause_path`
+/// drives: the tx must trap `UnknownAccountProcedure` and never flip `is_paused`. To actually
+/// pause, use [`run_dom_pauser_pause`] (the DOM_PAUSER custom proc — the only pause surface).
 pub async fn run_pause_against(
     chain: &MockChain,
     account: &Account,
@@ -2214,9 +2174,7 @@ pub fn assert_unknown_account_procedure(err: &TransactionExecutorError) {
         source = inner.source();
     }
     assert!(
-        messages
-            .iter()
-            .any(|m| m.contains("is not in the account procedure index map")),
+        messages.iter().any(|m| m.contains("is not in the account procedure index map")),
         "expected the exact UnknownAccountProcedure failure (the called proc root is not part of \
          the account code); actual error chain: {messages:?}"
     );
@@ -2248,11 +2206,9 @@ fn dom_pauser_manager_note(
          \x20\x20\x20\x20dropw dropw dropw dropw\n\
          end\n",
     );
-    let script = CodeBuilder::new()
-        .compile_note_script(src.clone())
-        .map_err(|e| {
-            anyhow::anyhow!("dom_pauser {proc} note script failed to compile: {e}\n{src}")
-        })?;
+    let script = CodeBuilder::new().compile_note_script(src.clone()).map_err(|e| {
+        anyhow::anyhow!("dom_pauser {proc} note script failed to compile: {e}\n{src}")
+    })?;
     // Deterministic note rng (serial only; never affects the gate). Distinct tails ([21,22] pause /
     // [23,24] unpause) keep serials disjoint from set_attester [1,2] / pause [3,4] / set_max_supply
     // [5,6] / set_min_burn [7,8] / domain_init [9,10].
@@ -2320,8 +2276,8 @@ pub async fn run_dom_pauser_unpause(
 /// `FungibleFaucet`; `[0,0,0,0]` unpaused, `[1,0,0,0]` paused)
 /// from a committed/evolved account — the `GetAccount` pause-state observability read (Circle
 /// requires the pause state be publicly observable). Mirrors
-/// [`read_min_burn_size`] / [`read_token_config`]; the slot is installed by the base `Pausable` component, so it is
-/// present on every production faucet (never a missing-slot artifact).
+/// [`read_min_burn_size`] / [`read_token_config`]; the slot is installed by the base `Pausable`
+/// component, so it is present on every production faucet (never a missing-slot artifact).
 pub fn read_is_paused(account: &Account) -> Result<Word> {
     account
         .storage()
@@ -2334,12 +2290,12 @@ pub fn read_is_paused(account: &Account) -> Result<Word> {
 
 /// Builds a note SENT BY `sender` whose script `call`s a stock rbac member-administration proc
 /// (`grant_role` / `revoke_role`, rbac.masm:197/:228) for (`role`, `member`). Stack contract:
-/// `[role_symbol, account_suffix, account_prefix, pad(13)]` (role on top). Like `set_max_supply_note`,
-/// the stock rbac procs are pure standards procs (CodeBuilder pre-links StandardsLib), so the
-/// absolute-path `call` resolves to the SAME proc root the production account exposes via the RBAC
-/// component re-exports (`account_components/access/rbac.masm`) — no xreserve link is needed. The
-/// role/member felts are injected from the Rust-side `RoleSymbol`/`AccountId` (single source; no new
-/// MASM constants, no new parity surface).
+/// `[role_symbol, account_suffix, account_prefix, pad(13)]` (role on top). Like
+/// `set_max_supply_note`, the stock rbac procs are pure standards procs (CodeBuilder pre-links
+/// StandardsLib), so the absolute-path `call` resolves to the SAME proc root the production account
+/// exposes via the RBAC component re-exports (`account_components/access/rbac.masm`) — no xreserve
+/// link is needed. The role/member felts are injected from the Rust-side `RoleSymbol`/`AccountId`
+/// (single source; no new MASM constants, no new parity surface).
 fn rbac_member_note(
     sender: AccountId,
     proc_name: &str,
@@ -2349,7 +2305,8 @@ fn rbac_member_note(
     tail0: u32,
     tail1: u32,
 ) -> Result<Note> {
-    // Push 13 pads (deepest), then prefix, suffix, role so the triple ends role-on-top: 13 + 3 = 16.
+    // Push 13 pads (deepest), then prefix, suffix, role so the triple ends role-on-top: 13 + 3 =
+    // 16.
     let role_felt = Felt::from(role).as_canonical_u64();
     let member_suffix = member.suffix().as_canonical_u64();
     let member_prefix = member.prefix().as_felt().as_canonical_u64();
@@ -2364,15 +2321,13 @@ fn rbac_member_note(
          \x20\x20\x20\x20dropw dropw dropw dropw\n\
          end\n",
     );
-    let script = CodeBuilder::new()
-        .compile_note_script(src.clone())
-        .map_err(|e| {
-            anyhow::anyhow!("rbac {proc_name} note script failed to compile: {e}\n{src}")
-        })?;
+    let script = CodeBuilder::new().compile_note_script(src.clone()).map_err(|e| {
+        anyhow::anyhow!("rbac {proc_name} note script failed to compile: {e}\n{src}")
+    })?;
     // Deterministic note rng (serial only; never affects the gate). Distinct tails ([11,12] grant /
-    // [13,14] revoke / [15,16] set_role_admin) keep serials disjoint from set_attester [1,2] / pause
-    // [3,4] / set_max_supply [5,6] / set_min_burn [7,8] / domain_init [9,10] / dom pause [21,22] /
-    // dom unpause [23,24].
+    // [13,14] revoke / [15,16] set_role_admin) keep serials disjoint from set_attester [1,2] /
+    // pause [3,4] / set_max_supply [5,6] / set_min_burn [7,8] / domain_init [9,10] / dom pause
+    // [21,22] / dom unpause [23,24].
     let mut rng = RandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
@@ -2423,9 +2378,7 @@ pub fn set_role_admin_note(
     seed: u64,
 ) -> Result<Note> {
     let role_felt = Felt::from(role).as_canonical_u64();
-    let admin_felt = admin_role
-        .map(|r| Felt::from(r).as_canonical_u64())
-        .unwrap_or(0);
+    let admin_felt = admin_role.map(|r| Felt::from(r).as_canonical_u64()).unwrap_or(0);
     let src = format!(
         "@note_script\n\
          pub proc main\n\
@@ -2561,10 +2514,7 @@ pub fn read_role_config(account: &Account, role: &RoleSymbol) -> Result<Word> {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]);
     account
         .storage()
-        .get_map_item(
-            RoleBasedAccessControl::role_config_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(RoleBasedAccessControl::role_config_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading the role_config entry: {e}"))
 }
 
@@ -2575,22 +2525,16 @@ pub fn read_role_membership(
     role: &RoleSymbol,
     member: AccountId,
 ) -> Result<Word> {
-    let key = Word::from([
-        Felt::ZERO,
-        Felt::from(role),
-        member.suffix(),
-        member.prefix().as_felt(),
-    ]);
+    let key =
+        Word::from([Felt::ZERO, Felt::from(role), member.suffix(), member.prefix().as_felt()]);
     account
         .storage()
-        .get_map_item(
-            RoleBasedAccessControl::role_membership_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(RoleBasedAccessControl::role_membership_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading the role_membership entry: {e}"))
 }
 
-// STOCK MinBurnAmount DIRECT-POLICY DRIVER — exec check_policy with a crafted [ASSET_ID, ASSET_VALUE]
+// STOCK MinBurnAmount DIRECT-POLICY DRIVER — exec check_policy with a crafted [ASSET_ID,
+// ASSET_VALUE]
 // ================================================================================================
 
 /// Module path of the generated direct burn-policy driver component.
@@ -2598,9 +2542,9 @@ pub const BURN_POLICY_DRIVER_PATH: &str = "xusdc::test_fixtures::burn_policy_dri
 
 /// Generates a direct-policy driver: a CALL-entered account proc that pushes a crafted
 /// `[ASSET_ID, ASSET_VALUE]` burn-policy stack (`ASSET_VALUE = [amount, 0, 0, 0]`) and `exec`s
-/// the STOCK `min_burn_amount::check_policy` (the floor comparison the custom policy preserves). The policy
-/// consumes the 8 cells and returns `[]`, restoring the 16-depth `call` boundary. Drives the
-/// floor boundary DIRECTLY as a SUPPLEMENTARY, belt-and-suspenders proof beside the
+/// the STOCK `min_burn_amount::check_policy` (the floor comparison the custom policy preserves).
+/// The policy consumes the 8 cells and returns `[]`, restoring the 16-depth `call` boundary. Drives
+/// the floor boundary DIRECTLY as a SUPPLEMENTARY, belt-and-suspenders proof beside the
 /// note-reachable rejects.
 pub fn burn_policy_direct_driver_src(asset_key: Word, amount: u64) -> String {
     let asset_value = Word::from([felt_from_u64(amount), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
@@ -2648,9 +2592,7 @@ pub fn setup_burn_policy_direct_account(
     let account = builder
         .add_existing_account_from_components(Auth::IncrNonce, [min_burn.into(), driver_component])
         .context("adding the direct burn-policy account")?;
-    let mock_chain = builder
-        .build()
-        .context("building the direct-policy MockChain")?;
+    let mock_chain = builder.build().context("building the direct-policy MockChain")?;
     Ok(ShellHarness {
         mock_chain,
         account_id: account.id(),
@@ -2674,8 +2616,9 @@ pub struct ProductionFaucet {
 }
 
 /// Builds the production-component-set faucet fixture. `seed_notes_for` receives the recipient
-/// wallet's `AccountId` (payloads embed `remoteRecipient = EthEmbeddedAccountId::from_account_id(recipient).to_bytes32()`) and
-/// returns the admin notes to seed at genesis. The faucet account carries EXACTLY the components
+/// wallet's `AccountId` (payloads embed `remoteRecipient =
+/// EthEmbeddedAccountId::from_account_id(recipient).to_bytes32()`) and returns the admin notes to
+/// seed at genesis. The faucet account carries EXACTLY the components
 /// `XReserveStablecoinBuilder::build_components` returns — proving the real-note mint needs no
 /// test-only component.
 pub fn setup_production_faucet(
@@ -2692,9 +2635,7 @@ pub fn setup_production_faucet_with_attesters(
     seed_notes_for: impl FnOnce(AccountId, AccountId) -> Vec<Note>,
 ) -> Result<ProductionFaucet> {
     let mut mc = MockChain::builder();
-    let recipient = mc
-        .add_existing_wallet(Auth::IncrNonce)
-        .context("adding recipient wallet")?;
+    let recipient = mc.add_existing_wallet(Auth::IncrNonce).context("adding recipient wallet")?;
     let producer =
         add_emitting_wallet(&mut mc, Auth::IncrNonce, []).context("adding producer wallet")?;
 
@@ -2710,8 +2651,9 @@ pub fn setup_production_faucet_with_attesters(
     let account = add_network_faucet_account(&mut mc, components)
         .context("adding the production faucet account")?;
     // The faucet id is now known, so the seed-notes closure binds its notes and its mint payloads
-    // (`remoteToken = EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()`) to the REAL faucet identity. Seeded AFTER the account is built; order relative to `mc.build()` is all that
-    // matters for genesis notes.
+    // (`remoteToken = EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()`) to the REAL
+    // faucet identity. Seeded AFTER the account is built; order relative to `mc.build()` is all
+    // that matters for genesis notes.
     let seeded_notes = seed_notes_for(recipient.id(), account.id());
     for note in &seeded_notes {
         mc.add_output_note(RawOutputNote::Full(note.clone()));
@@ -2787,12 +2729,8 @@ pub fn emit_helper_component() -> Result<AccountComponent> {
     let code = CodeBuilder::new()
         .compile_component_code(EMIT_HELPER_PATH, emit_helper_src())
         .context("emit helper component failed to compile")?;
-    AccountComponent::new(
-        code,
-        vec![],
-        AccountComponentMetadata::new("xusdc-emit-helper"),
-    )
-    .context("binding the emit helper component")
+    AccountComponent::new(code, vec![], AccountComponentMetadata::new("xusdc-emit-helper"))
+        .context("binding the emit helper component")
 }
 
 /// Adds an existing BasicWallet account CARRYING the emit helper (assets optional) — the
@@ -2838,10 +2776,8 @@ pub async fn emit_note_with_attachments(
     );
     let mut advice = AdviceInputs::default();
     for attachment in &attachments {
-        advice = advice.with_map([(
-            attachment.content().to_commitment(),
-            attachment.content().to_elements(),
-        )]);
+        advice = advice
+            .with_map([(attachment.content().to_commitment(), attachment.content().to_elements())]);
     }
     // each extra-attachment leg re-supplies the note index explicitly — the producer tx creates
     // exactly ONE output note, so its index is deterministically 0 — and calls the appender
@@ -2891,9 +2827,6 @@ pub async fn emit_note_with_attachments(
     );
     chain.add_pending_executed_transaction(&tx)?;
     chain.prove_next_block()?;
-    anyhow::ensure!(
-        chain.is_note_committed(&note.id()),
-        "the emitted note must be committed"
-    );
+    anyhow::ensure!(chain.is_note_committed(&note.id()), "the emitted note must be committed");
     Ok(())
 }

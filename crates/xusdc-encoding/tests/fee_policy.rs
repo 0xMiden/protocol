@@ -8,7 +8,12 @@ mod support;
 
 use anyhow::Result;
 use miden_protocol::account::{
-    Account, AccountComponent, AccountId, AccountType, StorageMapKey, StorageSlotContent,
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageMapKey,
+    StorageSlotContent,
 };
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::block::FeeParameters;
@@ -20,15 +25,21 @@ use miden_protocol::transaction::{RawOutputNote, TransactionFee};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::fees::{
-    BasicConstantFeePolicy, ConstantFeeManager, FeePolicyManager,
+    BasicConstantFeePolicy,
+    ConstantFeeManager,
+    FeePolicyManager,
 };
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
 use miden_standards::note::config::{
-    BlocklistConfigNote, ConstantFeePolicyConfigNote, FaucetMetadataConfigNote,
-    MinBurnAmountConfigNote, PauseConfigNote, RbacConfigNote,
+    BlocklistConfigNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
+    MinBurnAmountConfigNote,
+    PauseConfigNote,
+    RbacConfigNote,
 };
 use miden_standards::note::{FeeSponsorshipNote, MintNote, P2idNote, TxFeeNote};
 use miden_testing::{assert_transaction_executor_error, Auth, MockChain};
@@ -37,12 +48,14 @@ use support::mint_transport::commit;
 use support::*;
 use xusdc_encoding::account::xreserve::{XReserveAdminAuthority, XReserveStablecoinBuilder};
 use xusdc_encoding::note::costs::{
-    XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES, XUSDC_BURN_CONSUMPTION_CYCLES,
+    XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES,
+    XUSDC_BURN_CONSUMPTION_CYCLES,
     XUSDC_MINT_CONSUMPTION_CYCLES,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote, XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
+    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
 };
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
 use xusdc_encoding::xreserve::encoding::{ForeignChainAddress, Signature, XReserveBurnItems};
@@ -145,10 +158,7 @@ fn assert_output_note_roots(
         })
         .collect();
     for root in expected {
-        assert!(
-            actual.contains(root),
-            "missing expected output note root {root}"
-        );
+        assert!(actual.contains(root), "missing expected output note root {root}");
     }
     assert_eq!(actual.len(), expected.len());
 }
@@ -211,10 +221,7 @@ fn setup_sponsored_config_note(
         .sender(feature_note.metadata().sender())
         .target_account(account.id())
         .feature_note_id(feature_note.id())
-        .asset(FungibleAsset::new(
-            fee_faucet_id(),
-            config_note_fee.as_u64(),
-        )?)
+        .asset(FungibleAsset::new(fee_faucet_id(), config_note_fee.as_u64())?)
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();
@@ -287,12 +294,7 @@ fn setup_sponsored_mint() -> Result<SponsoredMintFixture> {
         builder.rng_mut(),
     )?;
 
-    for note in [
-        &attester_note,
-        &attester_sponsorship,
-        &mint_note,
-        &mint_sponsorship,
-    ] {
+    for note in [&attester_note, &attester_sponsorship, &mint_note, &mint_sponsorship] {
         builder.add_output_note(RawOutputNote::Full(note.clone()));
     }
     let mut mock_chain = builder.build()?;
@@ -330,7 +332,7 @@ fn setup_sponsored_burn() -> Result<SponsoredBurnFixture> {
     let user = add_emitting_wallet(&mut builder, Auth::IncrNonce, [burn_asset.into()])?;
     let burn_items = XReserveBurnItems::builder()
         .dest_domain(TEST_SOURCE_DOMAIN)
-        .dest_recipient(ForeignChainAddress::new([0xAB; 32]))
+        .dest_recipient(ForeignChainAddress::new([0xab; 32]))
         .build();
     let burn_note = XReserveBurnNote::create(
         user.id(),
@@ -480,9 +482,7 @@ fn production_installs_one_mutable_basic_constant_fee_policy() -> Result<()> {
         "the internally built manager must not register a reserved alternate policy",
     );
     assert_eq!(
-        allowed_policies.get(&StorageMapKey::new(
-            BasicConstantFeePolicy::root().as_word()
-        )),
+        allowed_policies.get(&StorageMapKey::new(BasicConstantFeePolicy::root().as_word())),
         Word::from([1u32, 0, 0, 0]),
     );
 
@@ -507,25 +507,18 @@ fn fee_policy_prices_standard_and_xusdc_execution_paths() -> Result<()> {
 
     for (root, expected) in [
         (MintNote::script_root(), expected_mint),
-        (
-            XReserveBurnNote::script_root(),
-            own_fee(XUSDC_BURN_CONSUMPTION_CYCLES)?,
-        ),
+        (XReserveBurnNote::script_root(), own_fee(XUSDC_BURN_CONSUMPTION_CYCLES)?),
         (
             XReserveSetAttesterNote::script_root(),
             own_fee(XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES)?,
         ),
         (
             MinBurnAmountConfigNote::script_root(),
-            pricer
-                .price(MinBurnAmountConfigNote::script_root())?
-                .as_u64(),
+            pricer.price(MinBurnAmountConfigNote::script_root())?.as_u64(),
         ),
         (
             FaucetMetadataConfigNote::script_root(),
-            pricer
-                .price(FaucetMetadataConfigNote::script_root())?
-                .as_u64(),
+            pricer.price(FaucetMetadataConfigNote::script_root())?.as_u64(),
         ),
         (
             PauseConfigNote::script_root(),
@@ -541,16 +534,11 @@ fn fee_policy_prices_standard_and_xusdc_execution_paths() -> Result<()> {
         ),
         (
             ConstantFeePolicyConfigNote::script_root(),
-            pricer
-                .price(ConstantFeePolicyConfigNote::script_root())?
-                .as_u64(),
+            pricer.price(ConstantFeePolicyConfigNote::script_root())?.as_u64(),
         ),
     ] {
         assert_eq!(scheduled_fee(&account, root)?, fee_entry(expected));
-        assert!(
-            expected > 0,
-            "the verification base fee must price every checked path"
-        );
+        assert!(expected > 0, "the verification base fee must price every checked path");
     }
     assert_eq!(
         scheduled_fee(&account, FeeSponsorshipNote::script_root())?,
@@ -585,10 +573,7 @@ async fn sponsored_mint_uses_the_installed_xusdc_fee_schedule() -> Result<()> {
         .execute()
         .await?;
     assert!(minted.compute_fee().as_u64() > 0);
-    assert_output_note_roots(
-        &minted,
-        &[P2idNote::script_root(), TxFeeNote::script_root()],
-    );
+    assert_output_note_roots(&minted, &[P2idNote::script_root(), TxFeeNote::script_root()]);
     let p2id = (0..minted.output_notes().num_notes())
         .map(|index| minted.output_notes().get_note(index))
         .find(|note| {
@@ -613,12 +598,8 @@ async fn sponsored_mint_uses_the_installed_xusdc_fee_schedule() -> Result<()> {
         committed_token_supply(&fixture.mock_chain, fixture.faucet_id)?,
         AssetAmount::new(SPONSORED_MINT_AMOUNT)?,
     );
-    assert!(fixture
-        .mock_chain
-        .is_note_consumed(&fixture.mint_note.nullifier()));
-    assert!(fixture
-        .mock_chain
-        .is_note_consumed(&fixture.mint_sponsorship.nullifier()));
+    assert!(fixture.mock_chain.is_note_consumed(&fixture.mint_note.nullifier()));
+    assert!(fixture.mock_chain.is_note_consumed(&fixture.mint_sponsorship.nullifier()));
     Ok(())
 }
 
@@ -664,12 +645,8 @@ async fn sponsored_burn_uses_the_installed_xusdc_fee_schedule() -> Result<()> {
         committed_token_supply(&fixture.mock_chain, fixture.faucet_id)?,
         AssetAmount::ZERO,
     );
-    assert!(fixture
-        .mock_chain
-        .is_note_consumed(&fixture.burn_note.nullifier()));
-    assert!(fixture
-        .mock_chain
-        .is_note_consumed(&fixture.sponsorship_note.nullifier()));
+    assert!(fixture.mock_chain.is_note_consumed(&fixture.burn_note.nullifier()));
+    assert!(fixture.mock_chain.is_note_consumed(&fixture.sponsorship_note.nullifier()));
     Ok(())
 }
 
@@ -706,10 +683,7 @@ async fn administrator_reprices_a_priced_config_note_under_collected_fees_bound(
             1,
         )
     })?;
-    let account = fixture
-        .mock_chain
-        .committed_account(fixture.faucet_id)?
-        .clone();
+    let account = fixture.mock_chain.committed_account(fixture.faucet_id)?.clone();
     assert_eq!(
         SponsorshipPolicy::try_from(account.storage())?,
         SponsorshipPolicy::AtMostCollectedFees,
@@ -734,18 +708,14 @@ async fn administrator_reprices_a_priced_config_note_under_collected_fees_bound(
     );
     let mut evolved = account;
     evolved.apply_patch(executed.account_patch())?;
-    assert_eq!(
-        scheduled_fee(&evolved, MintNote::script_root())?,
-        fee_entry(NEW_FEE)
-    );
+    assert_eq!(scheduled_fee(&evolved, MintNote::script_root())?, fee_entry(NEW_FEE));
     Ok(())
 }
 
 #[tokio::test]
 async fn config_note_for_another_account_cannot_reprice_the_faucet() -> Result<()> {
-    let other_account = AccountId::builder()
-        .account_type(AccountType::Public)
-        .build_with_seed([98; 32]);
+    let other_account =
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([98; 32]);
     let fixture = setup_sponsored_config_note(|_faucet_id| {
         repricing_note(
             test_account_id(1),

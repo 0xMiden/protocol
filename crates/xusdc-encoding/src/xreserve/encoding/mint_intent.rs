@@ -19,8 +19,15 @@ use miden_protocol::Felt;
 
 use super::bytes32::packed_felts_to_bytes32;
 use super::deposit_intent::{
-    DepositIntent, DepositIntentField, DepositIntentHeader, DepositNonce, ForeignChainAddress,
-    HookData, BYTES32_LEN, BYTES32_PACKED_LIMBS, BYTES_PER_PACKED_FELT,
+    DepositIntent,
+    DepositIntentField,
+    DepositIntentHeader,
+    DepositNonce,
+    ForeignChainAddress,
+    HookData,
+    BYTES32_LEN,
+    BYTES32_PACKED_LIMBS,
+    BYTES_PER_PACKED_FELT,
 };
 use super::domain::CircleDomain;
 use super::error::EncodingError;
@@ -191,9 +198,7 @@ impl MintIntent {
             )
             .map_err(|_| EncodingError::NonCanonicalAccountId)?,
             max_fee: AssetAmount::new(felts[Self::MAX_FEE_FELT_OFF].as_canonical_u64()).map_err(
-                |_| EncodingError::FieldNotAssetAmount {
-                    field: DepositIntentField::MaxFee,
-                },
+                |_| EncodingError::FieldNotAssetAmount { field: DepositIntentField::MaxFee },
             )?,
             hook_data: HookData::new(hook_data)?,
         })
@@ -354,28 +359,20 @@ mod tests {
                         Err(EncodingError::FieldNotAssetAmount { .. }),
                         "vector {id}"
                     )
-                }
+                },
                 "RemoteTokenMismatch" => {
-                    assert_matches!(
-                        result,
-                        Err(EncodingError::RemoteTokenMismatch),
-                        "vector {id}"
-                    )
-                }
+                    assert_matches!(result, Err(EncodingError::RemoteTokenMismatch), "vector {id}")
+                },
                 "AccountIdOutOfRange" => {
-                    assert_matches!(
-                        result,
-                        Err(EncodingError::AccountIdOutOfRange),
-                        "vector {id}"
-                    )
-                }
+                    assert_matches!(result, Err(EncodingError::AccountIdOutOfRange), "vector {id}")
+                },
                 "NonCanonicalAccountId" => {
                     assert_matches!(
                         result,
                         Err(EncodingError::NonCanonicalAccountId),
                         "vector {id}"
                     )
-                }
+                },
                 other => panic!("vector {id}: unexpected expected_variant {other:?}"),
             }
         }
@@ -427,14 +424,9 @@ mod tests {
     /// refused rather than silently truncated: on-chain that length picks the keccak extent.
     #[test]
     fn from_felts_rejects_a_hook_data_length_lie() {
-        let vec = accepts()
-            .find(|v| v.id == "mi-pos-empty-hookdata")
-            .expect("vector present");
+        let vec = accepts().find(|v| v.id == "mi-pos-empty-hookdata").expect("vector present");
         let mut felts = vec.carried_values();
         felts[MintIntent::HOOK_DATA_LEN_FELT_OFF] = Felt::from(4u32);
-        assert_matches!(
-            MintIntent::from_elements(&felts),
-            Err(EncodingError::LengthMismatch)
-        );
+        assert_matches!(MintIntent::from_elements(&felts), Err(EncodingError::LengthMismatch));
     }
 }

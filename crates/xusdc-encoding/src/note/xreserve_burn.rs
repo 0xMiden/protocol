@@ -22,8 +22,18 @@ use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteRecipient,
-    NoteScript, NoteScriptRoot, NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteRecipient,
+    NoteScript,
+    NoteScriptRoot,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::{Felt, Word, WORD_SIZE};
 use miden_standards::note::BurnNote;
@@ -39,7 +49,7 @@ use crate::xreserve::encoding::{XReserveBurnItems, BURN_NOTE_ITEMS_FELTS};
 ///
 /// The specific value is provisional and awaits Circle's confirmation — it is not a value Circle
 /// has assigned.
-pub const FIXED_XUSDC_BURN_TAG: u32 = 0x4255_524E;
+pub const FIXED_XUSDC_BURN_TAG: u32 = 0x4255_524e;
 
 /// The withdrawal-payload attachment scheme (u16, project-chosen). It carries the 9-felt Circle
 /// withdrawal payload, mirroring how the mint transport carries its own payload as a scheme-tagged
@@ -133,7 +143,8 @@ impl XReserveBurnNote {
     }
 
     /// Convenience constructor over the [`XReserveBurnItems`] payload (a thin delegator to the
-    /// [`builder`](Self::builder)); retained because the frozen conformance suites pin this signature.
+    /// [`builder`](Self::builder)); retained because the frozen conformance suites pin this
+    /// signature.
     pub fn create<R: FeltRng>(
         sender: AccountId,
         faucet_id: AccountId,
@@ -154,12 +165,13 @@ impl XReserveBurnNote {
 #[bon::bon]
 impl XReserveBurnNote {
     /// Builds an `XReserveBurnNote` via a `bon` builder
-    /// (`XReserveBurnNote::builder().sender(..).faucet_id(..).amount(..).items(..).rng(..).build()`):
-    /// `NoteType::Public`, the fixed xUSDC burn tag, `metadata.sender = sender` (the depositor),
-    /// `NoteAssets` = the burned xUSDC `FungibleAsset` (`amount` issued by `faucet_id`), and
-    /// `NoteStorage.items` = the stock 8-felt asset layout the stock burn script asserts against. The
-    /// `(destDomain, destRecipient)` withdrawal payload rides in a scheme-tagged
-    /// [`XUsdcBurnAttachment`]. The amount is supplied separately for the burned asset.
+    /// (`XReserveBurnNote::builder().sender(..).faucet_id(..).amount(..).items(..).rng(..).
+    /// build()`): `NoteType::Public`, the fixed xUSDC burn tag, `metadata.sender = sender` (the
+    /// depositor), `NoteAssets` = the burned xUSDC `FungibleAsset` (`amount` issued by
+    /// `faucet_id`), and `NoteStorage.items` = the stock 8-felt asset layout the stock burn
+    /// script asserts against. The `(destDomain, destRecipient)` withdrawal payload rides in a
+    /// scheme-tagged [`XUsdcBurnAttachment`]. The amount is supplied separately for the burned
+    /// asset.
     #[builder]
     pub fn new<R: FeltRng>(
         sender: AccountId,
@@ -173,9 +185,10 @@ impl XReserveBurnNote {
         let asset = FungibleAsset::new(faucet_id, u64::from(amount))
             .map_err(|err| NoteError::other_with_source("invalid burned xUSDC asset", err))?;
 
-        // NoteStorage carries the STOCK 8-felt asset layout (ASSET_ID(4) + ASSET_VALUE(4)); the stock
-        // consume script requires exactly that and asserts the stored asset equals the carried one.
-        // The withdrawal payload no longer lives here — it rides in the attachment below.
+        // NoteStorage carries the STOCK 8-felt asset layout (ASSET_ID(4) + ASSET_VALUE(4)); the
+        // stock consume script requires exactly that and asserts the stored asset equals
+        // the carried one. The withdrawal payload no longer lives here — it rides in the
+        // attachment below.
         let storage = NoteStorage::new(Asset::from(asset).as_elements().to_vec())?;
         let recipient = NoteRecipient::new(serial_num, BurnNote::script(), storage);
 
@@ -187,18 +200,13 @@ impl XReserveBurnNote {
 
         // two attachments: the scheme-2 NetworkAccountTarget routing bind (routing only, as any
         // faucet-targeted note carries), and the scheme-tagged withdrawal payload the off-chain
-        // attester decodes. The stock consume script ignores attachments, so the burn stays gated by
-        // receive_and_burn and the burn policy.
+        // attester decodes. The stock consume script ignores attachments, so the burn stays gated
+        // by receive_and_burn and the burn policy.
         let attachments = NoteAttachments::new(vec![
             super::network_routing_attachment(faucet_id)?,
             NoteAttachment::from(&XUsdcBurnAttachment::new(items)),
         ])?;
 
-        Ok(Note::with_attachments(
-            vault,
-            metadata,
-            recipient,
-            attachments,
-        ))
+        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
     }
 }

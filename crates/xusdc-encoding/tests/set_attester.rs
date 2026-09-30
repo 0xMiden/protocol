@@ -1,9 +1,9 @@
 //! `set_attester` requires the dedicated `ATTEST_ADMIN` role through the account-wide authority.
 //! The default fixture places `ADMIN` and `ATTEST_ADMIN` on id(1); the separate-holder case proves
-//! that attester administration follows only `ATTEST_ADMIN`. The setter remains usable while paused.
-//! Enabling, removing and rotating an attester changes which attestations real mints accept;
-//! those effects live in the mint end-to-end suites. Role seeding is pinned against production by
-//! `role_admin.rs::shipped_role_graph_reads_back` and against the burn replica by
+//! that attester administration follows only `ATTEST_ADMIN`. The setter remains usable while
+//! paused. Enabling, removing and rotating an attester changes which attestations real mints
+//! accept; those effects live in the mint end-to-end suites. Role seeding is pinned against
+//! production by `role_admin.rs::shipped_role_graph_reads_back` and against the burn replica by
 //! `set_min_burn.rs::support_replica_matches_the_production_role_seed`.
 
 mod support;
@@ -16,7 +16,9 @@ use miden_standards::account::policies::TokenPolicyManager;
 use miden_testing::{assert_transaction_executor_error, Auth, MockChain};
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveFaucetExtension, XReserveStablecoinBuilder, ATTESTATION_MINT_POLICY_PROC_PATH,
+    XReserveFaucetExtension,
+    XReserveStablecoinBuilder,
+    ATTESTATION_MINT_POLICY_PROC_PATH,
 };
 
 // The fixture gives ADMIN and ATTEST_ADMIN to id(1); DOM_PAUSER = id(2) and DOM_UNPAUSER = id(3)
@@ -75,8 +77,8 @@ fn guarded_faucet() -> Result<GuardedMint> {
     )
 }
 
-/// Reads the `xReserveAttesters` allowlist entry for `commitment` from a committed account (EMPTY_WORD
-/// when unset) — the no-state-change read-back the non-administrator reject uses.
+/// Reads the `xReserveAttesters` allowlist entry for `commitment` from a committed account
+/// (EMPTY_WORD when unset) — the no-state-change read-back the non-administrator reject uses.
 fn read_attester(account: &miden_protocol::account::Account, commitment: Word) -> Result<Word> {
     Ok(account.storage().get_map_item(
         XReserveFaucetExtension::xreserve_attesters_slot(),
@@ -167,11 +169,7 @@ async fn set_attester_administrator_succeeds() -> Result<()> {
         .get(&StorageMapKey::new(commitment))
         .copied()
         .expect("the commitment KEY must appear in the xReserveAttesters delta");
-    assert_eq!(
-        written,
-        Word::from([1u32, 0, 0, 0]),
-        "enabled marker written"
-    );
+    assert_eq!(written, Word::from([1u32, 0, 0, 0]), "enabled marker written");
     Ok(())
 }
 
@@ -211,15 +209,13 @@ async fn set_attester_requires_attest_admin_not_admin() -> Result<()> {
         .execute()
         .await?;
     account.apply_patch(executed.account_patch())?;
-    assert_eq!(
-        read_attester(&account, commitment)?,
-        Word::from([1u32, 0, 0, 0])
-    );
+    assert_eq!(read_attester(&account, commitment)?, Word::from([1u32, 0, 0, 0]));
     Ok(())
 }
 
 /// A `sender` without ATTEST_ADMIN traps the exact
-/// ERR_SENDER_LACKS_ROLE AND leaves the allowlist entry for the attempted key EMPTY (no partial write).
+/// ERR_SENDER_LACKS_ROLE AND leaves the allowlist entry for the attempted key EMPTY (no partial
+/// write).
 async fn assert_set_attester_non_administrator_rejected(
     sender: AccountId,
     key_seed: u32,
@@ -256,10 +252,10 @@ async fn set_attester_dom_unpauser_non_administrator_rejects() -> Result<()> {
 // ================================================================================================
 
 /// After the Domain Pauser pauses the faucet (the stock `PausableManager`, role-gated), an
-/// `ATTEST_ADMIN`-sent `set_attester` note SUCCEEDS while paused: the admin setters are deliberately NOT
-/// pause-gated, so a compromised attester can be disabled during a pause — which is exactly when it
-/// is needed. The enabled marker lands despite is_paused == true. The attester-admin gate still
-/// governs it — the rejection tests above prove that half.
+/// `ATTEST_ADMIN`-sent `set_attester` note SUCCEEDS while paused: the admin setters are
+/// deliberately NOT pause-gated, so a compromised attester can be disabled during a pause — which
+/// is exactly when it is needed. The enabled marker lands despite is_paused == true. The
+/// attester-admin gate still governs it — the rejection tests above prove that half.
 #[tokio::test]
 async fn set_attester_administrator_succeeds_while_paused() -> Result<()> {
     let gm = guarded_faucet()?;
@@ -273,7 +269,8 @@ async fn set_attester_administrator_succeeds_while_paused() -> Result<()> {
     let mut evolved = account.clone();
     evolved.apply_patch(paused.account_patch())?;
 
-    // tx2: the ATTEST_ADMIN holder's set_attester(K, true) SUCCEEDS while paused — setters are not pause-gated.
+    // tx2: the ATTEST_ADMIN holder's set_attester(K, true) SUCCEEDS while paused — setters are not
+    // pause-gated.
     let executed = run_set_attester_tx(&gm.harness, &evolved, administrator(), commitment, 1, 7)
         .await
         .expect(
@@ -297,10 +294,6 @@ async fn set_attester_administrator_succeeds_while_paused() -> Result<()> {
         .get(&StorageMapKey::new(commitment))
         .copied()
         .expect("the commitment KEY must appear in the xReserveAttesters delta");
-    assert_eq!(
-        written,
-        Word::from([1u32, 0, 0, 0]),
-        "enabled marker written while paused"
-    );
+    assert_eq!(written, Word::from([1u32, 0, 0, 0]), "enabled marker written while paused");
     Ok(())
 }

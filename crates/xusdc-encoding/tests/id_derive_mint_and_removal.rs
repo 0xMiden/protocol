@@ -57,11 +57,7 @@ async fn a_never_initialized_faucet_mints() -> Result<()> {
         )
         .expect("building the administrator set_attester note")]
     })?;
-    assert_eq!(
-        pf.seeded_notes.len(),
-        1,
-        "bring-up must be the attester note and nothing else"
-    );
+    assert_eq!(pf.seeded_notes.len(), 1, "bring-up must be the attester note and nothing else");
     bring_up(&mut pf, 1).await?;
 
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 31);
@@ -71,11 +67,7 @@ async fn a_never_initialized_faucet_mints() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("a faucet with no identifier init must still mint: {e}"))?;
 
-    assert_eq!(
-        tx.output_notes().num_notes(),
-        1,
-        "the mint must emit the attested output note"
-    );
+    assert_eq!(tx.output_notes().num_notes(), 1, "the mint must emit the attested output note");
     let mut chain = pf.mock_chain;
     commit(&mut chain, &tx)?;
     let faucet = committed(&chain, pf.faucet_id)?;
@@ -143,11 +135,9 @@ async fn a_foreign_remote_token_rejects_while_the_own_id_intent_mints() -> Resul
     let bound = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 33);
     let bound_note = honest_note(&pf, &bound, 2013)?;
     emit_note_with_attachments(&mut pf.mock_chain, pf.producer_id, &bound_note).await?;
-    let tx = consume_note(&pf.mock_chain, pf.faucet_id, bound_note.id())
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!("the own-id-bound intent must mint on the same faucet: {e}")
-        })?;
+    let tx = consume_note(&pf.mock_chain, pf.faucet_id, bound_note.id()).await.map_err(|e| {
+        anyhow::anyhow!("the own-id-bound intent must mint on the same faucet: {e}")
+    })?;
     assert_eq!(
         tx.output_notes().num_notes(),
         1,
@@ -209,11 +199,7 @@ fn the_composed_faucet_declares_no_identifier_slot() -> Result<()> {
     let account = production_faucet_account()?;
     let name = StorageSlotName::new(IDENTIFIER_SLOT_LABEL).context("identifier slot label")?;
     assert!(
-        !account
-            .storage()
-            .slots()
-            .iter()
-            .any(|slot| slot.name() == &name),
+        !account.storage().slots().iter().any(|slot| slot.name() == &name),
         "the composed faucet must declare no {IDENTIFIER_SLOT_LABEL} slot"
     );
     assert!(

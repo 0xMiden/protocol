@@ -98,9 +98,9 @@ fn mi(id: &str) -> &'static MiVector {
 
 /// The canonical accept payload with the wire amount / maxFee spliced in, `remoteRecipient`
 /// replaced by the real recipient wallet, `remoteToken` replaced by
-/// `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()` (the own-id key the mint path derives, so the identifier
-/// compare passes), and one nonce byte perturbed per variant so each mint consumes
-/// a nonce the replay guard has not seen.
+/// `EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32()` (the own-id key the mint path
+/// derives, so the identifier compare passes), and one nonce byte perturbed per variant so each
+/// mint consumes a nonce the replay guard has not seen.
 fn payload_for(
     recipient: AccountId,
     amount: u64,
@@ -263,8 +263,8 @@ fn the_xreserve_library_exports_no_pause_procedure() -> Result<()> {
 ///
 /// The standard pause manager IS installed now, so the rejection is an authorization check rather
 /// than a missing procedure: the account's procedure-role map gates `pause` on the Domain pauser
-/// role, the administrator does not hold it, and the role assertion traps. What matters is that the outcome
-/// is unchanged — the administrator cannot pause, and `is_paused` is left untouched.
+/// role, the administrator does not hold it, and the role assertion traps. What matters is that the
+/// outcome is unchanged — the administrator cannot pause, and `is_paused` is left untouched.
 ///
 /// The exact error is the point. A missing-procedure failure would now mean the manager was dropped
 /// from the composition; anything other than the role error would mean the map is not gating this
@@ -285,9 +285,9 @@ async fn administrator_has_no_pause_path() -> Result<()> {
     Ok(())
 }
 
-/// The unpause twin: the Domain pauser pauses first (the flag REALLY flips), then an administrator-sent
-/// unpause note fails with the EXACT role error and the faucet STAYS paused — an administrator who could
-/// unpause would visibly clear the flag.
+/// The unpause twin: the Domain pauser pauses first (the flag REALLY flips), then an
+/// administrator-sent unpause note fails with the EXACT role error and the faucet STAYS paused — an
+/// administrator who could unpause would visibly clear the flag.
 #[tokio::test]
 async fn administrator_has_no_unpause_path() -> Result<()> {
     let gm = production_pause_fixture()?;
@@ -344,12 +344,12 @@ async fn dom_pauser_pause_halts_mint() -> Result<()> {
     Ok(())
 }
 
-/// The shipped, allowlisted standard pause-action note, sent by the Domain Pauser, HALTS the real attested
-/// mint through the UNAUTHENTICATED-note transport: the pause note executes as an unauthenticated
-/// input (never block-committed first — routing target a placeholder PUBLIC id, routing-only), its
-/// `is_paused=1` delta is applied to the evolved faucet, and the REAL stock mint note consumed
-/// (unauthenticated) against that paused faucet traps the exact stock pause error — the emergency
-/// stop reaches the mint gate whichever note transport carries it.
+/// The shipped, allowlisted standard pause-action note, sent by the Domain Pauser, HALTS the real
+/// attested mint through the UNAUTHENTICATED-note transport: the pause note executes as an
+/// unauthenticated input (never block-committed first — routing target a placeholder PUBLIC id,
+/// routing-only), its `is_paused=1` delta is applied to the evolved faucet, and the REAL stock mint
+/// note consumed (unauthenticated) against that paused faucet traps the exact stock pause error —
+/// the emergency stop reaches the mint gate whichever note transport carries it.
 #[tokio::test]
 async fn dom_pauser_production_pause_note_halts_mint() -> Result<()> {
     let mut pf = mint_fixture(|_| vec![])?;
@@ -388,8 +388,8 @@ async fn dom_pauser_production_pause_note_halts_mint() -> Result<()> {
     Ok(())
 }
 
-/// The shipped, allowlisted standard pause-action note HALTS the real burn — the note-driven twin of
-/// `dom_pauser_pause_halts_burn`, which pauses through the procedure directly.
+/// The shipped, allowlisted standard pause-action note HALTS the real burn — the note-driven twin
+/// of `dom_pauser_pause_halts_burn`, which pauses through the procedure directly.
 #[tokio::test]
 async fn dom_pauser_production_pause_note_halts_burn() -> Result<()> {
     let bh = setup_burn_policy_account(
@@ -415,7 +415,8 @@ async fn dom_pauser_production_pause_note_halts_burn() -> Result<()> {
     chain.add_pending_executed_transaction(&tx0)?;
     chain.prove_next_block()?;
 
-    // The DOM_PAUSER production pause note pauses the faucet; apply its delta to the evolved account.
+    // The DOM_PAUSER production pause note pauses the faucet; apply its delta to the evolved
+    // account.
     let account = chain.committed_account(faucet_id)?.clone();
     let note = stock_pause_note(dom_pauser(), faucet_id, 8)?;
     let paused = chain
@@ -429,7 +430,8 @@ async fn dom_pauser_production_pause_note_halts_burn() -> Result<()> {
     let mut evolved = account.clone();
     evolved.apply_patch(paused.account_patch())?;
 
-    // The faucet consumes the committed burn note against the paused account → assert_not_paused traps.
+    // The faucet consumes the committed burn note against the paused account → assert_not_paused
+    // traps.
     let result = chain
         .build_transaction(evolved)
         .authenticated_input_note(burn_note.id())
@@ -440,9 +442,9 @@ async fn dom_pauser_production_pause_note_halts_burn() -> Result<()> {
     Ok(())
 }
 
-/// A DOM_PAUSER-triggered pause HALTS the real burn: DOM_PAUSER pauses, then a real `receive_and_burn`
-/// traps the EXACT `ERR_PAUSABLE_IS_PAUSED` (execute_burn_policy's stock pause gate). RED: the pause
-/// placeholder traps first.
+/// A DOM_PAUSER-triggered pause HALTS the real burn: DOM_PAUSER pauses, then a real
+/// `receive_and_burn` traps the EXACT `ERR_PAUSABLE_IS_PAUSED` (execute_burn_policy's stock pause
+/// gate). RED: the pause placeholder traps first.
 #[tokio::test]
 async fn dom_pauser_pause_halts_burn() -> Result<()> {
     let bh = setup_burn_policy_account(
@@ -476,8 +478,9 @@ async fn dom_pauser_pause_halts_burn() -> Result<()> {
     let mut evolved = account.clone();
     evolved.apply_patch(paused.account_patch())?;
 
-    // The faucet consumes the committed burn note against the paused account → execute_burn_policy's
-    // assert_not_paused traps the stock pause error (the valid amount isolates the pause gate).
+    // The faucet consumes the committed burn note against the paused account →
+    // execute_burn_policy's assert_not_paused traps the stock pause error (the valid amount
+    // isolates the pause gate).
     let result = chain
         .build_transaction(evolved)
         .authenticated_input_note(burn_note.id())

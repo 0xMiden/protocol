@@ -20,13 +20,27 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteId, NoteRecipient,
-    NoteStorage, NoteTag, NoteType, PartialNoteMetadata,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteId,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
+use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::{
-    MintNote, MintNoteStorage, NetworkAccountTarget, NoteExecutionHint, P2idNoteStorage,
+    MintNote,
+    MintNoteStorage,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    P2idNoteStorage,
 };
 use miden_testing::{assert_transaction_executor_error, MockChain};
 use miden_tx::TransactionExecutorError;
@@ -35,7 +49,6 @@ use xusdc_encoding::vectors::{load, MiVector};
 use xusdc_encoding::xreserve::encoding::{bytes32_to_storage_map_key, DepositIntent, MintIntent};
 
 use super::*;
-use miden_standards::interop::eth::EthEmbeddedAccountId;
 
 // FIXTURE VALUES (shared across the split e2e suites)
 // ================================================================================================
@@ -121,9 +134,8 @@ pub fn payload_for(
 
 /// The usedNonces key (== the attested output-note serial) for a payload's nonce bytes.
 pub fn nonce_key_of_payload(payload: &[u8]) -> Word {
-    let nonce: [u8; 32] = payload[NONCE_BYTE_OFF..NONCE_BYTE_OFF + 32]
-        .try_into()
-        .expect("32 nonce bytes");
+    let nonce: [u8; 32] =
+        payload[NONCE_BYTE_OFF..NONCE_BYTE_OFF + 32].try_into().expect("32 nonce bytes");
     Word::from(bytes32_to_storage_map_key(&nonce))
 }
 
@@ -317,9 +329,7 @@ pub fn tampered_mint_note(
     let recipient_recipe = P2idNoteStorage::new(storage.recipient).into_recipient(serial);
     let asset = FungibleAsset::new(pf.faucet_id, storage.amount)
         .map_err(|e| anyhow::anyhow!("storage asset: {e}"))?;
-    let tag = storage
-        .tag
-        .unwrap_or_else(|| NoteTag::with_account_target(storage.recipient));
+    let tag = storage.tag.unwrap_or_else(|| NoteTag::with_account_target(storage.recipient));
     let mint_storage = if storage.public {
         MintNoteStorage::new_public(recipient_recipe, asset, tag)
             .map_err(|e| anyhow::anyhow!("public mint storage: {e}"))?
@@ -467,16 +477,11 @@ pub async fn consume_note_with_advice(
     note_id: NoteId,
     advice_stack: Option<Vec<Felt>>,
 ) -> std::result::Result<ExecutedTransaction, TransactionExecutorError> {
-    let mut ctx = chain
-        .build_transaction(faucet_id)
-        .authenticated_input_note(note_id);
+    let mut ctx = chain.build_transaction(faucet_id).authenticated_input_note(note_id);
     if let Some(stack) = advice_stack {
         ctx = ctx.extend_advice_inputs(AdviceInputs::default().with_stack(stack.into()));
     }
-    ctx.build()
-        .expect("building the consume tx")
-        .execute()
-        .await
+    ctx.build().expect("building the consume tx").execute().await
 }
 
 /// Commits an executed transaction and proves the next block.
@@ -522,10 +527,11 @@ pub fn assert_no_effects(pf: &ProductionFaucet, payload: &[u8]) -> Result<()> {
 /// Emits the note and consumes it, expecting a trap that carries EXACTLY `expected`'s message,
 /// then proves fail-closure.
 ///
-/// [`expect_reject`] cannot serve for a `u32assert.err=` guard: `assert_transaction_executor_error!`
-/// matches only the VM's plain `FailedAssertion`, while a failed `u32assert` is a different
-/// operation error that carries the declared message inside its own rendering. The assertion is
-/// still exact — it names the `ERR_*` string byte for byte — it is only located differently.
+/// [`expect_reject`] cannot serve for a `u32assert.err=` guard:
+/// `assert_transaction_executor_error!` matches only the VM's plain `FailedAssertion`, while a
+/// failed `u32assert` is a different operation error that carries the declared message inside its
+/// own rendering. The assertion is still exact — it names the `ERR_*` string byte for byte — it is
+/// only located differently.
 pub async fn expect_reject_u32_assert(
     pf: &mut ProductionFaucet,
     note: Note,
@@ -534,9 +540,8 @@ pub async fn expect_reject_u32_assert(
 ) -> Result<()> {
     emit_note_with_attachments(&mut pf.mock_chain, pf.producer_id, &note).await?;
     let result = consume_note(&pf.mock_chain, pf.faucet_id, note.id()).await;
-    let TransactionExecutorError::TransactionProgramExecutionFailed(execution_error) = result
-        .err()
-        .context("the u32 guard must trap the consuming transaction")?
+    let TransactionExecutorError::TransactionProgramExecutionFailed(execution_error) =
+        result.err().context("the u32 guard must trap the consuming transaction")?
     else {
         anyhow::bail!("the trap must be a transaction program execution failure");
     };

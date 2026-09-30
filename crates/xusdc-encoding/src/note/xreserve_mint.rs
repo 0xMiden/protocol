@@ -25,15 +25,29 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAttachment, NoteAttachmentScheme, NoteScript, NoteScriptRoot, NoteTag,
+    Note,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteScript,
+    NoteScriptRoot,
+    NoteTag,
 };
 use miden_protocol::{Felt, Word, WORD_SIZE};
 use miden_standards::note::{
-    MintNote, MintNoteStorage, NetworkAccountTarget, NoteExecutionHint, P2idNoteStorage,
+    MintNote,
+    MintNoteStorage,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    P2idNoteStorage,
 };
 
 use crate::xreserve::encoding::{
-    CircleDomain, DepositIntent, DepositIntentHeader, DepositNonce, MintIntent, Signature,
+    CircleDomain,
+    DepositIntent,
+    DepositIntentHeader,
+    DepositNonce,
+    MintIntent,
+    Signature,
     BYTES_PER_PACKED_FELT,
 };
 
@@ -133,10 +147,7 @@ pub struct XUsdcDeposit {
 impl XUsdcDeposit {
     /// Bundles a decoded intent with the attestation over the payload it was decoded from.
     pub fn new(intent: MintIntent, attestation: DepositAttestation) -> Self {
-        Self {
-            intent,
-            attestation,
-        }
+        Self { intent, attestation }
     }
 
     /// The carried mint payload.

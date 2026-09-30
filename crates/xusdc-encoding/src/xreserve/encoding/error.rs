@@ -15,7 +15,8 @@ use super::domain::CircleDomain;
 pub enum EncodingError {
     LimbOutOfField,
     /// A u32-LE-packed felt limb exceeds `u32::MAX` (the `packed_felts_to_bytes32` guard on the
-    /// burn-note item decode, distinct from `LimbOutOfField`'s 8-byte/felt `>= p` Word-packing check).
+    /// burn-note item decode, distinct from `LimbOutOfField`'s 8-byte/felt `>= p` Word-packing
+    /// check).
     LimbNotU32,
     /// A deposit amount too wide to reduce to an asset amount at all: the quotient does not fit a
     /// `u64`. Every uint256 above 2^128 lands here, whatever the scale exponent.
@@ -63,7 +64,7 @@ impl fmt::Display for EncodingError {
             Self::AmountTooLarge => write!(f, "post-scale quotient does not fit a u64"),
             Self::AmountOverCap => {
                 write!(f, "post-scale quotient exceeds the asset amount maximum")
-            }
+            },
             Self::ScaleExpTooLarge => write!(f, "scale exponent exceeds 18"),
             Self::BadMagic => write!(f, "deposit intent magic mismatch"),
             Self::BadVersion => write!(f, "deposit intent version mismatch"),
@@ -72,32 +73,26 @@ impl fmt::Display for EncodingError {
             Self::LengthMismatch => write!(f, "deposit intent length relation violated"),
             Self::HookDataTooLarge => write!(f, "hook data exceeds the note storage felt bound"),
             Self::FieldNotAssetAmount { field } => {
-                write!(
-                    f,
-                    "deposit intent field {field:?} is not a valid asset amount"
-                )
-            }
+                write!(f, "deposit intent field {field:?} is not a valid asset amount")
+            },
             Self::RemoteTokenMismatch => {
-                write!(
-                    f,
-                    "deposit intent remote token is not the faucet account id"
-                )
-            }
+                write!(f, "deposit intent remote token is not the faucet account id")
+            },
             Self::RemoteDomainMismatch { expected, actual } => {
                 write!(
                     f,
                     "deposit intent remote domain {actual} is not the faucet's configured domain {expected}"
                 )
-            }
+            },
             Self::AccountIdOutOfRange => {
                 // The right-aligned (Agglayer-mirroring) layout: the account id region is the
                 // 16 bytes `bytes[16..32]` (prefix u64 BE + suffix u64 BE) behind a 16-byte zero
                 // pad — the message names the 16-byte region of the shipped layout.
                 write!(f, "bytes set outside the 16-byte account id region")
-            }
+            },
             Self::NonCanonicalAccountId => {
                 write!(f, "bytes do not decode to a canonical account id")
-            }
+            },
             Self::BurnItemsMalformed => write!(f, "burn note items have the wrong length or shape"),
             Self::JsonSchema(msg) => write!(f, "circle json does not match the schema: {msg}"),
             Self::BinaryMagic => write!(f, "circle binary decoder magic mismatch"),
@@ -128,7 +123,7 @@ impl From<EthAmountError> for EncodingError {
             // range, and a uint256 that overflowed before any scaling
             EthAmountError::ScaledValueDoesNotFitU64 | EthAmountError::Overflow => {
                 Self::AmountTooLarge
-            }
+            },
             EthAmountError::ScaledValueExceedsMaxFungibleAmount => Self::AmountOverCap,
         }
     }

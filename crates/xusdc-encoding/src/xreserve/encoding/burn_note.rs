@@ -27,8 +27,8 @@ pub struct XReserveBurnItems {
 
 impl XReserveBurnItems {
     /// Encodes `(destDomain, destRecipient)` into the payload felt layout
-    /// (`destDomain` at `[0]`, `destRecipient` at `[1..9]`). Infallible: `destDomain` is a u32 [`CircleDomain`],
-    /// and the bytes32 field packs via the shared `bytes32` codec.
+    /// (`destDomain` at `[0]`, `destRecipient` at `[1..9]`). Infallible: `destDomain` is a u32
+    /// [`CircleDomain`], and the bytes32 field packs via the shared `bytes32` codec.
     pub fn encode(&self) -> Vec<Felt> {
         let mut out = Vec::with_capacity(BURN_NOTE_ITEMS_FELTS);
         out.push(Felt::from(self.dest_domain)); // [0]
@@ -49,19 +49,15 @@ impl XReserveBurnItems {
         let dest_domain = u32::try_from(items[0].as_canonical_u64())
             .map(CircleDomain::new)
             .map_err(|_| EncodingError::BurnItemsMalformed)?;
-        // The length was checked above, so each slice is exactly 8 felts. Unpacking goes through the
-        // shared bytes32 inverse; a limb that is not a valid u32 is reported as a malformed payload
-        // rather than being truncated into a plausible-looking address.
-        let recipient_felts: [Felt; 8] = items[1..9]
-            .try_into()
-            .expect("len == 9 ⇒ items[1..9] is exactly 8 felts");
+        // The length was checked above, so each slice is exactly 8 felts. Unpacking goes through
+        // the shared bytes32 inverse; a limb that is not a valid u32 is reported as a
+        // malformed payload rather than being truncated into a plausible-looking address.
+        let recipient_felts: [Felt; 8] =
+            items[1..9].try_into().expect("len == 9 ⇒ items[1..9] is exactly 8 felts");
         let dest_recipient = packed_felts_to_bytes32(&recipient_felts)
             .map(ForeignChainAddress::new)
             .map_err(|_| EncodingError::BurnItemsMalformed)?;
-        Ok(Self {
-            dest_domain,
-            dest_recipient,
-        })
+        Ok(Self { dest_domain, dest_recipient })
     }
 }
 
@@ -81,23 +77,13 @@ mod tests {
     #[test]
     fn tv_bn_1_round_trip() {
         let v = load();
-        let accept: Vec<_> = v
-            .families
-            .bn
-            .iter()
-            .filter(|x| x.kind == "accept")
-            .collect();
+        let accept: Vec<_> = v.families.bn.iter().filter(|x| x.kind == "accept").collect();
         assert!(!accept.is_empty(), "bn accept vectors present");
         for vec in accept {
             let x = vec.expected_struct();
             let encoded = x.encode();
             assert_eq!(encoded.len(), 9, "{}: width", vec.id);
-            assert_eq!(
-                encoded,
-                vec.items_values(),
-                "{}: encode matches the golden layout",
-                vec.id
-            );
+            assert_eq!(encoded, vec.items_values(), "{}: encode matches the golden layout", vec.id);
             assert_eq!(
                 XReserveBurnItems::decode(&encoded).expect("round-trip decode"),
                 x,
@@ -115,8 +101,8 @@ mod tests {
 
     /// TV-BN-2 (destination-in-items): the destination fields land in the
     /// payload felt layout (`destDomain` at `[0]`, `destRecipient` at `[1..9]`). `encode` has no
-    /// metadata path — its only output is `Vec<Felt>`, so `metadata.sender` is structurally reserved
-    /// for the depositor.
+    /// metadata path — its only output is `Vec<Felt>`, so `metadata.sender` is structurally
+    /// reserved for the depositor.
     #[test]
     fn tv_bn_2_destination_in_items() {
         let v = load();
@@ -124,12 +110,7 @@ mod tests {
             let items = vec.expected_struct().encode();
             let golden = vec.items_values();
             assert_eq!(items[0], golden[0], "{}: destDomain in items[0]", vec.id);
-            assert_eq!(
-                &items[1..9],
-                &golden[1..9],
-                "{}: destRecipient in items[1..9]",
-                vec.id
-            );
+            assert_eq!(&items[1..9], &golden[1..9], "{}: destRecipient in items[1..9]", vec.id);
         }
     }
 

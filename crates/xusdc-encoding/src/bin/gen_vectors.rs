@@ -79,10 +79,7 @@ fn poseidon2_key(bytes32: &[u8; 32]) -> Word {
 
 fn amt_accept(id: &str, tv: &[&str], x: u128, derivation: &str) -> Value {
     let b = u256_be_from_u128(x);
-    assert!(
-        x <= ASSET_AMOUNT_MAX,
-        "{id}: accept vector must be within the cap"
-    );
+    assert!(x <= ASSET_AMOUNT_MAX, "{id}: accept vector must be within the cap");
     json!({
         "id": id, "tv": tv, "kind": "accept",
         "uint256_be": hex_bytes(&b),
@@ -166,9 +163,7 @@ impl IntentSpec {
         out.extend_from_slice(&self.local_depositor); // @140
         out.extend_from_slice(&self.max_fee); // @172
         out.extend_from_slice(&self.nonce); // @204
-        let hdl = self
-            .hook_data_len_override
-            .unwrap_or(self.hook_data.len() as u32);
+        let hdl = self.hook_data_len_override.unwrap_or(self.hook_data.len() as u32);
         out.extend_from_slice(&hdl.to_be_bytes()); // @236
         out.extend_from_slice(&self.hook_data); // @240
         assert_eq!(out.len(), 240 + self.hook_data.len());
@@ -199,11 +194,7 @@ fn di_accept(id: &str, tv: &[&str], spec: &IntentSpec, derivation: &str) -> Valu
     let packed_fields: Vec<Value> = FIELD_FELT_OFFS
         .iter()
         .map(|(name, off, len)| {
-            let len = if *name == "hook_data" {
-                hook_felts
-            } else {
-                *len
-            };
+            let len = if *name == "hook_data" { hook_felts } else { *len };
             json!({
                 "name": name, "felt_off": off,
                 "felts": felts_hex(&preimage[*off..*off + len]),
@@ -291,9 +282,8 @@ fn att_keccak256(msg: &[u8]) -> [u8; 32] {
 /// (r‖s‖v, v = recovery id). RAW secp256k1 over the keccak digest: NO EIP-712 domain, no
 /// struct; v is carried, unused on-chain.
 fn att_sign65(sk: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
-    let (sig, recid): (K256Signature, RecoveryId) = sk
-        .sign_prehash_recoverable(digest)
-        .expect("k256 prehash sign");
+    let (sig, recid): (K256Signature, RecoveryId) =
+        sk.sign_prehash_recoverable(digest).expect("k256 prehash sign");
     let mut out = [0u8; 65];
     out[..64].copy_from_slice(sig.to_bytes().as_slice()); // 64-byte big-endian r || s
     out[64] = recid.to_byte(); // v in {0..3}
@@ -319,11 +309,7 @@ fn main() {
     let b32_inputs: [(&str, [u8; 32], &str); 3] = [
         ("b32-pos-1", [0u8; 32], "all-zero bytes32"),
         ("b32-pos-2", [0xffu8; 32], "all-0xff bytes32"),
-        (
-            "b32-pos-3",
-            core::array::from_fn(|i| i as u8),
-            "bytes 0x00..0x1f",
-        ),
+        ("b32-pos-3", core::array::from_fn(|i| i as u8), "bytes 0x00..0x1f"),
     ];
     let mut b32: Vec<Value> = b32_inputs
         .iter()
@@ -393,8 +379,8 @@ fn main() {
         .map(|seed| AccountIdBuilder::new().build_with_seed([seed; 32]))
         .collect();
     // the right-aligned (Agglayer-mirroring) AccountId packaging — a draft that stays OPEN, pending
-    // Circle confirmation: bytes[0..16]=0, bytes[16..24]=prefix u64 BE, bytes[24..32]=suffix u64 BE.
-    // Derived inline from the protocol AccountId accessors.
+    // Circle confirmation: bytes[0..16]=0, bytes[16..24]=prefix u64 BE, bytes[24..32]=suffix u64
+    // BE. Derived inline from the protocol AccountId accessors.
     let r_b_bytes32 = |id: &miden_protocol::account::AccountId| -> [u8; 32] {
         let mut b = [0u8; 32];
         b[16..24].copy_from_slice(&id.prefix().as_u64().to_be_bytes());
@@ -507,18 +493,8 @@ fn main() {
         ));
     }
     for (id, tv, field, variant) in [
-        (
-            "di-rej-zero-amount",
-            "TV-DI-4",
-            "amount",
-            "ZeroField:Amount",
-        ),
-        (
-            "di-rej-zero-local-token",
-            "TV-DI-5",
-            "local_token",
-            "ZeroField:LocalToken",
-        ),
+        ("di-rej-zero-amount", "TV-DI-4", "amount", "ZeroField:Amount"),
+        ("di-rej-zero-local-token", "TV-DI-5", "local_token", "ZeroField:LocalToken"),
         (
             "di-rej-zero-local-depositor",
             "TV-DI-5",
@@ -738,10 +714,11 @@ fn main() {
 
     // ---- att family (attestation surface) ----------------------------------------
     // each vector carries an independent k256 keypair; the digest is keccak256 of a FULL
-    // DepositIntent payload (raw keccak, NOT EIP-712, no struct); the 65-byte r||s||v signature over
-    // that digest; and the canonical commitment from miden-crypto `PublicKey::to_commitment`. The
-    // nonce is varied per seed so digests, sigs, and pubkeys all differ.
-    // The fourth entry has a ten-byte hookData tail so the digest covers bytes past the header.
+    // DepositIntent payload (raw keccak, NOT EIP-712, no struct); the 65-byte r||s||v signature
+    // over that digest; and the canonical commitment from miden-crypto
+    // `PublicKey::to_commitment`. The nonce is varied per seed so digests, sigs, and pubkeys
+    // all differ. The fourth entry has a ten-byte hookData tail so the digest covers bytes past
+    // the header.
     let mut att: Vec<Value> = Vec::new();
     let attestation_cases: [(u64, Vec<u8>); 4] = [
         (1, vec![]),
@@ -844,16 +821,8 @@ fn main() {
     domain_over[0] = over_u32.clone();
     let mut recip_limb = bn_base.clone();
     recip_limb[4] = over_u32; // within destRecipient [1..9]
-    bn.push(bn_reject(
-        "bn-rej-len-short",
-        short,
-        "8 felts (< 9) → wrong length",
-    ));
-    bn.push(bn_reject(
-        "bn-rej-len-long",
-        long,
-        "10 felts (> 9) → wrong length",
-    ));
+    bn.push(bn_reject("bn-rej-len-short", short, "8 felts (< 9) → wrong length"));
+    bn.push(bn_reject("bn-rej-len-long", long, "10 felts (> 9) → wrong length"));
     bn.push(bn_reject(
         "bn-rej-domain-over-u32",
         domain_over,
@@ -868,14 +837,7 @@ fn main() {
     let file = json!({ "version": 1, "families": { "b32": b32, "amt": amt, "aid": aid, "di": di, "att": att, "bn": bn, "mi": mi } });
     let path = xusdc_encoding::vectors_path();
     std::fs::create_dir_all(path.parent().unwrap()).expect("create vectors dir");
-    std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&file).expect("serialize") + "\n",
-    )
-    .expect("write artifact");
-    println!(
-        "wrote {} ({} bytes)",
-        path.display(),
-        std::fs::metadata(&path).unwrap().len()
-    );
+    std::fs::write(&path, serde_json::to_string_pretty(&file).expect("serialize") + "\n")
+        .expect("write artifact");
+    println!("wrote {} ({} bytes)", path.display(), std::fs::metadata(&path).unwrap().len());
 }

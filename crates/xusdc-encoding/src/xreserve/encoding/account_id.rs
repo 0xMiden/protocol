@@ -4,11 +4,10 @@
 //! it stays an OPEN proposal to Circle.
 
 use miden_standards::interop::eth::AddressConversionError;
-
-use super::error::EncodingError;
-
 // Re-export this type so callers don't need to depend on miden-standards directly.
 pub use miden_standards::interop::eth::EthEmbeddedAccountId;
+
+use super::error::EncodingError;
 
 /// The inverse bytes32 decoding of [`EthEmbeddedAccountId::to_bytes32`].
 pub trait EthEmbeddedAccountIdExt: Sized {
@@ -59,12 +58,7 @@ mod tests {
     #[test]
     fn tv_aid_1_roundtrip_lossless() {
         let v = load();
-        for vec in v
-            .families
-            .aid
-            .iter()
-            .filter(|v| v.expected_variant.is_none())
-        {
+        for vec in v.families.aid.iter().filter(|v| v.expected_variant.is_none()) {
             let b = parse_hex32(&vec.bytes32);
             let embedded = EthEmbeddedAccountId::try_from_bytes32(b)
                 .unwrap_or_else(|e| panic!("vector {}: must decode, got {e}", vec.id));
@@ -79,29 +73,16 @@ mod tests {
     #[case::non_canonical("aid-rej-non-canonical")]
     fn tv_aid_2_rejects(#[case] id: &str) {
         let v = load();
-        let vec = v
-            .families
-            .aid
-            .iter()
-            .find(|v| v.id == id)
-            .expect("vector present");
+        let vec = v.families.aid.iter().find(|v| v.id == id).expect("vector present");
         let b = parse_hex32(&vec.bytes32);
         let result = EthEmbeddedAccountId::try_from_bytes32(b);
         match vec.expected_variant.as_deref() {
             Some("AccountIdOutOfRange") => {
-                assert_matches!(
-                    result,
-                    Err(EncodingError::AccountIdOutOfRange),
-                    "vector {id}"
-                )
-            }
+                assert_matches!(result, Err(EncodingError::AccountIdOutOfRange), "vector {id}")
+            },
             Some("NonCanonicalAccountId") => {
-                assert_matches!(
-                    result,
-                    Err(EncodingError::NonCanonicalAccountId),
-                    "vector {id}"
-                )
-            }
+                assert_matches!(result, Err(EncodingError::NonCanonicalAccountId), "vector {id}")
+            },
             other => panic!("vector {id}: unexpected expected_variant {other:?}"),
         }
     }
@@ -131,12 +112,7 @@ mod tests {
     #[case::b15(15)]
     fn nonzero_pad_byte_rejects_at_every_index(#[case] pad_index: usize) {
         let v = load();
-        let vec = v
-            .families
-            .aid
-            .iter()
-            .find(|v| v.id == "aid-rt-1")
-            .expect("vector present");
+        let vec = v.families.aid.iter().find(|v| v.id == "aid-rt-1").expect("vector present");
         let mut b = parse_hex32(&vec.bytes32);
         b[pad_index] = 0x01;
         assert_matches!(

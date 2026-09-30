@@ -13,34 +13,44 @@
 
 use std::collections::BTreeSet;
 
-use super::{add_faucet_account, setup_production_faucet, test_account_id, ProductionFaucet};
 use anyhow::{Context, Result};
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountComponent, AccountId, RoleSymbol, StorageMapKey};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::Note;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Authority;
 use miden_standards::account::access::{
-    Pausable, PausableManager, PausableStorage, RoleBasedAccessControl, RoleConfig,
+    Authority,
+    Pausable,
+    PausableManager,
+    PausableStorage,
+    RoleBasedAccessControl,
+    RoleConfig,
 };
 use miden_standards::account::policies::{BasicBlocklist, BlocklistManager, BlocklistStorage};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::config::{
-    BlocklistConfig, BlocklistConfigNote, FaucetMetadataConfig, FaucetMetadataConfigNote,
-    PauseConfig, PauseConfigNote,
+    BlocklistConfig,
+    BlocklistConfigNote,
+    FaucetMetadataConfig,
+    FaucetMetadataConfigNote,
+    PauseConfig,
+    PauseConfigNote,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder};
 use miden_tx::TransactionExecutorError;
 use xusdc_encoding::account::xreserve::{
-    XReserveAdminAuthority, BLK_MANAGER_ROLE, DOM_PAUSER_ROLE,
+    XReserveAdminAuthority,
+    BLK_MANAGER_ROLE,
+    DOM_PAUSER_ROLE,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveMinBurnAmountNote;
+
+use super::{add_faucet_account, setup_production_faucet, test_account_id, ProductionFaucet};
 
 // PRODUCTION CONSTANTS
 // ================================================================================================
@@ -117,9 +127,10 @@ pub fn set_word() -> Word {
 /// it seeds role membership the way the admin model assumes.
 pub fn grounding_components() -> Vec<AccountComponent> {
     // ADMIN plus the two domain roles, no delegated admin — the same seed the pre-bump
-    // `RoleBasedAccessControl::new(admins, role_members)` produced, now expressed one role config at
-    // a time through the builder that replaced the removed positional constructor. The role graph
-    // (a map keyed by role symbol) is identical regardless of the order the configs are added.
+    // `RoleBasedAccessControl::new(admins, role_members)` produced, now expressed one role config
+    // at a time through the builder that replaced the removed positional constructor. The role
+    // graph (a map keyed by role symbol) is identical regardless of the order the configs are
+    // added.
     let rbac = RoleBasedAccessControl::builder()
         .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_members([admin_holder()]))
         .role(RoleConfig::new(pauser_symbol()).with_members([pauser_holder()]))
@@ -226,9 +237,7 @@ pub async fn consume_and_commit(
     note: &Note,
     what: &str,
 ) -> Result<Account> {
-    let tx = consume(pf, note)
-        .await
-        .map_err(|e| anyhow::anyhow!("{what}: {e}"))?;
+    let tx = consume(pf, note).await.map_err(|e| anyhow::anyhow!("{what}: {e}"))?;
     pf.mock_chain.add_pending_executed_transaction(&tx)?;
     pf.mock_chain.prove_next_block()?;
     Ok(pf
@@ -329,29 +338,16 @@ pub fn read_paused(account: &Account) -> Result<Word> {
 
 /// The `blocked_accounts[target]` word: `[1,0,0,0]` blocked, empty not blocked.
 pub fn read_blocked(account: &Account, target: AccountId) -> Result<Word> {
-    let key = Word::from([
-        Felt::ZERO,
-        Felt::ZERO,
-        target.suffix(),
-        target.prefix().as_felt(),
-    ]);
+    let key = Word::from([Felt::ZERO, Felt::ZERO, target.suffix(), target.prefix().as_felt()]);
     account
         .storage()
-        .get_map_item(
-            BlocklistStorage::blocked_accounts_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(BlocklistStorage::blocked_accounts_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading blocked_accounts[{target}]: {e}"))
 }
 
 /// Every procedure root a built account exposes.
 pub fn callable_roots(account: &Account) -> BTreeSet<Word> {
-    account
-        .code()
-        .procedures()
-        .iter()
-        .map(|root| Word::from(*root))
-        .collect()
+    account.code().procedures().iter().map(|root| Word::from(*root)).collect()
 }
 
 // STOCK ADMIN CONFIG NOTES — the pause and blocklist admin surface
@@ -368,8 +364,9 @@ fn config_note_serial(seed: u64) -> Word {
     ])
 }
 
-/// The stock pause-action note for `action`, sent by `sender` and tagged for `faucet_id`. One script
-/// root covers pausing and unpausing; the Domain pauser and unpauser roles gate them separately.
+/// The stock pause-action note for `action`, sent by `sender` and tagged for `faucet_id`. One
+/// script root covers pausing and unpausing; the Domain pauser and unpauser roles gate them
+/// separately.
 pub fn stock_pause_action_note(
     sender: AccountId,
     faucet_id: AccountId,

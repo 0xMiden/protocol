@@ -11,7 +11,8 @@
 //! Two conversions make it usable: into the [`Authority`] configuration it describes, and into the
 //! [`AccountComponent`] that carries it into an account.
 //!
-//! Installed by [`XReserveStablecoinBuilder::build_components`][crate::account::xreserve::XReserveStablecoinBuilder::build_components]
+//! Installed by
+//! [`XReserveStablecoinBuilder::build_components`][crate::account::xreserve::XReserveStablecoinBuilder::build_components]
 //! as the account's only authority component. One consequence is worth stating where a reader will
 //! look for it: administrator membership is account-bound, and it is the account's ONLY authority
 //! handle — the faucet installs no ownership component, so nothing else can move authority over the
@@ -25,8 +26,12 @@ use miden_standards::account::access::{Authority, PausableManager};
 use miden_standards::account::policies::BlocklistManager;
 
 use super::{
-    XReserveFaucetExtension, ATTEST_ADMIN_ROLE, BLK_MANAGER_ROLE, DOM_PAUSER_ROLE,
-    DOM_UNPAUSER_ROLE, XRESERVE_SET_ATTESTER_PROC_PATH,
+    XReserveFaucetExtension,
+    ATTEST_ADMIN_ROLE,
+    BLK_MANAGER_ROLE,
+    DOM_PAUSER_ROLE,
+    DOM_UNPAUSER_ROLE,
+    XRESERVE_SET_ATTESTER_PROC_PATH,
 };
 
 /// Dedicated-role procedures: pause, unpause, set_attester, block and unblock.
@@ -63,10 +68,7 @@ impl XReserveAdminAuthority {
             (PausableManager::pause_root(), pauser),
             (PausableManager::unpause_root(), unpauser),
             (set_attester_root, attest_admin),
-            (
-                BlocklistManager::block_account_root(),
-                blocklist_manager.clone(),
-            ),
+            (BlocklistManager::block_account_root(), blocklist_manager.clone()),
             (BlocklistManager::unblock_account_root(), blocklist_manager),
         ]);
         assert_eq!(

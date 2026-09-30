@@ -3,8 +3,8 @@
 //! Locks every new typed API this typing slice introduces to the FROZEN golden vectors: the typed
 //! path must produce byte-for-byte / felt-for-felt identical output to the values the encoding
 //! conformance suite already pins. A wire
-//! change — a reordered signature felt, a swapped account-id pair, a drifted commitment — makes these
-//! RED, which is what proves the typing refactor is wire-neutral.
+//! change — a reordered signature felt, a swapped account-id pair, a drifted commitment — makes
+//! these RED, which is what proves the typing refactor is wire-neutral.
 //!
 //! It also re-locks the inlined AccountId two-felt form: the `account_id_to_felts` helper and
 //! its dedicated `tv_aid_4` unit test were deleted, so this suite carries the `[prefix, suffix]`
@@ -16,8 +16,13 @@ use miden_protocol::utils::serde::{Deserializable, DeserializationError, Seriali
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use xusdc_encoding::vectors::{load, parse_hex32};
 use xusdc_encoding::xreserve::encoding::{
-    bytes32_to_packed_felts, DepositIntent, EncodingError, EthEmbeddedAccountIdExt,
-    ForeignChainAddress, Signature, XReserveBurnItems,
+    bytes32_to_packed_felts,
+    DepositIntent,
+    EncodingError,
+    EthEmbeddedAccountIdExt,
+    ForeignChainAddress,
+    Signature,
+    XReserveBurnItems,
 };
 
 // Signature
@@ -36,12 +41,7 @@ fn signature_type_matches_golden() {
             "{}: Signature::to_felts == golden sig felts",
             v.id
         );
-        assert_eq!(
-            typed.as_bytes(),
-            &sig,
-            "{}: Signature round-trips its bytes",
-            v.id
-        );
+        assert_eq!(typed.as_bytes(), &sig, "{}: Signature round-trips its bytes", v.id);
     }
 }
 
@@ -66,12 +66,7 @@ fn deposit_intent_type_matches_golden() {
             "{}: DepositIntent::to_preimage_felts == golden preimage",
             vec.id
         );
-        assert_eq!(
-            intent.to_bytes(),
-            bytes,
-            "{}: the encode is the decode's inverse",
-            vec.id
-        );
+        assert_eq!(intent.to_bytes(), bytes, "{}: the encode is the decode's inverse", vec.id);
         // and the standard reader is the same decode as the typed entry point
         assert_eq!(
             DepositIntent::read_from_bytes(&bytes).expect("Deserializable reads accept vector"),
@@ -87,10 +82,7 @@ fn deposit_intent_type_matches_golden() {
 #[test]
 fn deposit_intent_type_propagates_rejects() {
     let short = [0u8; 10];
-    assert_matches!(
-        DepositIntent::try_from(short.as_slice()),
-        Err(EncodingError::TruncatedHeader)
-    );
+    assert_matches!(DepositIntent::try_from(short.as_slice()), Err(EncodingError::TruncatedHeader));
     assert_eq!(
         DepositIntent::read_from_bytes(&short)
             .expect_err("a truncated payload is not a deposit intent")
@@ -128,26 +120,19 @@ fn burn_items_methods_match_golden() {
 /// `XReserveBurnItems::decode` fail-closes on a malformed payload.
 #[test]
 fn burn_items_decode_fail_closes() {
-    assert_matches!(
-        XReserveBurnItems::decode(&[]),
-        Err(EncodingError::BurnItemsMalformed)
-    );
+    assert_matches!(XReserveBurnItems::decode(&[]), Err(EncodingError::BurnItemsMalformed));
 }
 
 // The inlined AccountId two-felt form (replacing the deleted `account_id_to_felts` + `tv_aid_4`)
 // ================================================================================================
 
 /// The inlined `(prefix, suffix)` form every call site now uses matches the vector's golden
-/// `[prefix, suffix]` pair — the coverage the deleted `tv_aid_4_two_felt_form` provided, kept alive.
-/// A swap to `(suffix, prefix)` at a call site is caught by comparing against this golden ordering.
+/// `[prefix, suffix]` pair — the coverage the deleted `tv_aid_4_two_felt_form` provided, kept
+/// alive. A swap to `(suffix, prefix)` at a call site is caught by comparing against this golden
+/// ordering.
 #[test]
 fn account_id_two_felt_form_matches_golden() {
-    for vec in load()
-        .families
-        .aid
-        .iter()
-        .filter(|v| v.expected_variant.is_none())
-    {
+    for vec in load().families.aid.iter().filter(|v| v.expected_variant.is_none()) {
         let b = parse_hex32(&vec.bytes32);
         let id = EthEmbeddedAccountId::try_from_bytes32(b)
             .expect("accept vector decodes")
@@ -169,12 +154,7 @@ fn account_id_two_felt_form_matches_golden() {
 /// byte-identical to the golden bytes32 — the adoption is not lossy.
 #[test]
 fn account_id_bytes32_form_is_stock_and_byte_identical() {
-    for vec in load()
-        .families
-        .aid
-        .iter()
-        .filter(|v| v.expected_variant.is_none())
-    {
+    for vec in load().families.aid.iter().filter(|v| v.expected_variant.is_none()) {
         let b = parse_hex32(&vec.bytes32);
         let embedded = EthEmbeddedAccountId::try_from_bytes32(b).expect("accept vector decodes");
         assert_eq!(
@@ -190,8 +170,8 @@ fn account_id_bytes32_form_is_stock_and_byte_identical() {
 // ================================================================================================
 
 /// A source-chain address uses the shared `bytes32_to_packed_felts` packing. The address here has
-/// non-zero leading bytes, which no EVM address has: a source chain wider than 20 bytes must survive
-/// the packing unchanged.
+/// non-zero leading bytes, which no EVM address has: a source chain wider than 20 bytes must
+/// survive the packing unchanged.
 #[test]
 fn local_chain_address_packs_like_the_shared_codec() {
     let bytes: [u8; 32] = core::array::from_fn(|i| 0x10 + i as u8);

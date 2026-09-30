@@ -12,7 +12,10 @@ mod support;
 
 use anyhow::{Context, Result};
 use miden_protocol::account::{
-    AccountComponent, AccountProcedureRoot, RoleSymbol, StorageSlotName,
+    AccountComponent,
+    AccountProcedureRoot,
+    RoleSymbol,
+    StorageSlotName,
 };
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::{Felt, Word};
@@ -20,9 +23,15 @@ use miden_standards::account::access::{PausableManager, PausableStorage};
 use miden_standards::account::policies::{BlocklistManager, MinBurnAmount, TokenPolicyManager};
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveAdminAuthority, XReserveFaucetExtension, XReserveStablecoinBuilder,
-    XReserveStablecoinBuilderError, ATTESTATION_MINT_POLICY_PROC_PATH, ATTEST_ADMIN_ROLE,
-    BLK_MANAGER_ROLE, DOM_PAUSER_ROLE, DOM_UNPAUSER_ROLE,
+    XReserveAdminAuthority,
+    XReserveFaucetExtension,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
+    ATTESTATION_MINT_POLICY_PROC_PATH,
+    ATTEST_ADMIN_ROLE,
+    BLK_MANAGER_ROLE,
+    DOM_PAUSER_ROLE,
+    DOM_UNPAUSER_ROLE,
 };
 
 /// The standard production builder: the fixed test supplies through the ONE production-shape
@@ -86,10 +95,11 @@ fn build_produces_attestation_gated_public_faucet() -> Result<()> {
 
 // The max-supply mutability invariant is now enforced BY CONSTRUCTION: the crate-root
 // `build_faucet_account` builds the faucet `is_max_supply_mutable(true)`, so there is no
-// runtime `ImmutableMaxSupply` reject to exercise, and the former `build_rejects_immutable_max_supply`
-// tripwire has no immutable faucet to inject through the public constructor. The invariant is
-// asserted positively by the crate-root byte-identity suite, which builds through
-// `build_faucet_account` and composes a valid faucet whose `set_max_supply` stays operable.
+// runtime `ImmutableMaxSupply` reject to exercise, and the former
+// `build_rejects_immutable_max_supply` tripwire has no immutable faucet to inject through the
+// public constructor. The invariant is asserted positively by the crate-root byte-identity suite,
+// which builds through `build_faucet_account` and composes a valid faucet whose `set_max_supply`
+// stays operable.
 
 // PRODUCTION minBurnSize SEEDING (the stock MinBurnAmount floor slot)
 // ================================================================================================
@@ -98,15 +108,16 @@ fn build_produces_attestation_gated_public_faucet() -> Result<()> {
 /// (`MinBurnAmount::slot_name()` = `[min_burn_amount, 0, 0, 0]`, carried by the policy companion
 /// component the manager emits) so the stock burn policy's floor read resolves on a real production
 /// faucet — the builder owns a `min_burn_amount` default/override, and the
-/// standard min-burn-amount config note mutates the SAME slot at runtime. The expected value uses the
-/// canonical full-u64 `AssetAmount -> Felt`, so an `as u32` truncation in the seed would fail this
-/// test (see the MIN_BURN choice below).
+/// standard min-burn-amount config note mutates the SAME slot at runtime. The expected value uses
+/// the canonical full-u64 `AssetAmount -> Felt`, so an `as u32` truncation in the seed would fail
+/// this test (see the MIN_BURN choice below).
 #[test]
 fn production_seeds_min_burn_size() -> Result<()> {
     // Anti-truncation: minBurnSize is a FULL `u64` `AssetAmount` (`AssetAmount::MAX` =
     // 2^63 - 2^31), encoded as `[min_burn_size, 0, 0, 0]`. MIN_BURN is chosen > `u32::MAX` so any
-    // `... as u32` truncation — in the seed (green) OR in this expectation — yields a DIFFERENT `Felt`
-    // and fails the test, rather than two sides silently agreeing on a truncated low-32-bit value.
+    // `... as u32` truncation — in the seed (green) OR in this expectation — yields a DIFFERENT
+    // `Felt` and fails the test, rather than two sides silently agreeing on a truncated
+    // low-32-bit value.
     const MIN_BURN: u64 = 5_000_000_000; // > u32::MAX (4_294_967_295), well within AssetAmount::MAX
     const _: () = assert!(
         MIN_BURN > u32::MAX as u64,
@@ -145,9 +156,9 @@ fn production_seeds_min_burn_size() -> Result<()> {
 /// A `min_burn_amount` below the floor (= 1) is rejected with the EXACT `MinBurnSizeBelowFloor(0)`:
 /// the stock `MinBurnAmount` asserts only `min <= amount` (its stock setter even accepts 0), so a
 /// zero seed would silently drop the zero-burn invariant — the builder half of the
-/// zero-floor guard (the other half is the `XReserveMinBurnAmountNote` factory's refusal). The faucet
-/// is otherwise valid, so the sub-floor seed is the SOLE reason for rejection. (An over-max seed
-/// is unrepresentable by construction: the input is a typed `AssetAmount`.)
+/// zero-floor guard (the other half is the `XReserveMinBurnAmountNote` factory's refusal). The
+/// faucet is otherwise valid, so the sub-floor seed is the SOLE reason for rejection. (An over-max
+/// seed is unrepresentable by construction: the input is a typed `AssetAmount`.)
 #[test]
 fn build_rejects_zero_min_burn_amount() -> Result<()> {
     let zero = AssetAmount::new(0).expect("a zero asset amount is representable");
@@ -155,10 +166,7 @@ fn build_rejects_zero_min_burn_amount() -> Result<()> {
         "a min_burn_amount of 0 must be rejected at construction (zero-floor invariant)",
     );
     assert!(
-        matches!(
-            err,
-            XReserveStablecoinBuilderError::MinBurnSizeBelowFloor(0)
-        ),
+        matches!(err, XReserveStablecoinBuilderError::MinBurnSizeBelowFloor(0)),
         "expected MinBurnSizeBelowFloor(0), got {err:?}"
     );
     Ok(())
@@ -196,7 +204,8 @@ fn build_seeds_the_domain_slot() -> Result<()> {
 ///
 /// The structural half is here — the four manager roots and the attester setter are installed,
 /// and each carries the role the faucet intends. The executing half is
-/// `administrator_has_no_pause_path` / `administrator_has_no_unpause_path` (pause_admin.rs) and the effects suite.
+/// `administrator_has_no_pause_path` / `administrator_has_no_unpause_path` (pause_admin.rs) and the
+/// effects suite.
 #[test]
 fn builder_installs_the_stock_managers_with_their_roles_assigned() -> Result<()> {
     let components = production_builder()
@@ -219,16 +228,8 @@ fn builder_installs_the_stock_managers_with_their_roles_assigned() -> Result<()>
     for (what, root, role) in [
         ("pause", PausableManager::pause_root(), &pauser),
         ("unpause", PausableManager::unpause_root(), &unpauser),
-        (
-            "block_account",
-            BlocklistManager::block_account_root(),
-            &blocklist_manager,
-        ),
-        (
-            "unblock_account",
-            BlocklistManager::unblock_account_root(),
-            &blocklist_manager,
-        ),
+        ("block_account", BlocklistManager::block_account_root(), &blocklist_manager),
+        ("unblock_account", BlocklistManager::unblock_account_root(), &blocklist_manager),
         (
             "set_attester",
             AccountProcedureRoot::from_raw(

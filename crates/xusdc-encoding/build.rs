@@ -17,8 +17,12 @@ use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::ProtocolLib;
 use miden_protocol_build_utils::{
-    assemble_project, assemble_workspace, extract_all_masm_errors, generate_error_file,
-    ErrorModule, PROJECT_MANIFEST,
+    assemble_project,
+    assemble_workspace,
+    extract_all_masm_errors,
+    generate_error_file,
+    ErrorModule,
+    PROJECT_MANIFEST,
 };
 use miden_standards::StandardsLib;
 
@@ -77,8 +81,9 @@ fn main() -> Result<()> {
 
 /// Builds the package registry that the declared dependencies resolve against.
 ///
-/// The protocol package declares the kernel and the core packages, and the xreserve projects declare
-/// the standards package, so all of them have to be present for dependency resolution to succeed.
+/// The protocol package declares the kernel and the core packages, and the xreserve projects
+/// declare the standards package, so all of them have to be present for dependency resolution to
+/// succeed.
 fn build_registry() -> Result<InMemoryPackageRegistry> {
     let mut registry = InMemoryPackageRegistry::default();
 

@@ -9,10 +9,10 @@
 //! (`eth::bytes32_to_account_id`) over the bytes the Rust encoder produces, in account context,
 //! and requires the result to be the emitting account.
 //!
-//! The whole design rests on one claim: the bytes `EthEmbeddedAccountId::to_bytes32` produces off chain
-//! decode, on chain, back to exactly the account they were produced for — for every account id, not
-//! just the one a fixture happened to pick. If the two ever disagreed, the faucet would reject
-//! deposits Circle addressed to it, or — worse — accept deposits addressed elsewhere.
+//! The whole design rests on one claim: the bytes `EthEmbeddedAccountId::to_bytes32` produces off
+//! chain decode, on chain, back to exactly the account they were produced for — for every account
+//! id, not just the one a fixture happened to pick. If the two ever disagreed, the faucet would
+//! reject deposits Circle addressed to it, or — worse — accept deposits addressed elsewhere.
 //!
 //! So every assertion here is made on the result of EXECUTING the MASM inside a transaction, over
 //! bytes the RUST encoder produced and the caller pushes across the `call` boundary. The comparison
@@ -43,7 +43,11 @@ use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_testing::{
-    assert_transaction_executor_error, AccountState, Auth, MockChain, MockTransactionInput,
+    assert_transaction_executor_error,
+    AccountState,
+    Auth,
+    MockChain,
+    MockTransactionInput,
 };
 use miden_tx::TransactionExecutorError;
 use rstest::rstest;
@@ -269,8 +273,9 @@ async fn call_driver(
         .await
 }
 
-/// The Rust side of the packaging: the eight u32-LE-packed limbs of `EthEmbeddedAccountId::from_account_id(id).to_bytes32()`,
-/// limb 0 first — the order `adv_push` pops them off the advice stack and the driver stages them in.
+/// The Rust side of the packaging: the eight u32-LE-packed limbs of
+/// `EthEmbeddedAccountId::from_account_id(id).to_bytes32()`, limb 0 first — the order `adv_push`
+/// pops them off the advice stack and the driver stages them in.
 fn encoded_bytes32_limbs(id: AccountId) -> Vec<Felt> {
     bytes32_to_packed_felts(&EthEmbeddedAccountId::from_account_id(id).to_bytes32()).to_vec()
 }
@@ -306,10 +311,7 @@ async fn native_account_id_matches_the_rust_felts_in_account_context() -> Result
         call_driver(h, "assert_native_id", vec![suffix, prefix])
             .await
             .unwrap_or_else(|e| {
-                panic!(
-                    "account {}: get_id must report the Rust felts: {e}",
-                    h.account_id
-                )
+                panic!("account {}: get_id must report the Rust felts: {e}", h.account_id)
             });
     }
     Ok(())
@@ -318,8 +320,8 @@ async fn native_account_id_matches_the_rust_felts_in_account_context() -> Result
 // PARITY — the decode, over the whole spread
 // ================================================================================================
 
-/// The bytes `EthEmbeddedAccountId::to_bytes32` produces for an account decode, on chain, back to that exact
-/// account — for every id in the spread and for the production faucet.
+/// The bytes `EthEmbeddedAccountId::to_bytes32` produces for an account decode, on chain, back to
+/// that exact account — for every id in the spread and for the production faucet.
 ///
 /// This is the layer Circle's wire format actually fixes: sixteen zero bytes, then the prefix as a
 /// u64 big endian, then the suffix as a u64 big endian. It is also exactly what the mint path does
@@ -330,18 +332,14 @@ async fn own_id_bytes32_packaging_matches_the_rust_encoding() -> Result<()> {
     let mut harnesses = spread()?;
     harnesses.push(setup_production_derive_faucet()?);
     for h in &harnesses {
-        call_driver(
-            h,
-            "assert_bytes32_decodes_to_own_id",
-            encoded_bytes32_limbs(h.account_id),
-        )
-        .await
-        .unwrap_or_else(|e| {
-            panic!(
-                "account {}: to_bytes32 must decode back to the account on chain: {e}",
-                h.account_id
-            )
-        });
+        call_driver(h, "assert_bytes32_decodes_to_own_id", encoded_bytes32_limbs(h.account_id))
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "account {}: to_bytes32 must decode back to the account on chain: {e}",
+                    h.account_id
+                )
+            });
     }
     Ok(())
 }
@@ -357,16 +355,10 @@ async fn own_id_bytes32_packaging_matches_the_rust_encoding() -> Result<()> {
 async fn foreign_expected_bytes32_limbs_trap() -> Result<()> {
     let a = setup_derive_account(AccountType::Public)?;
     let b = setup_derive_account(AccountType::Private)?;
-    assert_ne!(
-        a.account_id, b.account_id,
-        "the two harness accounts must have different ids"
-    );
-    let result = call_driver(
-        &a,
-        "assert_bytes32_decodes_to_own_id",
-        encoded_bytes32_limbs(b.account_id),
-    )
-    .await;
+    assert_ne!(a.account_id, b.account_id, "the two harness accounts must have different ids");
+    let result =
+        call_driver(&a, "assert_bytes32_decodes_to_own_id", encoded_bytes32_limbs(b.account_id))
+            .await;
     // b's encoding is perfectly well formed — its pad is zero and its id is structurally valid — so
     // the decode succeeds and the IDENTITY compare is what has to fire.
     assert_transaction_executor_error!(

@@ -26,16 +26,17 @@
 //! F5). `freeze_and_unfreeze_are_unreachable_from_every_allowlisted_note`
 //! scans the MAST of all 10 allowlisted note scripts and shows not one of them references the
 //! freeze/unfreeze roots; `freeze_and_unfreeze_are_not_admissible_via_either_allowlist` shows the
-//! roots are not among the 10 note-script roots; and `the_auth_component_rejects_a_non_allowlisted_note`
+//! roots are not among the 10 note-script roots; and
+//! `the_auth_component_rejects_a_non_allowlisted_note`
 //! / `the_auth_component_rejects_non_expiration_tx_scripts_and_admits_expiration` EXECUTE the two
 //! (and only two) entry vectors and watch the auth component reject every non-admitted script (the
-//! sole admitted tx-script — the expiration bounder — cannot reach freeze). (The allowlist is an epilogue
-//! `@auth_script`, checked AFTER note/tx-script execution, so a note that itself calls `freeze`
-//! would trap on freeze's own owner-gate before the allowlist check — the allowlist's decision on
-//! such a note is the root-membership one, which is why the freeze-specific proof is membership,
-//! not a self-trapping execution.) So `freeze` can never be invoked, `is_frozen` is never set, and
-//! `ERR_AUTHORITY_FROZEN` never fires: the mechanism is inert — the same disposition as the
-//! ratified `renounce_role`.
+//! sole admitted tx-script — the expiration bounder — cannot reach freeze). (The allowlist is an
+//! epilogue `@auth_script`, checked AFTER note/tx-script execution, so a note that itself calls
+//! `freeze` would trap on freeze's own owner-gate before the allowlist check — the allowlist's
+//! decision on such a note is the root-membership one, which is why the freeze-specific proof is
+//! membership, not a self-trapping execution.) So `freeze` can never be invoked, `is_frozen` is
+//! never set, and `ERR_AUTHORITY_FROZEN` never fires: the mechanism is inert — the same disposition
+//! as the ratified `renounce_role`.
 //!
 //! ROLE MANAGEMENT — REACHABLE, and deliberately so. The standard role-action note is allowlisted,
 //! and its single script root carries `grant_role`, `revoke_role`, `set_role_admin` and
@@ -50,8 +51,7 @@ mod support;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
-use miden_protocol::account::Account;
-use miden_protocol::account::AssetCallbackFlag;
+use miden_protocol::account::{Account, AssetCallbackFlag};
 use miden_protocol::assembly::mast::MastNodeExt;
 use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::note::NoteScriptRoot;
@@ -82,12 +82,8 @@ fn production_account() -> Result<Account> {
 #[test]
 fn authority_freeze_and_unfreeze_are_present_on_the_account() -> Result<()> {
     let account = production_account()?;
-    let roots: BTreeSet<Word> = account
-        .code()
-        .procedures()
-        .iter()
-        .map(|root| Word::from(*root))
-        .collect();
+    let roots: BTreeSet<Word> =
+        account.code().procedures().iter().map(|root| Word::from(*root)).collect();
     for (name, root) in [
         ("freeze", Word::from(Authority::freeze_root())),
         ("unfreeze", Word::from(Authority::unfreeze_root())),
@@ -150,15 +146,15 @@ fn freeze_and_unfreeze_are_unreachable_from_every_allowlisted_note() -> Result<(
 /// There is no freeze/unfreeze NOTE FACTORY at all (the 10 are the two supply notes, six admin
 /// notes, and two fee notes; none carries freeze), so no freeze-bearing note root can be among the
 /// 10, and the one-root
-/// tx-script allowlist admits only the expiration bounder (not freeze). Combined with the MAST sweep
-/// above (no allowlisted note even references the roots) both entry vectors are provably closed.
+/// tx-script allowlist admits only the expiration bounder (not freeze). Combined with the MAST
+/// sweep above (no allowlisted note even references the roots) both entry vectors are provably
+/// closed.
 #[test]
 fn freeze_and_unfreeze_are_not_admissible_via_either_allowlist() -> Result<()> {
     let note_allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
-    for (name, root) in [
-        ("freeze", Authority::freeze_root()),
-        ("unfreeze", Authority::unfreeze_root()),
-    ] {
+    for (name, root) in
+        [("freeze", Authority::freeze_root()), ("unfreeze", Authority::unfreeze_root())]
+    {
         let as_note_root = NoteScriptRoot::from_raw(Word::from(root));
         assert!(
             !note_allowlist.contains(&as_note_root),
@@ -179,16 +175,16 @@ fn freeze_and_unfreeze_are_not_admissible_via_either_allowlist() -> Result<()> {
 // callback flag is Enabled
 // ================================================================================================
 
-/// F4-REVERSAL policed counterpart of the former `invoke_wrappers_are_inert_and_the_asset_stays_basic`
-/// (which asserted the OPPOSITE — no callback slots, `AssetCallbackFlag::Disabled` — under the
-/// basic-asset F4). The transfer blocklist is now wired as the active send + receive policy, so the
-/// #3047 `invoke_send_policy`/`invoke_receive_policy` wrappers are LIVE. Asserts, directly on the
+/// F4-REVERSAL policed counterpart of the former
+/// `invoke_wrappers_are_inert_and_the_asset_stays_basic` (which asserted the OPPOSITE — no callback
+/// slots, `AssetCallbackFlag::Disabled` — under the basic-asset F4). The transfer blocklist is now
+/// wired as the active send + receive policy, so the #3047 `invoke_send_policy`/`invoke_receive_policy` wrappers are LIVE. Asserts, directly on the
 /// shipped composition + account: (1) BOTH protocol asset-callback slots ARE installed and hold the
 /// fixed `invoke_*_policy` wrapper roots (the kernel dispatches them on every policed-asset
 /// transfer), and (2) the committed faucet account id carries `AssetCallbackFlag::Enabled` (every
-/// minted xUSDC is a POLICED asset — the silent-foot-gun tripwire: a fixture built Disabled with the
-/// policy wired would make the callbacks never fire, and this assertion catches it — mutation check
-/// (b)). Complements the policed `basic_asset_tripwire` (F4-reversal).
+/// minted xUSDC is a POLICED asset — the silent-foot-gun tripwire: a fixture built Disabled with
+/// the policy wired would make the callbacks never fire, and this assertion catches it — mutation
+/// check (b)). Complements the policed `basic_asset_tripwire` (F4-reversal).
 #[test]
 fn invoke_wrappers_are_live_and_the_asset_is_policed() -> Result<()> {
     let components =

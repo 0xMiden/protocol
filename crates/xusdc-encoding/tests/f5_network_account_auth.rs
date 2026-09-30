@@ -36,12 +36,15 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::note::{NoteAttachmentScheme, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
-    AuthNetworkAccount, NetworkAccount, NetworkAccountNoteAllowlist,
+    AuthNetworkAccount,
+    NetworkAccount,
+    NetworkAccountNoteAllowlist,
     NetworkAccountTxScriptAllowlist,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
+    ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
+    ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::{MintNote, NetworkAccountTarget, NoteExecutionHint};
@@ -53,11 +56,18 @@ use support::*;
 use xusdc_encoding::account::xreserve::XReserveStablecoinBuilder;
 use xusdc_encoding::note::xreserve_burn::XReserveBurnNote;
 use xusdc_encoding::note::xreserve_mint::{
-    DepositAttestation, XUSDC_MINT_ATTESTATION_NUM_WORDS, XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME,
+    DepositAttestation,
+    XUSDC_MINT_ATTESTATION_NUM_WORDS,
+    XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME,
     XUSDC_MINT_TRANSPORT_PAYLOAD_WORD_OFF,
 };
 use xusdc_encoding::xreserve::encoding::{
-    CircleDomain, DepositIntent, ForeignChainAddress, MintIntent, Signature, XReserveBurnItems,
+    CircleDomain,
+    DepositIntent,
+    ForeignChainAddress,
+    MintIntent,
+    Signature,
+    XReserveBurnItems,
 };
 
 // HELPERS
@@ -77,7 +87,7 @@ fn note_rng(seed: u64) -> RandomCoin {
 fn sample_burn_items() -> XReserveBurnItems {
     XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
-        dest_recipient: ForeignChainAddress::new([0xABu8; 32]),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
     }
 }
 
@@ -119,8 +129,8 @@ fn attested_deposit_intent_payload(
     payload
 }
 
-/// Builds the current PRODUCTION faucet and returns its MockChain + committed faucet account object.
-/// The faucet id (`account.id()`) is PUBLIC — usable as a `NetworkAccountTarget` target.
+/// Builds the current PRODUCTION faucet and returns its MockChain + committed faucet account
+/// object. The faucet id (`account.id()`) is PUBLIC — usable as a `NetworkAccountTarget` target.
 fn production_faucet() -> Result<(MockChain, Account)> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
         .context("building the production faucet")?;
@@ -185,7 +195,8 @@ fn production_faucet_auth_component_is_stock_network_account() -> Result<()> {
     Ok(())
 }
 
-// PROOF #5 — the frozen note-script allowlist + a tx-script allowlist of EXACTLY the expiration root
+// PROOF #5 — the frozen note-script allowlist + a tx-script allowlist of EXACTLY the expiration
+// root
 // ================================================================================================
 
 /// The note-script allowlist contains exactly ten roots: two supply notes, six administration and
@@ -195,11 +206,7 @@ fn production_faucet_auth_component_is_stock_network_account() -> Result<()> {
 fn production_faucet_note_allowlist_contains_the_ten_expected_roots() -> Result<()> {
     let (_chain, account) = production_faucet()?;
     let expected = XReserveStablecoinBuilder::allowed_note_scripts();
-    assert_eq!(
-        expected.len(),
-        10,
-        "the expected allowlist contains exactly 10 distinct roots"
-    );
+    assert_eq!(expected.len(), 10, "the expected allowlist contains exactly 10 distinct roots");
 
     // The built account stores the builder's allowlist.
     let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
@@ -269,7 +276,8 @@ async fn non_allowlisted_note_is_rejected_by_auth() -> Result<()> {
 async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Result<()> {
     let (chain, account) = production_faucet()?;
 
-    // NEGATIVE — an arbitrary (nop) tx script is NOT the expiration root, so the allowlist rejects it.
+    // NEGATIVE — an arbitrary (nop) tx script is NOT the expiration root, so the allowlist rejects
+    // it.
     let bogus = CodeBuilder::new()
         .compile_tx_script("@transaction_script\npub proc main\n    nop\nend\n")
         .context("compiling the probe tx script")?;
@@ -283,10 +291,11 @@ async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Re
     assert_transaction_executor_error!(rejected, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
     // POSITIVE — the canonical expiration script IS allowlisted, so it CLEARS the allowlist gate.
-    // An expiration-only tx changes no account state and consumes no notes, so the kernel rejects it
-    // with the empty-tx epilogue assertion — downstream of, and orthogonal to, the allowlist gate.
-    // The precise invariant: the expiration script is NOT rejected by the tx-script allowlist (a
-    // mutation dropping the expiration root flips this back to the allowlist error — RED — caught here).
+    // An expiration-only tx changes no account state and consumes no notes, so the kernel rejects
+    // it with the empty-tx epilogue assertion — downstream of, and orthogonal to, the allowlist
+    // gate. The precise invariant: the expiration script is NOT rejected by the tx-script
+    // allowlist (a mutation dropping the expiration root flips this back to the allowlist error
+    // — RED — caught here).
     let expiration = ExpirationTransactionScript::new(NonZeroU16::new(64).expect("64 is non-zero"));
     let admitted = chain
         .build_transaction(account.id())
@@ -297,7 +306,7 @@ async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Re
         .execute()
         .await;
     match admitted {
-        Ok(_) => {}
+        Ok(_) => {},
         Err(TransactionExecutorError::TransactionProgramExecutionFailed(actual)) => assert!(
             !ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED.matches_execution_error(&actual),
             "the canonical ExpirationTransactionScript must be ADMITTED by the S12 allowlist, but \
@@ -305,7 +314,7 @@ async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Re
         ),
         Err(other) => {
             panic!("the expiration tx failed with an unexpected non-execution error: {other}")
-        }
+        },
     }
     Ok(())
 }
@@ -344,10 +353,7 @@ fn mint_note_carries_the_merged_transport_and_the_routing_target() -> Result<()>
     let transport_scheme = NoteAttachmentScheme::new(XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME)
         .expect("scheme 4 is a valid attachment scheme");
     let count_of = |scheme: NoteAttachmentScheme| {
-        note.attachments()
-            .iter()
-            .filter(|a| a.attachment_scheme() == scheme)
-            .count()
+        note.attachments().iter().filter(|a| a.attachment_scheme() == scheme).count()
     };
     assert_eq!(
         count_of(transport_scheme),
@@ -402,11 +408,7 @@ fn mint_note_carries_the_merged_transport_and_the_routing_target() -> Result<()>
 
     let target = NetworkAccountTarget::try_from(note.attachments())
         .map_err(|e| anyhow::anyhow!("the mint note must carry a scheme-2 routing target: {e}"))?;
-    assert_eq!(
-        target.target_id(),
-        faucet_id,
-        "the routing target must be the faucet account"
-    );
+    assert_eq!(target.target_id(), faucet_id, "the routing target must be the faucet account");
     assert_eq!(
         target.execution_hint(),
         NoteExecutionHint::Always,
@@ -438,11 +440,7 @@ fn burn_note_carries_scheme2_target_to_faucet() -> Result<()> {
     );
     let target = NetworkAccountTarget::try_from(note.attachments())
         .map_err(|e| anyhow::anyhow!("the burn note must carry a scheme-2 routing target: {e}"))?;
-    assert_eq!(
-        target.target_id(),
-        faucet_id,
-        "the routing target must be the faucet account"
-    );
+    assert_eq!(target.target_id(), faucet_id, "the routing target must be the faucet account");
     assert_eq!(
         target.execution_hint(),
         NoteExecutionHint::Always,

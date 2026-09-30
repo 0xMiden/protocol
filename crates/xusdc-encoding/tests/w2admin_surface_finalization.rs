@@ -42,27 +42,17 @@ fn read_role_config(account: &Account, role: &RoleSymbol) -> Result<Word> {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)]);
     account
         .storage()
-        .get_map_item(
-            RoleBasedAccessControl::role_config_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(RoleBasedAccessControl::role_config_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading role_config[{role}]: {e}"))
 }
 
 /// Whether `member` holds `role`.
 fn read_role_membership(account: &Account, role: &RoleSymbol, member: AccountId) -> Result<Word> {
-    let key = Word::from([
-        Felt::ZERO,
-        Felt::from(role),
-        member.suffix(),
-        member.prefix().as_felt(),
-    ]);
+    let key =
+        Word::from([Felt::ZERO, Felt::from(role), member.suffix(), member.prefix().as_felt()]);
     account
         .storage()
-        .get_map_item(
-            RoleBasedAccessControl::role_membership_slot(),
-            StorageMapKey::new(key),
-        )
+        .get_map_item(RoleBasedAccessControl::role_membership_slot(), StorageMapKey::new(key))
         .map_err(|e| anyhow::anyhow!("reading role_membership[{role}][{member}]: {e}"))
 }
 
@@ -100,8 +90,8 @@ fn role_note(
 
 /// Every remaining administrator- and role-gated action still lands with no ownership component in
 /// the composition: the attester allowlist, the supply cap, the burn floor, the pause flag and the
-/// transfer blocklist. None of them ever read the administrator slot, and this proves it rather than
-/// assuming it.
+/// transfer blocklist. None of them ever read the administrator slot, and this proves it rather
+/// than assuming it.
 #[tokio::test]
 async fn every_remaining_admin_note_still_lands() -> Result<()> {
     let commitment = Word::from([7u32, 8, 9, 10]);
@@ -171,9 +161,9 @@ async fn every_remaining_admin_note_still_lands() -> Result<()> {
 // ================================================================================================
 // With no ownership component, `ADMIN` membership is the whole of the faucet's administrative
 // authority — there is no owner slot, no nominate-then-accept handshake, and no second handle that
-// could serve as a backstop. Everything the administratorship component used to carry now rides on grants
-// and revokes of this one role, so the handover sequence and its failure boundary are worth driving
-// end to end rather than describing.
+// could serve as a backstop. Everything the administratorship component used to carry now rides on
+// grants and revokes of this one role, so the handover sequence and its failure boundary are worth
+// driving end to end rather than describing.
 
 /// A successor account for the handover — deliberately not one of the seeded role holders, so
 /// nothing it can do comes from a membership it already had.
