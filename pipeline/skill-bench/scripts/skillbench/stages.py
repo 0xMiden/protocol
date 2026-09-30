@@ -14,6 +14,14 @@ from . import github, judge, report, runner, telemetry, workspace
 from .util import BenchError, read_json, run, write_json
 
 
+def require(run_dir: Path, name: str, stage: str) -> Path:
+    """The path of an earlier stage's output, or an error naming the stage to run first."""
+    path = run_dir / name
+    if not path.exists():
+        raise BenchError(f"{path} does not exist yet; run the {stage} stage first")
+    return path
+
+
 def load_run(run_dir: str | Path) -> tuple[Path, dict[str, Any]]:
     path = Path(run_dir)
     if not (path / "config.json").is_file():
@@ -41,7 +49,7 @@ def cache_dir() -> Path:
 
 def prepare_workspaces(run_dir: Path, config: dict[str, Any]) -> tuple[Path, dict[str, workspace.Workspace]]:
     """Build one sealed workspace per arm under a fresh work root outside any project."""
-    pr = read_json(run_dir / "pr.json")
+    pr = read_json(require(run_dir, "pr.json", "fetch"))
     arms = [workspace.parse_arm(a) for a in config["arms"]]
     shas = [pr["base_sha"], pr["review_sha"]] + [a.ref for a in arms if a.ref]
     source = workspace.resolve_source(config["repo"], shas, config.get("source_repo"), cache_dir())
@@ -89,7 +97,7 @@ def stage_replay(run_dir: Path, config: dict[str, Any], keep_workspaces: bool = 
     if all((run_dir / "runs" / f"{rid}.json").exists() for rid in run_ids(config)) and (run_dir / "builtins.json").exists():
         print("all review runs already exist; nothing to replay")
         return
-    pr = read_json(run_dir / "pr.json")
+    pr = read_json(require(run_dir, "pr.json", "fetch"))
     raw = raw_dir(run_dir)
     write_json(run_dir / "environment.json", environment_info())
     work_root, built = prepare_workspaces(run_dir, config)
@@ -142,8 +150,8 @@ def stage_replay(run_dir: Path, config: dict[str, Any], keep_workspaces: bool = 
 
 def stage_telemetry(run_dir: Path, config: dict[str, Any]) -> None:
     """Re-parse the stored transcripts of every run (for example after a parser change)."""
-    pr = read_json(run_dir / "pr.json")
-    builtins = read_json(run_dir / "builtins.json")["names"]
+    pr = read_json(require(run_dir, "pr.json", "fetch"))
+    builtins = read_json(require(run_dir, "builtins.json", "replay"))["names"]
     for path in sorted((run_dir / "runs").glob("*.json")):
         record = read_json(path)
         transcript = run_dir / "raw" / record["id"] / "transcript.jsonl"
@@ -184,7 +192,7 @@ def valid_runs(run_dir: Path, arm: str | None = None) -> list[dict[str, Any]]:
 
 def stage_classify(run_dir: Path, config: dict[str, Any]) -> None:
     """Turn the candidate threads into ground-truth findings (truth.json)."""
-    pr = read_json(run_dir / "pr.json")
+    pr = read_json(require(run_dir, "pr.json", "fetch"))
     raw = raw_dir(run_dir) / "judge"
     verdicts: list[dict[str, Any]] = []
     cost = 0.0
@@ -213,7 +221,7 @@ def stage_classify(run_dir: Path, config: dict[str, Any]) -> None:
 
 def stage_match(run_dir: Path, config: dict[str, Any]) -> None:
     """Match every valid run's findings to the ground truth (matches/<run>.json)."""
-    truth = read_json(run_dir / "truth.json")["truth"]
+    truth = read_json(require(run_dir, "truth.json", "classify"))["truth"]
     raw = raw_dir(run_dir) / "judge"
     root, cwd = _judge_cwd(config)
     try:
@@ -262,7 +270,7 @@ def attribution_digest(skills: list[dict[str, Any]], items: list[dict[str, Any]]
 
 def stale_results(run_dir: Path, config: dict[str, Any]) -> list[str]:
     """Judge results whose inputs changed since they were computed (report notes)."""
-    truth = read_json(run_dir / "truth.json")["truth"]
+    truth = read_json(require(run_dir, "truth.json", "classify"))["truth"]
     stale = []
     for record in valid_runs(run_dir):
         path = run_dir / "matches" / f"{record['id']}.json"
@@ -287,7 +295,7 @@ def stale_results(run_dir: Path, config: dict[str, Any]) -> list[str]:
 
 def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
     """Ask which snapshot skills cover each finding (attribution/<arm>.json)."""
-    truth = read_json(run_dir / "truth.json")["truth"]
+    truth = read_json(require(run_dir, "truth.json", "classify"))["truth"]
     raw = raw_dir(run_dir) / "judge"
     for arm in (workspace.parse_arm(a) for a in config["arms"]):
         path = run_dir / "attribution" / f"{arm.slug}.json"
@@ -328,6 +336,7 @@ def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
 
 
 def stage_report(run_dir: Path, config: dict[str, Any]) -> None:
+    require(run_dir, "truth.json", "classify")
     result = report.build_result(run_dir)
     stale = stale_results(run_dir, config)
     if stale:

@@ -106,6 +106,17 @@ def default_repo_for_cwd() -> str | None:
     return info.get("nameWithOwner")
 
 
+def resolve_commit(owner: str, name: str, ref: str) -> str:
+    """The full SHA of a commit, branch or tag of the repository."""
+    if not re.fullmatch(r"[\w./-]+", ref):
+        raise BenchError(f"not a commit, branch or tag name: '{ref}'")
+    proc = run(["gh", "api", f"repos/{owner}/{name}/commits/{ref}", "--jq", ".sha"], timeout=120, check=False)
+    sha = proc.stdout.strip()
+    if proc.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise BenchError(f"could not resolve '{ref}' in {owner}/{name}")
+    return sha
+
+
 def merge_base(owner: str, name: str, base: str, head: str) -> str:
     """The commit the reviewed change branched from, via GitHub's compare API."""
     proc = run(

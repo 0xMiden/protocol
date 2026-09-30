@@ -105,7 +105,7 @@ python3 pipeline/skill-bench/scripts/bench.py resume --run-dir skill-bench-resul
 A PR can be given as `owner/repo#N`, as a PR URL, or as a bare number. A bare number resolves to the current checkout's repository, or to its parent if the checkout is a fork. Useful options, all recorded in the run's `config.json`:
 
 - `--round N`: the review round to replay (default 1). `fetch` lists every round, with its reviewers and thread count, in `pr.json`.
-- `--arms at-pr,none`: the arms to run; add `ref:<sha>` to compare another skill snapshot.
+- `--arms at-pr,none`: the arms to run. Add `ref:<commit, branch or tag>` to compare another skill snapshot; it is pinned to a full SHA when the run is created, so a resumed run uses the same snapshot.
 - `--runs N`: runs per arm (default 2). Agent output varies from run to run, so more runs give steadier numbers.
 - `--reviewer plain|repo-agent|repo-agent+skills`, and `--repo-agent NAME`.
 - `--model M` for the reviews, and `--judge-model M` for the judge (default `opus`).
@@ -128,6 +128,8 @@ A run directory (by default `skill-bench-results/<owner>-<repo>-<pr>/<UTC stamp>
 - `truth.json`, `matches/<run>.json` and `attribution/<arm>.json`: the judge results;
 - `result.json` and `report.md`: the outcome;
 - `raw/`: session streams, transcripts and raw judge output. The directory carries its own `.gitignore`, so it is never committed by accident.
+
+Claude Code also keeps its own copy of every replay session in its session history (`~/.claude/projects/`, in directories named after the temporary workspaces). Delete those directories if you do not want the replays in your history.
 
 ## Cost and authentication
 

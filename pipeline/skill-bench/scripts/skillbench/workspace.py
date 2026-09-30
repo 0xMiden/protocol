@@ -159,11 +159,15 @@ def extract_tree(git_dir: Path, sha: str, dest: Path, path: str | None = None) -
     cmd = ["git", "-C", str(git_dir), "archive", "--format=tar", sha] + ([path] if path else [])
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
         assert proc.stdout is not None
-        with tarfile.open(fileobj=proc.stdout, mode="r|") as archive:
-            if hasattr(tarfile, "data_filter"):
-                archive.extractall(dest, filter="data")
-            else:  # Python < 3.12
-                archive.extractall(dest)
+        try:
+            with tarfile.open(fileobj=proc.stdout, mode="r|") as archive:
+                if hasattr(tarfile, "data_filter"):
+                    archive.extractall(dest, filter="data")
+                else:  # Python < 3.12
+                    archive.extractall(dest)
+        except tarfile.TarError as exc:  # includes members the data filter refuses, such as absolute links
+            proc.kill()
+            raise BenchError(f"could not safely extract {sha[:12]}: {exc}") from exc
         stderr = proc.stderr.read().decode() if proc.stderr else ""
     if proc.returncode != 0:
         raise BenchError(f"git archive {sha[:12]} failed: {stderr.strip()[:500]}")
@@ -198,9 +202,9 @@ def assert_isolated(path: Path) -> None:
 
 
 def new_work_root(base: str | None = None) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="skill-bench-", dir=base))
-    assert_isolated(root)
-    return root
+    parent = Path(base) if base else Path(tempfile.gettempdir())
+    assert_isolated(parent / "skill-bench-root")  # refuse before creating anything
+    return Path(tempfile.mkdtemp(prefix="skill-bench-", dir=parent))
 
 
 # --- building ------------------------------------------------------------

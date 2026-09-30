@@ -41,7 +41,25 @@ def _config_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-usd-per-judge", type=float, default=1.0, help="cost ceiling for one judge call (default: 1.00)")
 
 
+def _resolve_arms(text: str, owner: str, name: str) -> list[str]:
+    """Parse, deduplicate, and pin `ref:` arms to full SHAs so a resumed run rebuilds the same snapshot."""
+    arms: list[str] = []
+    for part in text.split(","):
+        if not part.strip():
+            continue
+        arm = workspace.parse_arm(part)
+        if arm.kind == "ref" and arm.ref:
+            arm = workspace.parse_arm(f"ref:{github.resolve_commit(owner, name, arm.ref)}")
+        if arm.name not in arms:
+            arms.append(arm.name)
+    if not arms:
+        raise BenchError("--arms names no arm")
+    return arms
+
+
 def _new_config(args: argparse.Namespace) -> dict[str, Any]:
+    if args.runs < 1 or args.round < 1:
+        raise BenchError("--runs and --round must be at least 1")
     default_repo = args.repo
     if default_repo is None and args.pr.strip().isdigit():
         default_repo = github.default_repo_for_cwd()
@@ -53,7 +71,7 @@ def _new_config(args: argparse.Namespace) -> dict[str, Any]:
         "number": number,
         "skills_dir": args.skills_dir.rstrip("/"),
         "round": args.round,
-        "arms": [workspace.parse_arm(a).name for a in args.arms.split(",") if a.strip()],
+        "arms": _resolve_arms(args.arms, owner, name),
         "source_repo": args.source_repo,
         "work_dir": args.work_dir,
         "runs": args.runs,
