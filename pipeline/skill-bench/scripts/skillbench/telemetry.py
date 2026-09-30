@@ -5,8 +5,9 @@ and subagent sessions to `<id>/subagents/*.jsonl`. This module reads:
 
 * listed   - skill names in `skill_listing` attachments: what the model was shown
 * invoked  - `Skill` tool calls: skills the model loaded on purpose
-* read     - reads of files under the skills directory through `Read` or `Bash`
-* searched - `Grep`/`Glob` calls aimed at the skills directory
+* read     - reads of files under the skills directory, through `Read` or a
+  read-like shell command (`cat`, `head`, `sed` ...) that did not fail
+* searched - `Grep`/`Glob` calls, or search commands, aimed at the skills directory
 * outside_paths - absolute paths outside the workspace that the reviewer
   read or named in a shell command (a leak audit; Claude Code's own
   session files under `internal_dirs` are not counted)
@@ -57,7 +58,10 @@ class _Accumulator:
         self.tool_counts: dict[str, int] = {}
         self.skill_calls: dict[str, str] = {}  # tool_use id -> skill
         self.body_chars: dict[str, int] = {}
-        self._mention = re.compile(re.escape(skills_dir) + r"/([^/\s'\"`]+)")
+        # shell commands that mention skill files, kept until their result shows whether they worked
+        self.pending: dict[str, list[tuple[set[str], str]]] = {}
+        # <skills_dir>/<name><rest of the path>; glob characters end the name, so `*` is never a skill
+        self._mention = re.compile(re.escape(skills_dir) + r"/([^/\s'\"`*?\[]+)((?:/[^\s'\"`;|&]*)?)")
 
     def feed(self, records: list[Any]) -> None:
         for record in records:
@@ -74,6 +78,12 @@ class _Accumulator:
                 skill = self.skill_calls[record["sourceToolUseID"]]
                 text = "".join(b.get("text", "") for b in _content(record) if isinstance(b, dict))
                 self.body_chars[skill] = max(self.body_chars.get(skill, 0), len(text))
+            elif kind == "user":
+                for block in _content(record):
+                    if block.get("type") == "tool_result" and block.get("tool_use_id") in self.pending:
+                        for bucket, name in self.pending.pop(block["tool_use_id"]):
+                            if not block.get("is_error"):
+                                bucket.add(name)
 
     def _attachment(self, attachment: dict[str, Any]) -> None:
         if attachment.get("type") == "skill_listing":
@@ -99,9 +109,14 @@ class _Accumulator:
                 self.searched.add(mention)
         elif name == "Bash":
             command = str(params.get("command") or "")
-            for mention in self._mention.findall(command):
-                if not self._ignored(f"{self.skills_dir}/{mention}"):
-                    self.read.add(mention)
+            bucket = self.read if _READ_COMMAND.search(command) else self.searched if _SEARCH_COMMAND.search(command) else None
+            mentions = [
+                (bucket, name)
+                for name, rest in self._mention.findall(command)
+                if bucket is not None and not self._ignored(f"{self.skills_dir}/{name}{rest}")
+            ]
+            if mentions and block.get("id"):
+                self.pending[block["id"]] = mentions
             for token in _ABSOLUTE_PATH.findall(command):
                 if token not in _HARMLESS_PATHS:
                     self._outside(Path(token), token)
@@ -146,6 +161,11 @@ class _Accumulator:
             "body_chars": dict(sorted(self.body_chars.items())),
         }
 
+
+# Shell commands that show file contents, or search them. Anything else (ls, find,
+# git show of an untracked path) does not count as reading a skill.
+_READ_COMMAND = re.compile(r"(?:^|[\s|;&(])(?:cat|head|tail|less|more|nl|bat|sed|awk)\s")
+_SEARCH_COMMAND = re.compile(r"(?:^|[\s|;&(])(?:grep|egrep|rg|ag|ack)\s")
 
 # An absolute path: a slash not preceded by a path, glob, variable or ref character.
 _ABSOLUTE_PATH = re.compile(r"(?<![\w.~$/*:-])/(?:[\w.@+-]+/)*[\w.@+-]+")

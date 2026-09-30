@@ -13,6 +13,10 @@ def tool_use(uid, name, **params):
     return {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": uid, "name": name, "input": params}]}}
 
 
+def result(uid, error=False):
+    return {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": uid, "is_error": error, "content": "..."}]}}
+
+
 def write_jsonl(path, records):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(r) for r in records) + "\nnot json\n")
@@ -36,8 +40,20 @@ class ParseSessionTest(unittest.TestCase):
                 tool_use("u3", "Read", file_path=str(self.ws / ".claude/skills/rule-b/SKILL.md")),
                 tool_use("u4", "Read", file_path="src/lib.rs"),
                 tool_use("u5", "Read", file_path="/etc/passwd"),
-                tool_use("u6", "Bash", command="git show HEAD:.claude/skills/rule-d/SKILL.md"),
-                tool_use("u7", "Bash", command="cat .claude/skills/edited/SKILL.md"),
+                tool_use("u6", "Bash", command="git show HEAD:.claude/skills/rule-d/SKILL.md"),  # not a read-like command
+                result("u6", error=True),
+                tool_use("u7", "Bash", command="cat .claude/skills/edited/SKILL.md"),  # the PR edits this file
+                result("u7"),
+                tool_use("u12", "Bash", command="head -20 .claude/skills/rule-g/SKILL.md"),
+                result("u12"),
+                tool_use("u13", "Bash", command="cat .claude/skills/rule-h/SKILL.md"),
+                result("u13", error=True),  # a failed read does not count
+                tool_use("u14", "Bash", command="ls .claude/skills/* | head"),
+                result("u14"),
+                tool_use("u15", "Bash", command="grep -rn padw .claude/skills/rule-i/"),
+                result("u15"),
+                tool_use("u16", "Bash", command="cat .claude/skills/edited/references/notes.md"),  # not the edited file
+                result("u16"),
                 tool_use("u8", "Grep", pattern="padw", path=str(self.ws / ".claude/skills/rule-e")),
                 tool_use("u9", "Read", file_path=str(root / "config/projects/p/sid/tool-results/big.txt")),
                 tool_use("u10", "Bash", command=f"cat /home/someone/repo/src/lib.rs 2>/dev/null; head {self.ws}/src/a.rs"),
@@ -63,8 +79,8 @@ class ParseSessionTest(unittest.TestCase):
         self.assertEqual(tele["listed"], ["rule-a", "rule-b", "code-review", "rule-c"])
         self.assertEqual(tele["invoked"], ["code-review", "rule-a", "rule-f"])
         self.assertEqual(tele["invocations"], 3)
-        self.assertEqual(tele["read"], ["rule-b", "rule-d"])  # rule-e was only searched; edited is ignored
-        self.assertEqual(tele["searched"], ["rule-e"])
+        self.assertEqual(tele["read"], ["edited", "rule-b", "rule-g"])
+        self.assertEqual(tele["searched"], ["rule-e", "rule-i"])
         self.assertEqual(tele["outside_paths"], ["/etc/passwd", "/home/someone/repo/src/lib.rs"])
         self.assertEqual(tele["body_chars"], {"rule-a": 42})
         self.assertEqual(tele["subagent_transcripts"], 1)
