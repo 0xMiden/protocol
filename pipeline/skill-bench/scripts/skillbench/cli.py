@@ -37,6 +37,8 @@ def _config_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-usd-per-review", type=float, default=3.0, help="per-run cost ceiling passed to --max-budget-usd (default: 3.00)")
     parser.add_argument("--timeout", type=int, default=1800, help="seconds before a single run is abandoned (default: 1800)")
     parser.add_argument("--calibration-model", default="haiku", help="model for the built-in skill calibration run (default: haiku)")
+    parser.add_argument("--judge-model", default="opus", help="model for classifying threads, matching and attribution (default: opus)")
+    parser.add_argument("--max-usd-per-judge", type=float, default=1.0, help="cost ceiling for one judge call (default: 1.00)")
 
 
 def _new_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -61,6 +63,8 @@ def _new_config(args: argparse.Namespace) -> dict[str, Any]:
         "max_usd_review": args.max_usd_per_review,
         "timeout": args.timeout,
         "calibration_model": args.calibration_model,
+        "judge_model": args.judge_model,
+        "max_usd_judge": args.max_usd_per_judge,
     }
 
 
@@ -86,6 +90,14 @@ def _cmd_replay(args: argparse.Namespace) -> None:
 def _cmd_telemetry(args: argparse.Namespace) -> None:
     run_dir, config = stages.load_run(args.run_dir)
     stages.stage_telemetry(run_dir, config)
+
+
+def _stage_command(stage: Any) -> Any:
+    def command(args: argparse.Namespace) -> None:
+        run_dir, config = stages.load_run(args.run_dir)
+        stage(run_dir, config)
+
+    return command
 
 
 def _cmd_render_role(args: argparse.Namespace) -> None:
@@ -131,6 +143,15 @@ def build_parser() -> argparse.ArgumentParser:
     tele = sub.add_parser("telemetry", help="re-parse the stored transcripts of a run")
     tele.add_argument("--run-dir", required=True)
     tele.set_defaults(func=_cmd_telemetry)
+
+    for name, stage, help_text in (
+        ("classify", stages.stage_classify, "classify the human review threads into ground-truth findings"),
+        ("match", stages.stage_match, "match each valid run's findings to the ground truth"),
+        ("attribute", stages.stage_attribute, "decide which snapshot skills cover each finding"),
+    ):
+        stage_parser = sub.add_parser(name, help=help_text)
+        stage_parser.add_argument("--run-dir", required=True)
+        stage_parser.set_defaults(func=_stage_command(stage))
 
     render = sub.add_parser("render-role", help="print a role as the JSON that claude --agents expects")
     render.add_argument("role", help="role name, e.g. reviewer")

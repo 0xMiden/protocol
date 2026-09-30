@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import github, runner, telemetry, workspace
+from . import github, judge, runner, telemetry, workspace
 from .util import BenchError, read_json, run, write_json
 
 
@@ -149,3 +149,128 @@ def stage_telemetry(run_dir: Path, config: dict[str, Any]) -> None:
         runner.finalize(record, builtins, snapshot)
         write_json(path, record)
     print(f"re-parsed transcripts in {run_dir / 'runs'}")
+
+
+# --- judge stages --------------------------------------------------------
+
+
+def _judge_cwd(config: dict[str, Any]) -> tuple[Path, Path]:
+    """An empty directory outside any project for judge sessions."""
+    root = workspace.new_work_root(config.get("work_dir"))
+    cwd = root / "judge"
+    cwd.mkdir()
+    return root, cwd
+
+
+def _judge_kwargs(config: dict[str, Any], cwd: Path) -> dict[str, Any]:
+    return {"model": config["judge_model"], "max_usd": config["max_usd_judge"], "cwd": cwd, "timeout": config["timeout"]}
+
+
+def valid_runs(run_dir: Path, arm: str | None = None) -> list[dict[str, Any]]:
+    records = [read_json(p) for p in sorted((run_dir / "runs").glob("*.json"))]
+    return [r for r in records if r.get("valid") and (arm is None or r["arm"] == arm)]
+
+
+def stage_classify(run_dir: Path, config: dict[str, Any]) -> None:
+    """Turn the candidate threads into ground-truth findings (truth.json)."""
+    pr = read_json(run_dir / "pr.json")
+    raw = raw_dir(run_dir) / "judge"
+    verdicts: list[dict[str, Any]] = []
+    cost = 0.0
+    if pr["candidates"]:
+        root, cwd = _judge_cwd(config)
+        try:
+            for n, batch in enumerate(judge.batches(pr["candidates"], judge.CLASSIFY_BATCH), start=1):
+                out, spent = judge.call_role(
+                    "thread-classifier",
+                    judge.classification_payload(batch),
+                    "thread-classes",
+                    raw_path=raw / f"classify-{n}.json",
+                    **_judge_kwargs(config, cwd),
+                )
+                verdicts += out.get("threads") or []
+                cost += spent
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+    truth, excluded = judge.merge_classification(pr["candidates"], verdicts)
+    write_json(
+        run_dir / "truth.json",
+        {"truth": truth, "excluded": excluded, "judge_model": config["judge_model"], "cost_usd": round(cost, 4)},
+    )
+    print(f"classified {len(pr['candidates'])} candidates: {len(truth)} findings, {len(excluded)} excluded")
+
+
+def stage_match(run_dir: Path, config: dict[str, Any]) -> None:
+    """Match every valid run's findings to the ground truth (matches/<run>.json)."""
+    truth = read_json(run_dir / "truth.json")["truth"]
+    raw = raw_dir(run_dir) / "judge"
+    root, cwd = _judge_cwd(config)
+    try:
+        for record in valid_runs(run_dir):
+            path = run_dir / "matches" / f"{record['id']}.json"
+            if path.exists():
+                continue
+            matches: list[dict[str, Any]] = []
+            cost = 0.0
+            if truth and record["findings"]:
+                out, cost = judge.call_role(
+                    "matcher",
+                    judge.match_payload(truth, record["findings"]),
+                    "matches",
+                    raw_path=raw / f"match-{record['id']}.json",
+                    **_judge_kwargs(config, cwd),
+                )
+                matches = judge.filter_matches(out, {t["id"] for t in truth}, {f["id"] for f in record["findings"]})
+            write_json(path, {"run": record["id"], "matches": matches, "cost_usd": round(cost, 4)})
+            matched = len({m["human_id"] for m in matches})
+            print(f"{record['id']}: {matched} of {len(truth)} human findings matched by {len(record['findings'])} agent findings")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def unmatched_findings(run_dir: Path, record: dict[str, Any]) -> list[dict[str, Any]]:
+    path = run_dir / "matches" / f"{record['id']}.json"
+    if not path.is_file():
+        raise BenchError(f"run {record['id']} has no matches yet; run the match stage first")
+    matched = {m["agent_id"] for m in read_json(path)["matches"]}
+    return [f for f in record["findings"] if f["id"] not in matched]
+
+
+def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
+    """Ask which snapshot skills cover each finding (attribution/<arm>.json)."""
+    truth = read_json(run_dir / "truth.json")["truth"]
+    raw = raw_dir(run_dir) / "judge"
+    for arm in (workspace.parse_arm(a) for a in config["arms"]):
+        path = run_dir / "attribution" / f"{arm.slug}.json"
+        if not arm.has_skills or path.exists():
+            continue
+        snapshot = read_json(run_dir / "snapshots" / f"{arm.slug}.json")
+        skills = [
+            {"name": s["name"], "description": s["description"], "body": snapshot["skill_bodies"].get(s["name"], "")}
+            for s in snapshot["skills"]
+        ]
+        unmatched = [f for record in valid_runs(run_dir, arm.name) for f in unmatched_findings(run_dir, record)]
+        items = judge.attribution_items(truth, unmatched)
+        verdicts: dict[str, dict[str, Any]] = {}
+        cost = 0.0
+        if skills and items:
+            root, cwd = _judge_cwd(config)
+            try:
+                for n, batch in enumerate(judge.batches(items, judge.ATTRIBUTE_BATCH), start=1):
+                    out, spent = judge.call_role(
+                        "attributor",
+                        judge.attribution_payload(skills, batch),
+                        "attribution",
+                        raw_path=raw / f"attribute-{arm.slug}-{n}.json",
+                        **_judge_kwargs(config, cwd),
+                    )
+                    verdicts.update(judge.filter_attribution(out, {i["id"] for i in batch}, {s["name"] for s in skills}))
+                    cost += spent
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+        codifiable = {t["id"]: t["codifiable"] for t in truth}
+        for item in items:
+            verdicts.setdefault(item["id"], {"covering_skills": [], "codifiable": codifiable.get(item["id"], True)})
+        write_json(path, {"arm": arm.name, "items": verdicts, "cost_usd": round(cost, 4)})
+        covered = sum(1 for t in truth if verdicts[t["id"]]["covering_skills"])
+        print(f"{arm.name}: {covered} of {len(truth)} human findings are covered by a snapshot skill")

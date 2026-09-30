@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["threads"],
+  "properties": {
+    "threads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "actionable", "kind", "rule", "resolved_in_favour", "codifiable"],
+        "properties": {
+          "id": {"type": "string"},
+          "actionable": {"type": "boolean"},
+          "kind": {"type": "string", "enum": ["blocking", "should-fix", "nit", "question", "discussion", "praise", "other"]},
+          "rule": {"type": "string"},
+          "resolved_in_favour": {"type": "boolean"},
+          "codifiable": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

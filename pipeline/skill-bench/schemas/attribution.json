@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "covering_skills", "codifiable"],
+        "properties": {
+          "id": {"type": "string"},
+          "covering_skills": {"type": "array", "items": {"type": "string"}},
+          "codifiable": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}
