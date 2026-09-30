@@ -30,6 +30,7 @@ protox         = { workspace = true }
 quote          = { workspace = true }
 
 [dev-dependencies]
+anyhow         = { workspace = true }
 assert_matches = { workspace = true }
 miden-protocol = { features = ["testing"], workspace = true }
 rand           = { workspace = true }

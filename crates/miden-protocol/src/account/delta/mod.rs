@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::account::{Account, AccountCode, AccountId, AccountStorage, AccountStoragePatch};
+use crate::account::{Account, AccountCodePatch, AccountId, AccountStorage, AccountStoragePatch};
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
@@ -12,7 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word, ZERO};
+use crate::{Felt, Hasher, Word};
 
 mod delta_op;
 pub use delta_op::AssetDeltaOperation;
@@ -31,17 +31,7 @@ pub use vault::{AccountVaultDelta, AssetDelta};
 /// - vault: an [`AccountVaultDelta`] object that contains the changes to the account vault.
 /// - nonce: if the nonce of the account has changed, the _delta_ of the nonce is stored, i.e. the
 ///   value by which the nonce increased.
-/// - code: an [`AccountCode`] for new accounts and `None` for others.
-///
-/// The presence of the code in a delta signals if the delta is a _full state_ or _partial state_
-/// delta. A full state delta must be converted into an [`Account`] object, while a partial state
-/// delta must be applied to an existing [`Account`]. Because a full state delta reconstructs the
-/// account from empty storage, its storage patch may only create slots, never update or remove
-/// them; [`AccountDelta::new`] enforces this.
-///
-/// TODO(code_upgrades): The ability to track account code updates is an outstanding feature. For
-/// that reason, the account code is not considered as part of the "nonce must be incremented if
-/// state changed" check.
+/// - code: an [`AccountCodePatch`] containing the code of a new or upgraded account.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountDelta {
     /// The ID of the account to which this delta applies. If the delta is created during
@@ -51,10 +41,10 @@ pub struct AccountDelta {
     storage: AccountStoragePatch,
     /// The delta of the account's asset vault.
     vault: AccountVaultDelta,
-    /// The code of a new account (`Some`) or `None` for existing accounts.
-    code: Option<AccountCode>,
-    /// The value by which the nonce was incremented. Must be greater than zero if storage or vault
-    /// are non-empty.
+    /// The code of a new or upgraded account.
+    code: AccountCodePatch,
+    /// The value by which the nonce was incremented. Must be greater than zero if storage, vault
+    /// or code are non-empty.
     nonce_delta: Felt,
 }
 
@@ -83,30 +73,18 @@ impl AccountDelta {
 
     /// Returns new [AccountDelta] instantiated from the provided components.
     ///
-    /// `code` is `Some` for a full state delta (a new account) and `None` otherwise.
-    ///
     /// # Errors
     ///
-    /// - Returns an error if storage or vault were updated, but the nonce_delta is 0.
-    /// - Returns an error if `code` is provided but the storage patch contains an `Update` or
-    ///   `Remove` operation. A full state delta must reconstruct the account from empty storage, so
-    ///   it may only create slots.
+    /// Returns an error if storage, vault or code were updated, but the nonce_delta is 0.
     pub fn new(
         account_id: AccountId,
         storage: AccountStoragePatch,
         vault: AccountVaultDelta,
-        code: Option<AccountCode>,
+        code: AccountCodePatch,
         nonce_delta: Felt,
     ) -> Result<Self, AccountDeltaError> {
-        // nonce must be updated if either account storage or vault were updated
-        validate_nonce(nonce_delta, &storage, &vault)?;
-
-        // A full state delta (carrying code) must reconstruct the account from empty storage, so it
-        // may only create slots. An `Update` or `Remove` assumes the slot already exists and would
-        // make reconstruction impossible.
-        if code.is_some() && storage.contains_non_create_ops() {
-            return Err(AccountDeltaError::FullStateDeltaContainsNonCreateOp);
-        }
+        // nonce must be updated if either account storage, vault or code were updated
+        validate_nonce(nonce_delta, &storage, &vault, &code)?;
 
         Ok(Self {
             account_id,
@@ -128,24 +106,12 @@ impl AccountDelta {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns true if this account delta does not contain any vault, storage or nonce updates.
+    /// Returns true if this account delta does not contain any vault, storage or code updates and
+    /// the nonce wasn't updated.
     pub fn is_empty(&self) -> bool {
-        self.storage.is_empty() && self.vault.is_empty() && self.nonce_delta == ZERO
-    }
-
-    /// Returns `true` if this delta is a "full state" delta, `false` otherwise, i.e. if it is a
-    /// "partial state" delta.
-    ///
-    /// See the type-level docs for more on this distinction.
-    pub fn is_full_state(&self) -> bool {
-        // TODO(code_upgrades): Change this to another detection mechanism once we have code upgrade
-        // support, at which point the presence of code may not be enough of an indication
-        // that a delta can be converted to a full account.
-        //
-        // The presence of code alone is sufficient to identify a full state delta: the constructor
-        // enforces that a code-carrying delta's storage patch contains only `Create` ops, so it
-        // always reconstructs a full account.
-        self.code.is_some()
+        // A nonce delta of zero means the delta is empty, since the constructor validates that
+        // non-empty storage, vault or code updates must increment the nonce.
+        self.nonce_delta == Felt::ZERO
     }
 
     /// Returns storage updates for this account delta.
@@ -168,13 +134,13 @@ impl AccountDelta {
         self.account_id
     }
 
-    /// Returns a reference to the account code of this delta, if present.
-    pub fn code(&self) -> Option<&AccountCode> {
-        self.code.as_ref()
+    /// Returns code updates for this account delta.
+    pub fn code(&self) -> &AccountCodePatch {
+        &self.code
     }
 
     /// Converts this delta into its individual components.
-    pub fn into_parts(self) -> (AccountStoragePatch, AccountVaultDelta, Option<AccountCode>, Felt) {
+    pub fn into_parts(self) -> (AccountStoragePatch, AccountVaultDelta, AccountCodePatch, Felt) {
         (self.storage, self.vault, self.code, self.nonce_delta)
     }
 
@@ -183,7 +149,7 @@ impl AccountDelta {
     /// ## Computation
     ///
     /// The delta commitment is a sequential hash over a vector of field elements which starts out
-    /// empty and is appended to in the following way. If no asset or storage elements were
+    /// empty and is appended to in the following way. If no asset, storage or code elements were
     /// appended, the commitment is defined as the empty word. Whenever sorting is expected, it
     /// is that of a [`Word`]. The hash is domain-separated by the delta's `DOMAIN`, which is
     /// placed in the capacity word of the hasher.
@@ -232,6 +198,8 @@ impl AccountDelta {
     ///           [`StoragePatchOperation::Remove`](crate::account::StoragePatchOperation::Remove),
     ///           the trailer is always included with `num_changed_entries` set to zero, since the
     ///           number of removed entries is unknown.
+    /// - If the account is new or its code was upgraded, append `[[domain = 4, 0, 0, 0],
+    ///   CODE_COMMITMENT]`, where `CODE_COMMITMENT` is the commitment of the account code.
     ///
     /// ## Rationale
     ///
@@ -240,13 +208,6 @@ impl AccountDelta {
     /// in this bullet point list should add an even number of words since the hasher operates
     /// on double words. In the VM, each permutation is done immediately, so adding an uneven
     /// number of words in a given step will result in more difficulty in the MASM implementation.
-    ///
-    /// ### New Accounts
-    ///
-    /// The delta for new accounts (a full state delta) must commit to all the created storage slots
-    /// of the account, even if these slots contain the default value (e.g. the empty word for value
-    /// slots or an empty storage map). This ensures the full state delta commits to the exact
-    /// storage slots that are contained in the account.
     ///
     /// ## Security
     ///
@@ -332,63 +293,57 @@ impl AccountDelta {
     /// `num_changed_entries` included in the commitment, these deltas would be ambiguous. A delta
     /// with two empty maps could have the same commitment as a delta with one map entry where one
     /// key-value pair has changed.
-    ///
-    /// #### New Accounts
-    ///
-    /// The number of changed entries of a storage map can be validly zero when an empty storage map
-    /// is created in account (e.g. at account creation time). In such cases, the number of changed
-    /// key-value pairs is 0, but the map must still be committed to, in order to differentiate
-    /// between a slot being created as an empty map or not being created at all.
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
     }
-}
 
-impl TryFrom<&AccountDelta> for Account {
-    type Error = AccountError;
-
-    /// Converts an [`AccountDelta`] into an [`Account`].
+    /// Returns the new [`Account`] created by this delta.
     ///
     /// Conceptually, this applies the delta onto an empty account.
+    ///
+    /// # Warning
+    ///
+    /// This method only results in a semantically correct account if the caller knows that the
+    /// delta comes from an account-creating transaction. The method can also succeed on deltas
+    /// coming from code-upgrading transactions, but the result will not correspond to a meaningful
+    /// account state.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - If the delta is not a full state delta. See [`AccountDelta`] for details.
-    /// - If any vault delta operation removes an asset.
-    /// - If any vault delta operation adds an asset that would overflow the maximum representable
-    ///   amount.
-    /// - If any storage patch update violates account storage constraints.
-    fn try_from(delta: &AccountDelta) -> Result<Self, Self::Error> {
-        if !delta.is_full_state() {
-            return Err(AccountError::PartialStateDeltaToAccount);
-        }
-
-        let Some(code) = delta.code().cloned() else {
-            return Err(AccountError::PartialStateDeltaToAccount);
+    /// - the delta does not carry account code.
+    /// - the storage patch contains an `Update` or `Remove` operation, which cannot be applied to
+    ///   the empty storage of a new account.
+    /// - the vault delta removes an asset.
+    /// - the vault delta adds an asset that would overflow the maximum representable amount.
+    /// - applying the storage patch to empty storage fails.
+    /// - [`Account::new`] fails on the resulting components.
+    pub fn try_to_new_account(&self) -> Result<Account, AccountError> {
+        let Some(code) = self.code.as_code() else {
+            return Err(AccountError::NewAccountRequiresCodeAndNonce);
         };
+
+        if self.storage.contains_non_create_ops() {
+            return Err(AccountError::NewAccountStorageRequiresCreateOps);
+        }
 
         // The asset vault of a new account is empty, so if the delta contains removed assets, the
         // delta is invalid.
-        if delta.vault().removed_assets().count() != 0 {
+        if self.vault.removed_assets().count() != 0 {
             return Err(AccountError::AssetsRemovedFromNewAccount);
         }
 
         let mut vault = AssetVault::default();
-        for added_asset in delta.vault().added_assets() {
+        for added_asset in self.vault.added_assets() {
             vault.insert_asset(added_asset).map_err(AccountError::AssetVaultUpdateError)?;
         }
 
-        // A full state delta consists of `Create` slot patches, so applying it to empty storage
-        // reconstructs the account's full storage.
         let mut storage = AccountStorage::default();
-        storage.apply_patch(delta.storage())?;
+        storage.apply_patch(&self.storage)?;
 
         // The nonce of the account is the initial nonce of 0 plus the nonce_delta, so the
         // nonce_delta itself.
-        let nonce = delta.nonce_delta();
-
-        Account::new(delta.id(), vault, storage, code, nonce, None)
+        Account::new(self.account_id, vault, storage, code.clone(), self.nonce_delta, None)
     }
 }
 
@@ -436,6 +391,9 @@ impl SequentialCommit for AccountDelta {
         // Storage Patch
         self.storage.append_patch_elements(&mut elements);
 
+        // Code
+        self.code.append_patch_elements(&mut elements);
+
         debug_assert!(
             elements.len() % (2 * crate::WORD_SIZE) == 0,
             "expected elements to contain an even number of words, but it contained {} elements",
@@ -472,10 +430,10 @@ impl Deserializable for AccountDelta {
         let account_id = AccountId::read_from(source)?;
         let storage = AccountStoragePatch::read_from(source)?;
         let vault = AccountVaultDelta::read_from(source)?;
-        let code = <Option<AccountCode>>::read_from(source)?;
+        let code = AccountCodePatch::read_from(source)?;
         let nonce_delta = Felt::read_from(source)?;
 
-        validate_nonce(nonce_delta, &storage, &vault)
+        validate_nonce(nonce_delta, &storage, &vault, &code)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
 
         Ok(Self {
@@ -491,19 +449,20 @@ impl Deserializable for AccountDelta {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Checks if the nonce was updated correctly given the provided storage and vault deltas.
+/// Checks if the nonce was updated correctly given the provided storage, vault and code deltas.
 ///
 /// # Errors
 ///
 /// Returns an error if:
-/// - storage or vault were updated, but the nonce_delta was set to 0.
+/// - storage, vault or code were updated, but the nonce_delta is 0.
 fn validate_nonce(
     nonce_delta: Felt,
     storage: &AccountStoragePatch,
     vault: &AccountVaultDelta,
+    code: &AccountCodePatch,
 ) -> Result<(), AccountDeltaError> {
-    if (!storage.is_empty() || !vault.is_empty()) && nonce_delta == ZERO {
-        return Err(AccountDeltaError::NonEmptyStorageOrVaultDeltaWithZeroNonceDelta);
+    if (!storage.is_empty() || !vault.is_empty() || !code.is_empty()) && nonce_delta == Felt::ZERO {
+        return Err(AccountDeltaError::NonEmptyDeltaWithZeroNonceDelta);
     }
 
     Ok(())
@@ -522,6 +481,7 @@ mod tests {
     use crate::account::{
         Account,
         AccountCode,
+        AccountCodePatch,
         AccountId,
         AccountPatch,
         AccountStorage,
@@ -539,14 +499,14 @@ mod tests {
         NonFungibleAssetDetails,
     };
     use crate::crypto::SequentialCommit;
-    use crate::errors::AccountDeltaError;
+    use crate::errors::{AccountDeltaError, AccountError};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         AccountIdBuilder,
     };
     use crate::utils::serde::Serializable;
-    use crate::{Felt, ONE, Word, ZERO};
+    use crate::{Felt, Word};
 
     #[test]
     fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
@@ -554,8 +514,8 @@ mod tests {
             AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?,
             AccountStoragePatch::new(),
             AccountVaultDelta::default(),
-            None,
-            ZERO,
+            AccountCodePatch::default(),
+            Felt::ZERO,
         )?;
         assert_eq!(empty_delta.to_commitment(), Word::empty());
 
@@ -573,14 +533,14 @@ mod tests {
             account_id,
             AccountStoragePatch::new(),
             AccountVaultDelta::default(),
-            None,
+            AccountCodePatch::default(),
             nonce,
         )?;
         let patch = AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(nonce),
         )?;
 
@@ -591,32 +551,88 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn account_delta_nonce_validation() {
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        // empty delta
-        let storage_patch = AccountStoragePatch::new();
-        let vault_delta = AccountVaultDelta::default();
-
-        AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), None, ZERO)
-            .unwrap();
-        AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), None, ONE)
-            .unwrap();
-
-        // non-empty delta
-        let storage_patch = AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []);
+    /// A delta that updates storage, the vault or the code but leaves the nonce unchanged is
+    /// rejected, since any account state change requires the nonce to be incremented.
+    #[rstest]
+    #[case::non_empty_storage(
+        AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []),
+        AccountVaultDelta::default(),
+        AccountCodePatch::default(),
+    )]
+    #[case::non_empty_vault(
+        AccountStoragePatch::new(),
+        AccountVaultDelta::from_iters([FungibleAsset::mock(100)], []),
+        AccountCodePatch::default(),
+    )]
+    #[case::non_empty_code(
+        AccountStoragePatch::new(),
+        AccountVaultDelta::default(),
+        AccountCodePatch::new(Some(AccountCode::mock()))
+    )]
+    fn account_delta_with_state_change_requires_nonce_delta(
+        #[case] storage: AccountStoragePatch,
+        #[case] vault: AccountVaultDelta,
+        #[case] code: AccountCodePatch,
+    ) -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
         assert_matches!(
-            AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), None, ZERO)
-                .unwrap_err(),
-            AccountDeltaError::NonEmptyStorageOrVaultDeltaWithZeroNonceDelta
+            AccountDelta::new(account_id, storage, vault, code, Felt::ZERO).unwrap_err(),
+            AccountDeltaError::NonEmptyDeltaWithZeroNonceDelta
         );
-        AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), None, ONE)
-            .unwrap();
+
+        Ok(())
     }
 
-    /// A full state delta (carrying code) must only contain `Create` storage ops, since an `Update`
-    /// or `Remove` could not be applied to the empty storage of a new account.
+    /// An empty delta is valid with or without a nonce delta, and a delta with a state change is
+    /// valid with a nonce delta.
+    #[rstest]
+    #[case::empty_without_nonce_delta(
+        AccountStoragePatch::new(),
+        AccountVaultDelta::default(),
+        AccountCodePatch::default(),
+        Felt::ZERO
+    )]
+    #[case::empty_with_nonce_delta(
+        AccountStoragePatch::new(),
+        AccountVaultDelta::default(),
+        AccountCodePatch::default(),
+        Felt::ONE
+    )]
+    #[case::non_empty_storage(
+        AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []),
+        AccountVaultDelta::default(),
+        AccountCodePatch::default(),
+        Felt::ONE,
+    )]
+    #[case::non_empty_vault(
+        AccountStoragePatch::new(),
+        AccountVaultDelta::from_iters([FungibleAsset::mock(100)], []),
+        AccountCodePatch::default(),
+        Felt::ONE,
+    )]
+    #[case::non_empty_code(
+        AccountStoragePatch::new(),
+        AccountVaultDelta::default(),
+        AccountCodePatch::new(Some(AccountCode::mock())),
+        Felt::ONE
+    )]
+    fn account_delta_valid_nonce_delta(
+        #[case] storage: AccountStoragePatch,
+        #[case] vault: AccountVaultDelta,
+        #[case] code: AccountCodePatch,
+        #[case] nonce_delta: Felt,
+    ) -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+
+        AccountDelta::new(account_id, storage, vault, code, nonce_delta)?;
+
+        Ok(())
+    }
+
+    /// A delta carrying code may contain `Update` or `Remove` storage ops, since it can describe a
+    /// code upgrade. Such a delta cannot create an account, since the ops cannot be applied to the
+    /// empty storage of a new account.
     #[rstest]
     #[case::update(
         AccountStoragePatch::builder().update_value(StorageSlotName::mock(1), Word::empty()).build()
@@ -624,27 +640,49 @@ mod tests {
     #[case::remove(
         AccountStoragePatch::builder().remove_value(StorageSlotName::mock(1)).build()
     )]
-    fn account_delta_new_rejects_full_state_with_non_create_op(
+    fn account_delta_try_to_new_account_rejects_non_create_op(
         #[case] storage: AccountStoragePatch,
     ) -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
-        let error = AccountDelta::new(
+        let delta = AccountDelta::new(
             account_id,
             storage,
             AccountVaultDelta::default(),
-            Some(AccountCode::mock()),
-            ONE,
-        )
-        .unwrap_err();
-        assert_matches!(error, AccountDeltaError::FullStateDeltaContainsNonCreateOp);
+            AccountCodePatch::new(Some(AccountCode::mock())),
+            Felt::ONE,
+        )?;
+        assert_matches!(
+            delta.try_to_new_account().unwrap_err(),
+            AccountError::NewAccountStorageRequiresCreateOps
+        );
 
         Ok(())
     }
 
-    /// A full state delta whose storage only creates slots can be reconstructed into an account.
+    /// A delta without code cannot create an account.
     #[test]
-    fn account_delta_full_state_with_create_reconstructs() -> anyhow::Result<()> {
+    fn account_delta_try_to_new_account_requires_code() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+
+        let delta = AccountDelta::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultDelta::default(),
+            AccountCodePatch::default(),
+            Felt::ONE,
+        )?;
+        assert_matches!(
+            delta.try_to_new_account().unwrap_err(),
+            AccountError::NewAccountRequiresCodeAndNonce
+        );
+
+        Ok(())
+    }
+
+    /// A delta whose storage only creates slots can be reconstructed into an account.
+    #[test]
+    fn account_delta_try_to_new_account_with_create_reconstructs() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
         let code = AccountCode::mock();
         let created_slot = StorageSlotName::mock(1);
@@ -658,12 +696,11 @@ mod tests {
             account_id,
             storage,
             AccountVaultDelta::default(),
-            Some(code.clone()),
-            ONE,
+            AccountCodePatch::new(Some(code.clone())),
+            Felt::ONE,
         )?;
-        assert!(delta.is_full_state());
 
-        let account = Account::try_from(&delta)?;
+        let account = delta.try_to_new_account()?;
         assert_eq!(account.code(), &code);
         assert_eq!(account.storage().get_item(&created_slot)?, created_value);
 
@@ -679,8 +716,14 @@ mod tests {
         assert_eq!(storage_patch.to_bytes().len(), storage_patch.get_size_hint());
         assert_eq!(vault_delta.to_bytes().len(), vault_delta.get_size_hint());
 
-        let account_delta =
-            AccountDelta::new(account_id, storage_patch, vault_delta, None, ZERO).unwrap();
+        let account_delta = AccountDelta::new(
+            account_id,
+            storage_patch,
+            vault_delta,
+            AccountCodePatch::default(),
+            Felt::ZERO,
+        )
+        .unwrap();
         assert_eq!(account_delta.to_bytes().len(), account_delta.get_size_hint());
 
         let storage_patch = AccountStoragePatch::from_iters(
@@ -721,8 +764,14 @@ mod tests {
         assert_eq!(storage_patch.to_bytes().len(), storage_patch.get_size_hint());
         assert_eq!(vault_delta.to_bytes().len(), vault_delta.get_size_hint());
 
-        let account_delta =
-            AccountDelta::new(account_id, storage_patch, vault_delta, None, ONE).unwrap();
+        let account_delta = AccountDelta::new(
+            account_id,
+            storage_patch,
+            vault_delta,
+            AccountCodePatch::default(),
+            Felt::ONE,
+        )
+        .unwrap();
         assert_eq!(account_delta.to_bytes().len(), account_delta.get_size_hint());
 
         // Account
@@ -739,8 +788,13 @@ mod tests {
         let account_code = AccountCode::mock();
         assert_eq!(account_code.to_bytes().len(), account_code.get_size_hint());
 
-        let account =
-            Account::new_existing(account_id, asset_vault, account_storage, account_code, ONE);
+        let account = Account::new_existing(
+            account_id,
+            asset_vault,
+            account_storage,
+            account_code,
+            Felt::ONE,
+        );
         assert_eq!(account.to_bytes().len(), account.get_size_hint());
     }
 }

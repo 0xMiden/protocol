@@ -1,21 +1,29 @@
 # Changelog
 
-## Unreleased
+## v0.17.0-rc.8 (2026-09-29)
 
 ### Features
 
+- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3949](https://github.com/0xMiden/protocol/pull/3949)).
+- Added the `UpgradeNote` standard note, which upgrades a network account's code to the code it carries in an attachment ([#3958](https://github.com/0xMiden/protocol/pull/3958)).
+- `UpgradeNote` now carries its code in one or more `AccountCodeUpgradeAttachment` chunks and its script copies the code to the advice map ([#3967](https://github.com/0xMiden/protocol/pull/3967)).
 - Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
+- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3948](https://github.com/0xMiden/protocol/pull/3948)).
 
 ### Changes
 
+- [BREAKING] Upgraded Miden VM and crypto from v0.33.0 to v0.34.0, including Plonky3 v0.8.0 and updated VM AIR and recursive verifier roots. Falcon key generation now requires a `CryptoRng` ([#3952](https://github.com/0xMiden/protocol/pull/3952)).
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
 - [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
 - [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+- [BREAKING] `AccountCode`, `NoteScript` and `TransactionScript` now serialize their MAST forest in the hashless format and `NoteScript` element conversions became `NoteScript::{to_elements, try_from_elements}` ([#3961](https://github.com/0xMiden/protocol/pull/3961)).
 
 ### Fixes
 
 - Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
+- Fixed a panic when verifying a Protobuf `MerklePath` or `PartialMmr` with a path longer than 255 nodes ([#3970](https://github.com/0xMiden/protocol/pull/3970)).
+- [BREAKING] Transaction host creation now returns an error instead of panicking when a new account's partial storage is missing a storage map ([#3971](https://github.com/0xMiden/protocol/pull/3971)).
 
 ## v0.17.0-rc.7 (2026-09-24)
 
@@ -143,11 +151,11 @@
 - [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
+- Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 
 ## v0.16.0 (2026-08-06)
 
 - [BREAKING] `NetworkAccountTarget` decoding no longer discards the target account ID when the execution hint slot holds an unrecognized encoding ([#3811](https://github.com/0xMiden/protocol/pull/3811)).
-- Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] AggLayer bridge token registration now rejects keys owned by another faucet, and token-key cleanup verifies ownership before clearing a mapping ([#3754](https://github.com/0xMiden/protocol/pull/3754)).
 - [BREAKING] AggLayer bridges now allow faucet deregistration while paused, so compromised faucets can be revoked without resuming claims and bridge-outs ([#3750](https://github.com/0xMiden/protocol/pull/3753)).
 - Generated constant fee schedules now assign `FEE_SPONSORSHIP` an explicit zero fee, matching the fee-collection exemption while keeping the note allowlisted ([#3580](https://github.com/0xMiden/protocol/issues/3580)).
@@ -177,7 +185,6 @@
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
 - [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
-- Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] Bounded transfer policy dispatch to the reference block ([#3748](https://github.com/0xMiden/protocol/pull/3748)).
 - [BREAKING] AggLayer bridges now allow faucet deregistration while paused, so compromised faucets can be revoked without resuming claims and bridge-outs ([#3750](https://github.com/0xMiden/protocol/pull/3753)).
 - [BREAKING] AggLayer bridge token registration now rejects keys owned by another faucet, and token-key cleanup verifies ownership before clearing a mapping ([#3754](https://github.com/0xMiden/protocol/pull/3754)).
@@ -212,6 +219,7 @@
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 - [BREAKING] Added an emergency pause to the AggLayer bridge via the standards `Pausable`/`PausableManager` components: all bridge entry points except `remove_ger` abort while paused, and the `ADMIN`-gated standards `PAUSE_CONFIG` note toggles the state; the bridge code commitment and note allowlist change ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 - Added the `MinBurnAmountConfigNote` standard note ([#3511](https://github.com/0xMiden/protocol/pull/3511)).
+- Added the `PriceOracle` account component, reporting the conversion rate between two assets over FPI behind a wrapper whose MAST root stays stable as the pricing implementation behind it is replaced.
 - Exposed AggLayer bridge storage readers such as `is_ger_registered`, `network_id`, and `cgi_chain_hash` outside the `testing` feature ([#3617](https://github.com/0xMiden/protocol/pull/3617)).
 
 ### Changes
