@@ -9,6 +9,7 @@ come from the model; which bucket a finding lands in is decided by code
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -87,6 +88,11 @@ def call_role(
             return structured, cost
         detail = f"{out.get('subtype')}: {str(out.get('result'))[:300]}"
     raise BenchError(f"the {role_name} judge failed twice: {detail}")
+
+
+def digest(payload: Any) -> str:
+    """A stable fingerprint of a judge input, stored with each result to detect stale ones."""
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def batches(items: list[Any], size: int) -> list[list[Any]]:

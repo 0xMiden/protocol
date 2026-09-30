@@ -216,20 +216,22 @@ def stage_match(run_dir: Path, config: dict[str, Any]) -> None:
     try:
         for record in valid_runs(run_dir):
             path = run_dir / "matches" / f"{record['id']}.json"
-            if path.exists():
-                continue
+            payload = judge.match_payload(truth, record["findings"])
+            input_digest = judge.digest(payload)
+            if path.exists() and read_json(path).get("input_digest") == input_digest:
+                continue  # already matched against exactly this ground truth and these findings
             matches: list[dict[str, Any]] = []
             cost = 0.0
             if truth and record["findings"]:
                 out, cost = judge.call_role(
                     "matcher",
-                    judge.match_payload(truth, record["findings"]),
+                    payload,
                     "matches",
                     raw_path=raw / f"match-{record['id']}.json",
                     **_judge_kwargs(config, cwd),
                 )
                 matches = judge.filter_matches(out, {t["id"] for t in truth}, {f["id"] for f in record["findings"]})
-            write_json(path, {"run": record["id"], "matches": matches, "cost_usd": round(cost, 4)})
+            write_json(path, {"run": record["id"], "matches": matches, "cost_usd": round(cost, 4), "input_digest": input_digest})
             matched = len({m["human_id"] for m in matches})
             print(f"{record['id']}: {matched} of {len(truth)} human findings matched by {len(record['findings'])} agent findings")
     finally:
@@ -244,21 +246,57 @@ def unmatched_findings(run_dir: Path, record: dict[str, Any]) -> list[dict[str, 
     return [f for f in record["findings"] if f["id"] not in matched]
 
 
+def snapshot_skills(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"name": s["name"], "description": s["description"], "body": snapshot["skill_bodies"].get(s["name"], "")}
+        for s in snapshot["skills"]
+    ]
+
+
+def attribution_digest(skills: list[dict[str, Any]], items: list[dict[str, Any]]) -> str:
+    return judge.digest({"skills": skills, "items": items})
+
+
+def stale_results(run_dir: Path, config: dict[str, Any]) -> list[str]:
+    """Judge results whose inputs changed since they were computed (report notes)."""
+    truth = read_json(run_dir / "truth.json")["truth"]
+    stale = []
+    for record in valid_runs(run_dir):
+        path = run_dir / "matches" / f"{record['id']}.json"
+        expected = judge.digest(judge.match_payload(truth, record["findings"]))
+        if not path.is_file() or read_json(path).get("input_digest") != expected:
+            stale.append(f"matches for {record['id']}")
+    for arm in (workspace.parse_arm(a) for a in config["arms"]):
+        path = run_dir / "attribution" / f"{arm.slug}.json"
+        snapshot_path = run_dir / "snapshots" / f"{arm.slug}.json"
+        if not arm.has_skills or not snapshot_path.is_file():
+            continue
+        try:
+            unmatched = [f for r in valid_runs(run_dir, arm.name) for f in unmatched_findings(run_dir, r)]
+        except BenchError:
+            stale.append(f"attribution for {arm.name}")
+            continue
+        expected = attribution_digest(snapshot_skills(read_json(snapshot_path)), judge.attribution_items(truth, unmatched))
+        if not path.is_file() or read_json(path).get("input_digest") != expected:
+            stale.append(f"attribution for {arm.name}")
+    return stale
+
+
 def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
     """Ask which snapshot skills cover each finding (attribution/<arm>.json)."""
     truth = read_json(run_dir / "truth.json")["truth"]
     raw = raw_dir(run_dir) / "judge"
     for arm in (workspace.parse_arm(a) for a in config["arms"]):
         path = run_dir / "attribution" / f"{arm.slug}.json"
-        if not arm.has_skills or path.exists():
+        if not arm.has_skills:
             continue
         snapshot = read_json(run_dir / "snapshots" / f"{arm.slug}.json")
-        skills = [
-            {"name": s["name"], "description": s["description"], "body": snapshot["skill_bodies"].get(s["name"], "")}
-            for s in snapshot["skills"]
-        ]
+        skills = snapshot_skills(snapshot)
         unmatched = [f for record in valid_runs(run_dir, arm.name) for f in unmatched_findings(run_dir, record)]
         items = judge.attribution_items(truth, unmatched)
+        input_digest = attribution_digest(skills, items)
+        if path.exists() and read_json(path).get("input_digest") == input_digest:
+            continue  # already attributed for exactly these skills and findings
         verdicts: dict[str, dict[str, Any]] = {}
         cost = 0.0
         if skills and items:
@@ -278,7 +316,7 @@ def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
                 shutil.rmtree(root, ignore_errors=True)
         for item in items:
             verdicts.setdefault(item["id"], {"covering_skills": []})
-        write_json(path, {"arm": arm.name, "items": verdicts, "cost_usd": round(cost, 4)})
+        write_json(path, {"arm": arm.name, "items": verdicts, "cost_usd": round(cost, 4), "input_digest": input_digest})
         covered = sum(1 for t in truth if verdicts[t["id"]]["covering_skills"])
         print(f"{arm.name}: {covered} of {len(truth)} human findings are covered by a snapshot skill")
 
@@ -288,6 +326,11 @@ def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
 
 def stage_report(run_dir: Path, config: dict[str, Any]) -> None:
     result = report.build_result(run_dir)
+    stale = stale_results(run_dir, config)
+    if stale:
+        result["notes"].append(
+            f"Out of date: {', '.join(stale)}. Their inputs changed since they were computed; run match and attribute again."
+        )
     write_json(run_dir / "result.json", result)
     (run_dir / "report.md").write_text(report.render_markdown(result), encoding="utf-8")
     for arm, summary in result["arms"].items():

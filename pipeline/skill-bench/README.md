@@ -25,6 +25,8 @@ A run replays one *review round* of one PR. A round is a commit that someone oth
 
 Only the semantic questions in steps 3 to 5 go to a model. The bucket a finding lands in is decided by code, from recorded facts.
 
+The match and attribute stages store a digest of each judge call's input, and redo only the calls whose input changed. After `classify` or `telemetry` is run again, running `match` and `attribute` refreshes exactly the results that depend on it. The report flags any judge result that is out of date.
+
 ### Arms
 
 - `at-pr`: the project's `.claude/` as it was at the base commit of the change, including its skills.
