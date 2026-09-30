@@ -1,0 +1,5 @@
+{
+  "name": "skill-bench",
+  "version": "0.1.0",
+  "description": "Benchmark a project's Claude Code skills against the human review of a real pull request."
+}
