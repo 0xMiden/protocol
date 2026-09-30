@@ -88,6 +88,31 @@ class ReviewerForTest(unittest.TestCase):
             runner.reviewer_for("repo-agent", self.ws, repo_agent="nope")
 
 
+class RunSessionTest(unittest.TestCase):
+    def test_timeout_is_recorded_not_raised(self):
+        from unittest import mock
+
+        from skillbench.util import BenchTimeout
+
+        partial = json.dumps({"type": "system", "subtype": "init", "model": "m"}) + "\n"
+        with mock.patch("skillbench.runner.run", side_effect=BenchTimeout("slow", partial, "")):
+            session = runner.run_session(lambda sid: ["claude"], Path("."), "p", 5)
+        self.assertEqual((session.error, session.attempts, session.init["model"]), ("timed out after 5s", 1, "m"))
+
+    def test_cost_is_summed_over_retries(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        failed = json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True, "total_cost_usd": 0.3})
+        succeeded = json.dumps({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.2})
+        outputs = [SimpleNamespace(stdout=s, stderr="", returncode=0) for s in (failed, succeeded)]
+        with mock.patch("skillbench.runner.run", side_effect=outputs):
+            session = runner.run_session(lambda sid: ["claude"], Path("."), "p", 5)
+        self.assertIsNone(session.error)
+        self.assertEqual(session.attempts, 2)
+        self.assertAlmostEqual(session.cost_usd, 0.5)
+
+
 class FinalizeTest(unittest.TestCase):
     def record(self, listed, error=None):
         return {

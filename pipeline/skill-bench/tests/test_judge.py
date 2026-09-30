@@ -98,7 +98,7 @@ class CallRoleTest(unittest.TestCase):
                     "matcher", {"a": 1}, "matches", model="opus", max_usd=1.0, cwd=Path(tmp), raw_path=raw, timeout=10, runner=fake
                 )
             finally:
-                written = raw.read_text() if raw.exists() else None
+                written = [p.read_text() for p in (raw, raw.with_name("x.retry.json")) if p.exists()]
         return result, calls, written
 
     def test_success_after_one_retry(self):
@@ -107,11 +107,24 @@ class CallRoleTest(unittest.TestCase):
         self.assertEqual(output, {"matches": []})
         self.assertAlmostEqual(cost, 0.02)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(written, good)
+        self.assertEqual(written, ["not json", good])  # both attempts are kept for audit
         cmd = calls[0][0]
         self.assertEqual(cmd[cmd.index("--tools") + 1], "")
         self.assertIn("--no-session-persistence", cmd)
         self.assertIn('"a": 1', calls[0][1]["input"])
+
+    def test_timeouts_count_as_failed_attempts(self):
+        from skillbench.util import BenchTimeout
+
+        def always_slow(cmd, **kwargs):
+            raise BenchTimeout("slow", "partial", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw" / "x.json"
+            with self.assertRaises(BenchError) as ctx:
+                judge.call_role("matcher", {}, "matches", model=None, max_usd=1.0, cwd=Path(tmp), raw_path=raw, timeout=5, runner=always_slow)
+            self.assertIn("timed out", str(ctx.exception))
+            self.assertEqual(raw.read_text(), "partial")
 
     def test_two_failures_raise(self):
         bad = json.dumps({"subtype": "error_during_execution", "is_error": True, "result": "boom"})

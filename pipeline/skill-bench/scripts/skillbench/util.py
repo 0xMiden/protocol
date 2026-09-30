@@ -16,6 +16,21 @@ class BenchError(RuntimeError):
     """A failure the user can act on. The CLI prints it without a traceback."""
 
 
+class BenchTimeout(BenchError):
+    """A command ran past its timeout; carries whatever it printed until then."""
+
+    def __init__(self, message: str, stdout: str, stderr: str):
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _text(data: str | bytes | None) -> str:
+    if data is None:
+        return ""
+    return data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+
+
 def run(
     cmd: Sequence[str],
     *,
@@ -43,7 +58,9 @@ def run(
     except FileNotFoundError as exc:
         raise BenchError(f"command not found: {cmd[0]}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise BenchError(f"command timed out after {timeout}s: {_short(cmd)}") from exc
+        raise BenchTimeout(
+            f"command timed out after {timeout}s: {_short(cmd)}", _text(exc.stdout), _text(exc.stderr)
+        ) from exc
     if check and proc.returncode != 0:
         raise BenchError(
             f"command failed with exit code {proc.returncode}: {_short(cmd)}\n"

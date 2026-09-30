@@ -16,7 +16,7 @@ from typing import Any
 
 from . import roles
 from .runner import ISOLATION_SETTINGS
-from .util import BenchError, run
+from .util import BenchError, BenchTimeout, run
 
 CLASSIFY_BATCH = 20
 ATTRIBUTE_BATCH = 25
@@ -66,9 +66,16 @@ def call_role(
     cost = 0.0
     detail = ""
     raw_path.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(2):
-        proc = runner(cmd, cwd=cwd, input=prompt, timeout=timeout, check=False)
-        raw_path.write_text(proc.stdout, encoding="utf-8")
+    for attempt in range(1, 3):
+        # Keep every attempt's raw output, so a failed first attempt can be audited too.
+        target = raw_path if attempt == 1 else raw_path.with_name(f"{raw_path.stem}.retry{raw_path.suffix}")
+        try:
+            proc = runner(cmd, cwd=cwd, input=prompt, timeout=timeout, check=False)
+        except BenchTimeout as exc:
+            target.write_text(exc.stdout, encoding="utf-8")
+            detail = f"timed out after {timeout:g}s"
+            continue
+        target.write_text(proc.stdout, encoding="utf-8")
         try:
             out = json.loads(proc.stdout)
         except json.JSONDecodeError:

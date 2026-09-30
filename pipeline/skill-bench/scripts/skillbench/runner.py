@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from . import roles, telemetry
-from .util import BenchError, run
+from .util import BenchError, BenchTimeout, run
 from .workspace import Workspace, hermetic_git_env
 
 REVIEW_PROMPT = "Review the change between HEAD~1 and HEAD and report your findings."
@@ -160,21 +160,44 @@ def keep_raw(transcript: Path | None, stdout: str, dest: Path) -> None:
         shutil.copytree(subagents, dest / "transcript" / "subagents", dirs_exist_ok=True)
 
 
-def run_session(
-    cmd_for: Any, cwd: Path, prompt: str, timeout: float, retries: int = 1
-) -> tuple[str, str, dict[str, Any] | None, dict[str, Any] | None, str | None]:
-    """Run one session, retrying once when it ends without a successful result."""
-    last_error = None
-    for _ in range(retries + 1):
+@dataclass
+class Session:
+    session_id: str
+    stdout: str
+    init: dict[str, Any] | None
+    result: dict[str, Any] | None
+    error: str | None
+    cost_usd: float  # summed over every attempt
+    attempts: int
+
+
+def _cost(result: dict[str, Any] | None) -> float:
+    return float((result or {}).get("total_cost_usd") or 0)
+
+
+def run_session(cmd_for: Any, cwd: Path, prompt: str, timeout: float, retries: int = 1) -> Session:
+    """Run one session, retrying once when it ends without a successful result.
+
+    A timeout ends the session with an error instead of raising: a review
+    that ran out of time would most likely run out again, so it is not retried.
+    """
+    cost = 0.0
+    for attempt in range(1, retries + 2):
         session_id = str(uuid.uuid4())
-        proc = run(cmd_for(session_id), cwd=cwd, input=prompt, timeout=timeout, check=False)
+        try:
+            proc = run(cmd_for(session_id), cwd=cwd, input=prompt, timeout=timeout, check=False)
+        except BenchTimeout as exc:
+            init, result = parse_stream(exc.stdout)
+            cost += _cost(result)
+            return Session(session_id, exc.stdout, init, result, f"timed out after {timeout:g}s", cost, attempt)
         init, result = parse_stream(proc.stdout)
+        cost += _cost(result)
         if result is not None and not result.get("is_error") and result.get("subtype") == "success":
-            return session_id, proc.stdout, init, result, None
-        last_error = _error_text(proc, result)
-        if result is not None and "budget" in (last_error or "").lower():
+            return Session(session_id, proc.stdout, init, result, None, cost, attempt)
+        error = _error_text(proc, result)
+        if result is not None and "budget" in error.lower():
             break  # a budget stop will not succeed on retry
-    return session_id, proc.stdout, init, result, last_error
+    return Session(session_id, proc.stdout, init, result, error, cost, attempt)
 
 
 def _error_text(proc: Any, result: dict[str, Any] | None) -> str:
@@ -213,9 +236,10 @@ def run_review(
 ) -> dict[str, Any]:
     """Replay the review once and return the run record (without the exposure check)."""
     started = time.monotonic()
-    session_id, stdout, init, result, error = run_session(
+    session = run_session(
         lambda sid: review_command(reviewer, sid, model=model, max_usd=max_usd), ws.path, REVIEW_PROMPT, timeout
     )
+    session_id, stdout, init, result, error = session.session_id, session.stdout, session.init, session.result, session.error
     transcript = find_transcript(session_id)
     keep_raw(transcript, stdout, raw_dir)
     findings = []
@@ -244,7 +268,8 @@ def run_review(
         "error": error if error else (None if transcript else "session transcript not found"),
         "findings": findings,
         "telemetry": tele,
-        "cost_usd": (result or {}).get("total_cost_usd"),
+        "cost_usd": round(session.cost_usd, 6),
+        "attempts": session.attempts,
         "duration_ms": (result or {}).get("duration_ms"),
         "wall_seconds": round(time.monotonic() - started, 1),
         "num_turns": (result or {}).get("num_turns"),
@@ -263,9 +288,10 @@ def calibrate_builtins(work_root: Path, raw_dir: Path, *, model: str, timeout: f
     empty.mkdir()
     run(["git", "init", "-q", str(empty)], env=hermetic_git_env(), timeout=60)
     reviewer = plain_reviewer()
-    session_id, stdout, init, result, error = run_session(
+    session = run_session(
         lambda sid: review_command(reviewer, sid, model=model, max_usd=0.5), empty, CALIBRATION_PROMPT, timeout
     )
+    session_id, stdout, init, result, error = session.session_id, session.stdout, session.init, session.result, session.error
     transcript = find_transcript(session_id)
     keep_raw(transcript, stdout, raw_dir)
     if transcript is None:
@@ -274,5 +300,5 @@ def calibrate_builtins(work_root: Path, raw_dir: Path, *, model: str, timeout: f
     return {
         "claude_version": (init or {}).get("claude_code_version"),
         "names": sorted(listed),
-        "cost_usd": (result or {}).get("total_cost_usd"),
+        "cost_usd": round(session.cost_usd, 6),
     }
