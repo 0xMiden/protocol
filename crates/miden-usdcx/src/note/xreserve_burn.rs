@@ -38,7 +38,7 @@ use miden_protocol::note::{
 use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::BurnNote;
 
-use crate::xreserve::encoding::{BURN_NOTE_ITEMS_FELTS, XReserveBurnItems};
+use crate::xreserve::encoding::{BURN_NOTE_ITEMS_FELTS, EncodingError, XReserveBurnItems};
 
 /// The fixed tag every xUSDC burn note carries — ASCII `"BURN"`.
 ///
@@ -88,6 +88,11 @@ impl XUsdcBurnAttachment {
     pub fn items(&self) -> &XReserveBurnItems {
         &self.items
     }
+
+    /// Consumes the attachment, returning the carried withdrawal payload.
+    pub fn into_items(self) -> XReserveBurnItems {
+        self.items
+    }
 }
 
 impl From<&XUsdcBurnAttachment> for NoteAttachment {
@@ -114,6 +119,22 @@ impl From<&XUsdcBurnAttachment> for NoteAttachment {
         )
         // the payload is fixed-width, so the word count is the constant asserted below
         .expect("the withdrawal payload is within the per-attachment word cap")
+    }
+}
+
+impl TryFrom<&NoteAttachment> for XUsdcBurnAttachment {
+    type Error = EncodingError;
+
+    /// Decodes the scheme-6 withdrawal payload, ignoring the final three padding felts.
+    fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
+        if attachment.attachment_scheme().as_u16() != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME
+            || usize::from(attachment.num_words()) != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS
+        {
+            return Err(EncodingError::BurnItemsMalformed);
+        }
+
+        let items = XReserveBurnItems::decode(&attachment.as_elements()[..BURN_NOTE_ITEMS_FELTS])?;
+        Ok(Self { items })
     }
 }
 
