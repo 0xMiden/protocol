@@ -7,6 +7,7 @@ use miden_processor::trace::RowIndex;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
+    AccountCodeUpgrade,
     AccountId,
     AssetDelta,
     StorageMap,
@@ -119,6 +120,13 @@ pub(crate) enum TransactionEvent {
         code_commitment: Word,
         /// The procedure root whose index is requested.
         procedure_root: Word,
+    },
+
+    AccountBeforeCodeUpgrade {
+        /// The commitment to the new code.
+        new_code_commitment: Word,
+        /// The code upgrade read from the advice map.
+        code_upgrade: AccountCodeUpgrade,
     },
 
     NoteBeforeCreated {
@@ -381,6 +389,29 @@ impl TransactionEvent {
                 Some(TransactionEvent::AccountPushProcedureIndex {
                     code_commitment,
                     procedure_root,
+                })
+            },
+
+            TransactionEventId::AccountBeforeCodeUpgrade => {
+                // Expected stack state: [event, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+                let new_code_commitment = process.get_stack_word(1);
+
+                // Code in the advice map takes precedence over code that an input note carries.
+                let upgrade_key = AccountCodeUpgrade::advice_map_key(new_code_commitment);
+                let code_upgrade = match process.advice_provider().get_mapped_values(&upgrade_key) {
+                    Some(upgrade_data) => AccountCodeUpgrade::try_from_elements(upgrade_data)
+                        .map_err(|source| TransactionKernelError::AccountCodeUpgradeInvalid {
+                            new_code_commitment,
+                            source,
+                        })?,
+                    None => base_host.find_input_note_code_upgrade(new_code_commitment).ok_or(
+                        TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment),
+                    )?,
+                };
+
+                Some(TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
                 })
             },
 

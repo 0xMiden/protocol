@@ -217,6 +217,23 @@ pub enum TransactionKernelError {
     AccountDeltaRemoveAssetFailed(#[source] AccountDeltaError),
     #[error("failed to add asset to note")]
     FailedToAddAssetToNote(#[source] NoteError),
+    #[error(
+        "transaction initialized an upgrade to account code {0} but neither the advice map nor an input note attachment provides the new code"
+    )]
+    AccountCodeUpgradeMissing(Word),
+    #[error(
+        "transaction initialized an upgrade to account code {new_code_commitment} but the advice map provides invalid code"
+    )]
+    AccountCodeUpgradeInvalid {
+        new_code_commitment: Word,
+        source: DeserializationError,
+    },
+    #[error(
+        "transaction initialized an upgrade to account code {expected} but the advice map provides code {actual}"
+    )]
+    AccountCodeUpgradeCommitmentMismatch { expected: Word, actual: Word },
+    #[error("account code upgrade is not allowed for new accounts")]
+    AccountCodeUpgradeNotAllowedForNewAccount,
     #[error("note storage has commitment {actual} but expected commitment {expected}")]
     InvalidNoteStorage { expected: Word, actual: Word },
     #[error(

@@ -14,7 +14,7 @@ pub use account_procedures::AccountProcedureIndexMap;
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::TransactionEventId;
-use miden_protocol::vm::{EventId, EventName};
+use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -37,6 +37,7 @@ use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
+    AccountCodeUpgrade,
     AccountDelta,
     AccountHeader,
     AccountId,
@@ -61,6 +62,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
     TransactionSummaryUserParams,
 };
+use miden_standards::note::AccountCodeUpgradeAttachment;
 pub(crate) use tx_event::{
     RecipientData,
     TransactionEvent,
@@ -204,6 +206,26 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns the input notes consumed in this transaction.
     pub fn input_notes(&self) -> InputNotes<InputNote> {
         self.input_notes.clone()
+    }
+
+    /// Returns the upgrade to the code with `new_code_commitment` that an input note carries in an
+    /// [`AccountCodeUpgradeAttachment`], if any.
+    ///
+    /// Only attachments of that scheme are decoded. Those that do not decode or carry other code
+    /// are skipped.
+    pub(crate) fn find_input_note_code_upgrade(
+        &self,
+        new_code_commitment: Word,
+    ) -> Option<AccountCodeUpgrade> {
+        self.input_notes
+            .iter()
+            .flat_map(|input_note| input_note.note().attachments().iter())
+            .filter(|attachment| {
+                attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
+            })
+            .filter_map(|attachment| AccountCodeUpgradeAttachment::try_from(attachment).ok())
+            .map(AccountCodeUpgradeAttachment::into_code_upgrade)
+            .find(|code_upgrade| code_upgrade.commitment() == new_code_commitment)
     }
 
     /// Clones the inner [`OutputNoteBuilder`]s and returns the vector of created output notes that
@@ -386,6 +408,39 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.update_tracker.increment_nonce();
 
         Ok(Vec::new())
+    }
+
+    /// Handles the before code upgrade event by recording the new code in the update tracker and
+    /// providing its procedures to the kernel through the advice map.
+    ///
+    /// The `code_upgrade` is taken from the advice map entry under
+    /// [`AccountCodeUpgrade::advice_map_key`] or, if there is none, from an input note's
+    /// [`AccountCodeUpgradeAttachment`] when the event is extracted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the commitment of `code_upgrade` does not match `new_code_commitment`.
+    /// - the update tracker rejects the upgrade.
+    pub fn on_account_before_code_upgrade(
+        &mut self,
+        new_code_commitment: Word,
+        code_upgrade: AccountCodeUpgrade,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        if code_upgrade.commitment() != new_code_commitment {
+            return Err(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
+                expected: new_code_commitment,
+                actual: code_upgrade.commitment(),
+            });
+        }
+
+        let procedures = code_upgrade.code().to_elements();
+        self.update_tracker.record_code_upgrade(code_upgrade)?;
+
+        Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
+            new_code_commitment,
+            procedures,
+        )]))])
     }
 
     // ACCOUNT STORAGE UPDATE HANDLERS
