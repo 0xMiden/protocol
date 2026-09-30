@@ -12,7 +12,9 @@ Every replay is a separate `claude -p` process started in a sealed workspace
   unapproved makes it deny reads outside the workspace (a pre-approved
   Read would open any path on the machine, including a checkout that
   contains the pull request's later commits);
-* `--strict-mcp-config` starts no MCP servers;
+* `--strict-mcp-config` starts no MCP servers, and `--permission-mode
+  default` ignores any other mode (the workspace settings keep only `deny`
+  permission rules, see `workspace.py`);
 * `--session-id` fixes where the transcript is written, for telemetry.
 
 Separate processes are used, not subagents, because a subagent inherits the
@@ -94,6 +96,8 @@ def review_command(reviewer: Reviewer, session_id: str, *, model: str | None, ma
         "--settings",
         ISOLATION_SETTINGS,
         "--strict-mcp-config",
+        "--permission-mode",
+        "default",
         "--tools",
         REVIEW_TOOLS,
         "--allowedTools",

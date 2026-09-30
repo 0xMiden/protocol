@@ -10,8 +10,10 @@ untracked as the *snapshot* for one arm:
 * `none`      - the same, without the skills directory (the control arm)
 * `ref:<sha>` - the base `.claude/`, with the skills directory taken from <sha>
 
-Hooks and project-enabled plugins are removed from the workspace settings,
-so a replay runs no project code and loads no extra skills.
+Settings that would run project code, load extra skills or widen what the
+reviewer may do (hooks, plugins, credential and header helpers, environment
+variables, MCP opt-ins, and every permission rule except `deny`) are removed
+from the workspace settings.
 """
 
 from __future__ import annotations
@@ -32,7 +34,20 @@ BASE_MESSAGE = "Base of the change under review"
 REVIEW_MESSAGE = "Change under review"
 _FIXED_DATE = "2000-01-01T00:00:00+0000"
 _SETTINGS_FILES = ("settings.json", "settings.local.json")
-_STRIPPED_SETTINGS = ("hooks", "enabledPlugins", "extraKnownMarketplaces", "statusLine")
+# Top-level settings that run commands, load extensions or change the environment.
+_STRIPPED_SETTINGS = (
+    "hooks",
+    "statusLine",
+    "enabledPlugins",
+    "extraKnownMarketplaces",
+    "apiKeyHelper",
+    "awsAuthRefresh",
+    "awsCredentialExport",
+    "otelHeadersHelper",
+    "env",
+    "enableAllProjectMcpServers",
+    "enabledMcpjsonServers",
+)
 
 
 def hermetic_git_env() -> dict[str, str]:
@@ -232,7 +247,7 @@ def materialize(
 
 
 def strip_settings(workspace: Path) -> list[str]:
-    """Remove hooks and plugin settings from the workspace's project settings files."""
+    """Remove settings that could run code or widen permissions; keep `deny` rules."""
     deviations = []
     for name in _SETTINGS_FILES:
         path = workspace / ".claude" / name
@@ -247,6 +262,17 @@ def strip_settings(workspace: Path) -> list[str]:
         removed = [key for key in _STRIPPED_SETTINGS if key in settings]
         for key in removed:
             settings.pop(key)
+        permissions = settings.get("permissions")
+        if isinstance(permissions, dict) and set(permissions) - {"deny"}:
+            removed.append("permissions other than deny")
+            kept = {"deny": permissions["deny"]} if "deny" in permissions else {}
+            if kept:
+                settings["permissions"] = kept
+            else:
+                settings.pop("permissions")
+        elif "permissions" in settings and not isinstance(permissions, dict):
+            settings.pop("permissions")
+            removed.append("permissions")
         if removed:
             write_json(path, settings)
             deviations.append(f"removed {', '.join(removed)} from .claude/{name}")

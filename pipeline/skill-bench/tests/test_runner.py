@@ -35,7 +35,7 @@ class ReviewCommandTest(unittest.TestCase):
         cmd = runner.review_command(runner.plain_reviewer(), "sid", model="opus", max_usd=2.5)
         joined = " ".join(cmd)
         self.assertEqual(cmd[:2], ["claude", "-p"])
-        for flag in ("--setting-sources project", "--strict-mcp-config", "--session-id sid", "--agent reviewer", "--model opus", "--max-budget-usd 2.50", "--output-format stream-json"):
+        for flag in ("--setting-sources project", "--strict-mcp-config", "--permission-mode default", "--session-id sid", "--agent reviewer", "--model opus", "--max-budget-usd 2.50", "--output-format stream-json"):
             self.assertIn(flag, joined)
         self.assertEqual(json.loads(cmd[cmd.index("--settings") + 1]), {"syncClaudeAiSkills": False})
         self.assertEqual(cmd[cmd.index("--tools") + 1], "Read,Grep,Glob,Bash,Skill")
