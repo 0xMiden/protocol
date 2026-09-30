@@ -41,6 +41,12 @@ class ReviewCommandTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--tools") + 1], "Read,Grep,Glob,Bash,Skill")
         for denied in ("WebFetch", "WebSearch", "Bash(gh", "Bash(curl"):
             self.assertNotIn(denied, joined)
+        start = cmd.index("--allowedTools") + 1
+        allowed = cmd[start : start + len(runner.ALLOWED_TOOLS)]
+        self.assertEqual(allowed, runner.ALLOWED_TOOLS)
+        # Pre-approving a read tool would let it open files outside the workspace.
+        for tool in ("Read", "Grep", "Glob"):
+            self.assertNotIn(tool, allowed)
 
     def test_parse_stream(self):
         stdout = "\n".join(

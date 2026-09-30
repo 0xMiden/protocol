@@ -5,8 +5,13 @@ Every replay is a separate `claude -p` process started in a sealed workspace
 
 * `--setting-sources project` and `syncClaudeAiSkills: false` keep user-level
   and account-synced skills out, so only the workspace's skills are listed;
-* `--tools` / `--allowedTools` allow reading the code and read-only git
-  commands, and nothing that can reach the network;
+* `--tools` offers only Read, Grep, Glob, Bash and Skill, and
+  `--allowedTools` pre-approves only read-only git commands and Skill.
+  Read, Grep and Glob are deliberately *not* pre-approved: Claude Code
+  allows them inside the working directory anyway, and leaving them
+  unapproved makes it deny reads outside the workspace (a pre-approved
+  Read would open any path on the machine, including a checkout that
+  contains the pull request's later commits);
 * `--strict-mcp-config` starts no MCP servers;
 * `--session-id` fixes where the transcript is written, for telemetry.
 
@@ -33,10 +38,8 @@ from .workspace import Workspace, hermetic_git_env
 REVIEW_PROMPT = "Review the change between HEAD~1 and HEAD and report your findings."
 CALIBRATION_PROMPT = "Return an empty findings list. Do not use any tools."
 REVIEW_TOOLS = "Read,Grep,Glob,Bash,Skill"
+# Read, Grep and Glob must stay out of this list; see the module docstring.
 ALLOWED_TOOLS = [
-    "Read",
-    "Grep",
-    "Glob",
     "Skill",
     "Bash(git diff:*)",
     "Bash(git log:*)",

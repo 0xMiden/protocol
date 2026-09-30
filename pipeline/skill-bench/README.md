@@ -46,7 +46,7 @@ A replay must see the code under review and the chosen skills, and nothing else.
 - Each run is its own `claude -p` process with:
   - `--setting-sources project` and `syncClaudeAiSkills: false`, so user-level and account-synced skills are not loaded;
   - `--strict-mcp-config`, so no MCP servers start;
-  - tools limited to `Read`, `Grep`, `Glob`, `Skill`, and Bash, with `git diff`, `git log`, `git show` and `git status` pre-approved. Claude Code also auto-approves read-only shell commands such as `ls` or `head`; anything else is denied, and web tools are not available at all.
+  - tools limited to `Read`, `Grep`, `Glob`, `Skill` and Bash, with only `Skill` and the read-only `git diff`, `git log`, `git show` and `git status` pre-approved. Claude Code allows file reads and read-only shell commands (such as `ls` or `head`) inside the working directory, and a headless session denies everything that needs approval. That includes reads of any path outside the workspace, whether by the file tools, by shell commands, or by `git -C` and `git diff --no-index`. The file tools are deliberately not pre-approved, because a pre-approved `Read` opens any path on the machine. Web tools are not available at all.
 - Hooks and project-enabled plugins are removed from the workspace settings, so a replay runs no project code.
 - Runs are separate processes rather than subagents, because a subagent inherits its parent session's skill listing and working directory.
 
@@ -55,7 +55,7 @@ Each run is also checked, not just configured:
 - An *exposure check* compares the skills listed to the model, read from the session transcript, with the arm's snapshot. First, a calibration run in an empty project measures the skills that Claude Code itself lists (bundled skills such as `code-review`), because those appear in every arm. Any other skill from outside the snapshot makes the run invalid, and invalid runs are excluded from the results. Snapshot skills missing from the listing are reported.
 - Absolute paths outside the workspace that the reviewer read or named in a shell command are listed in the report.
 
-Limits: the isolation relies on Claude Code's own flags, and a model could still, in principle, guess a path outside the workspace and read it with a read-only command. The leak audit makes that visible, but does not prevent it. Replays also use today's model and today's Claude Code, so they show how the historical skills perform now, not how an agent behaved at the time.
+Limits: the isolation relies on Claude Code's permission checks, verified against Claude Code 2.1.280. A later version could behave differently, which is why every run also records attempted outside paths and denied tool calls. Replays use today's model and today's Claude Code, so they show how the historical skills perform now, not how an agent behaved at the time.
 
 ## Buckets
 
