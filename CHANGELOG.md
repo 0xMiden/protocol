@@ -5,6 +5,9 @@
 ### Features
 
 - Moved the `xusdc-encoding` crate from https://github.com/0xMiden/miden-usdcx/ here as `miden-usdcx` ([#3972](https://github.com/0xMiden/protocol/pull/3972)).
+### Fixes
+
+- [BREAKING] Fixed `ProposedBlock` rejecting account updates when a later batch contains multiple transactions for the same account ([#3973](https://github.com/0xMiden/protocol/pull/3973)).
 
 ## v0.17.0-rc.8 (2026-09-29)
 
