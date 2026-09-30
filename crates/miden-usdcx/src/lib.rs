@@ -8,6 +8,7 @@
 //! Rust-primary AccountId codec, and the DepositIntent layout + parser.
 
 pub mod account;
+#[cfg(any(feature = "testing", test))]
 pub mod errors;
 pub mod note;
 pub mod vectors;
