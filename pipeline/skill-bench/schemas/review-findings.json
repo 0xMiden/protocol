@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "line", "severity", "title", "explanation"],
+        "properties": {
+          "path": {"type": "string"},
+          "line": {"type": "integer", "minimum": 0},
+          "severity": {"type": "string", "enum": ["blocking", "should-fix", "nit"]},
+          "title": {"type": "string"},
+          "explanation": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -10,13 +10,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import __version__, github, workspace
-from .util import BenchError, read_json, write_json
+from . import __version__, github, roles, runner, telemetry, workspace
+from .util import BenchError, read_json, run, write_json
 
 DEFAULT_OUT = "skill-bench-results"
 
@@ -31,6 +32,13 @@ def _config_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--arms", default="at-pr,none", help="comma-separated arms: at-pr, none, ref:<sha> (default: at-pr,none)")
     parser.add_argument("--source-repo", help="local clone that contains the PR's commits (default: this checkout, else a cached mirror)")
     parser.add_argument("--work-dir", help="parent directory for replay workspaces; must be outside any project (default: the system temp directory)")
+    parser.add_argument("--runs", type=int, default=2, help="review runs per arm (default: 2)")
+    parser.add_argument("--reviewer", default="plain", choices=runner.MODES, help="who reviews: skill-bench's generic reviewer (plain), the project's own agent as-is (repo-agent), or that agent with the Skill tool added (default: plain)")
+    parser.add_argument("--repo-agent", default="code-reviewer", help="project agent used by the repo-agent modes (default: code-reviewer)")
+    parser.add_argument("--model", help="model for the review runs (default: the reviewer's or Claude Code's default)")
+    parser.add_argument("--max-usd-per-review", type=float, default=3.0, help="per-run cost ceiling passed to --max-budget-usd (default: 3.00)")
+    parser.add_argument("--timeout", type=int, default=1800, help="seconds before a single run is abandoned (default: 1800)")
+    parser.add_argument("--calibration-model", default="haiku", help="model for the built-in skill calibration run (default: haiku)")
 
 
 def _new_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -48,6 +56,13 @@ def _new_config(args: argparse.Namespace) -> dict[str, Any]:
         "arms": [workspace.parse_arm(a).name for a in args.arms.split(",") if a.strip()],
         "source_repo": args.source_repo,
         "work_dir": args.work_dir,
+        "runs": args.runs,
+        "reviewer": args.reviewer,
+        "repo_agent": args.repo_agent,
+        "model": args.model,
+        "max_usd_review": args.max_usd_per_review,
+        "timeout": args.timeout,
+        "calibration_model": args.calibration_model,
     }
 
 
@@ -115,6 +130,116 @@ def _cmd_workspace(args: argparse.Namespace) -> None:
     print(f"workspaces are under {work_root}; delete it when done", file=sys.stderr)
 
 
+def raw_dir(run_dir: Path) -> Path:
+    """Bulky and sensitive artifacts (streams, transcripts); ignored by git."""
+    path = run_dir / "raw"
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".gitignore").write_text("*\n", encoding="utf-8")
+    return path
+
+
+def environment_info() -> dict[str, Any]:
+    """Claude Code version and login method, so cost figures can be read correctly."""
+    version = run(["claude", "--version"], check=False, timeout=60).stdout.strip()
+    auth: dict[str, Any] = {}
+    status = run(["claude", "auth", "status"], check=False, timeout=60)
+    try:
+        data = json.loads(status.stdout)
+        auth = {key: data.get(key) for key in ("authMethod", "subscriptionType", "apiProvider")}
+    except ValueError:
+        pass
+    auth["api_key_in_environment"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return {"claude_version": version, "auth": auth}
+
+
+def stage_replay(run_dir: Path, config: dict[str, Any], keep_workspaces: bool = False) -> None:
+    pr = read_json(run_dir / "pr.json")
+    raw = raw_dir(run_dir)
+    write_json(run_dir / "environment.json", environment_info())
+    work_root, built = prepare_workspaces(run_dir, config)
+    try:
+        builtins_path = run_dir / "builtins.json"
+        if not builtins_path.exists():
+            calibration = runner.calibrate_builtins(
+                work_root, raw / "calibration", model=config["calibration_model"], timeout=config["timeout"]
+            )
+            write_json(builtins_path, calibration)
+        builtins = read_json(builtins_path)["names"]
+        for ws in built.values():
+            snapshot = {**ws.describe(), "skill_bodies": {s["name"]: s["body"] for s in ws.skills}}
+            write_json(run_dir / "snapshots" / f"{ws.arm.slug}.json", snapshot)
+            reviewer = runner.reviewer_for(config["reviewer"], ws, config["repo_agent"])
+            expected = [s["name"] for s in ws.skills if s["model_invocable"]] + ws.commands if reviewer.has_skill_tool else []
+            for index in range(1, config["runs"] + 1):
+                run_id = f"{ws.arm.slug}.{index}"
+                path = run_dir / "runs" / f"{run_id}.json"
+                if path.exists():
+                    print(f"{run_id}: already done, skipping")
+                    continue
+                record = runner.run_review(
+                    ws,
+                    reviewer,
+                    run_id,
+                    raw / run_id,
+                    model=config["model"],
+                    max_usd=config["max_usd_review"],
+                    timeout=config["timeout"],
+                    skills_dir=config["skills_dir"],
+                    ignore_files=tuple(pr["modified_skill_files"]),
+                )
+                record["expected_listing"] = sorted(expected)
+                runner.finalize(record, builtins, snapshot)
+                write_json(path, record)
+                tele = record["telemetry"] or {}
+                print(
+                    f"{run_id}: {'valid' if record['valid'] else 'INVALID'}, {len(record['findings'])} findings, "
+                    f"skills invoked {tele.get('invoked', [])}, read {tele.get('read', [])}, "
+                    f"est. ${record['cost_usd'] or 0:.2f}"
+                    + (f" - {'; '.join(record['problems'])}" if record["problems"] else "")
+                )
+    finally:
+        if keep_workspaces:
+            print(f"workspaces kept under {work_root}", file=sys.stderr)
+        else:
+            shutil.rmtree(work_root, ignore_errors=True)
+
+
+def stage_telemetry(run_dir: Path, config: dict[str, Any]) -> None:
+    """Re-parse the stored transcripts of every run (for example after a parser change)."""
+    pr = read_json(run_dir / "pr.json")
+    builtins = read_json(run_dir / "builtins.json")["names"]
+    for path in sorted((run_dir / "runs").glob("*.json")):
+        record = read_json(path)
+        transcript = run_dir / "raw" / record["id"] / "transcript.jsonl"
+        if not transcript.is_file():
+            continue
+        snapshot = read_json(run_dir / "snapshots" / f"{workspace.parse_arm(record['arm']).slug}.json")
+        record["telemetry"] = telemetry.parse_session(
+            transcript,
+            Path(record["workspace"]),
+            config["skills_dir"],
+            tuple(pr["modified_skill_files"]),
+            (runner.config_dir() / "projects",),
+        )
+        runner.finalize(record, builtins, snapshot)
+        write_json(path, record)
+    print(f"re-parsed transcripts in {run_dir / 'runs'}")
+
+
+def _cmd_replay(args: argparse.Namespace) -> None:
+    run_dir, config = load_run(args.run_dir)
+    stage_replay(run_dir, config, keep_workspaces=args.keep_workspaces)
+
+
+def _cmd_telemetry(args: argparse.Namespace) -> None:
+    run_dir, config = load_run(args.run_dir)
+    stage_telemetry(run_dir, config)
+
+
+def _cmd_render_role(args: argparse.Namespace) -> None:
+    print(roles.agents_json(roles.load_role(args.role)))
+
+
 def _cmd_fetch(args: argparse.Namespace) -> None:
     config = _new_config(args)
     run_dir = _create_run_dir(args, config)
@@ -137,6 +262,19 @@ def build_parser() -> argparse.ArgumentParser:
     ws = sub.add_parser("workspace", help="build the sealed replay workspaces of a run for inspection")
     ws.add_argument("--run-dir", required=True)
     ws.set_defaults(func=_cmd_workspace)
+
+    replay = sub.add_parser("replay", help="replay the review headlessly in every arm and record skill telemetry")
+    replay.add_argument("--run-dir", required=True)
+    replay.add_argument("--keep-workspaces", action="store_true", help="keep the replay workspaces for inspection")
+    replay.set_defaults(func=_cmd_replay)
+
+    tele = sub.add_parser("telemetry", help="re-parse the stored transcripts of a run")
+    tele.add_argument("--run-dir", required=True)
+    tele.set_defaults(func=_cmd_telemetry)
+
+    render = sub.add_parser("render-role", help="print a role as the JSON that claude --agents expects")
+    render.add_argument("role", help="role name, e.g. reviewer")
+    render.set_defaults(func=_cmd_render_role)
     return parser
 
 
