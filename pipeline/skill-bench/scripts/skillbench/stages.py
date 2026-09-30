@@ -299,20 +299,37 @@ def stage_report(run_dir: Path, config: dict[str, Any]) -> None:
     print(f"report: {run_dir / 'report.md'}")
 
 
-def estimate_plan(config: dict[str, Any], candidates: int | None = None) -> dict[str, Any]:
-    """How many sessions a run will start, and the worst-case cost ceiling."""
+MAX_ATTEMPTS = 2  # every session is retried at most once
+MAX_FINDINGS_PER_RUN = 10  # the review schema's maxItems
+
+
+def count_candidates(config: dict[str, Any]) -> int:
+    """Fetch the PR (a free GitHub call) and count the chosen round's candidate findings."""
+    owner, name = config["repo"].split("/", 1)
+    raw = github.fetch_pull_request(owner, name, config["number"])
+    return len(github.select_review_round(raw, config["skills_dir"], config["round"])["candidates"])
+
+
+def estimate_plan(config: dict[str, Any], candidates: int) -> dict[str, Any]:
+    """How many sessions a run will start at most, and the worst-case cost ceiling.
+
+    The ceiling assumes every session hits its cap and is retried once, so a
+    real run cannot exceed it.
+    """
     arms = [workspace.parse_arm(a) for a in config["arms"]]
     reviews = len(arms) * config["runs"]
-    classify = max(1, math.ceil(candidates / judge.CLASSIFY_BATCH)) if candidates else 1
-    attribute = sum(1 for a in arms if a.has_skills)
+    classify = math.ceil(candidates / judge.CLASSIFY_BATCH)
+    items = candidates + config["runs"] * MAX_FINDINGS_PER_RUN
+    attribute = sum(1 for a in arms if a.has_skills) * math.ceil(items / judge.ATTRIBUTE_BATCH)
     judge_calls = classify + reviews + attribute
     calibration_cap = 0.5
-    ceiling = reviews * config["max_usd_review"] + calibration_cap + judge_calls * config["max_usd_judge"]
+    per_attempt = reviews * config["max_usd_review"] + calibration_cap + judge_calls * config["max_usd_judge"]
     return {
+        "candidates": candidates,
         "reviews": reviews,
         "calibration": 1,
         "judge_calls": {"classify": classify, "match": reviews, "attribute": attribute, "total": judge_calls},
-        "ceiling_usd": round(ceiling, 2),
+        "ceiling_usd": round(per_attempt * MAX_ATTEMPTS, 2),
     }
 
 
@@ -336,7 +353,8 @@ def describe_plan(config: dict[str, Any], plan: dict[str, Any], env: dict[str, A
             f"- 1 calibration run in an empty project (model {config['calibration_model']}, capped at $0.50)",
             f"- about {calls['total']} judge call(s) (classify {calls['classify']}, match {calls['match']}, attribute "
             f"{calls['attribute']}) on {config['judge_model']}, each capped at ${config['max_usd_judge']:.2f}",
-            f"Worst-case ceiling: ${plan['ceiling_usd']:.2f}. Actual costs are usually far lower and are listed in the report.",
+            f"Worst-case ceiling: ${plan['ceiling_usd']:.2f}, assuming every session hits its cap and is retried once "
+            f"({plan['candidates']} candidate finding(s) in this round). Actual costs are usually far lower and are listed in the report.",
             billing,
         ]
     )

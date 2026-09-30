@@ -45,8 +45,9 @@ class ReportTest(unittest.TestCase):
         config = {"repo": "o/r", "number": 1, "round": 1, "arms": ["at-pr", "none"], "runs": 2, "reviewer": "plain", "model": None, "max_usd_review": 3.0, "max_usd_judge": 1.0, "judge_model": "opus", "calibration_model": "haiku"}
         plan = stages.estimate_plan(config, candidates=45)
         self.assertEqual(plan["reviews"], 4)
-        self.assertEqual(plan["judge_calls"], {"classify": 3, "match": 4, "attribute": 1, "total": 8})
-        self.assertEqual(plan["ceiling_usd"], 4 * 3.0 + 0.5 + 8 * 1.0)
+        # classify: 45 / 20 -> 3 batches; attribute: (45 + 2 runs x 10 findings) / 25 -> 3 batches for the one skill arm
+        self.assertEqual(plan["judge_calls"], {"classify": 3, "match": 4, "attribute": 3, "total": 10})
+        self.assertEqual(plan["ceiling_usd"], 2 * (4 * 3.0 + 0.5 + 10 * 1.0))  # every session capped and retried once
         text = stages.describe_plan(config, plan, {"auth": {"api_key_in_environment": True}})
         self.assertIn("billed per token", text)
 

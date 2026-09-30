@@ -102,7 +102,8 @@ def _stage_command(stage: Any) -> Any:
 
 def _cmd_estimate(args: argparse.Namespace) -> None:
     config = _new_config(args)
-    print(stages.describe_plan(config, stages.estimate_plan(config), stages.environment_info()))
+    plan = stages.estimate_plan(config, stages.count_candidates(config))
+    print(stages.describe_plan(config, plan, stages.environment_info()))
 
 
 def _cmd_all(args: argparse.Namespace) -> None:
