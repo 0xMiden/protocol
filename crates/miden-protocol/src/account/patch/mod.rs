@@ -202,7 +202,7 @@ impl AccountPatch {
             (Some(_), None) => return Ok(()),
 
             (Some(current), Some(new)) => {
-                if new.as_canonical_u64() <= current.as_canonical_u64() {
+                if new <= current {
                     return Err(AccountPatchError::NonceMustIncrease { current, new });
                 }
                 self.final_nonce = Some(new);
