@@ -532,9 +532,9 @@ pub enum AccountPatchError {
     StoragePatchMergeDoubleRemove(StorageSlotName),
 
     #[error(
-        "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"
+        "nonce in the patch being merged is {new} which is not greater than current patch nonce {current}"
     )]
-    NonceMustIncrementByOne { current: Felt, new: Felt },
+    NonceMustIncrease { current: Felt, new: Felt },
 
     #[error(
         "patch is for account ID {actual} but is being merged into patch for account {expected}"

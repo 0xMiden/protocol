@@ -162,12 +162,10 @@ impl AccountPatch {
     /// The merge is not commutative: `self` must describe the earlier and `other` the later
     /// state, so `a.merge(b)` and `b.merge(a)` generally give different results.
     ///
-    /// Both patches must apply to the same account, and `other.final_nonce` must be exactly one
-    /// greater than `self.final_nonce` whenever both are set. The exact `+1` requirement reflects
-    /// the tx kernel invariants that (a) a state-changing transaction must increment the nonce,
-    /// and (b) the nonce can be incremented at most once per transaction. As a consequence
-    /// the patch of the next transaction always lands at `self.final_nonce + 1`. The same nonce in
-    /// both patches represents a fork and a nonce delta larger than 1 means a missed transaction.
+    /// Both patches must apply to the same account, and `other.final_nonce` must be greater than
+    /// `self.final_nonce` whenever both are set. `other` can be an aggregate of multiple
+    /// transactions (e.g. of a batch), so the nonce can grow by more than one. Continuity of the
+    /// merged patches is not and cannot be checked here.
     ///
     /// If `other` carries code, it replaces the code of `self`, since `other` describes the later
     /// state.
@@ -179,8 +177,8 @@ impl AccountPatch {
     ///
     /// Returns an error if:
     /// - the two patches apply to different accounts.
-    /// - both patches carry a final nonce and the nonce in `other` is not exactly one greater than
-    ///   the nonce in `self`.
+    /// - both patches carry a final nonce and the nonce in `other` is not greater than the nonce in
+    ///   `self`.
     /// - a storage slot is used as different slot types in the two patches.
     pub fn merge(&mut self, other: Self) -> Result<(), AccountPatchError> {
         if self.account_id != other.account_id {
@@ -204,8 +202,8 @@ impl AccountPatch {
             (Some(_), None) => return Ok(()),
 
             (Some(current), Some(new)) => {
-                if new != current + Felt::ONE {
-                    return Err(AccountPatchError::NonceMustIncrementByOne { current, new });
+                if new <= current {
+                    return Err(AccountPatchError::NonceMustIncrease { current, new });
                 }
                 self.final_nonce = Some(new);
             },
@@ -809,8 +807,7 @@ mod tests {
     #[rstest::rstest]
     #[case::equal(3, 3)]
     #[case::smaller(3, 2)]
-    #[case::gap(3, 5)]
-    fn account_patch_merge_rejects_non_incrementing_nonce(
+    fn account_patch_merge_rejects_non_increasing_nonce(
         #[case] self_nonce: u32,
         #[case] other_nonce: u32,
     ) -> anyhow::Result<()> {
@@ -820,7 +817,7 @@ mod tests {
 
         assert_matches!(
             patch.merge(other).unwrap_err(),
-            AccountPatchError::NonceMustIncrementByOne { current, new } => {
+            AccountPatchError::NonceMustIncrease { current, new } => {
                 assert_eq!(current, Felt::from(self_nonce));
                 assert_eq!(new, Felt::from(other_nonce));
             }
