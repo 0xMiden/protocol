@@ -59,7 +59,7 @@ pub const XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME: u16 =
 ///
 /// This is the withdrawal attachment in domain form. It converts into the
 /// [`NoteAttachment`] the note id commits to, the way [`XUsdcDeposit`] converts into the mint
-/// note's scheme-4 transport one.
+/// note's transport one.
 ///
 /// [`XUsdcDeposit`]: crate::note::xreserve_mint::XUsdcDeposit
 pub struct XUsdcBurnAttachment {
@@ -97,7 +97,7 @@ impl From<&XUsdcBurnAttachment> for NoteAttachment {
                 .expect("the withdrawal scheme is neither reserved nor past the protocol maximum"),
             attachment.items.encode().to_vec(),
         )
-        // the payload is fixed-width, so the word count is the constant asserted below
+        // the payload has `NUM_WORDS` words, which the assertion below keeps within the cap
         .expect("the withdrawal payload is within the per-attachment word cap")
     }
 }

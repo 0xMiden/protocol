@@ -28,7 +28,7 @@ const CHECK_BURN_POLICY_RECIPIENT_HIGH_LOC = 16
 # =================================================================================================
 
 const ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_MISSING = "burn note withdrawal attachment is missing"
-const ERR_XRESERVE_BURN_NOTE_TARGET_NOT_FAUCET = "burn note routing target is not this faucet"
+const ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET = "burn note routing target is not this faucet"
 const ERR_XRESERVE_BURN_NOTE_ATTACHMENT_COUNT = "burn note must carry exactly two attachments"
 const ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS = "burn note withdrawal attachment must contain exactly three words"
 const ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32 = "burn note destination domain is not a valid u32"
@@ -87,7 +87,7 @@ pub proc check_burn_policy
 
     # the one remaining attachment must route the note to this faucet
     exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_XRESERVE_BURN_NOTE_TARGET_NOT_FAUCET
+    assert.err=ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET
     # => [withdrawal_idx, pad(16)]
 
     # check the number of words inside the withdrawal attachment

@@ -180,7 +180,7 @@ fn non_u32() -> Felt {
 )]
 #[case::routing_to_another_account(
     |_| vec![routing(test_faucet_id(42)), withdrawal()],
-    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_TARGET_NOT_FAUCET"),
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET"),
 )]
 #[case::domain_not_u32(
     |faucet_id| vec![routing(faucet_id), withdrawal_with_element(0, non_u32())],
