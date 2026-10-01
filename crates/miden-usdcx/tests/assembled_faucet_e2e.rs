@@ -708,17 +708,14 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         "S9: the fixed full-32-bit xUSDC burn tag"
     );
     assert_eq!(burn_note.metadata().sender(), holder_id, "S9: metadata.sender == depositor");
-    // The withdrawal payload rides the scheme-6 attachment, zero-padded to the word boundary.
-    let mut payload_felts = burn_note
+    // The withdrawal payload rides the withdrawal attachment.
+    let withdrawal = burn_note
         .attachments()
         .iter()
         .find(|a| a.attachment_scheme().as_u16() == XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
-        .expect("S9: burn note carries its withdrawal-payload attachment")
-        .content()
-        .to_elements();
-    payload_felts.truncate(XReserveBurnNote::NUM_PAYLOAD_ITEMS);
+        .expect("S9: burn note carries its withdrawal-payload attachment");
     assert_eq!(
-        XReserveBurnItems::decode(&payload_felts).expect("S9: DC-7 items decode"),
+        XReserveBurnItems::decode(withdrawal.content().as_words()).expect("S9: DC-7 items decode"),
         items,
         "S9: the withdrawal-payload attachment carries the exact DC-7 payload"
     );

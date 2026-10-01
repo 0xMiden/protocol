@@ -14,9 +14,9 @@
 
 use miden::core::mem
 use miden::protocol::account_id
-use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::utils
+use xreserve::domain_config
 use xreserve::packed_mem
 use {
     MINT_INTENT_FELTS, MINT_INTENT_HOOK_DATA_LEN_FELT_OFF, MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF,
@@ -24,12 +24,6 @@ use {
     MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF, MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF,
     MINT_INTENT_WORDS
 } from xreserve::mint_intent
-
-# CONSTANTS — storage slots
-# =================================================================================================
-
-# The configured destination domain. Read by `rebuild`.
-pub const DOMAIN_CONFIG_SLOT = word("xusdc::xreserve::domain_config::domain")
 
 # CONSTANTS — wire-field felt offsets (byte offset / 4)
 # =================================================================================================
@@ -165,7 +159,7 @@ pub proc rebuild
     # => []
 
     # ---- the configured destination domain, read here so no caller can influence it ----
-    exec.get_configured_domain
+    exec.domain_config::get_configured_domain
     # => [remote_domain]
 
     u32assert.err=ERR_XRESERVE_DOMAIN_NOT_U32
@@ -254,24 +248,6 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
-
-#! Reads the faucet's configured destination domain.
-#!
-#! Inputs:  []
-#! Outputs: [remote_domain]
-#!
-#! Panics if:
-#! - the domain config slot with the expected id does not exist in account storage.
-#!
-#! Invocation: exec
-proc get_configured_domain
-    push.DOMAIN_CONFIG_SLOT[0..2]
-    exec.active_account::get_item
-    # => [domain, d1, d2, d3]
-
-    movdn.3 drop drop drop
-    # => [domain]
-end
 
 #! Reads the carried recipient's two account-id felts.
 #!

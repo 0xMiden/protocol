@@ -11,6 +11,7 @@ pub mod account;
 #[cfg(any(feature = "testing", test))]
 pub mod errors;
 pub mod note;
+#[cfg(any(feature = "testing", test))]
 pub mod vectors;
 pub mod xreserve;
 

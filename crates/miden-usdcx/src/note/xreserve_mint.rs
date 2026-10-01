@@ -39,6 +39,7 @@ use miden_standards::note::{
     NetworkAccountTarget,
     NoteExecutionHint,
     P2idNoteStorage,
+    StandardNoteAttachment,
 };
 
 use crate::xreserve::encoding::{
@@ -51,10 +52,10 @@ use crate::xreserve::encoding::{
     Signature,
 };
 
-/// The mint-note transport attachment scheme (u16, project-chosen: >= 4, clear of
-/// the reserved "none" value 1 and the standard values 2 `NetworkAccountTarget` / 3 `Pswap`).
+/// The mint-note transport attachment scheme, see [`StandardNoteAttachment::UsdcxMint`].
 /// This attachment carries both the attestation and the DepositIntent preimage.
-pub const XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME: u16 = 4;
+pub const XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME: u16 =
+    StandardNoteAttachment::UsdcxMint.attachment_scheme().as_u16();
 
 /// The attestation section word count: `[pubkey(16), signature(17), pad(3)]` = 36 felts (the
 /// pubkey is the 16-felt affine form). The operator `feeAmount` is not carried at all — the faucet

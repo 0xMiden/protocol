@@ -606,18 +606,15 @@ async fn sponsored_mint_uses_the_installed_xusdc_fee_schedule() -> Result<()> {
 #[tokio::test]
 async fn sponsored_burn_uses_the_installed_xusdc_fee_schedule() -> Result<()> {
     let mut fixture = setup_sponsored_burn()?;
-    let mut payload = fixture
+    let attachment = fixture
         .burn_note
         .attachments()
         .iter()
         .find(|attachment| {
             attachment.attachment_scheme().as_u16() == XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME
         })
-        .expect("the burn note carries its withdrawal attachment")
-        .content()
-        .to_elements();
-    payload.truncate(XReserveBurnNote::NUM_PAYLOAD_ITEMS);
-    assert_eq!(XReserveBurnItems::decode(&payload)?, fixture.burn_items);
+        .expect("the burn note carries its withdrawal attachment");
+    assert_eq!(XReserveBurnItems::decode(attachment.content().as_words())?, fixture.burn_items);
 
     let emitted = try_emit_burn_note(
         &fixture.mock_chain,

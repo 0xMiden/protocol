@@ -203,7 +203,7 @@ pub struct AttVector {
 }
 
 /// Burn-note item (BN) vectors. `kind`: accept | reject. Accept entries carry
-/// the two destination fields plus the 9-felt expected `items` layout; reject entries carry the
+/// the two destination fields plus the expected `items` layout; reject entries carry the
 /// malformed `items` felts plus `expected_variant` (`BurnItemsMalformed`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -215,8 +215,8 @@ pub struct BnVector {
     pub dest_domain: Option<CircleDomain>,
     #[serde(default)]
     pub dest_recipient: Option<String>,
-    /// Accept: the 9-felt burn-payload golden layout (carried in note attachment scheme 6).
-    /// Reject: the malformed felts.
+    /// Accept: the burn-payload golden layout (carried in the withdrawal note attachment).
+    /// Reject: the malformed felts. Both are a whole number of words.
     pub items: Vec<String>,
     #[serde(default)]
     pub expected_variant: Option<String>,
@@ -416,9 +416,12 @@ impl BnVector {
         ))
     }
 
-    /// The felt slice under test (accept: 9-felt golden layout; reject: malformed felts).
-    pub fn items_values(&self) -> Vec<Felt> {
-        self.items.iter().map(|s| felt_from_hex(s)).collect()
+    /// The words under test (accept: golden layout; reject: malformed words).
+    pub fn items_words(&self) -> Vec<Word> {
+        let felts: Vec<Felt> = self.items.iter().map(|s| felt_from_hex(s)).collect();
+        let (words, remainder) = felts.as_chunks::<{ Word::NUM_ELEMENTS }>();
+        assert!(remainder.is_empty(), "{}: items are a whole number of words", self.id);
+        words.iter().map(|chunk| Word::new(*chunk)).collect()
     }
 
     /// Reconstructs the semantic `XReserveBurnItems` from an accept vector's inputs.
@@ -454,7 +457,7 @@ mod tests {
         assert_eq!(v.families.aid.len(), 5, "aid family");
         assert_eq!(v.families.di.len(), 10, "di family");
         assert_eq!(v.families.att.len(), 4, "att family");
-        assert_eq!(v.families.bn.len(), 7, "bn family");
+        assert_eq!(v.families.bn.len(), 8, "bn family");
         assert_eq!(v.families.mi.len(), 6, "mi family");
         let no_provenance = |cite: &str, derivation: &str| cite.is_empty() || derivation.is_empty();
         let tv_ok = |id: &str, tv: &[String]| !tv.is_empty() || TV_TAG_ALLOWLIST.contains(&id);

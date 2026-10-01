@@ -7,18 +7,25 @@
 //! The `destRecipient` field is packed and unpacked with the shared bytes32 codec in both
 //! directions, so there is one definition of how 32 bytes become field elements.
 
-use miden_protocol::Felt;
+use miden_protocol::{Felt, Word};
 
 use super::bytes32::packed_felts_to_bytes32;
 use super::deposit_intent::ForeignChainAddress;
 use super::domain::CircleDomain;
 use super::error::EncodingError;
-
-/// Felt width of the burn-note withdrawal payload: `destDomain` (1) then `destRecipient`
-/// (8 u32-LE), totalling 9 felts (≤ 1024, the note-model felt bound).
-pub const BURN_NOTE_ITEMS_FELTS: usize = 9;
+use crate::note::xreserve_burn::XUsdcBurnAttachment;
 
 /// The destination domain and recipient carried in the burn note's withdrawal attachment.
+///
+/// It is laid out as:
+///
+/// ```text
+/// [
+///   [destination_domain, 0, 0, 0]
+///   DESTINATION_RECIPIENT_LO,
+///   DESTINATION_RECIPIENT_HI,
+/// ]
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct XReserveBurnItems {
     pub dest_domain: CircleDomain,
@@ -26,35 +33,44 @@ pub struct XReserveBurnItems {
 }
 
 impl XReserveBurnItems {
-    /// Encodes `(destDomain, destRecipient)` into the payload felt layout
-    /// (`destDomain` at `[0]`, `destRecipient` at `[1..9]`). Infallible: `destDomain` is a u32
-    /// [`CircleDomain`], and the bytes32 field packs via the shared `bytes32` codec.
-    pub fn encode(&self) -> Vec<Felt> {
-        let mut out = Vec::with_capacity(BURN_NOTE_ITEMS_FELTS);
-        out.push(Felt::from(self.dest_domain)); // [0]
-        out.extend_from_slice(&self.dest_recipient.to_packed_felts()); // [1..9]
-        out
+    /// Encodes the domain and recipient into words.
+    pub fn encode(&self) -> [Word; XUsdcBurnAttachment::NUM_WORDS] {
+        let recipient = self.dest_recipient.to_packed_felts();
+        let mut items = [Word::empty(); XUsdcBurnAttachment::NUM_WORDS];
+
+        items[0][0] = Felt::from(self.dest_domain);
+        items[1].as_mut_slice().copy_from_slice(&recipient[0..4]);
+        items[2].as_mut_slice().copy_from_slice(&recipient[4..8]);
+
+        items
     }
 
     /// Decodes the withdrawal payload, reversing [`encode`](Self::encode).
     ///
     /// # Errors
     ///
-    /// Returns [`EncodingError::BurnItemsMalformed`] on any wrong length, out-of-range field, or
-    /// non-u32 limb.
-    pub fn decode(items: &[Felt]) -> Result<Self, EncodingError> {
-        if items.len() != BURN_NOTE_ITEMS_FELTS {
+    /// Returns [`EncodingError::BurnItemsMalformed`] on a wrong length, a non-zero element after
+    /// `destDomain`, or a field that is not a u32.
+    pub fn decode(words: &[Word]) -> Result<Self, EncodingError> {
+        let [domain_word, recipient_low, recipient_high] = words else {
+            return Err(EncodingError::BurnItemsMalformed);
+        };
+
+        let [domain, padding @ ..] = domain_word.into_elements();
+        if padding.iter().any(|element| *element != Felt::ZERO) {
             return Err(EncodingError::BurnItemsMalformed);
         }
-        let dest_domain = u32::try_from(items[0].as_canonical_u64())
+        let dest_domain = u32::try_from(domain.as_canonical_u64())
             .map(CircleDomain::new)
             .map_err(|_| EncodingError::BurnItemsMalformed)?;
-        // The length was checked above, so each slice is exactly 8 felts. Unpacking goes through
-        // the shared bytes32 inverse; a limb that is not a valid u32 is reported as a
-        // malformed payload rather than being truncated into a plausible-looking address.
-        let recipient_felts: [Felt; 8] =
-            items[1..9].try_into().expect("len == 9 ⇒ items[1..9] is exactly 8 felts");
-        let dest_recipient = packed_felts_to_bytes32(&recipient_felts)
+
+        // a limb that is not a valid u32 is reported as a malformed payload rather than being
+        // truncated into a plausible-looking address
+        let mut recipient = [Felt::ZERO; 2 * Word::NUM_ELEMENTS];
+        recipient[0..4].copy_from_slice(recipient_low.as_elements());
+        recipient[4..8].copy_from_slice(recipient_high.as_elements());
+
+        let dest_recipient = packed_felts_to_bytes32(&recipient)
             .map(ForeignChainAddress::new)
             .map_err(|_| EncodingError::BurnItemsMalformed)?;
         Ok(Self { dest_domain, dest_recipient })
@@ -72,7 +88,7 @@ mod tests {
     use super::*;
     use crate::vectors::load;
 
-    /// TV-BN-1 (round-trip + golden layout): `encode` matches the golden felts and
+    /// TV-BN-1 (round-trip + golden layout): `encode` matches the golden words and
     /// `decode(encode(x)) == x` across the accept vectors (incl. boundary values).
     #[test]
     fn tv_bn_1_round_trip() {
@@ -82,8 +98,12 @@ mod tests {
         for vec in accept {
             let x = vec.expected_struct();
             let encoded = x.encode();
-            assert_eq!(encoded.len(), 9, "{}: width", vec.id);
-            assert_eq!(encoded, vec.items_values(), "{}: encode matches the golden layout", vec.id);
+            assert_eq!(
+                encoded.as_slice(),
+                vec.items_words(),
+                "{}: encode matches the golden layout",
+                vec.id
+            );
             assert_eq!(
                 XReserveBurnItems::decode(&encoded).expect("round-trip decode"),
                 x,
@@ -91,46 +111,60 @@ mod tests {
                 vec.id
             );
             assert_eq!(
-                XReserveBurnItems::decode(&vec.items_values()).expect("golden decode"),
+                XReserveBurnItems::decode(&vec.items_words()).expect("golden decode"),
                 x,
-                "{}: decode golden felts",
+                "{}: decode golden words",
                 vec.id
             );
         }
     }
 
-    /// TV-BN-2 (destination-in-items): the destination fields land in the
-    /// payload felt layout (`destDomain` at `[0]`, `destRecipient` at `[1..9]`). `encode` has no
-    /// metadata path — its only output is `Vec<Felt>`, so `metadata.sender` is structurally
-    /// reserved for the depositor.
+    /// TV-BN-1 (random round-trip): for random domains and recipients `decode(encode(x)) == x`,
+    /// and every random canonical payload re-encodes to exactly the same words.
+    #[test]
+    fn tv_bn_1_random_round_trip() -> anyhow::Result<()> {
+        const NUM_CASES: usize = 256;
+
+        for _ in 0..NUM_CASES {
+            let items = XReserveBurnItems::builder()
+                .dest_domain(CircleDomain::new(rand::random()))
+                .dest_recipient(ForeignChainAddress::new(rand::random()))
+                .build();
+            assert_eq!(XReserveBurnItems::decode(&items.encode())?, items);
+
+            let mut payload = [Word::empty(); XUsdcBurnAttachment::NUM_WORDS];
+            payload[0][0] = Felt::from(rand::random::<u32>());
+            for element in payload[1..].iter_mut().flat_map(|word| word.as_mut_slice()) {
+                *element = Felt::from(rand::random::<u32>());
+            }
+            assert_eq!(XReserveBurnItems::decode(&payload)?.encode(), payload);
+        }
+
+        Ok(())
+    }
+
+    /// TV-BN-2 (destination-in-items): the destination fields land in the payload word layout
+    /// (`destDomain` at word 0, `destRecipient` at words 1 and 2). `encode` has no metadata path —
+    /// its only output is the payload words, so `metadata.sender` is structurally reserved for the
+    /// depositor.
     #[test]
     fn tv_bn_2_destination_in_items() {
         let v = load();
         for vec in v.families.bn.iter().filter(|x| x.kind == "accept") {
             let items = vec.expected_struct().encode();
-            let golden = vec.items_values();
-            assert_eq!(items[0], golden[0], "{}: destDomain in items[0]", vec.id);
-            assert_eq!(&items[1..9], &golden[1..9], "{}: destRecipient in items[1..9]", vec.id);
-        }
-    }
-
-    /// TV-BN-3 (note-model placement): the payload fits the note-model felt bound
-    /// (≤ 1024 felts), not `NoteInputs`/`aux`.
-    #[test]
-    fn tv_bn_3_note_storage_placement() {
-        let v = load();
-        for vec in v.families.bn.iter().filter(|x| x.kind == "accept") {
-            let n = vec.expected_struct().encode().len();
-            assert_eq!(n, BURN_NOTE_ITEMS_FELTS, "{}: fixed width", vec.id);
-            assert!(n <= 1024, "{}: within the note-model felt bound", vec.id);
+            let golden = vec.items_words();
+            assert_eq!(items[0], golden[0], "{}: destDomain in word 0", vec.id);
+            assert_eq!(&items[1..3], &golden[1..3], "{}: destRecipient in words 1 and 2", vec.id);
         }
     }
 
     /// TV-BN-4 (malformed → exact error): every malformed-items vector decodes to the exact
-    /// `BurnItemsMalformed` (wrong length, out-of-range domain, or a non-u32 limb).
+    /// `BurnItemsMalformed` (wrong length, non-zero domain padding, out-of-range domain, or a
+    /// non-u32 limb).
     #[rstest]
     #[case("bn-rej-len-short")]
     #[case("bn-rej-len-long")]
+    #[case("bn-rej-domain-padding-not-zero")]
     #[case("bn-rej-domain-over-u32")]
     #[case("bn-rej-recipient-limb-not-u32")]
     fn tv_bn_4_malformed_burn_items(#[case] id: &str) {
@@ -141,7 +175,7 @@ mod tests {
             .find(|x| x.id == id)
             .unwrap_or_else(|| panic!("vector {id} present"));
         assert_matches!(
-            XReserveBurnItems::decode(&vec.items_values()),
+            XReserveBurnItems::decode(&vec.items_words()),
             Err(EncodingError::BurnItemsMalformed),
             "{id}",
         );

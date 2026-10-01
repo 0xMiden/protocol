@@ -215,19 +215,17 @@ fn custom_mint_transport_masm_is_deleted() -> Result<()> {
     Ok(())
 }
 
-/// TRIPWIRE: the legacy `domain_config` and `min_burn_admin` MASM are replaced;
+/// TRIPWIRE: the legacy `min_burn_admin` MASM is replaced;
 /// the identifier-init module + note are gone too (the identifier is a
 /// provable fixpoint of the account id, which is why the mint path derives it instead of reading a
 /// seeded slot).
 #[test]
 fn legacy_config_and_burn_masm_are_replaced() -> Result<()> {
     let _serial = tripwire_serial_guard_blocking();
-    for gone in ["domain_config.masm", "min_burn_admin.masm"] {
-        assert!(
-            !shipped_masm_path(gone).exists(),
-            "asm/xreserve/{gone} must be deleted by the recomposition"
-        );
-    }
+    assert!(
+        !shipped_masm_path("min_burn_admin.masm").exists(),
+        "asm/xreserve/min_burn_admin.masm must be deleted by the recomposition"
+    );
     assert!(
         !shipped_masm_path("identifier_init.masm").exists(),
         "asm/xreserve/identifier_init.masm must be deleted — the mint path derives the \

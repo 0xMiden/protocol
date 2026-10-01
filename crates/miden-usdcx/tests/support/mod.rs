@@ -196,14 +196,14 @@ pub fn mint_note_from_payload_at_domain(
 /// generated from the MASM that raises it, so a message can only be changed in the MASM. What this
 /// table still carries is the NAME set — an error the faucet raises but no test names fails the
 /// bidirectional constant sweep until it gets a row.
-pub static SHELL_ERR_TABLE: [(&str, MasmError); 23] = [
+pub static SHELL_ERR_TABLE: [(&str, MasmError); 27] = [
     (
         "ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_MISSING",
         errors::ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_MISSING,
     ),
     (
-        "ERR_XRESERVE_BURN_NOTE_TARGET_MISSING",
-        errors::ERR_XRESERVE_BURN_NOTE_TARGET_MISSING,
+        "ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET",
+        errors::ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET,
     ),
     (
         "ERR_XRESERVE_BURN_NOTE_ATTACHMENT_COUNT",
@@ -212,6 +212,22 @@ pub static SHELL_ERR_TABLE: [(&str, MasmError); 23] = [
     (
         "ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS",
         errors::ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS,
+    ),
+    (
+        "ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32",
+        errors::ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32,
+    ),
+    (
+        "ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN",
+        errors::ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN,
+    ),
+    (
+        "ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32",
+        errors::ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32,
+    ),
+    (
+        "ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO",
+        errors::ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO,
     ),
     ("ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN", errors::ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN),
     ("ERR_XRESERVE_MINT_INTENT_LIMB", errors::ERR_XRESERVE_MINT_INTENT_LIMB),

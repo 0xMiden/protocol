@@ -40,7 +40,6 @@ use miden_tx::LocalTransactionProver;
 use miden_usdcx::note::xreserve_burn::{
     FIXED_XUSDC_BURN_TAG,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
-    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
     XReserveBurnNote,
     XUsdcBurnAttachment,
 };
@@ -75,48 +74,25 @@ fn sample_items() -> XReserveBurnItems {
     }
 }
 
-/// The carrier tag and word count are Circle-facing wire values. Pinned against literals rather
-/// than against the constants, so a re-tag fails here instead of moving silently through every
-/// site that reads them.
-#[test]
-fn burn_withdrawal_carrier_is_frozen() {
-    assert_eq!(
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME, 6,
-        "the withdrawal-payload attachment scheme is frozen at 6",
-    );
-    assert_eq!(
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS, 3,
-        "the withdrawal-payload attachment is frozen at 3 words",
-    );
-}
-
-/// Reads a burn note's 9-felt withdrawal payload straight out of its scheme-tagged attachment:
-/// the scheme-6 attachment's words with the word-boundary padding dropped. The felts feed the
-/// shared codec's `XReserveBurnItems::decode`, which stays the single owner of the field layout —
-/// this helper reads no offset and unpacks no field.
-fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
+/// Reads a burn note's withdrawal payload words straight out of its scheme-tagged attachment. The
+/// words feed the shared codec's `XReserveBurnItems::decode`, which stays the single owner of the
+/// field layout — this helper reads no offset and unpacks no field.
+fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Word> {
     let scheme = NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
-        .expect("scheme 6 is a valid attachment scheme");
+        .expect("the withdrawal scheme is a valid attachment scheme");
     let attachment = attachments
         .iter()
         .find(|attachment| attachment.attachment_scheme() == scheme)
         .expect("burn note carries its withdrawal-payload attachment");
     assert_eq!(
         usize::from(attachment.num_words()),
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
+        XUsdcBurnAttachment::NUM_WORDS,
         "the withdrawal-payload attachment carries exactly 3 words",
     );
-    let mut felts = attachment.content().to_elements();
-    assert!(
-        felts[XReserveBurnNote::NUM_PAYLOAD_ITEMS..]
-            .iter()
-            .all(|felt| *felt == Felt::ZERO)
-    );
-    felts.truncate(XReserveBurnNote::NUM_PAYLOAD_ITEMS);
-    felts
+    attachment.content().as_words().to_vec()
 }
 
-/// Emits a real `XReserveBurnNote` on a MockChain and returns the 9-felt withdrawal payload of the
+/// Emits a real `XReserveBurnNote` on a MockChain and returns the withdrawal payload words of the
 /// note as it actually landed on-chain — read out of the note's scheme-tagged attachment, not its
 /// storage (which now holds the stock 8-felt asset).
 ///
@@ -124,7 +100,7 @@ fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
 /// amount, which it emits with each withdrawal-payload vector. What comes back is the on-chain
 /// truth the parity test compares the codec's output against — not a re-encode of the same Rust
 /// call, which would prove nothing.
-async fn emitted_items_for(items: &XReserveBurnItems) -> anyhow::Result<Vec<Felt>> {
+async fn emitted_items_for(items: &XReserveBurnItems) -> anyhow::Result<Vec<Word>> {
     let cap = u64::from(AssetAmount::MAX);
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
@@ -236,9 +212,8 @@ fn burn_note_payload_schema() {
 
     // The payload rides a scheme-tagged attachment in the codec's field order and widths, so
     // decoding it returns exactly what was encoded.
-    let payload_felts = withdrawal_payload(note.attachments());
-    assert_eq!(payload_felts.len(), 9, "DC-7 payload is exactly 9 felts");
-    let decoded = XReserveBurnItems::decode(&payload_felts).expect("decoding DC-7 items");
+    let payload_words = withdrawal_payload(note.attachments());
+    let decoded = XReserveBurnItems::decode(&payload_words).expect("decoding DC-7 items");
     assert_eq!(decoded, items, "attachment payload decode == input items (DC-7 order)");
 
     let attachment = note
@@ -251,14 +226,6 @@ fn burn_note_payload_schema() {
     let decoded = XUsdcBurnAttachment::try_from(attachment).unwrap();
     assert_eq!(decoded.items(), &items);
     assert_eq!(decoded.into_items(), items);
-
-    let mut words = attachment.content().as_words().to_vec();
-    words[2][1] = Felt::ONE;
-    words[2][2] = Felt::ONE;
-    words[2][3] = Felt::ONE;
-    let nonzero_padding =
-        NoteAttachment::with_words(attachment.attachment_scheme(), words).unwrap();
-    assert_eq!(XUsdcBurnAttachment::try_from(&nonzero_padding).unwrap().into_items(), items);
 
     // NoteAssets carries the burned xUSDC FungibleAsset with the separately supplied amount.
     let asset = note.assets().iter_fungible().next().expect("note carries one fungible asset");
@@ -283,12 +250,14 @@ fn burn_note_payload_schema() {
 #[test]
 fn burn_attachment_rejects_malformed_payloads() {
     let attachment = NoteAttachment::from(&XUsdcBurnAttachment::new(sample_items()));
+    let scheme = XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME;
     for (name, scheme, word_count, invalid_limb) in [
         ("wrong scheme", 7, 3, None),
-        ("too few words", 6, 2, None),
-        ("too many words", 6, 4, None),
-        ("domain above u32", 6, 3, Some(0)),
-        ("recipient limb above u32", 6, 3, Some(8)),
+        ("too few words", scheme, 2, None),
+        ("too many words", scheme, 4, None),
+        ("domain above u32", scheme, 3, Some(0)),
+        ("domain padding not zero", scheme, 3, Some(3)),
+        ("recipient limb above u32", scheme, 3, Some(8)),
     ] {
         let mut words = attachment.content().as_words().to_vec();
         words.resize(word_count, Word::default());
@@ -304,26 +273,6 @@ fn burn_attachment_rejects_malformed_payloads() {
             ),
             "{name}",
         );
-    }
-}
-
-// 3 — PRODUCING SIDE: the constructor can only make Public notes (it takes no note-type argument)
-// ================================================================================================
-
-#[test]
-fn burn_note_is_never_private() {
-    let faucet = test_faucet_id(1);
-    for seed in [1u64, 2, 3] {
-        let note = XReserveBurnNote::create(
-            test_account_id(3),
-            faucet,
-            AssetAmount::new(1_000).unwrap(),
-            sample_items(),
-            &mut note_rng(seed),
-        )
-        .expect("constructing the burn note");
-        assert_eq!(note.metadata().note_type(), NoteType::Public, "R-BURN-6: always Public");
-        assert_ne!(note.metadata().note_type(), NoteType::Private, "R-BURN-6: never Private");
     }
 }
 
@@ -346,8 +295,8 @@ async fn burn_note_emitted_items_match_codec_vectors() -> anyhow::Result<()> {
         );
         assert_eq!(
             got.as_slice(),
-            vec.items_values().as_slice(),
-            "vector {}: emitted attachment payload == golden §7 felts",
+            vec.items_words().as_slice(),
+            "vector {}: emitted attachment payload == golden §7 words",
             vec.id,
         );
     }

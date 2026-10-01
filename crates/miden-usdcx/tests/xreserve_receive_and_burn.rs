@@ -1,7 +1,8 @@
 //! Audit of the burn-consume path: how a burn note is destroyed and supply is lowered.
 //!
 //! Consuming a burn note runs the standard `receive_and_burn` path, gated by the faucet's
-//! burn policy, which checks the required attachments and minimum burn amount.
+//! burn policy, which checks the required attachments, the withdrawal destination and the minimum
+//! burn amount.
 //!
 //! The property it protects is that the faucet has exactly one way to lower `token_supply`. A
 //! second, ungated decrement path would let tokens be destroyed without a public burn note, and
@@ -23,9 +24,12 @@
 mod support;
 
 use anyhow::Result;
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_processor::operation::OperationError;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -40,6 +44,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
+use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TARGET_MISSING;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_testing::assert_transaction_executor_error;
 use miden_tx::TransactionExecutorError;
@@ -52,6 +57,7 @@ use miden_usdcx::note::xreserve_burn::{
     XUsdcBurnAttachment,
 };
 use miden_usdcx::xreserve::encoding::{CircleDomain, ForeignChainAddress, XReserveBurnItems};
+use rstest::rstest;
 use support::*;
 
 // Amounts are arbitrary: this suite asserts which code path runs and what it is gated by, never
@@ -80,8 +86,7 @@ fn note_rng(seed: u64) -> RandomCoin {
     ]))
 }
 
-/// A withdrawal payload with an arbitrary destination. Those fields exist for
-/// the off-chain listener to read; consuming the note does not look at them.
+/// A withdrawal payload with an arbitrary destination other than the faucet's own domain.
 fn items() -> XReserveBurnItems {
     XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
@@ -107,66 +112,107 @@ fn raw_burn_note(
     )
 }
 
-#[tokio::test]
-async fn burn_rejects_a_missing_withdrawal_attachment() -> Result<()> {
-    let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
-        let routing = NetworkAccountTarget::new(faucet_id, NoteExecutionHint::Always)
-            .expect("public network faucet");
-        vec![raw_burn_note(sender, faucet_id, vec![routing.into()])]
-    })?;
-    let result = pf
-        .mock_chain
-        .build_transaction(pf.faucet_id)
-        .authenticated_input_note(pf.seeded_notes[0].id())
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(
-        result,
-        shell_error_by_name("ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_MISSING")
-    );
-    Ok(())
+/// The routing attachment that targets `target_id`.
+fn routing(target_id: AccountId) -> NoteAttachment {
+    NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)
+        .expect("public network account")
+        .into()
 }
 
-#[tokio::test]
-async fn burn_rejects_a_wrong_withdrawal_word_count() -> Result<()> {
-    let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
-        let routing = NetworkAccountTarget::new(faucet_id, NoteExecutionHint::Always)
-            .expect("public network faucet");
-        let withdrawal = NoteAttachment::with_words(
+/// The valid withdrawal attachment.
+fn withdrawal() -> NoteAttachment {
+    NoteAttachment::from(&XUsdcBurnAttachment::new(items()))
+}
+
+/// The valid withdrawal attachment with the element at `index` replaced by `value`.
+fn withdrawal_with_element(index: usize, value: Felt) -> NoteAttachment {
+    let mut words = withdrawal().content().as_words().to_vec();
+    words[index / Word::NUM_ELEMENTS][index % Word::NUM_ELEMENTS] = value;
+    NoteAttachment::with_words(
+        NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
+            .expect("withdrawal scheme"),
+        words,
+    )
+    .expect("three-word attachment")
+}
+
+/// The standards error as a static, so a test case can borrow it for `'static`.
+static NETWORK_ACCOUNT_TARGET_MISSING: MasmError = ERR_NETWORK_ACCOUNT_TARGET_MISSING;
+
+/// A value that is a valid felt but not a valid u32.
+fn non_u32() -> Felt {
+    Felt::from(u32::MAX) + Felt::ONE
+}
+
+/// Each malformed burn note is rejected by the burn policy with the expected error.
+#[rstest]
+#[case::missing_withdrawal(
+    |faucet_id| vec![routing(faucet_id)],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_MISSING"),
+)]
+#[case::wrong_withdrawal_word_count(
+    |faucet_id| vec![
+        routing(faucet_id),
+        NoteAttachment::with_words(
             NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
                 .expect("withdrawal scheme"),
             vec![Word::empty(); 4],
         )
-        .expect("four-word attachment");
-        vec![raw_burn_note(sender, faucet_id, vec![routing.into(), withdrawal])]
-    })?;
-    let result = pf
-        .mock_chain
-        .build_transaction(pf.faucet_id)
-        .authenticated_input_note(pf.seeded_notes[0].id())
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(
-        result,
-        shell_error_by_name("ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS")
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn burn_rejects_an_extra_attachment() -> Result<()> {
-    let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
-        let routing = NetworkAccountTarget::new(faucet_id, NoteExecutionHint::Always)
-            .expect("public network faucet");
-        let withdrawal = NoteAttachment::from(&XUsdcBurnAttachment::new(items()));
-        let extra = NoteAttachment::with_words(
+        .expect("four-word attachment"),
+    ],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS"),
+)]
+#[case::extra_attachment(
+    |faucet_id| vec![
+        routing(faucet_id),
+        withdrawal(),
+        NoteAttachment::with_words(
             NoteAttachmentScheme::new(7).expect("extra scheme"),
             vec![Word::empty()],
         )
-        .expect("one-word attachment");
-        vec![raw_burn_note(sender, faucet_id, vec![routing.into(), withdrawal, extra])]
+        .expect("one-word attachment"),
+    ],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_ATTACHMENT_COUNT"),
+)]
+#[case::missing_routing(
+    |_| vec![withdrawal(), withdrawal()],
+    &NETWORK_ACCOUNT_TARGET_MISSING,
+)]
+#[case::routing_to_another_account(
+    |_| vec![routing(test_faucet_id(42)), withdrawal()],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET"),
+)]
+#[case::domain_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(0, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32"),
+)]
+#[case::domain_is_faucet_domain(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(0, Felt::from(TEST_DOMAIN))],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN"),
+)]
+#[case::domain_padding_not_zero(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(3, Felt::ONE)],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO"),
+)]
+#[case::first_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(4, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
+)]
+#[case::second_word_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(9, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
+)]
+#[case::last_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(11, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
+)]
+#[tokio::test]
+async fn burn_rejects_a_malformed_note(
+    #[case] attachments: fn(AccountId) -> Vec<NoteAttachment>,
+    #[case] expected: &'static MasmError,
+) -> Result<()> {
+    let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
+        vec![raw_burn_note(sender, faucet_id, attachments(faucet_id))]
     })?;
     let result = pf
         .mock_chain
@@ -177,28 +223,36 @@ async fn burn_rejects_an_extra_attachment() -> Result<()> {
         .await;
     assert_transaction_executor_error!(
         result,
-        shell_error_by_name("ERR_XRESERVE_BURN_NOTE_ATTACHMENT_COUNT")
+        matches ref error
+            if expected.matches_execution_error(error) || is_u32_assertion(error, expected)
     );
     Ok(())
 }
 
+/// Returns `true` if `error` is a failed `u32assert*` raising `expected`. Those fail with
+/// `U32AssertionFailed`, which [`MasmError::matches_execution_error`] does not match.
+fn is_u32_assertion(error: &ExecutionError, expected: &MasmError) -> bool {
+    matches!(
+        error,
+        ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, err_msg, .. },
+            ..
+        } if *err_code == expected.code() && err_msg.as_deref() == Some(expected.message())
+    )
+}
+
+/// A burn note with valid attachments is consumed.
 #[tokio::test]
-async fn burn_rejects_a_missing_routing_attachment() -> Result<()> {
+async fn burn_accepts_a_valid_note() -> Result<()> {
     let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
-        let withdrawal = NoteAttachment::from(&XUsdcBurnAttachment::new(items()));
-        vec![raw_burn_note(sender, faucet_id, vec![withdrawal.clone(), withdrawal])]
+        vec![raw_burn_note(sender, faucet_id, vec![routing(faucet_id), withdrawal()])]
     })?;
-    let result = pf
-        .mock_chain
+    pf.mock_chain
         .build_transaction(pf.faucet_id)
         .authenticated_input_note(pf.seeded_notes[0].id())
         .build()?
         .execute()
-        .await;
-    assert_transaction_executor_error!(
-        result,
-        shell_error_by_name("ERR_XRESERVE_BURN_NOTE_TARGET_MISSING")
-    );
+        .await?;
     Ok(())
 }
 

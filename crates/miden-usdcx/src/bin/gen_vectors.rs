@@ -760,18 +760,20 @@ fn main() {
     }
 
     // ---- bn family (burn-note items) -------------------------------------------
-    // items = destDomain(1) + destRecipient(8 u32-LE) = 9 felts.
+    // items = [destDomain, 0, 0, 0] + destRecipient(8 u32-LE) = 3 words.
     // destDomain is the canonical felt of the integer, and the bytes32 field uses the
     // same `packed` primitive as the b32 family.
+    let zero = felt_hex(Felt::from(0u32));
     let bn_items = |domain: u32, recipient: &[u8; 32]| -> Vec<String> {
-        let mut out = Vec::with_capacity(9);
+        let mut out = Vec::with_capacity(12);
         out.push(felt_hex(Felt::from(domain)));
+        out.extend([zero.clone(), zero.clone(), zero.clone()]);
         out.extend(felts_hex(&packed(recipient)));
         out
     };
     let bn_accept = |id: &str, domain: u32, recipient: [u8; 32], derivation: &str| {
         json!({
-            "id": id, "tv": ["TV-BN-1", "TV-BN-2", "TV-BN-3"], "kind": "accept",
+            "id": id, "tv": ["TV-BN-1", "TV-BN-2"], "kind": "accept",
             "dest_domain": domain,
             "dest_recipient": hex_bytes(&recipient),
             "items": bn_items(domain, &recipient),
@@ -799,7 +801,7 @@ fn main() {
             "upper boundary: destDomain=u32::MAX, recipient all-0xff",
         ),
     ];
-    // each rejection vector changes one field or the length of a valid 9-felt payload
+    // each rejection vector changes one field or the length of a valid 3-word payload
     let bn_base = bn_items(6, &pattern32(0x55));
     let over_u32 = felt_hex(Felt::try_from((u32::MAX as u64) + 1).expect("2^32 < p"));
     let bn_reject = |id: &str, items: Vec<String>, derivation: &str| {
@@ -812,15 +814,22 @@ fn main() {
         })
     };
     let mut short = bn_base.clone();
-    short.pop(); // 8 felts
+    short.truncate(8); // 2 words
     let mut long = bn_base.clone();
-    long.push(felt_hex(Felt::from(0u32))); // 10 felts
+    long.extend([zero.clone(), zero.clone(), zero.clone(), zero]); // 4 words
+    let mut domain_padding = bn_base.clone();
+    domain_padding[3] = felt_hex(Felt::from(1u32));
     let mut domain_over = bn_base.clone();
     domain_over[0] = over_u32.clone();
     let mut recip_limb = bn_base.clone();
-    recip_limb[4] = over_u32; // within destRecipient [1..9]
-    bn.push(bn_reject("bn-rej-len-short", short, "8 felts (< 9) → wrong length"));
-    bn.push(bn_reject("bn-rej-len-long", long, "10 felts (> 9) → wrong length"));
+    recip_limb[7] = over_u32; // within destRecipient [4..12]
+    bn.push(bn_reject("bn-rej-len-short", short, "2 words (< 3) → wrong length"));
+    bn.push(bn_reject("bn-rej-len-long", long, "4 words (> 3) → wrong length"));
+    bn.push(bn_reject(
+        "bn-rej-domain-padding-not-zero",
+        domain_padding,
+        "items[3] = 1 → destDomain word padding not zero",
+    ));
     bn.push(bn_reject(
         "bn-rej-domain-over-u32",
         domain_over,
@@ -829,7 +838,7 @@ fn main() {
     bn.push(bn_reject(
         "bn-rej-recipient-limb-not-u32",
         recip_limb,
-        "items[4] = 2^32 → destRecipient limb not a u32",
+        "items[7] = 2^32 → destRecipient limb not a u32",
     ));
 
     let file = json!({ "version": 1, "families": { "b32": b32, "amt": amt, "aid": aid, "di": di, "att": att, "bn": bn, "mi": mi } });
