@@ -26,9 +26,11 @@ mod checker_utils;
 
 pub use checker_utils::{
     FailedNote,
+    FeeRejection,
     MAX_NUM_CHECKER_NOTES,
     NoteConsumptionInfo,
     NoteFailure,
+    SponsorshipRejection,
     SuccessfulNote,
 };
 use checker_utils::{

@@ -1,6 +1,7 @@
+use core::error::Error;
 use std::collections::BTreeSet;
 
-use anyhow::Context;
+use assert_matches::assert_matches;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountComponent, AccountId};
 use miden_protocol::asset::{AssetAmount, AssetId};
@@ -9,7 +10,14 @@ use miden_standards::account::fees::FeePolicy;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::MockChain;
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{NoteConsumptionChecker, NoteConsumptionInfo, NoteFailure, TransactionExecutor};
+use miden_tx::{
+    FeeRejection,
+    NoteConsumptionChecker,
+    NoteConsumptionInfo,
+    NoteFailure,
+    SponsorshipRejection,
+    TransactionExecutor,
+};
 use rstest::rstest;
 
 use super::{FEE_AMOUNT, Sponsorship, Test, fee_asset, fee_faucet_id, other_asset};
@@ -95,21 +103,25 @@ async fn check_consumability(
     ))
 }
 
-/// Asserts that the checker rejected the note with `note_id` without executing it, for a reason
-/// whose message contains `reason`.
-fn assert_rejected(info: &NoteConsumptionInfo, note_id: NoteId, reason: &str) {
+/// Returns the reason the checker rejected the note with `note_id` for without executing it.
+///
+/// Panics if the note did not fail, failed in execution, or was rejected for a reason other than
+/// an `R`.
+fn rejection<R: Error + 'static>(info: &NoteConsumptionInfo, note_id: NoteId) -> &R {
     let failed = info
         .failed()
         .iter()
         .find(|failed| failed.note().id() == note_id)
         .unwrap_or_else(|| panic!("note {note_id} should have failed"));
-    let NoteFailure::Rejected { reason: actual } = failed.failure() else {
-        panic!("note {note_id} should have been rejected without being executed");
+    let NoteFailure::Rejected { reason } = failed.failure() else {
+        panic!("note {note_id} should have been rejected without being executed, got {failed:?}");
     };
-    assert!(
-        actual.to_string().contains(reason),
-        "note {note_id} should have been rejected because of `{reason}`, got `{actual}`"
-    );
+    reason.downcast_ref::<R>().unwrap_or_else(|| {
+        panic!(
+            "note {note_id} should have been rejected with a {}, got: {reason}",
+            core::any::type_name::<R>()
+        )
+    })
 }
 
 /// An uncovered feature note does not drag the intact (feature note, FEE_SPONSORSHIP) pairs
@@ -168,8 +180,15 @@ async fn note_checker_keeps_intact_pairs_alongside_an_uncovered_note(
     assert_eq!(failed, uncovered_ids, "only the uncovered note and its sponsorship should fail");
 
     // the uncovered bundle is ruled out from the fee schedule, without being executed
+    let provided = AssetAmount::new(uncovered_sponsored_amount.unwrap_or(0))?;
     for note_id in uncovered_ids {
-        assert_rejected(&info, note_id, "but the account charges");
+        assert_matches!(
+            rejection::<FeeRejection>(&info, note_id),
+            FeeRejection::FeeNotCovered { feature_note_id, required, provided: actual }
+                if *feature_note_id == feature_notes[1].id()
+                    && required.as_u64() == FEE_AMOUNT
+                    && *actual == provided
+        );
     }
 
     Ok(())
@@ -229,9 +248,11 @@ async fn note_checker_fails_an_orphan_sponsorship_alone(
             "a reclaimable orphan should be executed rather than rejected, and fail there"
         );
     } else {
-        assert!(
-            orphan.is_rejected(),
-            "the account is not the orphan's reclaimer, so it should be rejected without being executed"
+        // the account is not the orphan's reclaimer, so it is rejected without being executed
+        assert_matches!(
+            rejection::<SponsorshipRejection>(&info, orphan.note().id()),
+            SponsorshipRejection::NotReclaimer { native_account, .. }
+                if *native_account == network_account.id()
         );
     }
 
@@ -290,17 +311,10 @@ async fn note_checker_rejects_a_sponsorship_naming_another_sponsorship(
         info.failed()
     );
 
-    let chained_failure = info
-        .failed()
-        .iter()
-        .find(|failed| failed.note().id() == chained.id())
-        .context("the chained sponsorship should fail")?;
-    let NoteFailure::Rejected { reason } = chained_failure.failure() else {
-        panic!("the chained sponsorship should be rejected, got {chained_failure:?}");
-    };
-    assert!(
-        reason.to_string().contains("is itself a FEE_SPONSORSHIP note"),
-        "the chained sponsorship should be rejected for naming a sponsorship, got: {reason}"
+    assert_matches!(
+        rejection::<SponsorshipRejection>(&info, chained.id()),
+        SponsorshipRejection::FeatureNoteIsSponsorship { feature_note_id }
+            if *feature_note_id == sponsorship.id()
     );
 
     if include_feature_note {
@@ -477,8 +491,17 @@ async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> an
     );
 
     assert_eq!(info.failed().len(), 2, "only the wrongly funded pair should fail");
-    assert_rejected(&info, sponsorship_notes[1].id(), "rather than the asset");
-    assert_rejected(&info, feature_notes[1].id(), "provide a fee of 0");
+    assert_matches!(
+        rejection::<SponsorshipRejection>(&info, sponsorship_notes[1].id()),
+        SponsorshipRejection::WrongFeeAsset { expected, actual }
+            if *expected == AssetId::new_fungible(fee_faucet_id()?)
+                && *actual == other_asset(FEE_AMOUNT)?.id()
+    );
+    // the wrongly funded sponsorship does not count towards the fee
+    assert_matches!(
+        rejection::<FeeRejection>(&info, feature_notes[1].id()),
+        FeeRejection::FeeNotCovered { provided, .. } if *provided == AssetAmount::ZERO
+    );
 
     Ok(())
 }
@@ -520,7 +543,12 @@ async fn note_checker_sums_the_sponsorships_of_a_feature_note(
     } else {
         assert!(info.successful().is_empty(), "no note of the uncovered bundle should succeed");
         for note_id in bundle_ids {
-            assert_rejected(&info, note_id, "but the account charges");
+            assert_matches!(
+                rejection::<FeeRejection>(&info, note_id),
+                FeeRejection::FeeNotCovered { required, provided, .. }
+                    if required.as_u64() == FEE_AMOUNT
+                        && provided.as_u64() == first_amount + second_amount
+            );
         }
     }
 
@@ -548,8 +576,14 @@ async fn note_checker_rejects_an_unscheduled_feature_note() -> anyhow::Result<()
     .await?;
 
     assert!(info.successful().is_empty(), "no note of the bundle should succeed");
-    assert_rejected(&info, feature_notes[0].id(), "schedules no fee");
-    assert_rejected(&info, sponsorship_notes[0].id(), "schedules no fee");
+    for note_id in [feature_notes[0].id(), sponsorship_notes[0].id()] {
+        assert_matches!(
+            rejection::<FeeRejection>(&info, note_id),
+            FeeRejection::FeeNotScheduled { feature_note_id, script_root }
+                if *feature_note_id == feature_notes[0].id()
+                    && *script_root == feature_notes[0].script().root()
+        );
+    }
 
     Ok(())
 }

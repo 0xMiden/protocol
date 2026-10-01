@@ -12,7 +12,7 @@
 - [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
 - [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
-- [BREAKING] `NoteConsumptionChecker` now reads the fee configuration from the account's storage instead of taking a fee asset, and rejects feature notes whose scheduled fee is not covered by their `FEE_SPONSORSHIP` notes without executing them ([#3962](https://github.com/0xMiden/protocol/pull/3962)).
+- [BREAKING] `NoteConsumptionChecker` now reads the fee configuration from the account's storage instead of taking a fee asset, and rejects feature notes whose scheduled fee is not covered by their `FEE_SPONSORSHIP` notes without executing them, reporting the reason as the now-public `FeeRejection` or `SponsorshipRejection` ([#3962](https://github.com/0xMiden/protocol/pull/3962)).
 
 ### Fixes
 

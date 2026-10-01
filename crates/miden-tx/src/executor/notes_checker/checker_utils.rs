@@ -250,12 +250,18 @@ impl NoteBundle {
 // ================================================================================================
 
 /// The reason a FEE_SPONSORSHIP note cannot be consumed, decided without executing it.
+///
+/// Reported as the reason of a [`NoteFailure::Rejected`].
 #[derive(Debug, thiserror::Error)]
-pub(super) enum SponsorshipRejection {
+#[non_exhaustive]
+pub enum SponsorshipRejection {
+    /// The sponsorship is funded with an asset other than the one the account collects fees in.
     #[error(
         "FEE_SPONSORSHIP note is funded with asset {actual} rather than the asset {expected} the account collects fees in"
     )]
     WrongFeeAsset { expected: AssetId, actual: AssetId },
+    /// The feature note is absent, so the sponsorship can only be reclaimed, and the account is not
+    /// its reclaimer.
     #[error(
         "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, but the native account {native_account} is not the reclaimer account {reclaimer}"
     )]
@@ -263,10 +269,14 @@ pub(super) enum SponsorshipRejection {
         native_account: AccountId,
         reclaimer: AccountId,
     },
+    /// The feature note is absent, so the sponsorship can only be reclaimed, and reclaim is
+    /// disabled.
     #[error(
         "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, and reclaim is disabled"
     )]
     ReclaimDisabled,
+    /// The feature note is absent, so the sponsorship can only be reclaimed, and the reclaim height
+    /// has not been reached.
     #[error(
         "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed: reclaim block is {reclaim_height}, but the current block is {current_height}"
     )]
@@ -274,6 +284,7 @@ pub(super) enum SponsorshipRejection {
         reclaim_height: BlockNumber,
         current_height: BlockNumber,
     },
+    /// The note the sponsorship names as its feature note is itself a FEE_SPONSORSHIP note.
     #[error(
         "FEE_SPONSORSHIP note names note {feature_note_id} as its feature note, but that note is itself a FEE_SPONSORSHIP note"
     )]
@@ -398,8 +409,14 @@ impl FeeCollection {
 
 /// The reason a feature note and the FEE_SPONSORSHIP notes bound to it cannot be consumed, decided
 /// without executing them.
+///
+/// Reported as the reason of a [`NoteFailure::Rejected`], for the feature note and each of its
+/// sponsorships alike.
 #[derive(Debug, Clone, thiserror::Error)]
-pub(super) enum FeeRejection {
+#[non_exhaustive]
+pub enum FeeRejection {
+    /// The account schedules no fee for the feature note's script root, so fee estimation aborts
+    /// for it.
     #[error(
         "the account schedules no fee for script root {script_root} of feature note {feature_note_id}"
     )]
@@ -407,6 +424,8 @@ pub(super) enum FeeRejection {
         feature_note_id: NoteId,
         script_root: NoteScriptRoot,
     },
+    /// The FEE_SPONSORSHIP notes bound to the feature note carry less of the fee asset than the
+    /// account charges for it.
     #[error(
         "the FEE_SPONSORSHIP notes bound to feature note {feature_note_id} provide a fee of {provided}, but the account charges {required}"
     )]
