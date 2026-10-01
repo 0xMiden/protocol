@@ -2188,9 +2188,9 @@ checksum = "a4933f3f57a8e9d9da04db23fb153356ecaf00cbd14aee46279c33dc80925c37"
 
 [[package]]
 name = "lazy_static"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "libc"
@@ -2360,7 +2360,7 @@ dependencies = [
 
 [[package]]
 name = "miden-agglayer"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "alloy-sol-types",
  "fs-err",
@@ -2451,7 +2451,7 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -2714,7 +2714,7 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2854,7 +2854,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protobuf"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "miden-protobuf-derive",
  "proc-macro-crate",
@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protobuf-derive"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "heck",
  "proc-macro-crate",
@@ -2877,7 +2877,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2913,7 +2913,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol-build-utils"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2965,7 +2965,7 @@ dependencies = [
 
 [[package]]
 name = "miden-standards"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3006,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "miden-testing"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "alloy-sol-types",
  "anyhow",
@@ -3036,7 +3036,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "bon",
  "miden-agglayer",
@@ -3050,7 +3050,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -3061,7 +3061,7 @@ dependencies = [
 
 [[package]]
 name = "miden-usdcx"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "assert_matches",
