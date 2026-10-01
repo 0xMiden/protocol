@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17.0-rc.10 (TBD)
+
+### Changes
+
+- Documented that procedure thresholds below the default in the multisig auth components also authorize changes to the procedure's output notes, and recommended sealing them ([#3985](https://github.com/0xMiden/protocol/pull/3985)).
+
 ## v0.17.0-rc.9 (2026-09-30)
 
 ### Features
