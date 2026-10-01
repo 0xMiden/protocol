@@ -4,16 +4,6 @@
 
 ### Features
 
-- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3949](https://github.com/0xMiden/protocol/pull/3949)).
-- Added the `UpgradeNote` standard note, which upgrades a network account's code to the code it carries in an attachment ([#3958](https://github.com/0xMiden/protocol/pull/3958)).
-- `UpgradeNote` now carries its code in one or more `AccountCodeUpgradeAttachment` chunks and its script copies the code to the advice map ([#3967](https://github.com/0xMiden/protocol/pull/3967)).
-- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
-- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3948](https://github.com/0xMiden/protocol/pull/3948)).
-
-## v0.17.0-rc.5 (2026-09-17)
-
-### Features
-
 - Added the `AuthTxFeeCollector` auth component, which forwards the single asset of every consumed note into one P2ID note for the target given by the auth args, verifies a signature over the transaction summary and leaves the account unchanged ([#3844](https://github.com/0xMiden/protocol/pull/3844)).
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
@@ -29,6 +19,10 @@
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
 - Added `TransactionEffects`, which captures the effects of an executed transaction without the inputs required to re-execute it, together with its canonical Protobuf representation ([#3891](https://github.com/0xMiden/protocol/pull/3891)).
 - Added canonical Protobuf representations for `Account`, `AccountStorage`, `StorageSlot`, `StorageMap` and `AssetVault` ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
+- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3949](https://github.com/0xMiden/protocol/pull/3949)).
+- Added the `UpgradeNote` standard note, which upgrades a network account's code to the code it carries in an attachment ([#3958](https://github.com/0xMiden/protocol/pull/3958)).
+- `UpgradeNote` now carries its code in one or more `AccountCodeUpgradeAttachment` chunks and its script copies the code to the advice map ([#3967](https://github.com/0xMiden/protocol/pull/3967)).
 - Moved the `xusdc-encoding` crate from https://github.com/0xMiden/miden-usdcx/ here as `miden-usdcx` ([#3972](https://github.com/0xMiden/protocol/pull/3972)).
 
 ### Changes
