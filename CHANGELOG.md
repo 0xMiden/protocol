@@ -5,6 +5,7 @@
 ### Changes
 
 - [BREAKING] The USDCx burn policy now rejects burns the withdrawal attester cannot pay out, and the USDCx burn attachment scheme is now `5` ([#3983](https://github.com/0xMiden/protocol/pull/3983)).
+- Documented that procedure thresholds below the default in the multisig auth components also authorize changes to the procedure's output notes, and recommended sealing them ([#3985](https://github.com/0xMiden/protocol/pull/3985)).
 
 ## v0.17.0-rc.9 (2026-09-30)
 
