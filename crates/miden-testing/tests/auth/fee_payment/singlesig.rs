@@ -1,6 +1,5 @@
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -14,6 +13,7 @@ use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
     ERR_FEE_CONVERSION_INFO_MISSING,
     ERR_FEE_CONVERSION_INFO_NOT_NATIVE,
+    ERR_FEE_INSUFFICIENT_BALANCE,
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -225,16 +225,27 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fee payment fails with the specific vault error when the account does not hold enough of the
-/// fee asset.
+/// Fee payment fails with a fee-specific error when the account does not hold enough of the
+/// fee asset, whether it holds none of it or less than the fee.
+#[rstest]
+#[case::no_fee_asset(None)]
+#[case::insufficient_balance(Some(1))]
 #[tokio::test]
-async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
+async fn fee_payment_fails_without_fee_asset(
+    #[case] fee_balance: Option<u64>,
+) -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_assets = fee_balance
+        .map(|amount| FungibleAsset::new(fee_faucet_id, amount).map(Asset::from))
+        .transpose()?;
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        fee_assets,
+    )?;
     let mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
@@ -250,10 +261,7 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
-    );
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
 
     Ok(())
 }
