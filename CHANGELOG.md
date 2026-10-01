@@ -2,6 +2,10 @@
 
 ## v0.17.0-rc.10 (TBD)
 
+### Features
+
+- Added Rust transaction log types with two-felt named topics, bounded serialization, cached two-stage commitments, and separate public/private submission data ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+
 ### Changes
 
 - Documented that procedure thresholds below the default in the multisig auth components also authorize changes to the procedure's output notes, and recommended sealing them ([#3985](https://github.com/0xMiden/protocol/pull/3985)).
