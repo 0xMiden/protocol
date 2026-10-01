@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use miden_usdcx::account::xreserve::XReserveFaucetExtension;
 use miden_usdcx::note::xreserve_burn::{
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
-    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
+    XUsdcBurnAttachment,
 };
 use miden_usdcx::note::xreserve_mint::{
     XUSDC_MINT_ATTESTATION_NUM_WORDS,
@@ -139,8 +139,8 @@ const BURN_POLICY_COVERED_NUMS: &[&str] = &[
     "BURN_NOTE_NUM_ATTACHMENTS",
     "CHECK_BURN_POLICY_COMMITMENTS_LOC",
     "CHECK_BURN_POLICY_WITHDRAWAL_LOC",
-    "CHECK_BURN_POLICY_WITHDRAWAL_WORD_1_LOC",
-    "CHECK_BURN_POLICY_WITHDRAWAL_WORD_2_LOC",
+    "CHECK_BURN_POLICY_RECIPIENT_LOW_LOC",
+    "CHECK_BURN_POLICY_RECIPIENT_HIGH_LOC",
 ];
 
 /// Numeric-constant coverage sets (bidirectional sweep): every numeric const parsed
@@ -403,7 +403,7 @@ fn masm_rust_constant_parity() {
     );
     assert_eq!(
         num(&burn_nums, "XUSDC_BURN_WITHDRAWAL_ATTACHMENT_NUM_WORDS", "burn_policy.masm"),
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS as u64,
+        XUsdcBurnAttachment::NUM_WORDS as u64,
         "withdrawal attachment word-count parity (MASM policy == Rust factory)"
     );
 

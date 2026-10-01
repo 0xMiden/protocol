@@ -40,7 +40,6 @@ use miden_tx::LocalTransactionProver;
 use miden_usdcx::note::xreserve_burn::{
     FIXED_XUSDC_BURN_TAG,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
-    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
     XReserveBurnNote,
     XUsdcBurnAttachment,
 };
@@ -75,11 +74,10 @@ fn sample_items() -> XReserveBurnItems {
     }
 }
 
-/// Reads a burn note's 9-felt withdrawal payload straight out of its scheme-tagged attachment:
-/// the withdrawal attachment's words with the word-boundary padding dropped. The felts feed the
-/// shared codec's `XReserveBurnItems::decode`, which stays the single owner of the field layout —
-/// this helper reads no offset and unpacks no field.
-fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
+/// Reads a burn note's withdrawal payload words straight out of its scheme-tagged attachment. The
+/// words feed the shared codec's `XReserveBurnItems::decode`, which stays the single owner of the
+/// field layout — this helper reads no offset and unpacks no field.
+fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Word> {
     let scheme = NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
         .expect("the withdrawal scheme is a valid attachment scheme");
     let attachment = attachments
@@ -88,20 +86,13 @@ fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
         .expect("burn note carries its withdrawal-payload attachment");
     assert_eq!(
         usize::from(attachment.num_words()),
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
+        XUsdcBurnAttachment::NUM_WORDS,
         "the withdrawal-payload attachment carries exactly 3 words",
     );
-    let mut felts = attachment.content().to_elements();
-    assert!(
-        felts[XReserveBurnNote::NUM_PAYLOAD_ITEMS..]
-            .iter()
-            .all(|felt| *felt == Felt::ZERO)
-    );
-    felts.truncate(XReserveBurnNote::NUM_PAYLOAD_ITEMS);
-    felts
+    attachment.content().as_words().to_vec()
 }
 
-/// Emits a real `XReserveBurnNote` on a MockChain and returns the 9-felt withdrawal payload of the
+/// Emits a real `XReserveBurnNote` on a MockChain and returns the withdrawal payload words of the
 /// note as it actually landed on-chain — read out of the note's scheme-tagged attachment, not its
 /// storage (which now holds the stock 8-felt asset).
 ///
@@ -109,7 +100,7 @@ fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
 /// amount, which it emits with each withdrawal-payload vector. What comes back is the on-chain
 /// truth the parity test compares the codec's output against — not a re-encode of the same Rust
 /// call, which would prove nothing.
-async fn emitted_items_for(items: &XReserveBurnItems) -> anyhow::Result<Vec<Felt>> {
+async fn emitted_items_for(items: &XReserveBurnItems) -> anyhow::Result<Vec<Word>> {
     let cap = u64::from(AssetAmount::MAX);
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
@@ -221,9 +212,8 @@ fn burn_note_payload_schema() {
 
     // The payload rides a scheme-tagged attachment in the codec's field order and widths, so
     // decoding it returns exactly what was encoded.
-    let payload_felts = withdrawal_payload(note.attachments());
-    assert_eq!(payload_felts.len(), 9, "DC-7 payload is exactly 9 felts");
-    let decoded = XReserveBurnItems::decode(&payload_felts).expect("decoding DC-7 items");
+    let payload_words = withdrawal_payload(note.attachments());
+    let decoded = XReserveBurnItems::decode(&payload_words).expect("decoding DC-7 items");
     assert_eq!(decoded, items, "attachment payload decode == input items (DC-7 order)");
 
     let attachment = note
@@ -266,8 +256,8 @@ fn burn_attachment_rejects_malformed_payloads() {
         ("too few words", scheme, 2, None),
         ("too many words", scheme, 4, None),
         ("domain above u32", scheme, 3, Some(0)),
+        ("domain padding not zero", scheme, 3, Some(3)),
         ("recipient limb above u32", scheme, 3, Some(8)),
-        ("padding not zero", scheme, 3, Some(11)),
     ] {
         let mut words = attachment.content().as_words().to_vec();
         words.resize(word_count, Word::default());
@@ -305,8 +295,8 @@ async fn burn_note_emitted_items_match_codec_vectors() -> anyhow::Result<()> {
         );
         assert_eq!(
             got.as_slice(),
-            vec.items_values().as_slice(),
-            "vector {}: emitted attachment payload == golden §7 felts",
+            vec.items_words().as_slice(),
+            "vector {}: emitted attachment payload == golden §7 words",
             vec.id,
         );
     }

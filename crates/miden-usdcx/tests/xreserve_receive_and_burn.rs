@@ -126,14 +126,8 @@ fn withdrawal() -> NoteAttachment {
 
 /// The valid withdrawal attachment with the element at `index` replaced by `value`.
 fn withdrawal_with_element(index: usize, value: Felt) -> NoteAttachment {
-    let mut elements = withdrawal().as_elements().to_vec();
-    elements[index] = value;
-    let words = elements
-        .as_chunks::<{ Word::NUM_ELEMENTS }>()
-        .0
-        .iter()
-        .map(|chunk| Word::new(*chunk))
-        .collect();
+    let mut words = withdrawal().content().as_words().to_vec();
+    words[index / Word::NUM_ELEMENTS][index % Word::NUM_ELEMENTS] = value;
     NoteAttachment::with_words(
         NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
             .expect("withdrawal scheme"),
@@ -196,21 +190,21 @@ fn non_u32() -> Felt {
     |faucet_id| vec![routing(faucet_id), withdrawal_with_element(0, Felt::from(TEST_DOMAIN))],
     shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN"),
 )]
+#[case::domain_padding_not_zero(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(3, Felt::ONE)],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO"),
+)]
 #[case::first_recipient_limb_not_u32(
-    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(1, non_u32())],
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(4, non_u32())],
     shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
 )]
-#[case::middle_recipient_limb_not_u32(
-    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(5, non_u32())],
+#[case::second_word_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(9, non_u32())],
     shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
 )]
 #[case::last_recipient_limb_not_u32(
-    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(8, non_u32())],
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(11, non_u32())],
     shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
-)]
-#[case::padding_not_zero(
-    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(11, Felt::ONE)],
-    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_PADDING_NOT_ZERO"),
 )]
 #[tokio::test]
 async fn burn_rejects_a_malformed_note(

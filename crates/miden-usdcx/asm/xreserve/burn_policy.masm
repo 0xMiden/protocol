@@ -19,10 +19,10 @@ const BURN_NOTE_NUM_ATTACHMENTS = 2
 # check_burn_policy locals, sized to the expected content. A larger attachment overflows its
 # region, but the word count assert that follows the write aborts before anything reads it.
 const CHECK_BURN_POLICY_COMMITMENTS_LOC = 0
-# the withdrawal attachment: [dest_domain, recipient(8), padding(3)]
+# the withdrawal attachment: [dest_domain, 0, 0, 0], then the recipient as a double word
 const CHECK_BURN_POLICY_WITHDRAWAL_LOC = 8
-const CHECK_BURN_POLICY_WITHDRAWAL_WORD_1_LOC = 12
-const CHECK_BURN_POLICY_WITHDRAWAL_WORD_2_LOC = 16
+const CHECK_BURN_POLICY_RECIPIENT_LOW_LOC = 12
+const CHECK_BURN_POLICY_RECIPIENT_HIGH_LOC = 16
 
 # ERRORS
 # =================================================================================================
@@ -34,7 +34,7 @@ const ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS = "burn note withdrawal attachment
 const ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32 = "burn note destination domain is not a valid u32"
 const ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN = "burn note destination domain must not be the faucet's own domain"
 const ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32 = "burn note destination recipient limb is not a valid u32"
-const ERR_XRESERVE_BURN_NOTE_PADDING_NOT_ZERO = "burn note withdrawal attachment padding must be zero"
+const ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO = "burn note destination domain word padding must be zero"
 const ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN = "amount to be burned must meet or exceed specified minimum burn amount"
 
 # POLICY PROCEDURE
@@ -58,8 +58,8 @@ const ERR_XRESERVE_BURN_AMOUNT_BELOW_MIN = "amount to be burned must meet or exc
 #! - the routing attachment does not target this faucet.
 #! - the withdrawal attachment does not contain exactly three words.
 #! - the destination domain is not a u32 or is the faucet's configured domain.
+#! - the destination domain word padding is not zero.
 #! - a destination recipient limb is not a u32.
-#! - a padding element of the withdrawal attachment is not zero.
 #! - the attachment content does not match the commitment in the note.
 #! - the burn amount is below the configured minimum.
 #!
@@ -97,34 +97,26 @@ pub proc check_burn_policy
 
     # the destination domain must be a u32 other than this faucet's own domain
     padw loc_loadw_le.CHECK_BURN_POLICY_WITHDRAWAL_LOC
-    # => [dest_domain, recipient_0, recipient_1, recipient_2, pad(16)]
+    # => [dest_domain, padding_0, padding_1, padding_2, pad(16)]
 
     u32assert.err=ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32
     exec.domain_config::get_configured_domain
-    # => [faucet_domain, dest_domain, recipient_0, recipient_1, recipient_2, pad(16)]
+    # => [faucet_domain, dest_domain, padding_0, padding_1, padding_2, pad(16)]
 
     neq assert.err=ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN
-    # => [recipient_0, recipient_1, recipient_2, pad(16)]
+    # => [padding_0, padding_1, padding_2, pad(16)]
 
-    # every recipient limb must be a u32
-    u32assert2.err=ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32 drop drop
-    u32assert.err=ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32 drop
+    assertz.err=ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO
+    assertz.err=ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO
+    assertz.err=ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO
     # => [pad(16)]
 
-    padw loc_loadw_le.CHECK_BURN_POLICY_WITHDRAWAL_WORD_1_LOC
-    # => [recipient_3, recipient_4, recipient_5, recipient_6, pad(16)]
-
+    # every recipient limb must be a u32
+    padw loc_loadw_le.CHECK_BURN_POLICY_RECIPIENT_LOW_LOC
     u32assertw.err=ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32 dropw
     # => [pad(16)]
 
-    padw loc_loadw_le.CHECK_BURN_POLICY_WITHDRAWAL_WORD_2_LOC
-    # => [recipient_7, padding_0, padding_1, padding_2, pad(16)]
-
-    u32assert.err=ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32 drop
-    # => [padding_0, padding_1, padding_2, pad(16)]
-
-    assertz.err=ERR_XRESERVE_BURN_NOTE_PADDING_NOT_ZERO
-    assertz.err=ERR_XRESERVE_BURN_NOTE_PADDING_NOT_ZERO
-    assertz.err=ERR_XRESERVE_BURN_NOTE_PADDING_NOT_ZERO
+    padw loc_loadw_le.CHECK_BURN_POLICY_RECIPIENT_HIGH_LOC
+    u32assertw.err=ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32 dropw
     # => [pad(16)]
 end

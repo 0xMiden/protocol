@@ -103,8 +103,8 @@ fn burn_items_methods_match_golden() {
         let items = vec.expected_struct();
         let encoded = items.encode();
         assert_eq!(
-            encoded,
-            vec.items_values(),
+            encoded.as_slice(),
+            vec.items_words(),
             "{}: XReserveBurnItems::encode == golden layout",
             vec.id
         );

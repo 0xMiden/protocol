@@ -35,10 +35,9 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::{BurnNote, StandardNoteAttachment};
 
-use crate::xreserve::encoding::{BURN_NOTE_ITEMS_FELTS, EncodingError, XReserveBurnItems};
+use crate::xreserve::encoding::{EncodingError, XReserveBurnItems};
 
 /// The fixed tag every xUSDC burn note carries — ASCII `"BURN"`.
 ///
@@ -55,10 +54,6 @@ pub const FIXED_XUSDC_BURN_TAG: u32 = 0x4255_524e;
 pub const XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME: u16 =
     StandardNoteAttachment::UsdcxBurn.attachment_scheme().as_u16();
 
-/// Word count of the withdrawal-payload attachment: the 9 payload felts zero-padded to a word
-/// boundary (3 words, 3 pad felts). Fixed, because [`BURN_NOTE_ITEMS_FELTS`] is fixed.
-pub const XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS: usize = 3;
-
 /// The withdrawal payload a burn note carries — the [`XReserveBurnItems`] the off-chain attester
 /// decodes.
 ///
@@ -72,6 +67,9 @@ pub struct XUsdcBurnAttachment {
 }
 
 impl XUsdcBurnAttachment {
+    /// Word count of the withdrawal attachment.
+    pub const NUM_WORDS: usize = 3;
+
     /// Wraps the withdrawal payload the burn note carries.
     pub fn new(items: XReserveBurnItems) -> Self {
         Self { items }
@@ -89,26 +87,15 @@ impl XUsdcBurnAttachment {
 }
 
 impl From<&XUsdcBurnAttachment> for NoteAttachment {
-    /// Builds the withdrawal attachment: the payload felts, zero-padded to the word boundary.
+    /// Builds the withdrawal attachment from the payload words.
     ///
     /// The encoding is the shared codec the off-chain attester decodes with, so the write and the
     /// read side cannot drift apart.
     fn from(attachment: &XUsdcBurnAttachment) -> Self {
-        let mut elements = attachment.items.encode();
-        while !elements.len().is_multiple_of(Word::NUM_ELEMENTS) {
-            elements.push(Felt::ZERO);
-        }
-
-        let words: Vec<Word> = elements
-            .as_chunks::<{ Word::NUM_ELEMENTS }>()
-            .0
-            .iter()
-            .map(|chunk| Word::new(*chunk))
-            .collect();
         NoteAttachment::with_words(
             NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
                 .expect("the withdrawal scheme is neither reserved nor past the protocol maximum"),
-            words,
+            attachment.items.encode().to_vec(),
         )
         // the payload is fixed-width, so the word count is the constant asserted below
         .expect("the withdrawal payload is within the per-attachment word cap")
@@ -118,39 +105,27 @@ impl From<&XUsdcBurnAttachment> for NoteAttachment {
 impl TryFrom<&NoteAttachment> for XUsdcBurnAttachment {
     type Error = EncodingError;
 
-    /// Decodes the withdrawal payload. Like the burn policy, it rejects non-zero padding felts.
+    /// Decodes the withdrawal payload.
     fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
-        if attachment.attachment_scheme().as_u16() != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME
-            || usize::from(attachment.num_words()) != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS
-        {
+        if attachment.attachment_scheme().as_u16() != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME {
             return Err(EncodingError::BurnItemsMalformed);
         }
 
-        let (payload, padding) = attachment.as_elements().split_at(BURN_NOTE_ITEMS_FELTS);
-        if padding.iter().any(|element| *element != Felt::ZERO) {
-            return Err(EncodingError::BurnItemsMalformed);
-        }
-
-        let items = XReserveBurnItems::decode(payload)?;
+        let items = XReserveBurnItems::decode(attachment.content().as_words())?;
         Ok(Self { items })
     }
 }
 
-// the padded payload is what fixes the attachment's word count, so the two cannot drift apart — and
-// that fixed count is what makes the conversion above infallible.
+// the fixed word count is what makes the conversion above infallible.
 const _: () = assert!(
-    BURN_NOTE_ITEMS_FELTS.div_ceil(WORD_SIZE) == XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS
-        && XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS <= NoteAttachment::MAX_NUM_WORDS as usize,
-    "the padded withdrawal payload must occupy the declared number of words, within the cap"
+    XUsdcBurnAttachment::NUM_WORDS <= NoteAttachment::MAX_NUM_WORDS as usize,
+    "the withdrawal payload must fit in one attachment"
 );
 
 /// The public burn-event note. A standalone unit-struct note factory.
 pub struct XReserveBurnNote;
 
 impl XReserveBurnNote {
-    /// Number of withdrawal-payload felts (9), owned by the shared-encoding codec.
-    pub const NUM_PAYLOAD_ITEMS: usize = BURN_NOTE_ITEMS_FELTS;
-
     /// Returns the (reused) stock burn note consume script — targets `faucet::receive_and_burn`.
     pub fn script() -> NoteScript {
         BurnNote::script()

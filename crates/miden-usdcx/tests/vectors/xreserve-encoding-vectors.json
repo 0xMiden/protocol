@@ -511,13 +511,15 @@
           "0x0",
           "0x0",
           "0x0",
+          "0x0",
+          "0x0",
+          "0x0",
           "0x0"
         ],
         "kind": "accept",
         "tv": [
           "TV-BN-1",
-          "TV-BN-2",
-          "TV-BN-3"
+          "TV-BN-2"
         ]
       },
       {
@@ -528,6 +530,9 @@
         "id": "bn-pos-typical",
         "items": [
           "0x6",
+          "0x0",
+          "0x0",
+          "0x0",
           "0x14131211",
           "0x18171615",
           "0x1c1b1a19",
@@ -540,8 +545,7 @@
         "kind": "accept",
         "tv": [
           "TV-BN-1",
-          "TV-BN-2",
-          "TV-BN-3"
+          "TV-BN-2"
         ]
       },
       {
@@ -552,6 +556,9 @@
         "id": "bn-pos-max",
         "items": [
           "0xffffffff",
+          "0x0",
+          "0x0",
+          "0x0",
           "0xffffffff",
           "0xffffffff",
           "0xffffffff",
@@ -564,24 +571,23 @@
         "kind": "accept",
         "tv": [
           "TV-BN-1",
-          "TV-BN-2",
-          "TV-BN-3"
+          "TV-BN-2"
         ]
       },
       {
         "cite": "error-map ; ASG-13/ASG-17",
-        "derivation": "8 felts (< 9) → wrong length",
+        "derivation": "2 words (< 3) → wrong length",
         "expected_variant": "BurnItemsMalformed",
         "id": "bn-rej-len-short",
         "items": [
           "0x6",
+          "0x0",
+          "0x0",
+          "0x0",
           "0x58575655",
           "0x5c5b5a59",
           "0x605f5e5d",
-          "0x64636261",
-          "0x68676665",
-          "0x6c6b6a69",
-          "0x706f6e6d"
+          "0x64636261"
         ],
         "kind": "reject",
         "tv": [
@@ -590,11 +596,14 @@
       },
       {
         "cite": "error-map ; ASG-13/ASG-17",
-        "derivation": "10 felts (> 9) → wrong length",
+        "derivation": "4 words (> 3) → wrong length",
         "expected_variant": "BurnItemsMalformed",
         "id": "bn-rej-len-long",
         "items": [
           "0x6",
+          "0x0",
+          "0x0",
+          "0x0",
           "0x58575655",
           "0x5c5b5a59",
           "0x605f5e5d",
@@ -603,6 +612,9 @@
           "0x6c6b6a69",
           "0x706f6e6d",
           "0x74737271",
+          "0x0",
+          "0x0",
+          "0x0",
           "0x0"
         ],
         "kind": "reject",
@@ -612,11 +624,14 @@
       },
       {
         "cite": "error-map ; ASG-13/ASG-17",
-        "derivation": "items[0] = 2^32 → destDomain not a u32",
+        "derivation": "items[3] = 1 → destDomain word padding not zero",
         "expected_variant": "BurnItemsMalformed",
-        "id": "bn-rej-domain-over-u32",
+        "id": "bn-rej-domain-padding-not-zero",
         "items": [
-          "0x100000000",
+          "0x6",
+          "0x0",
+          "0x0",
+          "0x1",
           "0x58575655",
           "0x5c5b5a59",
           "0x605f5e5d",
@@ -633,11 +648,38 @@
       },
       {
         "cite": "error-map ; ASG-13/ASG-17",
-        "derivation": "items[4] = 2^32 → destRecipient limb not a u32",
+        "derivation": "items[0] = 2^32 → destDomain not a u32",
+        "expected_variant": "BurnItemsMalformed",
+        "id": "bn-rej-domain-over-u32",
+        "items": [
+          "0x100000000",
+          "0x0",
+          "0x0",
+          "0x0",
+          "0x58575655",
+          "0x5c5b5a59",
+          "0x605f5e5d",
+          "0x64636261",
+          "0x68676665",
+          "0x6c6b6a69",
+          "0x706f6e6d",
+          "0x74737271"
+        ],
+        "kind": "reject",
+        "tv": [
+          "TV-BN-4"
+        ]
+      },
+      {
+        "cite": "error-map ; ASG-13/ASG-17",
+        "derivation": "items[7] = 2^32 → destRecipient limb not a u32",
         "expected_variant": "BurnItemsMalformed",
         "id": "bn-rej-recipient-limb-not-u32",
         "items": [
           "0x6",
+          "0x0",
+          "0x0",
+          "0x0",
           "0x58575655",
           "0x5c5b5a59",
           "0x605f5e5d",
