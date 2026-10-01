@@ -119,6 +119,30 @@ mod tests {
         }
     }
 
+    /// TV-BN-1 (random round-trip): for random domains and recipients `decode(encode(x)) == x`,
+    /// and every random canonical payload re-encodes to exactly the same words.
+    #[test]
+    fn tv_bn_1_random_round_trip() -> anyhow::Result<()> {
+        const NUM_CASES: usize = 256;
+
+        for _ in 0..NUM_CASES {
+            let items = XReserveBurnItems::builder()
+                .dest_domain(CircleDomain::new(rand::random()))
+                .dest_recipient(ForeignChainAddress::new(rand::random()))
+                .build();
+            assert_eq!(XReserveBurnItems::decode(&items.encode())?, items);
+
+            let mut payload = [Word::empty(); XUsdcBurnAttachment::NUM_WORDS];
+            payload[0][0] = Felt::from(rand::random::<u32>());
+            for element in payload[1..].iter_mut().flat_map(|word| word.as_mut_slice()) {
+                *element = Felt::from(rand::random::<u32>());
+            }
+            assert_eq!(XReserveBurnItems::decode(&payload)?.encode(), payload);
+        }
+
+        Ok(())
+    }
+
     /// TV-BN-2 (destination-in-items): the destination fields land in the payload word layout
     /// (`destDomain` at word 0, `destRecipient` at words 1 and 2). `encode` has no metadata path —
     /// its only output is the payload words, so `metadata.sender` is structurally reserved for the
