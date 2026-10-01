@@ -26,8 +26,7 @@ impl StandardNoteAttachment {
             StandardNoteAttachment::NetworkAccountTarget => NoteAttachmentScheme::new_const(2u16),
             StandardNoteAttachment::PswapAttachment => NoteAttachmentScheme::new_const(3u16),
             StandardNoteAttachment::UsdcxMint => NoteAttachmentScheme::new_const(4u16),
-            // Scheme 5 remains reserved for a retired USDCx attachment.
-            StandardNoteAttachment::UsdcxBurn => NoteAttachmentScheme::new_const(6u16),
+            StandardNoteAttachment::UsdcxBurn => NoteAttachmentScheme::new_const(5u16),
             StandardNoteAttachment::AccountCodeUpgrade => NoteAttachmentScheme::new_const(7u16),
         }
     }

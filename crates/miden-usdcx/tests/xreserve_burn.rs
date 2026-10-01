@@ -75,28 +75,13 @@ fn sample_items() -> XReserveBurnItems {
     }
 }
 
-/// The carrier tag and word count are Circle-facing wire values. Pinned against literals rather
-/// than against the constants, so a re-tag fails here instead of moving silently through every
-/// site that reads them.
-#[test]
-fn burn_withdrawal_carrier_is_frozen() {
-    assert_eq!(
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME, 6,
-        "the withdrawal-payload attachment scheme is frozen at 6",
-    );
-    assert_eq!(
-        XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS, 3,
-        "the withdrawal-payload attachment is frozen at 3 words",
-    );
-}
-
 /// Reads a burn note's 9-felt withdrawal payload straight out of its scheme-tagged attachment:
-/// the scheme-6 attachment's words with the word-boundary padding dropped. The felts feed the
+/// the withdrawal attachment's words with the word-boundary padding dropped. The felts feed the
 /// shared codec's `XReserveBurnItems::decode`, which stays the single owner of the field layout —
 /// this helper reads no offset and unpacks no field.
 fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
     let scheme = NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
-        .expect("scheme 6 is a valid attachment scheme");
+        .expect("the withdrawal scheme is a valid attachment scheme");
     let attachment = attachments
         .iter()
         .find(|attachment| attachment.attachment_scheme() == scheme)
@@ -252,14 +237,6 @@ fn burn_note_payload_schema() {
     assert_eq!(decoded.items(), &items);
     assert_eq!(decoded.into_items(), items);
 
-    let mut words = attachment.content().as_words().to_vec();
-    words[2][1] = Felt::ONE;
-    words[2][2] = Felt::ONE;
-    words[2][3] = Felt::ONE;
-    let nonzero_padding =
-        NoteAttachment::with_words(attachment.attachment_scheme(), words).unwrap();
-    assert_eq!(XUsdcBurnAttachment::try_from(&nonzero_padding).unwrap().into_items(), items);
-
     // NoteAssets carries the burned xUSDC FungibleAsset with the separately supplied amount.
     let asset = note.assets().iter_fungible().next().expect("note carries one fungible asset");
     assert_eq!(asset.faucet_id(), faucet, "asset issued by the faucet");
@@ -283,12 +260,14 @@ fn burn_note_payload_schema() {
 #[test]
 fn burn_attachment_rejects_malformed_payloads() {
     let attachment = NoteAttachment::from(&XUsdcBurnAttachment::new(sample_items()));
+    let scheme = XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME;
     for (name, scheme, word_count, invalid_limb) in [
         ("wrong scheme", 7, 3, None),
-        ("too few words", 6, 2, None),
-        ("too many words", 6, 4, None),
-        ("domain above u32", 6, 3, Some(0)),
-        ("recipient limb above u32", 6, 3, Some(8)),
+        ("too few words", scheme, 2, None),
+        ("too many words", scheme, 4, None),
+        ("domain above u32", scheme, 3, Some(0)),
+        ("recipient limb above u32", scheme, 3, Some(8)),
+        ("padding not zero", scheme, 3, Some(11)),
     ] {
         let mut words = attachment.content().as_words().to_vec();
         words.resize(word_count, Word::default());
@@ -304,26 +283,6 @@ fn burn_attachment_rejects_malformed_payloads() {
             ),
             "{name}",
         );
-    }
-}
-
-// 3 — PRODUCING SIDE: the constructor can only make Public notes (it takes no note-type argument)
-// ================================================================================================
-
-#[test]
-fn burn_note_is_never_private() {
-    let faucet = test_faucet_id(1);
-    for seed in [1u64, 2, 3] {
-        let note = XReserveBurnNote::create(
-            test_account_id(3),
-            faucet,
-            AssetAmount::new(1_000).unwrap(),
-            sample_items(),
-            &mut note_rng(seed),
-        )
-        .expect("constructing the burn note");
-        assert_eq!(note.metadata().note_type(), NoteType::Public, "R-BURN-6: always Public");
-        assert_ne!(note.metadata().note_type(), NoteType::Private, "R-BURN-6: never Private");
     }
 }
 

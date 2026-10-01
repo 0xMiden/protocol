@@ -215,7 +215,7 @@ pub struct BnVector {
     pub dest_domain: Option<CircleDomain>,
     #[serde(default)]
     pub dest_recipient: Option<String>,
-    /// Accept: the 9-felt burn-payload golden layout (carried in note attachment scheme 6).
+    /// Accept: the 9-felt burn-payload golden layout (carried in the withdrawal note attachment).
     /// Reject: the malformed felts.
     pub items: Vec<String>,
     #[serde(default)]

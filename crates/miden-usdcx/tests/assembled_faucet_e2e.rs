@@ -708,7 +708,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         "S9: the fixed full-32-bit xUSDC burn tag"
     );
     assert_eq!(burn_note.metadata().sender(), holder_id, "S9: metadata.sender == depositor");
-    // The withdrawal payload rides the scheme-6 attachment, zero-padded to the word boundary.
+    // The withdrawal payload rides the withdrawal attachment, zero-padded to the word boundary.
     let mut payload_felts = burn_note
         .attachments()
         .iter()

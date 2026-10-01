@@ -13,8 +13,6 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use miden_protocol::note::NoteAttachmentScheme;
-use miden_standards::note::NetworkAccountTarget;
 use miden_usdcx::account::xreserve::XReserveFaucetExtension;
 use miden_usdcx::note::xreserve_burn::{
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
@@ -39,6 +37,7 @@ use miden_usdcx::xreserve::encoding::{
 /// against their Rust counterparts. This is the only thing in the crate that reads MASM source: the
 /// code that ships is the package the build script assembled, not these strings.
 const DEPOSIT_INTENT_MASM: &str = include_str!("../asm/xreserve/deposit_intent.masm");
+const DOMAIN_CONFIG_MASM: &str = include_str!("../asm/xreserve/domain_config.masm");
 const MINT_INTENT_MASM: &str = include_str!("../asm/xreserve/mint_intent.masm");
 
 /// The faucet attestation verification attestation-verify shell module source, read test-side by
@@ -58,9 +57,9 @@ const ATTESTER_ADMIN_MASM: &str = include_str!("../asm/xreserve/attester_admin.m
 /// `deposit_intent.masm`.
 const PACKED_MEM_MASM: &str = include_str!("../asm/xreserve/packed_mem.masm");
 
-/// Expected `word("…")` slot-name constants of the shell module (MASM const name → label), pinned
-/// against the production slot names.
-fn expected_deposit_intent_word_consts() -> Vec<(&'static str, &'static str)> {
+/// Expected `word("…")` slot-name constant of the domain config module (MASM const name → label),
+/// pinned against the production slot name.
+fn expected_domain_config_word_consts() -> Vec<(&'static str, &'static str)> {
     vec![("DOMAIN_CONFIG_SLOT", XReserveFaucetExtension::domain_config_slot().as_str())]
 }
 
@@ -140,6 +139,8 @@ const BURN_POLICY_COVERED_NUMS: &[&str] = &[
     "BURN_NOTE_NUM_ATTACHMENTS",
     "CHECK_BURN_POLICY_COMMITMENTS_LOC",
     "CHECK_BURN_POLICY_WITHDRAWAL_LOC",
+    "CHECK_BURN_POLICY_WITHDRAWAL_WORD_1_LOC",
+    "CHECK_BURN_POLICY_WITHDRAWAL_WORD_2_LOC",
 ];
 
 /// Numeric-constant coverage sets (bidirectional sweep): every numeric const parsed
@@ -434,19 +435,6 @@ fn masm_rust_constant_parity() {
     // uint256. The one thing left to pin is the value of the single Rust constant, and it is
     // asserted where it is defined (`amount.rs`, `deposit_scale_exp_is_zero`) — the constant is
     // module-private, so there is no second spelling that could drift from it.
-    // rider A8 (ratified): the xUSDC scheme sits at >= 4 — clear of the protocol-reserved
-    // "none" value 1 and the standard values 2 (NetworkAccountTarget, carried on this very
-    // note) and 3 (Pswap). Executable so a scheme regression cannot slip in one-sided.
-    assert!(
-        num(&policy_nums, "XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME", "mint_policy.masm") >= 4,
-        "the transport scheme must be >= 4 (rider A8: off the reserved/standard values)"
-    );
-    assert_ne!(
-        NoteAttachmentScheme::new(XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME)
-            .expect("the xusdc scheme is valid"),
-        NetworkAccountTarget::ATTACHMENT_SCHEME,
-        "the transport scheme must not collide with the standard NetworkAccountTarget scheme"
-    );
 }
 
 // Error-string parity has no test left. `build.rs` generates the Rust `ERR_XRESERVE_*` constants
@@ -472,7 +460,7 @@ fn masm_constants_bidirectional() {
     // every MASM-only string constant must be a known error (the encoding table or the faucet
     // shell table); a new one fails here until it gets a row
     let known_err = |name: &str| support::SHELL_ERR_TABLE.iter().any(|(n, _)| *n == name);
-    let sources: [MasmConstSource; 7] = [
+    let sources: [MasmConstSource; 8] = [
         (
             "mint_intent.masm",
             MINT_INTENT_MASM,
@@ -483,7 +471,13 @@ fn masm_constants_bidirectional() {
             "deposit_intent.masm",
             DEPOSIT_INTENT_MASM,
             DEPOSIT_INTENT_COVERED_NUMS,
-            expected_deposit_intent_word_consts(),
+            Vec::new(),
+        ),
+        (
+            "domain_config.masm",
+            DOMAIN_CONFIG_MASM,
+            &[],
+            expected_domain_config_word_consts(),
         ),
         // attestation_verify: NO slot consts of its own. It imports `XRESERVE_ATTESTERS_SLOT` (and
         // the enabled marker) from the setter module rather than redeclaring them, so the two

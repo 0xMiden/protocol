@@ -13,9 +13,9 @@
 //! ATTACHMENT instead. The note is forced public, carries the fixed xUSDC burn tag, and packs the
 //! payload with the shared codec so the listener decodes precisely what was encoded.
 //!
-//! The burn policy requires exactly two attachments: the routing target and a withdrawal payload
-//! of three words. It checks the withdrawal content against the commitment in the note.
-//! The off-chain withdrawal attester validates the destination fields.
+//! The burn policy requires exactly two attachments: a routing target to the faucet and a
+//! withdrawal payload of three words. It checks the withdrawal content against the commitment in
+//! the note and accepts only destinations the off-chain withdrawal attester can pay out.
 
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
@@ -36,7 +36,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::{Felt, WORD_SIZE, Word};
-use miden_standards::note::BurnNote;
+use miden_standards::note::{BurnNote, StandardNoteAttachment};
 
 use crate::xreserve::encoding::{BURN_NOTE_ITEMS_FELTS, EncodingError, XReserveBurnItems};
 
@@ -51,16 +51,9 @@ use crate::xreserve::encoding::{BURN_NOTE_ITEMS_FELTS, EncodingError, XReserveBu
 /// has assigned.
 pub const FIXED_XUSDC_BURN_TAG: u32 = 0x4255_524e;
 
-/// The withdrawal-payload attachment scheme (u16, project-chosen). It carries the 9-felt Circle
-/// withdrawal payload, mirroring how the mint transport carries its own payload as a scheme-tagged
-/// attachment.
-///
-/// The value is chosen clear of everything already in use: the protocol reserves `0` (absent) and
-/// `1` (none); the standards use `2` (`NetworkAccountTarget`) and `3` (`Pswap`); the xUSDC mint
-/// transport holds `4`; and `5` is left burned because the parked validation crate historically
-/// used it for a now-retired attestation attachment. `6` is the first value not associated with any
-/// other payload, so it does not resurrect a retired scheme.
-pub const XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME: u16 = 6;
+/// The withdrawal-payload attachment scheme, see [`StandardNoteAttachment::UsdcxBurn`].
+pub const XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME: u16 =
+    StandardNoteAttachment::UsdcxBurn.attachment_scheme().as_u16();
 
 /// Word count of the withdrawal-payload attachment: the 9 payload felts zero-padded to a word
 /// boundary (3 words, 3 pad felts). Fixed, because [`BURN_NOTE_ITEMS_FELTS`] is fixed.
@@ -69,7 +62,7 @@ pub const XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS: usize = 3;
 /// The withdrawal payload a burn note carries — the [`XReserveBurnItems`] the off-chain attester
 /// decodes.
 ///
-/// This is the scheme-6 withdrawal attachment in domain form. It converts into the
+/// This is the withdrawal attachment in domain form. It converts into the
 /// [`NoteAttachment`] the note id commits to, the way [`XUsdcDeposit`] converts into the mint
 /// note's scheme-4 transport one.
 ///
@@ -125,7 +118,7 @@ impl From<&XUsdcBurnAttachment> for NoteAttachment {
 impl TryFrom<&NoteAttachment> for XUsdcBurnAttachment {
     type Error = EncodingError;
 
-    /// Decodes the scheme-6 withdrawal payload, ignoring the final three padding felts.
+    /// Decodes the withdrawal payload. Like the burn policy, it rejects non-zero padding felts.
     fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
         if attachment.attachment_scheme().as_u16() != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME
             || usize::from(attachment.num_words()) != XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS
@@ -133,7 +126,12 @@ impl TryFrom<&NoteAttachment> for XUsdcBurnAttachment {
             return Err(EncodingError::BurnItemsMalformed);
         }
 
-        let items = XReserveBurnItems::decode(&attachment.as_elements()[..BURN_NOTE_ITEMS_FELTS])?;
+        let (payload, padding) = attachment.as_elements().split_at(BURN_NOTE_ITEMS_FELTS);
+        if padding.iter().any(|element| *element != Felt::ZERO) {
+            return Err(EncodingError::BurnItemsMalformed);
+        }
+
+        let items = XReserveBurnItems::decode(payload)?;
         Ok(Self { items })
     }
 }
