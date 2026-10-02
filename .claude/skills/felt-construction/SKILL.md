@@ -11,7 +11,8 @@ description: Use when constructing a `Felt` from a numeric value in Rust — use
 
 Use one of:
 
-- `Felt::from(x)` where `x` is a `u32` or smaller (infallible).
+- `Felt::from_u8(x)`, `Felt::from_u16(x)` or `Felt::from_u32(x)` for `u32`-or-smaller inputs. They are infallible and `const`, so prefer them to define constants.
+- `Felt::from(x)` for `u32`-or-smaller inputs in non-`const` code (infallible).
 - `Felt::new(x)` or `Felt::try_from(x)` for `u64` inputs; both return `Result` and check the bound.
 - `Felt::new_unchecked(x)` only when `x < Felt::ORDER` has already been proved.
 
@@ -22,6 +23,9 @@ The field modulus sits just below `2^64`, so out-of-range inputs occupy a narrow
 ## Examples
 
 ```rust
+// Good: const constructor for a small constant
+const NUM_SLOTS: Felt = Felt::from_u8(4);
+
 // Good: u32 input, infallible conversion
 let f = Felt::from(slot_index as u32);
 
@@ -34,4 +38,7 @@ let f = Felt::new_unchecked(bounded_value);
 
 // Bad: unchecked construction on an untrusted value
 let f = Felt::new_unchecked(user_value);
+
+// Bad: new_unchecked for a constant that a const from_u* constructor covers
+const NUM_SLOTS: Felt = Felt::new_unchecked(4);
 ```
