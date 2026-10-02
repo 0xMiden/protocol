@@ -1,23 +1,23 @@
 ---
 name: felt-construction
-description: Use when constructing a `Felt` from a numeric value in Rust — avoid silently truncating values that may exceed the field modulus.
+description: Use when constructing a `Felt` from a numeric value in Rust — use checked construction unless the canonical bound is already proved.
 ---
 
 # Felt Construction From Untrusted Numeric Inputs
 
 ## Rule
 
-Do not call `Felt::new(x)` when `x` could exceed the field modulus. `Felt::new` silently truncates oversized values, which produces a valid-looking `Felt` that no longer equals the original input — a classic source of hard-to-attribute bugs.
+`Felt::new(x)` is checked and returns `Result`, rejecting values greater than or equal to `Felt::ORDER`. Use it when a `u64` input may exceed the field modulus.
 
 Use one of:
 
 - `Felt::from(x)` where `x` is a `u32` or smaller (infallible).
-- `Felt::try_from(x)` for `u64`-and-larger inputs, returning `Result`.
-- An explicit `assert!(x < Felt::MODULUS)` before `Felt::new(x)` if you have already proven the bound.
+- `Felt::new(x)` or `Felt::try_from(x)` for `u64` inputs; both return `Result` and check the bound.
+- `Felt::new_unchecked(x)` only when `x < Felt::ORDER` has already been proved.
 
 ## Why
 
-The field modulus sits just below `2^64`, so `Felt::new` truncates only for a narrow band of large values — most tests pass and production hits the bad input as a value mismatch far from the call. `Felt::from(u32)` cannot truncate and `Felt::try_from` forces the bound check.
+The field modulus sits just below `2^64`, so out-of-range inputs occupy a narrow band that tests can miss. Checked construction makes those inputs explicit errors; `new_unchecked` skips that protection.
 
 ## Examples
 
@@ -25,9 +25,13 @@ The field modulus sits just below `2^64`, so `Felt::new` truncates only for a na
 // Good: u32 input, infallible conversion
 let f = Felt::from(slot_index as u32);
 
-// Good: untrusted u64 input, checked conversion
-let f = Felt::try_from(user_value).map_err(|_| Error::FeltOverflow)?;
+// Good: untrusted u64 input, checked conversion returning Result
+let f = Felt::new(user_value).map_err(|_| Error::FeltOverflow)?;
 
-// Bad: silent truncation on any value >= MODULUS
-let f = Felt::new(user_value);
+// Good: unchecked construction only after proving the canonical bound
+assert!(bounded_value < Felt::ORDER);
+let f = Felt::new_unchecked(bounded_value);
+
+// Bad: unchecked construction on an untrusted value
+let f = Felt::new_unchecked(user_value);
 ```
