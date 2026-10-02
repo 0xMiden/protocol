@@ -5,16 +5,19 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_crypto::rand::test_utils::rand_value;
+use miden_crypto::rand::{FeltRng, RandomCoin};
 use miden_processor::{ExecutionError, Word};
+use miden_protocol::Hasher;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountCode,
+    AccountCodeUpgrade,
     AccountComponent,
     AccountId,
+    AccountProcedureRoot,
     AccountStorage,
     AccountType,
     StorageMap,
@@ -31,13 +34,23 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Linkage, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED,
+    ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH,
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
+    ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES,
+    ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
+    ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE,
+    ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
+    ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET,
+    ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT,
+    ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED,
 };
 use miden_protocol::field::PrimeField64;
 use miden_protocol::note::NoteType;
@@ -47,20 +60,23 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::testing::add_component::AddComponent;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::memory::{
     CODE_UPGRADE_COMMITMENT_PTR,
     STORAGE_UPGRADE_COMMITMENT_PTR,
 };
-use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
+use miden_protocol::transaction::{RawOutputNote, TransactionKernel, TransactionScript};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::vm::Package;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::{LocalTransactionProver, TransactionKernelError};
+use rand::random;
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -71,6 +87,7 @@ use crate::{
     ExecError,
     MockChain,
     TestTransactionBuilder,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 
@@ -93,8 +110,6 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         r#"
         use miden::core::word
 
-        use miden::protocol::active_account
-        use miden::protocol::native_account
         use mock::account as mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -151,9 +166,9 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
             # => []
         end
     "#,
-        key = &key,
-        value = &value,
-        expected_commitment = &expected_commitment,
+        key = key,
+        value = value,
+        expected_commitment = expected_commitment,
     );
 
     let mock_tx_builder = TestTransactionBuilder::new(account);
@@ -164,6 +179,99 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("failed to execute transaction: {err}"))?;
+
+    Ok(())
+}
+
+/// State changes are visible before authentication increments the nonce, and reverting storage
+/// restores the initial commitment.
+#[tokio::test]
+async fn has_state_changed() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let key = StorageMapKey::from_array([1, 2, 3, 4]);
+    let original_value = account.storage().get_map_item(mock_map_slot, key)?;
+    let changed_value = Word::from([2, 3, 4, 5u32]);
+    assert_ne!(original_value, changed_value);
+
+    let tx_script = format!(
+        r#"
+        use mock::account as mock_account
+
+        const MOCK_MAP_SLOT = word("{mock_map_slot}")
+
+        @transaction_script
+        pub proc main
+            call.mock_account::has_state_changed
+            assertz.err="the native account should initially be unchanged"
+            dropw dropw dropw drop drop drop
+
+            push.{changed_value} push.{key} push.MOCK_MAP_SLOT[0..2]
+            call.mock_account::set_map_item
+            dropw dropw dropw dropw
+
+            call.mock_account::has_state_changed
+            assert.err="storage changes should be detected before incrementing the nonce"
+            dropw dropw dropw drop drop drop
+
+            push.{original_value} push.{key} push.MOCK_MAP_SLOT[0..2]
+            call.mock_account::set_map_item
+            dropw dropw dropw dropw
+
+            call.mock_account::has_state_changed
+            assertz.err="restoring storage should restore the initial commitment"
+            dropw dropw dropw drop drop drop
+        end
+        "#,
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
+
+    TestTransactionBuilder::new(account)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Native-account commitment APIs still require an account procedure as their caller.
+#[rstest::rstest]
+#[case::compute_commitment("compute_commitment")]
+#[case::has_state_changed("has_state_changed")]
+#[tokio::test]
+async fn native_account_commitment_from_tx_script_is_rejected(
+    #[case] procedure: &str,
+) -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::native_account
+
+        @transaction_script
+        pub proc main
+            # keep this script's root distinct from the mock account's wrapper
+            push.1 drop
+            exec.native_account::{procedure}
+            exec.sys::truncate_stack
+        end
+        "#,
+    ))?;
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
+    );
 
     Ok(())
 }
@@ -213,10 +321,10 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
         let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
-            use miden::protocol::account_id
+            use miden::tx_kernel_core::account
 
             begin
-                exec.account_id::validate
+                exec.account::validate_id
             end
             ";
 
@@ -476,7 +584,7 @@ async fn test_get_item() -> anyhow::Result<()> {
             end
             "#,
             slot_name = storage_item.name(),
-            item_value = &storage_item.content().value(),
+            item_value = storage_item.content().value(),
         );
 
         mock_tx.execute_code(&code).await.unwrap();
@@ -585,6 +693,36 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
         assert_eq!(exec_output.get_stack_word(8), Word::empty(), "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_word(12), Word::empty(), "the rest of the stack is empty");
     }
+
+    Ok(())
+}
+
+/// Tests that `validate_storage` rejects a storage slot whose type is outside the supported set
+/// (value or map) instead of silently committing it as a map (audit finding L-11).
+#[tokio::test]
+async fn validate_storage_rejects_unsupported_slot_type() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+
+    // Overwrite the type element (offset 1) of the first storage slot with an unsupported type,
+    // then run the new-account storage validation which must reject it.
+    let code = "
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.2
+            exec.memory::get_native_account_active_storage_slots_ptr add.1
+            mem_store
+
+            exec.account::validate_storage
+        end
+        ";
+
+    let exec_output = mock_tx.execute_code(code).await;
+    assert_execution_error!(exec_output, ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID);
 
     Ok(())
 }
@@ -700,6 +838,145 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Returns the requested number of distinct procedure roots sorted in ascending order.
+fn sorted_procedure_roots(num_procedures: usize) -> Vec<AccountProcedureRoot> {
+    let mut rng = RandomCoin::new([num_procedures as u32, 0, 0, 0].into());
+    let mut roots = (0..num_procedures as u32)
+        .map(|_| AccountProcedureRoot::from_raw(rng.draw_word()))
+        .collect::<Vec<_>>();
+    roots.sort_unstable();
+
+    roots
+}
+
+/// Returns a program that writes the provided procedure roots into the native account's code
+/// section and validates them.
+/// TODO: Refactor to create the custom procedure section in local memory and call
+/// validate_procedures with a pointer, so it becomes simpler.
+fn validate_procedures_program(procedure_roots: &[AccountProcedureRoot]) -> String {
+    let procedure_writes = procedure_roots
+        .iter()
+        .enumerate()
+        .map(|(index, root)| {
+            format!(
+                "push.{root}
+                exec.memory::get_account_procedures_section_ptr add.{offset} mem_storew_le dropw",
+                offset = index * Word::NUM_ELEMENTS
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::memory
+
+        begin
+            exec.memory::set_active_account_data_ptr_to_native_account
+
+            push.{num_procedures} exec.memory::set_num_account_procedures
+
+            {procedure_writes}
+
+            exec.memory::get_active_account_code_section_ptr
+            exec.account::validate_procedures
+        end
+        "#,
+        num_procedures = procedure_roots.len()
+    )
+}
+
+/// The auth procedure at index 0 is exempt from the ordering, so it is validated against roots that
+/// sort before, in between and after the other procedures.
+#[rstest::rstest]
+#[case::minimum_number_of_procedures(2, 0)]
+#[case::auth_procedure_sorts_first(8, 0)]
+#[case::auth_procedure_sorts_in_between(8, 4)]
+#[case::auth_procedure_sorts_last(8, 7)]
+#[tokio::test]
+async fn test_validate_procedures_accepts_sorted_and_unique_procedures(
+    #[case] num_procedures: usize,
+    #[case] auth_procedure_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(num_procedures);
+    let auth_procedure_root = procedure_roots.remove(auth_procedure_index);
+    procedure_roots.insert(0, auth_procedure_root);
+
+    CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await?;
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::first_pair_swapped(1, 2)]
+#[case::last_pair_swapped(6, 7)]
+#[case::first_and_last_swapped(1, 7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_unsorted_procedures(
+    #[case] left_index: usize,
+    #[case] right_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(8);
+    procedure_roots.swap(left_index, right_index);
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE);
+
+    Ok(())
+}
+
+/// The duplicated procedure is always the one preceding it, which must be at index 1 or greater so
+/// the duplicate does not involve the auth procedure at index 0.
+#[rstest::rstest]
+#[case::first_procedure(2)]
+#[case::middle_procedure(4)]
+#[case::last_procedure(7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_duplicated_procedure(
+    #[case] duplicated_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(8);
+    procedure_roots[duplicated_index] = procedure_roots[duplicated_index - 1];
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE);
+
+    Ok(())
+}
+
+/// A duplicated auth procedure is not caught by the ordering check, since the auth procedure is
+/// exempt from it, so it must be rejected by the explicit comparison against the root at index 0.
+#[rstest::rstest]
+#[case::minimum_number_of_procedures(2, 1)]
+#[case::first_procedure(8, 1)]
+#[case::middle_procedure(8, 4)]
+#[case::last_procedure(8, 7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_duplicated_auth_procedure(
+    #[case] num_procedures: usize,
+    #[case] duplicated_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(num_procedures);
+    procedure_roots[0] = procedure_roots[duplicated_index];
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
@@ -798,8 +1075,8 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         end
         "#,
         slot_name = slot.name(),
-        new_key = &new_key,
-        new_value = &new_value,
+        new_key = new_key,
+        new_value = new_value,
     );
 
     let exec_output = &mock_tx.execute_code(&code).await?;
@@ -861,25 +1138,68 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="actual storage commitment is not equal to the expected one"
         end
         "#,
-        expected_storage_commitment = &mock_tx.account().storage().to_commitment(),
+        expected_storage_commitment = mock_tx.account().storage().to_commitment(),
     );
     mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
 
-/// Tests that `native_account::upgrade`, invoked from an account procedure, stores the code and
-/// storage upgrade commitments in the dedicated kernel memory region.
-#[tokio::test]
-async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
-    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+// ACCOUNT UPGRADE TESTS
+// ================================================================================================
 
-    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
-    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+/// Returns the existing mock account that the upgrade tests start from.
+fn existing_mock_account() -> Account {
+    Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [IncrNonceAuthComponent])
+}
 
-    // `upgrade` is invoked through the mock account's `upgrade` procedure, so the caller is a
-    // procedure of the account and the authenticator accepts it.
-    let code = format!(
+/// Returns the code of the mock account extended with the [`AddComponent`], which the upgrade tests
+/// upgrade to.
+fn upgraded_mock_account_code() -> anyhow::Result<AccountCode> {
+    Ok(AccountCode::from_components(&[
+        IncrNonceAuthComponent.into(),
+        MockAccountComponent::with_slots(vec![]).into(),
+        AddComponent.into(),
+    ])?)
+}
+
+/// Returns a transaction script that initializes one account upgrade per provided pair of new code
+/// and new storage commitments.
+fn upgrade_tx_script(
+    upgrades: impl IntoIterator<Item = (Word, Word)>,
+) -> anyhow::Result<TransactionScript> {
+    let upgrade_calls: String = upgrades
+        .into_iter()
+        .map(|(new_code_commitment, storage_upgrade_commitment)| {
+            format!(
+                "
+                push.{storage_upgrade_commitment}
+                push.{new_code_commitment}
+                call.mock_account::upgrade
+                dropw dropw
+                "
+            )
+        })
+        .collect();
+
+    let tx_script = format!(
+        r#"
+        use mock::account as mock_account
+
+        @transaction_script
+        pub proc main
+            {upgrade_calls}
+        end
+        "#
+    );
+
+    Ok(CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?)
+}
+
+/// Returns a program that runs the prologue and then initializes an upgrade of the native account's
+/// code to the code with `new_code_commitment`.
+fn upgrade_program(new_code_commitment: Word) -> String {
+    format!(
         r#"
         use mock::account as mock_account
         use miden::tx_kernel_core::prologue
@@ -887,30 +1207,355 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
         begin
             exec.prologue::prepare_transaction
 
-            push.{storage_upgrade_commitment}
-            push.{code_upgrade_commitment}
-            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+            padw push.{new_code_commitment}
+            # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
             call.mock_account::upgrade
             # => [pad(16)]
             dropw dropw dropw dropw
         end
         "#,
-        code_upgrade_commitment = &code_upgrade_commitment,
-        storage_upgrade_commitment = &storage_upgrade_commitment,
-    );
+    )
+}
 
-    let exec_output = &mock_tx.execute_code(&code).await?;
+/// Tests that `native_account::upgrade` stores the new code commitment in kernel memory, and the
+/// empty word if the upgrade is a no-op.
+#[rstest::rstest]
+#[case::upgraded_code(upgraded_mock_account_code()?.commitment(), upgraded_mock_account_code()?.commitment())]
+#[case::current_code(existing_mock_account().code().commitment(), Word::empty())]
+#[case::empty_word(Word::empty(), Word::empty())]
+#[tokio::test]
+async fn test_account_upgrade_stores_code_commitment(
+    #[case] new_code_commitment: Word,
+    #[case] expected_code_upgrade_commitment: Word,
+) -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_mock_account_code()?))
+        .build()?;
+
+    let exec_output = &mock_tx.execute_code(&upgrade_program(new_code_commitment)).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
-        code_upgrade_commitment,
-        "code upgrade commitment should be stored in kernel memory"
+        expected_code_upgrade_commitment,
     );
+    assert_eq!(exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR), Word::empty());
+
+    Ok(())
+}
+
+/// Tests that a transaction replaces the code of the native account in its final state and patch,
+/// and that an upgrade to the current code leaves the code unchanged.
+///
+/// A pending upgrade must also count as a state change before the nonce is incremented.
+#[rstest::rstest]
+#[case::upgraded_code(true)]
+#[case::current_code(false)]
+#[tokio::test]
+async fn test_account_upgrade_replaces_code(#[case] is_upgrade: bool) -> anyhow::Result<()> {
+    let account = existing_mock_account();
+    let upgraded_code = upgraded_mock_account_code()?;
+    let expected_code = if is_upgrade {
+        upgraded_code.clone()
+    } else {
+        account.code().clone()
+    };
+
+    let tx_script = format!(
+        r#"
+        use mock::account as mock_account
+
+        @transaction_script
+        pub proc main
+            padw push.{new_code_commitment}
+            # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+            call.mock_account::upgrade
+            dropw dropw
+            # => []
+
+            call.mock_account::has_state_changed
+            # => [has_state_changed]
+
+            eq.{is_upgrade} assert.err="a pending code upgrade should count as a state change"
+            dropw dropw dropw drop drop drop
+            # => []
+        end
+        "#,
+        new_code_commitment = expected_code.commitment(),
+        is_upgrade = u8::from(is_upgrade),
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
+
+    let executed_tx = TestTransactionBuilder::new(account.clone())
+        .tx_script(tx_script)
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_code))
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed_tx.final_account().code_commitment(), expected_code.commitment());
     assert_eq!(
-        exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
-        storage_upgrade_commitment,
-        "storage upgrade commitment should be stored in kernel memory"
+        executed_tx.account_patch().code().as_code(),
+        is_upgrade.then_some(&expected_code)
+    );
+
+    let mut expected_account = account;
+    expected_account.apply_patch(executed_tx.account_patch())?;
+    assert_eq!(expected_account.to_commitment(), executed_tx.final_account().to_commitment());
+
+    // Check account upgrades work under the prover's re-execution.
+    LocalTransactionProver::default().prove(executed_tx)?;
+
+    Ok(())
+}
+
+/// Tests that an auth component that signs the delta commitment signs the upgraded code, which
+/// requires the delta commitments of the kernel and the host to agree on the code section.
+#[tokio::test]
+async fn test_account_upgrade_with_signature_auth() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let mock_chain = builder.build()?;
+
+    let upgraded_code = upgraded_mock_account_code()?;
+    let executed_tx = mock_chain
+        .build_transaction(account.id())
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_code.clone()))
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed_tx.final_account().code_commitment(), upgraded_code.commitment());
+    assert_eq!(executed_tx.account_patch().code().as_code(), Some(&upgraded_code));
+
+    Ok(())
+}
+
+/// Tests that the kernel rejects upgrades that are invalid on their own.
+#[rstest::rstest]
+#[case::storage_upgrade(
+    vec![(upgraded_mock_account_code()?.commitment(), Word::from([1, 2, 3, 4u32]))],
+    ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED,
+)]
+#[case::second_upgrade(
+    vec![(upgraded_mock_account_code()?.commitment(), Word::empty()); 2],
+    ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET,
+)]
+#[tokio::test]
+async fn test_account_upgrade_rejects_invalid_initialization(
+    #[case] upgrades: Vec<(Word, Word)>,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script(upgrades)?)
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_mock_account_code()?))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that a new account cannot be upgraded, since its code is part of its creation.
+#[tokio::test]
+async fn test_account_upgrade_rejects_new_account() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.create_new_mock_account(Auth::IncrNonce)?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account)
+        .tx_script(upgrade_tx_script([(
+            upgraded_mock_account_code()?.commitment(),
+            Word::empty(),
+        )])?)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT);
+
+    Ok(())
+}
+
+/// Tests that the host rejects an upgrade to code that the advice map does not provide.
+#[tokio::test]
+async fn test_account_upgrade_rejects_missing_code() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment))
+                    if *new_code_commitment == upgraded_code.commitment()
+            )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects an upgrade whose advice map entry does not encode valid code.
+#[tokio::test]
+async fn test_account_upgrade_rejects_invalid_code() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .add_advice_map_entry(
+            AccountCodeUpgrade::advice_map_key(upgraded_code.commitment()),
+            vec![Felt::ONE],
+        )
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::AccountCodeUpgradeInvalid { new_code_commitment, .. })
+                    if *new_code_commitment == upgraded_code.commitment()
+            )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects an upgrade whose advice map entry provides code with a different
+/// commitment.
+#[tokio::test]
+async fn test_account_upgrade_rejects_code_not_matching_commitment() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+    let provided_code = AccountCode::mock();
+    assert_ne!(upgraded_code.commitment(), provided_code.commitment());
+
+    let (_, provided_code_data) =
+        AccountCodeUpgrade::new(provided_code.clone()).to_advice_map_entry();
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .add_advice_map_entry(
+            AccountCodeUpgrade::advice_map_key(upgraded_code.commitment()),
+            provided_code_data,
+        )
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
+                    expected,
+                    actual,
+                }) if *expected == upgraded_code.commitment()
+                    && *actual == provided_code.commitment()
+            )
+    );
+
+    Ok(())
+}
+
+/// Tests that the upgrade rejects procedures that do not match the new code commitment, so that a
+/// malicious host cannot swap the code the transaction commits to.
+#[tokio::test]
+async fn test_account_upgrade_rejects_procedures_not_matching_commitment() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+
+    // Without lazy loading, the host does not provide the procedures of the new code, so the kernel
+    // loads the mismatching procedures from the advice map.
+    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
+        .add_advice_map_entry(upgraded_code.commitment(), AccountCode::mock().to_elements())
+        .build()?;
+
+    let result = mock_tx
+        .execute_code_without_lazy_loading(&upgrade_program(upgraded_code.commitment()))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH);
+
+    Ok(())
+}
+
+/// Tests that the upgrade rejects procedures that match the new code commitment but are not valid
+/// account procedures, which only a malicious host could provide.
+#[rstest::rstest]
+#[case::not_enough_procedures(sorted_procedure_roots(1), ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES)]
+#[case::unsorted_procedures(
+    {
+        let mut procedure_roots = sorted_procedure_roots(4);
+        procedure_roots.swap(1, 2);
+        procedure_roots
+    },
+    ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE,
+)]
+#[case::duplicated_auth_procedure(
+    {
+        let mut procedure_roots = sorted_procedure_roots(4);
+        procedure_roots[3] = procedure_roots[0];
+        procedure_roots
+    },
+    ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED,
+)]
+#[tokio::test]
+async fn test_account_upgrade_rejects_invalid_procedures(
+    #[case] procedure_roots: Vec<AccountProcedureRoot>,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let procedure_elements: Vec<Felt> = procedure_roots
+        .iter()
+        .flat_map(AccountProcedureRoot::as_elements)
+        .copied()
+        .collect();
+    let new_code_commitment = Hasher::hash_elements(&procedure_elements);
+
+    // Without lazy loading, the host does not provide the procedures of the new code, so the kernel
+    // loads the invalid procedures from the advice map.
+    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
+        .add_advice_map_entry(new_code_commitment, procedure_elements)
+        .build()?;
+
+    let result = mock_tx
+        .execute_code_without_lazy_loading(&upgrade_program(new_code_commitment))
+        .await;
+
+    assert_execution_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that a code upgrade without a nonce increment is rejected.
+#[tokio::test]
+async fn test_account_upgrade_requires_nonce_increment() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+
+    let result = TestTransactionBuilder::with_noop_auth_account()
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_code))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED
     );
 
     Ok(())
@@ -934,13 +1579,13 @@ async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Res
         pub proc main
             push.{storage_upgrade_commitment}
             push.{code_upgrade_commitment}
-            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+            # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
 
             exec.native_account::upgrade
         end
         "#,
-        code_upgrade_commitment = &code_upgrade_commitment,
-        storage_upgrade_commitment = &storage_upgrade_commitment,
+        code_upgrade_commitment = code_upgrade_commitment,
+        storage_upgrade_commitment = storage_upgrade_commitment,
     );
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_source)?;
 
@@ -1063,7 +1708,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     let slot1 = StorageSlot::with_value(slot_name1.clone(), Word::from([10, 20, 30, 40u32]));
     let mut map_entries = Vec::new();
     for _ in 0..10 {
-        map_entries.push((StorageMapKey::from_raw(rand_value::<Word>()), rand_value::<Word>()));
+        map_entries.push((StorageMapKey::from_raw(random::<Word>()), random::<Word>()));
     }
     let map_slot =
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);
@@ -1131,7 +1776,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
 
     let mut account = mock_tx.account().clone();
 
-    let fungible_asset = Asset::Fungible(
+    let fungible_asset = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             5,
@@ -1157,7 +1802,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             assert_eqw.err="initial vault root mismatch"
         end
         "#,
-        expected_vault_root = &account.vault().root(),
+        expected_vault_root = account.vault().root(),
     );
     mock_tx.execute_code(&code).await?;
 
@@ -1191,7 +1836,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
         "#,
         FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
         FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
-        expected_vault_root = &account.vault().root(),
+        expected_vault_root = account.vault().root(),
     );
     mock_tx.execute_code(&code).await?;
 
@@ -1217,7 +1862,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let faucet_new_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1227,11 +1872,11 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
-    let fungible_asset_for_note_new = Asset::Fungible(
+    let fungible_asset_for_note_new = Asset::from(
         FungibleAsset::new(faucet_new_asset, 20).context("fungible_asset_1 is invalid")?,
     );
 
@@ -1369,7 +2014,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let faucet_existing_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1379,7 +2024,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
@@ -1464,7 +2109,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let faucet_existing_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1474,7 +2119,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
@@ -1582,7 +2227,7 @@ async fn test_authenticate_procedure() -> anyhow::Result<()> {
                 dropw
             end
             ",
-            root = &root,
+            root = root,
         );
 
         // Execution of this code will return an EventError(UnknownAccountProcedure) for procs
@@ -1660,10 +2305,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    mock_tx
-        .execute()
-        .await
-        .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1688,7 +2330,7 @@ async fn transaction_executor_account_code_using_custom_package() -> anyhow::Res
         exec.native_account::set_item
         dropw dropw
       end"#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
     );
 
     const ACCOUNT_COMPONENT_CODE: &str = "
@@ -1865,10 +2507,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    mock_tx
-        .execute()
-        .await
-        .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1966,8 +2605,8 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
             assert_eqw.err="initial value should remain unchanged"
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
-        expected_initial_value = &AccountStorage::mock_value_slot0().content().value(),
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
+        expected_initial_value = AccountStorage::mock_value_slot0().content().value(),
     );
 
     mock_tx.execute_code(&code).await?;
@@ -2043,10 +2682,10 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
             dropw dropw dropw
         end
         "#,
-        initial_key = &initial_key,
-        initial_value = &initial_value,
-        new_key = &new_key,
-        new_value = &new_value,
+        initial_key = initial_key,
+        initial_value = initial_value,
+        new_key = new_key,
+        new_value = new_value,
     );
 
     mock_tx.execute_code(&code).await.unwrap();
@@ -2177,7 +2816,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
                   swapw dropw
               end
             "#,
-            test_slot_name = &*TEST_SLOT_NAME
+            test_slot_name = *TEST_SLOT_NAME
         );
 
         let source_manager = Arc::new(DefaultSourceManager::default());
@@ -2212,7 +2851,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
                   swapw dropw
               end
             "#,
-            test_slot_name = &*TEST_SLOT_NAME
+            test_slot_name = *TEST_SLOT_NAME
         );
 
         let source_manager = Arc::new(DefaultSourceManager::default());

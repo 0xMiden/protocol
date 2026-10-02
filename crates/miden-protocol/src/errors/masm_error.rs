@@ -1,4 +1,5 @@
 use alloc::borrow::Cow;
+use core::fmt::Display;
 
 use miden_processor::ExecutionError;
 use miden_processor::operation::OperationError;
@@ -58,8 +59,8 @@ impl MasmError {
     }
 }
 
-impl core::fmt::Display for MasmError {
+impl Display for MasmError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("\"{}\" (code: {})", self.message(), self.code()))
+        write!(f, "\"{}\" (code: {})", self.message(), self.code())
     }
 }

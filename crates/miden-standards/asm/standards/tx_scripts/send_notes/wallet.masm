@@ -1,3 +1,4 @@
+use {SendNotesPayloadCommitment} from miden::standards::tx_scripts::send_notes
 # The canonical `send_notes` transaction script for accounts exposing the basic wallet
 # interface.
 #
@@ -45,7 +46,7 @@ const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment co
 #!
 #! Invocation: call
 @transaction_script
-pub proc main
+pub proc main(payload_commitment: SendNotesPayloadCommitment)
     push.PAYLOAD_ADDR
     # => [payload_addr, PAYLOAD_COMMITMENT, pad(11)]
 
@@ -83,7 +84,7 @@ end
 #!
 #! Invocation: exec
 @locals(3)
-proc process_notes
+proc process_notes()
     push.NOTES_START_ADDR loc_store.PROCESS_NOTES_READ_PTR_LOC
     # => [pad(16)]
 

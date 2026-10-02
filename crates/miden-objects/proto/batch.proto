@@ -1,0 +1,35 @@
+syntax = "proto3";
+package transaction;
+
+import "account.proto";
+import "block.proto";
+import "block_number.proto";
+import "note.proto";
+import "partial_blockchain.proto";
+import "primitives.proto";
+import "transaction.proto";
+
+message ProposedBatch {
+  repeated ProvenTransaction transactions = 1;
+  blockchain.BlockHeader reference_block_header = 2;
+  blockchain.PartialBlockchain partial_blockchain = 3;
+  repeated note.NoteInclusionProof unauthenticated_note_proofs = 4;
+}
+
+message BatchAccountUpdate {
+  account.AccountId account_id = 1;
+  primitives.Word initial_state_commitment = 2;
+  primitives.Word final_state_commitment = 3;
+  account.AccountUpdateDetails details = 4;
+}
+
+message ProvenBatch {
+  primitives.Word reference_block_commitment = 1;
+  blockchain.BlockNumber reference_block_num = 2;
+  repeated BatchAccountUpdate account_updates = 3;
+  repeated InputNoteCommitment input_notes = 4;
+  repeated OutputNote output_notes = 5;
+  blockchain.BlockNumber expiration_block_num = 6;
+  repeated TransactionHeader transactions = 7;
+  primitives.ExecutionProof proof = 8;
+}

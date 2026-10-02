@@ -63,7 +63,7 @@ impl AssetWitness {
 
             // Validate that the (id, value) pair forms a valid asset (and skip empty entries).
             if !value.is_empty() {
-                Asset::from_id_and_value(id, value)
+                Asset::new(id, value)
                     .map_err(|err| AssetError::AssetWitnessInvalid(Box::new(err)))?;
             }
 
@@ -116,10 +116,7 @@ impl AssetWitness {
         if value.is_empty() {
             None
         } else {
-            Some(
-                Asset::from_id_and_value(asset_id, value)
-                    .expect("asset witness should track valid assets"),
-            )
+            Some(Asset::new(asset_id, value).expect("asset witness should track valid assets"))
         }
     }
 
@@ -129,10 +126,7 @@ impl AssetWitness {
             if value.is_empty() {
                 None
             } else {
-                Some(
-                    Asset::from_id_and_value(*id, *value)
-                        .expect("asset witness should track valid assets"),
-                )
+                Some(Asset::new(*id, *value).expect("asset witness should track valid assets"))
             }
         })
     }

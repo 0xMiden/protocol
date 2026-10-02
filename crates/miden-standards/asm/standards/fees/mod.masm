@@ -1,3 +1,4 @@
+use {Asset, AssetAmount, AssetId, Bool, NoteId} from miden::protocol::types
 # miden::standards::fees
 #
 # Fee collection and sponsorship-note creation for the fee manager account.
@@ -23,13 +24,12 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::attachments::network_account_target
 use miden::standards::note
-use miden::standards::note_tag
+use miden::standards::note::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS, FEATURE_NOTE_ID_ITEM_OFFSET} from miden::standards::notes::fee_sponsorship
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME, NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS}
     from miden::standards::attachments::network_account_target
 
-use {Asset, AssetId, Bool} from miden::protocol::types
 
 pub mod fee_manager
 pub mod policies
@@ -355,7 +355,7 @@ end
 #! - num_elements is the number of elements to clear.
 #!
 #! Invocation: exec
-proc zeroize_elements
+proc zeroize_elements(num_elements: u32, start_ptr: ptr<felt>)
     # the number of elements is bounded by the kernel's input note limit, so it is a valid u32
     # rounds up to the next multiple of WORD_NUM_ELEMENTS by adding 3 and masking out the two least
     # significant bits
@@ -402,7 +402,7 @@ end
 #! - is_sponsorship is 1 if the note's script is the FEE_SPONSORSHIP script, 0 otherwise.
 #!
 #! Invocation: exec
-proc is_sponsorship_note
+proc is_sponsorship_note(note_idx: u16) -> Bool
     exec.input_note::get_script_root
     procref.fee_sponsorship::main
     # => [SPONSORSHIP_NOTE_SCRIPT_ROOT, NOTE_SCRIPT_ROOT]
@@ -422,7 +422,7 @@ end
 #!
 #! Invocation: exec
 @locals(8)
-proc get_sponsored_feature_note_id
+proc get_sponsored_feature_note_id(note_index: u16) -> NoteId
     # write the sponsorship note's storage items to memory
     locaddr.SPONSORSHIP_STORAGE_LOC swap exec.note::input_note_get_storage
     # => []
@@ -449,7 +449,7 @@ end
 #! - an input note's required fee exceeds the fee collected for it.
 #!
 #! Invocation: exec
-proc assert_input_note_fees_covered
+proc assert_input_note_fees_covered(num_input_notes: u32, required_fee_table_ptr: ptr<AssetAmount>)
     # walking entry pointers rather than note indices keeps the loop free of address arithmetic
     dup.1 add swap
     # => [entry_ptr, end_ptr]
@@ -487,7 +487,7 @@ end
 #! - required_fee_amount is the fee amount charged for the note, or 0 if the policy prices it to 0.
 #!
 #! Invocation: exec
-proc estimate_input_note_fee
+proc estimate_input_note_fee(note_index: u16) -> AssetAmount
     dup exec.input_note::get_recipient
     # => [RECIPIENT, note_index]
 
@@ -510,7 +510,7 @@ proc estimate_input_note_fee
 
     # the manager asserts the estimate is denominated in its configured fee asset, so only the
     # fee amount is needed here
-    dropw exec.fungible_asset::value_into_amount
+    dropw exec.fungible_asset::value_into_amount_unchecked
     # => [required_fee_amount]
 end
 
@@ -534,7 +534,7 @@ end
 #! - adding the asset to the vault overflows the fungible asset maximum.
 #!
 #! Invocation: exec
-proc move_sponsored_fee_to_vault
+proc move_sponsored_fee_to_vault(note_index: u16, fee_asset_id: AssetId) -> AssetAmount
     # move the sponsorship note's single asset into the vault
     exec.move_asset_to_vault
     # => [ASSET_ID, ASSET_VALUE, FEE_ASSET_ID]
@@ -543,7 +543,7 @@ proc move_sponsored_fee_to_vault
     movupw.2 exec.word::eq assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
     # => [ASSET_VALUE]
 
-    exec.fungible_asset::value_into_amount
+    exec.fungible_asset::value_into_amount_unchecked
     # => [fee_amount]
 end
 
@@ -564,7 +564,7 @@ end
 #!
 #! Invocation: exec
 @locals(8)
-proc move_asset_to_vault
+proc move_asset_to_vault(note_index: u16) -> Asset
     # remove all remaining assets from the note into the local buffer
     locaddr.0 exec.input_note::remove_all_assets
     # => [num_assets]
@@ -642,7 +642,7 @@ proc create_network_note_sponsorship(
     exec.compute_sponsorship_fee
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
 
-    exec.fungible_asset::to_amount
+    exec.fungible_asset::to_amount_unchecked
     # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
 
     movdn.10 dup.10 eq.0

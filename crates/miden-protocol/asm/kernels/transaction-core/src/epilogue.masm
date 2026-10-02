@@ -1,3 +1,5 @@
+use {BlockNumber} from miden::protocol_utils::types
+use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
 use miden::tx_kernel_core::asset
@@ -56,7 +58,7 @@ const EPILOGUE_AUTH_PROC_END_EVENT = event("miden::protocol::epilogue::auth_proc
 #! - output_note_ptr is the start boundary of the output notes section.
 #! - output_notes_end_ptr is the end boundary of the output notes section.
 #! - mem[i] is the memory value stored at some address i.
-proc copy_output_notes_to_advice_map
+proc copy_output_notes_to_advice_map(output_notes_commitment: Commitment) -> Commitment
     # get the number of notes created by the transaction
     exec.memory::get_num_output_notes
     # => [num_notes, OUTPUT_NOTES_COMMITMENT]
@@ -97,9 +99,9 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-proc build_output_vault
+proc build_output_vault()
     # copy final account vault root to output account vault root
-    exec.memory::get_account_vault_root exec.memory::set_output_vault_root dropw
+    exec.memory::get_native_account_vault_root exec.memory::set_output_vault_root dropw
     # => []
 
     # get the number of output notes from memory
@@ -183,7 +185,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-proc execute_auth_procedure
+proc execute_auth_procedure()
     emit.EPILOGUE_AUTH_PROC_START_EVENT
 
     padw padw padw
@@ -222,11 +224,43 @@ proc execute_auth_procedure
     emit.EPILOGUE_AUTH_PROC_END_EVENT
 end
 
+# ACCOUNT UPGRADE
+# =================================================================================================
+
+#! Applies a pending code upgrade of the native account, if any.
+#!
+#! The upgrade is applied after the auth procedure so that the account is authenticated by the code
+#! it had at the start of the transaction. account::upgrade already validated the new code, and the
+#! new procedures are not loaded into account memory since nothing after the auth procedure reads
+#! them. This means the procedure runs in constant time which keeps the epilogue cycle estimation
+#! simple.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc apply_code_upgrade()
+    exec.memory::get_account_code_commitment
+    exec.memory::get_code_upgrade_commitment
+    # => [UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
+
+    # the upgrade commitment is the empty word if no code upgrade is pending
+    exec.word::testz not
+    # => [has_code_upgrade, UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
+
+    # If has_code_upgrade UPGRADE_CODE_COMMITMENT remains.
+    # If !has_code_upgrade CURRENT_CODE_COMMITMENT remains.
+    cdropw
+    # => [CODE_COMMITMENT]
+
+    exec.memory::set_account_code_commitment dropw
+    # => []
+end
+
 # TRANSACTION EPILOGUE PROCEDURE
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
+#! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
@@ -255,7 +289,7 @@ end
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
 @locals(8)
-pub proc finalize_transaction
+pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
 
@@ -268,6 +302,11 @@ pub proc finalize_transaction
     exec.memory::get_native_account_nonce
     # => [nonce]
     eq.0 assertz.err=ERR_EPILOGUE_NONCE_CANNOT_BE_0
+
+    # ------ Apply the account code upgrade ------
+
+    exec.apply_code_upgrade
+    # => []
 
     # ------ Assert assets are preserved ------
 

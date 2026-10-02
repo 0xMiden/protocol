@@ -1,19 +1,9 @@
 use alloc::vec::Vec;
 
 use super::{Account, AccountId, Felt, PartialAccount};
+use crate::Word;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::transaction::memory::{
-    ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_DATA_MEM_SIZE,
-    ACCT_ID_AND_NONCE_OFFSET,
-    ACCT_ID_PREFIX_IDX,
-    ACCT_ID_SUFFIX_IDX,
-    ACCT_NONCE_IDX,
-    ACCT_STORAGE_COMMITMENT_OFFSET,
-    ACCT_VAULT_ROOT_OFFSET,
-    MemoryOffset,
-};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -21,7 +11,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{WORD_SIZE, Word, WordError};
 
 // ACCOUNT HEADER
 // ================================================================================================
@@ -45,9 +34,44 @@ pub struct AccountHeader {
 }
 
 impl AccountHeader {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Version 1 of the account header encoding.
+    ///
+    /// The version occupies the first element of the account metadata word, so a reader can get it
+    /// before it interprets the rest of the header. Version 0 is unused, which means an all-zero
+    /// word is never valid account metadata.
+    pub(crate) const VERSION_1: u8 = 1;
+
+    /// The number of elements in an account header.
+    pub(crate) const NUM_ELEMENTS: u8 = 16;
+
+    /// The index of the version in the account header elements.
+    pub(crate) const VERSION_IDX: usize = 0;
+
+    /// The index of the nonce in the account header elements.
+    pub(crate) const NONCE_IDX: usize = 1;
+
+    /// The index of the ID suffix in the account header elements.
+    pub(crate) const ID_SUFFIX_IDX: usize = 2;
+
+    /// The index of the ID prefix in the account header elements.
+    pub(crate) const ID_PREFIX_IDX: usize = 3;
+
+    /// The index at which the vault root word starts in the account header elements.
+    const VAULT_ROOT_IDX: usize = 4;
+
+    /// The index at which the storage commitment word starts in the account header elements.
+    const STORAGE_COMMITMENT_IDX: usize = 8;
+
+    /// The index at which the code commitment word starts in the account header elements.
+    const CODE_COMMITMENT_IDX: usize = 12;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
-    /// Creates a new [AccountHeader].
+
+    /// Creates a new [`AccountHeader`].
     pub fn new(
         id: AccountId,
         nonce: Felt,
@@ -68,25 +92,24 @@ impl AccountHeader {
     /// commitments. Returns a tuple of account ID, vault root, storage commitment, code
     /// commitment, and nonce.
     pub(crate) fn try_from_elements(elements: &[Felt]) -> Result<AccountHeader, AccountError> {
-        if elements.len() != ACCT_DATA_MEM_SIZE {
-            return Err(AccountError::HeaderDataIncorrectLength {
-                actual: elements.len(),
-                expected: ACCT_DATA_MEM_SIZE,
-            });
+        if elements.len() != Self::NUM_ELEMENTS as usize {
+            return Err(AccountError::UnexpectedHeaderLength { actual: elements.len() });
         }
 
+        let version = elements[Self::VERSION_IDX].as_canonical_u64();
+        if version != u64::from(Self::VERSION_1) {
+            return Err(AccountError::UnsupportedAccountVersion(version));
+        }
+        let nonce = elements[Self::NONCE_IDX];
         let id = AccountId::try_from_elements(
-            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_SUFFIX_IDX],
-            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+            elements[Self::ID_SUFFIX_IDX],
+            elements[Self::ID_PREFIX_IDX],
         )
         .map_err(AccountError::FinalAccountHeaderIdParsingFailed)?;
-        let nonce = elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_NONCE_IDX];
-        let vault_root = parse_word(elements, ACCT_VAULT_ROOT_OFFSET)
-            .expect("we should have sliced off exactly 4 bytes");
-        let storage_commitment = parse_word(elements, ACCT_STORAGE_COMMITMENT_OFFSET)
-            .expect("we should have sliced off exactly 4 bytes");
-        let code_commitment = parse_word(elements, ACCT_CODE_COMMITMENT_OFFSET)
-            .expect("we should have sliced off exactly 4 bytes");
+
+        let vault_root = parse_word(elements, Self::VAULT_ROOT_IDX);
+        let storage_commitment = parse_word(elements, Self::STORAGE_COMMITMENT_IDX);
+        let code_commitment = parse_word(elements, Self::CODE_COMMITMENT_IDX);
 
         Ok(AccountHeader::new(id, nonce, vault_root, storage_commitment, code_commitment))
     }
@@ -133,20 +156,16 @@ impl AccountHeader {
     /// This is a vector of the following field elements:
     /// ```text
     /// [
-    ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
+    ///     [account_version, account_nonce, account_id_suffix, account_id_prefix],
     ///     VAULT_ROOT,
     ///     STORAGE_COMMITMENT,
     ///     CODE_COMMITMENT,
     /// ]
     /// ```
+    ///
+    /// `account_version` is an 8-bit version of this encoding. Version 0 is unused.
     pub fn to_elements(&self) -> Vec<Felt> {
         <Self as SequentialCommit>::to_elements(self)
-    }
-}
-
-impl From<PartialAccount> for AccountHeader {
-    fn from(account: PartialAccount) -> Self {
-        (&account).into()
     }
 }
 
@@ -159,12 +178,6 @@ impl From<&PartialAccount> for AccountHeader {
             storage_commitment: account.storage().commitment(),
             code_commitment: account.code().commitment(),
         }
-    }
-}
-
-impl From<Account> for AccountHeader {
-    fn from(account: Account) -> Self {
-        (&account).into()
     }
 }
 
@@ -184,13 +197,14 @@ impl SequentialCommit for AccountHeader {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        let mut id_nonce = Word::empty();
-        id_nonce[ACCT_NONCE_IDX] = self.nonce;
-        id_nonce[ACCT_ID_SUFFIX_IDX] = self.id.suffix();
-        id_nonce[ACCT_ID_PREFIX_IDX] = self.id.prefix().as_felt();
+        let mut metadata_word = Word::empty();
+        metadata_word[Self::VERSION_IDX] = Felt::from(Self::VERSION_1);
+        metadata_word[Self::NONCE_IDX] = self.nonce;
+        metadata_word[Self::ID_SUFFIX_IDX] = self.id.suffix();
+        metadata_word[Self::ID_PREFIX_IDX] = self.id.prefix().as_felt();
 
         [
-            id_nonce.as_elements(),
+            metadata_word.as_elements(),
             self.vault_root.as_elements(),
             self.storage_commitment.as_elements(),
             self.code_commitment.as_elements(),
@@ -204,6 +218,7 @@ impl SequentialCommit for AccountHeader {
 
 impl Serializable for AccountHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        Self::VERSION_1.write_into(target);
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -214,6 +229,16 @@ impl Serializable for AccountHeader {
 
 impl Deserializable for AccountHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != Self::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account version is {} but only version {} is supported",
+                version,
+                Self::VERSION_1,
+            )));
+        }
+
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
@@ -234,8 +259,9 @@ impl Deserializable for AccountHeader {
 // ================================================================================================
 
 /// Creates a new `Word` instance from the slice of `Felt`s using provided offset.
-fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
-    Word::try_from(&data[offset as usize..offset as usize + WORD_SIZE])
+fn parse_word(data: &[Felt], offset: usize) -> Word {
+    Word::try_from(&data[offset..offset + Word::NUM_ELEMENTS])
+        .expect("we should have sliced off exactly 4 bytes")
 }
 
 // TESTS
@@ -243,14 +269,53 @@ fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
+    use assert_matches::assert_matches;
     use miden_core::Felt;
 
     use super::AccountHeader;
     use crate::Word;
-    use crate::account::StorageSlotContent;
     use crate::account::tests::build_account;
+    use crate::account::{AccountId, StorageSlotContent};
     use crate::asset::FungibleAsset;
-    use crate::utils::serde::{Deserializable, Serializable};
+    use crate::errors::AccountError;
+    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+
+    /// Builds an account header whose fields are all distinguishable from one another so that a
+    /// swapped element in the encoding is visible.
+    fn mock_header() -> anyhow::Result<AccountHeader> {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
+            .context("failed to build account ID")?;
+
+        Ok(AccountHeader::new(
+            id,
+            Felt::from(42u32),
+            Word::from([1, 2, 3, 4u32]),
+            Word::from([5, 6, 7, 8u32]),
+            Word::from([9, 10, 11, 12u32]),
+        ))
+    }
+
+    #[rstest::rstest]
+    #[case::version_zero(0)]
+    #[case::version_two(2)]
+    // The lower 8 bits encode the supported version, so this guards against the upper bits being
+    // truncated instead of rejected.
+    #[case::version_exceeding_u8((1 << 8) | u32::from(AccountHeader::VERSION_1))]
+    fn account_header_rejects_unsupported_version(#[case] version: u32) -> anyhow::Result<()> {
+        let mut elements = mock_header()?.to_elements();
+        elements[AccountHeader::VERSION_IDX] = Felt::from(version);
+
+        let error = AccountHeader::try_from_elements(&elements)
+            .expect_err("header with an unsupported version should not parse");
+
+        assert_matches!(error, AccountError::UnsupportedAccountVersion(actual) => {
+            assert_eq!(actual, u64::from(version));
+        });
+
+        Ok(())
+    }
 
     #[test]
     fn test_serde_account_storage() {
@@ -260,10 +325,19 @@ mod tests {
         let storage_slot = StorageSlotContent::Value(word);
         let account = build_account(vec![asset_0], init_nonce, vec![storage_slot]);
 
-        let account_header: AccountHeader = account.into();
+        let account_header = account.to_header();
 
         let header_bytes = account_header.to_bytes();
         let deserialized_header = AccountHeader::read_from_bytes(&header_bytes).unwrap();
         assert_eq!(deserialized_header, account_header);
+    }
+
+    #[test]
+    fn account_header_deserialization_rejects_unsupported_version() {
+        let error = AccountHeader::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("account version is 0"));
+        });
     }
 }

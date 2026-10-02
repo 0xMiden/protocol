@@ -366,3 +366,87 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// An actor holding only the `FREEZER` authorization, capable of nothing but freezing,
+/// can flip the kill switch; it can never unfreeze the account, nor authorize any other
+/// protected procedure.
+#[tokio::test]
+async fn freezer_can_freeze_but_cannot_unfreeze_or_authorize() -> anyhow::Result<()> {
+    let freezer = test_account_id(25);
+    let unfreezer = test_account_id(26);
+
+    // `freeze` is the freezer's only reachable procedure: `unfreeze` carries its own role and
+    // `pause` is unmapped, so it falls back to ADMIN.
+    let roles = BTreeMap::from([
+        (Authority::freeze_root(), role("FREEZER")),
+        (Authority::unfreeze_root(), role("UNFREEZER")),
+    ]);
+
+    let admin = *ADMIN_ID;
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, roles, 66)?;
+
+    let grant_freezer = build_grant_role_note(admin, &role("FREEZER"), freezer)?;
+    let grant_unfreezer = build_grant_role_note(admin, &role("UNFREEZER"), unfreezer)?;
+    let freezer_pause_note = build_pause_note(freezer)?;
+    let freezer_freeze_note = build_freeze_note(freezer)?;
+    let freezer_unfreeze_note = build_unfreeze_note(freezer)?;
+    let admin_unfreeze_note = build_unfreeze_note(admin)?;
+    let unfreezer_unfreeze_note = build_unfreeze_note(unfreezer)?;
+    for note in [
+        &grant_freezer,
+        &grant_unfreezer,
+        &freezer_pause_note,
+        &freezer_freeze_note,
+        &freezer_unfreeze_note,
+        &admin_unfreeze_note,
+        &unfreezer_unfreeze_note,
+    ] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_freezer).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unfreezer).await?;
+
+    // The freezer holds no other role, so ordinary gated procedures stay out of reach.
+    let freezer_pause_result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(freezer_pause_note.id())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(freezer_pause_result, ERR_SENDER_LACKS_ROLE);
+
+    // The freezer trips the emergency switch.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &freezer_freeze_note).await?;
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // But it cannot re-open the account: `unfreeze` requires UNFREEZER.
+    let freezer_unfreeze_result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(freezer_unfreeze_note.id())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(freezer_unfreeze_result, ERR_SENDER_LACKS_ROLE);
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // Neither can the ADMIN, since `unfreeze` is explicitly mapped and so never falls back to it.
+    let admin_unfreeze_result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(admin_unfreeze_note.id())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(admin_unfreeze_result, ERR_SENDER_LACKS_ROLE);
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // Only the UNFREEZER re-opens the account.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unfreezer_unfreeze_note).await?;
+    assert!(!is_frozen(&mock_chain, faucet.id())?);
+
+    Ok(())
+}

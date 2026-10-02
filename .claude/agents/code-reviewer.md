@@ -90,9 +90,13 @@ then the incompleteness itself is NOT a Critical or Important finding - the chan
 ## Output Format
 
 ```
+<BLOCK or APPROVE>: [see the closing instructions at the end of this file. This must
+be the literal first thing in your response, substituting the real token for what's
+inside the angle brackets - do not write this line verbatim.]
+
 ## Review Summary
 
-**Verdict:** APPROVE | REQUEST CHANGES
+**Verdict:** APPROVE | BLOCK
 
 **Overview:** [1-2 sentences summarizing the change and overall assessment]
 
@@ -109,6 +113,14 @@ then the incompleteness itself is NOT a Critical or Important finding - the chan
 - [Specific positive observation - always include at least one]
 ```
 
+### Empty Sections
+
+If `### Critical Issues` or `### Important Issues` has no findings, its first line must
+open with `None.` - either bare, or with a period-terminated explanation on the same
+line; further explanation on the lines below is fine either way. The rule cuts the
+other way too: if the section has any real finding, do not write `None.` anywhere in
+it - list the finding(s) directly. A section never contains both.
+
 ## Rules
 
 1. Every Critical and Important finding must include a specific fix recommendation
@@ -119,6 +131,7 @@ then the incompleteness itself is NOT a Critical or Important finding - the chan
 6. Be direct. "This will panic when the vec is empty" not "this might possibly be a concern"
 7. New code without tests is always a finding
 8. Respect the user's intent. Your prompt may name what the user asked for this session - treat deliberate, explicitly-requested choices as intended, not mistakes, and don't recommend reversing them. Intent does not excuse a real defect: a genuine correctness bug or exploitable risk stays Critical or Important even when requested. Downgrade to a Nit only when your objection is stylistic or defensive-programming preference, not a real defect.
+9. Never mix `None.` with a real finding in the same section (see Empty Sections above). `### Critical Issues` / `### Important Issues` either has `None.` as its entire content, or lists real findings with no `None.` line anywhere in it - never both.
 
 **Critical and Important findings block the merge; Nits are surfaced but do not block.** Address the blocking findings before pushing.
 

@@ -13,9 +13,9 @@
 //! [`BasicConstantFeePolicy::with_fees`](crate::account::fees::BasicConstantFeePolicy::with_fees).
 //!
 //! The values are estimates from canonical scenarios, not worst cases: asset-scaling paths
-//! carry 16 callback-free assets (the maximum per note) and action notes run one selector, so
-//! callback-carrying notes can exceed the values - do not treat them as guaranteed fee upper
-//! bounds.
+//! carry 16 callback-free assets (the maximum per note) and action notes exercise a single
+//! note variant, so callback-carrying notes can exceed the values - do not treat them as
+//! guaranteed fee upper bounds.
 //!
 //! Terminology: a note's *cost* is its measured cycle count; its *price* is the fee derived
 //! from that cost (and from the costs of the notes its consumption creates).
@@ -29,25 +29,28 @@ use alloc::vec::Vec;
 
 use miden_protocol::note::NoteScriptRoot;
 
-use crate::note::{
+use crate::note::config::{
     AllowlistConfigNote,
     BlocklistConfigNote,
-    BurnNote,
     ConstantFeePolicyConfigNote,
     FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
-    FeeSponsorshipNote,
     MinBurnAmountConfigNote,
-    MintNote,
     NetworkAccountConfigNote,
     OwnerConfigNote,
+    PauseConfigNote,
+    RbacConfigNote,
+};
+use crate::note::{
+    BurnNote,
+    FeeSponsorshipNote,
+    MintNote,
     P2idNote,
     P2ideNote,
-    PauseConfigNote,
     PswapNote,
-    RbacConfigNote,
     StandardNote,
     SwapNote,
+    UpgradeNote,
 };
 
 mod table;
@@ -138,6 +141,7 @@ impl StandardNote {
             StandardNote::NETWORK_ACCOUNT_CONFIG => {
                 Some(NoteCost::of::<NetworkAccountConfigNote>())
             },
+            StandardNote::UPGRADE => Some(NoteCost::of::<UpgradeNote>()),
             StandardNote::FEE_SPONSORSHIP => Some(NoteCost::of::<FeeSponsorshipNote>()),
             StandardNote::TX_FEE => None,
         }
@@ -186,6 +190,7 @@ mod tests {
                 NetworkAccountConfigNote::script_root(),
                 NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES,
             ),
+            (UpgradeNote::script_root(), UPGRADE_CONSUMPTION_CYCLES),
             (FeeSponsorshipNote::script_root(), FEE_SPONSORSHIP_CONSUMPTION_CYCLES),
         ] {
             let cost = StandardNote::note_cost(root).expect("standard note should have a cost");

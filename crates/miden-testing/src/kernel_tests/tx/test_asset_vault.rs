@@ -262,7 +262,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
     assert_eq!(
         exec_output.get_stack_word(0),
         account_vault
-            .add_asset(Asset::Fungible(add_fungible_asset))
+            .add_asset(Asset::from(add_fungible_asset))
             .unwrap()
             .to_value_word()
     );
@@ -304,7 +304,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
     let exec_result = mock_tx.execute_code(&code).await;
 
     assert_execution_error!(exec_result, ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED);
-    assert!(account_vault.add_asset(Asset::Fungible(add_fungible_asset)).is_err());
+    assert!(account_vault.add_asset(Asset::from(add_fungible_asset)).is_err());
 
     Ok(())
 }
@@ -314,9 +314,10 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?;
     let mut account_vault = mock_tx.account().vault().clone();
-    let add_non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]),
-    ));
+    let add_non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet_id,
+        vec![1, 2, 3, 4, 5, 6, 7, 8],
+    )));
 
     let code = format!(
         "
@@ -359,7 +360,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
     let mut account_vault = mock_tx.account().vault().clone();
     let non_fungible_asset_details =
         NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&non_fungible_asset_details));
 
     let code = format!(
         "
@@ -417,7 +418,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
     let exec_output = &mock_tx.execute_code(&code).await?;
 
     let remaining = account_vault
-        .remove_asset(Asset::Fungible(remove_fungible_asset))?
+        .remove_asset(Asset::from(remove_fungible_asset))?
         .expect("fungible removal should return remaining asset");
     assert_eq!(exec_output.get_stack_word(0), remaining.to_value_word());
 
@@ -493,7 +494,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
     let exec_output = &mock_tx.execute_code(&code).await?;
 
     let remaining = account_vault
-        .remove_asset(Asset::Fungible(remove_fungible_asset))?
+        .remove_asset(Asset::from(remove_fungible_asset))?
         .expect("fungible removal should return remaining asset");
     assert_eq!(exec_output.get_stack_word(0), remaining.to_value_word());
 
@@ -513,12 +514,12 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 
     let non_fungible_asset_details =
         NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
-    let nonfungible = NonFungibleAsset::new(&non_fungible_asset_details);
-    let non_existent_non_fungible_asset = Asset::NonFungible(nonfungible);
+    let non_existent_non_fungible_asset =
+        Asset::from(NonFungibleAsset::new(&non_fungible_asset_details));
 
     assert_matches!(
         account_vault.remove_asset(non_existent_non_fungible_asset).unwrap_err(),
-        AssetVaultError::NonFungibleAssetNotFound(err_asset) if err_asset == nonfungible,
+        AssetVaultError::NonFungibleAssetNotFound(err_asset) if err_asset == non_existent_non_fungible_asset,
         "asset must not be in the vault before the test",
     );
 
@@ -543,7 +544,7 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
     assert_execution_error!(exec_result, ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND);
     assert_matches!(
         account_vault.remove_asset(non_existent_non_fungible_asset).unwrap_err(),
-        AssetVaultError::NonFungibleAssetNotFound(err_asset) if err_asset == nonfungible,
+        AssetVaultError::NonFungibleAssetNotFound(err_asset) if err_asset == non_existent_non_fungible_asset,
         "asset should not be in the vault after the test",
     );
 

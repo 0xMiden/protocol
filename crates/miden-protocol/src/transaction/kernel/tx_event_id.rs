@@ -48,6 +48,8 @@ pub enum TransactionEventId {
 
     AccountPushProcedureIndex = ACCOUNT_PUSH_PROCEDURE_INDEX_ID,
 
+    AccountBeforeCodeUpgrade = ACCOUNT_BEFORE_CODE_UPGRADE_ID,
+
     NoteBeforeCreated = NOTE_BEFORE_CREATED_ID,
     NoteAfterCreated = NOTE_AFTER_CREATED_ID,
 
@@ -57,6 +59,8 @@ pub enum TransactionEventId {
     NoteBeforeAddAttachment = NOTE_BEFORE_ADD_ATTACHMENT_ID,
 
     InputNoteIndexLookup = INPUT_NOTE_INDEX_LOOKUP_ID,
+
+    TxBeforeBlockWitnessLoad = TX_BEFORE_BLOCK_WITNESS_LOAD_ID,
 
     AuthRequest = AUTH_REQUEST_ID,
 
@@ -123,12 +127,14 @@ impl TransactionEventId {
             Self::AccountBeforeIncrementNonce => &ACCOUNT_BEFORE_INCREMENT_NONCE_NAME,
             Self::AccountAfterIncrementNonce => &ACCOUNT_AFTER_INCREMENT_NONCE_NAME,
             Self::AccountPushProcedureIndex => &ACCOUNT_PUSH_PROCEDURE_INDEX_NAME,
+            Self::AccountBeforeCodeUpgrade => &ACCOUNT_BEFORE_CODE_UPGRADE_NAME,
             Self::NoteBeforeCreated => &NOTE_BEFORE_CREATED_NAME,
             Self::NoteAfterCreated => &NOTE_AFTER_CREATED_NAME,
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
             Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
             Self::InputNoteIndexLookup => &INPUT_NOTE_INDEX_LOOKUP_NAME,
+            Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
@@ -213,6 +219,8 @@ impl TryFrom<EventId> for TransactionEventId {
 
             ACCOUNT_PUSH_PROCEDURE_INDEX_ID => Ok(TransactionEventId::AccountPushProcedureIndex),
 
+            ACCOUNT_BEFORE_CODE_UPGRADE_ID => Ok(TransactionEventId::AccountBeforeCodeUpgrade),
+
             NOTE_BEFORE_CREATED_ID => Ok(TransactionEventId::NoteBeforeCreated),
             NOTE_AFTER_CREATED_ID => Ok(TransactionEventId::NoteAfterCreated),
 
@@ -222,6 +230,8 @@ impl TryFrom<EventId> for TransactionEventId {
             NOTE_BEFORE_ADD_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeAddAttachment),
 
             INPUT_NOTE_INDEX_LOOKUP_ID => Ok(TransactionEventId::InputNoteIndexLookup),
+
+            TX_BEFORE_BLOCK_WITNESS_LOAD_ID => Ok(TransactionEventId::TxBeforeBlockWitnessLoad),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 

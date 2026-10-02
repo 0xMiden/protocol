@@ -7,7 +7,9 @@ use miden_processor::trace::RowIndex;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
+    AccountCodeUpgrade,
     AccountId,
+    AssetDelta,
     StorageMap,
     StorageMapKey,
     StorageSlotName,
@@ -118,6 +120,13 @@ pub(crate) enum TransactionEvent {
         code_commitment: Word,
         /// The procedure root whose index is requested.
         procedure_root: Word,
+    },
+
+    AccountBeforeCodeUpgrade {
+        /// The commitment to the new code.
+        new_code_commitment: Word,
+        /// The code upgrade read from the advice map.
+        code_upgrade: AccountCodeUpgrade,
     },
 
     NoteBeforeCreated {
@@ -267,13 +276,12 @@ impl TransactionEvent {
                         source,
                     }
                 })?;
-                let asset =
-                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountOnAssetDeltaComputation",
-                            source,
-                        }
-                    })?;
+                let asset = Asset::new(asset_id, delta_asset_value).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountOnAssetDeltaComputation",
+                        source,
+                    }
+                })?;
                 let delta_op = AssetDeltaOperation::try_from(
                     u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
                         TransactionKernelError::other("failed to convert asset delta op to u8")
@@ -287,7 +295,7 @@ impl TransactionEvent {
                 })?;
 
                 TransactionEvent::AccountOnAssetDeltaComputation {
-                    delta: AssetDelta { delta_op, asset },
+                    delta: AssetDelta::new(delta_op, asset),
                 }
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
@@ -384,6 +392,29 @@ impl TransactionEvent {
                 })
             },
 
+            TransactionEventId::AccountBeforeCodeUpgrade => {
+                // Expected stack state: [event, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+                let new_code_commitment = process.get_stack_word(1);
+
+                let upgrade_key = AccountCodeUpgrade::advice_map_key(new_code_commitment);
+                let upgrade_data =
+                    process.advice_provider().get_mapped_values(&upgrade_key).ok_or(
+                        TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment),
+                    )?;
+                let code_upgrade =
+                    AccountCodeUpgrade::try_from_elements(upgrade_data).map_err(|source| {
+                        TransactionKernelError::AccountCodeUpgradeInvalid {
+                            new_code_commitment,
+                            source,
+                        }
+                    })?;
+
+                Some(TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
+                })
+            },
+
             TransactionEventId::NoteBeforeCreated => {
                 // Expected stack state:  [event, tag, note_type, RECIPIENT]
                 let tag = process.get_stack_item(1);
@@ -403,10 +434,10 @@ impl TransactionEvent {
                     let note_script = process
                         .advice_provider()
                         .get_mapped_values(&script_root)
-                        .map(|script_data| {
-                            NoteScript::try_from(script_data).map_err(|source| {
+                        .map(|script_elements| {
+                            NoteScript::try_from_elements(script_elements).map_err(|source| {
                                 TransactionKernelError::MalformedNoteScript {
-                                    data: script_data.to_vec(),
+                                    script_elements: script_elements.to_vec(),
                                     source,
                                 }
                             })
@@ -487,6 +518,11 @@ impl TransactionEvent {
                 let note_id = NoteId::from_raw(process.get_stack_word(1));
                 Some(TransactionEvent::InputNoteIndexLookup { note_id })
             },
+
+            // TODO(block_witness_lazy_loading): provide the authentication witness of the requested
+            // block so that a block which the transaction inputs do not already authenticate can be
+            // read.
+            TransactionEventId::TxBeforeBlockWitnessLoad => None,
 
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
@@ -618,7 +654,7 @@ impl TxSummaryOrSignature {
     }
 }
 
-// ASSET PATCH AND DELTA
+// ASSET PATCH
 // ================================================================================================
 
 #[derive(Debug)]
@@ -628,12 +664,6 @@ pub(crate) struct AssetPatch {
     pub initial_vault_value: Word,
     /// The absolute value of `asset_id` in the vault after the operation.
     pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 // RECIPIENT DATA
@@ -755,9 +785,10 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-///         BLOCK_COMMITMENT, [expiration_delta, user_param0, user_param1, user_param2],
-///         [user_param3, user_param4, user_param5, user_param6]
+///         [version, metadata, user_param0, user_param1],
+///         [user_param2, user_param3, user_param4, user_param5],
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -772,34 +803,38 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    // This also validates the preimage length, which is what makes the commitment words below
-    // safe to slice out.
-    let (expiration_delta, user_params) = TransactionSummary::try_params_from_elements(commitments)
+    // This also validates the preimage length and the layout version, which is what makes the
+    // commitment words below safe to slice out.
+    let (metadata, user_params) = TransactionSummary::try_params_from_elements(commitments)
         .map_err(|source| {
             TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(source))
         })?;
 
-    let account_delta_commitment = extract_word(commitments, 0);
-    let input_notes_commitment = extract_word(commitments, 4);
-    let output_notes_commitment = extract_word(commitments, 8);
-    let block_commitment = extract_word(commitments, 12);
+    let account_delta_commitment = extract_word(commitments, 8);
+    let input_notes_commitment = extract_word(commitments, 12);
+    let output_notes_commitment = extract_word(commitments, 16);
+    let block_commitment = extract_word(commitments, 20);
 
-    // Validate the expiration delta against the kernel state so that a summary preimage
-    // carrying a fabricated delta is rejected rather than presented to the signer.
+    // Validate the metadata against the kernel state so that a summary preimage carrying
+    // fabricated values is rejected rather than presented to the signer.
     let expected_expiration_delta = process.get_expiration_block_delta()?;
-    if expiration_delta != expected_expiration_delta {
+    if metadata.expiration_delta() != expected_expiration_delta {
         return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
             expected: expected_expiration_delta,
-            actual: expiration_delta,
+            actual: metadata.expiration_delta(),
         });
     }
 
+    // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
+    // block the transaction does not authenticate and cross-checks the bound block commitment
+    // against the one the host knows for that block.
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
+        metadata.block_number(),
         block_commitment,
-        expiration_delta,
+        metadata.expiration_delta(),
         user_params,
     )?;
 
@@ -878,7 +913,9 @@ fn extract_note_attachment(
     }
 
     let words: Vec<Word> = elements
-        .chunks_exact(WORD_SIZE)
+        .as_chunks::<WORD_SIZE>()
+        .0
+        .iter()
         .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
 

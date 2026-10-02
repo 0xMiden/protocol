@@ -45,8 +45,8 @@ static P2ID_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Only the `target` account can consume the note and claim its assets.
 ///
 /// Construct one with the [builder](P2idNote::builder), which sets sensible defaults for the
-/// optional parameters (private note type, no attachments) and requires at least one asset.
-/// Convert a `P2idNote` into a protocol [`Note`] infallibly via `Note::from`.
+/// optional parameters (private note type, zero salt, no attachments) and requires at least one
+/// asset. Convert a `P2idNote` into a protocol [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
 pub struct P2idNote {
     sender: AccountId,
@@ -72,15 +72,16 @@ impl P2idNote {
         #[builder(field)] assets: Vec<Asset>,
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        #[builder(name = target, with = |target: AccountId| P2idNoteStorage::new(target))]
-        storage: P2idNoteStorage,
+        target: AccountId,
         serial_number: Word,
         #[builder(default)] note_type: NoteType,
+        #[builder(default)] salt: [Felt; 2],
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
             return Err(NoteError::other("a P2ID note must contain at least one asset"));
         }
 
+        let storage = P2idNoteStorage::new(target).with_salt(salt);
         let assets = NoteAssets::new(assets)?;
         let attachments = NoteAttachments::new(attachments)?;
 
@@ -217,9 +218,13 @@ impl From<P2idNote> for Note {
 /// Contains the identifier of the target account that is authorized
 /// to consume the note. Only the account matching this ID can execute
 /// the note and claim its assets.
+///
+/// The salt is included in the storage commitment. A random salt kept private prevents the target
+/// account ID from being determined by comparing commitments for candidate account IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2idNoteStorage {
     target: AccountId,
+    salt: [Felt; 2],
 }
 
 impl P2idNoteStorage {
@@ -227,11 +232,22 @@ impl P2idNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the P2ID note.
-    pub const NUM_ITEMS: usize = 2;
+    pub const NUM_ITEMS: usize = 4;
 
-    /// Creates new P2ID note storage targeting the given account.
+    /// Creates P2ID note storage targeting the given account with a zero salt.
     pub fn new(target: AccountId) -> Self {
-        Self { target }
+        Self { target, salt: [Felt::ZERO; 2] }
+    }
+
+    /// Sets the salt included in the storage commitment.
+    ///
+    /// # Privacy
+    /// For privacy, sample both elements uniformly at random and keep them secret. The default zero
+    /// salt does not prevent target-account enumeration. Salt does not hide account-derived note
+    /// tags.
+    pub fn with_salt(mut self, salt: [Felt; 2]) -> Self {
+        self.salt = salt;
+        self
     }
 
     /// Consumes the storage and returns a P2ID [`NoteRecipient`] with the provided serial number.
@@ -246,14 +262,24 @@ impl P2idNoteStorage {
     pub fn target(&self) -> AccountId {
         self.target
     }
+
+    /// Returns the salt included in the storage commitment.
+    pub fn salt(&self) -> [Felt; 2] {
+        self.salt
+    }
 }
 
 impl From<P2idNoteStorage> for NoteStorage {
     fn from(storage: P2idNoteStorage) -> Self {
         // Storage layout:
-        // [ account_id_suffix, account_id_prefix ]
-        NoteStorage::new(vec![storage.target.suffix(), storage.target.prefix().as_felt()])
-            .expect("number of storage items should not exceed max storage items")
+        // [ account_id_suffix, account_id_prefix, salt_0, salt_1 ]
+        NoteStorage::new(vec![
+            storage.target.suffix(),
+            storage.target.prefix().as_felt(),
+            storage.salt[0],
+            storage.salt[1],
+        ])
+        .expect("number of storage items should not exceed max storage items")
     }
 }
 
@@ -271,7 +297,10 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
         let target = AccountId::try_from_elements(note_storage[0], note_storage[1])
             .map_err(|err| NoteError::other_with_source("failed to create account id", err))?;
 
-        Ok(Self { target })
+        Ok(Self {
+            target,
+            salt: [note_storage[2], note_storage[3]],
+        })
     }
 }
 
@@ -307,33 +336,39 @@ mod tests {
             .account_type(AccountType::Private)
             .build_with_seed([1u8; 32]);
 
-        let storage = vec![target.suffix(), target.prefix().as_felt()];
+        let salt = [Felt::ONE, Felt::from(2u32)];
+        let storage = vec![target.suffix(), target.prefix().as_felt(), salt[0], salt[1]];
 
         let parsed =
             P2idNoteStorage::try_from(storage.as_slice()).expect("storage should be valid");
 
         assert_eq!(parsed.target(), target);
+        assert_eq!(parsed.salt(), salt);
+        assert_eq!(NoteStorage::from(parsed).items(), storage.as_slice());
     }
 
     #[test]
     fn try_from_invalid_length_returns_error() {
-        let storage = vec![Felt::ZERO];
+        for len in [0, 1, 2, 3, 5] {
+            let storage = vec![Felt::ZERO; len];
+            let err = P2idNoteStorage::try_from(storage.as_slice())
+                .expect_err("should fail due to invalid length");
 
-        let err = P2idNoteStorage::try_from(storage.as_slice())
-            .expect_err("should fail due to invalid length");
-
-        assert!(matches!(
-            err,
-            NoteError::InvalidNoteStorageLength {
+            assert_matches!(err, NoteError::InvalidNoteStorageLength {
                 expected: P2idNote::NUM_STORAGE_ITEMS,
-                actual: 1
-            }
-        ));
+                actual,
+            } => assert_eq!(actual, len));
+        }
     }
 
     #[test]
     fn try_from_invalid_storage_contents_returns_error() {
-        let storage = vec![Felt::new_unchecked(999_u64), Felt::new_unchecked(888_u64)];
+        let storage = vec![
+            Felt::new_unchecked(999_u64),
+            Felt::new_unchecked(888_u64),
+            Felt::ZERO,
+            Felt::ZERO,
+        ];
 
         let err = P2idNoteStorage::try_from(storage.as_slice())
             .expect_err("should fail due to invalid account id encoding");
@@ -381,9 +416,32 @@ mod tests {
 
         assert_eq!(note.sender(), sender());
         assert_eq!(note.target(), target());
+        assert_eq!(note.storage().salt(), [Felt::ZERO; 2]);
         assert_eq!(note.note_type(), NoteType::default());
         assert_eq!(note.assets().num_assets(), 1);
         assert_eq!(note.attachments().num_attachments(), 0);
+    }
+
+    #[test]
+    fn salt_changes_storage_and_recipient_commitments() {
+        let storage = P2idNoteStorage::new(target());
+        let recipient = storage.into_recipient(Word::empty());
+
+        for salt in [[Felt::ONE, Felt::ZERO], [Felt::ZERO, Felt::ONE]] {
+            let note: Note = P2idNote::builder()
+                .sender(sender())
+                .target(target())
+                .salt(salt)
+                .serial_number(Word::empty())
+                .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
+                .build()
+                .unwrap()
+                .into();
+
+            assert_eq!(note.recipient(), &storage.with_salt(salt).into_recipient(Word::empty()));
+            assert_ne!(note.recipient().storage().commitment(), recipient.storage().commitment());
+            assert_ne!(note.recipient().digest(), recipient.digest());
+        }
     }
 
     /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.

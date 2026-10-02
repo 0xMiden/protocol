@@ -1,3 +1,5 @@
+use {Asset, AssetId, AssetValue} from miden::protocol_utils::types
+use {Commitment} from miden::tx_kernel_core::types
 use miden::core::collections::smt
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
@@ -43,7 +45,14 @@ const REMOVE_ASSET_ASSET_COMPOSITION_LOC = 1
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
-pub proc get_asset
+#!
+#! Panics if:
+#! - the asset's composition is Custom.
+pub proc get_asset(asset_id: AssetId, vault_root_ptr: ptr<Commitment>) -> AssetValue
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, vault_root_ptr]
+
     # hash the asset ID before using it as the SMT key
     exec.hash_asset_id
     # => [ASSET_ID_HASH, vault_root_ptr]
@@ -83,7 +92,7 @@ end
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
 #! - ASSET_ID_HASH is the hashed asset ID of the asset to fetch (see hash_asset_id).
 #! - ASSET_VALUE is the retrieved asset.
-pub proc peek_asset
+pub proc peek_asset(asset_id_hash: Commitment, vault_root_ptr: ptr<Commitment>) -> AssetValue
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
     # => [ASSET_VAULT_ROOT, ASSET_ID_HASH]
@@ -134,7 +143,7 @@ end
 #! - 0: vault_root_ptr
 #! - 1: asset_composition
 @locals(2)
-pub proc add_asset
+pub proc add_asset(asset: Asset, vault_root_ptr: ptr<Commitment>) -> (AssetValue, AssetValue)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
@@ -256,7 +265,7 @@ end
 #! - 0: vault_root_ptr
 #! - 1: asset_composition
 @locals(2)
-pub proc remove_asset
+pub proc remove_asset(asset: Asset, vault_root_ptr: ptr<Commitment>) -> (AssetValue, AssetValue)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
@@ -348,7 +357,7 @@ end
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [ASSET_ID_HASH]
-proc hash_asset_id
+proc hash_asset_id(asset_id: AssetId) -> Commitment
     exec.poseidon2::hash
     # => [ASSET_ID_HASH]
 end

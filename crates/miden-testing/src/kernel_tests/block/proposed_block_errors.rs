@@ -415,10 +415,11 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
         .get(&p2id_note.id())
         .expect("note proof should have been fetched")
         .clone();
-    let mut original_merkle_path = MerklePath::from(original_note_proof.note_path().clone());
-    original_merkle_path.push(block2.header().commitment());
+    let original_merkle_path = MerklePath::from(original_note_proof.note_path().clone());
+    let mut path_nodes = Vec::from(original_merkle_path);
+    path_nodes.push(block2.header().commitment());
     // Add a random hash to the path to make it invalid.
-    let invalid_note_path = SparseMerklePath::try_from(original_merkle_path).unwrap();
+    let invalid_note_path = SparseMerklePath::try_from(MerklePath::new(path_nodes)).unwrap();
     let invalid_note_proof = NoteInclusionProof::new(
         original_note_proof.location().block_num(),
         original_note_proof.location().block_note_tree_index(),

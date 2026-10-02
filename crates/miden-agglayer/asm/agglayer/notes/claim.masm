@@ -1,7 +1,9 @@
+use {NoteArgs} from miden::protocol::types
+use {AdviceMapKey} from agglayer::types
 use agglayer::bridge::bridge_in as bridge
 use miden::protocol::active_note
 use miden::core::crypto::hashes::poseidon2
-use miden::standards::attachments::network_account_target
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -10,15 +12,13 @@ const PROOF_DATA_SIZE = 536
 const LEAF_DATA_SIZE = 32
 const OUTPUT_NOTE_SIZE = 8
 
+# The number of storage items of a CLAIM note, see the layout in the script's doc comment.
+const CLAIM_NOTE_NUM_STORAGE_ITEMS = 569
+
 const CLAIM_NOTE_STORAGE_PTR = 0
 const PROOF_DATA_START_PTR = CLAIM_NOTE_STORAGE_PTR
 const LEAF_DATA_START_PTR = 536
 const FAUCET_MINT_AMOUNT = 568
-
-# ERRORS
-# =================================================================================================
-
-const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account does not match consuming account"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -32,6 +32,8 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge::bridge_in::claim procedure.
+#!
+#! Consumers: target account (attachment)
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -75,18 +77,19 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #! Panics if:
 #! - account does not expose claim procedure.
 #! - note attachment target account does not match the consuming account.
+#! - the note carries more than CLAIM_NOTE_NUM_STORAGE_ITEMS storage items.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # Load CLAIM note storage into memory, starting at address 0
-    push.CLAIM_NOTE_STORAGE_PTR exec.active_note::get_storage drop
+    push.CLAIM_NOTE_NUM_STORAGE_ITEMS push.CLAIM_NOTE_STORAGE_PTR
+    exec.active_note::get_bounded_storage drop
     # => [pad(16)]
 
     exec.write_claim_data_into_advice_map_by_key
@@ -103,7 +106,7 @@ pub proc main
     # => [pad(16), pad(9)]
 
     # a call invocation consumes and returns 16 elements, but we had trailing padding
-    dropw dropw drop 
+    dropw dropw drop
 
     # => [pad(16)]
 end
@@ -140,7 +143,7 @@ end
 #! ]
 #!
 #! Invocation: exec
-proc write_claim_data_into_advice_map_by_key
+proc write_claim_data_into_advice_map_by_key() -> (AdviceMapKey, AdviceMapKey)
     # 1) Get LEAF_DATA_KEY
     push.LEAF_DATA_SIZE push.LEAF_DATA_START_PTR
     exec.poseidon2::hash_elements

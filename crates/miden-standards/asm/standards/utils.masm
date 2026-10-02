@@ -1,11 +1,11 @@
+use {Uint64} from miden::standards::types
+use {DoubleWord} from miden::protocol::types
 # Shared utility constants and helper procedures reused across the standards modules:
 # common word constants, byte manipulation, and double word memory operations.
 #
 # Many modules keep a local, semantically-named word constant that is really just [1, 0, 0, 0] or
 # [0, 0, 0, 0]. They should alias these shared definitions so the raw literals live in one place.
 
-use {DoubleWord} from miden::protocol::types
-use {MemoryAddress} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -35,7 +35,7 @@ const ERR_MERGE_OVERFLOW="merged u32 limbs do not fit in a field element"
 #! Outputs: [swapped]
 #!
 #! Invocation: exec
-pub proc swap_u32_bytes
+pub proc swap_u32_bytes(value: u32) -> u32
     # part0 = (value & 0xFF) << 24
     dup u32and.0xFF u32shl.24
     # => [part0, value]
@@ -70,7 +70,7 @@ end
 #!   the combined value was reduced modulo the field prime).
 #!
 #! Invocation: exec
-pub proc merge_u32_limbs
+pub proc merge_u32_limbs(value: Uint64) -> felt
     # keep copies for the round-trip check
     dup.1 dup.1
     # => [lo, hi, lo, hi]
@@ -106,8 +106,8 @@ end
 #! Invocation: exec
 pub proc mem_store_double_word(
     double_word_to_store: DoubleWord,
-    mem_ptr: MemoryAddress
-) -> (DoubleWord, MemoryAddress)
+    mem_ptr: ptr<DoubleWord>
+) -> (DoubleWord, ptr<DoubleWord>)
     dup.8 mem_storew_le swapw
     # => [WORD_2, WORD_1, ptr]
 
@@ -123,7 +123,7 @@ end
 #! Invocation: exec
 pub proc mem_store_double_word_unaligned(
     double_word_to_store: DoubleWord,
-    mem_ptr: MemoryAddress
+    mem_ptr: ptr<DoubleWord>
 )
     # bring ptr to the top of the stack
     dup.8
@@ -151,7 +151,7 @@ end
 #! Outputs: [WORD_1, WORD_2]
 #!
 #! Invocation: exec
-pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
+pub proc mem_load_double_word(mem_ptr: ptr<DoubleWord>) -> DoubleWord
     padw dup.4 add.4 mem_loadw_le
     # => [WORD_2, ptr]
 
@@ -169,7 +169,7 @@ end
 #! Outputs: [WORD_1, WORD_2]
 #!
 #! Invocation: exec
-pub proc mem_load_double_word_unaligned(mem_ptr: MemoryAddress) -> DoubleWord
+pub proc mem_load_double_word_unaligned(mem_ptr: ptr<DoubleWord>) -> DoubleWord
     # Load WORD_2 first so it ends up underneath WORD_1 on the final stack.
     dup add.7 mem_load
     dup.1 add.6 mem_load

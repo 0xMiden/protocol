@@ -1,7 +1,8 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::asset::{Asset, AssetVault};
+use crate::account::delta::AssetDeltaOperation;
+use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
@@ -35,8 +36,8 @@ mod builder;
 pub use builder::AccountBuilder;
 
 pub mod code;
-pub use code::AccountCode;
 pub use code::procedure::AccountProcedureRoot;
+pub use code::{AccountCode, AccountCodeUpgrade};
 
 pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
@@ -45,7 +46,9 @@ pub mod interface;
 pub use interface::{AccountCodeInterface, AccountComponentName};
 
 mod patch;
+pub(crate) use patch::validate_new_public_account;
 pub use patch::{
+    AccountCodePatch,
     AccountPatch,
     AccountStoragePatch,
     AccountUpdateDetails,
@@ -58,13 +61,7 @@ pub use patch::{
 };
 
 pub mod delta;
-pub use delta::{
-    AccountDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-};
+pub use delta::{AccountDelta, AccountVaultDelta, AssetDelta};
 
 pub mod storage;
 pub use storage::{
@@ -86,9 +83,6 @@ pub use storage::{
 
 mod header;
 pub use header::AccountHeader;
-
-mod file;
-pub use file::AccountFile;
 
 mod partial;
 pub use partial::PartialAccount;
@@ -137,6 +131,8 @@ impl Account {
     /// - an account seed is not provided but the account's nonce indicates the account is new.
     /// - an account seed is provided but the account ID derived from it is invalid or does not
     ///   match the provided account's ID.
+    /// - the storage contains an asset callback slot while the account ID's [`AssetCallbackFlag`]
+    ///   is [`AssetCallbackFlag::Disabled`].
     pub fn new(
         id: AccountId,
         vault: AssetVault,
@@ -146,6 +142,7 @@ impl Account {
         seed: Option<Word>,
     ) -> Result<Self, AccountError> {
         validate_account_seed(id, code.commitment(), storage.to_commitment(), seed, nonce)?;
+        validate_asset_callbacks(id, &storage)?;
 
         Ok(Self::new_unchecked(id, vault, storage, code, nonce, seed))
     }
@@ -184,9 +181,8 @@ impl Account {
     /// Returns an error if:
     /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more packages export a procedure with the same MAST root.
-    /// - The first component doesn't contain exactly one authentication procedure.
-    /// - Other components contain authentication procedures.
+    /// - The components don't contain exactly one authentication component with exactly one
+    ///   authentication procedure.
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all packages.
     pub(super) fn initialize_from_components(
@@ -208,6 +204,11 @@ impl Account {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the [`AccountHeader`] of this account.
+    pub fn to_header(&self) -> AccountHeader {
+        AccountHeader::from(self)
+    }
 
     /// Returns the commitment of this account.
     ///
@@ -299,15 +300,13 @@ impl Account {
     // DATA MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the provided patch to this account. This sets account vault, storage, and nonce to
-    /// the values specified by the patch.
+    /// Applies the provided patch to this account. This sets account code, vault, storage, and
+    /// nonce to the values specified by the patch.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The patch's account ID does not match this account's ID.
-    /// - The patch carries account code, i.e. represents a newly created account. Such patches can
-    ///   be converted to accounts directly and cannot be applied to an existing account.
     /// - Applying the vault sub-patch to the vault of this account fails.
     /// - Applying the storage sub-patch to the storage of this account fails.
     /// - The nonce specified in the provided patch is not strictly greater than the current account
@@ -320,10 +319,6 @@ impl Account {
             });
         }
 
-        if patch.is_full_state() {
-            return Err(AccountError::ApplyFullStatePatchToAccount);
-        }
-
         self.vault
             .apply_patch(patch.vault())
             .map_err(AccountError::AssetVaultUpdateError)?;
@@ -332,6 +327,11 @@ impl Account {
 
         if let Some(new_nonce) = patch.final_nonce() {
             self.set_nonce(new_nonce)?;
+        }
+
+        // Replace the code last, so that a patch rejected above cannot change it.
+        if let Some(code) = patch.code().as_code() {
+            self.code = code.clone();
         }
 
         Ok(())
@@ -417,34 +417,26 @@ impl TryFrom<Account> for AccountDelta {
         let storage_patch = AccountStoragePatch::from_raw(slot_deltas)
             .expect("number of slot patches is bounded by the account's storage slots");
 
-        let mut fungible_delta = FungibleAssetDelta::default();
-        let mut non_fungible_delta = NonFungibleAssetDelta::default();
-        for asset in vault.assets() {
-            // SAFETY: All assets in the account vault should be representable in the delta.
-            match asset {
-                Asset::Fungible(fungible_asset) => {
-                    fungible_delta
-                        .add(fungible_asset)
-                        .expect("delta should allow representing valid fungible assets");
-                },
-                Asset::NonFungible(non_fungible_asset) => {
-                    non_fungible_delta
-                        .add(non_fungible_asset)
-                        .expect("delta should allow representing valid non-fungible assets");
-                },
-            }
-        }
-        let vault_delta = AccountVaultDelta::new(fungible_delta, non_fungible_delta);
+        // SAFETY: The assets in the account vault are unique, so no asset is changed twice.
+        let vault_delta = AccountVaultDelta::new(
+            vault.assets().map(|asset| AssetDelta::new(AssetDeltaOperation::Add, asset)),
+        )
+        .expect("assets in the account vault should be unique");
 
         // The nonce of the account is the nonce delta since adding the nonce_delta to 0 would
         // result in the nonce.
         let nonce_delta = nonce;
 
         // SAFETY: As checked earlier, the nonce delta should be greater than 0 allowing for
-        // non-empty state changes. The storage patch consists of `Create` slot patches only, so the
-        // full state delta validation passes.
-        let delta = AccountDelta::new(id, storage_patch, vault_delta, Some(code), nonce_delta)
-            .expect("full state delta from account contains only create patches");
+        // non-empty state changes.
+        let delta = AccountDelta::new(
+            id,
+            storage_patch,
+            vault_delta,
+            AccountCodePatch::new(Some(code)),
+            nonce_delta,
+        )
+        .expect("delta from an account with a non-zero nonce should be valid");
 
         Ok(delta)
     }
@@ -488,8 +480,14 @@ impl TryFrom<Account> for AccountPatch {
         // checked above, the nonce is guaranteed to be greater than zero, so the patch can
         // represent non-empty state changes and the `final_nonce == 1` invariant is satisfied
         // by passing the account code.
-        let patch = AccountPatch::new(id, storage_patch, vault_patch, Some(code), Some(nonce))
-            .expect("non-seeded account should yield a valid patch");
+        let patch = AccountPatch::new(
+            id,
+            storage_patch,
+            vault_patch,
+            AccountCodePatch::new(Some(code)),
+            Some(nonce),
+        )
+        .expect("non-seeded account should yield a valid patch");
 
         Ok(patch)
     }
@@ -514,6 +512,7 @@ impl Serializable for Account {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let Account { id, vault, storage, code, nonce, seed } = self;
 
+        AccountHeader::VERSION_1.write_into(target);
         id.write_into(target);
         vault.write_into(target);
         storage.write_into(target);
@@ -523,7 +522,8 @@ impl Serializable for Account {
     }
 
     fn get_size_hint(&self) -> usize {
-        self.id.get_size_hint()
+        AccountHeader::VERSION_1.get_size_hint()
+            + self.id.get_size_hint()
             + self.vault.get_size_hint()
             + self.storage.get_size_hint()
             + self.code.get_size_hint()
@@ -534,6 +534,16 @@ impl Serializable for Account {
 
 impl Deserializable for Account {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != AccountHeader::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account version is {} but only version {} is supported",
+                version,
+                AccountHeader::VERSION_1,
+            )));
+        }
+
         let id = AccountId::read_from(source)?;
         let vault = AssetVault::read_from(source)?;
         let storage = AccountStorage::read_from(source)?;
@@ -548,6 +558,22 @@ impl Deserializable for Account {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Validates that an account which installs an asset callback slot has callbacks enabled.
+///
+/// The transaction kernel rejects such accounts when they are created; this mirrors that rule for
+/// accounts that are constructed or deserialized outside of a transaction. See the
+/// [`AccountBuilder`](AccountBuilder#asset-callbacks) docs for details.
+pub(super) fn validate_asset_callbacks(
+    id: AccountId,
+    storage: &AccountStorage,
+) -> Result<(), AccountError> {
+    if !id.asset_callback_flag().is_enabled() && storage.has_callback_slots() {
+        return Err(AccountError::AssetCallbackSlotWithDisabledFlag(id));
+    }
+
+    Ok(())
+}
 
 /// Validates that the provided seed is valid for the provided account components.
 pub(super) fn validate_account_seed(
@@ -588,13 +614,14 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_crypto::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, DeserializationError, Serializable};
     use miden_crypto::{Felt, Word};
 
     use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
     use crate::account::{
         Account,
         AccountBuilder,
+        AccountCodePatch,
         AccountIdVersion,
         AccountPatch,
         AccountType,
@@ -608,7 +635,7 @@ mod tests {
         StorageSlotContent,
         StorageSlotName,
     };
-    use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{Asset, AssetCallbacks, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
     use crate::testing::account_id::{
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -707,21 +734,25 @@ mod tests {
     }
 
     #[test]
-    fn apply_patch_rejects_new_account_patch() -> anyhow::Result<()> {
+    fn apply_patch_replaces_code() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
         let init_nonce = Felt::from(1_u32);
         let mut account = build_account(vec![], init_nonce, vec![]);
+        let new_code =
+            AccountCode::from_components(&[NoopAuthComponent.into(), AddComponent.into()])?;
+        assert_ne!(account.code(), &new_code);
 
         let patch = AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
-            Some(AccountCode::mock()),
+            AccountCodePatch::new(Some(new_code.clone())),
             Some(Felt::from(2_u32)),
         )?;
 
-        let err = account.apply_patch(&patch).unwrap_err();
-        assert_matches!(err, AccountError::ApplyFullStatePatchToAccount);
+        account.apply_patch(&patch)?;
+        assert_eq!(account.code(), &new_code);
+        assert_eq!(account.nonce(), Felt::from(2_u32));
 
         Ok(())
     }
@@ -737,7 +768,7 @@ mod tests {
             account_id,
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(Felt::from(init_nonce - 1)),
         )?;
         let err = account.apply_patch(&patch_smaller).unwrap_err();
@@ -757,7 +788,7 @@ mod tests {
             other_account_id,
             AccountStoragePatch::default(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(Felt::from(2_u32)),
         )?;
 
@@ -775,7 +806,7 @@ mod tests {
             id,
             AccountStoragePatch::default(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             None,
         )?;
         let init_account = build_account(vec![], nonce, vec![]);
@@ -798,7 +829,7 @@ mod tests {
             id,
             AccountStoragePatch::default(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(final_nonce),
         )?;
 
@@ -821,7 +852,8 @@ mod tests {
     ) -> AccountDelta {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
-        AccountDelta::new(id, storage_patch, vault_delta, None, nonce_delta).unwrap()
+        AccountDelta::new(id, storage_patch, vault_delta, AccountCodePatch::default(), nonce_delta)
+            .unwrap()
     }
 
     pub fn build_account_patch(
@@ -832,7 +864,14 @@ mod tests {
     ) -> AccountPatch {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let vault_patch = AccountVaultPatch::from_iters(added_assets, removed_assets);
-        AccountPatch::new(id, storage_patch, vault_patch, None, Some(final_nonce)).unwrap()
+        AccountPatch::new(
+            id,
+            storage_patch,
+            vault_patch,
+            AccountCodePatch::default(),
+            Some(final_nonce),
+        )
+        .unwrap()
     }
 
     pub fn build_account(
@@ -854,6 +893,31 @@ mod tests {
         let storage = AccountStorage::new(slots).unwrap();
 
         Account::new_existing(id, vault, storage, code, nonce)
+    }
+
+    /// Accounts constructed outside of the builder are rejected if they install a callback slot
+    /// without having callbacks enabled.
+    #[test]
+    fn account_new_rejects_callback_slot_with_disabled_flag() -> anyhow::Result<()> {
+        let account = AccountBuilder::new([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+        let (id, vault, storage, code, nonce, _seed) = account.into_parts();
+
+        let mut slots = storage.into_slots();
+        slots.push(StorageSlot::with_value(
+            AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+            Word::from([1u32, 2, 3, 4]),
+        ));
+        let storage = AccountStorage::new(slots)?;
+
+        let err = Account::new(id, vault, storage, code, nonce, None).unwrap_err();
+        assert_matches!(err, AccountError::AssetCallbackSlotWithDisabledFlag(_));
+
+        Ok(())
     }
 
     /// Tests all cases of account ID seed validation.
@@ -937,5 +1001,14 @@ mod tests {
         let _partial_account = PartialAccount::from(&account);
 
         Ok(())
+    }
+
+    #[test]
+    fn account_deserialization_rejects_unsupported_version() {
+        let error = Account::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("account version is 0"));
+        });
     }
 }

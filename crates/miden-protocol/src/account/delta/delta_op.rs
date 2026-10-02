@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::errors::AssetError;
 
 /// Describes whether an asset was added or removed in an
@@ -34,6 +36,15 @@ impl TryFrom<u8> for AssetDeltaOperation {
             Self::ADD => Ok(Self::Add),
             Self::REMOVE => Ok(Self::Remove),
             _ => Err(AssetError::UnknownAssetDeltaOperation(value)),
+        }
+    }
+}
+
+impl fmt::Display for AssetDeltaOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AssetDeltaOperation::Add => f.write_str("Add"),
+            AssetDeltaOperation::Remove => f.write_str("Remove"),
         }
     }
 }

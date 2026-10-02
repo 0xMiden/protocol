@@ -1,3 +1,6 @@
+use {Uint64} from miden::standards::types
+use {AccountId, Asset, AssetAmount, Bool, NoteArgs, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::protocol::account_id
@@ -8,15 +11,15 @@ use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
-use miden::standards::note_tag
+use miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
-use miden::standards::note::note_creator
 
 # CONSTANTS
 # =================================================================================================
 
 const NUM_STORAGE_ITEMS=7
+const NUM_ASSETS = 1
 const MAX_U32=0x0000000100000000
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
@@ -24,7 +27,10 @@ const MAX_U32=0x0000000100000000
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
-# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
+# The number of words in the PswapAttachment.
+const PSWAP_ATTACHMENT_NUM_WORDS = 1
+
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_bounded_storage):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount       [2]  : 1 felt
@@ -65,6 +71,10 @@ const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
 const CALC_FILL_AMOUNT = 0
 const CALC_FILL_REFERENCE = 1
 
+# Procedure locals of load_offered_asset
+const OFFERED_REMAINING_ASSET_PTR = 0
+const OFFERED_INITIAL_ASSET_PTR = 8
+
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
 const P2ID_REQUESTED_FAUCET_SUFFIX = 1
@@ -101,10 +111,15 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
+const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
+const ERR_PSWAP_OUTPUT_ALTERED="PSWAP output was altered before sealing"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
 const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below the minimum fill step"
+const ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS="PSWAP attachment must consist of exactly one word"
+const ERR_PSWAP_PARENT_DEPTH_NOT_U32="PSWAP parent depth carried in the consumed note attachment is not a u32"
+const ERR_PSWAP_DEPTH_OVERFLOW="PSWAP lineage depth exceeds u32"
 
 # U64 VALIDATION
 # =================================================================================================
@@ -116,7 +131,7 @@ const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below the minimum fill 
 #! Outputs: [lo, hi]
 #!
 #! Panics if the value exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
-proc assert_valid_asset_amount
+proc assert_valid_asset_amount(value: Uint64) -> Uint64
     dup.1 dup.1
     # => [lo, hi, lo, hi]
 
@@ -153,7 +168,11 @@ end
 @locals(2)
 # CALC_FILL_AMOUNT:      this leg's fill amount
 # CALC_FILL_REFERENCE: max(total_fill, min_requested_amount) — the fill that maps to the whole offered side
-proc calculate_output_amount
+proc calculate_output_amount(
+    offered: AssetAmount,
+    fill_reference: AssetAmount,
+    fill_amount: AssetAmount
+) -> AssetAmount
     movup.2 loc_store.CALC_FILL_AMOUNT
     # => [offered, fill_reference]
 
@@ -198,7 +217,7 @@ end
 #!
 #! Inputs:  [a, b]
 #! Outputs: [max(a, b)]
-proc max
+proc max(a: felt, b: felt) -> felt
     dup.1 dup.1 lt
     # => [b_lt_a, a, b]
     cdrop
@@ -209,11 +228,47 @@ end
 #!
 #! Inputs:  [a, b]
 #! Outputs: [min(a, b)]
-proc min
+proc min(a: felt, b: felt) -> felt
     dup dup.2 lt
     # => [a_lt_b, a, b]
     cdrop
     # => [min(a, b)]
+end
+
+# OUTPUT NOTE VALIDATION AND SEALING
+# =================================================================================================
+
+#! Checks the completed output's asset, then seals it. Call after all asset callbacks finish.
+#! Callbacks cannot replace the asset argument today, but a native issuer's
+#! callback can add to the output's balance without changing its asset count, so the full asset
+#! commitment must still be checked.
+#!
+#! The PSWAP attachment is added before callbacks and cannot be replaced or removed.
+#! Additional public attachments are allowed before sealing.
+#!
+#! Inputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+#! Outputs: []
+proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
+    exec.poseidon2::merge
+    # => [EXPECTED_ASSETS_COMMITMENT, note_idx]
+
+    movup.4
+    # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
+
+    dup exec.output_note::get_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, note_idx, EXPECTED_ASSETS_COMMITMENT]
+
+    movup.4 eq.NUM_ASSETS assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    # => [ASSETS_COMMITMENT, note_idx, EXPECTED_ASSETS_COMMITMENT]
+
+    movup.4 movdn.8
+    # => [ASSETS_COMMITMENT, EXPECTED_ASSETS_COMMITMENT, note_idx]
+
+    assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+    # => [note_idx]
+
+    exec.output_note::seal
+    # => []
 end
 
 # P2ID NOTE CREATION PROCEDURE
@@ -224,19 +279,26 @@ end
 #! Derives a unique serial number by incrementing the least significant element
 #! of the provided serial, creates the output note using p2id::create_output_note, sets the
 #! attachment, and adds the requested assets (from the consumer's account vault
-#! and/or from another note in the same transaction).
+#! and/or from another note in the same transaction), then verifies and seals the output.
 #!
 #! Inputs: [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
 #!          faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
 #!
 @locals(5)
-# P2ID_NOTE_IDX              : note_idx
+# P2ID_NOTE_IDX                : note_idx
 # P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
 # P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
-# P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
-# P2ID_AMT_NOTE_FILL         : amt_note_fill
-proc create_p2id_note
+# P2ID_AMT_ACCOUNT_FILL        : amt_account_fill
+# P2ID_AMT_NOTE_FILL           : amt_note_fill
+proc create_p2id_note(
+    creator: AccountId,
+    note_type: NoteType,
+    serial_num: NoteSerialNumber,
+    faucet: AccountId,
+    amt_account_fill: AssetAmount,
+    amt_note_fill: AssetAmount
+)
     # Derive P2ID serial: increment least significant element
     movup.3 add.1 movdn.3
     # => [creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM,
@@ -285,7 +347,7 @@ proc create_p2id_note
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
     loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
-    
+
     if.true
         # create the asset
         loc_load.P2ID_AMT_ACCOUNT_FILL
@@ -329,6 +391,21 @@ proc create_p2id_note
         # => []
     end
     # => []
+
+    loc_load.P2ID_NOTE_IDX
+    # => [note_idx]
+
+    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    # => [total_fill, note_idx]
+
+    loc_load.P2ID_REQUESTED_FAUCET_PREFIX loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+    # => [requested_faucet_suffix, requested_faucet_prefix, total_fill, note_idx]
+
+    exec.fungible_asset::create
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
+    exec.validate_and_seal_output_note
+    # => []
 end
 
 # REMAINDER NOTE CREATION PROCEDURE
@@ -339,7 +416,7 @@ end
 #! Updates the requested amount in note storage, builds a new remainder recipient
 #! (using the active note's script root and a serial derived by incrementing the
 #! most significant element of the active note's serial number), creates the output
-#! note, sets the attachment, and adds the remaining offered asset.
+#! note, sets the attachment, adds the remaining offered asset, then verifies and seals the output.
 #!
 #! Inputs:  [offered_faucet_suffix, offered_faucet_prefix,
 #!           amt_payout, amt_offered,
@@ -352,7 +429,14 @@ end
 # REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
 # REMAINDER_AMT_PAYOUT            : amt_payout
 # REMAINDER_AMT_OFFERED           : amt_offered
-proc create_remainder_note
+proc create_remainder_note(
+    offered_faucet: AccountId,
+    amt_payout: AssetAmount,
+    amt_offered: AssetAmount,
+    remaining_requested: AssetAmount,
+    note_type: NoteType,
+    tag: NoteTag
+)
     # Store offered asset info to locals (top element stored first)
     loc_store.REMAINDER_OFFERED_FAUCET_SUFFIX
     loc_store.REMAINDER_OFFERED_FAUCET_PREFIX
@@ -371,7 +455,7 @@ proc create_remainder_note
     # Derive remainder serial: increment most significant element
     exec.active_note::get_serial_number
     # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
-    
+
     movup.3 add.1 movdn.3
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
@@ -390,7 +474,7 @@ proc create_remainder_note
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    call.note_creator::create_note
+    call.wallet::create_note
     # => [note_idx, pad(15)]
 
     movdn.15 dropw dropw dropw drop drop drop
@@ -435,6 +519,21 @@ proc create_remainder_note
 
     exec.output_note::add_asset
     # => []
+
+    loc_load.REMAINDER_NOTE_IDX
+    # => [note_idx]
+
+    loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
+    # => [remainder_amount, note_idx]
+
+    loc_load.REMAINDER_OFFERED_FAUCET_PREFIX loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
+    # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
+
+    exec.fungible_asset::create
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
+    exec.validate_and_seal_output_note
+    # => []
 end
 
 #! Checks if the currently consuming account is the creator of the note.
@@ -442,7 +541,7 @@ end
 #! Inputs: [creator_id_suffix, creator_id_prefix]
 #! Outputs: [is_creator]
 #!
-proc is_consumer_creator
+proc is_consumer_creator(creator_id: AccountId) -> Bool
     exec.active_account::get_id
     # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
 
@@ -450,34 +549,54 @@ proc is_consumer_creator
     # => [is_creator]
 end
 
-#! Loads the offered asset from the active note and validates there is exactly one asset.
+#! Loads the note's single offered asset, asserting it equals the amount the note was created with.
 #!
 #! Inputs: []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
-@locals(8)
-proc load_offered_asset
-    locaddr.0 exec.active_note::remove_all_assets
+#! Panics if:
+#! - the note does not carry exactly one remaining asset.
+#! - the note was not created with exactly one asset.
+#! - the remaining offered asset differs from the asset the note was created with.
+#!
+@locals(16)
+proc load_offered_asset() -> Asset
+    locaddr.OFFERED_REMAINING_ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets]
 
-    push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    push.NUM_ASSETS eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => []
 
-    locaddr.0
-    # => [dest_ptr]
+    # initial assets are unaffected by removals; require exactly one
+    locaddr.OFFERED_INITIAL_ASSET_PTR exec.active_note::get_initial_assets
+    # => [num_initial_assets]
 
-    exec.asset::load
+    eq.NUM_ASSETS assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    # => []
+
+    locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE]
+
+    locaddr.OFFERED_INITIAL_ASSET_PTR exec.asset::load
+    # => [INITIAL_ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE]
+
+    # the remaining offered asset must equal the initial one
+    movupw.2 assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    # => []
+
+    locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
 end
 
-#! Reclaims all assets from the note back to the creator's vault.
+#! Reclaims the note's remaining assets back to the creator's vault.
 #!
 #! Called when the consumer IS the creator (cancel/reclaim path).
 #!
 #! Inputs: []
 #! Outputs: []
 #!
-proc handle_reclaim
+proc handle_reclaim()
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE]
 
@@ -500,7 +619,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [order_id]
-proc get_order_id
+proc get_order_id() -> felt
     exec.active_note::get_serial_number
     # => [s0, s1, s2, s3]
 
@@ -521,8 +640,13 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [current_depth]
+#!
+#! Panics if:
+#! - the PswapAttachment does not consist of exactly PSWAP_ATTACHMENT_NUM_WORDS words.
+#! - the parent depth is not a u32.
+#! - the incremented depth overflows a u32.
 @locals(4)
-proc get_current_depth
+proc get_current_depth() -> u32
     push.PSWAP_ATTACHMENT_SCHEME
     # => [PSWAP_ATTACHMENT_SCHEME]
 
@@ -536,7 +660,8 @@ proc get_current_depth
         exec.active_note::write_attachment_to_memory
         # => [num_words]
 
-        drop
+        eq.PSWAP_ATTACHMENT_NUM_WORDS
+        assert.err=ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS
         # => []
 
         loc_load.PARENT_ATTACHMENT_DEPTH_OFFSET
@@ -547,7 +672,13 @@ proc get_current_depth
     end
     # => [parent_depth]
 
-    add.1
+    u32assert.err=ERR_PSWAP_PARENT_DEPTH_NOT_U32
+    # => [parent_depth]
+
+    u32overflowing_add.1
+    # => [is_overflow, current_depth]
+
+    assertz.err=ERR_PSWAP_DEPTH_OVERFLOW
     # => [current_depth]
 end
 
@@ -587,7 +718,7 @@ end
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
 # EXEC_AMT_FILL_REFERENCE         : max(total_fill, min_requested_amount)
-proc execute_pswap
+proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmount)
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
     # => []
@@ -596,7 +727,7 @@ proc execute_pswap
     # => [ASSET_ID, ASSET_VALUE]
 
     # Extract offered amount
-    exec.fungible_asset::to_amount
+    exec.fungible_asset::to_amount_unchecked
     # => [amount, ASSET_ID, ASSET_VALUE]
 
     loc_store.EXEC_AMT_OFFERED
@@ -788,15 +919,18 @@ end
 #! - `note_fill_amount`:    portion of the requested asset sourced from another note in the
 #!                          same transaction (cross-swap / net-zero flow, no vault debit).
 #!
-#! At least one of the two must be non-zero. If both are zero — which is the default in
-#! network transactions where the executor does not provide note_args — the script falls back
-#! to a full fill (`account_fill_amount = min_requested_amount`). If the consuming account is the note's
-#! creator, the script reclaims the offered asset back to the creator's vault instead.
+#! At least one of the two must be non-zero. If both are zero — which is the default in network
+#! transactions where the executor does not provide note_args — the script falls back to a full fill
+#! (`account_fill_amount = min_requested_amount`). If the consuming account is the note's creator,
+#! the script reclaims the offered asset back to the creator's vault instead.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::wallets::basic::receive_asset` procedure.
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
 #! - `miden::standards::note::note_creator::create_note` procedure.
+#!
+#! Consumers: unrestricted - any account may fill the order and receive the offered asset in
+#!   exchange for the requested one
 #!
 #! Inputs:  [NOTE_ARGS]
 #! Outputs: []
@@ -808,16 +942,18 @@ end
 #!
 #! Panics if:
 #! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
-#! - the note does not carry exactly one offered asset.
+#! - the note does not hold exactly one offered asset at consumption time.
+#! - the offered asset remaining in the note differs from the asset the note was created with (i.e.
+#!   it was partially removed before the script ran).
 #! - the total fill (account_fill + note_fill) overflows u64 or exceeds the max asset amount.
 #! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script
-pub proc main
+pub proc main(note_args: NoteArgs)
     movdn.3 movdn.3 drop drop
     # => [account_fill_amount, note_fill_amount]
 
     # Load all note storage items to memory starting at address 0
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, account_fill_amount, note_fill_amount]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS

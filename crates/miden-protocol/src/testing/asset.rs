@@ -13,7 +13,7 @@ impl NonFungibleAsset {
             asset_data.to_vec(),
         );
         let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
-        Asset::NonFungible(non_fungible_asset)
+        Asset::from(non_fungible_asset)
     }
 
     /// Returns the account ID of the issuer of [`NonFungibleAsset::mock()`]
@@ -26,7 +26,7 @@ impl NonFungibleAsset {
 impl FungibleAsset {
     /// Returns a mocked fungible asset, issued by [ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET].
     pub fn mock(amount: u64) -> Asset {
-        Asset::Fungible(
+        Asset::from(
             FungibleAsset::new(
                 AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("id should be valid"),
                 amount,

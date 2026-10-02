@@ -19,6 +19,8 @@ use crate::utils::serde::{
 };
 use crate::{Felt, Hasher, Word};
 
+type AssetIdVersion = u8;
+
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
 /// Its [`Word`] layout is:
@@ -26,14 +28,14 @@ use crate::{Felt, Hasher, Word};
 /// [
 ///   asset_class_suffix (64 bits),
 ///   asset_class_prefix (64 bits),
-///   [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
+///   [faucet_id_suffix (56 bits) | reserved (2 bits) | composition (2 bits) | version (4 bits)],
 ///   faucet_id_prefix (64 bits)
 /// ]
 /// ```
 ///
-/// The composition is the discriminator between assets and so it is placed at a static offset much
-/// like the version in an account ID. This makes it slightly easier to change the asset metadata in
-/// the future without affecting identification of previous assets.
+/// The version determines how the remainder of the asset is decoded and so it is placed at a
+/// static offset so it can be read first independent of the version. Version 0 is invalid, which
+/// guarantees that an empty word is not a valid asset ID.
 ///
 /// Use [`AssetId::hash`] to produce the corresponding [`AssetIdHash`] that is used as
 /// the key in the asset vault's underlying SMT. Hashing ensures a uniform distribution across
@@ -54,8 +56,9 @@ impl AssetId {
     /// The serialized size of an [`AssetId`] with [`AssetComposition::Fungible`] in bytes.
     ///
     /// The asset class of a fungible asset is always empty and so it is not serialized.
-    const FUNGIBLE_SERIALIZED_SIZE: usize =
-        AssetComposition::SERIALIZED_SIZE + AccountId::SERIALIZED_SIZE;
+    const FUNGIBLE_SERIALIZED_SIZE: usize = core::mem::size_of::<AssetIdVersion>()
+        + AssetComposition::SERIALIZED_SIZE
+        + AccountId::SERIALIZED_SIZE;
 
     /// The serialized size of an [`AssetId`] with any other [`AssetComposition`] in bytes.
     const NON_FUNGIBLE_SERIALIZED_SIZE: usize =
@@ -67,13 +70,17 @@ impl AssetId {
     /// The metadata byte occupies the lower 8 bits of the third element of the asset ID word.
     pub(in crate::asset) const METADATA_BYTE_MASK: u8 = 0xff;
 
-    /// Bits 0-1 of the metadata byte encode the [`AssetComposition`]. The composition occupies
-    /// the lowest bits so its position remains stable as new metadata bits are added, since it
-    /// identifies the asset's type.
-    pub(in crate::asset) const COMPOSITION_MASK: u8 = 0b11;
+    /// Version 1 of the asset ID encoding.
+    pub(in crate::asset) const VERSION_1: u8 = 1;
 
-    /// Bits 2-7 of the metadata byte are reserved and must be zero.
-    pub(in crate::asset) const METADATA_RESERVED_MASK: u8 = 0b1111_1100;
+    /// Bits 0-3 of the metadata byte encode the version.
+    pub(in crate::asset) const VERSION_MASK: u8 = 0b1111;
+
+    /// Bits 4-5 of the metadata byte encode the [`AssetComposition`].
+    pub(in crate::asset) const COMPOSITION_SHIFT: u8 = 4;
+
+    /// Bits 6-7 of the metadata byte are reserved and must be zero.
+    pub(in crate::asset) const METADATA_RESERVED_MASK: u8 = 0b1100_0000;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -124,7 +131,7 @@ impl AssetId {
             faucet_suffix & Self::METADATA_BYTE_MASK as u64 == 0,
             "lower 8 bits of faucet suffix must be zero",
         );
-        let metadata_byte = self.composition.as_u8();
+        let metadata_byte = Self::encode_metadata(self.composition);
         let faucet_id_suffix_and_metadata = faucet_suffix | metadata_byte as u64;
         let faucet_id_suffix_and_metadata = Felt::try_from(faucet_id_suffix_and_metadata)
             .expect("highest bit should still be zero resulting in a valid felt");
@@ -162,6 +169,14 @@ impl AssetId {
     /// vault's underlying SMT.
     pub fn hash(&self) -> AssetIdHash {
         AssetIdHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
+    }
+
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Encodes the given composition into a metadata byte of the current version.
+    pub(in crate::asset) fn encode_metadata(composition: AssetComposition) -> u8 {
+        (composition.as_u8() << Self::COMPOSITION_SHIFT) | Self::VERSION_1
     }
 }
 
@@ -224,10 +239,11 @@ impl TryFrom<Word> for AssetId {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the asset class limbs are not zero when asset composition is
-    ///   [`AssetComposition::Fungible`].
+    /// - the version encoded in the metadata byte is unknown.
     /// - the metadata byte has reserved bits set.
     /// - the composition encoded in the metadata byte is invalid.
+    /// - the asset class limbs are not zero when asset composition is
+    ///   [`AssetComposition::Fungible`].
     fn try_from(id: Word) -> Result<Self, Self::Error> {
         let asset_class_suffix = id[0];
         let asset_class_prefix = id[1];
@@ -237,12 +253,18 @@ impl TryFrom<Word> for AssetId {
         let raw = faucet_id_suffix_and_metadata.as_canonical_u64();
         let metadata_byte = (raw & Self::METADATA_BYTE_MASK as u64) as u8;
 
+        // The version defines how the rest of the metadata is decoded, so check it first.
+        let version = metadata_byte & Self::VERSION_MASK;
+        if version != Self::VERSION_1 {
+            return Err(AssetError::UnknownAssetIdVersion(version));
+        }
+
         // Make sure the reserved bits of the metadata are zero.
         if metadata_byte & Self::METADATA_RESERVED_MASK != 0 {
             return Err(AssetError::ReservedAssetMetadata(metadata_byte));
         }
 
-        let composition = AssetComposition::try_from(metadata_byte & Self::COMPOSITION_MASK)?;
+        let composition = AssetComposition::try_from(metadata_byte >> Self::COMPOSITION_SHIFT)?;
 
         let faucet_id_suffix = Felt::try_from(raw & !(Self::METADATA_BYTE_MASK as u64))
             .expect("clearing lower bits should not produce an invalid felt");
@@ -287,7 +309,7 @@ impl Serializable for AssetId {
     /// asset class of a fungible asset is always empty, it is not written, saving
     /// [`AssetClass::SERIALIZED_SIZE`] bytes per fungible ID.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Lead with the asset composition byte.
+        target.write(AssetId::VERSION_1);
         target.write(self.composition);
         target.write(self.faucet_id);
 
@@ -307,6 +329,16 @@ impl Serializable for AssetId {
 
 impl Deserializable for AssetId {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version: u8 = source.read()?;
+
+        if version != Self::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "asset version is {} but only version {} is supported",
+                version,
+                Self::VERSION_1,
+            )));
+        }
+
         let composition: AssetComposition = source.read()?;
         let faucet_id: AccountId = source.read()?;
         let asset_class = if composition.is_fungible() {
@@ -365,29 +397,53 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn decoding_word_with_reserved_bits_set_fails() -> anyhow::Result<()> {
-        let id = FungibleAsset::mock(42).id();
-        let valid_metadata = asset_metadata(id);
-        // Set the reserved bits so the reserved-bits check fires.
-        let word = set_asset_metadata(id, valid_metadata | AssetId::METADATA_RESERVED_MASK);
+    /// Version 0 is never valid, so the all-zero word cannot decode into an asset ID.
+    #[rstest::rstest]
+    #[case::version_zero(0, AssetError::UnknownAssetIdVersion(0))]
+    #[case::unknown_version(AssetId::VERSION_1 + 1, AssetError::UnknownAssetIdVersion(2))]
+    #[case::reserved_bits_set(
+        AssetId::encode_metadata(AssetComposition::Fungible) | AssetId::METADATA_RESERVED_MASK,
+        AssetError::ReservedAssetMetadata(0b1101_0001)
+    )]
+    // Composition value 3 is the unused bit pattern within the 2-bit field.
+    #[case::unknown_composition(
+        0b0011_0000 | AssetId::VERSION_1,
+        AssetError::UnknownAssetComposition(0b11)
+    )]
+    fn decoding_word_with_invalid_metadata_fails(
+        #[case] metadata: u8,
+        #[case] expected_err: AssetError,
+    ) -> anyhow::Result<()> {
+        let word = set_asset_metadata(FungibleAsset::mock(42).id(), metadata);
 
         let err = AssetId::try_from(word).unwrap_err();
-        assert_matches!(err, AssetError::ReservedAssetMetadata(_));
+        assert_eq!(err.to_string(), expected_err.to_string());
 
         Ok(())
     }
 
     #[test]
-    fn decoding_word_with_invalid_composition_value_fails() -> anyhow::Result<()> {
-        let id = FungibleAsset::mock(42).id();
-        // Set all composition bits — value 3 is the invalid bit pattern within the 2-bit field.
-        let invalid_metadata = AssetId::COMPOSITION_MASK;
-        let word = set_asset_metadata(id, invalid_metadata);
+    fn metadata_encodes_version_and_composition() -> anyhow::Result<()> {
+        let fungible =
+            AssetId::new_fungible(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?);
+        assert_eq!(asset_metadata(fungible), 0b0001_0001);
 
-        let err = AssetId::try_from(word).unwrap_err();
-        assert_matches!(err, AssetError::UnknownAssetComposition(_));
+        let non_fungible = AssetId::new(
+            AssetClass::new(Felt::from(42u32), Felt::from(99u32)),
+            AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?,
+            AssetComposition::None,
+        )?;
+        assert_eq!(asset_metadata(non_fungible), 0b0000_0001);
 
         Ok(())
+    }
+
+    #[test]
+    fn asset_id_deserialization_rejects_unsupported_version() {
+        let error = AssetId::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("asset version is 0"));
+        });
     }
 }

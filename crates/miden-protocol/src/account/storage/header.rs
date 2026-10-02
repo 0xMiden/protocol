@@ -168,7 +168,12 @@ impl AccountStorageHeader {
         }
 
         let mut slots = Vec::new();
-        for chunk in elements.chunks_exact(StorageSlot::NUM_ELEMENTS) {
+        for chunk in elements.as_chunks::<{ StorageSlot::NUM_ELEMENTS }>().0 {
+            // The first element of each slot record is reserved and must be zero.
+            if chunk[0] != Felt::ZERO {
+                return Err(AccountError::StorageSlotReservedElementNotZero(chunk[0]));
+            }
+
             // Parse slot type from second element.
             let slot_type_felt = chunk[1];
             let slot_type = slot_type_felt.try_into()?;
@@ -351,11 +356,13 @@ mod tests {
     use alloc::collections::BTreeMap;
     use alloc::string::ToString;
 
+    use assert_matches::assert_matches;
     use miden_core::Felt;
 
     use super::AccountStorageHeader;
     use crate::Word;
     use crate::account::{AccountStorage, StorageSlotHeader, StorageSlotName, StorageSlotType};
+    use crate::errors::AccountError;
     use crate::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
     use crate::utils::serde::{Deserializable, Serializable};
 
@@ -488,6 +495,13 @@ mod tests {
             AccountStorageHeader::try_from_elements(&invalid_type_elements, &empty_slot_names)
                 .is_err()
         );
+
+        // Test with a non-zero reserved element.
+        let mut reserved_elements = vec![crate::ZERO; 8];
+        reserved_elements[0] = Felt::ONE; // Reserved element must be zero.
+        let err = AccountStorageHeader::try_from_elements(&reserved_elements, &empty_slot_names)
+            .unwrap_err();
+        assert_matches!(err, AccountError::StorageSlotReservedElementNotZero(value) if value == Felt::ONE);
     }
 
     #[test]

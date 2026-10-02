@@ -330,7 +330,7 @@ async fn test_send_note_script_non_fungible_faucet() -> anyhow::Result<()> {
 
     let commitment =
         NonFungibleFaucet::compute_asset_commitment(b"token #1", Word::from([7, 8, 9, 10u32]));
-    let asset = Asset::NonFungible(NonFungibleAsset::from_parts(faucet_account.id(), commitment));
+    let asset = Asset::from(NonFungibleAsset::from_parts(faucet_account.id(), commitment));
 
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let note = create_p2any_note(faucet_account.id(), NoteType::Public, [asset], &mut rng);
@@ -378,7 +378,7 @@ fn test_dedicated_send_notes_scripts_validate_their_interface() -> anyhow::Resul
     ));
 
     // The wallet script needs the wallet procedures.
-    let own_asset = Asset::Fungible(FungibleAsset::new(faucet_interface.id(), 10)?);
+    let own_asset = Asset::from(FungibleAsset::new(faucet_interface.id(), 10)?);
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let faucet_note =
         create_p2any_note(faucet_interface.id(), NoteType::Private, [own_asset], &mut rng);
@@ -438,7 +438,7 @@ fn test_send_note_script_dual_faucet_dispatches_on_asset_composition() -> anyhow
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let non_fungible =
-        Asset::NonFungible(NonFungibleAsset::from_parts(account_id, Word::from([5, 6, 7, 8u32])));
+        Asset::from(NonFungibleAsset::from_parts(account_id, Word::from([5, 6, 7, 8u32])));
     let non_fungible_note =
         create_p2any_note(account_id, NoteType::Private, [non_fungible], &mut rng);
     assert!(matches!(
@@ -446,7 +446,7 @@ fn test_send_note_script_dual_faucet_dispatches_on_asset_composition() -> anyhow
         SendNotesTransactionScript::NonFungible(_)
     ));
 
-    let fungible = Asset::Fungible(FungibleAsset::new(account_id, 10)?);
+    let fungible = Asset::from(FungibleAsset::new(account_id, 10)?);
     let fungible_note = create_p2any_note(account_id, NoteType::Private, [fungible], &mut rng);
     assert!(matches!(
         SendNotesTransactionScript::new(&interface, &[fungible_note.into()])?,
@@ -477,7 +477,7 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(100)?, Word::empty());
     let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
         .with_tag(tag);
-    let assets = NoteAssets::new(vec![Asset::Fungible(
+    let assets = NoteAssets::new(vec![Asset::from(
         FungibleAsset::new(sender_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
@@ -624,7 +624,7 @@ async fn faucet_with_single_asset_payload()
     let mock_chain = builder.build()?;
 
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let own_asset = Asset::Fungible(FungibleAsset::new(faucet_account.id(), 10)?);
+    let own_asset = Asset::from(FungibleAsset::new(faucet_account.id(), 10)?);
     let note = create_p2any_note(faucet_account.id(), NoteType::Public, [own_asset], &mut rng);
 
     let script = SendNotesTransactionScript::new(&faucet_account.code_interface(), &[note.into()])?;

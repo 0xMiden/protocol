@@ -122,6 +122,10 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionExecutorHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be created.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
@@ -131,19 +135,19 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-        );
+        )?;
 
-        Self {
+        Ok(Self {
             base_host,
             tx_progress: TransactionProgress::default(),
             authenticator,
@@ -153,7 +157,7 @@ where
             generated_signatures: BTreeMap::new(),
             in_auth_procedure: false,
             source_manager,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -229,7 +233,7 @@ where
         let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
-        Ok(vec![AdviceMutation::extend_advice_stack(signature.into())])
+        Ok(vec![AdviceMutation::extend_advice_stack_with(signature)])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -363,7 +367,7 @@ where
 
         match note_script {
             Some(note_script) => {
-                let script_felts: Vec<Felt> = (&note_script).into();
+                let script_felts = note_script.to_elements();
                 let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
@@ -553,6 +557,13 @@ where
 
                 TransactionEvent::AccountPushProcedureIndex { code_commitment, procedure_root } => {
                     self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
+                },
+
+                TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
+                } => {
+                    self.base_host.on_account_before_code_upgrade(new_code_commitment, code_upgrade)
                 },
 
                 TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {

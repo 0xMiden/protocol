@@ -53,11 +53,11 @@ fn main() -> Result<()> {
 
     // The protocol package declares dependencies on the kernel and core packages, so all three
     // must be available in the registry for project dependency resolution to succeed.
-    for package in CoreLibrary::default()
-        .packages()
-        .into_iter()
-        .chain([ProtocolLib::default().package(), TransactionKernel::package()])
-    {
+    for package in [
+        CoreLibrary::default().package(),
+        ProtocolLib::default().package(),
+        TransactionKernel::package(),
+    ] {
         registry.cache_package(package).into_diagnostic()?;
     }
 

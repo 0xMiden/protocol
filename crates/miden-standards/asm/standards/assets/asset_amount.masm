@@ -1,3 +1,5 @@
+use {BigEndianUint256, EncodedUint256, Uint128, Uint256} from miden::standards::types
+use {AssetAmount} from miden::protocol::types
 use miden::core::math::u64
 use miden::core::word
 use miden::standards::utils
@@ -29,7 +31,7 @@ const MAX_SCALING_FACTOR=18
 #! - scale > 18 (overflow protection)
 #!
 #! Invocation: exec
-pub proc pow10
+pub proc pow10(scale: u8) -> felt
     u32assert.err=ERR_SCALE_AMOUNT_EXCEEDED_LIMIT
     # => [scale]
 
@@ -87,7 +89,7 @@ end
 #! - ETH: amount=1e10, target_scale=8 → 1e18
 #!
 #! Invocation: exec
-pub proc scale_asset_amount_to_u256
+pub proc scale_asset_amount_to_u256(amount: AssetAmount, target_scale: u8) -> Uint256
     swap
     # => [target_scale, amount]
 
@@ -114,7 +116,7 @@ end
 #! Reverse the limbs and change the byte endianness of the result.
 #!
 #! Invocation: exec
-pub proc reverse_limbs_and_change_byte_endianness
+pub proc reverse_limbs_and_change_byte_endianness(value: EncodedUint256) -> EncodedUint256
     # reverse the felts within each word
     # [a, b, c, d, e, f, g, h] -> [h, g, f, e, d, c, b, a]
     exec.word::reverse
@@ -150,7 +152,7 @@ end
 #!
 #! Panics if:
 #!   - y > x  (ERR_UNDERFLOW)
-proc u128_safe_sub
+proc u128_safe_sub(y: Uint128, x: Uint128) -> Uint128
     # Put x-word on top for easier access.
     swapw
     # => [x0, x1, x2, x3, y0, y1, y2, y3]
@@ -259,7 +261,7 @@ end
 #! - (z1, z0) >= 10^scale_exp (remainder too large)
 #!
 #! Invocation: exec
-pub proc verify_u128_to_asset_amount_conversion
+pub proc verify_u128_to_asset_amount_conversion(x: Uint128, scale_exp: u8, y: AssetAmount)
     # => [x0, x1, x2, x3, scale_exp, y]
 
     # =============================================================================================
@@ -382,8 +384,11 @@ end
 #! - (z1, z0) >= 10^scale_exp (remainder too large)
 #!
 #! Invocation: exec
-pub proc verify_u256_to_asset_amount_conversion
-
+pub proc verify_u256_to_asset_amount_conversion(
+    value: BigEndianUint256,
+    scale_exp: u8,
+    y: AssetAmount
+)
     # reverse limbs and byte endianness
     exec.reverse_limbs_and_change_byte_endianness
     # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]

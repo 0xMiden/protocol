@@ -1,3 +1,5 @@
+use {SendNotesPayloadCommitment} from miden::standards::tx_scripts::send_notes
+use {NoteAttachmentCommitment} from miden::protocol::types
 # Shared payload handling for the canonical `send_notes` transaction scripts.
 #
 # This module is private to `send_notes`: it is the shared implementation behind the
@@ -23,13 +25,17 @@ use miden::core::mem
 use miden::protocol::output_note
 use miden::protocol::tx
 
+# One send-notes attachment record: a padded scheme followed by its commitment.
+pub type AttachmentRecord = struct {
+    scheme: u32,
+    padding: [felt; 3],
+    commitment: NoteAttachmentCommitment
+}
+
 # CONSTANTS
 # =================================================================================================
 
-# The number of field elements in a word. Replace with
-# `miden::protocol::constants::WORD_NUM_ELEMENTS`, once
-# https://github.com/0xMiden/miden-vm/issues/3429 is fixed.
-pub const WORD_NUM_ELEMENTS = 4
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 
 # Memory address at which the `send_notes` scripts write the payload, and the address of the note
 # count, which is the payload header's first element.
@@ -89,7 +95,10 @@ const ERR_SEND_NOTES_PAYLOAD_EMPTY = "send notes payload must not be empty"
 #! - the expiration delta is non-zero and not in the range 1..=0xFFFF.
 #!
 #! Invocation: exec
-pub proc write_payload_to_memory(payload_addr: u32, payload_commitment: word)
+pub proc write_payload_to_memory(
+    payload_addr: ptr<felt>,
+    payload_commitment: SendNotesPayloadCommitment
+)
     # push the payload from the advice map onto the advice stack, together with its length
     movdn.4 adv.push_mapvaln
     # OS => [PAYLOAD_COMMITMENT, payload_addr, pad(11)]
@@ -156,7 +165,11 @@ end
 #! - an attachment's elements are missing from the advice map.
 #!
 #! Invocation: exec
-pub proc add_attachments(note_idx: u32, attachments_ptr: u32, num_attachments: u32) -> u32
+pub proc add_attachments(
+    note_idx: u32,
+    attachments_ptr: ptr<AttachmentRecord>,
+    num_attachments: u32
+) -> ptr<AttachmentRecord>
     # the loop variables are kept on the stack
     movdn.2 swap
     # => [num_attachments, attachments_ptr, note_idx]

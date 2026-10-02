@@ -94,7 +94,7 @@ Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
-- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage is the account ID of the receiver. The receiver only needs to know the exact amount that was filled to derive the full note for consumption. This amount can be encoded in a public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
+- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage contains the receiver account ID and a zero salt. The receiver only needs to know the exact amount that was filled to derive the full note for consumption. This amount can be encoded in a public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
 
 ## Note Lifecycle
 
@@ -170,6 +170,19 @@ The RECIPIENT is not necessarily just an account address. Its pre-image consists
 
 The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
+#### Declaring who may consume a note
+
+A note script either restricts consumption to accounts the note commits to, or is open to any consumer by design. Nothing in a script's body distinguishes the second case from a restriction that was simply left out, so every standard note script states its rule on a `Consumers:` line in the doc comment of its `@note_script` procedure.
+
+A note commits to the accounts allowed to consume it in one of two ways:
+
+- as a `NetworkAccountTarget` [attachment](#attachments), which the [config notes](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes) and the agglayer note scripts use.
+- as an account ID in the note's [storage](#storage), which P2ID and P2IDE use. MINT and BURN commit their faucet the same way, as part of the asset held in their storage.
+
+Both are enforced through the shared [`miden::standards::note::note_target`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/note_target.masm) procedures. A note that lets its creator take its assets back enforces that separately, through [`miden::standards::note::note_reclaim`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/note_reclaim.masm), which checks the reclaimer alongside the block height from which reclaim is allowed.
+
+A note that is open to any consumer states so explicitly, e.g. a SWAP note is filled by whoever provides the requested asset. Some notes' consumption rules are enforced by the account procedure they invoke, e.g. a MINT note is rejected by the faucet it is not addressed to.
+
 #### Note nullifier ensuring private consumption
 
 The `Note` nullifier, computed as:
@@ -205,14 +218,16 @@ For a private note, the operator stores only its ID and never sees these compone
 
 The `miden::standards` library provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
 
+Input-note assets are stateful within a transaction: a note script claims the assets remaining in the note at consumption time, which may be less than the note was created with. Logic that prices or validates a note based on its assets must use the note's **initial assets** info rather than its remaining assets.
+
 ### P2ID (Pay-to-ID)
 
-The P2ID note script implements a simple pay-to-account-ID pattern. It adds all assets from the note to a specific target account.
+The P2ID note script implements a simple pay-to-account-ID pattern. It adds the note's remaining assets to a specific target account.
 
 **Key characteristics:**
 
 - **Purpose:** Direct asset transfer to a specific account ID
-- **Storage:** Requires exactly 2 storage items containing the target account ID
+- **Storage:** Requires exactly 4 storage items containing the target account ID and two salt elements. A random salt kept secret protects the target account ID against guesses using an exposed storage commitment; the default zero salt does not provide this protection.
 - **Validation:** Ensures the consuming account's ID matches the target account ID specified in the note
 - **Requirements:** Target account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
@@ -243,7 +258,7 @@ The P2IDE note script extends P2ID with additional features including time-locki
 
 ### TX_FEE
 
-The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds all assets from the note to the consuming account, without restricting who that account is.
+The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It leaves the note's assets in place for the consuming account to collect, without restricting who that account is.
 
 **Key characteristics:**
 
@@ -252,10 +267,29 @@ The TX_FEE note script is the canonical way for a transaction to pay its fee to 
 - **Note type:** Always public
 - **Assets:** Carries one or more assets of the sender's choosing - the note is unopinionated about which assets are used to pay
 - **Tag:** The unique `0xFEE` tag. Its 18 least significant bits are non-zero, so it can never collide with a default account-target tag (those have their 18 least significant bits set to zero)
-- **Validation:** None - unlike P2ID, there is no target account check, so the note is consumable by any account. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
-- **Requirements:** Consuming account must expose the `miden::standards::wallets::basic::receive_asset` procedure
+- **Validation:** None - unlike P2ID, there is no target account check, so any account may consume the note. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
+- **Requirements:** The note script does not move the assets, so the consuming account's own code must remove them from the note. Only the account context can do this, via `miden::protocol::input_note::remove_asset` or `remove_all_assets`. A transaction that leaves any of the note's assets uncollected fails the kernel's asset conservation check
 
 **Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
+
+### FEE_SPONSORSHIP
+
+The FEE_SPONSORSHIP note script prepays the fee a network account charges for consuming one specific note, so that note stays fee-unaware. See the [fee documentation](fees.md#sponsoring-fees).
+
+**Key characteristics:**
+
+- **Purpose:** Prepaying a network account's fee for a single note
+- **Storage:** Requires exactly 7 storage items:
+  - ID of the sponsored note (4 felts)
+  - Reclaimer account ID (2 felts)
+  - Reclaim block height (0 disables reclaim)
+- **Note type:** Always public
+- **Assets:** Exactly 1 - the fee, in the asset the target account charges in
+- **Tag:** Routes to the target network account
+- **Validation:** If the sponsored note is among the transaction's input notes, the script does nothing, leaving the assets for the consuming account to collect. Otherwise only the reclaimer can consume the note, once the reclaim block height is reached - a zero height disables reclaim entirely
+- **Requirements:** Collection requires an account whose authentication procedure collects sponsored fees; reclaiming requires the `miden::standards::wallets::basic::receive_asset` procedure
+
+**Use case:** Paying a network account up front so it will consume a note that carries no fee of its own.
 
 ### SWAP
 

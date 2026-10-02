@@ -1,3 +1,4 @@
+use {AccountId} from miden::protocol::types
 # miden::standards::faucets::policies::transfer::allowlist::manager
 #
 # Authority-gated allowlist admin: wraps the `Invocation: exec` helpers from
@@ -29,7 +30,7 @@ use miden::standards::faucets::policies::transfer::allowlist
 #!
 #! Invocation: call
 @account_procedure
-pub proc allow_account
+pub proc allow_account(account_id: AccountId)
     exec.authority::assert_authorized
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
@@ -47,7 +48,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc disallow_account
+pub proc disallow_account(account_id: AccountId)
     exec.authority::assert_authorized
     # => [account_id_suffix, account_id_prefix, pad(14)]
 

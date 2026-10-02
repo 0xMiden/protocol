@@ -6,7 +6,7 @@ use core::error::Error;
 use miden_processor::ExecutionError;
 use miden_processor::serde::DeserializationError;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
-use miden_protocol::account::{AccountId, StorageMapKey};
+use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
@@ -23,6 +23,7 @@ use miden_protocol::errors::{
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
+use miden_prover::ProverError;
 use thiserror::Error;
 
 // NOTE EXECUTION ERROR
@@ -99,6 +100,10 @@ pub enum TransactionExecutorError {
     },
     #[error("failed to create transaction inputs")]
     InvalidTransactionInputs(#[source] TransactionInputError),
+    // It is boxed to avoid triggering clippy::result_large_err for functions that return this
+    // type.
+    #[error("failed to create transaction host")]
+    TransactionHostCreationFailed(#[source] Box<TransactionKernelError>),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(&'static str),
     #[error(
@@ -160,10 +165,16 @@ pub enum TransactionProverError {
     OutputNoteShrinkFailed(#[source] OutputNoteError),
     #[error("failed to build proven transaction")]
     ProvenTransactionBuildFailed(#[source] ProvenTransactionError),
+    // It is boxed to avoid triggering clippy::result_large_err for functions that return this
+    // type.
+    #[error("failed to create transaction host")]
+    TransactionHostCreationFailed(#[source] Box<TransactionKernelError>),
     // Print the diagnostic directly instead of returning the source error. In the source error
     // case, the diagnostic is lost if the execution error is not explicitly unwrapped.
     #[error("failed to execute transaction kernel program:\n{}", PrintDiagnostic::new(.0))]
     TransactionProgramExecutionFailed(ExecutionError),
+    #[error("failed to generate transaction proof")]
+    TransactionProofGenerationFailed(#[source] ProverError),
     /// Custom error variant for errors not covered by the other variants.
     #[error("{error_msg}")]
     Other {
@@ -206,6 +217,23 @@ pub enum TransactionKernelError {
     AccountDeltaRemoveAssetFailed(#[source] AccountDeltaError),
     #[error("failed to add asset to note")]
     FailedToAddAssetToNote(#[source] NoteError),
+    #[error(
+        "transaction initialized an upgrade to account code {0} but the advice map did not provide the new code"
+    )]
+    AccountCodeUpgradeMissing(Word),
+    #[error(
+        "transaction initialized an upgrade to account code {new_code_commitment} but the advice map provides invalid code"
+    )]
+    AccountCodeUpgradeInvalid {
+        new_code_commitment: Word,
+        source: DeserializationError,
+    },
+    #[error(
+        "transaction initialized an upgrade to account code {expected} but the advice map provides code {actual}"
+    )]
+    AccountCodeUpgradeCommitmentMismatch { expected: Word, actual: Word },
+    #[error("account code upgrade is not allowed for new accounts")]
+    AccountCodeUpgradeNotAllowedForNewAccount,
     #[error("note storage has commitment {actual} but expected commitment {expected}")]
     InvalidNoteStorage { expected: Word, actual: Word },
     #[error(
@@ -224,6 +252,8 @@ pub enum TransactionKernelError {
         "transaction summary binds expiration delta {actual} but the transaction's expiration delta is {expected}"
     )]
     TransactionSummaryExpirationDeltaMismatch { expected: u16, actual: u16 },
+    #[error("transaction summary binds block {0}, which the transaction does not authenticate")]
+    TransactionSummaryUnknownBlockNumber(BlockNumber),
     #[error("failed to construct transaction summary")]
     TransactionSummaryConstructionFailed(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("asset data extracted from the stack by event handler `{handler}` is not well formed")]
@@ -236,10 +266,10 @@ pub enum TransactionKernelError {
     )]
     MalformedNoteStorage(#[source] NoteError),
     #[error(
-        "note script data `{data:?}` extracted from the advice map by the event handler is not well formed"
+        "note script elements `{script_elements:?}` extracted from the advice map by the event handler are not well formed"
     )]
     MalformedNoteScript {
-        data: Vec<Felt>,
+        script_elements: Vec<Felt>,
         source: DeserializationError,
     },
     #[error(
@@ -271,6 +301,8 @@ pub enum TransactionKernelError {
     AccountStorageSlotsNumMissing(u32),
     #[error("account nonce can only be incremented once")]
     NonceCanOnlyIncrementOnce,
+    #[error("partial storage of a new account is missing the storage map of slot {0}")]
+    NewAccountMissingStorageMap(StorageSlotName),
     #[error(
         "failed to get inputs for foreign account {foreign_account_id} from data store at reference block {ref_block}"
     )]

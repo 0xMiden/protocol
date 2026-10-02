@@ -1,3 +1,4 @@
+use {NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::protocol::output_note
 
 # PUBLIC API
@@ -5,9 +6,9 @@ use miden::protocol::output_note
 
 #! Creates a new output note and returns its index.
 #!
-#! This procedure lets the wallet opt into note creation: `output_note::create` can only be invoked
-#! from the account context, so accounts that want to create notes must expose it through their own
-#! interface.
+#! This procedure lets a note or tx script create an output note: `output_note::create` can only
+#! be invoked from the account context, so accounts that want to create notes must expose it through
+#! their own interface.
 #!
 #! This procedure is expected to be invoked using a `call` instruction. It makes no guarantees about
 #! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure
@@ -24,7 +25,7 @@ use miden::protocol::output_note
 #!
 #! Invocation: call
 @account_procedure
-pub proc create_note
+pub proc create_note(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
     exec.output_note::create
     # => [note_idx, pad(15)]
 end

@@ -15,6 +15,7 @@ pub use executor::{
     MastForestStore,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
+    NoteFailure,
     ProgramExecutor,
     SuccessfulNote,
     TransactionExecutor,
@@ -25,12 +26,7 @@ mod host;
 pub use host::{AccountProcedureIndexMap, LinkMap, MemoryViewer, ScriptMastForestStore};
 
 mod prover;
-pub use prover::{
-    LocalTransactionProver,
-    ProvingOptions,
-    TransactionMastStore,
-    TransactionProverHost,
-};
+pub use prover::{LocalTransactionProver, Prover, TransactionMastStore, TransactionProverHost};
 
 mod pricer;
 pub use pricer::{NetworkNotePricer, NotePricingError};

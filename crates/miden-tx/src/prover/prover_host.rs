@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -8,6 +9,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
@@ -39,24 +41,28 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be created.
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-        );
+        )?;
 
-        Self { base_host }
+        Ok(Self { base_host })
     }
 
     // PUBLIC ACCESSORS
@@ -163,6 +169,10 @@ where
 
             TransactionEvent::AccountPushProcedureIndex { code_commitment, procedure_root } => {
                 self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
+            },
+
+            TransactionEvent::AccountBeforeCodeUpgrade { new_code_commitment, code_upgrade } => {
+                self.base_host.on_account_before_code_upgrade(new_code_commitment, code_upgrade)
             },
 
             TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {

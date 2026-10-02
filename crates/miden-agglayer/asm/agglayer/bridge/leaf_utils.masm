@@ -1,6 +1,5 @@
+use {Keccak256Digest, LeafData} from agglayer::types
 use miden::core::crypto::hashes::keccak256
-use {DoubleWord} from miden::protocol::types
-use {MemoryAddress} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================
@@ -24,7 +23,7 @@ const PACKED_DATA_NUM_ELEMENTS = 29
 #! Outputs: [LEAF_VALUE[8]]
 #!
 #! Invocation: exec
-pub proc compute_leaf_value(leaf_data_start_ptr: MemoryAddress) -> DoubleWord
+pub proc compute_leaf_value(leaf_data_start_ptr: ptr<LeafData>) -> Keccak256Digest
     dup
     # => [leaf_data_start_ptr, leaf_data_start_ptr]
     
@@ -74,7 +73,7 @@ end
 #!
 #! Invocation: exec
 @locals(1) # start_ptr
-pub proc pack_leaf_data(leaf_data_start_ptr: MemoryAddress)
+pub proc pack_leaf_data(leaf_data_start_ptr: ptr<LeafData>)
     loc_store.PACKING_START_PTR_LOCAL
     # => []
 

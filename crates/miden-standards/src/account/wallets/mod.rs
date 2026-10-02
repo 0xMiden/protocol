@@ -24,9 +24,6 @@ use crate::account::auth::{
 };
 use crate::procedure_root;
 
-mod note_creator;
-pub use note_creator::NoteCreator;
-
 // BASIC WALLET
 // ================================================================================================
 
@@ -66,10 +63,10 @@ procedure_root!(
 
 /// An [`AccountComponent`] implementing a basic wallet.
 ///
-/// It reexports the procedures from `miden::standards::wallets::basic` and
-/// `miden::standards::note::create_note` modules. When linking against this component, the `miden`
-/// library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler
-/// which is the case when using [`CodeBuilder`][builder]. The procedures of this component are:
+/// It reexports the procedures from `miden::standards::wallets::basic` module. When linking against
+/// this component, the `miden` library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be
+/// available to the assembler which is the case when using [`CodeBuilder`][builder]. The procedures
+/// of this component are:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
@@ -143,10 +140,11 @@ impl From<BasicWallet> for AccountComponent {
 /// Creates a new account with a basic wallet interface, single signature authentication and the
 /// specified account type.
 ///
-/// The basic wallet interface exposes two procedures:
+/// The basic wallet interface exposes three procedures:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
+/// - `create_note`, which can be used to create an output note.
 ///
 /// All methods require authentication, which is provided by an [`AuthSingleSig`] component
 /// configured with the given approver.

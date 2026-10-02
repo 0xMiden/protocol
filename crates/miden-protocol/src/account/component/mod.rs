@@ -18,7 +18,7 @@ use crate::assembly::Path;
 use crate::errors::AccountError;
 
 /// The attribute name used to mark the authentication procedure in an account component.
-const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
+pub const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
 /// The attribute name used to mark a procedure as a member of an account component's interface.
 const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
@@ -95,11 +95,11 @@ impl AccountComponent {
     /// - The storage initialization fails due to invalid or missing data
     /// - The component creation fails
     pub fn from_package(
-        package: &Package,
+        package: Package,
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
-        let metadata = AccountComponentMetadata::try_from(package)?;
-        let component_code = AccountComponentCode::from(package.clone());
+        let metadata = AccountComponentMetadata::try_from(&package)?;
+        let component_code = AccountComponentCode::from(package);
 
         let storage_slots = metadata
             .storage_schema()
@@ -258,13 +258,13 @@ mod tests {
         // Test with empty init data - this tests the complete workflow:
         // Package -> AccountComponent
         let init_data = InitStorageData::default();
-        let component = AccountComponent::from_package(&package_with_metadata, &init_data).unwrap();
+        let component = AccountComponent::from_package(package_with_metadata, &init_data).unwrap();
 
         // Verify the component was created correctly
         assert_eq!(component.storage_size(), 0);
 
         // Test without metadata - should fail
-        let result = AccountComponent::from_package(&package, &init_data);
+        let result = AccountComponent::from_package(package, &init_data);
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("package does not contain account component metadata"));

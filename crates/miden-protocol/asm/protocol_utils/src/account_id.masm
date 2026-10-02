@@ -1,3 +1,5 @@
+use {AccountId, Bool} from miden::protocol_utils::types
+
 # ERRORS
 # =================================================================================================
 
@@ -38,7 +40,7 @@ const VERSION_1 = 1
 #! - other_account_id_{suffix,prefix} are the suffix and prefix felts of the other account ID to
 #!   compare against.
 #! - is_id_equal is a boolean indicating whether the account IDs are equal.
-pub proc eq
+pub proc eq(account_id: AccountId, other_account_id: AccountId) -> Bool
     movup.2 eq
     # => [is_suffix_equal, account_id_prefix, other_account_id_prefix]
     movdn.2 eq
@@ -59,7 +61,7 @@ end
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #! - is_zero is a boolean indicating whether the account ID is the zero address.
-pub proc testz
+pub proc testz(account_id: AccountId) -> (Bool, AccountId)
     dup.1 eq.0 dup.1 eq.0 and
     # => [is_zero, account_id_suffix, account_id_prefix]
 end
@@ -72,7 +74,7 @@ end
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
 #! - is_zero is a boolean indicating whether both felts of the account ID are zero.
-pub proc eqz
+pub proc eqz(account_id: AccountId) -> Bool
     eq.0 swap eq.0 and
     # => [is_zero]
 end
@@ -93,7 +95,7 @@ end
 #! - account_id_prefix has a zero version.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
-pub proc validate_structure
+pub proc validate_structure(account_id: AccountId)
     # Validate the version is non-zero, so that the zero account ID remains invalid.
     # ---------------------------------------------------------------------------------------------
     dup.1 exec.id_version neq.0
@@ -138,7 +140,7 @@ end
 #! - account_id_prefix does not contain version one.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
-pub proc validate
+pub proc validate(account_id: AccountId)
     # Validate version in prefix. For now only version 1 is supported.
     # ---------------------------------------------------------------------------------------------
     dup.1 exec.id_version
@@ -162,7 +164,7 @@ end
 #! - seed_digest_suffix is the suffix of the digest that should be shaped into the suffix
 #!   of an account ID.
 #! - account_id_suffix is the suffix of an account ID.
-pub proc shape_suffix
+pub proc shape_suffix(seed_digest_suffix: felt) -> felt
     u32split
     # => [seed_digest_suffix_lo, seed_digest_suffix_hi]
 
@@ -186,7 +188,7 @@ end
 #! Where:
 #! - account_id_prefix is the prefix of an account ID.
 #! - id_version is the version number of the ID.
-proc id_version
+proc id_version(account_id_prefix: felt) -> u8
     # extract the lower 32 bits
     u32split swap drop
     # => [account_id_prefix_lo]
@@ -204,7 +206,7 @@ end
 #! Where:
 #! - account_id_prefix is the prefix of an account ID.
 #! - has_callbacks is a boolean indicating whether the account's assets trigger callbacks.
-pub proc asset_callback_flag
+pub proc asset_callback_flag(account_id_prefix: felt) -> Bool
     # extract the lower 32 bits
     u32split swap drop
     # => [account_id_prefix_lo]

@@ -1,7 +1,7 @@
 //! Tests for the `BLOCKLIST_CONFIG` standard note, which dispatches the
 //! [`miden_standards::account::policies::BlocklistManager`] admin procedures from a note.
 //!
-//! The suite covers the note itself: that each selector dispatches to the matching procedure, and
+//! The suite covers the note itself: that each variant dispatches to the matching procedure, and
 //! that the script's own guards reject malformed storage. The blocklist semantics (the
 //! `check_policy` predicate, the noop cases) and the `Authority` rejection of an unauthorized
 //! sender are covered by the parent [`super`] suite.
@@ -14,16 +14,13 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::policies::BlocklistStorage;
 use miden_standards::errors::standards::{
-    ERR_BLOCKLIST_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    ERR_BLOCKLIST_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_BLOCKLIST_CONFIG_UNKNOWN_SELECTOR,
+    ERR_BLOCKLIST_CONFIG_UNKNOWN_VARIANT,
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
-use miden_standards::note::{
-    BlocklistConfig,
-    BlocklistConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{BlocklistConfig, BlocklistConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -32,8 +29,8 @@ use super::{
     add_rbac_faucet_with_blocklist,
     dummy_owner,
 };
-use crate::consume_note;
 use crate::scripts::rbac::{build_grant_role_note, role, test_account_id};
+use crate::{consume_note, into_private_note};
 
 // HELPERS
 // ================================================================================================
@@ -161,15 +158,15 @@ async fn rbac_blocklister_can_block() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_blocklist_config_note(
         owner_id,
         faucet.id(),
@@ -190,12 +187,12 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BLOCKLIST_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_BLOCKLIST_CONFIG_UNKNOWN_VARIANT);
 
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
@@ -203,7 +200,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    // BlockAccount selector (0) but the account prefix is missing
+    // BlockAccount variant (0) but the account prefix is missing
     let note = malformed_blocklist_config_note(
         owner_id,
         faucet.id(),
@@ -258,6 +255,39 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BLOCKLIST_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the list changes.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
+
+    let note = blocklist_config_note(
+        owner_id,
+        faucet.id(),
+        BlocklistConfig::BlockAccount { account: target_account.id() },
+        9,
+    )?;
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_BLOCKLIST_CONFIG_NOTE_IS_NOT_PUBLIC);
+
     Ok(())
 }

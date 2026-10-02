@@ -198,6 +198,16 @@ mod tests {
 
     use super::*;
 
+    const USDC_TOKEN_ADDR: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+
+    fn usdc_token_address() -> EthAddress {
+        EthAddress::from_hex(USDC_TOKEN_ADDR).expect("USDC token address should be valid")
+    }
+
+    fn usdc_metadata_hash() -> MetadataHash {
+        MetadataHash::from_token_info("USD Coin", "USDC", 6)
+    }
+
     /// Locks in the 18-felt wire layout of `CONFIG_AGG_BRIDGE` note storage. Any reordering in
     /// `to_elements` would silently desync from the indices the MASM `CONFIG_AGG_BRIDGE` script
     /// reads from (`ORIGIN_TOKEN_ADDR_0..4`, `FAUCET_ID_SUFFIX=5`, ... `METADATA_HASH_HI_3=17`).
@@ -205,9 +215,8 @@ mod tests {
     fn to_elements_layout_matches_masm_storage_indices() {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("valid faucet account id");
-        let origin_token_address =
-            EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
-        let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+        let origin_token_address = usdc_token_address();
+        let metadata_hash = usdc_metadata_hash();
 
         let metadata = ConversionMetadata {
             faucet_account_id: faucet,

@@ -20,7 +20,7 @@ In Miden, assets serve as the primary means of expressing and transferring value
    Users can transact freely and privately with no single contract or entity controlling `Asset` transfers. This reduces the risk of censored transactions, resulting in a more open and resilient system.
 
 4. **Fee payment in native asset:**  
-   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in the asset committed via the transaction's auth args (the native asset at rate 1/1, or a different asset at a committed conversion rate). See [Fees](fees.md).
+   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in that same asset: the conversion info committed via the transaction's auth args must name the native fee asset at rate 1/1. See [Fees](fees.md).
 
 ## Native asset
 
@@ -52,7 +52,7 @@ While the asset value is unique to each type of asset, the asset ID has a common
 [
   asset_class_suffix (64 bits),
   asset_class_prefix (64 bits),
-  [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
+  [faucet_id_suffix (56 bits) | reserved (2 bits) | composition (2 bits) | version (4 bits)],
   faucet_id_prefix (64 bits)
 ]
 ```
@@ -60,6 +60,7 @@ While the asset value is unique to each type of asset, the asset ID has a common
 - `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
 - `asset_class_suffix` and `asset_class_prefix` is a class that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
 - `composition` describes how assets compose. Read on for more details.
+- `version` determines how the remainder of the asset is decoded. The only valid version is currently `1`. Version `0` is unassigned and invalid, which means an empty word is guaranteed to _not_ be a valid asset ID.
 - `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
 
 Whether the asset triggers [callbacks](#callbacks) is not part of the asset ID: it is an immutable property of the issuing faucet's account ID.
@@ -115,7 +116,7 @@ On the other hand, `Custom` would involve invoking `merge` and `split` implement
 
 The native fungible asset has the following asset ID and value layout:
 
-- Asset ID: `[0, 0, faucet_id_suffix | composition, faucet_id_prefix]`.
+- Asset ID: `[0, 0, faucet_id_suffix | composition | version, faucet_id_prefix]`.
   - Its `composition` must be set to `Fungible`.
 - Value: `[amount, 0, 0, 0]`.
   - The amount is always $2^{63}-2^{31}$ or smaller, representing the maximum supply for any fungible `Asset`.
@@ -128,7 +129,7 @@ Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USD
 
 The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes, which results in the asset value.
 
-- Asset ID: `[hash0, hash1, faucet_id_suffix | composition, faucet_id_prefix]`.
+- Asset ID: `[hash0, hash1, faucet_id_suffix | composition | version, faucet_id_prefix]`.
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
 
@@ -171,27 +172,27 @@ Account components that need to add callbacks to an account's storage should use
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet and the callback receives the asset ID and value and is expected to return the processed asset value.
-
-:::warning
-At this time, the processed asset value must be the same as the asset value, but in the future this limitation may be lifted. The transaction kernel enforces this: if a callback returns a value different from the one it received, the transaction is aborted.
-:::
+The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value for inspection. The callback either completes successfully or aborts the transaction.
 
 The **account callback** receives:
 
 ```
 Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+Outputs: [pad(16)]
 ```
 
 The **note callback** receives the additional `note_idx` identifying which output note the asset is being added to:
 
 ```
 Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+Outputs: [pad(16)]
 ```
 
-Both callbacks are invoked via `call`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
+Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
+
+#### Expiration requirement
+
+Asset callbacks execute against the issuing faucet through FPI. Any callback or callback-dispatched policy that reads mutable, security-sensitive state must set an expiration delta in the execution path that reads that state. Standards components can use `miden::standards::expiration::apply_default` for the common expiration delta, and custom callbacks can call `tx::update_expiration_block_delta` directly. For more information, see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).
 
 #### Callback skipping
 
@@ -210,3 +211,5 @@ All data structures not following the Miden asset model that can be exchanged.
 :::
 
 Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum’s ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
+
+Alternative or programmable asset models that expose FPI-callable checks follow the same expiration delta rule as native asset callbacks; see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).

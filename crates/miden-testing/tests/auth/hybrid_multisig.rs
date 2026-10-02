@@ -13,7 +13,7 @@ use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
+use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig, MultisigAuthArgs};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -23,6 +23,8 @@ use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+
+use super::multisig::MultisigAuthArgsExt;
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -150,7 +152,10 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures - should fail
     let tx_summary = mock_tx_builder
@@ -235,7 +240,10 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
         let salt = Word::from([Felt::new_unchecked(10 + i as u64); 4]);
 
         // Build mock transaction with all config
-        let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
+        let mock_tx_builder =
+            mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+                MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+            );
 
         // Execute transaction without signatures first to get tx summary
         let tx_summary = mock_tx_builder
@@ -376,7 +384,10 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .tx_script(tx_script)
         .tx_script_args(tx_script_args)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary = mock_tx_builder
@@ -512,7 +523,10 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     let mock_tx_builder_new = new_mock_chain
         .build_transaction(updated_multisig_account.id())
         .authenticated_input_note(input_note_new.id())
-        .auth_args(salt_new);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            new_mock_chain.latest_block_header().block_num(),
+            salt_new,
+        ));
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary_new = mock_tx_builder_new
@@ -635,7 +649,10 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute without signatures to get tx summary
     let tx_summary = mock_tx_builder
@@ -858,7 +875,10 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         .tx_script(tx_script)
         .tx_script_args(tx_script_args)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary = mock_tx_builder

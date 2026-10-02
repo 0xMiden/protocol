@@ -1,0 +1,21 @@
+[package]
+edition = "2024"
+name    = "protobuf-consumer"
+publish = false
+version = "0.0.0"
+
+[workspace]
+resolver = "3"
+
+[workspace.dependencies]
+# Use an alias to ensure generated code resolves the dependency name instead of hardcoding it.
+wire-codec = { default-features = false, package = "miden-protobuf", path = "../.." }
+
+[dependencies]
+prost      = { default-features = false, features = ["derive"], version = "0.14" }
+wire-codec = { features = ["derive"], workspace = true }
+
+[build-dependencies]
+prost-build = { default-features = false, version = "0.14" }
+prost-types = { default-features = false, version = "0.14" }
+wire-codec  = { features = ["build"], workspace = true }

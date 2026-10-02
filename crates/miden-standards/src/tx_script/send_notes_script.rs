@@ -404,9 +404,9 @@ impl SendFungibleFaucetNotesTransactionScript {
 /// The canonical `send_notes` [`TransactionScript`] for accounts exposing the [`NonFungibleFaucet`]
 /// procedures, which sends notes holding assets the faucet mints as part of note creation.
 ///
-/// Every note must carry exactly one non-fungible asset, issued by this faucet. Unlike the fungible
-/// faucet, `non_fungible::mint_and_send` derives the asset from the faucet itself, so the script
-/// passes it only the asset's commitment.
+/// Every note must carry exactly one non-fungible asset, issued by this faucet. As for the fungible
+/// faucet, the script passes `non_fungible::mint_and_send` the full asset, whose `ASSET_ID` the
+/// procedure checks against the asset it derives for the active faucet.
 ///
 /// Faucets that delegate minting to an authority (those exposing [`Ownable2Step`] or
 /// [`RoleBasedAccessControl`]) are network faucets that mint exclusively via MINT notes, so they

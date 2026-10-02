@@ -23,7 +23,7 @@ Covered scenarios, with one variant per distinct execution path:
 
 - standards, consumed by a network basic wallet: P2ID (1 vs 16 assets); P2IDE (claim, claim with 16 assets, reclaim); SWAP (public vs private payback); PSWAP (full vs partial fill); FEE_SPONSORSHIP (consumed with its sponsored feature note; the sponsor-side reclaim path is benchmarked separately on a regular wallet, since a network account cannot consume a lone sponsorship note)
 - standards, consumed by a network faucet: MINT (fungible vs non-fungible faucet); BURN
-- standards, consumed by a network account with the matching management components: CONSTANT_FEE_POLICY_CONFIG, FAUCET_POLICY_CONFIG, FAUCET_METADATA_CONFIG, MIN_BURN_AMOUNT_CONFIG, ALLOWLIST_CONFIG, BLOCKLIST_CONFIG, PAUSE_CONFIG, OWNER_CONFIG, RBAC_CONFIG, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path)
+- standards, consumed by a network account with the matching management components: CONSTANT_FEE_POLICY_CONFIG, FAUCET_POLICY_CONFIG, FAUCET_METADATA_CONFIG, MIN_BURN_AMOUNT_CONFIG, ALLOWLIST_CONFIG, BLOCKLIST_CONFIG, PAUSE_CONFIG, OWNER_CONFIG, RBAC_CONFIG, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path); UPGRADE (the new code is taken from the note attachment)
 - agglayer, consumed by the bridge account (a network account): CLAIM (L1 vs L2 origin, with fee payment), B2AGG (empty vs `2^31 - 1`-leaf frontier, with fee payment), CONFIG_AGG_BRIDGE, DEREGISTER_AGG_FAUCET, UPDATE_GER, REMOVE_GER
 
 The original CLAIM/B2AGG scenarios (without fee payment) are kept unchanged for continuity; the `with fee payment` variants are the network-account pricing baseline.
@@ -40,7 +40,7 @@ Regenerate the tables (and `bench-tx.json`) with:
 make update-note-costs
 ```
 
-Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot tests in `src/note_costs.rs` re-execute every priced scenario during the regular test run and fail when a measured cost drifts more than 5% from its checked-in constant. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
+Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
 
 ### Benchmark Groups
 
@@ -57,7 +57,7 @@ Each of the above transactions is measured in two groups:
     - Authentication procedure
     - After tx cycles were obtained (The number of cycles the epilogue took to execute after the number of transaction cycles were obtained)
 
-  In the same pass we also rebuild the `ExecutionTrace` for each scenario and emit per-component trace row counts (`core_rows`, `chiplets_rows`, `range_rows`) plus the per-chiplet shape breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, `ace_rows`).
+  In the same pass we also rebuild the `ExecutionTrace` for each scenario and emit per-component trace row counts (`core_rows`, `chiplets_rows`, `poseidon2_permutation_rows`, `range_rows`) plus the per-chiplet shape breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, `ace_rows`).
 
   Results of this benchmark will be stored in the [`bin/bench-tx/bench-tx.json`](bench-tx.json) file.
 - Benchmarking the transaction execution and proving.
@@ -166,14 +166,19 @@ cargo bench --bin bench-transaction --bench time_counting_benchmarks --features 
 
 ## Trace shape and miden-vm's synthetic benchmark
 
-The `trace` section in `bench-tx.json` is the input contract for miden-vm's `miden-vm-synthetic-bench`. Its hard targets are the AIR-side row totals (`trace.core_rows`, `trace.chiplets_rows`, `trace.range_rows`); the `trace.chiplets_shape.*` per-chiplet breakdown is advisory profiling metadata and is required to satisfy the chiplet-bus invariant `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
+The `trace` section in `bench-tx.json` is the input contract for miden-vm's `miden-vm-synthetic-bench`. Its hard targets are the AIR-side row totals (`trace.core_rows`, `trace.chiplets_rows`, `trace.poseidon2_permutation_rows`, `trace.range_rows`); the `trace.chiplets_shape.*` per-chiplet breakdown is advisory profiling metadata and is required to satisfy the chiplet-bus invariant `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
 
 The consumer's hard match is on padded power-of-two brackets, not raw row equality:
 
 - `padded_core_side = max(64, next_pow2(max(core_rows, range_rows)))`
 - `padded_chiplets  = max(64, next_pow2(chiplets_rows))`
+- `padded_poseidon2 = max(64, next_pow2(poseidon2_permutation_rows))`
 
-These two can land in different brackets on the same workload (e.g. `consume two P2ID notes with Falcon signing` has `padded_core_side = 131072` but `padded_chiplets = 262144`).
+These three can land in different brackets on the same workload (e.g. `consume two P2ID notes with Falcon signing` currently has `padded_core_side = 131072` but `padded_chiplets = 16384`).
+
+Raw `range_rows` can vary slightly with witness values between producer runs. The checked contract
+is the generated scenario, its authoritative Poseidon2 count, and the independently pinned padded
+brackets rather than byte stability across separate executions.
 
 To feed the snapshot into `miden-vm`, regenerate `bench-tx.json` here and copy it across:
 
@@ -184,7 +189,10 @@ cp bin/bench-transaction/bench-tx.json \
 cargo bench -p miden-vm-synthetic-bench
 ```
 
-The schema is maintained manually; bench-tx.json's `trace` section is what the consumer's loader keys off. When changing the shape of the trace section, bump both repos together.
+The VM keeps a byte-for-byte copy of this generated file but selects only its canonical six
+Falcon/ECDSA P2ID scenarios for the default synthetic suite. The schema is maintained manually;
+`bench-tx.json`'s `trace` section is what the consumer's loader keys off. When changing the shape
+of the trace section, update both repositories together.
 
 ## License
 

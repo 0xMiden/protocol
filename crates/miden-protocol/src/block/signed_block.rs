@@ -238,8 +238,7 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::block::ValidatorKeys;
-    use crate::testing::validator_keys::{random_validator_set as validator_set, sign_all};
+    use crate::block::ValidatorConfig;
     use crate::transaction::OrderedTransactionHeaders;
 
     fn empty_body() -> BlockBody {
@@ -253,40 +252,40 @@ mod tests {
 
     fn block_one(
         parent: &BlockHeader,
-        parent_keys: &ValidatorKeys,
+        parent_keys: &ValidatorConfig,
         signers: &[SigningKey],
     ) -> SignedBlock {
-        let next_keys = validator_set(3).1;
+        let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
-        let signatures = sign_all(parent_keys, signers, header.commitment());
+        let signatures = parent_keys.sign_all(signers, header.commitment());
         SignedBlock::new_unchecked(header, empty_body(), signatures)
     }
 
     #[test]
     fn validate_accepts_committed_signers() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn validate_accepts_single_validator() {
-        let (signers, keys) = validator_set(1);
+        let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn validate_rejects_uncommitted_signers() {
-        let (_, keys) = validator_set(3);
+        let (_, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        let next_keys = validator_set(3).1;
+        let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
 
         // The block is signed by a full, valid validator set of the same size the parent never
         // committed.
-        let (impostor_signers, impostor_keys) = validator_set(3);
-        let signatures = sign_all(&impostor_keys, &impostor_signers, header.commitment());
+        let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
+        let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
         let block = SignedBlock::new_unchecked(header, empty_body(), signatures);
 
         let result = block.validate(Some(&parent));

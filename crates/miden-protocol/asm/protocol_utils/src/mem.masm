@@ -24,7 +24,7 @@ use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 #! - COMPUTED_COMMITMENT is the commitment over the written elements.
 #!
 #! Invocation: exec
-pub proc pipe_elements_preimage_to_memory
+pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>) -> word
     # compute the number of words required to store the elements: ceil(num_elements / 4)
     dup u32divmod.WORD_NUM_ELEMENTS neq.0 add
     # => [num_words, num_elements, dest_ptr]

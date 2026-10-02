@@ -47,6 +47,8 @@ pub enum NoteExecutionHint {
         slot_len: u8,
         slot_offset: u8,
     },
+    /// An encoding that this version does not recognize, preserved verbatim.
+    Unknown(Felt),
 }
 
 impl NoteExecutionHint {
@@ -126,7 +128,7 @@ impl NoteExecutionHint {
     pub fn can_be_consumed(&self, block_num: BlockNumber) -> Option<bool> {
         let block_num = block_num.as_u32();
         match self {
-            NoteExecutionHint::None => None,
+            NoteExecutionHint::None | NoteExecutionHint::Unknown(_) => None,
             NoteExecutionHint::Always => Some(true),
             NoteExecutionHint::AfterBlock { block_num: hint_block_num } => {
                 Some(block_num >= hint_block_num.as_u32())
@@ -147,19 +149,21 @@ impl NoteExecutionHint {
         }
     }
 
-    /// Encodes the [`NoteExecutionHint`] into an 8-bit tag and a 32-bit payload.
-    pub fn into_parts(&self) -> (u8, u32) {
+    /// Encodes the [`NoteExecutionHint`] into an 8-bit tag and a 32-bit payload, or `None` for
+    /// [`NoteExecutionHint::Unknown`], which by definition has no valid decomposition.
+    pub fn into_parts(&self) -> Option<(u8, u32)> {
         match self {
-            NoteExecutionHint::None => (Self::NONE_TAG, 0),
-            NoteExecutionHint::Always => (Self::ALWAYS_TAG, 0),
+            NoteExecutionHint::None => Some((Self::NONE_TAG, 0)),
+            NoteExecutionHint::Always => Some((Self::ALWAYS_TAG, 0)),
             NoteExecutionHint::AfterBlock { block_num } => {
-                (Self::AFTER_BLOCK_TAG, block_num.as_u32())
+                Some((Self::AFTER_BLOCK_TAG, block_num.as_u32()))
             },
             NoteExecutionHint::OnBlockSlot { round_len, slot_len, slot_offset } => {
                 let payload: u32 =
                     ((*round_len as u32) << 16) | ((*slot_len as u32) << 8) | (*slot_offset as u32);
-                (Self::ON_BLOCK_SLOT_TAG, payload)
+                Some((Self::ON_BLOCK_SLOT_TAG, payload))
             },
+            NoteExecutionHint::Unknown(_) => None,
         }
     }
 }
@@ -167,31 +171,30 @@ impl NoteExecutionHint {
 /// Converts a [`NoteExecutionHint`] into a [`Felt`] with the layout documented on the type.
 impl From<NoteExecutionHint> for Felt {
     fn from(value: NoteExecutionHint) -> Self {
-        let int_representation: u64 = value.into();
-        Felt::new_unchecked(int_representation)
+        match value {
+            NoteExecutionHint::Unknown(felt) => felt,
+            hint => {
+                let (tag, payload) =
+                    hint.into_parts().expect("every hint but `Unknown` decomposes into parts");
+                // The composed value occupies the low 40 bits, so it is always canonical.
+                Felt::new_unchecked(((payload as u64) << 8) | (tag as u64))
+            },
+        }
     }
 }
 
-/// Tries to convert a `u64` into a [`NoteExecutionHint`] with the expected layout documented on the
-/// type.
-///
-/// Note: The upper 24 bits are not enforced to be zero.
-impl TryFrom<u64> for NoteExecutionHint {
-    type Error = NoteError;
-    fn try_from(value: u64) -> Result<Self, Self::Error> {
-        let tag = (value & 0b1111_1111) as u8;
-        // Shift the payload and cut off / ignore the upper 32 bits.
-        let payload = (value >> 8) as u32;
+/// Converts a [`Felt`] into a [`NoteExecutionHint`] with the layout documented on the type.
+impl From<Felt> for NoteExecutionHint {
+    fn from(value: Felt) -> Self {
+        let encoded = value.as_canonical_u64();
+        let tag = (encoded & 0b1111_1111) as u8;
 
-        Self::from_parts(tag, payload)
-    }
-}
-
-/// Converts a [`NoteExecutionHint`] into a `u64` with the layout documented on the type.
-impl From<NoteExecutionHint> for u64 {
-    fn from(value: NoteExecutionHint) -> Self {
-        let (tag, payload) = value.into_parts();
-        ((payload as u64) << 8) | (tag as u64)
+        // A felt with bits set above the documented layout does not encode a hint, so it must not
+        // truncate into one - that would lose those bits on re-encoding.
+        u32::try_from(encoded >> 8)
+            .ok()
+            .and_then(|payload| Self::from_parts(tag, payload).ok())
+            .unwrap_or(NoteExecutionHint::Unknown(value))
     }
 }
 
@@ -204,7 +207,7 @@ mod tests {
     use super::*;
 
     fn assert_hint_serde(note_execution_hint: NoteExecutionHint) {
-        let (tag, payload) = note_execution_hint.into_parts();
+        let (tag, payload) = note_execution_hint.into_parts().unwrap();
         let deserialized = NoteExecutionHint::from_parts(tag, payload).unwrap();
         assert_eq!(deserialized, note_execution_hint);
     }
@@ -223,22 +226,38 @@ mod tests {
 
     #[test]
     fn test_encode_round_trip() {
-        let hint = NoteExecutionHint::after_block(15.into());
-        let hint_int: u64 = hint.into();
-        let decoded_hint: NoteExecutionHint = hint_int.try_into().unwrap();
-        assert_eq!(hint, decoded_hint);
+        for hint in [
+            NoteExecutionHint::None,
+            NoteExecutionHint::Always,
+            NoteExecutionHint::after_block(15.into()),
+            NoteExecutionHint::OnBlockSlot {
+                round_len: 22,
+                slot_len: 33,
+                slot_offset: 44,
+            },
+        ] {
+            let encoded = Felt::from(hint);
+            assert_eq!(NoteExecutionHint::from(encoded), hint);
+        }
 
-        let hint = NoteExecutionHint::OnBlockSlot {
-            round_len: 22,
-            slot_len: 33,
-            slot_offset: 44,
-        };
-        let hint_int: u64 = hint.into();
-        let decoded_hint: NoteExecutionHint = hint_int.try_into().unwrap();
-        assert_eq!(hint, decoded_hint);
+        assert_eq!(Felt::from(NoteExecutionHint::always()).as_canonical_u64(), 1);
+    }
 
-        let always_int: u64 = NoteExecutionHint::always().into();
-        assert_eq!(always_int, 1u64);
+    /// A felt that does not encode a recognized hint decodes as `Unknown`.
+    #[test]
+    fn unknown_hint_round_trip() {
+        // A tag above the highest known one, a non-zero payload on a tag that requires an empty
+        // one, a non-zero remainder on the `OnBlockSlot` payload, and a felt with bits set above
+        // the documented 40-bit layout.
+        for encoded in [7u64, (1 << 8) | 1, (1 << 32) | 3, 1 << 40] {
+            let encoded = Felt::new(encoded).unwrap();
+            let hint = NoteExecutionHint::from(encoded);
+
+            assert_eq!(hint, NoteExecutionHint::Unknown(encoded));
+            assert_eq!(hint.into_parts(), None);
+            assert_eq!(hint.can_be_consumed(100.into()), None);
+            assert_eq!(Felt::from(hint), encoded);
+        }
     }
 
     #[test]

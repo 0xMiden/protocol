@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_crypto::merkle::InnerNodeInfo;
+use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
 use super::{
     Asset,
@@ -13,7 +13,6 @@ use super::{
     Deserializable,
     DeserializationError,
     FungibleAsset,
-    NonFungibleAsset,
     Serializable,
 };
 use crate::Word;
@@ -72,7 +71,12 @@ impl AssetVault {
         let asset_tree = Smt::with_entries(
             assets.iter().map(|asset| (asset.id().hash().as_word(), asset.to_value_word())),
         )
-        .map_err(AssetVaultError::DuplicateAsset)?;
+        .map_err(|error| match error {
+            MerkleError::TooManyLeafEntries { .. } => {
+                AssetVaultError::MaxLeafEntriesExceeded(error)
+            },
+            error => AssetVaultError::DuplicateAsset(error),
+        })?;
 
         // Filter empty values so the `entries` map stays in sync with the SMT, which treats
         // empty values as no-ops. `Smt::with_entries` above already errored on duplicate keys,
@@ -103,15 +107,10 @@ impl AssetVault {
             None
         } else {
             Some(
-                Asset::from_id_and_value(asset_id, asset_value)
+                Asset::new(asset_id, asset_value)
                     .expect("asset vault should only store valid assets"),
             )
         }
-    }
-
-    /// Returns true if the specified non-fungible asset is stored in this vault.
-    pub fn has_non_fungible_asset(&self, asset: NonFungibleAsset) -> Result<bool, AssetVaultError> {
-        Ok(self.entries.contains_key(&asset.id()))
     }
 
     /// Returns the balance of the fungible asset identified by `asset_id`.
@@ -141,8 +140,7 @@ impl AssetVault {
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
         // SAFETY: The entries map only tracks valid assets.
         self.entries.iter().map(|(id, value)| {
-            Asset::from_id_and_value(*id, *value)
-                .expect("asset vault should only store valid assets")
+            Asset::new(*id, *value).expect("asset vault should only store valid assets")
         })
     }
 
@@ -221,10 +219,10 @@ impl AssetVault {
     /// - If the vault already contains the same non-fungible asset.
     /// - The maximum number of leaves per asset is exceeded.
     pub fn add_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
-        Ok(match asset {
-            Asset::Fungible(asset) => Asset::Fungible(self.add_fungible_asset(asset)?),
-            Asset::NonFungible(asset) => Asset::NonFungible(self.add_non_fungible_asset(asset)?),
-        })
+        match asset.as_fungible() {
+            Some(fungible_asset) => Ok(self.add_fungible_asset(fungible_asset)?.into()),
+            None => self.add_non_composable_asset(asset),
+        }
     }
 
     /// Add the specified fungible asset to the vault. If the vault already contains an asset
@@ -251,15 +249,15 @@ impl AssetVault {
         Ok(new_asset)
     }
 
-    /// Add the specified non-fungible asset to the vault.
+    /// Adds the specified non-composable asset to the vault without checking its
+    /// [`AssetComposition`].
     ///
     /// # Errors
-    /// - If the vault already contains the same non-fungible asset.
-    /// - The maximum number of leaves per asset is exceeded.
-    fn add_non_fungible_asset(
-        &mut self,
-        asset: NonFungibleAsset,
-    ) -> Result<NonFungibleAsset, AssetVaultError> {
+    ///
+    /// Returns an error if:
+    /// - the vault already contains an asset with the same [`AssetId`].
+    /// - the maximum number of leaves per asset is exceeded.
+    fn add_non_composable_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
         let old = self.insert_entry(asset.id(), asset.to_value_word())?;
 
         // if the asset already exists, return an error
@@ -274,8 +272,7 @@ impl AssetVault {
     // --------------------------------------------------------------------------------------------
     /// Remove the specified asset from the vault and returns the remaining asset, if any.
     ///
-    /// - For fungible assets, returns `Some(Asset::Fungible(remaining))` with the remaining balance
-    ///   (which may have amount 0).
+    /// - For fungible assets, returns `Some` with the remaining balance (which may have amount 0).
     /// - For non-fungible assets, returns `None` since non-fungible assets are either fully present
     ///   or absent.
     ///
@@ -284,13 +281,13 @@ impl AssetVault {
     /// - The amount of the fungible asset in the vault is less than the amount to be removed.
     /// - The non-fungible asset is not found in the vault.
     pub fn remove_asset(&mut self, asset: Asset) -> Result<Option<Asset>, AssetVaultError> {
-        match asset {
-            Asset::Fungible(asset) => {
-                let remaining = self.remove_fungible_asset(asset)?;
-                Ok(Some(Asset::Fungible(remaining)))
+        match asset.as_fungible() {
+            Some(fungible_asset) => {
+                let remaining = self.remove_fungible_asset(fungible_asset)?;
+                Ok(Some(remaining.into()))
             },
-            Asset::NonFungible(asset) => {
-                self.remove_non_fungible_asset(asset)?;
+            None => {
+                self.remove_non_composable_asset(asset)?;
                 Ok(None)
             },
         }
@@ -336,15 +333,15 @@ impl AssetVault {
         Ok(new_asset)
     }
 
-    /// Remove the specified non-fungible asset from the vault.
+    /// Remove the specified non-composable asset from the vault without checking its
+    /// [`AssetComposition`].
     ///
     /// # Errors
-    /// - The non-fungible asset is not found in the vault.
-    /// - The maximum number of leaves per asset is exceeded.
-    fn remove_non_fungible_asset(
-        &mut self,
-        asset: NonFungibleAsset,
-    ) -> Result<(), AssetVaultError> {
+    ///
+    /// Returns an error if:
+    /// - the asset is not found in the vault.
+    /// - the maximum number of leaves per asset is exceeded.
+    fn remove_non_composable_asset(&mut self, asset: Asset) -> Result<(), AssetVaultError> {
         let old = self.insert_entry(asset.id(), Smt::EMPTY_VALUE)?;
 
         // return an error if the asset did not exist in the vault.
@@ -417,6 +414,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
+    use crate::asset::NonFungibleAsset;
 
     #[test]
     fn vault_fails_on_absent_fungible_asset() {

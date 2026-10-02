@@ -1,0 +1,11 @@
+{
+  "source": "@metamask/eth-sig-util",
+  "method": "signTypedData V4",
+  "domain_name": "Miden Transaction",
+  "domain_version": "1",
+  "public_key": "0x034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+  "signature_r": "0x13deb6c6f8903c58117a86d11ce7140af8a1d90dc9a25cb03d1c5972deae7ae8",
+  "signature_s": "0x06dda37b581ebcb290000fc2f460c964c5fbca5e6ad4b77109609db80743ca8d",
+  "signature_v": 27,
+  "tx_summary_hash": "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}

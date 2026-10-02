@@ -82,6 +82,7 @@ impl<'store> MockHost<'store> {
         self.handled_events.extend(
             [
                 &TransactionEventId::AccountBeforeForeignLoad,
+                &TransactionEventId::AccountBeforeCodeUpgrade,
                 &TransactionEventId::AccountVaultBeforeGetAsset,
                 &TransactionEventId::AccountVaultBeforeAddAsset,
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,
@@ -129,9 +130,7 @@ impl<'store> Host for MockHost<'store> {
             if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
                 && let Some(response) = self.input_note_index_response
             {
-                return Ok(vec![AdviceMutation::extend_advice_stack(
-                    response.into_iter().collect(),
-                )]);
+                return Ok(vec![AdviceMutation::extend_advice_stack_with(response)]);
             }
 
             // If the host should handle the event, delegate to the tx executor host.

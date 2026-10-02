@@ -16,7 +16,6 @@ use miden_standards::account::auth::{
     commit_fee_conversion_info,
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     FeeSponsorshipNote,
     NetworkAccountTarget,
@@ -74,7 +73,6 @@ fn network_account(
     Ok(AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_components(auth)
-        .with_component(BasicWallet)
         .with_assets(assets)
         .build_existing()?)
 }
@@ -194,9 +192,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         .find(|note| note.metadata().tag() == TxFeeNote::TAG)
         .expect("the sponsor should pay its own fee note");
     let fee_note_asset = fee_note.assets().iter().next().expect("fee note carries one asset");
-    let &Asset::Fungible(paid) = fee_note_asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid = fee_note_asset.unwrap_fungible();
     assert!(
         paid.amount() >= executed.compute_fee(),
         "paid fee {} should cover the required fee {}",
@@ -282,11 +278,12 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
         .iter()
         .find(|note| note.metadata().tag() == TxFeeNote::TAG)
         .expect("the network account should pay its own fee note");
-    let &Asset::Fungible(paid) =
-        fee_note.assets().iter().next().expect("fee note carries one asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid = fee_note
+        .assets()
+        .iter()
+        .next()
+        .expect("fee note carries one asset")
+        .unwrap_fungible();
 
     mock_chain.add_pending_executed_transaction(&collection_tx)?;
     mock_chain.prove_next_block()?;

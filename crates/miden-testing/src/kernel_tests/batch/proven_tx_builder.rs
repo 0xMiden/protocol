@@ -25,6 +25,7 @@ pub struct MockProvenTxBuilder {
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
+    proof: ExecutionProof,
 }
 
 impl MockProvenTxBuilder {
@@ -44,6 +45,7 @@ impl MockProvenTxBuilder {
             output_notes: None,
             input_notes: None,
             nullifiers: None,
+            proof: miden_protocol::testing::dummy_execution_proof(),
         }
     }
 
@@ -130,7 +132,7 @@ impl MockProvenTxBuilder {
             ref_block_num,
             ref_block_commitment,
             self.expiration_block_num,
-            ExecutionProof::new_dummy(),
+            self.proof,
         )
         .context("failed to build proven transaction")
     }

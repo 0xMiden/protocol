@@ -1,0 +1,49 @@
+syntax = "proto3";
+package transaction;
+
+import "account.proto";
+import "block.proto";
+import "note.proto";
+import "partial_blockchain.proto";
+import "primitives.proto";
+import "protocol_config.proto";
+import "transaction.proto";
+
+message AuthenticatedInputNote {
+  note.Note note = 1;
+  note.NoteInclusionProof proof = 2;
+}
+
+message InputNote {
+  oneof note {
+    AuthenticatedInputNote authenticated = 1;
+    note.Note unauthenticated = 2;
+  }
+}
+
+message InputNotes {
+  repeated InputNote notes = 1;
+}
+
+message ForeignAccountSlotName {
+  account.StorageSlotId slot_id = 1;
+  string slot_name = 2;
+}
+
+message TransactionInputs {
+  oneof version {
+    TransactionInputsV1 v1 = 1;
+  }
+}
+
+message TransactionInputsV1 {
+  account.PartialAccount account = 1;
+  blockchain.BlockHeader block_header = 2;
+  protocol_config.ProtocolConfig protocol_config = 3;
+  blockchain.PartialBlockchain partial_blockchain = 4;
+  InputNotes input_notes = 5;
+  TransactionArgs tx_args = 6;
+  primitives.AdviceInputs advice_inputs = 7;
+  repeated account.AccountCode foreign_account_code = 8;
+  repeated ForeignAccountSlotName foreign_account_slot_names = 9;
+}
