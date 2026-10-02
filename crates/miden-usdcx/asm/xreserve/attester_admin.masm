@@ -1,0 +1,66 @@
+# xreserve::attester_admin
+#
+# The authority-gated deposit-attester allowlist setter (`set_attester`): writes the
+# xReserveAttesters allowlist — the write side of the allowlist that attestation_verify.masm
+# reads at mint time. Under the account's role-based authority this procedure is mapped to
+# the ATTEST_ADMIN role, whose seeded member is the attester administrator's account. The
+# setter is NOT pause-gated, matching Circle's onlyOwner model, so the attester
+# administrator can disable a compromised attester while the faucet is paused.
+
+use miden::protocol::native_account
+use miden::standards::access::authority
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
+
+# CONSTANTS
+# =================================================================================================
+
+# The xReserveAttesters allowlist StorageMap slot.
+pub const XRESERVE_ATTESTERS_SLOT = word("xusdc::xreserve::attester_admin::xreserve_attesters")
+
+# The marker written into xReserveAttesters[PK_COMMITMENT] when enabled = 1.
+pub const ATTESTER_ENABLED_MARKER = ONE_WORD
+
+# The marker written when enabled = 0. Equal to EMPTY_WORD, so a disabled row is indistinguishable
+# from an absent one on the read path.
+const ATTESTER_DISABLED_MARKER = ZERO_WORD
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Enables (enabled = 1) or disables (enabled = 0) a deposit attester keyed by its pubkey
+#! commitment — the `ATTEST_ADMIN`-gated setter for the xReserveAttesters allowlist. It
+#! trusts the caller's commitment Word verbatim and does NOT recompute it from a raw pubkey.
+#!
+#! Inputs:  [PK_COMMITMENT, enabled, pad(11)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - PK_COMMITMENT is the Poseidon2 pubkey commitment (the xReserveAttesters map key).
+#! - enabled is 1 to allowlist or 0 to remove.
+#!
+#! Panics if:
+#! - the note sender does not hold the role the account's authority requires for this procedure
+#!   (authority::assert_authorized -> rbac::assert_sender_is_admin, ERR_SENDER_LACKS_ROLE).
+#! - `enabled` is not a boolean (the `cdropw` binary constraint).
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_attester
+    # gate on the account-wide authority (sender-based) only.
+    exec.authority::assert_authorized
+    # => [PK_COMMITMENT, enabled, pad(11)]
+
+    push.ATTESTER_DISABLED_MARKER push.ATTESTER_ENABLED_MARKER movup.12
+    # => [enabled, ENABLED_MARKER, DISABLED_MARKER, PK_COMMITMENT, pad(11)]
+
+    # enabled = 1 keeps ENABLED_MARKER, enabled = 0 keeps DISABLED_MARKER.
+    cdropw
+    # => [MARKER, PK_COMMITMENT, pad(11)]
+
+    swapw push.XRESERVE_ATTESTERS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, PK_COMMITMENT, MARKER, pad(11)]
+
+    # xReserveAttesters[PK_COMMITMENT] = MARKER.
+    exec.native_account::set_map_item dropw
+    # => [pad(16)]
+end

@@ -208,6 +208,12 @@ impl AuthGuardedMultisigConfig {
 /// The transaction fee is paid as described for [`AuthMultisig`](super::AuthMultisig), so the fee
 /// note is covered by the approver and guardian signatures.
 ///
+/// # Security
+///
+/// Per-procedure threshold overrides work as in [`AuthMultisig`](super::AuthMultisig), so a
+/// procedure with a lowered override should seal the notes it creates for the reasons described
+/// there.
+///
 /// # Privacy
 ///
 /// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public
