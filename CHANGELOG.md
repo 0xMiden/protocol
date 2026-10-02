@@ -1,58 +1,11 @@
 # Changelog
 
-## v0.17.0-rc.8 (2026-09-29)
-
-### Features
-
-- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3949](https://github.com/0xMiden/protocol/pull/3949)).
-- Added the `UpgradeNote` standard note, which upgrades a network account's code to the code it carries in an attachment ([#3958](https://github.com/0xMiden/protocol/pull/3958)).
-- `UpgradeNote` now carries its code in one or more `AccountCodeUpgradeAttachment` chunks and its script copies the code to the advice map ([#3967](https://github.com/0xMiden/protocol/pull/3967)).
-- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
-- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3948](https://github.com/0xMiden/protocol/pull/3948)).
+## Unreleased
 
 ### Changes
 
-- [BREAKING] Upgraded Miden VM and crypto from v0.33.0 to v0.34.0, including Plonky3 v0.8.0 and updated VM AIR and recursive verifier roots. Falcon key generation now requires a `CryptoRng` ([#3952](https://github.com/0xMiden/protocol/pull/3952)).
-- [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
-- [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
-- Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
 - [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
-- [BREAKING] `AccountCode`, `NoteScript` and `TransactionScript` now serialize their MAST forest in the hashless format and `NoteScript` element conversions became `NoteScript::{to_elements, try_from_elements}` ([#3961](https://github.com/0xMiden/protocol/pull/3961)).
 
-### Fixes
-
-- Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
-- Fixed a panic when verifying a Protobuf `MerklePath` or `PartialMmr` with a path longer than 255 nodes ([#3970](https://github.com/0xMiden/protocol/pull/3970)).
-- [BREAKING] Transaction host creation now returns an error instead of panicking when a new account's partial storage is missing a storage map ([#3971](https://github.com/0xMiden/protocol/pull/3971)).
-
-## v0.17.0-rc.7 (2026-09-24)
-
-### Fixes
-
-- [BREAKING] `AuthGuardedMultisig` now pays the transaction fee ([#3931](https://github.com/0xMiden/protocol/pull/3931)).
-
-## v0.17.0-rc.6 (2026-09-22)
-
-### Features
-
-- Added canonical Protobuf representations for `Account`, `AccountStorage`, `StorageSlot`, `StorageMap` and `AssetVault` ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
-
-### Changes
-
-- [BREAKING] Moved `AccountFile` from `miden-protocol` and `NoteFile` from `miden-standards` into `miden-objects` and switched both to Protobuf serialization ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
-- [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
-- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
-- [BREAKING] `StorageMap` now drops an entry whose value is empty, which the sparse Merkle tree already treats as absent, so a removed RBAC role no longer fails account reconstruction, and reports an overfull leaf through the new `StorageMapError::MaxLeafEntriesExceeded` instead of panicking ([#3916](https://github.com/0xMiden/protocol/pull/3916)).
-- [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
-
-## v0.17.0-rc.5 (2026-09-17)
-### Fixes
-
-- [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
-- `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
-- The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
-
-## v0.17.0-pre.1 (2026-09-05)
 ## v0.17.0 (2026-10-01)
 
 ### Features
