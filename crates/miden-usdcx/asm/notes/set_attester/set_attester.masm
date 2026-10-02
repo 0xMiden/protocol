@@ -1,0 +1,97 @@
+# xreserve_set_attester_note
+#
+# Its main role is to call `attester_admin::set_attester` on the faucet account. The scheme-2
+# NetworkAccountTarget attachment binds the note to its target faucet, enforced as a consume gate.
+#
+# Note storage layout (5 felts): [pk_commitment(4), enabled]. `enabled` is 1 (allowlist) or 0 (remove).
+
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+use xreserve::attester_admin
+
+# CONSTANTS
+# =================================================================================================
+
+# The note-storage item count: [pk_commitment(4), enabled] = 5 felts.
+const SET_ATTESTER_NOTE_NUM_ITEMS = 5
+
+# Memory address at which note storage is staged.
+const STORAGE_PTR = 0
+
+# ERRORS
+# =================================================================================================
+
+# The note must carry exactly the 5 param felts.
+const ERR_XRESERVE_SET_ATTESTER_NOTE_STORAGE = "set_attester note storage item count is invalid"
+
+# The consuming account must be the faucet the note's NetworkAccountTarget attachment addresses.
+const ERR_XRESERVE_SET_ATTESTER_NOTE_WRONG_FAUCET = "set_attester note is not bound to the consuming faucet"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Consumes the `set_attester` admin note and drives the `ATTEST_ADMIN`-role-gated
+#! attester-allowlist write.
+#!
+#! Stages the note storage into memory, loads the params onto the stack as
+#! `[PK_COMMITMENT, enabled, pad(11)]`, and `call`s `attester_admin::set_attester`.
+#!
+#! Requires that the account exposes:
+#! - xreserve::attester_admin::set_attester procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - ARGS is unused.
+#!
+#! Note storage is assumed to be as follows:
+#! - PK_COMMITMENT is the Poseidon2 pubkey commitment to write.
+#! - enabled is 1 (allowlist: write the enabled marker) or 0 (remove: write EMPTY_WORD).
+#!
+#! Panics if:
+#! - the consuming account is not the note's NetworkAccountTarget attachment target.
+#! - the note storage does not carry exactly 5 items.
+#! - the note sender does not hold the `ATTEST_ADMIN` role (attester_admin::set_attester's
+#!   authority gate).
+#!
+#! Invocation: dyncall
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # faucet binding: only the attachment's target faucet may consume this note.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_XRESERVE_SET_ATTESTER_NOTE_WRONG_FAUCET
+    # => [pad(16)]
+
+    # stage the creator-committed params into memory at STORAGE_PTR.
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_items, pad(16)]
+
+    eq.SET_ATTESTER_NOTE_NUM_ITEMS assert.err=ERR_XRESERVE_SET_ATTESTER_NOTE_STORAGE
+    # => [pad(16)]
+
+    # load params one-by-one, deepest-first so pk_commitment element 0 lands on top.
+    push.4 mem_load
+    # => [enabled, pad(16)]
+
+    push.3 mem_load
+    # => [pk_commitment_3, enabled, pad(16)]
+
+    push.2 mem_load
+    # => [pk_commitment_2, pk_commitment_3, enabled, pad(16)]
+
+    push.1 mem_load
+    # => [pk_commitment_1, pk_commitment_2, pk_commitment_3, enabled, pad(16)]
+
+    push.0 mem_load
+    # => [PK_COMMITMENT, enabled, pad(16)]
+
+    call.attester_admin::set_attester
+    # => [pad(21)]
+
+    dropw drop
+    # => [pad(16)]
+end

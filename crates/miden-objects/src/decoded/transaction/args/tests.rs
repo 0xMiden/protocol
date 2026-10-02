@@ -43,6 +43,7 @@ fn transaction_args_decode_optional_script_without_verifying_it() {
         Default::default(),
         Default::default(),
         Word::empty(),
+        None,
     );
     let wire = proto::transaction::TransactionArgs::from(&input);
     let decoded = wire.clone().decode_fields().unwrap();
@@ -89,6 +90,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
         auth_args: Some(dummy_word(6).into()),
+        account_code_upgrade: None,
     }
     .decode_fields()
     .unwrap()
@@ -127,6 +129,7 @@ fn transaction_args_reject_duplicate_note_ids() {
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
         auth_args: Some(dummy_word(5).into()),
+        account_code_upgrade: None,
     };
     let error = duplicate
         .decode_fields()

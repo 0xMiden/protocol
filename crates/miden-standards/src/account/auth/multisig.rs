@@ -240,6 +240,25 @@ impl AuthMultisigConfig {
 /// override exceeds the threshold of `set_procedure_threshold`. Note that
 /// `update_signers_and_threshold` can also weaken an override by growing the signer set (see
 /// above), so protect it the same way where relevant.
+///
+/// # Security: a lowered override authorizes changes to the procedure's output notes
+///
+/// The transaction threshold is derived only from the called account procedures, but a
+/// transaction script can also change output notes without calling one: it can add attachments to
+/// any output note, and add assets that were removed from the vault but not yet placed in a note.
+/// These changes do not raise the threshold, so an override below the default lets that smaller
+/// group of approvers also change the notes the procedure creates.
+///
+/// For example, a procedure with an override of 1 creates a note with a fixed recipient and
+/// asset. A single approver can still add a secret attachment that the recipient cannot
+/// reconstruct, so the recipient cannot consume the note. Or the approver can add a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment, which makes the account
+/// fund a fee sponsorship for a network account the approver chooses.
+///
+/// To prevent this, a procedure with a lowered override should seal every note it creates with
+/// `miden::protocol::output_note::seal`, after it adds its own assets and attachments. A sealed
+/// note rejects further assets and attachments. The auth procedure cannot check this, so the
+/// protection holds only when the procedure itself seals its notes.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,

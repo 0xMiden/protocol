@@ -58,6 +58,10 @@ use crate::scripts::fee_manager::{
     fee_faucet_id,
 };
 
+/// The lowest reclaim height a FEE_SPONSORSHIP note can have: height 0 encodes a disabled reclaim,
+/// so block 1 is the earliest block from which the note can be reclaimed.
+const MIN_RECLAIM_HEIGHT: BlockNumber = BlockNumber::FIRST;
+
 // COLLECT SPONSORED FEES
 // ================================================================================================
 
@@ -274,7 +278,7 @@ impl Test {
             // all, which is what a sponsorship that is not meant to be reclaimed here keeps.
             let (reclaimer, reclaim_height) = sponsorship
                 .reclaimable_by_target
-                .then(|| (network_account.id(), BlockNumber::from(1)))
+                .then(|| (network_account.id(), MIN_RECLAIM_HEIGHT))
                 .unzip();
             let note = Note::from(
                 FeeSponsorshipNote::builder()

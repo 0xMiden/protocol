@@ -41,6 +41,16 @@ impl Verify for AccountCode {
     }
 }
 
+pub use proto::account::DecodedAccountCodeUpgrade as AccountCodeUpgrade;
+
+impl Verify for AccountCodeUpgrade {
+    type Verified = miden_protocol::account::AccountCodeUpgrade;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(self.code.verify()?))
+    }
+}
+
 pub use proto::account::DecodedAccountWitness as AccountWitness;
 
 impl Verify for AccountWitness {
