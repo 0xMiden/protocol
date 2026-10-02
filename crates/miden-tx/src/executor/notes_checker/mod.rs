@@ -22,26 +22,24 @@ use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
 use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
+mod bundle;
 mod checker_utils;
+mod fee_collection;
+mod sponsorship;
 
+use bundle::NoteBundle;
 pub use checker_utils::{
     FailedNote,
-    FeeRejection,
     MAX_NUM_CHECKER_NOTES,
     NoteConsumptionInfo,
     NoteFailure,
-    SponsorshipRejection,
     SuccessfulNote,
 };
-use checker_utils::{
-    FeeCollection,
-    NoteBundle,
-    drop_rejected_notes,
-    feature_note_roots,
-    handle_epilogue_error,
-    reject_unreclaimable_sponsorships,
-    sponsorship_consumption_status,
-};
+use checker_utils::{drop_rejected_notes, handle_epilogue_error};
+pub use fee_collection::FeeRejection;
+use fee_collection::{FeeCollection, feature_note_roots};
+pub use sponsorship::SponsorshipRejection;
+use sponsorship::{reject_unreclaimable_sponsorships, sponsorship_consumption_status};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
