@@ -39,7 +39,6 @@ use checker_utils::{
     drop_rejected_notes,
     feature_note_roots,
     handle_epilogue_error,
-    reject_unfunded_bundles,
     reject_unreclaimable_sponsorships,
     sponsorship_consumption_status,
 };
@@ -143,7 +142,7 @@ where
         // which leaves the bundles unchanged but for the sponsorships rejected above.
         let (bundles, _) = NoteBundle::group(&notes);
         if let Some(fee_collection) = self.read_fee_collection(&tx_inputs, &bundles).await? {
-            let unfunded = reject_unfunded_bundles(&bundles, &fee_collection);
+            let unfunded = fee_collection.reject_unfunded_bundles(&bundles);
             if !unfunded.is_empty() {
                 drop_rejected_notes(&mut notes, &unfunded);
                 rejected.extend(unfunded);
