@@ -103,11 +103,11 @@ async fn check_consumability(
     ))
 }
 
-/// Returns the reason the checker rejected the note with `note_id` for without executing it.
+/// Returns the reason the checker rejected the note with `note_id` without executing it.
 ///
 /// Panics if the note did not fail, failed in execution, or was rejected for a reason other than
 /// an `R`.
-fn rejection<R: Error + 'static>(info: &NoteConsumptionInfo, note_id: NoteId) -> &R {
+fn rejection_reason<R: Error + 'static>(info: &NoteConsumptionInfo, note_id: NoteId) -> &R {
     let failed = info
         .failed()
         .iter()
@@ -183,7 +183,7 @@ async fn note_checker_keeps_intact_pairs_alongside_an_uncovered_note(
     let provided = AssetAmount::new(uncovered_sponsored_amount.unwrap_or(0))?;
     for note_id in uncovered_ids {
         assert_matches!(
-            rejection::<FeeRejection>(&info, note_id),
+            rejection_reason::<FeeRejection>(&info, note_id),
             FeeRejection::FeeNotCovered { feature_note_id, required, provided: actual }
                 if *feature_note_id == feature_notes[1].id()
                     && required.as_u64() == FEE_AMOUNT
@@ -250,7 +250,7 @@ async fn note_checker_fails_an_orphan_sponsorship_alone(
     } else {
         // the account is not the orphan's reclaimer, so it is rejected without being executed
         assert_matches!(
-            rejection::<SponsorshipRejection>(&info, orphan.note().id()),
+            rejection_reason::<SponsorshipRejection>(&info, orphan.note().id()),
             SponsorshipRejection::NotReclaimer { native_account, .. }
                 if *native_account == network_account.id()
         );
@@ -312,7 +312,7 @@ async fn note_checker_rejects_a_sponsorship_naming_another_sponsorship(
     );
 
     assert_matches!(
-        rejection::<SponsorshipRejection>(&info, chained.id()),
+        rejection_reason::<SponsorshipRejection>(&info, chained.id()),
         SponsorshipRejection::FeatureNoteIsSponsorship { feature_note_id }
             if *feature_note_id == sponsorship.id()
     );
@@ -492,14 +492,14 @@ async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> an
 
     assert_eq!(info.failed().len(), 2, "only the wrongly funded pair should fail");
     assert_matches!(
-        rejection::<SponsorshipRejection>(&info, sponsorship_notes[1].id()),
+        rejection_reason::<SponsorshipRejection>(&info, sponsorship_notes[1].id()),
         SponsorshipRejection::WrongFeeAsset { expected, actual }
             if *expected == AssetId::new_fungible(fee_faucet_id()?)
                 && *actual == other_asset(FEE_AMOUNT)?.id()
     );
     // the wrongly funded sponsorship does not count towards the fee
     assert_matches!(
-        rejection::<FeeRejection>(&info, feature_notes[1].id()),
+        rejection_reason::<FeeRejection>(&info, feature_notes[1].id()),
         FeeRejection::FeeNotCovered { provided, .. } if *provided == AssetAmount::ZERO
     );
 
@@ -544,7 +544,7 @@ async fn note_checker_sums_the_sponsorships_of_a_feature_note(
         assert!(info.successful().is_empty(), "no note of the uncovered bundle should succeed");
         for note_id in bundle_ids {
             assert_matches!(
-                rejection::<FeeRejection>(&info, note_id),
+                rejection_reason::<FeeRejection>(&info, note_id),
                 FeeRejection::FeeNotCovered { required, provided, .. }
                     if required.as_u64() == FEE_AMOUNT
                         && provided.as_u64() == first_amount + second_amount
@@ -578,7 +578,7 @@ async fn note_checker_rejects_an_unscheduled_feature_note() -> anyhow::Result<()
     assert!(info.successful().is_empty(), "no note of the bundle should succeed");
     for note_id in [feature_notes[0].id(), sponsorship_notes[0].id()] {
         assert_matches!(
-            rejection::<FeeRejection>(&info, note_id),
+            rejection_reason::<FeeRejection>(&info, note_id),
             FeeRejection::FeeNotScheduled { feature_note_id, script_root }
                 if *feature_note_id == feature_notes[0].id()
                     && *script_root == feature_notes[0].script().root()

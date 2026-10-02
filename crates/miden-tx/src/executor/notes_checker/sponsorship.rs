@@ -58,10 +58,10 @@ pub enum SponsorshipRejection {
 /// Rejects the FEE_SPONSORSHIP notes heading a bundle of their own that `native_account_id` cannot
 /// reclaim at `block_ref`.
 ///
-/// A sponsorship heads a bundle only when the feature note it names is not an input, and then it
-/// can only be reclaimed, which requires reclaim to be enabled, its height to have been reached,
-/// and the reclaiming account to be the named reclaimer. The asset a reclaim returns is not
-/// constrained, so the fee asset is not checked here.
+/// This procedure checks that:
+/// - Reclaim is enabled.
+/// - Reclaim height has been reached.
+/// - Reclaiming account is the reclaimer.
 pub(super) fn reject_unreclaimable_sponsorships(
     bundles: &[NoteBundle],
     native_account_id: AccountId,
