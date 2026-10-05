@@ -6,7 +6,6 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
-    AccountBuilder,
     AccountComponent,
     AccountId,
     AccountType,
