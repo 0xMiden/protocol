@@ -47,7 +47,7 @@ const FROZEN = 1
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
 const ERR_PROCEDURE_ROLES_REQUIRE_RBAC = "procedure roles require an RBAC-controlled authority"
-const ERR_CANNOT_REASSIGN_SET_PROCEDURE_ROLE = "the role of set_procedure_role cannot be reassigned"
+const ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS = "set_procedure_role requires a role with members"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -91,7 +91,9 @@ end
 #! Assigns the role required to invoke an authority-gated procedure, or clears it.
 #!
 #! Writing `0` unmaps the procedure so it falls back to the `ADMIN` role. Assigning a role that has
-#! no members blocks the procedure for everyone, `ADMIN` included, until it is reassigned.
+#! no members blocks the procedure for everyone, `ADMIN` included, until the role is granted to an
+#! account or the procedure is reassigned. `set_procedure_role` itself can only be assigned a role
+#! that has at least one member.
 #!
 #! Inputs:  [role_symbol, PROCEDURE_ROOT, pad(11)]
 #! Outputs: [pad(16)]
@@ -104,7 +106,8 @@ end
 #! - the authority is not RbacControlled.
 #! - the note sender is not the account's emergency authority.
 #! - role_symbol is neither 0 nor a valid role symbol encoding.
-#! - PROCEDURE_ROOT is the root of `set_procedure_role` itself.
+#! - PROCEDURE_ROOT is the root of `set_procedure_role` itself and role_symbol is a non-zero role
+#!   with no members.
 #!
 #! Invocation: call
 @account_procedure
@@ -126,8 +129,17 @@ pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProc
     dupw padw caller
     # => [SELF_ROOT, PROCEDURE_ROOT, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
 
-    exec.word::eq assertz.err=ERR_CANNOT_REASSIGN_SET_PROCEDURE_ROLE
-    # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+    exec.word::eq dup.5 neq.0 and
+    # => [is_self_mapped, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    # A role for set_procedure_role itself must have a member, so it stays callable.
+    if.true
+        dup.4 exec.rbac::get_role_member_count
+        # => [member_count, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+        neq.0 assert.err=ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS
+        # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+    end
 
     push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
     # => [slot_suffix, slot_prefix, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
