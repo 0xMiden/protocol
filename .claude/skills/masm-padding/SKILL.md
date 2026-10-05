@@ -44,7 +44,8 @@ Not:
 This shows up most often at the start of note scripts that don't use their input arguments:
 
 ```masm
-begin
+@note_script
+pub proc main(args: NoteArgs)
     dropw
     # => [pad(16)]
     ...
@@ -124,29 +125,22 @@ These extra elements must be explicitly dropped before the procedure returns (di
 
 ## Debugging Stack Depth
 
-When unsure whether the stack matches the depth you expect, use the assembly's debug instructions to inspect it at runtime. These cost zero VM cycles, do not affect the program hash, and are stripped at compile time when the assembler is not in debug mode.
+Use the event-based procedures in `miden::core::debug` to inspect VM state. These are ordinary procedure calls: they emit print events whenever invoked, affect the program being executed, and consume cycles (`print_stack` costs 3 cycles). Remove them from production programs.
 
-- `debug.stack` – print the full operand stack.
-- `debug.stack.N` – print only the top N elements (1 ≤ N < 256).
-- `sdepth` – push the current stack depth onto the stack as a felt; useful when you need depth as a runtime value, e.g. to assert it:
+```masm
+use miden::core::debug
 
-  ```masm
-  sdepth push.16 eq assert.err="depth must be 16 here"
-  ```
-
-Run with the `--debug` flag to see output:
-
-```bash
-miden-vm run program.masm --debug
+begin
+    exec.debug::print_stack
+    sdepth push.16 eq assert.err="depth must be 16 here"
+end
 ```
-
-Without `--debug`, debug instructions are silently removed. Remove or comment out `debug.*` lines before committing production MASM.
 
 ## Validation Checklist
 
 For all invocation types:
 - [ ] Inline `# =>` trackers reflect the post-auto-pad depth (never below 16) at boundaries that enforce the floor (`call`, note scripts, tx scripts)
-- [ ] No `debug.*` instruction is left in production MASM
+- [ ] No `miden::core::debug` procedure call is left in production MASM
 
 For `call` procedures:
 - [ ] Inputs doc comment shows exactly 16 elements with `pad(N)`
