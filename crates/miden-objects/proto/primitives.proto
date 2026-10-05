@@ -16,7 +16,7 @@ message ExecutionProof {
 }
 
 message MastForest {
-  // Canonically serialized MAST forest.
+  // Hashless serialized MAST forest.
   bytes encoded = 1;
 }
 
@@ -41,6 +41,21 @@ message MerklePath {
 message SparseMerklePath {
   fixed64 empty_nodes_mask = 1;
   repeated Word siblings = 2;
+}
+
+// A partial MMR reconstructed from its peaks and tracked leaf openings.
+message PartialMmr {
+  // Number of leaves in the forest.
+  fixed64 forest = 1;
+  repeated Word peaks = 2;
+  // Unique leaves ordered by strictly increasing position.
+  repeated TrackedMmrLeaf tracked_leaves = 3;
+}
+
+message TrackedMmrLeaf {
+  fixed64 position = 1;
+  Word leaf = 2;
+  repeated Word path = 3;
 }
 
 message MmrDelta {

@@ -65,7 +65,8 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         mast_store.as_ref(),
         script_mast_store,
         account_procedure_index_map,
-    );
+    )
+    .context("failed to construct transaction prover host")?;
 
     let advice_inputs = tx_advice_inputs.into_advice_inputs();
     let program = TransactionKernel::main();

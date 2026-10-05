@@ -2,13 +2,14 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::account::AccountUpdateDetails;
+use miden_protocol::account::{AccountCode, AccountCodeUpgrade, AccountUpdateDetails};
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::note::{Note, NoteType, PartialNoteMetadata};
 use miden_protocol::transaction::{PublicOutputNote, TransactionArgs};
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
 use prost::Message;
+use rstest::rstest;
 
 use crate::decoded::account::test_utils::private_account_id;
 use crate::decoded::transaction::test_utils::note_id;
@@ -48,8 +49,12 @@ fn account_update_roundtrips_through_protobuf_bytes() {
     assert_eq!(message.decode_fields().unwrap().verify().unwrap(), update);
 }
 
-#[test]
-fn transaction_args_roundtrip_normalizes_note_args_order() {
+#[rstest]
+#[case::without_code_upgrade(None)]
+#[case::with_code_upgrade(Some(AccountCodeUpgrade::new(AccountCode::mock())))]
+fn transaction_args_roundtrip_normalizes_note_args_order(
+    #[case] account_code_upgrade: Option<AccountCodeUpgrade>,
+) {
     let first = note_id(1);
     let second = note_id(2);
     let args = TransactionArgs::from_parts(
@@ -58,6 +63,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order() {
         BTreeMap::from([(second, dummy_word(4)), (first, dummy_word(5))]),
         AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
         dummy_word(8),
+        account_code_upgrade,
     );
 
     let message = proto::transaction::TransactionArgs::from(&args);
