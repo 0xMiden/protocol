@@ -252,7 +252,7 @@ where
             .header()
             .find_slot_header_by_name(BasicConstantFeePolicy::fee_schedule_slot_name());
         if let Some(fee_schedule_slot) = fee_schedule_slot
-            && FeePolicyManager::active_fee_policy_from_storage(storage.header())
+            && FeePolicyManager::active_fee_policy(storage.header())
                 == Some(BasicConstantFeePolicy::root())
         {
             let map_root = fee_schedule_slot.value();
