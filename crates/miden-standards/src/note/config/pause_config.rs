@@ -58,19 +58,19 @@ pub enum PauseConfig {
 }
 
 impl PauseConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the first storage item. Keep in sync with
+    // Config note variants stored in the first storage item. Keep in sync with
     // `pause_config.masm`.
-    const SELECTOR_PAUSE: u8 = 0;
-    const SELECTOR_UNPAUSE: u8 = 1;
+    const VARIANT_PAUSE: u8 = 0;
+    const VARIANT_UNPAUSE: u8 = 1;
 
-    /// Returns the note storage values encoding this action, laid out as `[selector]`.
+    /// Returns the note storage values encoding this action, laid out as `[variant]`.
     fn to_storage_values(self) -> Vec<Felt> {
         match self {
-            PauseConfig::Pause => vec![Felt::from(Self::SELECTOR_PAUSE)],
-            PauseConfig::Unpause => vec![Felt::from(Self::SELECTOR_UNPAUSE)],
+            PauseConfig::Pause => vec![Felt::from(Self::VARIANT_PAUSE)],
+            PauseConfig::Unpause => vec![Felt::from(Self::VARIANT_UNPAUSE)],
         }
     }
 }
@@ -89,7 +89,7 @@ impl From<PauseConfig> for NoteStorage {
 /// [`PausableManager`](crate::account::access::pausable::PausableManager) admin action on the
 /// account that consumes it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the component's
+/// A single note script dispatches on the note variant in its storage to one of the component's
 /// admin procedures (`pause`, `unpause`). Authorization is enforced by those procedures through
 /// the account-wide [`Authority`](crate::account::access::Authority) component, so the note carries
 /// no assets.
@@ -161,7 +161,7 @@ impl PauseConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a PauseConfig note: a single selector.
+    /// Number of storage items of a PauseConfig note: a single variant.
     pub const NUM_STORAGE_ITEMS: usize = 1;
 
     // PUBLIC ACCESSORS
@@ -305,13 +305,13 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// `Pause` / `Unpause` storage is a single selector item.
+    /// `Pause` / `Unpause` storage is a single variant item.
     #[test]
     fn action_storage_layout() {
         let pause = NoteStorage::from(PauseConfig::Pause);
-        assert_eq!(pause.items(), &[Felt::from(PauseConfig::SELECTOR_PAUSE)]);
+        assert_eq!(pause.items(), &[Felt::from(PauseConfig::VARIANT_PAUSE)]);
 
         let unpause = NoteStorage::from(PauseConfig::Unpause);
-        assert_eq!(unpause.items(), &[Felt::from(PauseConfig::SELECTOR_UNPAUSE)]);
+        assert_eq!(unpause.items(), &[Felt::from(PauseConfig::VARIANT_UNPAUSE)]);
     }
 }

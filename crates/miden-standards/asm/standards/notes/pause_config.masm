@@ -9,13 +9,13 @@ use miden::standards::note::note_target
 # Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
-# Memory address of the PauseConfig note storage selector.
-const SELECTOR_PTR = STORAGE_PTR
+# Memory address of the note variant in the PauseConfig note storage.
+const VARIANT_PTR = STORAGE_PTR
 
-# Config note selectors, stored in the first storage item. Keep in sync with `PauseConfig` on the
+# Config note variants, stored in the first storage item. Keep in sync with `PauseConfig` on the
 # Rust side.
-const SELECTOR_PAUSE = 0
-const SELECTOR_UNPAUSE = 1
+const VARIANT_PAUSE = 0
+const VARIANT_UNPAUSE = 1
 
 # Expected note storage item count per action.
 const NUM_ITEMS_PAUSE = 1
@@ -27,7 +27,7 @@ const MAX_NUM_ITEMS = NUM_ITEMS_PAUSE
 # ERRORS
 # =================================================================================================
 
-const ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR = "pause config note selector does not match a known action"
+const ERR_PAUSE_CONFIG_UNKNOWN_VARIANT = "pause config note variant does not match a known action"
 
 const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note storage item count does not match the selected action"
 
@@ -37,7 +37,7 @@ const ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC = "pause config note must be public"
 # =================================================================================================
 
 #! PauseConfig script: triggers a `PausableManager` admin action against the consuming account,
-#! dispatched on a selector stored in the first note storage item.
+#! dispatched on the note variant in its storage.
 #!
 #! The selected action is read from the note storage and is fixed at note creation:
 #! - `0` Pause:   `[0]`.
@@ -59,7 +59,7 @@ const ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC = "pause config note must be public"
 #! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
-#! - the selector is not a known action.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
@@ -80,12 +80,12 @@ pub proc main(args: NoteArgs)
     push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_PAUSE
-    # => [is_pause, selector, num_storage_items]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_PAUSE
+    # => [is_pause, variant, num_storage_items]
 
     if.true
         drop
@@ -93,7 +93,7 @@ pub proc main(args: NoteArgs)
 
         exec.execute_pause
     else
-        eq.SELECTOR_UNPAUSE assert.err=ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR
+        eq.VARIANT_UNPAUSE assert.err=ERR_PAUSE_CONFIG_UNKNOWN_VARIANT
         # => [num_storage_items]
 
         exec.execute_unpause

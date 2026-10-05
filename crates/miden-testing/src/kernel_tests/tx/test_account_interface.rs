@@ -199,7 +199,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // First failing note.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error(),
+        first_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -212,7 +212,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // Second failing note.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error(),
+        second_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -348,7 +348,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // First failing note should be the note that does not cause epilogue failure.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error(),
+        first_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -361,7 +361,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // Second failing note should be the note that causes epilogue failure.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error(),
+        second_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::FailedAssertion { .. },

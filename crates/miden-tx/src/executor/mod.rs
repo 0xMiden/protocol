@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::marker::PhantomData;
@@ -39,6 +40,7 @@ pub use notes_checker::{
     MAX_NUM_CHECKER_NOTES,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
+    NoteFailure,
     SuccessfulNote,
 };
 
@@ -345,7 +347,8 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
-        );
+        )
+        .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 
         let advice_inputs = tx_advice_inputs.into_advice_inputs();
 

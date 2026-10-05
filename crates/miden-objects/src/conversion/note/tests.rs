@@ -57,3 +57,15 @@ fn note_protobuf_reconstructs_attachment_metadata_from_structured_attachments() 
     assert_eq!(message.metadata.as_ref().unwrap().tag, note.metadata().tag().as_u32());
     assert_eq!(message.decode_fields().unwrap().verify().unwrap(), note);
 }
+
+#[test]
+fn partial_note_roundtrips_through_protobuf() {
+    // The header and the full metadata are derived on construction rather than transmitted, so the
+    // round trip only holds if the derivation matches on both sides.
+    let partial = miden_protocol::note::PartialNote::from(Note::mock_noop(Word::empty()));
+
+    let encoded = proto::note::PartialNote::from(&partial).encode_to_vec();
+    let message = proto::note::PartialNote::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(message.decode_fields().unwrap().verify().unwrap(), partial);
+}

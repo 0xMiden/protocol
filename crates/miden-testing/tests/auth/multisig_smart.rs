@@ -1,4 +1,4 @@
-use core::num::NonZeroU16;
+use core::num::NonZeroU32;
 
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
@@ -31,7 +31,6 @@ use miden_standards::errors::standards::{
     ERR_PROC_ROOT_NOT_IN_ACCOUNT,
     ERR_TOO_MANY_APPROVERS,
 };
-use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
@@ -39,6 +38,7 @@ use rstest::rstest;
 use super::multisig::{
     MultisigAuthArgsExt,
     build_update_signers_config_vector,
+    eip712_signature_witness,
     setup_keys_and_authenticators_with_scheme,
 };
 
@@ -150,6 +150,56 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_accepts_raw_and_eip712_signatures() -> anyhow::Result<()> {
+    let (secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = mock_chain_builder.build()?;
+    let salt = Word::from([Felt::new_unchecked(2); 4]);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
+    let raw_signature = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+
+    let (signature_key, witness) =
+        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary.as_ref())?;
+
+    mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
+        .add_advice_map_entry(signature_key, witness)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }
@@ -804,7 +854,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 /// rather than relative to the transaction reference block.
 #[rstest]
 #[case::within_the_window(1, None)]
-#[case::deadline_reached(3, Some(ERR_MULTISIG_APPROVAL_EXPIRED))]
+#[case::approval_expired(3, Some(ERR_MULTISIG_APPROVAL_EXPIRED))]
 #[tokio::test]
 async fn test_multisig_smart_approval_expires_relative_to_bound_block(
     #[case] blocks_advanced: u32,
@@ -818,16 +868,14 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
 
     let salt = Word::from([Felt::from(13u32); 4]);
-    let expiration_delta = NonZeroU16::new(3).unwrap();
-    let expiration_script = ExpirationTransactionScript::new(expiration_delta);
+    let approval_expiration_delta = NonZeroU32::new(3).unwrap();
     let signed_block = mock_chain.latest_block_header().block_num();
-    let auth_args = MultisigAuthArgs::new(signed_block, salt);
-    let expiration_block = signed_block + u32::from(expiration_delta.get());
+    let auth_args = MultisigAuthArgs::new(signed_block, salt)
+        .with_approval_expiration_delta(approval_expiration_delta)?;
+    let expiration_block = signed_block + approval_expiration_delta.get();
 
     let tx_summary = mock_chain
         .build_transaction(multisig_account.id())
-        .tx_script(expiration_script.into())
-        .tx_script_args(expiration_script.tx_script_args())
         .multisig_auth_args(auth_args)
         .build()?
         .execute()
@@ -835,8 +883,8 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
         .unwrap_err()
         .unwrap_unauthorized_err();
 
-    // The summary binds the delta the transaction set, measured from the bound block.
-    assert_eq!(tx_summary.expiration_delta(), expiration_delta.get());
+    // The summary binds the approval expiration as the first user param.
+    assert_eq!(tx_summary.user_params().as_elements()[0], Felt::from(expiration_block));
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -852,8 +900,6 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
 
     let result = mock_chain
         .build_transaction(multisig_account.id())
-        .tx_script(expiration_script.into())
-        .tx_script_args(expiration_script.tx_script_args())
         .multisig_auth_args(auth_args)
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)

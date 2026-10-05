@@ -15,10 +15,10 @@ use {ALWAYS} from miden::standards::note::note_execution_hint
 # CONSTANTS
 # =================================================================================================
 
-# MINT note storage layout (public mode, 22 felts total). The full window feeds the
+# MINT note storage layout (public mode, 24 felts total). The full window feeds the
 # storage commitment via `note::compute_and_store_recipient`, so it must match
 # `MintNoteStorage::Public` exactly. The padding at [17..19] keeps the P2ID storage
-# at [20..21] word-aligned and is written as explicit zeros rather than relying on
+# at [20..23] word-aligned and is written as explicit zeros rather than relying on
 # memory zero-init.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
@@ -28,7 +28,8 @@ use {ALWAYS} from miden::standards::note::note_execution_hint
 # - padding           [17..19] : 3 felts (word-aligns P2ID; explicitly zeroed)
 # - account_id_suffix [20]     : 1 felt
 # - account_id_prefix [21]     : 1 felt
-const MINT_NOTE_NUM_STORAGE_ITEMS = 22
+# - salt              [22..23] : 2 felts (zeros)
+const MINT_NOTE_NUM_STORAGE_ITEMS = 24
 
 # Memory addresses for MINT note output construction
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
@@ -40,6 +41,8 @@ const MINT_NOTE_STORAGE_DEST_TAG = 816
 # padding at 817, 818, 819 so the P2ID storage below stays word-aligned
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 820
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 821
+const MINT_NOTE_STORAGE_OUTPUT_SALT_0 = 822
+const MINT_NOTE_STORAGE_OUTPUT_SALT_1 = 823
 
 # Offsets in the local memory of the `unlock_and_send` procedure
 const UNLOCK_ASSET_ID_LOC = 0
@@ -52,12 +55,12 @@ const UNLOCK_DEST_PREFIX_LOC = 9
 
 #! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.
 #!
-#! Used on the bridge-in claim path for bridge-owned faucets. The MINT note uses public mode (22
-#! storage items) so the AggLayer Faucet creates a PUBLIC P2ID note on consumption. The 22 items
+#! Used on the bridge-in claim path for bridge-owned faucets. The MINT note uses public mode (24
+#! storage items) so the AggLayer Faucet creates a PUBLIC P2ID note on consumption. The 24 items
 #! include the fungible asset (`ASSET_ID` + `ASSET_VALUE`) for the resolved faucet at the
 #! resolved native amount, so the faucet's `mint_and_send` can verify the asset's faucet ID
 #! against the active account at consumption time. This procedure orchestrates three steps:
-#! 1. Write all 22 MINT note storage items to global memory.
+#! 1. Write all 24 MINT note storage items to global memory.
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Create the output note, and set the attachment.
 #!
@@ -66,7 +69,7 @@ const UNLOCK_DEST_PREFIX_LOC = 9
 #!
 #! Invocation: exec
 pub proc build_mint_output_note(destination_id: AccountId, faucet_id: AccountId)
-    # Step 1: Write all 22 MINT note storage items to global memory
+    # Step 1: Write all 24 MINT note storage items to global memory
     exec.write_mint_note_storage
     # => [faucet_id_suffix, faucet_id_prefix]
 
@@ -164,7 +167,7 @@ end
 # MINT-PATH HELPERS (used only by build_mint_output_note)
 # =================================================================================================
 
-#! Writes all 22 MINT note storage items to global memory.
+#! Writes all 24 MINT note storage items to global memory.
 #!
 #! Storage layout:
 #! - [0..3]:   P2ID_SCRIPT_ROOT (script root of the P2ID note)
@@ -172,9 +175,10 @@ end
 #! - [8..11]:  ASSET_ID (asset ID of the fungible asset that the AggLayer faucet must mint)
 #! - [12..15]: ASSET_VALUE (value word of the asset: [native_amount, 0, 0, 0])
 #! - [16]:     dest_tag (note tag for the P2ID output note, targeting the destination account)
-#! - [17..19]: padding (so the P2ID storage below stays word-aligned at [20..21])
+#! - [17..19]: padding (so the P2ID storage below stays word-aligned at [20..23])
 #! - [20]:     account_id_suffix (destination account suffix)
 #! - [21]:     account_id_prefix (destination account prefix)
+#! - [22..23]: salt (zeros)
 #!
 #! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [faucet_id_suffix, faucet_id_prefix]
@@ -186,6 +190,8 @@ proc write_mint_note_storage(destination_id: AccountId, faucet_id: AccountId) ->
     dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
     # destination_id_prefix [21]
     dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
+    # write the zero salt [22..23]
+    push.0.0 mem_store.MINT_NOTE_STORAGE_OUTPUT_SALT_0 mem_store.MINT_NOTE_STORAGE_OUTPUT_SALT_1
     # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
     drop
