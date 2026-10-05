@@ -64,43 +64,32 @@ where
         NoteConsumptionChecker { tx_executor }
     }
 
-    /// Checks whether some set of the provided input notes could be consumed by the provided
-    /// account by executing the transaction with varying combination of notes.
-    ///
-    /// This function attempts to find the maximum set of notes that can be successfully executed
-    /// together by the target account.
+    /// Finds the largest set of the provided input notes that the target account can consume
+    /// together.
     ///
     /// Because of the runtime complexity involved in this function, a limited range of
     /// [`MAX_NUM_CHECKER_NOTES`] input notes is allowed.
     ///
-    /// If some notes succeed and others fail, the failed notes are removed from the candidate set
-    /// and the remaining notes (successful + unattempted) are retried in the next iteration. This
-    /// process continues until either all remaining notes succeed or no notes can be successfully
-    /// executed
+    /// The notes go through the following checks, each dropping the notes it rules out before the
+    /// next one runs:
+    /// 1. Static checks that need no account state. The notes are grouped into bundles that are
+    ///    only consumable together, such as a feature note and the FEE_SPONSORSHIP notes bound to
+    ///    it, and the following notes are rejected:
+    ///    - a FEE_SPONSORSHIP note naming another FEE_SPONSORSHIP note as its feature note.
+    ///    - a FEE_SPONSORSHIP note whose feature note is absent and which the account may not
+    ///      reclaim.
+    /// 2. Static checks against the account's fee configuration, read from its storage. They apply
+    ///    only to an account with a fee policy manager, and reject:
+    ///    - a FEE_SPONSORSHIP note carrying an asset other than the one the account collects fees
+    ///      in.
+    ///    - a feature note the account schedules no fee for, or whose fee the FEE_SPONSORSHIP notes
+    ///      bound to it do not cover, together with those sponsorships. This is only checked for an
+    ///      account pricing notes through [`BasicConstantFeePolicy`].
+    /// 3. Execution. The remaining notes are executed, and the ones that fail are eliminated until
+    ///    a set of notes executes successfully, retrying the notes of a bundle as a unit.
     ///
-    /// For example, given notes A, B, C, D, E, the execution flow would be as follows:
-    /// - Try [A, B, C, D, E] → A, B succeed, C fails → Remove C, try again.
-    /// - Try [A, B, D, E] → A, B, D succeed, E fails → Remove E, try again.
-    /// - Try [A, B, D] → All succeed → Return successful=[A, B, D], failed=[C, E].
-    ///
-    /// If a failure occurs at the epilogue phase of the transaction execution, the relevant set of
-    /// otherwise-successful notes are retried in various combinations in an attempt to find a
-    /// combination that passes the epilogue phase successfully. Notes that are only consumable
-    /// together, such as a feature note and the FEE_SPONSORSHIP notes bound to it, are grouped and
-    /// retried as a unit.
-    ///
-    /// Notes the target account cannot consume at all are rejected up front, before anything is
-    /// executed:
-    /// - a FEE_SPONSORSHIP note whose feature note is absent and which the account may not reclaim.
-    /// - a FEE_SPONSORSHIP note carrying an asset other than the one the account collects fees in.
-    /// - a feature note the account schedules no fee for, or whose fee the FEE_SPONSORSHIP notes
-    ///   bound to it do not cover, together with those sponsorships.
-    ///
-    /// The fee checks read the account's fee configuration from its storage, so they apply only to
-    /// an account with a fee policy manager, and the fee coverage checks only to one pricing notes
-    /// through [`BasicConstantFeePolicy`]. Any other case is left for execution to decide.
-    ///
-    /// Returns a list of successfully consumed notes and a list of failed notes.
+    /// Returns a list of successfully consumed notes and a list of failed notes. A note ruled out
+    /// by a static check is reported as [`NoteFailure::Rejected`].
     pub async fn check_notes_consumability(
         &self,
         target_account_id: AccountId,
@@ -305,6 +294,25 @@ where
     }
 
     /// Finds a set of executable notes and eliminates failed notes from the list in the process.
+    ///
+    /// This function attempts to find the maximum set of notes that can be successfully executed
+    /// together by the target account.
+    ///
+    /// If some notes succeed and others fail, the failed notes are removed from the candidate set
+    /// and the remaining notes (successful + unattempted) are retried in the next iteration. This
+    /// process continues until either all remaining notes succeed or no notes can be successfully
+    /// executed.
+    ///
+    /// For example, given notes A, B, C, D, E, the execution flow would be as follows:
+    /// - Try [A, B, C, D, E] → A, B succeed, C fails → Remove C, try again.
+    /// - Try [A, B, D, E] → A, B, D succeed, E fails → Remove E, try again.
+    /// - Try [A, B, D] → All succeed → Return successful=[A, B, D], failed=[C, E].
+    ///
+    /// If a failure occurs at the epilogue phase of the transaction execution, the relevant set of
+    /// otherwise-successful notes are retried in various combinations in an attempt to find a
+    /// combination that passes the epilogue phase successfully. Notes that are only consumable
+    /// together, such as a feature note and the FEE_SPONSORSHIP notes bound to it, are grouped and
+    /// retried as a unit.
     ///
     /// The result contains some combination of the input notes partitioned by whether they
     /// succeeded or failed to execute. `failed_notes` seeds the failures reported, so that notes
