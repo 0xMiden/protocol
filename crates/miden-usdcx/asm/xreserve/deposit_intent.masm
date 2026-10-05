@@ -262,3 +262,4 @@ proc load_carried_recipient
     swap add.MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF mem_load
     # => [recipient_suffix, recipient_prefix]
 end
+

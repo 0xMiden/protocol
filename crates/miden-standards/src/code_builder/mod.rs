@@ -233,14 +233,10 @@ impl CodeBuilderScriptSource for std::path::PathBuf {
 /// # let my_lib: Package = StandardsLib::default().into();
 /// # let fpi_lib: Package = ProtocolLib::default().into();
 /// let script = CodeBuilder::default()
-///     .with_linked_module("my::module", module_code)
-///     .context("failed to link module")?
-///     .with_statically_linked_package(&my_lib)
-///     .context("failed to link static package")?
-///     .with_dynamically_linked_package(&fpi_lib)
-///     .context("failed to link dynamic package")? // For FPI calls
-///     .compile_tx_script(script_code)
-///     .context("failed to parse tx script")?;
+///     .with_linked_module("my::module", module_code).context("failed to link module")?
+///     .with_statically_linked_package(&my_lib).context("failed to link static package")?
+///     .with_dynamically_linked_package(&fpi_lib).context("failed to link dynamic package")?  // For FPI calls
+///     .compile_tx_script(script_code).context("failed to parse tx script")?;
 /// # Ok(())
 /// # }
 /// ```

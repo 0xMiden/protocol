@@ -184,7 +184,6 @@ proc assert_valid_asset_amount(value: Uint64) -> Uint64
 
     assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
     # => [lo, hi]
-
 end
 
 # PRICE CALCULATION
@@ -252,7 +251,6 @@ proc calculate_output_amount(
     # Reconstruct the u64 quotient as a single felt: `q0 + q1 * 2^32`.
     swap mul.MAX_U32 add
     # => [payout_amount]
-
 end
 
 #! Returns the larger of two field elements, compared as unsigned integers. Callers must pass
@@ -263,10 +261,8 @@ end
 proc max(a: felt, b: felt) -> felt
     dup.1 dup.1 lt
     # => [b_lt_a, a, b]
-
     cdrop
     # => [max(a, b)]
-
 end
 
 #! Returns the smaller of two field elements, compared as unsigned integers.
@@ -276,7 +272,6 @@ end
 proc min(a: felt, b: felt) -> felt
     dup dup.2 lt
     # => [a_lt_b, a, b]
-
     cdrop
     # => [min(a, b)]
 
@@ -499,7 +494,6 @@ proc create_p2id_note(
 
         dropw dropw dropw dropw
         # => []
-
     end
     # => []
 
@@ -522,7 +516,6 @@ proc create_p2id_note(
 
         exec.output_note::add_asset
         # => []
-
     end
     # => []
 
@@ -788,7 +781,6 @@ proc load_offered_asset() -> Asset
 
     locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
-
 end
 
 #! Reclaims a public-payback order into the original creator's vault.
@@ -811,7 +803,6 @@ proc handle_reclaim()
 
     dropw dropw dropw dropw
     # => []
-
 end
 
 #! Returns the PSWAP order_id, taken from the active note's serial[1].
@@ -833,7 +824,6 @@ proc get_order_id() -> felt
 
     drop drop
     # => [s1]
-
 end
 
 #! Returns current_depth = parent_depth + 1, where parent_depth is the depth carried in the
@@ -869,11 +859,9 @@ proc get_current_depth() -> u32
 
         loc_load.PARENT_ATTACHMENT_DEPTH_OFFSET
         # => [parent_depth]
-
     else
         drop push.0
         # => [0]
-
     end
     # => [parent_depth]
 
@@ -885,7 +873,6 @@ proc get_current_depth() -> u32
 
     assertz.err=ERR_PSWAP_DEPTH_OVERFLOW
     # => [current_depth]
-
 end
 
 #! Executes the partially-fillable swap.
@@ -1059,7 +1046,6 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
 
         dropw dropw dropw dropw
         # => []
-
     end
     # => []
 
@@ -1104,11 +1090,9 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
 
         exec.create_remainder_note
         # => []
-
     else
         drop drop
         # => []
-
     end
     # => []
 
