@@ -281,9 +281,18 @@ end
 # =================================================================================================
 
 #! Checks the canonical account ID encoding supported by this script version.
+#!
+#! Inputs: [account_suffix, account_prefix]
+#! Outputs: []
 proc validate_account_id(account_id: AccountId)
-    dup.1 u32split swap drop u32and.0x0f eq.1 assert.err=ERR_PSWAP_INVALID_ACCOUNT_ID
+    dup.1 u32split swap drop u32and.0x0f
+    # => [version, account_suffix, account_prefix]
+
+    eq.1 assert.err=ERR_PSWAP_INVALID_ACCOUNT_ID
+    # => [account_suffix, account_prefix]
+
     exec.account_id::validate_structure
+    # => []
 end
 
 #! Loads and validates either storage layout. Private recipient digests remain opaque.
@@ -352,8 +361,13 @@ end
 
 #! Prepares the current public payback or loads the order's fixed private recipient.
 #! Only public mode registers full recipient details for output creation.
+#!
+#! Inputs: []
+#! Outputs: []
 proc prepare_payback()
     mem_load.PAYBACK_NOTE_TYPE_ITEM
+    # => [payback_note_type]
+
     if.true
         mem_load.PUBLIC_CREATOR_SUFFIX_ITEM mem_store.P2ID_STORAGE_PTR
         mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_store.P2ID_PREFIX_PTR
@@ -361,14 +375,24 @@ proc prepare_payback()
         push.0 mem_store.P2ID_SALT_1_PTR
 
         mem_load.PUBLIC_CREATOR_PREFIX_ITEM exec.note_tag::create_account_target
+        # => [payback_tag]
+
         mem_store.PAYBACK_TAG_ITEM
+        # => []
 
         # Preserve public paybacks: canonical zero-salt P2ID, with PSWAP serial[0] + 1.
         procref.p2id::main
         exec.active_note::get_serial_number add.1
+        # => [P2ID_SERIAL_NUM, SCRIPT_ROOT]
+
         push.P2ID_NUM_STORAGE_ITEMS push.P2ID_STORAGE_PTR
+        # => [storage_ptr, num_storage_items, P2ID_SERIAL_NUM, SCRIPT_ROOT]
+
         exec.note::compute_and_store_recipient
+        # => [RECIPIENT]
+
         mem_storew_le.PAYBACK_RECIPIENT_PTR dropw
+        # => []
     else
         # The source is unaligned; load its elements individually and store an aligned word.
         mem_load.PRIVATE_RECIPIENT_3_ITEM mem_load.PRIVATE_RECIPIENT_2_ITEM
@@ -442,7 +466,11 @@ proc create_p2id_note(
     # => [tag, note_type, RECIPIENT]
 
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
     call.wallet::create_note
+    # => [note_idx, pad(15)]
+
     movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
