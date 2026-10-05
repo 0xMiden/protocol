@@ -17,6 +17,7 @@ use anyhow::Result;
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountBuilder,
+    AccountCode,
     AccountComponent,
     AccountId,
     AccountType,
@@ -40,6 +41,9 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
+use miden_standards::account::upgrade::UpgradeManager;
+use miden_standards::account::wallets::BasicWallet;
+use miden_standards::note::UpgradeNote;
 use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
@@ -546,6 +550,57 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
         .config(NetworkAccountConfig::AddAllowedNoteScript {
             script_root: NoteScriptRoot::from_array([1, 2, 3, 4]),
         })
+        .serial_number(Word::from([1u32, 0, 0, 0]))
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// UPGRADE NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context in which a network account consumes an UPGRADE note.
+///
+/// The account carries `UpgradeManager` gated by the Ownable2Step owner via
+/// `Authority::OwnerControlled`. The note upgrades the account to its current code extended with
+/// `BasicWallet`.
+pub fn tx_consume_upgrade_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner authorized to send upgrade notes; only its ID is needed
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
+
+    let upgrade_note_root = UpgradeNote::script_root();
+    let components: Vec<AccountComponent> = AuthNetworkAccount::new(
+        BTreeSet::from([upgrade_note_root]),
+        super::fee_policy_manager([upgrade_note_root], &[])?,
+    )?
+    .into_iter()
+    .chain(AccessControl::Ownable2Step { owner })
+    .chain([UpgradeManager.into()])
+    .collect();
+    let upgraded_code = AccountCode::from_components(
+        &components.iter().cloned().chain([BasicWallet.into()]).collect::<Vec<_>>(),
+    )?;
+
+    let account = AccountBuilder::new([7; 32])
+        .account_type(AccountType::Public)
+        .with_components(components)
+        .with_assets([super::fee_funding_asset()?])
+        .build_existing()?;
+    builder.add_account(account.clone())?;
+
+    let note: Note = UpgradeNote::builder()
+        .sender(owner)
+        .target(account.id())
+        .code(upgraded_code)
         .serial_number(Word::from([1u32, 0, 0, 0]))
         .build()?
         .into();

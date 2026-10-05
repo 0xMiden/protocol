@@ -251,7 +251,7 @@ impl FromIterator<(StorageMapKey, Word)> for StorageMapPatchEntries {
     }
 }
 
-/// Converts a [`StorageMap`] into a set of map patch entries for full state patch construction.
+/// Converts a [`StorageMap`] into a set of map patch entries for creation patch construction.
 impl From<StorageMap> for StorageMapPatchEntries {
     fn from(map: StorageMap) -> Self {
         StorageMapPatchEntries::from_raw(map.into_entries().into_iter().collect())

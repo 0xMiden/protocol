@@ -145,8 +145,11 @@ fn storage_slot_id_roundtrips_through_protobuf_bytes() {
 fn partial_account_roundtrips_through_protobuf_bytes() {
     let account = partial_account();
 
-    let encoded = proto::account::PartialAccount::from(&account).encode_to_vec();
-    let message = proto::account::PartialAccount::decode(encoded.as_slice()).unwrap();
+    let encoded = proto::account::PartialAccount::from(&account);
+    assert_eq!(encoded.version, proto::account::AccountVersion::V1 as i32);
+
+    let message =
+        proto::account::PartialAccount::decode(encoded.encode_to_vec().as_slice()).unwrap();
 
     assert_eq!(message.decode_fields().unwrap().verify().unwrap(), account);
 }
