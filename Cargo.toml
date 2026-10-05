@@ -13,6 +13,7 @@ members = [
   "crates/miden-testing",
   "crates/miden-tx",
   "crates/miden-tx-batch",
+  "crates/miden-usdcx",
 ]
 resolver = "3"
 
@@ -24,7 +25,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/protocol"
 rust-version = "1.98.1"
-version      = "0.17.0-rc.5"
+version      = "0.17.0"
 
 [profile.release]
 codegen-units = 1
@@ -40,31 +41,31 @@ lto           = true
 
 [workspace.dependencies]
 # Workspace crates
-miden-agglayer             = { default-features = false, path = "crates/miden-agglayer", version = "0.17.0-rc.5" }
-miden-block-prover         = { default-features = false, path = "crates/miden-block-prover", version = "0.17.0-rc.5" }
-miden-protobuf             = { default-features = false, path = "crates/miden-protobuf", version = "0.17.0-rc.5" }
-miden-protobuf-derive      = { path = "crates/miden-protobuf-derive", version = "0.17.0-rc.5" }
-miden-protocol             = { default-features = false, path = "crates/miden-protocol", version = "0.17.0-rc.5" }
-miden-protocol-build-utils = { default-features = false, path = "crates/miden-protocol-build-utils", version = "0.17.0-rc.5" }
-miden-standards            = { default-features = false, path = "crates/miden-standards", version = "0.17.0-rc.5" }
-miden-testing              = { default-features = false, path = "crates/miden-testing", version = "0.17.0-rc.5" }
-miden-tx                   = { default-features = false, path = "crates/miden-tx", version = "0.17.0-rc.5" }
-miden-tx-batch             = { default-features = false, path = "crates/miden-tx-batch", version = "0.17.0-rc.5" }
+miden-agglayer             = { default-features = false, path = "crates/miden-agglayer", version = "0.17" }
+miden-block-prover         = { default-features = false, path = "crates/miden-block-prover", version = "0.17" }
+miden-protobuf             = { default-features = false, path = "crates/miden-protobuf", version = "0.17" }
+miden-protobuf-derive      = { path = "crates/miden-protobuf-derive", version = "0.17" }
+miden-protocol             = { default-features = false, path = "crates/miden-protocol", version = "0.17" }
+miden-protocol-build-utils = { default-features = false, path = "crates/miden-protocol-build-utils", version = "0.17" }
+miden-standards            = { default-features = false, path = "crates/miden-standards", version = "0.17" }
+miden-testing              = { default-features = false, path = "crates/miden-testing", version = "0.17" }
+miden-tx                   = { default-features = false, path = "crates/miden-tx", version = "0.17" }
+miden-tx-batch             = { default-features = false, path = "crates/miden-tx-batch", version = "0.17" }
 
 # Miden dependencies
-miden-assembly         = { default-features = false, version = "0.33.0" }
-miden-assembly-syntax  = { default-features = false, version = "0.33.0" }
-miden-core             = { default-features = false, version = "0.33.0" }
-miden-core-lib         = { default-features = false, version = "0.33.0" }
-miden-crypto           = { default-features = false, version = "0.33.0" }
-miden-crypto-derive    = { default-features = false, version = "0.33.0" }
-miden-mast-package     = { default-features = false, version = "0.33.0" }
-miden-package-registry = { default-features = false, version = "0.33.0" }
-miden-processor        = { default-features = false, version = "0.33.0" }
-miden-project          = { default-features = false, version = "0.33.0" }
-miden-prover           = { default-features = false, version = "0.33.0" }
-miden-utils-sync       = { default-features = false, version = "0.33.0" }
-miden-verifier         = { default-features = false, version = "0.33.0" }
+miden-assembly         = { default-features = false, version = "0.35" }
+miden-assembly-syntax  = { default-features = false, version = "0.35" }
+miden-core             = { default-features = false, version = "0.35" }
+miden-core-lib         = { default-features = false, version = "0.35" }
+miden-crypto           = { default-features = false, version = "0.35" }
+miden-crypto-derive    = { default-features = false, version = "0.35" }
+miden-mast-package     = { default-features = false, version = "0.35" }
+miden-package-registry = { default-features = false, version = "0.35" }
+miden-processor        = { default-features = false, version = "0.35" }
+miden-project          = { default-features = false, version = "0.35" }
+miden-prover           = { default-features = false, version = "0.35" }
+miden-utils-sync       = { default-features = false, version = "0.35" }
+miden-verifier         = { default-features = false, version = "0.35" }
 
 # External dependencies
 alloy-sol-types  = { default-features = false, version = "1.5" }
@@ -73,7 +74,10 @@ assert_matches   = { default-features = false, version = "1.5" }
 bon              = { default-features = false, version = "3" }
 criterion        = { default-features = false, version = "0.5" }
 fs-err           = { default-features = false, version = "3" }
+getrandom        = { version = "0.4" }
+getrandom-03     = { package = "getrandom", version = "0.3" }
 heck             = { version = "0.5" }
+k256             = { default-features = false, version = "0.14" }
 primitive-types  = { default-features = false, version = "0.14" }
 proc-macro-crate = { version = "3.4" }
 proc-macro2      = { version = "1" }
@@ -88,6 +92,7 @@ regex            = { version = "1.11" }
 rstest           = { version = "0.26" }
 serde            = { default-features = false, version = "1.0" }
 serde_json       = { default-features = false, version = "1.0" }
+sha3             = { default-features = false, version = "0.12" }
 syn              = { features = ["full"], version = "2" }
 thiserror        = { default-features = false, version = "2.0" }
 tokio            = { default-features = false, features = ["sync"], version = "1" }

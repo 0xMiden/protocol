@@ -10,7 +10,7 @@ use miden_processor::advice::AdviceInputs;
 use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::BlockNumber;
@@ -81,6 +81,7 @@ pub struct MockTransactionBuilder<'chain> {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     auth_args: Word,
+    account_code_upgrade: Option<AccountCodeUpgrade>,
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
@@ -112,6 +113,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_script: None,
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
+            account_code_upgrade: None,
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
@@ -224,6 +226,13 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Sets the code upgrade of the native account, which the transaction must provide if it
+    /// upgrades the account's code.
+    pub fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
+        self.account_code_upgrade = Some(account_code_upgrade);
+        self
+    }
+
     /// Requires the transaction's partial blockchain to track the provided block, so that the
     /// executed code can read its commitment.
     ///
@@ -323,6 +332,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_args = tx_args.with_tx_script_and_args(tx_script, self.tx_script_args);
         }
         tx_args = tx_args.with_auth_args(self.auth_args);
+        if let Some(account_code_upgrade) = self.account_code_upgrade {
+            tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
+        }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(&self.expected_output_notes);
         for (public_key_commitment, message, signature) in self.signatures {
