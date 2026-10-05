@@ -98,6 +98,7 @@ const P2ID_NUM_STORAGE_ITEMS = 4
 
 # Domain separator for cancellation advice; ASCII "PSWAPCAN". Matches Rust.
 const CANCEL_ADVICE_DOMAIN = 0x505357415043414e
+const CANCEL_ADVICE_NUM_ITEMS = 4 + P2ID_NUM_STORAGE_ITEMS
 
 # Local memory offsets
 # =================================================================================================
@@ -109,6 +110,9 @@ const CALC_FILL_REFERENCE = 1
 # Procedure locals of load_offered_asset
 const OFFERED_REMAINING_ASSET_PTR = 0
 const OFFERED_INITIAL_ASSET_PTR = 8
+
+# refund_private locals
+const REFUND_EXPECTED_ASSET_PTR = 0
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -704,14 +708,19 @@ proc authenticate_cancel()
 
     adv.push_mapvaln
     adv_push
-    eq.8 assert.err=ERR_PSWAP_INVALID_CANCEL_ADVICE
+    # => [num_advice_items, CANCEL_ADVICE_KEY]
+
+    eq.CANCEL_ADVICE_NUM_ITEMS assert.err=ERR_PSWAP_INVALID_CANCEL_ADVICE
     dropw
     # => []
 
     padw adv_loadw
     # => [SERIAL_NUM]
 
-    padw adv_loadw mem_storew_le.P2ID_STORAGE_PTR dropw
+    padw adv_loadw
+    # => [P2ID_STORAGE, SERIAL_NUM]
+
+    mem_storew_le.P2ID_STORAGE_PTR dropw
     mem_load.P2ID_PREFIX_PTR mem_load.P2ID_STORAGE_PTR exec.validate_account_id
     # => [SERIAL_NUM]
 
@@ -732,7 +741,7 @@ proc authenticate_cancel()
 end
 
 #! Returns the full remaining order balance in a private P2ID to its committed recipient.
-#! The refund has no fill attachment. Fees must be funded separately.
+#! Does not add a fill attachment. Fees must be funded separately.
 #!
 #! Inputs: []
 #! Outputs: []
@@ -743,27 +752,27 @@ proc refund_private()
     # => [tag, private_type, RECIPIENT]
 
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, private_type, RECIPIENT, pad(10)]
+
     call.wallet::create_note
+    # => [note_idx, pad(15)]
+
     movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    locaddr.0 exec.asset::store
-    dup locaddr.0 exec.asset::load
+    locaddr.REFUND_EXPECTED_ASSET_PTR exec.asset::store
+    # => [note_idx]
+
+    dup locaddr.REFUND_EXPECTED_ASSET_PTR exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+
     exec.output_note::add_asset
     # => [note_idx]
 
-    # A cancellation refund must have no attachments, including any added by asset callbacks.
-    dup exec.output_note::get_metadata
-    # => [METADATA, note_idx]
-
-    drop drop drop
-    assertz.err=ERR_PSWAP_OUTPUT_ALTERED
-    # => [note_idx]
-
-    locaddr.0 exec.asset::load
+    locaddr.REFUND_EXPECTED_ASSET_PTR exec.asset::load
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.validate_and_seal_output_note

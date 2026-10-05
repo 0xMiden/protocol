@@ -497,9 +497,10 @@ impl PswapNote {
 
     /// Reconstructs the private cancellation refund of this unspent PSWAP or remainder.
     ///
-    /// The refund contains the full offered asset, uses the order's private recipient/tag, and
-    /// has no fill attachment. The sender is the account executing cancellation. Verify its ID
-    /// against the actual output and consume it with an inclusion proof.
+    /// The refund contains the full offered asset and uses the order's private recipient/tag.
+    /// The sender is the account executing cancellation. This helper adds no attachments. If the
+    /// output contains attachments, reconstruct it with [`Note::with_attachments`] using the
+    /// complete attachment list. Verify its ID and consume it with an inclusion proof.
     ///
     /// # Errors
     ///
@@ -511,12 +512,11 @@ impl PswapNote {
         recipient: &NoteRecipient,
     ) -> Result<Note, NoteError> {
         self.validate_private_payback_recipient(recipient)?;
-        Ok(Note::with_attachments(
+        Ok(Note::new(
             NoteAssets::new(vec![self.offered_asset.into()])?,
             PartialNoteMetadata::new(cancelling_account_id, NoteType::Private)
                 .with_tag(self.storage.payback_note_tag()),
             recipient.clone(),
-            NoteAttachments::default(),
         ))
     }
 

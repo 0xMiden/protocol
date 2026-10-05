@@ -323,9 +323,9 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
 - **Storage:** 7 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
 
-When reconstructing a private payback, include its complete on-chain attachment list.
+When reconstructing a private payback or cancellation refund, include its complete on-chain attachment list.
 
-For private cancellation, use note arguments `[0, 0, 1, 0]` in Rust element order and supply the recipient opening (serial, target account ID, and salt) as private advice. The script verifies the opening and returns the full remaining offered asset in a private P2ID to the same recipient, with no attachments. The refund is checked and sealed before returning. Anyone holding the opening can cancel; only the target account can consume the refund.
+For private cancellation, use note arguments `[0, 0, 1, 0]` in Rust element order and supply the recipient opening (serial, target account ID, and salt) as private advice. The script verifies the opening and returns the full remaining offered asset in a private P2ID to the same recipient. The refund is checked and sealed before returning. Anyone holding the opening can cancel; only the target account can consume the refund.
 
 To avoid linking cancellation to the target, build and prove locally through a public account with `NoAuth` and the required wallet procedures. Fund fees separately, for example with a private P2ID consumed in the same transaction, and explicitly return unused funding in a private change note. The order is refunded in full; `NoAuth` does not return fee change automatically.
 
