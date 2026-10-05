@@ -19,6 +19,13 @@ permissions:
 
 jobs:
   test:
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name != github.repository ||
+        github.event.pull_request.head.ref != 'next' ||
+        github.event.pull_request.base.ref != 'main'
+      }}
     name: test
     runs-on: warp-ubuntu-latest-x64-8x
     steps:
@@ -46,6 +53,13 @@ jobs:
         run: cargo test -p miden-protobuf --all-features --locked
 
   doc-tests:
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name != github.repository ||
+        github.event.pull_request.head.ref != 'next' ||
+        github.event.pull_request.base.ref != 'main'
+      }}
     name: doc-tests
     runs-on: warp-ubuntu-latest-x64-8x
     steps:

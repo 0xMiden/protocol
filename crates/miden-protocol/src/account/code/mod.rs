@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use miden_core::mast::MastForest;
+use miden_core::mast::{MastForest, UntrustedMastForest};
 use miden_core::prettier::PrettyPrint;
 use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_processor::LoadedMastForest;
@@ -24,6 +24,9 @@ use crate::package::{loaded_mast_forest, package_debug_info};
 
 pub mod procedure;
 use procedure::{AccountProcedureRoot, PrintableProcedure};
+
+mod upgrade;
+pub use upgrade::AccountCodeUpgrade;
 
 // ACCOUNT CODE
 // ================================================================================================
@@ -312,7 +315,7 @@ impl Eq for AccountCode {}
 
 impl Serializable for AccountCode {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.mast.write_into(target);
+        self.mast.write_hashless(target);
         // since the number of procedures is guaranteed to be between 2 and 256, we can store the
         // number as a single byte - but we do have to subtract 1 to store 256 as 255.
         target.write_u8((self.procedures.len() - 1) as u8);
@@ -322,7 +325,7 @@ impl Serializable for AccountCode {
     fn get_size_hint(&self) -> usize {
         // TODO: Replace with proper calculation.
         let mut mast_forest_target = Vec::new();
-        self.mast.write_into(&mut mast_forest_target);
+        self.mast.write_hashless(&mut mast_forest_target);
 
         // Size of the serialized procedures length.
         let u8_size = 0u8.get_size_hint();
@@ -338,7 +341,11 @@ impl Serializable for AccountCode {
 
 impl Deserializable for AccountCode {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mast = Arc::new(MastForest::read_from(source)?);
+        // The bytes may be untrusted, so node hashes are rebuilt from the forest's structure.
+        let mast = UntrustedMastForest::read_from_reader(source)?
+            .validate()
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
+        let mast = Arc::new(mast);
         let num_procedures = (source.read_u8()? as usize) + 1;
 
         let procedures = source
@@ -520,11 +527,13 @@ mod tests {
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     #[test]
-    fn test_serde_account_code() {
+    fn test_serde_account_code() -> anyhow::Result<()> {
         let code = AccountCode::mock();
         let serialized = code.to_bytes();
-        let deserialized = AccountCode::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, code)
+        let deserialized = AccountCode::read_from_bytes(&serialized)?;
+        assert_eq!(deserialized, code);
+
+        Ok(())
     }
 
     #[test]
@@ -698,7 +707,7 @@ mod tests {
         let procedures = code.procedures();
 
         let mut bytes = Vec::new();
-        code.mast().write_into(&mut bytes);
+        code.mast().write_hashless(&mut bytes);
         bytes.write_u8(3 - 1); // num_procedures is serialized as count - 1
         procedures[0].write_into(&mut bytes);
         procedures[1].write_into(&mut bytes);

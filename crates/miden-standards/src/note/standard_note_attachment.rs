@@ -10,6 +10,13 @@ pub enum StandardNoteAttachment {
     /// Carries the word `[amount, order_id, depth, 0]`. See
     /// [`PswapNote`](crate::note::PswapNote) for details.
     PswapAttachment,
+    /// The USDCx mint attachment carrying the attestation and deposit intent.
+    UsdcxMint,
+    /// The USDCx burn attachment carrying the withdrawal destination.
+    UsdcxBurn,
+    /// See [`AccountCodeUpgradeAttachment`](crate::note::AccountCodeUpgradeAttachment) for
+    /// details.
+    AccountCodeUpgrade,
 }
 
 impl StandardNoteAttachment {
@@ -18,6 +25,9 @@ impl StandardNoteAttachment {
         match self {
             StandardNoteAttachment::NetworkAccountTarget => NoteAttachmentScheme::new_const(2u16),
             StandardNoteAttachment::PswapAttachment => NoteAttachmentScheme::new_const(3u16),
+            StandardNoteAttachment::UsdcxMint => NoteAttachmentScheme::new_const(4u16),
+            StandardNoteAttachment::UsdcxBurn => NoteAttachmentScheme::new_const(5u16),
+            StandardNoteAttachment::AccountCodeUpgrade => NoteAttachmentScheme::new_const(7u16),
         }
     }
 }

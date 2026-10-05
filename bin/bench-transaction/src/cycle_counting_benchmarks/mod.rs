@@ -40,6 +40,7 @@ pub enum ExecutionBenchmark {
     ConsumeOwnerConfigNetwork,
     ConsumeRbacConfigNetwork,
     ConsumeNetworkAccountConfigNetwork,
+    ConsumeUpgradeNetwork,
     ConsumeConstantFeePolicyConfigNetwork,
     ConsumeFeeSponsorshipWithFeatureNetwork,
     ConsumeFeeSponsorshipReclaim,
@@ -91,6 +92,7 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeOwnerConfigNetwork,
             ExecutionBenchmark::ConsumeRbacConfigNetwork,
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork,
+            ExecutionBenchmark::ConsumeUpgradeNetwork,
             ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork,
             ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork,
             ExecutionBenchmark::ConsumeFeeSponsorshipReclaim,
@@ -210,6 +212,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
                 write!(f, "consume NETWORK_ACCOUNT_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeUpgradeNetwork => {
+                write!(f, "consume UPGRADE note (network account)")
             },
             ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork => {
                 write!(f, "consume CONSTANT_FEE_POLICY_CONFIG note (network account)")

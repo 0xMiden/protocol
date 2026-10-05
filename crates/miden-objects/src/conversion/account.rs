@@ -161,6 +161,7 @@ impl From<PartialVault> for proto::account::PartialVault {
 impl From<&PartialAccount> for proto::account::PartialAccount {
     fn from(account: &PartialAccount) -> Self {
         Self {
+            version: proto::account::AccountVersion::V1 as i32,
             account_id: Some(account.id().into()),
             nonce: Some(account.nonce().into()),
             code: Some(account.code().into()),

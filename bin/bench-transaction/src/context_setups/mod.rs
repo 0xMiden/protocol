@@ -221,6 +221,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
             network_config::tx_consume_network_account_config_note_network()
         },
+        ExecutionBenchmark::ConsumeUpgradeNetwork => {
+            network_config::tx_consume_upgrade_note_network()
+        },
         ExecutionBenchmark::ConsumeConstantFeePolicyConfigNetwork => {
             network_config::tx_consume_constant_fee_policy_config_note_network()
         },

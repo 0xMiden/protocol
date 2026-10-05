@@ -53,6 +53,7 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::OWNER_CONFIG),
             PricedNote::Standard(StandardNote::RBAC_CONFIG),
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG),
+            PricedNote::Standard(StandardNote::UPGRADE),
             PricedNote::Standard(StandardNote::FEE_SPONSORSHIP),
             PricedNote::Agglayer(AgglayerNote::CLAIM),
             PricedNote::Agglayer(AgglayerNote::B2AGG),
@@ -122,6 +123,9 @@ impl PricedNote {
             },
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork]
+            },
+            PricedNote::Standard(StandardNote::UPGRADE) => {
+                &[ExecutionBenchmark::ConsumeUpgradeNetwork]
             },
             PricedNote::Standard(StandardNote::FEE_SPONSORSHIP) => {
                 &[ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork]
@@ -201,7 +205,8 @@ impl PricedNote {
             PricedNote::Standard(
                 StandardNote::ALLOWLIST_CONFIG
                 | StandardNote::OWNER_CONFIG
-                | StandardNote::RBAC_CONFIG,
+                | StandardNote::RBAC_CONFIG
+                | StandardNote::UPGRADE,
             )
             | PricedNote::Agglayer(AgglayerNote::UPDATE_GER) => "an",
             _ => "a",

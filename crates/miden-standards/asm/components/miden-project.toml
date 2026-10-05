@@ -30,6 +30,7 @@ members = [
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
+  "oracle/price_oracle",
   "upgrade/manager",
   "wallets/basic_wallet",
 ]
@@ -38,6 +39,6 @@ members = [
 version = "0.17.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.33" }
+miden-core      = { linkage = "dynamic", version = "0.35" }
 miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
-miden-standards = { linkage = "static", version = "0.17.0" }
+miden-standards = { linkage = "dynamic", version = "0.17.0" }

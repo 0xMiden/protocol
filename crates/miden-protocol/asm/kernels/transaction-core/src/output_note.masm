@@ -275,7 +275,7 @@ pub proc add_asset(asset: Asset, note_idx: u16)
 
     movup.8 exec.memory::get_output_note_ptr
     # Check after the callback, which can itself seal the note.
-    dup exec.memory::get_output_note_sealed_flag assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
+    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
     dup
     # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]
 
@@ -348,7 +348,7 @@ pub proc add_attachment(
     movup.6 exec.memory::get_output_note_ptr
     # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
 
-    dup exec.memory::get_output_note_sealed_flag assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
+    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
     # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
 
     # update and validate total attachment words
