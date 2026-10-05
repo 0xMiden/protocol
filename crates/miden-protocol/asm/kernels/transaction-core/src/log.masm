@@ -4,7 +4,7 @@ use miden::tx_kernel_core::memory
 use {MAX_LOGS_PER_TX, MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS_PER_TX, WORD_NUM_ELEMENTS}
     from miden::protocol_utils::constants
 
-const LOG_DOMAIN = 0x020002
+const LOG_DOMAIN = 0x020005
 const LOGS_DOMAIN = 0x020003
 const PRIVATE_LOGS_DOMAIN = 0x020004
 

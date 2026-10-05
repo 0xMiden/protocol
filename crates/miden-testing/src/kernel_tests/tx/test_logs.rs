@@ -567,7 +567,13 @@ async fn standard_auth_signs_nonempty_logs(
     let effects = TransactionEffects::from(&executed);
     let final_nonce = account.nonce() + Felt::ONE;
     let summary = TransactionSummary::new(
-        AccountDelta::new(account.id(), Default::default(), Default::default(), None, Felt::ONE)?,
+        AccountDelta::new(
+            account.id(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Felt::ONE,
+        )?,
         executed.input_notes().clone(),
         executed.output_notes().clone(),
         effects.ref_block_number(),

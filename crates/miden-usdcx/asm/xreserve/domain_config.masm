@@ -1,0 +1,32 @@
+# xreserve::domain_config
+#
+# The faucet's configured Circle domain: the domain deposits are addressed to.
+
+use miden::protocol::active_account
+
+# CONSTANTS
+# =================================================================================================
+
+# The configured Circle domain.
+pub const DOMAIN_CONFIG_SLOT = word("xusdc::xreserve::domain_config::domain")
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Reads the faucet's configured Circle domain.
+#!
+#! Inputs:  []
+#! Outputs: [domain]
+#!
+#! Panics if:
+#! - the domain config slot with the expected id does not exist in account storage.
+#!
+#! Invocation: exec
+pub proc get_configured_domain
+    push.DOMAIN_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [domain, d1, d2, d3]
+
+    movdn.3 drop drop drop
+    # => [domain]
+end

@@ -81,7 +81,7 @@ pub struct TransactionLog {
 
 impl TransactionLog {
     /// Hash domain for individual log commitments.
-    pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0002);
+    pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0005);
 
     /// Creates a log with the provided emitter, topic, and payload.
     ///
@@ -199,7 +199,7 @@ impl Deserializable for TransactionLog {
 /// ```text
 /// P_i = hash_elements(flatten(payload_i))
 /// M_i = [emitter_suffix, emitter_prefix, topic_0, topic_1]
-/// L_i = merge_in_domain([M_i, P_i], 0x02_0002)
+/// L_i = merge_in_domain([M_i, P_i], 0x02_0005)
 /// commitment = hash_elements_in_domain(L_1 || ... || L_n, 0x02_0003)
 /// ```
 ///

@@ -67,6 +67,12 @@ impl TransactionAdviceInputs {
             }
         }
 
+        // The host reads the new code from this entry when the kernel initializes the upgrade.
+        if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {
+            let (key, elements) = code_upgrade.to_advice_map_entry();
+            inputs.add_map_entry(key, elements);
+        }
+
         // Extend with extra user-supplied advice.
         inputs.extend(tx_inputs.tx_args().advice_inputs().clone());
 

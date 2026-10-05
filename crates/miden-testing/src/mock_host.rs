@@ -82,6 +82,7 @@ impl<'store> MockHost<'store> {
         self.handled_events.extend(
             [
                 &TransactionEventId::AccountBeforeForeignLoad,
+                &TransactionEventId::AccountBeforeCodeUpgrade,
                 &TransactionEventId::AccountVaultBeforeGetAsset,
                 &TransactionEventId::AccountVaultBeforeAddAsset,
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,

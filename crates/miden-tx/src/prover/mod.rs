@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
@@ -166,7 +167,8 @@ impl LocalTransactionProver {
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
-        );
+        )
+        .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 
         let advice_inputs = advice_inputs.into_advice_inputs();
 

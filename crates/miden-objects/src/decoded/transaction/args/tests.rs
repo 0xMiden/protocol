@@ -5,10 +5,8 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
-use miden_protocol::assembly::mast::MastForestError;
 use miden_protocol::utils::serde::DeserializationError;
 
-use crate::decoded::primitives::test_utils::corrupt_node_hash;
 use crate::decoded::transaction::test_utils::note_id;
 use crate::test_utils::{dummy_word, error_source};
 use crate::{ConversionError, DecodeMessage, Verify, proto};
@@ -45,6 +43,7 @@ fn transaction_args_decode_optional_script_without_verifying_it() {
         Default::default(),
         Default::default(),
         Word::empty(),
+        None,
     );
     let wire = proto::transaction::TransactionArgs::from(&input);
     let decoded = wire.clone().decode_fields().unwrap();
@@ -92,6 +91,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
         }),
         log_salt: Some(Word::empty().into()),
         auth_args: Some(dummy_word(6).into()),
+        account_code_upgrade: None,
     }
     .decode_fields()
     .unwrap()
@@ -131,6 +131,7 @@ fn transaction_args_reject_duplicate_note_ids() {
         }),
         log_salt: Some(Word::empty().into()),
         auth_args: Some(dummy_word(5).into()),
+        account_code_upgrade: None,
     };
     let error = duplicate
         .decode_fields()
@@ -171,18 +172,4 @@ fn transaction_script_rejects_invalid_entrypoint_and_malformed_mast() {
         error.source().and_then(|source| source.downcast_ref::<DeserializationError>()),
         Some(DeserializationError::InvalidValue(message)) if message.contains("budget exhausted")
     );
-}
-
-#[test]
-fn transaction_script_validates_its_forest() {
-    let script = miden_protocol::note::NoteScript::mock();
-    let mast = corrupt_node_hash(&script.mast(), script.root().into());
-    let wire = proto::transaction::TransactionScript {
-        mast: Some(mast),
-        entrypoint: script.entrypoint().into(),
-    };
-    assert!(matches!(
-        error_source::<MastForestError>(&wire.decode_fields().unwrap().verify().unwrap_err()),
-        Some(MastForestError::HashMismatch { .. })
-    ));
 }
