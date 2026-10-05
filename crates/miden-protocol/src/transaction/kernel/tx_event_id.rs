@@ -48,6 +48,8 @@ pub enum TransactionEventId {
 
     AccountPushProcedureIndex = ACCOUNT_PUSH_PROCEDURE_INDEX_ID,
 
+    AccountBeforeCodeUpgrade = ACCOUNT_BEFORE_CODE_UPGRADE_ID,
+
     NoteBeforeCreated = NOTE_BEFORE_CREATED_ID,
     NoteAfterCreated = NOTE_AFTER_CREATED_ID,
 
@@ -125,6 +127,7 @@ impl TransactionEventId {
             Self::AccountBeforeIncrementNonce => &ACCOUNT_BEFORE_INCREMENT_NONCE_NAME,
             Self::AccountAfterIncrementNonce => &ACCOUNT_AFTER_INCREMENT_NONCE_NAME,
             Self::AccountPushProcedureIndex => &ACCOUNT_PUSH_PROCEDURE_INDEX_NAME,
+            Self::AccountBeforeCodeUpgrade => &ACCOUNT_BEFORE_CODE_UPGRADE_NAME,
             Self::NoteBeforeCreated => &NOTE_BEFORE_CREATED_NAME,
             Self::NoteAfterCreated => &NOTE_AFTER_CREATED_NAME,
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
@@ -215,6 +218,8 @@ impl TryFrom<EventId> for TransactionEventId {
             ACCOUNT_AFTER_INCREMENT_NONCE_ID => Ok(TransactionEventId::AccountAfterIncrementNonce),
 
             ACCOUNT_PUSH_PROCEDURE_INDEX_ID => Ok(TransactionEventId::AccountPushProcedureIndex),
+
+            ACCOUNT_BEFORE_CODE_UPGRADE_ID => Ok(TransactionEventId::AccountBeforeCodeUpgrade),
 
             NOTE_BEFORE_CREATED_ID => Ok(TransactionEventId::NoteBeforeCreated),
             NOTE_AFTER_CREATED_ID => Ok(TransactionEventId::NoteAfterCreated),

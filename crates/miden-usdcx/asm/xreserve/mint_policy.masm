@@ -1,0 +1,327 @@
+# xreserve::mint_policy
+#
+# The faucet's only supply-increasing gate. `check_policy` is registered as the account's ACTIVE
+# mint policy, so the stock `mint_and_send` dispatches it on every mint; its contract is documented
+# on the proc itself.
+
+use miden::protocol::active_note
+use miden::protocol::native_account
+use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME} from miden::standards::attachments::network_account_target
+use miden::standards::note::note_tag
+use miden::standards::notes::p2id
+use {ONE_WORD} from miden::standards::utils
+use xreserve::attestation_verify
+use xreserve::deposit_intent
+use xreserve::mint_intent
+use {
+    MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF, MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF,
+    MINT_INTENT_WORDS, USED_NONCES_SLOT
+} from xreserve::mint_intent
+
+# CONSTANTS
+# =================================================================================================
+
+# The mint-note transport attachment scheme (>= 4 — clear of the reserved "none"
+# value 1 and the standard values 2 `NetworkAccountTarget` / 3 `Pswap`). ONE attachment carries
+# the whole Circle-signed transport: the attestation, then the carried mint payload, then the
+# hookData tail.
+const XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME = 4
+
+# The attestation section: [pubkey(16), signature(17), pad(3)].
+const XUSDC_MINT_ATTESTATION_NUM_FELTS = 36
+const XUSDC_MINT_ATTESTATION_NUM_WORDS = 9
+
+# The transport's fixed prefix: the attestation and the carried mint intent. Everything past it is
+# packed hookData, so this is both the shape floor and the base of the exact word-count binding.
+const XUSDC_MINT_TRANSPORT_FIXED_WORDS = XUSDC_MINT_ATTESTATION_NUM_WORDS + MINT_INTENT_WORDS
+
+# The non-empty Word written into usedNonces[KEY].
+# Whether the marker should carry more than a plain flag is OPEN, pending Circle confirmation.
+const NONCE_USED_MARKER = ONE_WORD
+
+# Where the rebuilt DepositIntent is written in global memory.
+#
+# `rebuild` sets only the fields the message actually carries and leaves every structural pad
+# alone, so the region has to read as zero before it runs — and Miden memory is zero-initialized,
+# which a reused procedure frame is not.
+#
+# As of miden-protocol 0.16-rc.3 the policy manager dispatches mint policies via `dyncall` rather
+# than the earlier `dynexec`, so `check_policy` enters a completely fresh context and this global
+# region is trivially zero-initialized by that fresh context — no longer relying on the address
+# being unused in a shared parent context. The failure mode if the zero read ever stopped holding
+# would be LIVENESS, not forgery: stale bytes rebuild a message Circle never signed, the signature
+# refuses it, and no mint occurs.
+const DEPOSIT_INTENT_PTR = 0x40000000
+
+# `check_policy` memory locals.
+const ASSET_VALUE_LOC = 0
+const RECIPIENT_LOC = 4
+const TAG_LOC = 8
+const NOTE_TYPE_LOC = 9
+
+# The attachment commitments list. Sized to 16 elements, i.e. the protocol's FOUR-attachment ceiling.
+const ATTACHMENT_COMMITMENTS_LOC = 12
+
+const HASHED_NONCE_LOC = 28
+
+# The hash-verified transport attachment and the sub-regions read out of it. The region is sized to
+# the protocol's per-attachment word ceiling, and it MUST be, because the kernel writes the
+# attachment's content before it returns the word count this policy checks.
+const TRANSPORT_LOC = 32
+const ATTESTATION_LOC = TRANSPORT_LOC
+const ATTESTATION_PUBKEY_LOC = ATTESTATION_LOC
+# the affine pubkey's felt count
+const ATTESTATION_SIGNATURE_LOC = ATTESTATION_LOC + 16
+
+# The carried mint intent inside the transport, plus the two felts `check_policy` itself reads out
+# of it for the output-note recipe. `rebuild` reads the rest off the base pointer, and has already
+# validated these by the time they are read here.
+const MINT_INTENT_LOC = ATTESTATION_LOC + XUSDC_MINT_ATTESTATION_NUM_FELTS
+const MINT_INTENT_RECIPIENT_PREFIX_LOC = MINT_INTENT_LOC + MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF
+const MINT_INTENT_RECIPIENT_SUFFIX_LOC = MINT_INTENT_LOC + MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF
+
+# ERRORS
+# =================================================================================================
+
+const ERR_XRESERVE_MINT_NOTE_TRANSPORT_MISSING = "mint note transport attachment is missing"
+const ERR_XRESERVE_MINT_NOTE_TARGET_MISSING = "mint note routing target attachment is missing"
+const ERR_XRESERVE_MINT_NOTE_ATTACHMENT_COUNT = "mint note must carry exactly two attachments"
+
+const ERR_XRESERVE_MINT_NOTE_TRANSPORT_TOO_SHORT = "mint note transport attachment is shorter than the attestation and the deposit intent header"
+
+const ERR_XRESERVE_MINT_NOTE_HOOK_LEN_LIMB = "mint note deposit intent hook data length limb is not a valid u32"
+const ERR_XRESERVE_MINT_NOTE_INTENT_WORDS = "mint note deposit intent attachment word count does not match the intent length"
+
+const ERR_XRESERVE_MINT_RECIPIENT_MISMATCH = "mint note recipient does not match the attested deposit intent"
+
+const ERR_XRESERVE_MINT_AMOUNT_MISMATCH = "mint note asset amount does not match the attested deposit intent"
+
+const ERR_XRESERVE_MINT_ZERO_AMOUNT = "mint note asset amount must be non-zero"
+const ERR_XRESERVE_MINT_AMOUNT_OVER_MAX = "mint note asset amount exceeds the fungible maximum"
+
+const ERR_XRESERVE_MINT_TAG_MISMATCH = "mint note tag does not match the attested recipient target"
+const ERR_XRESERVE_MINT_NOTE_TYPE_NOT_PUBLIC = "mint note output note type must be public"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Gates every `mint_and_send` on the full attestation pipeline and the ASSERT-MATCH
+#! binding — the attestation mint policy predicate. Registered as the ACTIVE mint policy of the
+#! faucet's TokenPolicyManager and invoked by `policy_manager::execute_mint_policy` via `dyncall`
+#! on every MINT-note consumption.
+#!
+#! It hash-verifies the note's transport attachment into ONE region, REBUILDS the DepositIntent
+#! the attestation signed, and verifies the signature over what it built. On accept it marks the
+#! nonce used — its only state write — and returns its inputs unchanged.
+#!
+#! The note does not carry the full deposit intent. It carries the fields the faucet cannot
+#! derive, and the faucet supplies the rest: the scheme constants, the amount from the note's own
+#! asset value, the configured domain, its own id as the token identifier, and a zero fee.
+#!
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#!
+#! Where:
+#! - ASSET_VALUE is the note-supplied fungible asset value word [amount, 0, 0, 0]; its amount is
+#!   what the faucet writes into the preimage, and it is returned unchanged.
+#! - tag is the note-supplied output-note tag; asserted equal to the attested recipient's account
+#!   target and returned unchanged.
+#! - note_type is the note-supplied output-note type; asserted public and returned unchanged.
+#! - RECIPIENT is the note-supplied output-note recipient digest; asserted equal to the P2ID
+#!   recipe derived from the attested intent and returned unchanged.
+#!
+#! Panics if:
+#! - the procedure is not dispatched during note processing (active_note::* will fail).
+#! - an attachment is missing, doubled, or extra (the two finds + the count-two assert).
+#! - the transport is shorter than its fixed prefix, or its committed word count does not match the
+#!   count the carried hookData length implies.
+#! - an attachment's advice-map content does not hash to its note-committed commitment (the
+#!   pipe_preimage_to_memory assert inside write_attachment_to_memory).
+#! - the note's asset value is not a mintable fungible amount.
+#! - the carried recipient is not a valid account id.
+#! - the amount is below the carried fee ceiling, or the nonce was already used.
+#! - the attestation verify rejects (attester allowlist, signature).
+#! - a note-supplied value diverges from its attested derivation (the ASSERT-MATCH errors).
+#!
+#! Locals:
+#! - 0..4: ASSET_VALUE
+#! - 4..8: RECIPIENT
+#! - 8: note tag
+#! - 9: note_type
+#! - 10: carried hookData length
+#! - 11: the note's asset amount
+#! - 12..28: attachment commitments list (4 words)
+#! - 28..32: the hashed nonce (usedNonces storage-map key == the attested output-note serial)
+#! - 32..1056: the rebuilt DepositIntent preimage
+#! - 1056..2080: the hash-verified transport attachment (MAX_ATTACHMENT_WORDS * 4 felts)
+#!     - 1056..1072: pubkey(16)
+#!     - 1072..1092: signature(17) + pad(3)
+#!     - 1092..1116: the carried mint payload
+#!     - 1116..: packed hookData
+#!
+#! Invocation: call
+@locals(1056)
+@account_procedure
+pub proc check_policy
+    # store the note-supplied values: the ASSERT-MATCH compares read them back, and so does the
+    # return
+    loc_storew_le.ASSET_VALUE_LOC dropw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    loc_store.TAG_LOC loc_store.NOTE_TYPE_LOC
+    # => [RECIPIENT, pad(12)]
+
+    loc_storew_le.RECIPIENT_LOC dropw
+    # => [pad(16)]
+
+    # ---- TRANSPORT: locate the two attachments; keep the transport index for the staging read ----
+
+    push.XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME exec.active_note::find_attachment
+    # => [is_found, transport_idx, pad(16)]
+
+    assert.err=ERR_XRESERVE_MINT_NOTE_TRANSPORT_MISSING
+    # => [transport_idx, pad(16)]
+
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME exec.active_note::find_attachment
+    # => [is_found, target_idx, transport_idx, pad(16)]
+
+    assert.err=ERR_XRESERVE_MINT_NOTE_TARGET_MISSING
+    drop
+    # => [transport_idx, pad(16)]
+
+    # with both schemes found, require exactly two attachments total.
+    locaddr.ATTACHMENT_COMMITMENTS_LOC exec.active_note::write_attachment_commitments_to_memory
+    # => [num_attachments, transport_idx, pad(16)]
+
+    eq.2 assert.err=ERR_XRESERVE_MINT_NOTE_ATTACHMENT_COUNT
+    # => [transport_idx, pad(16)]
+
+    # ---- the transport attachment: ONE hash-verify into the policy's own locals ----
+
+    locaddr.TRANSPORT_LOC exec.active_note::write_attachment_to_memory
+    # => [transport_num_words, pad(16)]
+
+    # transport-shape floor: the attestation and the carried mint intent. Checked FIRST, because
+    # every read below is at a constant offset that only a transport of at least this size contains.
+    dup u32assert.err=ERR_XRESERVE_MINT_NOTE_TRANSPORT_TOO_SHORT
+    u32gte.XUSDC_MINT_TRANSPORT_FIXED_WORDS assert.err=ERR_XRESERVE_MINT_NOTE_TRANSPORT_TOO_SHORT
+    # => [transport_num_words, pad(16)]
+
+    # past the fixed-width attestation is the mint intent and its hookData tail. The floor above is
+    # what proves this subtraction stays non-negative; `rebuild` binds the result to the intent's
+    # own length claim.
+    sub.XUSDC_MINT_ATTESTATION_NUM_WORDS
+    # => [mint_intent_num_words, pad(16)]
+
+    # ---- the amount the faucet will write: the note's own asset value ----
+
+    padw loc_loadw_le.ASSET_VALUE_LOC
+    # => [amount, value_1, value_2, value_3, mint_intent_num_words, pad(16)]
+
+    movdn.3
+    # => [value_1, value_2, value_3, amount, mint_intent_num_words, pad(16)]
+
+    assertz.err=ERR_XRESERVE_MINT_AMOUNT_MISMATCH
+    assertz.err=ERR_XRESERVE_MINT_AMOUNT_MISMATCH
+    assertz.err=ERR_XRESERVE_MINT_AMOUNT_MISMATCH
+    # => [amount, mint_intent_num_words, pad(16)]
+
+    dup neq.0 assert.err=ERR_XRESERVE_MINT_ZERO_AMOUNT
+    # => [amount, mint_intent_num_words, pad(16)]
+
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_XRESERVE_MINT_AMOUNT_OVER_MAX
+    # => [amount, mint_intent_num_words, pad(16)]
+
+    # ---- Admit the carried intent, then rebuild the message Circle signed from it ----
+
+    dup locaddr.MINT_INTENT_LOC
+    # => [mint_intent_ptr, amount, amount, mint_intent_num_words, pad(16)]
+
+    # validate the two preconditions the attestation cannot express over the carried fields alone.
+    exec.mint_intent::validate
+    # => [HASHED_NONCE, amount, mint_intent_num_words, pad(16)]
+
+    loc_storew_le.HASHED_NONCE_LOC dropw
+    # => [amount, mint_intent_num_words, pad(16)]
+
+    swap locaddr.MINT_INTENT_LOC push.DEPOSIT_INTENT_PTR
+    # => [deposit_intent_ptr, mint_intent_ptr, mint_intent_num_words, amount, pad(16)]
+
+    exec.deposit_intent::rebuild
+    # => [intent_num_bytes, pad(16)]
+
+    # attestation verify: keccak the rebuilt extent, allowlist gate + ECDSA verify
+    locaddr.ATTESTATION_SIGNATURE_LOC locaddr.ATTESTATION_PUBKEY_LOC
+    # => [pubkey_ptr, signature_ptr, intent_num_bytes, pad(16)]
+
+    movup.2 push.DEPOSIT_INTENT_PTR
+    # => [deposit_intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr, pad(16)]
+
+    exec.attestation_verify::verify_attestation
+    # => [pad(16)]
+
+    # ---- ASSERT-MATCH ----
+    # derive the EXPECTED_RECIPIENT from the attested values and check the note-supplied ones match
+    # this covers script root, target ID, serial, tag and note type
+
+    padw loc_loadw_le.HASHED_NONCE_LOC
+    # => [SERIAL_NUM, pad(16)]
+
+    push.NOTE_TYPE_PUBLIC
+    # => [note_type, SERIAL_NUM, pad(16)]
+
+    loc_load.MINT_INTENT_RECIPIENT_PREFIX_LOC loc_load.MINT_INTENT_RECIPIENT_SUFFIX_LOC
+    # => [target_id_suffix, target_id_prefix, note_type, SERIAL_NUM, pad(16)]
+
+    dup.1 exec.note_tag::create_account_target movdn.2
+    # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM, pad(16)]
+
+    exec.p2id::prepare_note
+    # => [tag, note_type, RECIPIENT, pad(16)]
+
+    # assert equality against the values passed to the mint policy
+    loc_load.TAG_LOC assert_eq.err=ERR_XRESERVE_MINT_TAG_MISMATCH
+    # => [note_type, RECIPIENT, pad(16)]
+
+    loc_load.NOTE_TYPE_LOC assert_eq.err=ERR_XRESERVE_MINT_NOTE_TYPE_NOT_PUBLIC
+    # => [RECIPIENT, pad(16)]
+
+    padw loc_loadw_le.RECIPIENT_LOC
+    # => [NOTE_RECIPIENT, EXPECTED_RECIPIENT, pad(16)]
+
+    assert_eqw.err=ERR_XRESERVE_MINT_RECIPIENT_MISMATCH
+    # => [pad(16)]
+
+    # ---- ACCEPT: mark the nonce used (the policy's ONLY state write) ----
+
+    push.NONCE_USED_MARKER
+    # => [MARKER, pad(16)]
+
+    padw loc_loadw_le.HASHED_NONCE_LOC
+    # => [KEY, MARKER, pad(16)]
+
+    push.USED_NONCES_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, KEY, MARKER, pad(16)]
+
+    exec.native_account::set_map_item dropw
+    # => [pad(16)]
+
+    # ---- return the (asserted-matching) policy interface unchanged ----
+
+    # the load overwrites a word
+    loc_loadw_le.RECIPIENT_LOC
+    # => [RECIPIENT, pad(12)]
+
+    loc_load.NOTE_TYPE_LOC loc_load.TAG_LOC
+    # => [tag, note_type, RECIPIENT, pad(12)]
+
+    padw loc_loadw_le.ASSET_VALUE_LOC
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+
+    # drop the six excess pads behind the interface so the policy returns at the same 16-element
+    # depth it was dispatched at
+    movupw.3 dropw movup.10 drop movup.10 drop
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+end

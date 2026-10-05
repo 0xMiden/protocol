@@ -9,3 +9,6 @@ pub use mock_account_component::MockAccountComponent;
 
 mod mock_faucet_component;
 pub use mock_faucet_component::MockFaucetComponent;
+
+mod mock_procedures_component;
+pub use mock_procedures_component::MockProceduresComponent;
