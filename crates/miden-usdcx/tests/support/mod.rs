@@ -2063,8 +2063,8 @@ pub async fn try_emit_burn_note(
         .tx_script(tx_script)
         // The attachment contents (routing target) keyed by commitment for `add_attachment`.
         .extend_advice_inputs(attachment_advice(burn_note))
-        // Register the full note details so the kernel's `before_created` event can resolve the
-        // PUBLIC note's details when tx0 creates it.
+        // Register the full note details so the kernel's `before_created` event can resolve the PUBLIC
+        // note's details when tx0 creates it.
         .expected_output_note(RawOutputNote::Full(burn_note.clone()));
     // A POLICED (callback-Enabled) faucet's asset fires the SEND callback when the holder
     // emits a note moving it out of their vault (native = the holder), so the kernel dyncalls the
