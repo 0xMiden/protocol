@@ -43,9 +43,11 @@ pub struct BlockBody {
     /// Nullifiers created by the transactions in this block through the consumption of notes.
     created_nullifiers: Vec<Nullifier>,
 
+    /// Log data in transaction-header order.
+    log_data: TransactionLogDataCollection,
+
     /// The aggregated and flattened transaction headers of all batches in the order in which they
     /// appeared in the proposed block.
-    log_data: TransactionLogDataCollection,
     transactions: OrderedTransactionHeaders,
 }
 
@@ -286,7 +288,9 @@ impl From<ProposedBlock> for BlockBody {
             .collect();
         let created_nullifiers = created_nullifiers.keys().copied().collect::<Vec<_>>();
         // Aggregate the verified transactions of all batches.
-        let (transactions, log_data) = batches.into_transaction_data();
+        let (transactions, log_data) = batches.into_transaction_data().expect(
+            "ProposedBlock validates the log budget during construction and deserialization",
+        );
         Self {
             updated_accounts,
             output_note_batches,
