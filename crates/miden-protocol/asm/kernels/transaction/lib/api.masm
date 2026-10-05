@@ -159,7 +159,7 @@ pub proc account_get_initial_commitment(padding: [felt; 16]) -> (Commitment, [fe
     # => [INIT_COMMITMENT, pad(12)]
 end
 
-#! Computes commitment to the state of the active account.
+#! Computes commitment to the state of the native account.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
@@ -169,14 +169,18 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account.
 #!
 #! Invocation: dynexec
 pub proc account_compute_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
 
-    # compute the active account commitment
+    # compute the native account commitment
     exec.account::compute_commitment
     # => [ACCOUNT_COMMITMENT, pad(16)]
 
@@ -225,43 +229,74 @@ pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [
     # => [ACCOUNT_COMMITMENT, pad(12)]
 end
 
-#! Records the commitments describing an upgrade of the native account's code and storage.
+#! Initializes an upgrade of the native account's code, which the epilogue applies after the
+#! authentication procedure.
 #!
-#! This procedure is currently a no-op beyond storing the two commitments in kernel memory.
+#! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
 #!
-#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
-#! Outputs: [pad(16)]
+#! Inputs:
+#!   Operand stack: [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+#!   Advice map: {
+#!     NEW_CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
 #!
 #! Where:
-#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
-#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
+#! - STORAGE_UPGRADE_COMMITMENT is not empty.
+#! - the native account is new.
+#! - a code upgrade is already pending.
+#! - the new code is not valid account code.
+#!
+#! Invocation: dynexec
+pub proc account_upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    exec.account::upgrade
+    # => [pad(16)]
+end
+
+#! Returns the commitment to the pending code upgrade of the native account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [NEW_CODE_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code, or the empty word if no code
+#!   upgrade is pending.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_upgrade(code_upgrade_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
-    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
-    # account as validated in account::{validate_storage, validate_procedures}.
-    # The same applies to the asset callback rule validated in
-    # prologue::validate_asset_callbacks: an upgrade must reject adding an asset callback slot to an
-    # account whose asset callback flag is disabled. Such a callback is not invalid, it simply could
-    # never be invoked, since the flag is immutable, which leaves the account looking configured
-    # while nothing is enforced - the state the creation-time check rejects.
+pub proc account_get_code_upgrade_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
-
-    exec.memory::set_code_upgrade_commitment
-    # => [STORAGE_UPGRADE_COMMITMENT, pad(12)]
-
-    exec.memory::set_storage_upgrade_commitment
     # => [pad(16)]
+
+    exec.memory::get_code_upgrade_commitment
+    # => [NEW_CODE_COMMITMENT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [NEW_CODE_COMMITMENT, pad(12)]
 end
 
 #! Returns the ID of the specified account.
@@ -1557,6 +1592,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> [felt; 16]
@@ -1569,6 +1605,49 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
 
     exec.output_note::add_asset
     # => [pad(16)]
+end
+
+#! Prevents further changes to the specified output note's assets and attachments.
+#! Sealing is idempotent.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the active account is not the native account.
+#! - the note index points to a non-existent output note.
+#!
+#! Invocation: dynexec
+pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
+    exec.memory::assert_native_account
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
+    exec.memory::seal_output_note
+    # => [pad(16)]
+end
+
+#! Returns whether the specified output note is sealed against asset and attachment changes.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [is_sealed, pad(15)]
+#!
+#! Panics if:
+#! - the note index points to a non-existent output note.
+#!
+#! Invocation: dynexec
+pub proc output_note_is_sealed(note_idx: u16, padding: [felt; 15]) -> (Bool, [felt; 15])
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
+    exec.memory::is_output_note_sealed
+    # => [is_sealed, pad(15)]
 end
 
 #! Adds an attachment to the note specified by the index.
@@ -1584,6 +1663,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #! - the attachment scheme is 0 or exceeds 65534.
 #! - the attachment num_words exceeds 256 or is zero.
 #! - the note already has 4 attachments.

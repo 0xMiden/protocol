@@ -50,6 +50,7 @@ use crate::note::{
     PswapNote,
     StandardNote,
     SwapNote,
+    UpgradeNote,
 };
 
 mod table;
@@ -140,6 +141,7 @@ impl StandardNote {
             StandardNote::NETWORK_ACCOUNT_CONFIG => {
                 Some(NoteCost::of::<NetworkAccountConfigNote>())
             },
+            StandardNote::UPGRADE => Some(NoteCost::of::<UpgradeNote>()),
             StandardNote::FEE_SPONSORSHIP => Some(NoteCost::of::<FeeSponsorshipNote>()),
             StandardNote::TX_FEE => None,
         }
@@ -188,6 +190,7 @@ mod tests {
                 NetworkAccountConfigNote::script_root(),
                 NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES,
             ),
+            (UpgradeNote::script_root(), UPGRADE_CONSUMPTION_CYCLES),
             (FeeSponsorshipNote::script_root(), FEE_SPONSORSHIP_CONSUMPTION_CYCLES),
         ] {
             let cost = StandardNote::note_cost(root).expect("standard note should have a cost");

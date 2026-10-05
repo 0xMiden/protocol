@@ -123,6 +123,10 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionExecutorHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be created.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
@@ -134,7 +138,7 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
@@ -142,9 +146,9 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-        );
+        )?;
 
-        Self {
+        Ok(Self {
             base_host,
             tx_progress: TransactionProgress::default(),
             authenticator,
@@ -154,7 +158,7 @@ where
             generated_signatures: BTreeMap::new(),
             in_auth_procedure: false,
             source_manager,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -364,7 +368,7 @@ where
 
         match note_script {
             Some(note_script) => {
-                let script_felts: Vec<Felt> = (&note_script).into();
+                let script_felts = note_script.to_elements();
                 let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
@@ -556,6 +560,13 @@ where
 
                 TransactionEvent::AccountPushProcedureIndex { code_commitment, procedure_root } => {
                     self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
+                },
+
+                TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
+                } => {
+                    self.base_host.on_account_before_code_upgrade(new_code_commitment, code_upgrade)
                 },
 
                 TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {

@@ -30,5 +30,10 @@ protox         = { workspace = true }
 quote          = { workspace = true }
 
 [dev-dependencies]
+anyhow         = { workspace = true }
 assert_matches = { workspace = true }
 miden-protocol = { features = ["testing"], workspace = true }
+rand           = { workspace = true }
+rand_chacha    = { workspace = true }
+rstest         = { workspace = true }
+tempfile       = { version = "3.19" }

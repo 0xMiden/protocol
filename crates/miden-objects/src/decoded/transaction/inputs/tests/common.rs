@@ -173,6 +173,7 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         BTreeMap::from([(unauthenticated_note.id(), dummy_word(51))]),
         dummy_advice_inputs([52, 53], 54, 55),
         dummy_word(56),
+        None,
     );
     let advice_inputs = dummy_advice_inputs([60, 61], 62, 63);
     let foreign_account_code = vec![account_code, dummy_secondary_account_code()];

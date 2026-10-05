@@ -144,6 +144,11 @@ impl Note {
         self.header.details_commitment()
     }
 
+    /// Returns the note's details.
+    pub fn details(&self) -> &NoteDetails {
+        &self.details
+    }
+
     /// Returns the note's assets.
     pub fn assets(&self) -> &NoteAssets {
         self.details.assets()

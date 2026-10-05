@@ -14,7 +14,7 @@ pub use account_procedures::AccountProcedureIndexMap;
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::{TransactionEventId, TransactionLog, TransactionLogs};
-use miden_protocol::vm::{EventId, EventName};
+use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -37,6 +37,7 @@ use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
+    AccountCodeUpgrade,
     AccountDelta,
     AccountHeader,
     AccountId,
@@ -120,6 +121,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the [`AccountUpdateTracker`] cannot be created for the account.
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
@@ -127,7 +132,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
@@ -139,19 +144,19 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             }
             registry
         };
-        Self {
+        Ok(Self {
             mast_store,
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            update_tracker: AccountUpdateTracker::new(account),
+            update_tracker: AccountUpdateTracker::new(account)?,
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             logs: TransactionLogs::default(),
             input_notes,
             block_commitments,
             core_lib_handlers,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -400,6 +405,38 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.update_tracker.increment_nonce();
 
         Ok(Vec::new())
+    }
+
+    /// Handles the before code upgrade event by recording the new code in the update tracker and
+    /// providing its procedures to the kernel through the advice map.
+    ///
+    /// The `code_upgrade` is taken from the advice map entry under
+    /// [`AccountCodeUpgrade::advice_map_key`] when the event is extracted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the commitment of `code_upgrade` does not match `new_code_commitment`.
+    /// - the update tracker rejects the upgrade.
+    pub fn on_account_before_code_upgrade(
+        &mut self,
+        new_code_commitment: Word,
+        code_upgrade: AccountCodeUpgrade,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        if code_upgrade.commitment() != new_code_commitment {
+            return Err(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
+                expected: new_code_commitment,
+                actual: code_upgrade.commitment(),
+            });
+        }
+
+        let procedures = code_upgrade.code().to_elements();
+        self.update_tracker.record_code_upgrade(code_upgrade)?;
+
+        Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
+            new_code_commitment,
+            procedures,
+        )]))])
     }
 
     // ACCOUNT STORAGE UPDATE HANDLERS

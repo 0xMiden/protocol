@@ -7,6 +7,7 @@ use miden_processor::trace::RowIndex;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
+    AccountCodeUpgrade,
     AccountId,
     AssetDelta,
     StorageMap,
@@ -125,6 +126,13 @@ pub(crate) enum TransactionEvent {
         code_commitment: Word,
         /// The procedure root whose index is requested.
         procedure_root: Word,
+    },
+
+    AccountBeforeCodeUpgrade {
+        /// The commitment to the new code.
+        new_code_commitment: Word,
+        /// The code upgrade read from the advice map.
+        code_upgrade: AccountCodeUpgrade,
     },
 
     NoteBeforeCreated {
@@ -415,6 +423,29 @@ impl TransactionEvent {
                 })
             },
 
+            TransactionEventId::AccountBeforeCodeUpgrade => {
+                // Expected stack state: [event, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+                let new_code_commitment = process.get_stack_word(1);
+
+                let upgrade_key = AccountCodeUpgrade::advice_map_key(new_code_commitment);
+                let upgrade_data =
+                    process.advice_provider().get_mapped_values(&upgrade_key).ok_or(
+                        TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment),
+                    )?;
+                let code_upgrade =
+                    AccountCodeUpgrade::try_from_elements(upgrade_data).map_err(|source| {
+                        TransactionKernelError::AccountCodeUpgradeInvalid {
+                            new_code_commitment,
+                            source,
+                        }
+                    })?;
+
+                Some(TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
+                })
+            },
+
             TransactionEventId::NoteBeforeCreated => {
                 // Expected stack state:  [event, tag, note_type, RECIPIENT]
                 let tag = process.get_stack_item(1);
@@ -434,10 +465,10 @@ impl TransactionEvent {
                     let note_script = process
                         .advice_provider()
                         .get_mapped_values(&script_root)
-                        .map(|script_data| {
-                            NoteScript::try_from(script_data).map_err(|source| {
+                        .map(|script_elements| {
+                            NoteScript::try_from_elements(script_elements).map_err(|source| {
                                 TransactionKernelError::MalformedNoteScript {
-                                    data: script_data.to_vec(),
+                                    script_elements: script_elements.to_vec(),
                                     source,
                                 }
                             })
