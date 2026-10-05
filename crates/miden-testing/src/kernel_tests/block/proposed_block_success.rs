@@ -15,6 +15,7 @@ use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
 use rand::RngExt;
+use rstest::rstest;
 
 use super::utils::MockChainBlockExt;
 use crate::{AccountState, Auth, MockChain, MockTransactionInput};
@@ -110,9 +111,18 @@ async fn proposed_block_basic_success() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that account updates are correctly aggregated into a block-level account update.
+/// Tests that account updates are correctly aggregated into a block-level account update,
+/// regardless of how the transactions are grouped into batches.
+///
+/// Each batch grouping lists the indices of the transactions in each batch.
+#[rstest]
+#[case::later_tx_in_single_tx_batch(vec![vec![2], vec![0, 1]])]
+#[case::later_txs_in_multi_tx_batch(vec![vec![0], vec![1, 2]])]
+#[case::later_txs_in_multi_tx_batch_listed_first(vec![vec![1, 2], vec![0]])]
 #[tokio::test]
-async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<()> {
+async fn proposed_block_aggregates_account_state_transition(
+    #[case] batch_groupings: Vec<Vec<usize>>,
+) -> anyhow::Result<()> {
     let asset = FungibleAsset::mock(100).unwrap_fungible();
     let sender_id = AccountId::try_from(ACCOUNT_ID_SENDER)?;
 
@@ -138,18 +148,19 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
     account1.apply_patch(executed_tx1.account_patch())?;
     let executed_tx2 = chain.create_authenticated_notes_tx(account1.clone(), [note2.id()]).await?;
 
-    let [tx0, tx1, tx2] = [executed_tx0, executed_tx1, executed_tx2]
+    let txs = [executed_tx0, executed_tx1, executed_tx2]
         .into_iter()
-        .map(|tx| LocalTransactionProver::default().prove_dummy(tx).unwrap())
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("we should have provided three executed txs");
+        .map(|tx| LocalTransactionProver::default().prove_dummy(tx))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let batch0 = chain.create_batch(vec![tx2.clone()])?;
-    let batch1 = chain.create_batch(vec![tx0.clone(), tx1.clone()])?;
-
-    let batches = vec![batch0.clone(), batch1.clone()];
-    let block_inputs = chain.get_block_inputs(&batches).unwrap();
+    let batches = batch_groupings
+        .iter()
+        .map(|tx_indices| {
+            let txs = tx_indices.iter().map(|tx_index| txs[*tx_index].clone()).collect();
+            chain.create_batch(txs)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let block_inputs = chain.get_block_inputs(&batches)?;
 
     let block =
         ProposedBlock::new(block_inputs, batches).context("failed to build proposed block")?;
@@ -159,16 +170,20 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
     assert_eq!(*account_id, account1.id());
     assert_eq!(
         account_update.initial_state_commitment(),
-        tx0.account_update().initial_state_commitment()
+        txs[0].account_update().initial_state_commitment()
     );
     assert_eq!(
         account_update.final_state_commitment(),
-        tx2.account_update().final_state_commitment()
+        txs[2].account_update().final_state_commitment()
     );
     // The transactions are in the flattened order of the batches.
+    let expected_tx_ids = batch_groupings
+        .iter()
+        .flat_map(|tx_indices| tx_indices.iter().map(|tx_index| txs[*tx_index].id()))
+        .collect::<Vec<_>>();
     assert_eq!(
         block.transactions().map(TransactionHeader::id).collect::<Vec<_>>(),
-        [tx2.id(), tx0.id(), tx1.id()]
+        expected_tx_ids
     );
 
     let expected_asset = asset.add(asset)?.add(asset)?;

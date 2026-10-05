@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::crypto::merkle::mmr::MmrDelta;
+use miden_protocol::crypto::merkle::mmr::{MmrDelta, PartialMmr};
 use miden_protocol::crypto::merkle::smt::{PartialSmt, SmtLeaf, SmtProof, UniqueNodes};
 use miden_protocol::crypto::merkle::{MerklePath, SparseMerklePath};
 
@@ -36,6 +36,39 @@ impl From<SparseMerklePath> for proto::primitives::SparseMerklePath {
             empty_nodes_mask,
             siblings: siblings.into_iter().map(Into::into).collect(),
         }
+    }
+}
+
+// PARTIAL MMR
+// ================================================================================================
+
+impl From<&PartialMmr> for proto::primitives::PartialMmr {
+    fn from(mmr: &PartialMmr) -> Self {
+        let tracked_leaves = mmr
+            .leaves()
+            .map(|(position, leaf)| {
+                let proof = mmr
+                    .open(position)
+                    .expect("tracked MMR position must be in bounds")
+                    .expect("tracked MMR leaf must have an opening");
+                proto::primitives::TrackedMmrLeaf {
+                    position: position as u64,
+                    leaf: Some(leaf.into()),
+                    path: proof.merkle_path().nodes().iter().map(Into::into).collect(),
+                }
+            })
+            .collect();
+        Self {
+            forest: mmr.forest().num_leaves() as u64,
+            peaks: mmr.peaks().peaks().iter().map(Into::into).collect(),
+            tracked_leaves,
+        }
+    }
+}
+
+impl From<PartialMmr> for proto::primitives::PartialMmr {
+    fn from(mmr: PartialMmr) -> Self {
+        (&mmr).into()
     }
 }
 

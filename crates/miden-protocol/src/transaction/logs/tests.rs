@@ -116,16 +116,16 @@ fn commitment_vectors() {
     ];
     // These vectors are also checked against direct permutations below.
     let individual_commitments = [
-        "0xd48ee9c90700f3cee47bdbc45a6b876e0d35afcb3efcf0c9ce64e91ff03f3dcc",
-        "0x1ac455ea7d275937b74272a1068607b432cb02da68bfaa9cd9ef32b16715bcf9",
-        "0xab7bea921af076cf291e416373b7a7da08effb0c51bc641d7eb9ee3434510ee2",
-        "0xd48ee9c90700f3cee47bdbc45a6b876e0d35afcb3efcf0c9ce64e91ff03f3dcc",
+        "0x17203a1b029a5d2cfe4d94ec68da2a204d2cdb7ad60c7f8cc5c3eded29c94810",
+        "0x97da466301344a0647316ec6df65a06dc9953150f2e8f9117329974810462eae",
+        "0xb0d045543e0ff96da679f79428e26b641bfc3578a31b8ad221c09ef9508bf345",
+        "0x17203a1b029a5d2cfe4d94ec68da2a204d2cdb7ad60c7f8cc5c3eded29c94810",
     ];
     let collection_commitments = [
-        "0xc5c686b91e1a532971174419deafdb34441d58d3ca9dca6d88995ef713e5400b",
-        "0x9ec219fe5cca6ca58857603e7871a93f59d5efdfa128afc9acb1a6cc3e32a706",
-        "0x39bf0c3dc416404626594dcee304d8c8d88dfc9b0633031a65c699b16b0b2127",
-        "0xa01084cb1de302811811102972481d7c9e08da91eb11fd5a07b2f74a45f984a3",
+        "0xbf0d38cfceaa53cebbc701dec388d0be838452add786b934c26789273748d2ad",
+        "0xad7e7b073214899b118bf50ee4f4d9ff4bd92624f1d70e594b570f64cf369981",
+        "0x23d2173c6dee33b73935164fc32ede1c3e06ecfb09a4a5efd6be6c6e7fd85dd7",
+        "0x245f9c8952bd6b2d27f35815104353866243cbb5c92af0847e4afb9c0d654f85",
     ];
     let mut logs = TransactionLogs::default();
     for (index, record) in vector_logs().into_iter().enumerate() {
@@ -164,7 +164,7 @@ fn commitments_match_permutation_layout() {
     let mut logs = TransactionLogs::default();
     for record in vector_logs() {
         let mut state = [Felt::ZERO; Hasher::STATE_WIDTH];
-        state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0002u32);
+        state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0005u32);
         state[..4].copy_from_slice(&[
             record.emitter().suffix(),
             record.emitter().prefix().as_felt(),
