@@ -338,7 +338,7 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// Payback and remainder outputs are verified and sealed before the script returns, regardless of
 /// their visibility. Later asset or attachment additions fail the transaction.
 ///
-/// # Private paybacks
+/// # Privacy
 ///
 /// The owner must retain the payback [`NoteRecipient`] to reconstruct outputs with
 /// [`Self::payback_note`]. Use an independent random serial and a discovery tag that does not
@@ -1363,6 +1363,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn pswap_private_payback_reconstruction_validates_opening_and_order() {
+        let offered = FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap();
+        let requested = FungibleAsset::new(dummy_faucet_id(0xbb), 50).unwrap();
+        let (mut pswap, _) = build_pswap_note(offered, requested, dummy_creator_id());
+        let serial = Word::from([1u32, 2, 3, 4]);
+        let recipient = P2idNoteStorage::new(dummy_creator_id()).into_recipient(serial);
+        pswap.storage.payback = PswapPayback::private(&recipient, NoteTag::new(0)).unwrap();
+        let attachment = PswapNoteAttachment::new(requested.amount(), pswap.order_id(), 1);
+        let consumer = dummy_consumer_id();
+
+        let expected = pswap.execute_full_fill(consumer).unwrap();
+        let reconstructed = pswap.payback_note(consumer, &attachment, Some(&recipient)).unwrap();
+        assert_eq!(reconstructed.id(), expected.id());
+
+        assert!(pswap.payback_note(consumer, &attachment, None).is_err());
+        let wrong_recipient = P2idNoteStorage::new(consumer).into_recipient(serial);
+        assert!(pswap.payback_note(consumer, &attachment, Some(&wrong_recipient)).is_err());
+        let wrong_order = PswapNoteAttachment::new(requested.amount(), pswap.order_id() + ONE, 1);
+        assert!(pswap.payback_note(consumer, &wrong_order, Some(&recipient)).is_err());
+
+        // A matching digest alone is insufficient: the opening must be a canonical P2ID.
+        let wrong_script =
+            NoteRecipient::new(serial, PswapNote::script(), recipient.storage().clone());
+        pswap.storage.payback = PswapPayback::Private {
+            recipient: wrong_script.digest(),
+            tag: NoteTag::new(0),
+        };
+        assert!(pswap.payback_note(consumer, &attachment, Some(&wrong_script)).is_err());
     }
 
     /// Consumer supplies both an account fill and a note fill, and the sum is below

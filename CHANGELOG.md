@@ -4,7 +4,7 @@
 
 ### Changes
 
-- [BREAKING] Changed private PSWAP paybacks to use fixed P2ID recipient commitments with independent secret serials; updated the private storage layout, Rust APIs, and script root ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
+- [BREAKING] Changed PSWAP private paybacks to use fixed P2ID recipient commitments and independent secret serials, updating the private storage layout and Rust APIs ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 
 ## v0.17.0 (2026-10-01)
 
