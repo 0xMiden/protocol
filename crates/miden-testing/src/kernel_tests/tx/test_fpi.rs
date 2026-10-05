@@ -2003,6 +2003,81 @@ async fn native_only_procedure_fails_for_foreign_account(
     Ok(())
 }
 
+/// A foreign account can query the sealing state of outputs created by the native account.
+#[tokio::test]
+async fn foreign_account_can_query_output_note_sealing() -> anyhow::Result<()> {
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "foreign_account",
+            "
+            use miden::protocol::output_note
+
+            @account_procedure
+            pub proc check_output_note_sealing
+                push.0 exec.output_note::is_sealed assert
+                push.1 exec.output_note::is_sealed assertz
+            end
+            ",
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.clone())?;
+
+    let code = format!(
+        "
+        use miden::core::sys
+        use miden::protocol::output_note
+        use miden::protocol::tx
+        use {{NOTE_TYPE_PRIVATE}} from miden::protocol::note
+
+        @transaction_script
+        pub proc main
+            # Use different recipients to keep the outputs distinct; seal only the first.
+            push.1.2.3.4 push.NOTE_TYPE_PRIVATE.0
+            call.::mock::account::create_note exec.output_note::seal
+            push.5.6.7.8 push.NOTE_TYPE_PRIVATE.0
+            call.::mock::account::create_note drop
+
+            padw padw padw push.0.0.0
+            procref.::foreign_account::check_output_note_sealing
+            push.{foreign_prefix} push.{foreign_suffix}
+            exec.tx::execute_foreign_procedure
+            exec.sys::truncate_stack
+        end
+        ",
+        foreign_prefix = foreign_account.id().prefix().as_felt(),
+        foreign_suffix = foreign_account.id().suffix(),
+    );
+    let tx_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_tx_script(code)?;
+
+    mock_chain
+        .build_transaction(native_account.id())
+        .foreign_accounts([foreign_account_inputs])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 

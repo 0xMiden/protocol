@@ -5,11 +5,13 @@ use miden_protocol::{MastForest, Word};
 
 use crate::proto;
 
+/// Uses the hash-bearing format, which the untrusted decoder still accepts from a sender that
+/// chooses it, because only that format carries node digests to corrupt.
 pub(crate) fn corrupt_node_hash(
     forest: &MastForest,
     digest: Word,
 ) -> proto::primitives::MastForest {
-    let mut wire = proto::primitives::MastForest::from(forest);
+    let mut wire = proto::primitives::MastForest { encoded: forest.to_bytes() };
     let digest = digest.to_bytes();
     let offsets: Vec<_> = wire
         .encoded
