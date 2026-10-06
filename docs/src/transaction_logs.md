@@ -15,13 +15,19 @@ encoding. The aggregate is cached until another transaction log is appended and 
 transaction outputs, IDs, proofs and signing summaries. Emit all transaction logs before constructing
 the summary that authorizes them.
 
-Visibility follows the native account, including through FPI. Public transactions submit complete
-transaction logs. Private transactions retain their transaction logs and secret salt locally and
-submit only the resulting commitment. For nonempty private transaction logs, the hash preimage is
-the unsalted transaction log commitment followed by the secret salt. See
-`TransactionLogs::commitment_for_account` for salt requirements. Empty transaction logs commit to
-zero, so the presence of transaction logs is visible. Remote provers and validators that decrypt
-execution witnesses can access private transaction logs and their secret salt.
+Visibility follows the native account: the account against which the transaction executes. A public
+native account submits complete transaction logs; a private native account submits only their
+commitment. This also applies during FPI, regardless of the emitting account's visibility.
+
+For nonempty private transaction logs, the hash preimage is the unsalted transaction log commitment
+followed by a secret salt. Sample a fresh, random, nonzero salt for each transaction and pass it to
+`TransactionArgs::with_log_salt`. Keep the same salt through signing and proving. Zero salts are
+rejected; randomness and freshness are the caller's responsibility. Empty transaction logs commit
+to zero, so the presence of transaction logs is visible.
+
+Local execution data and signing summaries retain complete transaction logs and their salt, including
+when serialized or formatted for debugging. Remote provers and validators that decrypt execution
+witnesses can access this data.
 
 A transaction allows 64 transaction logs, 256 words per payload and 512 total payload words, excluding
 metadata. Transaction logs alone do not make an otherwise empty transaction valid.
