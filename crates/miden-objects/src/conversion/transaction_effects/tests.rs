@@ -5,9 +5,12 @@ use miden_protocol::note::{Note, PartialNote};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
+    LogTopic,
     RawOutputNote,
     RawOutputNotes,
     TransactionEffects,
+    TransactionLog,
+    TransactionLogs,
 };
 use prost::Message;
 
@@ -16,6 +19,16 @@ use crate::test_utils::dummy_word;
 use crate::{DecodeMessage, Verify, proto};
 
 fn transaction_effects() -> TransactionEffects {
+    let account_patch = account_patch();
+    let logs = TransactionLogs::new(vec![
+        TransactionLog::new(
+            account_patch.id(),
+            LogTopic::from_name("test::updated"),
+            vec![dummy_word(7)],
+        )
+        .unwrap(),
+    ])
+    .unwrap();
     let input_notes =
         InputNotes::new(vec![InputNote::unauthenticated(Note::mock_noop(dummy_word(1)))]).unwrap();
     let output_notes = RawOutputNotes::new(vec![
@@ -27,13 +40,15 @@ fn transaction_effects() -> TransactionEffects {
     TransactionEffects::new(
         dummy_word(4),
         dummy_word(5),
-        account_patch(),
+        account_patch,
         input_notes,
         output_notes,
         BlockNumber::from(17_u32),
         dummy_word(6),
         BlockNumber::from(42_u32),
     )
+    .with_logs(logs, dummy_word(8))
+    .unwrap()
 }
 
 #[test]
