@@ -374,6 +374,33 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Visibility depends only on the account type bit, including for future account ID versions.
+#[tokio::test]
+async fn test_account_visibility_ignores_other_prefix_bits() -> anyhow::Result<()> {
+    let code = "
+        use miden::protocol::account_id
+
+        begin
+            # Version one, private account.
+            push.1 exec.account_id::is_private assert
+            # => []
+
+            # Version one, public account.
+            push.17 exec.account_id::is_private assertz
+            # => []
+
+            # Future version ten with callbacks and high prefix bits set.
+            push.0x001234560000002a exec.account_id::is_private assert
+            # => []
+
+            push.0x001234560000003a exec.account_id::is_private assertz
+            # => []
+        end
+    ";
+    CodeExecutor::with_default_host().run(code).await?;
+    Ok(())
+}
+
 /// `account_id::validate_structure` enforces the version-independent structural requirements of an
 /// account ID without constraining the version, so IDs carrying a future (currently unsupported)
 /// version pass as long as their suffix is well-formed.
