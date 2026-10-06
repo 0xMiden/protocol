@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-faucets-policies-policy-manager-v2"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::policy_manager_v2"
+path      = "policy_manager_v2.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

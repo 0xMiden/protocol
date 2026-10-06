@@ -8,25 +8,29 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountComponent,
     AccountId,
+    AccountStorage,
     AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetAmount, AssetId, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, AssetCallbacks, AssetId, TokenSymbol};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
-use miden_protocol::errors::StorageMapError;
+use miden_protocol::errors::{AccountError, StorageMapError};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::vm::Package;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::FeePolicyManager;
+use miden_standards::account::policies::{TokenPolicyManager, TokenPolicyManagerV2};
 
 use super::{
+    PolicyManagerVersion,
     USDCX_DECIMALS,
     USDCX_TOKEN_SYMBOL,
     XReserveStablecoinBuilder,
@@ -244,6 +248,87 @@ pub fn record_used_nonces(
     }
     Account::new(id, vault, storage, code, Felt::ONE, None)
         .map_err(XReserveStablecoinBuilderError::AccountComposition)
+}
+
+/// Upgrades the existing faucet `account` from the [`TokenPolicyManager`] to the
+/// [`TokenPolicyManagerV2`], e.g. a faucet built for genesis.
+///
+/// The account keeps its ID, vault, nonce and storage, except that its code is replaced and the
+/// asset callback slots point at the V2 callbacks. A faucet built with
+/// [`PolicyManagerVersion::V2`] gets a different ID instead, because the ID commits to the code.
+///
+/// # Errors
+///
+/// [`XReserveStablecoinBuilderError::AccountComposition`] if:
+/// - `account` does not have the V1 manager's `invoke_send_policy` and `invoke_receive_policy`
+///   procedures.
+/// - the asset callback slots are missing.
+/// - `account` is new: its seed derives the ID from the V1 code.
+pub fn upgrade_to_token_policy_manager_v2(
+    account: Account,
+) -> Result<Account, XReserveStablecoinBuilderError> {
+    let has_v1_manager = [
+        TokenPolicyManager::invoke_send_policy_root(),
+        TokenPolicyManager::invoke_receive_policy_root(),
+    ]
+    .into_iter()
+    .all(|procedure_root| account.code().has_procedure(procedure_root.as_word()));
+    if !has_v1_manager {
+        return Err(XReserveStablecoinBuilderError::AccountComposition(AccountError::other(
+            "the account is not a faucet with the V1 token policy manager",
+        )));
+    }
+    let v2_code = faucet_code(account.id(), PolicyManagerVersion::V2)?;
+
+    let (id, vault, mut storage, _code, nonce, seed) = account.into_parts();
+    set_v2_callback_slots(&mut storage)
+        .map_err(XReserveStablecoinBuilderError::AccountComposition)?;
+    Account::new(id, vault, storage, v2_code, nonce, seed)
+        .map_err(XReserveStablecoinBuilderError::AccountComposition)
+}
+
+/// Points the asset callback slots in `storage` at the [`TokenPolicyManagerV2`] callbacks.
+fn set_v2_callback_slots(storage: &mut AccountStorage) -> Result<(), AccountError> {
+    let callback_mappings = [
+        (
+            AssetCallbacks::on_before_asset_added_to_note_slot(),
+            TokenPolicyManagerV2::invoke_send_policy_root(),
+        ),
+        (
+            AssetCallbacks::on_before_asset_added_to_account_slot(),
+            TokenPolicyManagerV2::invoke_receive_policy_root(),
+        ),
+    ];
+
+    for (slot_name, callback_root) in callback_mappings {
+        storage.set_item(slot_name, callback_root.as_word())?;
+    }
+
+    Ok(())
+}
+
+/// Returns the code of an xUSDC faucet with the token policy manager `version`.
+///
+/// The code depends only on the components and not on their configuration, so a minimal
+/// configuration builds it.
+fn faucet_code(
+    faucet_id: AccountId,
+    version: PolicyManagerVersion,
+) -> Result<AccountCode, XReserveStablecoinBuilderError> {
+    let account = XReserveStablecoinBuilder::builder()
+        .token_supply(AssetAmount::ZERO)
+        .owner(faucet_id)
+        .attest_admin_holders(Vec::new())
+        .pauser_holders(Vec::new())
+        .unpauser_holders(Vec::new())
+        .blocklist_manager_holders(Vec::new())
+        .fee_parameters(FeeParameters::new(0))
+        .fee_asset_id(AssetId::new_fungible(faucet_id))
+        .domain(CircleDomain::new(0))
+        .policy_manager(version)
+        .build()?
+        .build_account([0; 32])?;
+    Ok(account.code().clone())
 }
 
 /// Crate-root constructor for the final xUSDC faucet [`Account`]: builds the fixed-identity USDCx

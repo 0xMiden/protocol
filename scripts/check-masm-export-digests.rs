@@ -108,6 +108,7 @@ mod current {
         MintAllowAll,
         MintOwnerOnly,
         TokenPolicyManager,
+        TokenPolicyManagerV2,
         TransferAllowAll,
     };
     use miden_standards_current::account::upgrade::UpgradeManager;
@@ -140,6 +141,7 @@ mod current {
         BasicBlocklist::code,
         BlocklistManager::code,
         TokenPolicyManager::code,
+        TokenPolicyManagerV2::code,
         BasicConstantFeePolicy::code,
         ConstantFeeManager::code,
         FungibleFaucet::code,

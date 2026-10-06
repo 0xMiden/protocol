@@ -22,7 +22,7 @@ required-features = ["vectors"]
 default = ["std"]
 std     = ["miden-protocol/std", "miden-standards/std", "miden-tx/std"]
 # Exposes the whole `xreserve` MASM library.
-testing = []
+testing = ["miden-protocol/testing"]
 # Enables the canonical golden-vector generator binary.
 vectors = ["dep:k256", "dep:miden-crypto", "dep:rand", "dep:sha3"]
 

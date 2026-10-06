@@ -1,0 +1,14 @@
+# The MASM code of the Token Policy Manager V2 Account Component.
+#
+# Same as the Token Policy Manager, but its transfer callbacks do not apply the pause check.
+
+pub use {set_mint_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_mint_policy} from miden::standards::faucets::policies::policy_manager
+pub use {set_burn_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_burn_policy} from miden::standards::faucets::policies::policy_manager
+pub use {set_send_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_send_policy} from miden::standards::faucets::policies::policy_manager
+pub use {set_receive_policy} from miden::standards::faucets::policies::policy_manager
+pub use {get_receive_policy} from miden::standards::faucets::policies::policy_manager
+pub use {invoke_send_policy_v2} from miden::standards::faucets::policies::policy_manager
+pub use {invoke_receive_policy_v2} from miden::standards::faucets::policies::policy_manager
