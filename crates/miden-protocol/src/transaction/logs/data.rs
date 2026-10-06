@@ -9,7 +9,11 @@ use crate::utils::serde::{
     Serializable,
 };
 
-/// Transaction log data submitted according to the native account's visibility.
+/// Submitted transaction log data for the account against which the transaction executes.
+///
+/// A public native account submits complete transaction logs. A private native account submits
+/// only their commitment. This applies to all transaction logs, including those emitted by
+/// foreign accounts during FPI.
 ///
 /// Validating a private transaction log commitment requires the transaction proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +36,11 @@ impl TransactionLogData {
         }
     }
 
-    /// Checks visibility against the native transaction account, not an FPI emitter.
+    /// Checks that public transaction logs are submitted for a public native account and a
+    /// private commitment is submitted for a private native account.
+    ///
+    /// `native_account` is the account against which the transaction executes. A public foreign
+    /// account emitting transaction logs during FPI does not make a private transaction public.
     pub fn validate_visibility(
         &self,
         native_account: AccountId,
