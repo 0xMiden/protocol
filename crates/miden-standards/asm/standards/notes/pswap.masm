@@ -278,7 +278,7 @@ end
 #! Inputs: [account_suffix, account_prefix]
 #! Outputs: []
 proc validate_account_id(account_id: AccountId)
-    dup.1 u32split swap drop u32and.0x0f
+    dup.1 exec.account_id::id_version
     # => [version, account_suffix, account_prefix]
 
     eq.1 assert.err=ERR_PSWAP_INVALID_ACCOUNT_ID
