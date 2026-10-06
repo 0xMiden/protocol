@@ -224,7 +224,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         (self.update_tracker.into_patch(), self.input_notes, output_notes, self.logs)
     }
 
-    /// Returns the complete records collected during execution.
+    /// Returns the complete transaction logs collected during execution.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
     }

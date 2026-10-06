@@ -57,7 +57,7 @@ const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x100000000
 #! - version is the layout version of the summary preimage.
 #! - metadata packs block_number and the transaction's expiration block delta into a single felt.
 #! - BLOCK_COMMITMENT is the commitment to the block identified by block_number.
-#! - LOGS_COMMITMENT binds all logs emitted before this summary is constructed.
+#! - LOGS_COMMITMENT binds all transaction logs emitted before this summary is constructed.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
@@ -165,7 +165,7 @@ end
 #!   [user_param2, user_param3, user_param4, user_param5], together binding the summary metadata and
 #!   the six user-defined parameters. See `create_tx_summary_with_block` for the metadata felt.
 #! - BLOCK_COMMITMENT is the commitment to the block bound by the summary.
-#! - LOGS_COMMITMENT binds all logs emitted before this summary is constructed.
+#! - LOGS_COMMITMENT binds all transaction logs emitted before this summary is constructed.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
