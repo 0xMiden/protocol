@@ -31,7 +31,7 @@ impl BlockNumber {
     pub const GENESIS: Self = Self(0);
 
     /// The block height of the first block after genesis.
-    pub const FIRST: Self = Self(1);
+    pub const ONE: Self = Self(1);
 
     /// The maximum block number.
     pub const MAX: Self = Self(u32::MAX);

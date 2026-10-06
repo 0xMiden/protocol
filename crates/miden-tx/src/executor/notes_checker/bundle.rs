@@ -48,13 +48,15 @@ impl NoteBundle {
                 .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied());
             match sponsored_note_idx {
                 // Reject a sponsorship which names another sponsorship as its feature note.
-                Some(head_idx) if is_fee_sponsorship_at(notes, head_idx) => {
+                Some(feature_note_idx) if is_fee_sponsorship_at(notes, feature_note_idx) => {
                     let reason = SponsorshipRejection::FeatureNoteIsSponsorship {
-                        feature_note_id: notes[head_idx].id(),
+                        feature_note_id: notes[feature_note_idx].id(),
                     };
                     rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
                 },
-                Some(head_idx) => bundles.entry(head_idx).or_default().push(note.clone()),
+                Some(feature_note_idx) => {
+                    bundles.entry(feature_note_idx).or_default().push(note.clone())
+                },
                 // This note heads its own bundle, so it goes first whichever side of the notes
                 // bound to it it arrives on.
                 None => bundles.entry(idx).or_default().insert(0, note.clone()),
@@ -86,8 +88,8 @@ impl NoteBundle {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns `true` if the note at index `head_idx` in the provided `notes` array is the
+/// Returns `true` if the note at index `feature_note_idx` in the provided `notes` array is the
 /// [`FeeSponsorshipNote`]. Returns `false` otherwise.
-fn is_fee_sponsorship_at(notes: &[Note], head_idx: usize) -> bool {
-    FeeSponsorshipNote::try_from(&notes[head_idx]).is_ok()
+fn is_fee_sponsorship_at(notes: &[Note], feature_note_idx: usize) -> bool {
+    FeeSponsorshipNote::try_from(&notes[feature_note_idx]).is_ok()
 }
