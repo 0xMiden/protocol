@@ -23,13 +23,13 @@ pub const MAX_INPUT_NOTES_PER_TX: usize = 1024;
 /// The maximum number of new notes created by a single transaction.
 pub const MAX_OUTPUT_NOTES_PER_TX: usize = MAX_INPUT_NOTES_PER_TX;
 
-/// The maximum number of logs emitted by a single transaction.
+/// The maximum number of transaction logs emitted by a single transaction.
 pub const MAX_LOGS_PER_TX: usize = 64;
 
-/// The maximum number of words in a log payload (8 KiB of serialized payload data).
+/// The maximum number of words in a transaction log payload (8 KiB of serialized payload data).
 pub const MAX_LOG_PAYLOAD_WORDS: usize = 256;
 
-/// The maximum total number of log payload words in a transaction (16 KiB of serialized data).
+/// The maximum total number of transaction log payload words (16 KiB of serialized data).
 ///
 /// This excludes the bounded emitter, topic, and length metadata.
 pub const MAX_LOG_PAYLOAD_WORDS_PER_TX: usize = 512;

@@ -31,14 +31,14 @@ use crate::{
 // ERRORS
 // ================================================================================================
 
-/// Errors from validating transaction logs or submitted log data.
+/// Errors from validating transaction logs or their submitted data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TransactionLogDataError {
-    /// An individual payload exceeds its word limit.
+    /// An individual transaction log payload exceeds its word limit.
     #[error("log payload has {0} words, exceeding the maximum of {MAX_LOG_PAYLOAD_WORDS}")]
     TooManyPayloadWords(usize),
-    /// The collection exceeds its log count limit.
+    /// The number of transaction logs exceeds the per transaction limit.
     #[error("transaction has {0} logs, exceeding the maximum of {MAX_LOGS_PER_TX}")]
     TooManyLogs(usize),
     /// The combined payloads exceed the transaction's word limit.
@@ -46,7 +46,7 @@ pub enum TransactionLogDataError {
         "transaction log payloads have {0} words, exceeding the maximum of {MAX_LOG_PAYLOAD_WORDS_PER_TX}"
     )]
     TooManyTotalPayloadWords(usize),
-    /// Submitted log visibility differs from the native account.
+    /// Submitted transaction log visibility differs from the native account.
     #[error("log data visibility does not match the native account")]
     VisibilityMismatch,
 }
@@ -54,7 +54,7 @@ pub enum TransactionLogDataError {
 // TRANSACTION LOG
 // ================================================================================================
 
-/// A log emitted by an account during a transaction.
+/// A transaction log emitted by an account.
 ///
 /// Construction validates payload size; the kernel authenticates the emitter account.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,10 +65,10 @@ pub struct TransactionLog {
 }
 
 impl TransactionLog {
-    /// Hash domain for individual log commitments.
+    /// Hash domain for individual transaction log commitments.
     pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0005);
 
-    /// Creates a log with the provided emitter, topic, and payload.
+    /// Creates a transaction log with the provided emitter, topic, and payload.
     ///
     /// Returns an error if the payload exceeds [`MAX_LOG_PAYLOAD_WORDS`].
     pub fn new(
@@ -80,17 +80,17 @@ impl TransactionLog {
         Ok(Self { emitter, topic, payload })
     }
 
-    /// Returns the account that emitted this log, which may be a foreign account.
+    /// Returns the account that emitted this transaction log, which may be a foreign account.
     pub fn emitter(&self) -> AccountId {
         self.emitter
     }
 
-    /// Returns the log's application defined topic.
+    /// Returns the transaction log's application defined topic.
     pub fn topic(&self) -> LogTopic {
         self.topic
     }
 
-    /// Returns the log's payload words.
+    /// Returns the transaction log's payload words.
     pub fn payload(&self) -> &[Word] {
         &self.payload
     }
@@ -115,7 +115,7 @@ impl TransactionLog {
         Hasher::merge_in_domain(&[metadata, self.payload_commitment()], Self::COMMITMENT_DOMAIN)
     }
 
-    /// Consumes this log and returns its emitter, topic, and payload.
+    /// Consumes this transaction log and returns its emitter, topic, and payload.
     pub fn into_parts(self) -> (AccountId, LogTopic, Vec<Word>) {
         (self.emitter, self.topic, self.payload)
     }
@@ -175,11 +175,11 @@ impl Deserializable for TransactionLog {
 
 /// An ordered collection of transaction logs with a cached commitment.
 ///
-/// Appending invalidates the cache. Empty lists and duplicate logs are allowed.
+/// Appending invalidates the cache. Empty lists and duplicate transaction logs are allowed.
 ///
 /// # Commitment
 ///
-/// Uses Poseidon2 over field elements. For logs numbered `1..=n`:
+/// Uses Poseidon2 over field elements. For transaction logs numbered `1..=n`:
 ///
 /// ```text
 /// P_i = hash_elements(flatten(payload_i))
@@ -188,10 +188,10 @@ impl Deserializable for TransactionLog {
 /// commitment = hash_elements_in_domain(L_1 || ... || L_n, 0x02_0003)
 /// ```
 ///
-/// An empty collection has commitment [`Word::empty`]. The collection hash binds log order and
-/// duplicate occurrences. The payload hash binds content and length.
+/// An empty collection has commitment [`Word::empty`]. The collection hash binds transaction log
+/// order and duplicate occurrences. The payload hash binds content and length.
 ///
-/// These commitments do not hide predictable private logs.
+/// These commitments do not hide predictable private transaction logs.
 #[derive(Debug, Default)]
 pub struct TransactionLogs {
     logs: Vec<TransactionLog>,
@@ -200,10 +200,10 @@ pub struct TransactionLogs {
 }
 
 impl TransactionLogs {
-    /// Hash domain for ordered log collections.
+    /// Hash domain for ordered collections of transaction logs.
     pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0003);
 
-    /// Creates a collection by appending the provided logs in order.
+    /// Creates a collection by appending the provided transaction logs in order.
     ///
     /// Returns an error if the count exceeds [`MAX_LOGS_PER_TX`] or the total payload size
     /// exceeds [`MAX_LOG_PAYLOAD_WORDS_PER_TX`].
@@ -216,7 +216,7 @@ impl TransactionLogs {
         Ok(result)
     }
 
-    /// Appends a log and invalidates the cached collection commitment.
+    /// Appends a transaction log and invalidates the cached collection commitment.
     ///
     /// Returns an error if the resulting count exceeds [`MAX_LOGS_PER_TX`] or total payload
     /// size exceeds [`MAX_LOG_PAYLOAD_WORDS_PER_TX`]. On error the collection is unchanged.
@@ -232,7 +232,7 @@ impl TransactionLogs {
         Ok(())
     }
 
-    /// Returns the commitment to the ordered log list.
+    /// Returns the commitment to the ordered transaction logs.
     pub fn commitment(&self) -> Word {
         *self.commitment.get_or_init(|| {
             if self.is_empty() {
@@ -246,27 +246,27 @@ impl TransactionLogs {
         })
     }
 
-    /// Returns the number of logs.
+    /// Returns the number of transaction logs.
     pub fn num_logs(&self) -> usize {
         self.logs.len()
     }
 
-    /// Returns the total number of payload words, excluding log metadata.
+    /// Returns the total number of payload words, excluding transaction log metadata.
     pub fn num_payload_words(&self) -> usize {
         self.logs.iter().map(TransactionLog::num_payload_words).sum()
     }
 
-    /// Returns whether the collection contains no logs.
+    /// Returns whether the collection contains no transaction logs.
     pub fn is_empty(&self) -> bool {
         self.logs.is_empty()
     }
 
-    /// Returns the logs in emission order.
+    /// Returns the transaction logs in emission order.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &TransactionLog> {
         self.logs.iter()
     }
 
-    /// Consumes this collection and returns its logs in emission order.
+    /// Consumes this collection and returns the transaction logs in emission order.
     pub fn into_vec(self) -> Vec<TransactionLog> {
         self.logs
     }
@@ -327,7 +327,8 @@ impl<'a> IntoIterator for &'a TransactionLogs {
 }
 
 impl Serializable for TransactionLogs {
-    /// Writes a little-endian u16 log count followed by the logs, without the commitment.
+    /// Writes a little endian u16 transaction log count followed by the contents, without the
+    /// commitment.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_u16(self.logs.len() as u16);
         target.write_many(&self.logs);
