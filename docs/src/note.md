@@ -94,7 +94,7 @@ Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
-- Communicate the details needed to reconstruct a _private_ note without disclosing its secret recipient opening. For example, the owner of a PSWAP order retains the complete private P2ID recipient, including its independent secret serial and target account storage. Public fill attachments provide the amount, order ID, and depth needed to reconstruct each payback and verify its note ID. The secret serial must not be derived from the public PSWAP serial.
+- Communicate the details needed to reconstruct a _private_ note without disclosing its secret recipient preimage. For example, the owner of a PSWAP order retains the complete private P2ID recipient, including its independent secret serial and target account storage. Public fill attachments provide the amount, order ID, and depth needed to reconstruct each payback and verify its note ID. The secret serial must not be derived from the public PSWAP serial.
 
 ## Note Lifecycle
 

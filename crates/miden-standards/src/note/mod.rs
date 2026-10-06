@@ -36,7 +36,7 @@ mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
 mod p2id;
-pub use p2id::{P2idNote, P2idNoteStorage};
+pub use p2id::{P2idNote, P2idNoteRecipient, P2idNoteStorage};
 
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};

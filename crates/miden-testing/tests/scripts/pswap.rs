@@ -44,6 +44,7 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_PARENT_DEPTH_NOT_U32,
 };
 use miden_standards::note::{
+    P2idNoteRecipient,
     P2idNoteStorage,
     PswapNote,
     PswapNoteAttachment,
@@ -199,9 +200,11 @@ async fn pswap_rejects_later_output_mutation(
     let payback = match payback_type {
         NoteType::Public => PswapPayback::Public { creator_account_id: alice.id() },
         NoteType::Private => {
-            let recipient =
-                P2idNoteStorage::new(alice.id()).into_recipient(builder.rng_mut().draw_word());
-            PswapPayback::private(&recipient, NoteTag::new(0))?
+            let recipient = P2idNoteRecipient::new(
+                P2idNoteStorage::new(alice.id()),
+                builder.rng_mut().draw_word(),
+            );
+            PswapPayback::private(recipient, NoteTag::new(0))
         },
     };
     let (_, note) = build_pswap_note(
@@ -379,10 +382,10 @@ async fn pswap_checks_output_before_sealing(
     filler.vault_mut().add_asset(extra.into())?;
     builder.add_account(filler.clone())?;
     let payback_recipient =
-        P2idNoteStorage::new(alice.id()).into_recipient(builder.rng_mut().draw_word());
+        P2idNoteRecipient::new(P2idNoteStorage::new(alice.id()), builder.rng_mut().draw_word());
     let payback = match payback_type {
         NoteType::Public => PswapPayback::Public { creator_account_id: alice.id() },
-        NoteType::Private => PswapPayback::private(&payback_recipient, NoteTag::new(0))?,
+        NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
     };
     let (pswap, note) =
         build_pswap_note(&mut builder, alice.id(), offered, requested, NoteType::Public, payback)?;
@@ -411,11 +414,12 @@ async fn pswap_checks_output_before_sealing(
                 let attachment = PswapNoteAttachment::try_from(
                     payback.attachments().get(0).expect("payback has a PSWAP attachment"),
                 )?;
-                pswap.payback_note(
-                    filler.id(),
-                    &attachment,
-                    (payback_type == NoteType::Private).then_some(&payback_recipient),
-                )?
+                match payback_type {
+                    NoteType::Private => {
+                        pswap.private_payback_note(filler.id(), &attachment, payback_recipient)?
+                    },
+                    NoteType::Public => pswap.public_payback_note(filler.id(), &attachment)?,
+                }
             };
             assert_eq!(output.attachments().get(0), expected.attachments().get(0));
 
@@ -478,7 +482,7 @@ async fn pswap_checks_output_before_sealing(
 ///    attachment data and her retained payback recipient. On partial fills she reconstructs the
 ///    remainder via `PswapNote::remainder_note`.
 /// 4. Alice supplies the reconstructed body and a chain inclusion proof, consuming the payback as
-///    an authenticated input. The filler never receives the private recipient opening.
+///    an authenticated input. The filler never receives the private recipient preimage.
 #[rstest]
 #[case::partial_public(NoteType::Public, 20)]
 #[case::full_public(NoteType::Public, 25)]
@@ -513,9 +517,9 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     let serial_number = rng.draw_word();
     let payback_storage = P2idNoteStorage::new(alice.id()).with_salt([ONE, Felt::from(7u32)]);
     let payback_serial = rng.draw_word();
-    let payback_recipient = payback_storage.into_recipient(payback_serial);
+    let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_note_type {
-        NoteType::Private => PswapPayback::private(&payback_recipient, NoteTag::new(0))?,
+        NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
         NoteType::Public => PswapPayback::Public {
             creator_account_id: payback_storage.target(),
         },
@@ -602,11 +606,16 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     // Depth = 1 (first fill). Consumer comes from the on-chain payback's metadata sender.
     let payback_attachment =
         PswapNoteAttachment::new(AssetAmount::new(fill_amount_from_aux)?, pswap.order_id(), 1);
-    let reconstructed_payback = pswap.payback_note(
-        output_p2id.metadata().sender(),
-        &payback_attachment,
-        (payback_note_type == NoteType::Private).then_some(&payback_recipient),
-    )?;
+    let reconstructed_payback = match payback_note_type {
+        NoteType::Private => pswap.private_payback_note(
+            output_p2id.metadata().sender(),
+            &payback_attachment,
+            payback_recipient,
+        )?,
+        NoteType::Public => {
+            pswap.public_payback_note(output_p2id.metadata().sender(), &payback_attachment)?
+        },
+    };
 
     assert_eq!(
         reconstructed_payback.recipient().digest(),
@@ -1180,7 +1189,7 @@ async fn pswap_note_creator_reclaim_test(
     let result = chain
         .build_transaction(bob.id())
         .authenticated_input_note(note.id())
-        .extend_note_args(BTreeMap::from([(note.id(), Word::new([ZERO, ZERO, ONE, ZERO]))]))
+        .extend_note_args(BTreeMap::from([(note.id(), Word::new([ONE, ZERO, ZERO, ZERO]))]))
         .build()?
         .execute()
         .await;
@@ -1203,17 +1212,18 @@ fn build_private_pswap_note(
     offered: FungibleAsset,
     requested: FungibleAsset,
     salt: [Felt; 2],
-) -> anyhow::Result<(PswapNote, Note, NoteRecipient)> {
-    let recipient = P2idNoteStorage::new(target)
-        .with_salt(salt)
-        .into_recipient(builder.rng_mut().draw_word());
+) -> anyhow::Result<(PswapNote, Note, P2idNoteRecipient)> {
+    let recipient = P2idNoteRecipient::new(
+        P2idNoteStorage::new(target).with_salt(salt),
+        builder.rng_mut().draw_word(),
+    );
     let (pswap, note) = build_pswap_note(
         builder,
         sender,
         offered,
         requested,
         NoteType::Public,
-        PswapPayback::private(&recipient, NoteTag::new(1234))?,
+        PswapPayback::private(recipient, NoteTag::new(1234)),
     )?;
     Ok((pswap, note, recipient))
 }
@@ -1240,8 +1250,8 @@ async fn pswap_private_target_can_fill_without_cancelling(
     )?;
     let chain = builder.build()?;
     for invalid_args in [
-        [ZERO, ZERO, ONE, ZERO],
-        [ZERO, ZERO, Felt::from(2u32), ZERO],
+        [ONE, ZERO, ZERO, ZERO],
+        [Felt::from(2u32), ZERO, ZERO, ZERO],
         [ZERO, ZERO, ZERO, ONE],
     ] {
         let result = chain
@@ -1274,7 +1284,7 @@ async fn pswap_private_target_can_fill_without_cancelling(
     Ok(())
 }
 
-/// Rust and MASM must agree on the two storage layouts, including canonical IDs and values.
+/// Rust and MASM reject malformed lengths, account ID structures, and field values.
 #[rstest]
 #[tokio::test]
 async fn pswap_rejects_malformed_storage(
@@ -1333,7 +1343,7 @@ async fn pswap_rejects_malformed_storage(
     malformed.push(long);
     for (offset, value) in [
         (0, items[0] + ONE),
-        (1, Felt::from(2u32)),
+        (1, ZERO),
         (2, Felt::MAX),
         (3, Felt::MAX),
         (4, Felt::from(2u32)),
@@ -1348,7 +1358,7 @@ async fn pswap_rejects_malformed_storage(
             let mut invalid = items.clone();
             invalid[offset] = ONE;
             if offset == 6 {
-                invalid[offset] = Felt::from(2u32);
+                invalid[offset] = ZERO;
             }
             malformed.push(invalid);
         }
@@ -1366,8 +1376,60 @@ async fn pswap_rejects_malformed_storage(
             .build()?
             .execute()
             .await;
-        assert!(result.is_err(), "MASM must reject storage that Rust rejects");
+        assert!(result.is_err(), "MASM must reject malformed storage");
     }
+    Ok(())
+}
+
+/// The script must accept structurally valid creator IDs from future account versions, even
+/// though the current Rust AccountId type cannot parse them yet.
+#[tokio::test]
+async fn pswap_public_payback_accepts_future_creator_version() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
+    let creator = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let filler = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(requested.id(), 25)?.into()],
+    )?;
+    let (_, note) = build_pswap_note(
+        &mut builder,
+        creator.id(),
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        NoteType::Public,
+        PswapPayback::Public { creator_account_id: creator.id() },
+    )?;
+    let mut items = note.recipient().storage().items().to_vec();
+    // The low four prefix bits encode the version. Keep the rest of the ID unchanged.
+    items[6] = Felt::try_from((items[6].as_canonical_u64() & !0xf) | 2)?;
+    let target = [items[5], items[6]];
+    let future_order = Note::new(
+        note.assets().clone(),
+        *note.metadata().partial_metadata(),
+        NoteRecipient::new(
+            note.recipient().serial_num(),
+            PswapNote::script(),
+            NoteStorage::new(items)?,
+        ),
+    );
+    let chain = builder.build()?;
+    let tx = chain
+        .build_transaction(filler.id())
+        .unauthenticated_input_note(future_order)
+        .build()?
+        .execute()
+        .await?;
+    let payback = tx.output_notes().get_note(0);
+    assert_eq!(
+        payback.recipient().unwrap().storage().items(),
+        &[target[0], target[1], ZERO, ZERO]
+    );
+    assert_eq!(
+        payback.assets(),
+        &NoteAssets::new(vec![FungibleAsset::new(requested.id(), 25)?.into()])?
+    );
     Ok(())
 }
 
@@ -2496,9 +2558,9 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
 
     let payback_serial = builder.rng_mut().draw_word();
     let payback_storage = P2idNoteStorage::new(alice.id());
-    let payback_recipient = payback_storage.into_recipient(payback_serial);
+    let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_type {
-        NoteType::Private => PswapPayback::private(&payback_recipient, NoteTag::new(0))?,
+        NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
         NoteType::Public => PswapPayback::Public {
             creator_account_id: payback_storage.target(),
         },
@@ -2585,18 +2647,22 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
             original_pswap.order_id(),
             depth,
         );
-        let reconstructed_payback = original_pswap.payback_note(
-            on_chain_payback.metadata().sender(),
-            &payback_attachment,
-            (payback_type == NoteType::Private).then_some(&payback_recipient),
-        )?;
+        let reconstructed_payback = match payback_type {
+            NoteType::Private => original_pswap.private_payback_note(
+                on_chain_payback.metadata().sender(),
+                &payback_attachment,
+                payback_recipient,
+            )?,
+            NoteType::Public => original_pswap
+                .public_payback_note(on_chain_payback.metadata().sender(), &payback_attachment)?,
+        };
         assert_eq!(
             reconstructed_payback.details_commitment(),
             on_chain_payback.details_commitment(),
             "round {depth}: reconstructed payback commitment must match on-chain leaf",
         );
         if payback_type == NoteType::Private {
-            assert_eq!(reconstructed_payback.recipient(), &payback_recipient);
+            assert_eq!(reconstructed_payback.recipient(), &NoteRecipient::from(payback_recipient));
         } else {
             let parent_serial = current_pswap.serial_number();
             let expected = P2idNoteStorage::new(alice.id()).into_recipient(Word::new([
@@ -2622,13 +2688,18 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
         // The helpers offset the serial by the distance to the note they are called on rather
         // than by the absolute depth, so the round's own parent reconstructs the same note.
         assert_eq!(
-            current_pswap
-                .payback_note(
+            match payback_type {
+                NoteType::Private => current_pswap.private_payback_note(
                     on_chain_payback.metadata().sender(),
                     &payback_attachment,
-                    (payback_type == NoteType::Private).then_some(&payback_recipient)
-                )?
-                .details_commitment(),
+                    payback_recipient
+                )?,
+                NoteType::Public => current_pswap.public_payback_note(
+                    on_chain_payback.metadata().sender(),
+                    &payback_attachment
+                )?,
+            }
+            .details_commitment(),
             on_chain_payback.details_commitment(),
             "round {depth}: reconstruction from the round's parent must match as well",
         );
