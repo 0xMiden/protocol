@@ -618,6 +618,78 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
     Ok(())
 }
 
+/// After deployment the owner switches the account to another allowed fee policy via
+/// `set_fee_policy`. [`FeePolicyManager::active_fee_policy`] reads the switched policy from the
+/// updated account's storage header, while [`FeePolicyManager::initial_fee_policy`] keeps returning
+/// the policy the account was built with.
+#[tokio::test]
+async fn active_fee_policy_reads_the_policy_set_after_deployment() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+    let custom_policy_root = custom_fee_policy()?.root();
+
+    let set_note = build_sender_note(
+        owner_account_id,
+        703,
+        &create_fee_manager_note_script("set_fee_policy", custom_policy_root.as_word()),
+    )?;
+    let allowed_note_roots = BTreeSet::from([set_note.script().root()]);
+    let fee_policy_manager = fee_policy_manager(&allowed_note_roots)?;
+    let account = build_fee_account_with_switching(owner_account_id, allowed_note_roots)?;
+
+    // Fee collection runs after the switch note, so the custom policy prices it, on its storage
+    // commitment with a timeframe and priority of 0. The sponsorship covers exactly that fee.
+    let custom_fee = custom_fee_amount_for(set_note.recipient().storage().commitment(), 0, 0);
+    let sponsorship_note = Note::from(
+        FeeSponsorshipNote::builder()
+            .sender(owner_account_id)
+            .target_account(account.id())
+            .feature_note_id(set_note.id())
+            .asset(FungibleAsset::new(fee_faucet_id()?, custom_fee.as_u64())?)
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // before the switch, the deployed account uses the policy its manager was built with
+    let initial_policy_root = BasicConstantFeePolicy::root();
+    assert_eq!(fee_policy_manager.initial_fee_policy(), initial_policy_root);
+    assert_eq!(
+        FeePolicyManager::active_fee_policy(
+            &mock_chain.committed_account(account.id())?.storage().to_header()
+        ),
+        Some(initial_policy_root),
+    );
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(sponsorship_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    // after the switch, the updated account's storage holds the custom policy, while the manager
+    // still reports the policy the account was built with
+    let updated_header = mock_chain.committed_account(account.id())?.storage().to_header();
+    assert_eq!(
+        FeePolicyManager::active_fee_policy(&updated_header),
+        Some(custom_policy_root),
+        "the active policy should be read from the updated account's storage"
+    );
+    assert_eq!(fee_policy_manager.initial_fee_policy(), initial_policy_root);
+
+    Ok(())
+}
+
 /// `FeePolicyManager::get_fee_asset_id`, invoked via FPI, returns the fee asset ID the manager was
 /// configured with. A wrong result aborts the transaction, so successful execution proves the
 /// returned fee asset ID.
