@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17.1 (TBD)
+
+### Features
+
+- Added `TokenPolicyManagerV2`, whose transfer callbacks ignore the pause state so a paused fee faucet does not block fee payments, and the `TokenPolicyManagerV2MigrationNote` to switch an upgraded faucet to it.
+
 ## v0.17.0 (2026-10-01)
 
 ### Features

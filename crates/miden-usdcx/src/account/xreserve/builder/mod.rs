@@ -47,6 +47,7 @@ use miden_standards::account::policies::{
     MinBurnAmount,
     MintPolicy,
     TokenPolicyManager,
+    TokenPolicyManagerV2,
     TransferPolicy,
 };
 use miden_standards::account::upgrade::UpgradeManager;
@@ -255,6 +256,37 @@ impl XReserveStablecoinBuilder {
     pub fn build_components(
         &self,
     ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
+        let manager = self.token_policy_manager()?;
+        self.compose_components(manager)
+    }
+
+    /// Returns the components of [`Self::build_components`] with [`TokenPolicyManagerV2`] in place
+    /// of the V1 manager, so a pause no longer blocks transfers of the faucet's asset.
+    pub fn build_components_v2(
+        &self,
+    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
+        let manager = TokenPolicyManagerV2::new(self.token_policy_manager()?);
+        self.compose_components(manager)
+    }
+
+    /// Returns the components of the intermediate code of the upgrade to [`TokenPolicyManagerV2`]:
+    /// the components of [`Self::build_components`] plus the V2 manager procedures.
+    ///
+    /// See [`TokenPolicyManagerV2`] for why the upgrade needs this intermediate code.
+    pub fn build_components_v2_upgrade(
+        &self,
+    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
+        let mut components = self.build_components()?;
+        components.push(TokenPolicyManagerV2::upgrade_component());
+        Ok(components)
+    }
+
+    /// Validates the role holders and composes the faucet components around the given token
+    /// policy manager components.
+    fn compose_components(
+        &self,
+        manager: impl IntoIterator<Item = AccountComponent>,
+    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
         let overlaps = |left: &[AccountId], right: &[AccountId]| {
             left.iter().any(|member| right.contains(member))
         };
@@ -282,30 +314,6 @@ impl XReserveStablecoinBuilder {
                 return Err(XReserveStablecoinBuilderError::PauserNotIsolated { collides_with });
             }
         }
-        let xreserve_component = AccountComponent::from(self.faucet_extension.clone());
-        let burn_policy_component = Self::burn_policy_component();
-        let burn_root = burn_policy_component
-            .get_procedure_root_by_path(XRESERVE_BURN_POLICY_PROC_PATH)
-            .ok_or(XReserveStablecoinBuilderError::BurnPolicyProcNotFound)?;
-
-        let manager = TokenPolicyManager::builder()
-            .active_mint_policy(
-                MintPolicy::custom(
-                    xreserve_component
-                        .get_procedure_root_by_path(ATTESTATION_MINT_POLICY_PROC_PATH)
-                        .ok_or(XReserveStablecoinBuilderError::AttestationPolicyProcNotFound)?,
-                    [xreserve_component],
-                )
-                .map_err(XReserveStablecoinBuilderError::MintPolicy)?,
-            )
-            .active_burn_policy(BurnPolicy::custom(
-                burn_root,
-                [burn_policy_component, MinBurnAmount::new(self.min_burn_amount).into()],
-            )?)
-            .active_send_policy(TransferPolicy::empty_basic_blocklist())
-            .active_receive_policy(TransferPolicy::empty_basic_blocklist())
-            .build();
-
         let mut components = Vec::new();
         components.push(self.faucet.clone().into());
         components.push(Pausable::unpaused().into());
@@ -323,6 +331,34 @@ impl XReserveStablecoinBuilder {
         ));
         components.push(XReserveAdminAuthority::new().into());
         Ok(components)
+    }
+
+    /// Returns the token policy manager with the attestation mint policy, the burn policy and the
+    /// transfer blocklist.
+    fn token_policy_manager(&self) -> Result<TokenPolicyManager, XReserveStablecoinBuilderError> {
+        let xreserve_component = AccountComponent::from(self.faucet_extension.clone());
+        let burn_policy_component = Self::burn_policy_component();
+        let burn_root = burn_policy_component
+            .get_procedure_root_by_path(XRESERVE_BURN_POLICY_PROC_PATH)
+            .ok_or(XReserveStablecoinBuilderError::BurnPolicyProcNotFound)?;
+
+        Ok(TokenPolicyManager::builder()
+            .active_mint_policy(
+                MintPolicy::custom(
+                    xreserve_component
+                        .get_procedure_root_by_path(ATTESTATION_MINT_POLICY_PROC_PATH)
+                        .ok_or(XReserveStablecoinBuilderError::AttestationPolicyProcNotFound)?,
+                    [xreserve_component],
+                )
+                .map_err(XReserveStablecoinBuilderError::MintPolicy)?,
+            )
+            .active_burn_policy(BurnPolicy::custom(
+                burn_root,
+                [burn_policy_component, MinBurnAmount::new(self.min_burn_amount).into()],
+            )?)
+            .active_send_policy(TransferPolicy::empty_basic_blocklist())
+            .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+            .build())
     }
 }
 

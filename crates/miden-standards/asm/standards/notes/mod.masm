@@ -12,6 +12,7 @@ pub mod owner_config
 pub mod p2id
 pub mod p2ide
 pub mod pause_config
+pub mod policy_manager_v2_migration
 pub mod pswap
 pub mod rbac_config
 pub mod swap

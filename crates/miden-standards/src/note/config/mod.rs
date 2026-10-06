@@ -55,5 +55,8 @@ pub use owner_config::{OwnerConfig, OwnerConfigNote};
 mod pause_config;
 pub use pause_config::{PauseConfig, PauseConfigNote};
 
+mod policy_manager_v2_migration;
+pub use policy_manager_v2_migration::TokenPolicyManagerV2MigrationNote;
+
 mod rbac_config;
 pub use rbac_config::{RbacConfig, RbacConfigNote};

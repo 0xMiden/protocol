@@ -1,0 +1,57 @@
+use {NoteArgs} from miden::protocol::types
+use miden::protocol::active_note
+use miden::standards::faucets::policies::policy_manager
+use miden::standards::note::note_target
+
+# ERRORS
+# =================================================================================================
+
+const ERR_POLICY_MANAGER_V2_MIGRATION_NOTE_IS_NOT_PUBLIC = "policy manager v2 migration note must be public"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! PolicyManagerV2Migration script: points the asset callback slots of the consuming faucet at the
+#! `TokenPolicyManagerV2` transfer callbacks.
+#!
+#! Authorization is enforced by the called `migrate_transfer_callbacks` procedure via the
+#! account-wide `Authority` component; this script only dispatches to it.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::faucets::policies::policy_manager::migrate_transfer_callbacks` (the
+#!   `TokenPolicyManagerV2` component), backed by the `Authority` companion component.
+#!
+#! Consumers: target account (attachment)
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note is not public.
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the caller is not authorized per the installed `Authority` component.
+#! - the account does not have the asset callback slots.
+@note_script
+pub proc main(args: NoteArgs)
+    dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_POLICY_MANAGER_V2_MIGRATION_NOTE_IS_NOT_PUBLIC
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.note_target::assert_active_account_is_network_target_account
+    # => [pad(16)]
+
+    padw padw padw padw
+    # => [pad(16), pad(16)]
+
+    call.policy_manager::migrate_transfer_callbacks
+    # => [pad(16), pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => [pad(16)]
+end

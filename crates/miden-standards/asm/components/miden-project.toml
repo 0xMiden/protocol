@@ -20,6 +20,7 @@ members = [
   "faucets/policies/mint/allow_all",
   "faucets/policies/mint/owner_controlled/owner_only",
   "faucets/policies/policy_manager",
+  "faucets/policies/policy_manager_v2",
   "faucets/policies/transfer/allow_all",
   "faucets/policies/transfer/allowlist/manager",
   "faucets/policies/transfer/basic_allowlist",

@@ -8,6 +8,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountComponent,
     AccountId,
     AccountType,
@@ -183,7 +184,27 @@ impl XReserveStablecoinBuilder {
         &self,
         init_seed: [u8; 32],
     ) -> Result<Account, XReserveStablecoinBuilderError> {
-        let components = self.build_components()?;
+        self.build_account_from_components(self.build_components()?, init_seed)
+    }
+
+    /// Returns the code of the faucet composed from `components` and the auth component, e.g. the
+    /// new code for an `UpgradeNote` from [`Self::build_components_v2_upgrade`] or
+    /// [`Self::build_components_v2`].
+    pub fn build_code(
+        &self,
+        components: Vec<AccountComponent>,
+    ) -> Result<AccountCode, XReserveStablecoinBuilderError> {
+        // The code does not depend on the seed.
+        let account = self.build_account_from_components(components, [0; 32])?;
+        Ok(account.code().clone())
+    }
+
+    /// Builds the faucet [`Account`] from `components`, the auth component and `init_seed`.
+    fn build_account_from_components(
+        &self,
+        components: Vec<AccountComponent>,
+        init_seed: [u8; 32],
+    ) -> Result<Account, XReserveStablecoinBuilderError> {
         let mut builder = Account::builder(init_seed).account_type(AccountType::Public);
         for component in components {
             builder = builder.with_component(component);

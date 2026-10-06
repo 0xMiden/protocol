@@ -45,6 +45,11 @@ account_component_code!(
     "miden-standards-faucets-policies-policy-manager.masp"
 );
 
+account_component_code!(
+    POLICY_MANAGER_V2_CODE,
+    "miden-standards-faucets-policies-policy-manager-v2.masp"
+);
+
 // PROCEDURE ROOTS
 // ================================================================================================
 
@@ -93,6 +98,31 @@ procedure_root!(
     POLICY_MANAGER_LIBRARY_PATH,
     TokenPolicyManager::INVOKE_RECEIVE_POLICY_PROC_NAME,
     TokenPolicyManager::code()
+);
+
+/// MASL library namespace of the [`TokenPolicyManagerV2`] component.
+const POLICY_MANAGER_V2_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::policy_manager_v2";
+
+procedure_root!(
+    POLICY_MANAGER_V2_INVOKE_SEND_POLICY,
+    POLICY_MANAGER_V2_LIBRARY_PATH,
+    TokenPolicyManagerV2::INVOKE_SEND_POLICY_PROC_NAME,
+    TokenPolicyManagerV2::code()
+);
+
+procedure_root!(
+    POLICY_MANAGER_V2_INVOKE_RECEIVE_POLICY,
+    POLICY_MANAGER_V2_LIBRARY_PATH,
+    TokenPolicyManagerV2::INVOKE_RECEIVE_POLICY_PROC_NAME,
+    TokenPolicyManagerV2::code()
+);
+
+procedure_root!(
+    POLICY_MANAGER_V2_MIGRATE_TRANSFER_CALLBACKS,
+    POLICY_MANAGER_V2_LIBRARY_PATH,
+    TokenPolicyManagerV2::MIGRATE_TRANSFER_CALLBACKS_PROC_NAME,
+    TokenPolicyManagerV2::code()
 );
 
 // STORAGE SLOT NAMES
@@ -529,6 +559,22 @@ impl TokenPolicyManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
+        Self::build_component_metadata(
+            Self::NAME,
+            Self::DESCRIPTION,
+            Self::invoke_send_policy_root(),
+            Self::invoke_receive_policy_root(),
+        )
+    }
+
+    /// Builds the component metadata of a manager whose asset-callback slots default to the given
+    /// transfer callback roots.
+    fn build_component_metadata(
+        name: &'static str,
+        description: &'static str,
+        invoke_send_policy_root: AccountProcedureRoot,
+        invoke_receive_policy_root: AccountProcedureRoot,
+    ) -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
             (
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
@@ -596,7 +642,7 @@ impl TokenPolicyManager {
                     "on_before_asset_added_to_account callback procedure root",
                     WordSchema::new_simple_with_default(
                         SchemaType::native_word(),
-                        Self::invoke_receive_policy_root().as_word(),
+                        invoke_receive_policy_root.as_word(),
                     ),
                 ),
             ),
@@ -606,15 +652,15 @@ impl TokenPolicyManager {
                     "on_before_asset_added_to_note callback procedure root",
                     WordSchema::new_simple_with_default(
                         SchemaType::native_word(),
-                        Self::invoke_send_policy_root().as_word(),
+                        invoke_send_policy_root.as_word(),
                     ),
                 ),
             ),
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(Self::DESCRIPTION)
+        AccountComponentMetadata::new(name)
+            .with_description(description)
             .with_storage_schema(storage_schema)
     }
 
@@ -627,7 +673,11 @@ impl TokenPolicyManager {
         })
     }
 
-    fn manager_storage_slots(&self) -> Vec<StorageSlot> {
+    fn manager_storage_slots(
+        &self,
+        invoke_send_policy_root: AccountProcedureRoot,
+        invoke_receive_policy_root: AccountProcedureRoot,
+    ) -> Vec<StorageSlot> {
         let mut slots = vec![
             StorageSlot::with_value(
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
@@ -680,8 +730,8 @@ impl TokenPolicyManager {
         // `AccountBuilder::enable_asset_callbacks`.
         if self.has_transfer_policy() {
             let callback_slots = AssetCallbacks::new()
-                .on_before_asset_added_to_account(Self::invoke_receive_policy_root().as_word())
-                .on_before_asset_added_to_note(Self::invoke_send_policy_root().as_word())
+                .on_before_asset_added_to_account(invoke_receive_policy_root.as_word())
+                .on_before_asset_added_to_note(invoke_send_policy_root.as_word())
                 .into_storage_slots();
             slots.extend(callback_slots);
         }
@@ -704,15 +754,37 @@ impl TokenPolicyManager {
     }
 
     fn to_manager_component(&self) -> AccountComponent {
-        let storage_slots = self.manager_storage_slots();
-        AccountComponent::new(
-            Self::code().clone(),
-            storage_slots,
+        self.to_component(
+            Self::code(),
             Self::component_metadata(),
+            Self::invoke_send_policy_root(),
+            Self::invoke_receive_policy_root(),
         )
-        .expect(
+    }
+
+    /// Builds the manager component from `code`, whose transfer callbacks are the given roots.
+    fn to_component(
+        &self,
+        code: &AccountComponentCode,
+        metadata: AccountComponentMetadata,
+        invoke_send_policy_root: AccountProcedureRoot,
+        invoke_receive_policy_root: AccountProcedureRoot,
+    ) -> AccountComponent {
+        let storage_slots =
+            self.manager_storage_slots(invoke_send_policy_root, invoke_receive_policy_root);
+        AccountComponent::new(code.clone(), storage_slots, metadata).expect(
             "token policy manager component should satisfy the requirements of a valid account component",
         )
+    }
+
+    /// Returns `manager_component` followed by the companion components of every registered
+    /// policy.
+    fn into_components(self, manager_component: AccountComponent) -> Vec<AccountComponent> {
+        let mut components = vec![manager_component];
+        for (_, policy) in self.policies {
+            components.extend(policy.components);
+        }
+        components
     }
 }
 
@@ -748,11 +820,143 @@ impl IntoIterator for TokenPolicyManager {
     /// contributes its companion components once.
     fn into_iter(self) -> Self::IntoIter {
         let manager_component = self.to_manager_component();
-        let mut components = vec![manager_component];
-        for (_, policy) in self.policies {
-            components.extend(policy.components);
-        }
-        components.into_iter()
+        self.into_components(manager_component).into_iter()
+    }
+}
+
+// TOKEN POLICY MANAGER V2
+// ================================================================================================
+
+/// A [`TokenPolicyManager`] whose transfer callbacks do not apply the account-wide pause check.
+///
+/// With the V1 callbacks, a pause of the faucet that issues the network's fee asset blocks every
+/// fee payment, including the one of the transaction that unpauses the faucet. The V2 callbacks
+/// still apply the active send and receive policies, so pause only gates mint and burn.
+///
+/// The storage layout is the same as the one of [`TokenPolicyManager`], except that the
+/// asset-callback slots hold the V2 callback roots. An account upgraded from the V1 manager still
+/// holds the V1 roots in these slots, which the kernel only invokes while they are part of the
+/// account code. Such an account therefore upgrades in two steps:
+///
+/// 1. Upgrade to code that contains both the V1 and the V2 manager (see
+///    [`Self::upgrade_component`]). The account keeps working, because the V1 callbacks are still
+///    installed.
+/// 2. Call `migrate_transfer_callbacks` (see
+///    [`TokenPolicyManagerV2MigrationNote`](crate::note::config::TokenPolicyManagerV2MigrationNote)),
+///    which points the callback slots at the V2 callbacks. In the same transaction or later, the
+///    account can upgrade to code without the V1 manager.
+#[derive(Debug, Clone)]
+pub struct TokenPolicyManagerV2 {
+    manager: TokenPolicyManager,
+}
+
+impl TokenPolicyManagerV2 {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// The name of the component (used in metadata).
+    pub const NAME: &'static str = "miden::standards::faucets::policies::policy_manager_v2";
+
+    /// Component description used in [`AccountComponentMetadata`].
+    pub const DESCRIPTION: &'static str =
+        "Token policy manager for fungible faucets whose transfer policies ignore the pause state";
+
+    const INVOKE_SEND_POLICY_PROC_NAME: &'static str = "invoke_send_policy_v2";
+    const INVOKE_RECEIVE_POLICY_PROC_NAME: &'static str = "invoke_receive_policy_v2";
+    const MIGRATE_TRANSFER_CALLBACKS_PROC_NAME: &'static str = "migrate_transfer_callbacks";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a V2 manager with the policy configuration of `manager`.
+    pub fn new(manager: TokenPolicyManager) -> Self {
+        Self { manager }
+    }
+
+    // ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the policy configuration of this manager.
+    pub fn manager(&self) -> &TokenPolicyManager {
+        &self.manager
+    }
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &POLICY_MANAGER_V2_CODE
+    }
+
+    /// Returns the procedure root of the `invoke_send_policy_v2` wrapper stored in the
+    /// `on_before_asset_added_to_note` callback slot.
+    pub fn invoke_send_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_V2_INVOKE_SEND_POLICY
+    }
+
+    /// Returns the procedure root of the `invoke_receive_policy_v2` wrapper stored in the
+    /// `on_before_asset_added_to_account` callback slot.
+    pub fn invoke_receive_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_V2_INVOKE_RECEIVE_POLICY
+    }
+
+    /// Returns the procedure root of the `migrate_transfer_callbacks` account procedure.
+    pub fn migrate_transfer_callbacks_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_V2_MIGRATE_TRANSFER_CALLBACKS
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        TokenPolicyManager::build_component_metadata(
+            Self::NAME,
+            Self::DESCRIPTION,
+            Self::invoke_send_policy_root(),
+            Self::invoke_receive_policy_root(),
+        )
+    }
+
+    /// Returns a component with the procedures of the V2 manager, but without storage slots.
+    ///
+    /// Add it to the components of an account with the V1 manager to build the intermediate code
+    /// of the upgrade to the V2 manager. The V1 manager component already installs the storage
+    /// slots.
+    pub fn upgrade_component() -> AccountComponent {
+        let metadata =
+            AccountComponentMetadata::new(Self::NAME).with_description(Self::DESCRIPTION);
+        AccountComponent::new(Self::code().clone(), Vec::new(), metadata).expect(
+            "token policy manager v2 upgrade component should satisfy the requirements of a valid account component",
+        )
+    }
+
+    /// Returns the V2 manager component without the companion components of the policies.
+    fn to_manager_component(&self) -> AccountComponent {
+        self.manager.to_component(
+            Self::code(),
+            Self::component_metadata(),
+            Self::invoke_send_policy_root(),
+            Self::invoke_receive_policy_root(),
+        )
+    }
+}
+
+impl From<TokenPolicyManager> for TokenPolicyManagerV2 {
+    fn from(manager: TokenPolicyManager) -> Self {
+        Self::new(manager)
+    }
+}
+
+impl IntoIterator for TokenPolicyManagerV2 {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the V2 manager component first, then the companion components contributed by every
+    /// registered policy.
+    fn into_iter(self) -> Self::IntoIter {
+        let manager_component = self.to_manager_component();
+        self.manager.into_components(manager_component).into_iter()
     }
 }
 
@@ -972,6 +1176,56 @@ mod tests {
             find_schema_slot(TokenPolicyManager::active_receive_policy_slot()),
             allow_all_root
         );
+    }
+
+    /// The V2 manager installs the V2 callback roots in the asset-callback slots, both via the
+    /// builder and via the storage schema.
+    #[test]
+    fn v2_manager_registers_v2_callback_roots() -> anyhow::Result<()> {
+        let manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_send_policy(TransferPolicy::allow_all())
+            .active_receive_policy(TransferPolicy::allow_all())
+            .build();
+        let manager_component = TokenPolicyManagerV2::new(manager).to_manager_component();
+
+        let mut init_storage_data = InitStorageData::default();
+        for slot_name in [
+            TokenPolicyManager::active_mint_policy_slot(),
+            TokenPolicyManager::active_burn_policy_slot(),
+            TokenPolicyManager::active_send_policy_slot(),
+            TokenPolicyManager::active_receive_policy_slot(),
+        ] {
+            init_storage_data
+                .set_value(StorageValueName::from_slot_name(slot_name), Word::empty())?;
+        }
+        let schema_slots = TokenPolicyManagerV2::component_metadata()
+            .storage_schema()
+            .build_storage_slots(&init_storage_data)?;
+        let schema_slot = |slot_name: &StorageSlotName| {
+            schema_slots
+                .iter()
+                .find(|slot| slot.name() == slot_name)
+                .map(StorageSlot::value)
+        };
+
+        for (slot_name, expected_root) in [
+            (
+                AssetCallbacks::on_before_asset_added_to_note_slot(),
+                TokenPolicyManagerV2::invoke_send_policy_root(),
+            ),
+            (
+                AssetCallbacks::on_before_asset_added_to_account_slot(),
+                TokenPolicyManagerV2::invoke_receive_policy_root(),
+            ),
+        ] {
+            let component_slot = find_slot(&manager_component, slot_name).map(StorageSlot::value);
+            assert_eq!(component_slot, Some(expected_root.as_word()));
+            assert_eq!(schema_slot(slot_name), Some(expected_root.as_word()));
+        }
+
+        Ok(())
     }
 
     /// Allowed entries registered via the builder land in the `allowed_*_policies` storage map

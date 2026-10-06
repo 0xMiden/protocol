@@ -51,6 +51,10 @@ const MINT_NOTE_METADATA_PTR=4
 # policy `dyncall`, so it can be checked for tampering once the policy returns.
 const MINT_RECIPIENT_PTR=8
 
+# Protocol-reserved asset callback slots. Must match the slot names of the transaction kernel.
+const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
+const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
+
 # ERRORS
 # =================================================================================================
 
@@ -287,6 +291,81 @@ pub proc set_receive_policy(new_policy_root: AccountProcedureRoot)
     # => [NEW_POLICY_ROOT, pad(12)]
 
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+# V2 TRANSFER CALLBACKS
+# =================================================================================================
+#
+# The V2 transfer callbacks do not apply the pause check. A pause of the faucet that issues the
+# network's fee asset would otherwise block every fee payment, including the one of the
+# transaction that unpauses the faucet.
+
+#! Invokes the active send policy without the pause check. See [`invoke_send_policy`].
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the active send policy predicate fails.
+#!
+#! Invocation: call
+@account_procedure
+pub proc invoke_send_policy_v2(asset: Asset, note_idx: u16)
+    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+    exec.invoke_transfer_policy_v2
+    # => [pad(16)]
+end
+
+#! Invokes the active receive policy without the pause check. See [`invoke_receive_policy`].
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - custom_data is `0` for the receive callback.
+#!
+#! Panics if:
+#! - the active receive policy predicate fails.
+#!
+#! Invocation: call
+@account_procedure
+pub proc invoke_receive_policy_v2(asset: Asset, custom_data: felt)
+    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
+    exec.invoke_transfer_policy_v2
+    # => [pad(16)]
+end
+
+#! Points the asset callback slots at [`invoke_send_policy_v2`] and [`invoke_receive_policy_v2`].
+#!
+#! An account upgraded from the V1 manager still holds the V1 callback roots in these slots, so it
+#! calls this procedure once to switch to the V2 callbacks.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#! - the account does not have the asset callback slots.
+#!
+#! Invocation: call
+@account_procedure
+pub proc migrate_transfer_callbacks()
+    exec.authority::assert_authorized
+    # => [pad(16)]
+
+    procref.invoke_send_policy_v2
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
+    exec.native_account::set_item dropw
+    # => [pad(16)]
+
+    procref.invoke_receive_policy_v2
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
+    exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
@@ -652,6 +731,55 @@ proc invoke_transfer_policy(slot_id: StorageSlotId, asset: Asset, custom_data: f
         # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
         exec.pausable::assert_not_paused
+        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
+
+        loc_storew_le.POLICY_PROC_ROOT_PTR dropw
+        # => [ASSET_ID, ASSET_VALUE, custom_data]
+
+        # pad the policy inputs to 16 elements
+        repeat.7
+            push.0 movdn.9
+        end
+        # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
+        locaddr.POLICY_PROC_ROOT_PTR
+        # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
+        dyncall
+        # => [pad(16)]
+
+        dropw dropw dropw dropw
+        # => []
+    end
+end
+
+#! Same as [`invoke_transfer_policy`], but without the pause check.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
+#! Outputs: []
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
+#! - custom_data is `0` for the receive callback and the output note index for the send callback.
+#!
+#! Panics if:
+#! - the invoked policy predicate fails.
+#!
+#! Invocation: exec
+@locals(4)
+proc invoke_transfer_policy_v2(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
+    exec.active_account::get_item
+    # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
+
+    exec.word::testz
+    # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
+
+    if.true
+        # No policy configured: consume the callback inputs.
+        dropw dropw dropw drop
+        # => []
+    else
+        exec.expiration::apply_default
         # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
