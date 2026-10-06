@@ -1,6 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
+use miden::protocol_utils::account_id
 use miden::tx_kernel_core::memory
 use {LOG_SALT_PTR, NUM_LOGS_PTR, LOG_PAYLOAD_WORDS_PTR, LOG_COMMITMENT_DIRTY_FLAG_PTR,
      LOG_COMMITMENT_PTR, LOG_COMMITMENTS_PTR}
@@ -18,11 +19,8 @@ const PRIVATE_LOGS_DOMAIN = 0x020004
 
 # add_log locals: two topic elements, two padding elements, then at most 256 payload words.
 const TOPIC_0_LOC = 0
-const TOPIC_1_LOC = 1
-const PAYLOAD_LOC = 4
-
-# The account type is bit four of the native account prefix's low 32 bits.
-const ACCOUNT_TYPE_MASK_U32 = 0x10
+const TOPIC_1_LOC = TOPIC_0_LOC + 1
+const PAYLOAD_LOC = TOPIC_0_LOC + WORD_NUM_ELEMENTS
 
 const TX_LOG_ADDED_EVENT = event("miden::protocol::tx::log_added")
 
@@ -140,8 +138,7 @@ proc compute_commitment() -> word
     exec.poseidon2::hash_elements_in_domain
     # => [LOGS_COMMITMENT]
 
-    exec.memory::get_native_account_id drop u32split swap drop
-    u32and.ACCOUNT_TYPE_MASK_U32 eq.0
+    exec.memory::get_native_account_id drop exec.account_id::is_private
     # => [is_private, LOGS_COMMITMENT]
 
     if.true

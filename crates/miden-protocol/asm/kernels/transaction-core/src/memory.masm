@@ -131,17 +131,17 @@ const MAX_ACCOUNT_STACK_PTR = 1284
 pub const LOG_SALT_PTR = 1300
 
 # The memory address at which the number of transaction logs is stored.
-pub const NUM_LOGS_PTR = 1304
+pub const NUM_LOGS_PTR = LOG_SALT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the total number of transaction log payload words is stored.
-pub const LOG_PAYLOAD_WORDS_PTR = 1305
+pub const LOG_PAYLOAD_WORDS_PTR = NUM_LOGS_PTR + 1
 
 # The memory address at which the transaction log commitment's dirty flag is stored.
 # A value of 1 means a transaction log was added after the cached commitment was computed.
-pub const LOG_COMMITMENT_DIRTY_FLAG_PTR = 1306
+pub const LOG_COMMITMENT_DIRTY_FLAG_PTR = LOG_PAYLOAD_WORDS_PTR + 1
 
 # Address 1307 is padding to align the cached transaction log commitment to a word boundary.
-pub const LOG_COMMITMENT_PTR = 1308
+pub const LOG_COMMITMENT_PTR = LOG_SALT_PTR + 2 * WORD_NUM_ELEMENTS
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------

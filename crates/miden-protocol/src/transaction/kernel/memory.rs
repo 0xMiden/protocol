@@ -160,7 +160,7 @@ pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 1220;
 pub const LOG_SALT_PTR: MemoryAddress = 1300;
 
 /// Number of transaction logs collected by the kernel.
-pub const NUM_LOGS_PTR: MemoryAddress = 1304;
+pub const NUM_LOGS_PTR: MemoryAddress = LOG_SALT_PTR + WORD_SIZE as MemoryAddress;
 
 // GLOBAL INPUTS
 // ------------------------------------------------------------------------------------------------
