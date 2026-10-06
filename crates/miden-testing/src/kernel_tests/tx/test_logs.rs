@@ -111,7 +111,7 @@ async fn kernel_logs_reject_a_forged_payload() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn private_logs_require_a_secret_opening() -> anyhow::Result<()> {
+async fn private_transaction_logs_require_a_nonzero_secret_salt() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_SENDER, [NoopAuthComponent]);
     let tx = TestTransactionBuilder::new(account)
         .add_advice_map_entry(Word::empty(), vec![])

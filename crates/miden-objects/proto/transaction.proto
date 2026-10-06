@@ -69,7 +69,8 @@ message ProvenTransaction {
   primitives.Word reference_block_commitment = 5;
   blockchain.BlockNumber expiration_block_num = 6;
   primitives.ExecutionProof proof = 7;
-  // Canonical bounded TransactionLogData encoding. Private data contains only a commitment.
+  // Canonical bounded TransactionLogData encoding: complete public transaction logs or only
+  // a commitment to private transaction logs.
   bytes log_data = 8;
 }
 
@@ -90,6 +91,7 @@ message TransactionArgs {
   primitives.AdviceInputs advice_inputs = 4;
   primitives.Word auth_args = 5;
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
-  // Private witness data. Do not include this in a submitted transaction.
+  // Secret salt for the private transaction log commitment.
+  // Do not include this in a submitted transaction.
   primitives.Word log_salt = 7;
 }

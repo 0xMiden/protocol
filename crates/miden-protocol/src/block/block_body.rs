@@ -43,7 +43,7 @@ pub struct BlockBody {
     /// Nullifiers created by the transactions in this block through the consumption of notes.
     created_nullifiers: Vec<Nullifier>,
 
-    /// Log data in transaction-header order.
+    /// Transaction log data in transaction header order.
     log_data: TransactionLogDataCollection,
 
     /// The aggregated and flattened transaction headers of all batches in the order in which they
@@ -177,7 +177,7 @@ impl BlockBody {
         }
     }
 
-    /// Returns log data associated positionally with the ordered transaction headers.
+    /// Returns transaction log data associated positionally with the ordered transaction headers.
     pub fn log_data(&self) -> &TransactionLogDataCollection {
         &self.log_data
     }

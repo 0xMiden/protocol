@@ -144,7 +144,7 @@ impl ProvenBatch {
     }
 
     /// Creates a new [`ProvenBatch`] from the provided parts without checking any constraints
-    /// except the expiration and log-data constraints listed below.
+    /// except the expiration and transaction log data constraints listed below.
     ///
     /// Callers must ensure that the batch satisfies the structural constraints checked by
     /// [`ProvenBatch::new`].
@@ -152,7 +152,8 @@ impl ProvenBatch {
     /// # Errors
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
-    /// block number, or log data violates its limits, visibility, or header association.
+    /// block number, or transaction log data violates its limits, visibility, or header
+    /// association.
     #[allow(clippy::too_many_arguments)]
     pub fn new_unchecked(
         id: BatchId,
@@ -190,12 +191,12 @@ impl ProvenBatch {
         })
     }
 
-    /// Returns log data associated positionally with the ordered transaction headers.
+    /// Returns transaction log data associated positionally with the ordered transaction headers.
     pub fn log_data(&self) -> &TransactionLogDataCollection {
         &self.log_data
     }
 
-    /// Consumes the ordered headers and their submitted log data together.
+    /// Consumes the ordered headers and their submitted transaction log data together.
     pub fn into_transaction_data(
         self,
     ) -> (OrderedTransactionHeaders, TransactionLogDataCollection) {
@@ -1017,7 +1018,7 @@ mod tests {
         assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
     }
     #[test]
-    fn private_batch_log_data_roundtrips_and_rejects_missing_openings() {
+    fn private_transaction_log_data_roundtrips_and_rejects_missing_entries() {
         use crate::transaction::{TransactionLogData, TransactionLogDataCollection};
         let data = TransactionLogData::Private(Word::from([23u32; 4]));
         let header = TransactionHeader::new(

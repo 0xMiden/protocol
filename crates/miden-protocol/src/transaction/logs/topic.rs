@@ -9,7 +9,7 @@ use crate::utils::serde::{
     Serializable,
 };
 
-/// An opaque two-felt transaction log topic.
+/// An opaque two felt transaction log topic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogTopic([Felt; 2]);
 

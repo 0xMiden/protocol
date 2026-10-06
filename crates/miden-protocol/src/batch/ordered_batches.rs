@@ -21,8 +21,8 @@ use crate::{Felt, Word};
 
 /// The ordered set of batches in a [`ProposedBlock`](crate::block::ProposedBlock).
 ///
-/// This wrapper preserves batch order when converting to transaction headers and log data.
-/// Construction does not validate block constraints.
+/// This wrapper preserves batch order when converting to transaction headers and transaction log
+/// data. Construction does not validate block constraints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderedBatches(Vec<ProvenBatch>);
 
@@ -58,11 +58,11 @@ impl OrderedBatches {
         )
     }
 
-    /// Consumes headers and log data together, preserving batch and transaction order.
+    /// Consumes headers and transaction log data together, preserving batch and transaction order.
     ///
     /// # Errors
     ///
-    /// Returns an error if the combined log data exceeds the block resource limits.
+    /// Returns an error if the combined transaction log data exceeds the block resource limits.
     pub fn into_transaction_data(
         self,
     ) -> Result<(OrderedTransactionHeaders, TransactionLogDataCollection), TransactionLogDataError>
@@ -185,7 +185,7 @@ mod tests {
         );
     }
 
-    /// Builds distinct, individually valid batches at the public log-count limit.
+    /// Builds distinct, individually valid batches at the limit for public transaction logs.
     fn batches_with_logs(num_batches: usize) -> OrderedBatches {
         let account: AccountId =
             ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap();

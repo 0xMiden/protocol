@@ -23,13 +23,13 @@ pub const MAX_INPUT_NOTES_PER_TX: usize = 1024;
 /// The maximum number of new notes created by a single transaction.
 pub const MAX_OUTPUT_NOTES_PER_TX: usize = MAX_INPUT_NOTES_PER_TX;
 
-/// The maximum number of logs emitted by a single transaction.
+/// The maximum number of transaction logs emitted by a single transaction.
 pub const MAX_LOGS_PER_TX: usize = 64;
 
-/// The maximum number of words in a log payload (8 KiB of serialized payload data).
+/// The maximum number of words in a transaction log payload (8 KiB of serialized payload data).
 pub const MAX_LOG_PAYLOAD_WORDS: usize = 256;
 
-/// The maximum total number of log payload words in a transaction (16 KiB of serialized data).
+/// The maximum total number of transaction log payload words (16 KiB of serialized data).
 ///
 /// This excludes the bounded emitter, topic, and length metadata.
 pub const MAX_LOG_PAYLOAD_WORDS_PER_TX: usize = 512;
@@ -85,19 +85,19 @@ pub const MAX_ACCOUNTS_PER_BLOCK: usize = MAX_ACCOUNTS_PER_BATCH * MAX_BATCHES_P
 const _: () = assert!(MAX_ACCOUNTS_PER_BLOCK >= MAX_ACCOUNTS_PER_BATCH);
 const _: () = assert!(MAX_ACCOUNTS_PER_BLOCK >= MAX_BATCHES_PER_BLOCK);
 
-/// Maximum transaction log-data entries per batch, including empty and private entries.
+/// Maximum transaction log data entries per batch, including empty and private entries.
 pub const MAX_LOG_DATA_TRANSACTIONS_PER_BATCH: usize = 1024;
-/// Maximum transaction log-data entries per block.
+/// Maximum transaction log data entries per block.
 pub const MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK: usize = 65536;
-/// Maximum public records in a batch.
+/// Maximum number of public transaction logs in a batch.
 pub const MAX_PUBLIC_LOGS_PER_BATCH: usize = 4096;
-/// Maximum public records in a block.
+/// Maximum number of public transaction logs in a block.
 pub const MAX_PUBLIC_LOGS_PER_BLOCK: usize = 65536;
-/// Maximum public payload words in a batch (2 MiB).
+/// Maximum public transaction log payload words in a batch (2 MiB).
 pub const MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH: usize = 65536;
-/// Maximum public payload words in a block (16 MiB).
+/// Maximum public transaction log payload words in a block (16 MiB).
 pub const MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK: usize = 524288;
-/// Maximum serialized log-data collection per batch, including metadata (4 MiB).
+/// Maximum serialized transaction log data per batch, including metadata (4 MiB).
 pub const MAX_LOG_DATA_BYTES_PER_BATCH: usize = 4 * 1024 * 1024;
-/// Maximum serialized log-data collection per block, including metadata (32 MiB).
+/// Maximum serialized transaction log data per block, including metadata (32 MiB).
 pub const MAX_LOG_DATA_BYTES_PER_BLOCK: usize = 32 * 1024 * 1024;

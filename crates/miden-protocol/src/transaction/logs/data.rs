@@ -11,10 +11,10 @@ use crate::utils::serde::{
 
 /// Transaction log data submitted according to the native account's visibility.
 ///
-/// Validating a private commitment requires the transaction proof.
+/// Validating a private transaction log commitment requires the transaction proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionLogData {
-    /// Complete public logs, with their commitment derived from the logs.
+    /// Complete public transaction logs, from which the commitment is derived.
     Public(TransactionLogs),
     /// A commitment to the private transaction logs.
     Private(Word),
@@ -24,7 +24,7 @@ impl TransactionLogData {
     const PUBLIC: u8 = 0;
     const PRIVATE: u8 = 1;
 
-    /// Returns the computed public commitment or the supplied private commitment.
+    /// Returns the computed public or supplied private transaction log commitment.
     pub fn commitment(&self) -> Word {
         match self {
             Self::Public(logs) => logs.commitment(),

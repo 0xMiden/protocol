@@ -90,7 +90,7 @@ impl TransactionSummary {
         }
     }
 
-    /// Attaches the local logs that the signature authorizes.
+    /// Attaches the local transaction logs that the signature authorizes.
     pub fn with_logs(
         mut self,
         logs: TransactionLogs,
@@ -102,16 +102,17 @@ impl TransactionSummary {
         Ok(self)
     }
 
-    /// Returns the complete records available to the signer.
+    /// Returns the complete transaction logs available to the signer.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
     }
 
-    /// Returns the proof-bound commitment included in the signing message.
+    /// Returns the transaction log commitment included in the signing message and transaction
+    /// proof.
     pub fn logs_commitment(&self) -> Word {
         self.logs
             .commitment_for_account(self.account_delta.id(), self.log_salt)
-            .expect("summary log opening is valid")
+            .expect("transaction log salt in the summary is valid")
     }
 
     // PUBLIC ACCESSORS

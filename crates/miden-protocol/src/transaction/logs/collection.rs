@@ -21,7 +21,7 @@ use crate::{
     MAX_PUBLIC_LOGS_PER_BLOCK,
 };
 
-/// Submitted log data in transaction-header order, including empty collections.
+/// Submitted transaction log data in transaction header order, including empty collections.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TransactionLogDataCollection(Vec<TransactionLogData>);
 
@@ -154,7 +154,7 @@ impl TransactionLogDataCollection {
         Ok(())
     }
 
-    /// Builds empty fixture data and refuses headers that commit to nonempty logs.
+    /// Builds empty fixture data and refuses headers that commit to nonempty transaction logs.
     #[cfg(any(test, feature = "testing"))]
     pub fn empty_for_headers(headers: &OrderedTransactionHeaders) -> Self {
         Self(
@@ -206,7 +206,7 @@ impl Deserializable for TransactionLogDataCollection {
                     "log data exceeds block byte budget".into(),
                 ));
             }
-            // A transaction can encode at most 64 records with 512 payload words in total.
+            // A transaction can encode at most 64 transaction logs with 512 payload words in total.
             // Reject oversized frames before reading or allocating their payloads.
             let max_tx_size = 3
                 + crate::MAX_LOGS_PER_TX * super::TransactionLog::min_serialized_size()
