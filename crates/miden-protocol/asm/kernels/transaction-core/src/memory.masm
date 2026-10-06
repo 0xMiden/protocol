@@ -121,11 +121,27 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
-# TRANSACTION LOG BOOKKEEPING
+# TRANSACTION LOG STATE
 # -------------------------------------------------------------------------------------------------
 
-# The transaction log salt, counters, dirty flag, and cached commitment occupy 1300..1312.
-# These addresses are owned by tx_log.masm; the salt is initialized by the prologue.
+# The transaction log state occupies 12 elements starting at address 1300.
+# The prologue initializes the salt; the counters, dirty flag, and cached commitment start at zero.
+
+# The memory address at which the secret salt for private transaction logs is stored (one word).
+pub const LOG_SALT_PTR = 1300
+
+# The memory address at which the number of transaction logs is stored.
+pub const NUM_LOGS_PTR = 1304
+
+# The memory address at which the total number of transaction log payload words is stored.
+pub const LOG_PAYLOAD_WORDS_PTR = 1305
+
+# The memory address at which the transaction log commitment's dirty flag is stored.
+# A value of 1 means a transaction log was added after the cached commitment was computed.
+pub const LOG_COMMITMENT_DIRTY_FLAG_PTR = 1306
+
+# Address 1307 is padding to align the cached transaction log commitment to a word boundary.
+pub const LOG_COMMITMENT_PTR = 1308
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
@@ -251,8 +267,9 @@ const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 2404
 # TRANSACTION LOG COMMITMENTS
 # -------------------------------------------------------------------------------------------------
 
-# The ordered individual transaction log commitments occupy 3000..3256 (64 words).
-# Their layout and access are owned by tx_log.masm.
+# The memory address at which the ordered individual transaction log commitments begin.
+# This section holds 64 words (256 elements), starting at address 3000.
+pub const LOG_COMMITMENTS_PTR = 3000
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------

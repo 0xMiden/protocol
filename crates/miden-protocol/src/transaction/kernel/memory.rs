@@ -139,8 +139,22 @@ pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 1216;
 /// ```
 pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 1220;
 
-// TRANSACTION LOG BOOKKEEPING
+// TRANSACTION LOG STATE
 // ------------------------------------------------------------------------------------------------
+
+// The 12 element state section has the following layout, matching memory.masm:
+//
+// | Address | Elements | Content                                  |
+// | ------- | -------- | ---------------------------------------- |
+// | 1300    | 4        | Secret salt, initialized by the prologue  |
+// | 1304    | 1        | Number of transaction logs               |
+// | 1305    | 1        | Total payload words                      |
+// | 1306    | 1        | Dirty flag for the cached commitment     |
+// | 1307    | 1        | Padding                                  |
+// | 1308    | 4        | Cached transaction log commitment        |
+//
+// The counters, dirty flag, and cached commitment start at zero. Individual transaction log
+// commitments are stored separately: 64 words (256 elements) starting at address 3000.
 
 /// Secret salt for the private transaction log commitment, initialized by the prologue.
 pub const LOG_SALT_PTR: MemoryAddress = 1300;

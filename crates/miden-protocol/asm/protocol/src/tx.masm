@@ -469,7 +469,6 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
 
     dropw dropw dropw dropw
     # => []
-
 end
 
 #! Returns the current transaction log commitment while allowing further transaction logs to be added.
@@ -487,5 +486,4 @@ pub proc get_logs_commitment() -> word
 
     swapdw dropw dropw swapw dropw
     # => [LOGS_COMMITMENT]
-
 end

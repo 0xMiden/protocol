@@ -2229,7 +2229,6 @@ pub proc tx_add_log(topic_0: felt, topic_1: felt, payload_commitment: word, padd
 
     exec.tx_log::add_log
     # => [pad(16)]
-
 end
 
 #! Returns the current transaction log commitment.
@@ -2244,5 +2243,4 @@ pub proc tx_get_logs_commitment(padding: [felt; 16]) -> (word, [felt; 12])
 
     swapw dropw
     # => [LOGS_COMMITMENT, pad(12)]
-
 end
