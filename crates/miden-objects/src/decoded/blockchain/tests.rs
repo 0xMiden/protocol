@@ -4,14 +4,30 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
-use miden_protocol::block::{BlockBody, BlockNumber};
+use miden_protocol::block::{
+    BlockBody,
+    BlockHeader,
+    BlockNumber,
+    SignedBlock,
+    SignedBlockError,
+    ValidatorConfig,
+};
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
-use miden_protocol::transaction::OrderedTransactionHeaders;
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionLogDataCollection};
+use miden_protocol::utils::serde::Serializable;
 
 use crate::decoded::blockchain::test_utils::block_header_with_scheduled_upgrade;
 use crate::decoded::protocol_config::test_utils::dummy_protocol_config;
 use crate::test_utils::error_source;
-use crate::{BuildUnchecked, ConversionError, DecodeMessage, DecodeMessageExt, Verify, proto};
+use crate::{
+    BuildUnchecked,
+    ConversionError,
+    DecodeMessage,
+    DecodeMessageExt,
+    Verify,
+    VerifyWith,
+    proto,
+};
 
 #[test]
 fn block_number_verifies() {
@@ -39,25 +55,12 @@ fn fee_parameters_verify() {
 
 #[test]
 fn signed_blocks_require_a_trusted_parent_for_authentication() {
-    use miden_protocol::block::{
-        BlockBody,
-        BlockHeader,
-        SignedBlock,
-        SignedBlockError,
-        ValidatorConfig,
-    };
-    use miden_protocol::transaction::OrderedTransactionHeaders;
-
-    use crate::{BuildUnchecked, VerifyWith};
-
     fn header_for(num: u32, previous: Word, keys: ValidatorConfig) -> BlockHeader {
         let body = BlockBody::new(
             vec![],
             vec![],
             vec![],
-            miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(OrderedTransactionHeaders::new_unchecked(vec![])),
-            ),
+            TransactionLogDataCollection::default(),
             OrderedTransactionHeaders::new_unchecked(vec![]),
         )
         .unwrap();
@@ -84,9 +87,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
         vec![],
         vec![],
         vec![],
-        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
-            &(OrderedTransactionHeaders::new_unchecked(vec![])),
-        ),
+        TransactionLogDataCollection::default(),
         OrderedTransactionHeaders::new_unchecked(vec![]),
     )
     .unwrap();
@@ -160,18 +161,14 @@ fn empty_protobuf_block_body_requires_explicit_log_data() {
         vec![],
         vec![],
         vec![],
-        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
-            &(OrderedTransactionHeaders::new_unchecked(vec![])),
-        ),
+        TransactionLogDataCollection::default(),
         OrderedTransactionHeaders::new_unchecked(vec![]),
     )
     .unwrap();
 
     assert_eq!(
         proto::blockchain::BlockBody {
-            log_data: miden_protocol::utils::serde::Serializable::to_bytes(
-                &miden_protocol::transaction::TransactionLogDataCollection::default()
-            ),
+            log_data: TransactionLogDataCollection::default().to_bytes(),
             ..Default::default()
         }
         .decode_fields()

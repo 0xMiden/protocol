@@ -22,7 +22,13 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{
+    InputNoteCommitment,
+    OutputNote,
+    PartialBlockchain,
+    TransactionHeader,
+    TransactionLogDataCollection,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -161,7 +167,7 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
-        crate::transaction::TransactionLogDataCollection::validate_block_budget(
+        TransactionLogDataCollection::validate_block_budget(
             batches.iter().flat_map(|batch| batch.log_data().as_slice()),
         )?;
 
@@ -626,7 +632,7 @@ impl Serializable for ProposedBlock {
 impl Deserializable for ProposedBlock {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let batches = OrderedBatches::read_from(source)?;
-        crate::transaction::TransactionLogDataCollection::validate_block_budget(
+        TransactionLogDataCollection::validate_block_budget(
             batches.as_slice().iter().flat_map(|batch| batch.log_data().as_slice()),
         )
         .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;

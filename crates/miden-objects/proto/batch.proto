@@ -32,5 +32,8 @@ message ProvenBatch {
   blockchain.BlockNumber expiration_block_num = 6;
   repeated TransactionHeader transactions = 7;
   primitives.ExecutionProof proof = 8;
+  // Canonical TransactionLogDataCollection encoding, with one entry per transaction header
+  // in the same order, including transactions with no transaction logs. Public entries contain
+  // complete transaction logs; private entries contain only their commitments.
   bytes log_data = 9;
 }

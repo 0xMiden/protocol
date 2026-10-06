@@ -191,7 +191,10 @@ impl ProvenBatch {
         })
     }
 
-    /// Returns transaction log data associated positionally with the ordered transaction headers.
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns submitted transaction log data in the same order as the transaction headers.
     pub fn log_data(&self) -> &TransactionLogDataCollection {
         &self.log_data
     }
@@ -202,9 +205,6 @@ impl ProvenBatch {
     ) -> (OrderedTransactionHeaders, TransactionLogDataCollection) {
         (self.transactions, self.log_data)
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// The ID of this batch. See [`BatchId`] for details on how it is computed.
     pub fn id(&self) -> BatchId {
@@ -454,6 +454,8 @@ mod tests {
         OutputNote,
         RawOutputNote,
         TransactionHeader,
+        TransactionLogData,
+        TransactionLogDataCollection,
     };
     use crate::utils::serde::{Deserializable, Serializable};
     use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
@@ -558,7 +560,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -567,6 +569,7 @@ mod tests {
 
     #[test]
     fn derives_account_update_keys_from_updates() {
+        let transactions = transaction_headers();
         let update = private_account_update();
         let account_id = update.account_id();
 
@@ -577,10 +580,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap();
@@ -590,6 +591,7 @@ mod tests {
 
     #[test]
     fn rejects_proofs_with_precompiles() {
+        let transactions = transaction_headers();
         for proof in [dummy_deferred_execution_proof(), dummy_precompile_execution_proof()] {
             let error = ProvenBatch::new(
                 Word::empty(),
@@ -598,10 +600,8 @@ mod tests {
                 InputNotes::default(),
                 Vec::new(),
                 BlockNumber::from(2),
-                crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                    &(transaction_headers()),
-                ),
-                transaction_headers(),
+                TransactionLogDataCollection::empty_for_headers(&transactions),
+                transactions.clone(),
                 proof,
             )
             .unwrap_err();
@@ -612,6 +612,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_account_updates() {
+        let transactions = transaction_headers();
         let update = private_account_update();
         let account_id = update.account_id();
 
@@ -622,10 +623,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -635,6 +634,7 @@ mod tests {
 
     #[test]
     fn rejects_too_many_account_updates_without_consuming_the_tail() {
+        let transactions = transaction_headers();
         let mut next_index = 0_u64;
         let account_updates = core::iter::from_fn(move || {
             assert!(
@@ -658,10 +658,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -682,6 +680,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_account_update() {
+        let transactions = transaction_headers();
         let error = ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
@@ -689,10 +688,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -702,6 +699,7 @@ mod tests {
 
     #[test]
     fn rejects_unexpected_account_update() {
+        let transactions = transaction_headers();
         let unexpected_account_id =
             AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
 
@@ -712,10 +710,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -730,6 +726,7 @@ mod tests {
     #[case::initial(true)]
     #[case::final_state(false)]
     fn rejects_account_update_commitment_mismatch(#[case] mismatch_initial: bool) {
+        let transactions = transaction_headers();
         let expected_initial = Word::from([1_u32, 2, 3, 4]);
         let expected_final = Word::from([5_u32, 6, 7, 8]);
         let actual_initial = if mismatch_initial {
@@ -757,10 +754,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -805,7 +800,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -837,7 +832,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -859,7 +854,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -889,7 +884,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -900,6 +895,7 @@ mod tests {
 
     #[test]
     fn accepts_output_note_missing_from_transaction_headers() {
+        let transactions = transaction_headers();
         let (_, _, output_notes) = conflicting_notes();
 
         ProvenBatch::new(
@@ -909,10 +905,8 @@ mod tests {
             InputNotes::default(),
             output_notes,
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap();
@@ -935,7 +929,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -944,6 +938,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_supplied_input_note() {
+        let transactions = transaction_headers();
         let note = Note::mock_noop(Word::empty());
         let input =
             InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
@@ -956,10 +951,8 @@ mod tests {
             input_notes,
             Vec::new(),
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -972,6 +965,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_supplied_output_note() {
+        let transactions = transaction_headers();
         let note = Note::mock_noop(Word::empty());
         let output_note = RawOutputNote::Full(note.clone()).into_output_note().unwrap();
 
@@ -982,10 +976,8 @@ mod tests {
             InputNotes::default(),
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -998,6 +990,7 @@ mod tests {
 
     #[test]
     fn rejects_supplied_input_output_overlap() {
+        let transactions = transaction_headers();
         let (note_id, input_notes, output_notes) = conflicting_notes();
 
         let error = ProvenBatch::new(
@@ -1007,19 +1000,17 @@ mod tests {
             input_notes,
             output_notes,
             BlockNumber::from(2),
-            crate::transaction::TransactionLogDataCollection::empty_for_headers(
-                &(transaction_headers()),
-            ),
-            transaction_headers(),
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
 
         assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
     }
+
     #[test]
     fn private_transaction_log_data_roundtrips_and_rejects_missing_entries() {
-        use crate::transaction::{TransactionLogData, TransactionLogDataCollection};
         let data = TransactionLogData::Private(Word::from([23u32; 4]));
         let header = TransactionHeader::new(
             account_id(),

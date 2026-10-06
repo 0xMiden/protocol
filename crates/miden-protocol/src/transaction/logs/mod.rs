@@ -56,10 +56,10 @@ pub enum TransactionLogDataError {
     #[error("private transaction logs require a nonzero secret salt")]
     MissingPrivateSalt,
     /// There must be exactly one transaction log data entry for each transaction header.
-    #[error("log data and transaction header counts differ")]
+    #[error("transaction log data and transaction header counts differ")]
     AssociationCount,
     /// The transaction log commitment differs from the commitment in its transaction header.
-    #[error("log commitment mismatch at transaction index {0}")]
+    #[error("transaction log commitment mismatch at transaction index {0}")]
     CommitmentMismatch(usize),
     /// Aggregate transaction log data exceeds the batch or block resource budget.
     #[error("aggregate transaction log data exceeds its resource budget")]

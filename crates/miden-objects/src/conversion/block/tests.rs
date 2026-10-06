@@ -3,7 +3,12 @@ use alloc::vec;
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
-use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders, TransactionHeader};
+use miden_protocol::transaction::{
+    InputNotes,
+    OrderedTransactionHeaders,
+    TransactionHeader,
+    TransactionLogDataCollection,
+};
 use prost::Message;
 
 use crate::decoded::account::test_utils::private_account_id;
@@ -28,14 +33,13 @@ fn block_body_and_transaction_header_roundtrip() {
         AccountUpdateDetails::Private,
     )
     .unwrap();
+    let transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction]);
     let body = BlockBody::new(
         vec![account_update],
         vec![],
         vec![],
-        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
-            &(OrderedTransactionHeaders::new_unchecked(vec![transaction.clone()])),
-        ),
-        OrderedTransactionHeaders::new_unchecked(vec![transaction]),
+        TransactionLogDataCollection::empty_for_headers(&transactions),
+        transactions,
     )
     .unwrap();
 

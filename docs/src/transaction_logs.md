@@ -32,7 +32,7 @@ commitments.
 
 | Aggregate limit | Batch | Block |
 | --- | ---: | ---: |
-| Transaction entries, including private/empty | 1,024 | 65,536 |
+| Transaction log data entries, including private and empty entries | 1,024 | 65,536 |
 | Public transaction logs | 4,096 | 65,536 |
 | Public transaction log payload words | 65,536 | 524,288 |
 | Encoded bytes, including metadata | 4 MiB | 32 MiB |

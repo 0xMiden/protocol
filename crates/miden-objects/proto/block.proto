@@ -61,6 +61,9 @@ message BlockBody {
   repeated OutputNoteBatch output_note_batches = 2;
   repeated primitives.Word created_nullifiers = 3;
   repeated transaction.TransactionHeader transactions = 4;
+  // Canonical TransactionLogDataCollection encoding, with one entry per transaction header
+  // in the same order, including transactions with no transaction logs. Public entries contain
+  // complete transaction logs; private entries contain only their commitments.
   bytes log_data = 5;
 }
 
