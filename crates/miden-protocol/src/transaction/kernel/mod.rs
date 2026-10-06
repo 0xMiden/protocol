@@ -280,6 +280,7 @@ impl TransactionKernel {
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
@@ -317,6 +318,7 @@ impl TransactionKernel {
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
@@ -386,6 +388,7 @@ impl TransactionKernel {
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and the account
     ///   delta commitment of the account that the transaction is being executed against.

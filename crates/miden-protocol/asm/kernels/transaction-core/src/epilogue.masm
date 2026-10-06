@@ -262,7 +262,7 @@ end
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
 #! - applies a pending code upgrade of the native account.
-#! - computes the output notes commitment.
+#! - computes the output notes commitment and transaction log commitment.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
 #!
@@ -276,6 +276,8 @@ end
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
 #! - tx_expiration_block_num is the transaction expiration block number.
+#! - LOGS_COMMITMENT is the commitment to all transaction logs, including those emitted during
+#!   authentication.
 #!
 #! Locals:
 #! - 0..4: OUTPUT_NOTES_COMMITMENT
@@ -401,7 +403,7 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber, Commitm
 
     # ------ Build output stack ------
 
-    # Place the transaction log commitment below the remaining outputs.
+    # Append the transaction log commitment to preserve the existing output indices.
     exec.tx_log::get_commitment swapw
     # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT]
 
@@ -412,5 +414,4 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber, Commitm
     # load output notes commitment from local
     padw loc_loadw_le.0
     # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, LOGS_COMMITMENT]
-
 end

@@ -2,6 +2,9 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::tx_kernel_core::memory
+use {LOG_SALT_PTR, NUM_LOGS_PTR, LOG_PAYLOAD_WORDS_PTR, LOG_COMMITMENT_DIRTY_FLAG_PTR,
+     LOG_COMMITMENT_PTR, LOG_COMMITMENTS_PTR}
+    from miden::tx_kernel_core::memory
 use {MAX_LOGS_PER_TX, MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS_PER_TX, WORD_NUM_ELEMENTS}
     from miden::protocol_utils::constants
 
@@ -12,17 +15,6 @@ use {MAX_LOGS_PER_TX, MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS_PER_TX, WORD_
 const LOG_DOMAIN = 0x020005
 const LOGS_DOMAIN = 0x020003
 const PRIVATE_LOGS_DOMAIN = 0x020004
-
-# Transaction log bookkeeping occupies 1300..1312. Only the salt is initialized by the prologue;
-# the counters, dirty flag, and cached commitment start at zero. Address 1307 is alignment padding.
-pub const SALT_PTR = 1300
-const NUM_LOGS_PTR = 1304
-const PAYLOAD_WORDS_PTR = 1305
-const DIRTY_PTR = 1306
-const COMMITMENT_PTR = 1308
-
-# The ordered individual transaction log commitments occupy 3000..3256 (64 words).
-const LOG_COMMITMENTS_PTR = 3000
 
 # add_log locals: two topic elements, two padding elements, then at most 256 payload words.
 const TOPIC_0_LOC = 0
@@ -75,9 +67,9 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     dup u32lte.MAX_LOG_PAYLOAD_WORDS assert.err=ERR_TX_LOG_PAYLOAD
     # => [num_words, PAYLOAD_COMMITMENT]
 
-    dup mem_load.PAYLOAD_WORDS_PTR add
+    dup mem_load.LOG_PAYLOAD_WORDS_PTR add
     dup u32lte.MAX_LOG_PAYLOAD_WORDS_PER_TX assert.err=ERR_TX_LOG_TOTAL_PAYLOAD
-    mem_store.PAYLOAD_WORDS_PTR
+    mem_store.LOG_PAYLOAD_WORDS_PTR
     # => [num_words, PAYLOAD_COMMITMENT]
 
     # Copy and hash in one pass. The checked word count fits in the 1024 payload locals.
@@ -103,9 +95,8 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
 
     # Appending invalidates the commitment cached by get_commitment.
     mem_load.NUM_LOGS_PTR add.1 mem_store.NUM_LOGS_PTR
-    push.1 mem_store.DIRTY_PTR
+    push.1 mem_store.LOG_COMMITMENT_DIRTY_FLAG_PTR
     # => []
-
 end
 
 #! Returns the transaction log commitment included in the transaction proof.
@@ -118,20 +109,19 @@ end
 #!
 #! Invocation: exec
 pub proc get_commitment() -> word
-    mem_load.DIRTY_PTR
+    mem_load.LOG_COMMITMENT_DIRTY_FLAG_PTR
     # => [is_dirty]
 
     if.true
-        exec.compute_commitment mem_storew_le.COMMITMENT_PTR
+        exec.compute_commitment mem_storew_le.LOG_COMMITMENT_PTR
         # => [LOGS_COMMITMENT]
 
-        push.0 mem_store.DIRTY_PTR
+        push.0 mem_store.LOG_COMMITMENT_DIRTY_FLAG_PTR
         # => [LOGS_COMMITMENT]
 
     else
-        padw mem_loadw_le.COMMITMENT_PTR
+        padw mem_loadw_le.LOG_COMMITMENT_PTR
         # => [LOGS_COMMITMENT]
-
     end
 end
 
@@ -155,12 +145,11 @@ proc compute_commitment() -> word
     # => [is_private, LOGS_COMMITMENT]
 
     if.true
-        padw mem_loadw_le.SALT_PTR
+        padw mem_loadw_le.LOG_SALT_PTR
         exec.word::testz not assert.err=ERR_TX_LOG_SALT
         # => [SECRET_SALT, LOGS_COMMITMENT]
 
         swapw push.PRIVATE_LOGS_DOMAIN exec.poseidon2::merge_in_domain
         # => [PRIVATE_LOGS_COMMITMENT]
-
     end
 end

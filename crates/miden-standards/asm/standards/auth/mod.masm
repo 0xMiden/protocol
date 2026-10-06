@@ -98,7 +98,6 @@ pub proc create_tx_summary_with_block(block_number: BlockNumber, user_params: [f
     exec.native_account::compute_delta_commitment movdnw.2
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
     #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
-
 end
 
 #! Creates the transaction summary bound to the transaction's reference block and returns it in the
@@ -122,7 +121,6 @@ pub proc create_tx_summary(user_params: [felt; 6])
     exec.create_tx_summary_with_block
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
     #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
-
 end
 
 #! Creates and hashes the reference block summary, retaining its preimage in the advice map.
@@ -138,7 +136,6 @@ pub proc get_tx_summary_commitment(user_params: [felt; 6]) -> word
 
     exec.hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT]
-
 end
 
 #! Creates and hashes a summary bound to `block_number`, retaining its preimage in the advice map.
@@ -155,7 +152,6 @@ pub proc get_tx_summary_commitment_with_block(block_number: BlockNumber, user_pa
 
     exec.hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT]
-
 end
 
 #! Hashes the provided transaction summary, inserts its preimage into the advice map keyed by the
@@ -251,5 +247,4 @@ pub proc hash_and_insert_tx_summary(
 
     movup.4 drop movup.4 drop
     # => [TX_SUMMARY_COMMITMENT]
-
 end

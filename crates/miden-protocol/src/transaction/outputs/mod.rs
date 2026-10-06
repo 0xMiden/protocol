@@ -62,6 +62,8 @@ impl TransactionOutputs {
     pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 8;
 
     /// The first stack element of the transaction log commitment.
+    ///
+    /// Appended after the expiration block number to preserve the existing output indices.
     pub const LOGS_COMMITMENT_WORD_IDX: usize = 9;
 
     // CONSTRUCTOR
