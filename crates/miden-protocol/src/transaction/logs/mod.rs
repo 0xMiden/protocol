@@ -1,4 +1,4 @@
-//! Transaction log records, submitted data, and their ordered commitment.
+//! Transaction logs, submitted data, and their ordered commitment.
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -59,7 +59,7 @@ pub enum TransactionLogDataError {
 
 /// A log emitted by an account during a transaction.
 ///
-/// Construction validates payload size; the kernel authenticates the emitter.
+/// Construction validates payload size; the kernel authenticates the emitter account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionLog {
     emitter: AccountId,
@@ -88,7 +88,7 @@ impl TransactionLog {
         self.emitter
     }
 
-    /// Returns the log's application-defined topic.
+    /// Returns the log's application defined topic.
     pub fn topic(&self) -> LogTopic {
         self.topic
     }
@@ -178,7 +178,7 @@ impl Deserializable for TransactionLog {
 
 /// An ordered collection of transaction logs with a cached commitment.
 ///
-/// Appending invalidates the cache. Empty lists and duplicate records are allowed.
+/// Appending invalidates the cache. Empty lists and duplicate logs are allowed.
 ///
 /// # Commitment
 ///
@@ -194,7 +194,7 @@ impl Deserializable for TransactionLog {
 /// An empty collection has commitment [`Word::empty`]. The collection hash binds log order and
 /// duplicate occurrences. The payload hash binds content and length.
 ///
-/// These commitments do not hide predictable private records.
+/// These commitments do not hide predictable private logs.
 #[derive(Debug, Default)]
 pub struct TransactionLogs {
     logs: Vec<TransactionLog>,
@@ -212,7 +212,7 @@ impl TransactionLogs {
     /// Returns the proof-bound commitment for a native account.
     ///
     /// Nonempty private logs require a fresh, random, nonzero secret salt to hide predictable
-    /// records. Empty collections commit to [`Word::empty`].
+    /// logs. Empty collections commit to [`Word::empty`].
     pub fn commitment_for_account(
         &self,
         native_account: AccountId,
@@ -355,7 +355,7 @@ impl<'a> IntoIterator for &'a TransactionLogs {
 }
 
 impl Serializable for TransactionLogs {
-    /// Writes a little-endian u16 log count followed by the records, without the commitment.
+    /// Writes a little-endian u16 log count followed by the logs, without the commitment.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_u16(self.logs.len() as u16);
         target.write_many(&self.logs);
