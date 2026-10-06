@@ -2,7 +2,7 @@ use {BlockNumber} from miden::protocol::types
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::crypto::hashes::poseidon2
-use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 
 pub mod eip712
 pub mod eip712_transaction_summary
