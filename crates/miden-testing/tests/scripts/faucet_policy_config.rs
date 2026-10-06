@@ -3,7 +3,7 @@
 //!
 //! Integration coverage exercises the mint and burn dispatch branches (each switching `allow_all`
 //! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
-//! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in selector and
+//! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in variant and
 //! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
 //! built-in alternative `TransferPolicy` to switch to without bespoke policy setup.
 
@@ -29,7 +29,7 @@ use miden_standards::account::policies::{
 use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR,
+    ERR_FAUCET_POLICY_CONFIG_UNKNOWN_VARIANT,
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
 use miden_standards::note::config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
@@ -197,9 +197,9 @@ async fn set_burn_policy_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let mut builder = MockChain::builder();
@@ -207,7 +207,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // a root-sized payload followed by selector 99, which is not a known action
+    // a root-sized payload followed by variant 99, which is not a known action
     let storage = vec![Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(99u32)];
     let note = malformed_faucet_policy_config_note(owner, faucet.id(), storage, &mut rng)?;
     let tx = mock_chain
@@ -216,11 +216,11 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_UNKNOWN_VARIANT);
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
@@ -230,7 +230,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // a single storage item instead of the expected five; the selector position reads as an
+    // a single storage item instead of the expected five; the variant position reads as an
     // uninitialized zero, dispatching to SetMintPolicy, whose count guard then rejects the note
     let note =
         malformed_faucet_policy_config_note(owner, faucet.id(), vec![Felt::from(0u32)], &mut rng)?;

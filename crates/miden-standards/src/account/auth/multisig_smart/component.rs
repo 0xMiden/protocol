@@ -191,10 +191,14 @@ fn validate_proc_policies(
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
 ///
-/// # Security considerations
+/// # Security
 ///
-/// Two properties follow from verifying proposal signatures over the proposed transaction's
-/// commitment, and callers/operators must account for them:
+/// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
+/// [`AuthMultisig`], so a procedure with such a policy should seal the notes it creates for the
+/// reasons described there.
+///
+/// Delayed execution verifies proposal signatures over the proposed transaction's commitment, and
+/// three properties follow from that which callers and operators must account for:
 ///
 /// - A proposal signature is bound to the proposed transaction's commitment, which is a stable,
 ///   replayable message. After a proposal is cancelled (its entry removed), the original proposal

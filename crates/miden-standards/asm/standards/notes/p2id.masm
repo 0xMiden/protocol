@@ -7,17 +7,19 @@ use miden::standards::wallets::basic as basic_wallet
 # ERRORS
 # =================================================================================================
 
-const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 2 note storage items"
+const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 4 note storage items"
 
 # CONSTANTS
 # =================================================================================================
 
 # The number of storage items of a P2ID note.
-const NUM_STORAGE_ITEMS = 2
+const NUM_STORAGE_ITEMS = 4
 
 const STORAGE_PTR = 0
 const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR
 const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
+const SALT_0_PTR = STORAGE_PTR + 2
+const SALT_1_PTR = STORAGE_PTR + 3
 
 # PROCEDURES
 # =================================================================================================
@@ -35,6 +37,12 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 #!
 #! Note storage is assumed to be as follows:
 #! - target_account_id is the ID of the account for which the note is intended.
+#! - salt is two field elements included in the storage commitment. It does not affect the target
+#!   account check.
+#! The storage layout is [target_account_id_suffix, target_account_id_prefix, salt_0, salt_1].
+#!
+#! A secret salt makes brute force checks of account IDs against the storage commitment
+#! computationally infeasible. A zero salt does not provide this protection.
 #!
 #! Panics if:
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
@@ -65,11 +73,10 @@ pub proc main()
     # => []
 end
 
-#! Computes the P2ID recipient and returns the note-creation arguments for the given inputs.
+#! Computes a P2ID recipient with a zero salt and returns the note-creation arguments.
 #!
 #! This procedure handles:
-#! - Writing note storage to memory in the expected layout ([suffix, prefix] to match
-#!   existing P2ID storage format)
+#! - Writing note storage to memory in the layout [suffix, prefix, 0, 0]
 #! - Obtaining the note script root via procref
 #! - Building the recipient
 #!
@@ -91,7 +98,7 @@ end
 #! - RECIPIENT is the computed recipient digest of the note (4 elements).
 #!
 #! Invocation: exec
-@locals(2)
+@locals(4)
 pub proc prepare_note(
     target_id: AccountId,
     tag: NoteTag,
@@ -103,6 +110,9 @@ pub proc prepare_note(
     loc_store.TARGET_ACCOUNT_ID_SUFFIX_PTR loc_store.TARGET_ACCOUNT_ID_PREFIX_PTR
     # => [tag, note_type, SERIAL_NUM]
 
+    push.0.0 loc_store.SALT_0_PTR loc_store.SALT_1_PTR
+    # => [tag, note_type, SERIAL_NUM]
+
     movdn.5 movdn.5
     # => [SERIAL_NUM, tag, note_type]
 
@@ -112,8 +122,8 @@ pub proc prepare_note(
     swapw
     # => [SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
 
-    push.2 locaddr.STORAGE_PTR
-    # => [storage_ptr, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
+    push.NUM_STORAGE_ITEMS locaddr.STORAGE_PTR
+    # => [storage_ptr, num_storage_items=4, SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
 
     exec.note::compute_and_store_recipient
     # => [RECIPIENT, tag, note_type]
@@ -122,7 +132,7 @@ pub proc prepare_note(
     # => [tag, note_type, RECIPIENT]
 end
 
-#! Creates a new P2ID output note from the given inputs and returns its index.
+#! Creates a P2ID output note with a zero salt and returns its index.
 #!
 #! Note creation must originate from the account context, so this procedure routes creation through
 #! the account's `create_note` procedure. This lets `p2id::create_output_note` be used from contexts

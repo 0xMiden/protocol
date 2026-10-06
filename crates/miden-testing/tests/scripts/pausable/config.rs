@@ -14,7 +14,7 @@ use miden_standards::errors::standards::{
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
     ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR,
+    ERR_PAUSE_CONFIG_UNKNOWN_VARIANT,
 };
 use miden_standards::note::config::{PauseConfig, PauseConfigNote};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
@@ -122,9 +122,9 @@ async fn pause_then_unpause_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let account = create_pausable_account(owner)?;
@@ -133,7 +133,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_pause_config_note(owner, account.id(), vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
@@ -141,11 +141,11 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_UNKNOWN_VARIANT);
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
@@ -156,7 +156,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // no storage items at all instead of the single expected selector item
+    // no storage items at all instead of the single expected variant item
     let note = malformed_pause_config_note(owner, account.id(), Vec::new(), &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())

@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_crypto::merkle::InnerNodeInfo;
+use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
 use super::{
     Asset,
@@ -71,7 +71,12 @@ impl AssetVault {
         let asset_tree = Smt::with_entries(
             assets.iter().map(|asset| (asset.id().hash().as_word(), asset.to_value_word())),
         )
-        .map_err(AssetVaultError::DuplicateAsset)?;
+        .map_err(|error| match error {
+            MerkleError::TooManyLeafEntries { .. } => {
+                AssetVaultError::MaxLeafEntriesExceeded(error)
+            },
+            error => AssetVaultError::DuplicateAsset(error),
+        })?;
 
         // Filter empty values so the `entries` map stays in sync with the SMT, which treats
         // empty values as no-ops. `Smt::with_entries` above already errored on duplicate keys,

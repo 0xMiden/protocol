@@ -30,25 +30,8 @@ impl From<BlockNumber> for proto::blockchain::BlockNumber {
 
 impl From<&PartialBlockchain> for proto::blockchain::PartialBlockchain {
     fn from(value: &PartialBlockchain) -> Self {
-        let mmr = value.mmr();
-        let tracked_leaves = mmr
-            .leaves()
-            .map(|(position, leaf)| {
-                let proof = mmr
-                    .open(position)
-                    .expect("tracked MMR position must be in bounds")
-                    .expect("tracked MMR leaf must have an opening");
-                proto::blockchain::TrackedMmrLeaf {
-                    position: position as u64,
-                    leaf: Some(leaf.into()),
-                    path: proof.merkle_path().nodes().iter().map(Into::into).collect(),
-                }
-            })
-            .collect();
         Self {
-            forest: mmr.forest().num_leaves() as u64,
-            peaks: mmr.peaks().peaks().iter().map(Into::into).collect(),
-            tracked_leaves,
+            mmr: Some(value.mmr().into()),
             block_headers: value.block_headers().map(Into::into).collect(),
         }
     }

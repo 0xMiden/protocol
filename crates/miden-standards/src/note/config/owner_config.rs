@@ -62,32 +62,32 @@ pub enum OwnerConfig {
 }
 
 impl OwnerConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the first storage item. Keep in sync with
+    // Config note variants stored in the first storage item. Keep in sync with
     // `owner_config.masm`.
-    const SELECTOR_TRANSFER_OWNERSHIP: u8 = 0;
-    const SELECTOR_ACCEPT_OWNERSHIP: u8 = 1;
-    const SELECTOR_RENOUNCE_OWNERSHIP: u8 = 2;
+    const VARIANT_TRANSFER_OWNERSHIP: u8 = 0;
+    const VARIANT_ACCEPT_OWNERSHIP: u8 = 1;
+    const VARIANT_RENOUNCE_OWNERSHIP: u8 = 2;
 
-    /// Returns the note storage values encoding this action, laid out as `[selector, ..args]`.
+    /// Returns the note storage values encoding this action, laid out as `[variant, ..args]`.
     fn to_storage_values(self) -> Vec<Felt> {
         match self {
             OwnerConfig::TransferOwnership { new_owner } => {
-                // [selector, new_owner_suffix, new_owner_prefix]; the zero address (0, 0) is the
+                // [variant, new_owner_suffix, new_owner_prefix]; the zero address (0, 0) is the
                 // cancel value understood by `ownable2step::transfer_ownership`.
                 let (suffix, prefix) = match new_owner {
                     Some(id) => (id.suffix(), id.prefix().as_felt()),
                     None => (Felt::ZERO, Felt::ZERO),
                 };
-                vec![Felt::from(Self::SELECTOR_TRANSFER_OWNERSHIP), suffix, prefix]
+                vec![Felt::from(Self::VARIANT_TRANSFER_OWNERSHIP), suffix, prefix]
             },
             OwnerConfig::AcceptOwnership => {
-                vec![Felt::from(Self::SELECTOR_ACCEPT_OWNERSHIP)]
+                vec![Felt::from(Self::VARIANT_ACCEPT_OWNERSHIP)]
             },
             OwnerConfig::RenounceOwnership => {
-                vec![Felt::from(Self::SELECTOR_RENOUNCE_OWNERSHIP)]
+                vec![Felt::from(Self::VARIANT_RENOUNCE_OWNERSHIP)]
             },
         }
     }
@@ -106,7 +106,7 @@ impl From<OwnerConfig> for NoteStorage {
 /// An OwnerConfig note: triggers an [`Ownable2Step`](crate::account::access::Ownable2Step)
 /// management action on the account that consumes it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the component's
+/// A single note script dispatches on the note variant in its storage to one of the component's
 /// management procedures (`transfer_ownership`, `accept_ownership`, `renounce_ownership`). All
 /// authorization is enforced by those procedures against the note sender, so the note carries no
 /// assets and its authorization is bound to `sender` at creation time.
@@ -185,8 +185,8 @@ impl OwnerConfigNote {
 
     /// The numbers of storage items the OwnerConfig note script accepts.
     ///
-    /// The layout is variable: `TransferOwnership` uses 3 items (`[selector, new_owner_suffix,
-    /// new_owner_prefix]`), while `AcceptOwnership` / `RenounceOwnership` use 1 (`[selector]`).
+    /// The layout is variable: `TransferOwnership` uses 3 items (`[variant, new_owner_suffix,
+    /// new_owner_prefix]`), while `AcceptOwnership` / `RenounceOwnership` use 1 (`[variant]`).
     /// Keep in sync with the `NUM_ITEMS_*` constants in `owner_config.masm`.
     pub const NUM_STORAGE_ITEMS: NumStorageItems =
         NumStorageItems::AnyOf(&[NumStorageItems::Exact(1), NumStorageItems::Exact(3)]);
@@ -439,7 +439,7 @@ mod tests {
         });
     }
 
-    /// `TransferOwnership` storage is `[selector, new_owner_suffix, new_owner_prefix]`.
+    /// `TransferOwnership` storage is `[variant, new_owner_suffix, new_owner_prefix]`.
     #[test]
     fn transfer_ownership_storage_layout() {
         let new_owner = account_id(3);
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(OwnerConfig::SELECTOR_TRANSFER_OWNERSHIP),
+                Felt::from(OwnerConfig::VARIANT_TRANSFER_OWNERSHIP),
                 new_owner.suffix(),
                 new_owner.prefix().as_felt(),
             ]
@@ -463,17 +463,17 @@ mod tests {
 
         assert_eq!(
             storage.items(),
-            &[Felt::from(OwnerConfig::SELECTOR_TRANSFER_OWNERSHIP), Felt::ZERO, Felt::ZERO]
+            &[Felt::from(OwnerConfig::VARIANT_TRANSFER_OWNERSHIP), Felt::ZERO, Felt::ZERO]
         );
     }
 
-    /// `AcceptOwnership` / `RenounceOwnership` storage is a single selector item.
+    /// `AcceptOwnership` / `RenounceOwnership` storage is a single variant item.
     #[test]
     fn accept_and_renounce_storage_layout() {
         let accept = NoteStorage::from(OwnerConfig::AcceptOwnership);
-        assert_eq!(accept.items(), &[Felt::from(OwnerConfig::SELECTOR_ACCEPT_OWNERSHIP)]);
+        assert_eq!(accept.items(), &[Felt::from(OwnerConfig::VARIANT_ACCEPT_OWNERSHIP)]);
 
         let renounce = NoteStorage::from(OwnerConfig::RenounceOwnership);
-        assert_eq!(renounce.items(), &[Felt::from(OwnerConfig::SELECTOR_RENOUNCE_OWNERSHIP)]);
+        assert_eq!(renounce.items(), &[Felt::from(OwnerConfig::VARIANT_RENOUNCE_OWNERSHIP)]);
     }
 }

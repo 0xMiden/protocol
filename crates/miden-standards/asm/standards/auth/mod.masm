@@ -3,6 +3,8 @@ use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::crypto::hashes::poseidon2
 
+pub mod eip712
+pub mod eip712_transaction_summary
 pub mod guardian
 pub mod multisig
 pub mod multisig_smart

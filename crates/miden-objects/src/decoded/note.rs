@@ -205,3 +205,19 @@ impl Verify for Note {
         ))
     }
 }
+
+pub use proto::note::DecodedPartialNote as PartialNote;
+
+impl Verify for PartialNote {
+    type Verified = miden_protocol::note::PartialNote;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        let assets = miden_protocol::note::NoteAssets::new(self.assets.verify()?)?;
+        Ok(Self::Verified::new(
+            self.metadata.verify()?,
+            self.recipient_digest,
+            assets,
+            self.attachments.verify()?,
+        ))
+    }
+}

@@ -32,9 +32,6 @@ pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
-mod file;
-pub use file::{NoteFile, NoteSyncHint};
-
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
@@ -53,8 +50,17 @@ pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap}
 mod tx_fee;
 pub use tx_fee::TxFeeNote;
 
+mod upgrade;
+pub use upgrade::UpgradeNote;
+
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
+
+mod account_code_upgrade_attachment;
+pub use account_code_upgrade_attachment::{
+    AccountCodeUpgradeAttachment,
+    AccountCodeUpgradeAttachmentError,
+};
 
 mod network_note;
 pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
@@ -85,6 +91,7 @@ pub enum StandardNote {
     OWNER_CONFIG,
     RBAC_CONFIG,
     NETWORK_ACCOUNT_CONFIG,
+    UPGRADE,
     FEE_SPONSORSHIP,
     TX_FEE,
 }
@@ -150,6 +157,9 @@ impl StandardNote {
         if root == NetworkAccountConfigNote::script_root() {
             return Some(Self::NETWORK_ACCOUNT_CONFIG);
         }
+        if root == UpgradeNote::script_root() {
+            return Some(Self::UPGRADE);
+        }
         if root == FeeSponsorshipNote::script_root() {
             return Some(Self::FEE_SPONSORSHIP);
         }
@@ -182,6 +192,7 @@ impl StandardNote {
             Self::OWNER_CONFIG => "OWNER_CONFIG",
             Self::RBAC_CONFIG => "RBAC_CONFIG",
             Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
+            Self::UPGRADE => "UPGRADE",
             Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
             Self::TX_FEE => "TX_FEE",
         }
@@ -218,6 +229,7 @@ impl StandardNote {
             Self::NETWORK_ACCOUNT_CONFIG => {
                 NumStorageItems::Exact(NetworkAccountConfigNote::NUM_STORAGE_ITEMS)
             },
+            Self::UPGRADE => NumStorageItems::Exact(UpgradeNote::NUM_STORAGE_ITEMS),
             Self::FEE_SPONSORSHIP => NumStorageItems::Exact(FeeSponsorshipNote::NUM_STORAGE_ITEMS),
             Self::TX_FEE => NumStorageItems::Exact(TxFeeNote::NUM_STORAGE_ITEMS),
         }
@@ -242,6 +254,7 @@ impl StandardNote {
             Self::OWNER_CONFIG => OwnerConfigNote::script(),
             Self::RBAC_CONFIG => RbacConfigNote::script(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script(),
+            Self::UPGRADE => UpgradeNote::script(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script(),
             Self::TX_FEE => TxFeeNote::script(),
         }
@@ -266,6 +279,7 @@ impl StandardNote {
             Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
             Self::RBAC_CONFIG => RbacConfigNote::script_root(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script_root(),
+            Self::UPGRADE => UpgradeNote::script_root(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script_root(),
             Self::TX_FEE => TxFeeNote::script_root(),
         }

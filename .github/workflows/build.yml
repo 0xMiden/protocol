@@ -19,6 +19,13 @@ permissions:
 
 jobs:
     no-std:
+        if: >-
+            ${{
+                github.event_name != 'pull_request' ||
+                github.event.pull_request.head.repo.full_name != github.repository ||
+                github.event.pull_request.head.ref != 'next' ||
+                github.event.pull_request.base.ref != 'main'
+            }}
         name: build for no-std
         runs-on: ubuntu-latest
         steps:
@@ -40,6 +47,13 @@ jobs:
                   make build-no-std-testing
 
     check-features:
+      if: >-
+        ${{
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name != github.repository ||
+          github.event.pull_request.head.ref != 'next' ||
+          github.event.pull_request.base.ref != 'main'
+        }}
       name: check all feature combinations
       runs-on: warp-ubuntu-latest-x64-8x
       steps:
@@ -63,6 +77,13 @@ jobs:
           run: make check-features
 
     build-benches:
+      if: >-
+        ${{
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name != github.repository ||
+          github.event.pull_request.head.ref != 'next' ||
+          github.event.pull_request.base.ref != 'main'
+        }}
       name: Check benchmarks compilation
       runs-on: ubuntu-latest
       steps:

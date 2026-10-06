@@ -402,13 +402,17 @@ end
 
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
+#! The transaction summary this procedure builds has the layout documented on
+#! `miden::standards::auth::multisig::auth_tx`.
+#!
 #! Inputs:
-#!   Operand stack: [block_number, SALT]
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - block_number and SALT are as described in `miden::standards::auth::multisig::auth_tx`.
+#! - bound_block_num, approval_expiration_block_num and SALT are as described in
+#!   `miden::standards::auth::multisig::auth_tx`.
 #!
 #! A propose/cancel transaction (delayed-execution timelock action) verifies its own signatures
 #! inside the called procedure, so this procedure only asserts that nothing else was bundled with
@@ -431,33 +435,27 @@ end
 #!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
 #!   the final `compute_tx_threshold` fallback.
 @locals(3)
-pub proc auth_tx(block_number: BlockNumber, salt: word)
+pub proc auth_tx(
+    bound_block_num: BlockNumber,
+    approval_expiration_block_num: BlockNumber,
+    salt: word
+)
     exec.native_account::incr_nonce drop
-    # => [block_number, SALT]
+    # => [bound_block_num, approval_expiration_block_num, SALT]
 
     # ------ Computing transaction summary ------
 
-    # the multisig components expose no meaning for the leading user params, so they are zeroed
-    # and the salt occupies the trailing four
-    push.0.0 movup.2
-    # => [block_number, 0, 0, SALT]
-
-    dup movdn.7
-    # => [block_number, 0, 0, SALT, block_number]
+    push.0 movdn.2
+    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
     exec.auth::create_tx_summary_with_block
-    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, block_number]
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted into
     # the advice map for extraction by the host. Binding a caller-chosen block (rather than the tx
     # reference block) keeps this commitment stable between the block a delayed action is proposed at
     # and the later block it is executed at, so the same commitment keys the proposal across both.
     exec.auth::hash_and_insert_tx_summary
-    # => [TX_SUMMARY_COMMITMENT, block_number]
-
-    # this must run after the summary was created since rebasing the expiration before would bind a
-    # reference-block-dependent delta and so change the summary with every new reference block.
-    movup.4 exec.multisig::rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Dispatch ------
