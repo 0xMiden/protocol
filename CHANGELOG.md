@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.17.1 (TBD)
+## v0.17.1 (2026-10-06)
 
 ### Features
 
