@@ -2,10 +2,35 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountCode, AccountCodeUpgrade, AccountUpdateDetails};
+use miden_protocol::account::{
+    AccountCode,
+    AccountCodeUpgrade,
+    AccountId,
+    AccountIdVersion,
+    AccountPatch,
+    AccountType,
+    AccountUpdateDetails,
+    AssetCallbackFlag,
+};
 use miden_protocol::batch::BatchAccountUpdate;
-use miden_protocol::note::{Note, NoteType, PartialNoteMetadata};
-use miden_protocol::transaction::{PublicOutputNote, TransactionArgs};
+use miden_protocol::note::{Note, NoteType, PartialNote, PartialNoteMetadata};
+use miden_protocol::testing::dummy_execution_proof;
+use miden_protocol::transaction::{
+    InputNoteCommitment,
+    LogTopic,
+    OutputNote,
+    ProvenTransaction,
+    PublicOutputNote,
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionArgs,
+    TransactionHeader,
+    TransactionLog,
+    TransactionLogData,
+    TransactionLogs,
+    TxAccountUpdate,
+};
+use miden_protocol::utils::serde::Serializable;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
 use prost::Message;
@@ -14,7 +39,7 @@ use rstest::rstest;
 use crate::decoded::account::test_utils::private_account_id;
 use crate::decoded::transaction::test_utils::note_id;
 use crate::test_utils::dummy_word;
-use crate::{DecodeMessage, Verify, proto};
+use crate::{BuildUnchecked, DecodeMessage, Verify, proto};
 
 fn public_note() -> Note {
     let (assets, metadata, recipient, attachments) = Note::mock_noop(Word::empty()).into_parts();
@@ -82,93 +107,69 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
     assert_eq!(decoded.decode_fields().unwrap().verify().unwrap(), args);
 }
 
-#[test]
-fn submitted_logs_and_headers_roundtrip_without_private_records() {
-    use miden_protocol::account::{
-        AccountId,
-        AccountIdVersion,
-        AccountPatch,
-        AccountType,
-        AssetCallbackFlag,
+#[rstest]
+#[case::public(AccountType::Public)]
+#[case::private(AccountType::Private)]
+fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: AccountType) {
+    let account = AccountId::dummy(
+        [73; 15],
+        AccountIdVersion::Version1,
+        account_type,
+        AssetCallbackFlag::Disabled,
+    );
+    let patch = AccountPatch::empty(account);
+    let patch_commitment = patch.to_commitment();
+    let details = if account_type.is_public() {
+        AccountUpdateDetails::Public(patch)
+    } else {
+        AccountUpdateDetails::Private
     };
-    use miden_protocol::transaction::{
-        InputNoteCommitment,
-        LogTopic,
-        OutputNote,
-        ProvenTransaction,
-        TransactionHeader,
-        TransactionLog,
-        TransactionLogData,
-        TransactionLogs,
-        TxAccountUpdate,
-    };
-
-    use crate::BuildUnchecked;
-
-    for account_type in [AccountType::Public, AccountType::Private] {
-        let account = AccountId::dummy(
-            [73; 15],
-            AccountIdVersion::Version1,
-            account_type,
-            AssetCallbackFlag::Disabled,
-        );
-        let patch = AccountPatch::empty(account);
-        let patch_commitment = patch.to_commitment();
-        let details = if account_type.is_public() {
-            AccountUpdateDetails::Public(patch)
-        } else {
-            AccountUpdateDetails::Private
-        };
-        let logs = TransactionLogs::new(vec![
-            TransactionLog::new(
-                account,
-                LogTopic::from_name("example::updated"),
-                vec![dummy_word(731)],
-            )
-            .unwrap(),
-        ])
-        .unwrap();
-        let salt = dummy_word(913);
-        let data = if account_type.is_public() {
-            TransactionLogData::Public(logs.clone())
-        } else {
-            TransactionLogData::Private(logs.commitment_for_account(account, salt).unwrap())
-        };
-        let update =
-            TxAccountUpdate::new(account, dummy_word(1), dummy_word(2), patch_commitment, details)
-                .unwrap();
-        let tx = ProvenTransaction::new(
-            update,
-            Vec::<InputNoteCommitment>::new(),
-            Vec::<OutputNote>::new(),
-            2u32.into(),
-            dummy_word(3),
-            3u32.into(),
-            miden_protocol::testing::dummy_execution_proof(),
+    let logs = TransactionLogs::new(vec![
+        TransactionLog::new(
+            account,
+            LogTopic::from_name("example::updated"),
+            vec![dummy_word(731)],
         )
-        .unwrap()
-        .with_log_data(data)
-        .unwrap();
-        let message = proto::transaction::ProvenTransaction::from(&tx);
-        assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), tx);
-        let header = TransactionHeader::from(&tx);
-        let message = proto::transaction::TransactionHeader::from(&header);
-        assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), header);
-        if account_type.is_private() {
-            use miden_protocol::utils::serde::Serializable;
-            let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();
-            for secret in [logs.to_bytes(), salt.to_bytes()] {
-                assert!(!bytes.windows(secret.len()).any(|window| window == secret));
-            }
+        .unwrap(),
+    ])
+    .unwrap();
+    let salt = dummy_word(913);
+    let data = if account_type.is_public() {
+        TransactionLogData::Public(logs.clone())
+    } else {
+        TransactionLogData::Private(logs.commitment_for_account(account, salt).unwrap())
+    };
+    let update =
+        TxAccountUpdate::new(account, dummy_word(1), dummy_word(2), patch_commitment, details)
+            .unwrap();
+    let tx = ProvenTransaction::new(
+        update,
+        Vec::<InputNoteCommitment>::new(),
+        Vec::<OutputNote>::new(),
+        2u32.into(),
+        dummy_word(3),
+        3u32.into(),
+        dummy_execution_proof(),
+    )
+    .unwrap()
+    .with_log_data(data)
+    .unwrap();
+    let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();
+    let message = proto::transaction::ProvenTransaction::decode(bytes.as_slice()).unwrap();
+    assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), tx);
+    let header = TransactionHeader::from(&tx);
+    let header_bytes = proto::transaction::TransactionHeader::from(&header).encode_to_vec();
+    let message = proto::transaction::TransactionHeader::decode(header_bytes.as_slice()).unwrap();
+    assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), header);
+    if account_type.is_private() {
+        for secret in [logs.to_bytes(), salt.to_bytes()] {
+            assert!(!bytes.windows(secret.len()).any(|window| window == secret));
         }
     }
 }
 
 #[test]
 fn raw_output_notes_roundtrip_through_protobuf() {
-    use miden_protocol::note::PartialNote;
-    use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
-
     let full = RawOutputNote::Full(public_note());
     let partial = RawOutputNote::Partial(PartialNote::from(Note::mock_noop(dummy_word(7))));
     let notes = RawOutputNotes::new(vec![full, partial]).unwrap();
