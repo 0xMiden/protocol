@@ -94,6 +94,7 @@ const INIT_NUM_OF_APPROVERS_LOC = 1
 const AUTH_TX_EXECUTION_MODE_LOC = 0
 const AUTH_TX_DEFAULT_THRESHOLD_LOC = 1
 const AUTH_TX_TX_THRESHOLD_LOC = 2
+const AUTH_TX_APPROVAL_EXPIRATION_LOC = 3
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -425,6 +426,7 @@ end
 #! 0: execution_mode
 #! 1: default_threshold
 #! 2: transaction_threshold
+#! 3: approval_expiration_block_num
 #!
 #! Invocation: exec
 #!
@@ -434,13 +436,18 @@ end
 #!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
 #!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
 #!   the final `compute_tx_threshold` fallback.
-@locals(3)
+@locals(4)
 pub proc auth_tx(
     bound_block_num: BlockNumber,
     approval_expiration_block_num: BlockNumber,
     salt: word
 )
     exec.native_account::incr_nonce drop
+    # => [bound_block_num, approval_expiration_block_num, SALT]
+
+    # The summary below consumes the approval deadline; keep it for the delayed-execution branch,
+    # which requires one.
+    dup.1 loc_store.AUTH_TX_APPROVAL_EXPIRATION_LOC
     # => [bound_block_num, approval_expiration_block_num, SALT]
 
     # ------ Computing transaction summary ------
@@ -534,7 +541,10 @@ pub proc auth_tx(
         # => [execution_mode, TX_SUMMARY_COMMITMENT]
 
         if.true
-            dupw exec.delayed_execution::consume_tx_proposal
+            dupw loc_load.AUTH_TX_APPROVAL_EXPIRATION_LOC
+            # => [approval_expiration_block_num, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+
+            exec.delayed_execution::consume_tx_proposal
             # => [TX_SUMMARY_COMMITMENT]
         end
         # => [TX_SUMMARY_COMMITMENT]

@@ -964,12 +964,8 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
 
     let update_timelock_script = compile_multisig_smart_tx_script(
         "
-        use miden::protocol::tx
-
         @transaction_script
         pub proc main
-            # Delayed execution requires the transaction to bound its own validity window.
-            push.100 exec.tx::update_expiration_block_delta
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -1134,12 +1130,8 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     // an execution because it is not a propose/cancel-only transaction.
     let execute_script = compile_multisig_smart_tx_script(
         "
-        use miden::protocol::tx
-
         @transaction_script
         pub proc main
-            # Delayed execution requires the transaction to bound its own validity window.
-            push.100 exec.tx::update_expiration_block_delta
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -1150,7 +1142,8 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     )?;
 
     let bound_block = mock_chain.latest_block_header().block_num();
-    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(500));
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(500))
+        .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
 
     // Dry-run the execute tx (same auth args) to obtain its action commitment (the proposal
     // target).
@@ -1225,12 +1218,8 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
 
     let execute_script = compile_multisig_smart_tx_script(
         "
-        use miden::protocol::tx
-
         @transaction_script
         pub proc main
-            # Delayed execution requires the transaction to bound its own validity window.
-            push.100 exec.tx::update_expiration_block_delta
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -1241,7 +1230,8 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     )?;
 
     let bound_block = mock_chain.latest_block_header().block_num();
-    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(600));
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(600))
+        .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
 
     let tx_summary = mock_chain
         .build_transaction(account_id)
@@ -1706,12 +1696,8 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
 
     let execute_script = compile_multisig_smart_tx_script(
         "
-        use miden::protocol::tx
-
         @transaction_script
         pub proc main
-            # Delayed execution requires the transaction to bound its own validity window.
-            push.100 exec.tx::update_expiration_block_delta
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -1722,7 +1708,8 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
     )?;
 
     let bound_block = mock_chain.latest_block_header().block_num();
-    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(950));
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(950))
+        .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
 
     // The immediate path still costs the procedure's immediate threshold of 3, so one signature is
     // not enough without going through the timelock.
@@ -1829,12 +1816,8 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
 
     let execute_script = compile_multisig_smart_tx_script(
         "
-        use miden::protocol::tx
-
         @transaction_script
         pub proc main
-            # Delayed execution requires the transaction to bound its own validity window.
-            push.100 exec.tx::update_expiration_block_delta
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
@@ -1845,7 +1828,8 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
     )?;
 
     let bound_block = mock_chain.latest_block_header().block_num();
-    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(960));
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(960))
+        .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
 
     let tx_summary = mock_chain
         .build_transaction(account_id)
@@ -2079,9 +2063,8 @@ async fn test_multisig_smart_policy_raises_threshold_for_policy_edits(
 }
 
 /// Delayed execution must bound its own validity window. The approver signatures are over the
-/// target commitment and stay usable for as long as the transaction can be included, so a proposed
-/// transaction that sets no expiration would be a perpetual authorization; executing one is
-/// rejected.
+/// target commitment and stay usable until the approval expires, so a proposal whose auth args
+/// carry no approval expiration would be a perpetual authorization; executing one is rejected.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
@@ -2103,7 +2086,6 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    // Deliberately omits `update_expiration_block_delta`, unlike the other delayed-execution tests.
     let execute_script = compile_multisig_smart_tx_script(
         "
         @transaction_script
@@ -2118,6 +2100,7 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
     )?;
 
     let bound_block = mock_chain.latest_block_header().block_num();
+    // Deliberately no `with_approval_expiration_delta`, unlike the other delayed-execution tests.
     let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(990));
 
     let tx_summary = mock_chain

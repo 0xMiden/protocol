@@ -30,7 +30,7 @@
 - Proposing a smart multisig delayed transaction now requires a single approver signature; the called procedures' delayed threshold governs its execution.
 - Cancelling a smart multisig proposal now requires signatures over `AuthMultisigSmart::cancel_signing_message`, so proposal signatures cannot be replayed to cancel.
 - Added `AuthMultisigSmart::update_signers_and_threshold_root` and `AuthMultisigSmart::set_procedure_policy_root`, so a procedure policy can guard approver-set rotation and policy edits at a higher threshold than the account default.
-- [BREAKING] A smart multisig transaction executing through the timelock must now set an expiration delta, bounding the window in which the approvals for a proposal stay usable.
+- [BREAKING] A smart multisig transaction executing through the timelock must now carry an approval expiration in its `MultisigAuthArgs`, bounding the window in which the approvals for a proposal stay usable.
 - [BREAKING] TX_FEE notes leave their assets in the note for the consuming account's own code to collect ([#3843](https://github.com/0xMiden/protocol/pull/3843)).
 - Moved `MAX_ASSETS_PER_NOTE` into `miden::protocol_utils::constants` ([#3821](https://github.com/0xMiden/protocol/pull/3821)).
 - [BREAKING] Added a `serial_number_block` argument to `fee::pay_fee` and `fee::create_and_fund_fee_note`. Multisigs use the signed proposal block to keep fee-note serial numbers stable across execution reference blocks; other standard auth components use the execution reference block ([#3836](https://github.com/0xMiden/protocol/issues/3836)).

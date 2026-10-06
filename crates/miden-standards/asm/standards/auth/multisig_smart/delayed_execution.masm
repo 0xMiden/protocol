@@ -1,7 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::native_account
 use miden::protocol::tx
-use {Bool} from miden::protocol::types
+use {BlockNumber, Bool} from miden::protocol::types
 use miden::standards::auth::multisig
 use {SignatureThreshold} from miden::standards::auth::multisig
 
@@ -44,7 +44,7 @@ const ERR_TX_NOT_PROPOSED = "tx not proposed"
 const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
 const ERR_PROPOSE_INSUFFICIENT_SIGNATURES = "insufficient signatures for propose"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
-const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires a transaction expiration"
+const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an approval expiration"
 
 # CONFIGURATION
 # =================================================================================================
@@ -511,39 +511,42 @@ end
 #! Consumes the proposal matching the current transaction, enforcing the timelock.
 #!
 #! Called by the auth procedure when the current transaction matches an existing proposal. Asserts
-#! the transaction bounds its own validity, that the proposal exists and its unlock timestamp has
-#! been reached, then deletes the proposal entry. Replay protection against re-execution is provided
-#! by the multisig executed-transactions set.
+#! the approval carries an expiration, that the proposal exists and its unlock timestamp has been
+#! reached, then deletes the proposal entry. Replay protection against re-execution is provided by
+#! the multisig executed-transactions set.
 #!
 #! A proposal is a standing authorization: the approver signatures are over this commitment, and the
-#! same commitment is what the execute transaction reproduces, so those signatures stay usable for
-#! as long as the transaction can be included. Requiring an expiration is what bounds that window -
-#! `multisig::rebase_expiration_delta` anchors it to the block the summary binds, so an approval
-#! that is never executed stops being executable instead of lingering indefinitely. The expiration
-#! is part of the signed summary, so changing the expiration changes the commitment.
+#! same commitment is what the execute transaction reproduces, so those signatures stay usable until
+#! the approval expires. Requiring an approval expiration is what bounds that window, so a proposal
+#! that is never executed stops being executable instead of lingering indefinitely. The deadline is
+#! bound by the signed summary, so changing it changes the commitment, and
+#! `multisig::assert_approval_not_expired` enforces it on every transaction; this procedure only
+#! requires that one was set.
 #!
-#! The expiration is checked here rather than in `propose_transaction` because a proposal carries
+#! The requirement is checked here rather than in `propose_transaction` because a proposal carries
 #! only the target's commitment; asserting it at proposal time would require the summary preimage.
-#! Checking at execution is equivalent for security, since the expiration is committed to: a target
+#! Checking at execution is equivalent for security, since the deadline is committed to: a target
 #! proposed without one is recorded but can never execute.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [approval_expiration_block_num, TX_SUMMARY_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
+#! - approval_expiration_block_num is the first reference block at which the approvals are no
+#!   longer valid, or 0 when the approval does not expire.
 #! - TX_SUMMARY_COMMITMENT is the current transaction's block-independent tx-summary commitment.
 #!
 #! Panics if:
-#! - the transaction set no expiration delta (`ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION`).
+#! - the approval does not expire (`ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION`).
 #! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
 #! - the proposal unlock timestamp has not been reached (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
-pub proc consume_tx_proposal(tx_summary_commitment: word)
-    # The delta read here is the rebased one, which is zero exactly when the transaction set no
-    # expiration.
-    exec.tx::get_expiration_block_delta neq.0
-    assert.err=ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION
+pub proc consume_tx_proposal(
+    approval_expiration_block_num: BlockNumber,
+    tx_summary_commitment: word
+)
+    neq.0 assert.err=ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION
     # => [TX_SUMMARY_COMMITMENT]
 
     dupw exec.assert_tx_proposed_and_unlocked
