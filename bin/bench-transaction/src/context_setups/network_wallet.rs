@@ -242,7 +242,7 @@ pub fn tx_consume_pswap_note_network(
     let payback = match payback_note_type {
         NoteType::Private => PswapPayback::private(
             &payback_storage.into_recipient(payback_serial),
-            miden_protocol::note::NoteTag::new(0),
+            NoteTag::default()
         )?,
         NoteType::Public => PswapPayback::Public {
             creator_account_id: payback_storage.target(),
