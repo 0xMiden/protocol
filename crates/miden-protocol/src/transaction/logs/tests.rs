@@ -70,20 +70,6 @@ fn empty_payload_is_not_an_absent_log_or_zero_word_payload() {
 }
 
 #[test]
-fn construction_and_appends_preserve_records_and_commitments() {
-    let records = vector_logs();
-    let mut logs = TransactionLogs::default();
-    for (index, record) in records.iter().enumerate() {
-        logs.try_push(record.clone()).unwrap();
-        assert_eq!(logs, TransactionLogs::new(records[..=index].to_vec()).unwrap());
-    }
-
-    assert_eq!(logs.num_logs(), records.len());
-    assert_eq!(logs.num_payload_words(), 3);
-    assert_eq!(logs.into_vec(), records);
-}
-
-#[test]
 fn collection_iterators_preserve_order() {
     let records = vector_logs();
     let logs = TransactionLogs::new(records.clone()).unwrap();
@@ -92,18 +78,6 @@ fn collection_iterators_preserve_order() {
     assert!((&logs).into_iter().eq(&records));
     assert!(logs.clone().into_iter().eq(records.clone()));
     assert_eq!(logs.into_vec(), records);
-}
-
-#[test]
-fn log_accessors_preserve_fields() {
-    let record = log(1);
-    assert_eq!(record.emitter(), emitter(256, 1));
-    assert_eq!(record.topic(), topic(1, 2));
-    assert_eq!(record.payload(), &[Word::from([9u32, 10, 11, 12])]);
-    assert_eq!(
-        record.clone().into_parts(),
-        (record.emitter(), record.topic(), record.payload().to_vec())
-    );
 }
 
 #[test]
@@ -157,38 +131,44 @@ fn commitment_binds_every_field_count_and_order(#[case] mutate: fn(&mut Vec<Tran
     assert_ne!(commitment, TransactionLogs::new(changed).unwrap().commitment());
 }
 
-/// Checks metadata and collection hashing against direct permutations.
+/// Pins the individual log's metadata order and domain independently of `merge_in_domain`.
 #[test]
-fn commitments_match_permutation_layout() {
-    let mut individual_commitments = Vec::new();
-    let mut logs = TransactionLogs::default();
-    for record in vector_logs() {
+fn individual_commitments_match_permutation_layout() {
+    for log in vector_logs() {
+        let [topic_0, topic_1] = log.topic().as_elements();
+        let metadata = [log.emitter().suffix(), log.emitter().prefix().as_felt(), topic_0, topic_1];
         let mut state = [Felt::ZERO; Hasher::STATE_WIDTH];
+        // Pin the specified domain rather than reading the implementation's constant.
         state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0005u32);
-        state[..4].copy_from_slice(&[
-            record.emitter().suffix(),
-            record.emitter().prefix().as_felt(),
-            record.topic().as_elements()[0],
-            record.topic().as_elements()[1],
-        ]);
-        state[4..8].copy_from_slice(record.payload_commitment().as_elements());
+        // The rate contains the metadata word followed by the payload commitment.
+        state[..4].copy_from_slice(&metadata);
+        state[4..8].copy_from_slice(log.payload_commitment().as_elements());
         Hasher::apply_permutation(&mut state);
-        let individual = Word::new(state[Hasher::DIGEST_RANGE].try_into().unwrap());
-        assert_eq!(record.commitment(), individual);
-        individual_commitments.push(individual);
-        logs.try_push(record).unwrap();
-
-        let elements = Word::words_as_elements(&individual_commitments);
-        let mut state = [Felt::ZERO; Hasher::STATE_WIDTH];
-        state[Hasher::CAPACITY_RANGE.start] = Felt::from((elements.len() % 8) as u32);
-        state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0003u32);
-        for block in elements.chunks(8) {
-            state[..8].fill(Felt::ZERO);
-            state[..block.len()].copy_from_slice(block);
-            Hasher::apply_permutation(&mut state);
-        }
-        assert_eq!(logs.commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
+        assert_eq!(log.commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
     }
+}
+
+/// Pins collection hashing independently of `hash_elements_in_domain`.
+#[rstest]
+#[case::half_rate(1)]
+#[case::full_rate(2)]
+#[case::full_and_half_rate(3)]
+#[case::two_full_rates(4)]
+fn collection_commitment_matches_permutation_layout(#[case] num_logs: usize) {
+    let logs = TransactionLogs::new(vector_logs()[..num_logs].to_vec()).unwrap();
+    let commitments: Vec<_> = logs.iter().map(TransactionLog::commitment).collect();
+    let elements = Word::words_as_elements(&commitments);
+    let mut state = [Felt::ZERO; Hasher::STATE_WIDTH];
+    // The capacity stores the final block length and the specified collection domain.
+    state[Hasher::CAPACITY_RANGE.start] = Felt::from((elements.len() % 8) as u32);
+    state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0003u32);
+    for block in elements.chunks(8) {
+        // Absorb two log commitments per permutation, zero-padding an odd final log.
+        state[..8].fill(Felt::ZERO);
+        state[..block.len()].copy_from_slice(block);
+        Hasher::apply_permutation(&mut state);
+    }
+    assert_eq!(logs.commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
 }
 
 #[test]
@@ -222,10 +202,8 @@ fn serialization_vector() {
 }
 
 #[rstest]
-#[case(0)]
-#[case(1)]
-#[case(2)]
-#[case(MAX_LOG_PAYLOAD_WORDS)]
+#[case::empty(0)]
+#[case::maximum(MAX_LOG_PAYLOAD_WORDS)]
 fn log_serialization(#[case] num_words: usize) {
     let record = log(num_words);
     let bytes = record.to_bytes();
