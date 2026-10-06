@@ -43,12 +43,12 @@ impl NoteBundle {
         for (idx, note) in notes.iter().enumerate() {
             // A sponsorship is only bundled when the note it sponsors is actually an input;
             // otherwise it can only be reclaimed, which is something it has to attempt on its own.
-            match FeeSponsorshipNote::try_from(note)
+            let sponsored_note_idx = FeeSponsorshipNote::try_from(note)
                 .ok()
-                .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied())
-            {
+                .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied());
+            match sponsored_note_idx {
                 // Reject a sponsorship which names another sponsorship as its feature note.
-                Some(head_idx) if FeeSponsorshipNote::try_from(&notes[head_idx]).is_ok() => {
+                Some(head_idx) if is_fee_sponsorship_at(notes, head_idx) => {
                     let reason = SponsorshipRejection::FeatureNoteIsSponsorship {
                         feature_note_id: notes[head_idx].id(),
                     };
@@ -81,4 +81,13 @@ impl NoteBundle {
     pub(super) fn bound_notes(&self) -> &[Note] {
         &self.notes[1..]
     }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Returns `true` if the note at index `head_idx` in the provided `notes` array is the 
+/// [`FeeSponsorshipNote`]. Returns `false` otherwise.
+fn is_fee_sponsorship_at(notes: &[Note], head_idx: usize) -> bool {
+    FeeSponsorshipNote::try_from(&notes[head_idx]).is_ok()
 }
