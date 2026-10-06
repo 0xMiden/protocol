@@ -304,6 +304,47 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
     }
 }
 
+// P2ID NOTE RECIPIENT
+// ================================================================================================
+
+/// The preimage of a P2ID recipient commitment: canonical storage and a serial number.
+///
+/// The script is always [`P2idNote::script`]. Keep this preimage private when it is used for
+/// private swap paybacks, and sample its serial independently of the swap's serial number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct P2idNoteRecipient {
+    storage: P2idNoteStorage,
+    serial_number: Word,
+}
+
+impl P2idNoteRecipient {
+    /// Creates a P2ID recipient from its storage and serial number.
+    pub fn new(storage: P2idNoteStorage, serial_number: Word) -> Self {
+        Self { storage, serial_number }
+    }
+
+    /// Returns the canonical P2ID storage.
+    pub fn storage(&self) -> P2idNoteStorage {
+        self.storage
+    }
+
+    /// Returns the serial number.
+    pub fn serial_number(&self) -> Word {
+        self.serial_number
+    }
+
+    /// Returns the recipient commitment.
+    pub fn digest(&self) -> Word {
+        NoteRecipient::from(*self).digest()
+    }
+}
+
+impl From<P2idNoteRecipient> for NoteRecipient {
+    fn from(recipient: P2idNoteRecipient) -> Self {
+        recipient.storage.into_recipient(recipient.serial_number)
+    }
+}
+
 // NOTE CONSUMPTION COST
 // ================================================================================================
 

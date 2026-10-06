@@ -94,7 +94,7 @@ Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
-- Communicate the details needed to reconstruct a _private_ note without disclosing its secret recipient opening. For example, the owner of a PSWAP order retains the complete private P2ID recipient, including its independent secret serial and target account storage. Public fill attachments provide the amount, order ID, and depth needed to reconstruct each payback and verify its note ID. The secret serial must not be derived from the public PSWAP serial.
+- Communicate the details needed to reconstruct a _private_ note without disclosing its secret recipient preimage. For example, the owner of a PSWAP order retains the complete private P2ID recipient, including its independent secret serial and target account storage. Public fill attachments provide the amount, order ID, and depth needed to reconstruct each payback and verify its note ID. The secret serial must not be derived from the public PSWAP serial.
 
 ## Note Lifecycle
 
@@ -325,13 +325,13 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 
 When reconstructing a private payback or cancellation refund, include its complete on-chain attachment list.
 
-For private cancellation, use note arguments `[0, 0, 1, 0]` in Rust element order and supply the recipient opening (serial, target account ID, and salt) as private advice. The script verifies the opening and returns the full remaining offered asset in a private P2ID to the same recipient. The refund is checked and sealed before returning. Anyone holding the opening can cancel; only the target account can consume the refund.
+For private cancellation, use note arguments `[1, 0, 0, 0]` in Rust element order and supply the recipient preimage (serial, target account ID, and salt) as private advice. The script verifies the preimage and returns the full remaining offered asset in a private P2ID to the same recipient. The refund is checked and sealed before returning. Anyone holding the preimage can cancel; only the target account can consume the refund.
 
 To avoid linking cancellation to the target, build and prove locally through a public account with `NoAuth` and the required wallet procedures. Fund fees separately, for example with a private P2ID consumed in the same transaction, and explicitly return unused funding in a private change note. The order is refunded in full; `NoAuth` does not return fee change automatically.
 
-Consume private funding notes, paybacks, and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. If funding must be created first, wait for its inclusion. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data.
+Consume private funding notes, paybacks, and refunds as authenticated notes; unauthenticated inputs expose their note ID and sender. If funding must be created first, wait for its inclusion. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data.
 
-The public account and order consumption remain visible. Remote provers given the execution witness learn the opening, and timing or funding may still correlate transactions. Order creation must also avoid identifying the user's main account when that privacy is required.
+The public account and order consumption remain visible. Remote provers given the execution witness learn the preimage, and timing or funding may still correlate transactions. Order creation must also avoid identifying the user's main account when that privacy is required.
 
 ### Choosing the Right Note Type
 

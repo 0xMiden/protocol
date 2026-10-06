@@ -1,5 +1,5 @@
 use {Uint64} from miden::standards::types
-use {AccountId, Asset, AssetAmount, NoteArgs, NoteTag, NoteType} from miden::protocol::types
+use {AccountId, Asset, AssetAmount, NoteArgs, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
@@ -13,6 +13,7 @@ use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::note::note_tag
 use miden::standards::notes::p2id
+use {NUM_STORAGE_ITEMS as P2ID_NUM_STORAGE_ITEMS} from miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
 
 # CONSTANTS
@@ -71,30 +72,24 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # (via note_tag::create_account_target) rather than stored. For private payback notes, the tag
 # is stored explicitly because the recipient digest does not expose the target account ID.
 #
-# The remainder PSWAP note's own tag is not stored: it is copied from the active note's
+# The remainder PSWAP note's own tag is copied from the active note's
 # metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
 const STORAGE_PTR = 0
-const REQUESTED_FAUCET_SUFFIX_ITEM = 0
-const REQUESTED_FAUCET_PREFIX_ITEM = 1
-const MIN_REQUESTED_AMOUNT_ITEM = 2
-const MIN_FILL_STEP_ITEM = 3
-const PAYBACK_NOTE_TYPE_ITEM = 4
-const PAYBACK_TAG_ITEM = 9
-const PUBLIC_CREATOR_SUFFIX_ITEM = 5
-const PUBLIC_CREATOR_PREFIX_ITEM = 6
-const PRIVATE_RECIPIENT_0_ITEM = 5
+const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
+const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
+const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
+const MIN_FILL_STEP_ITEM = STORAGE_PTR + 3
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
+const PAYBACK_TAG_ITEM = STORAGE_PTR + 9
+const PUBLIC_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
+const PUBLIC_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
+const PRIVATE_RECIPIENT_0_ITEM = STORAGE_PTR + 5
 const PRIVATE_RECIPIENT_1_ITEM = PRIVATE_RECIPIENT_0_ITEM + 1
 const PRIVATE_RECIPIENT_2_ITEM = PRIVATE_RECIPIENT_0_ITEM + 2
 const PRIVATE_RECIPIENT_3_ITEM = PRIVATE_RECIPIENT_0_ITEM + 3
 
-# Scratch memory is disjoint from either storage layout. P2ID storage must be word-aligned.
+# The storage length is retained for remainder creation.
 const STORAGE_LENGTH_PTR = 16
-const PAYBACK_RECIPIENT_PTR = 20
-const P2ID_STORAGE_PTR = 24
-const P2ID_PREFIX_PTR = P2ID_STORAGE_PTR + 1
-const P2ID_SALT_0_PTR = P2ID_STORAGE_PTR + 2
-const P2ID_SALT_1_PTR = P2ID_STORAGE_PTR + 3
-const P2ID_NUM_STORAGE_ITEMS = 4
 
 # Domain separator for cancellation advice; ASCII "PSWAPCAN". Matches Rust.
 const CANCEL_ADVICE_DOMAIN = 0x505357415043414e
@@ -113,6 +108,10 @@ const OFFERED_INITIAL_ASSET_PTR = 8
 
 # refund_private locals
 const REFUND_EXPECTED_ASSET_PTR = 0
+
+# authenticate_cancel locals
+const P2ID_STORAGE_PTR = 0
+const P2ID_PREFIX_PTR = P2ID_STORAGE_PTR + 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -151,10 +150,9 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP storage length does not match payback visibility"
 const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or private"
 const ERR_PSWAP_INVALID_PAYBACK_TAG="PSWAP payback tag must fit in u32"
-const ERR_PSWAP_INVALID_ACCOUNT_ID="PSWAP account ID version is unsupported"
 const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
 const ERR_PSWAP_INVALID_CANCEL_ADVICE="PSWAP cancellation requires a serial and complete P2ID storage"
-const ERR_PSWAP_INVALID_PAYBACK_OPENING="PSWAP cancellation opening does not match the payback recipient"
+const ERR_PSWAP_INVALID_PAYBACK_PREIMAGE="PSWAP cancellation preimage does not match the payback recipient"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
 const ERR_PSWAP_OUTPUT_ALTERED="PSWAP output was altered before sealing"
@@ -284,21 +282,6 @@ end
 # PAYBACK PREPARATION
 # =================================================================================================
 
-#! Checks the canonical account ID encoding supported by this script version.
-#!
-#! Inputs: [account_suffix, account_prefix]
-#! Outputs: []
-proc validate_account_id(account_id: AccountId)
-    dup.1 u32split swap drop u32and.0x0f
-    # => [version, account_suffix, account_prefix]
-
-    eq.1 assert.err=ERR_PSWAP_INVALID_ACCOUNT_ID
-    # => [account_suffix, account_prefix]
-
-    exec.account_id::validate_structure
-    # => []
-end
-
 #! Loads and validates either storage layout. Private recipient digests remain opaque.
 #!
 #! Inputs: []
@@ -326,7 +309,7 @@ proc load_storage()
         mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
         # => [creator_suffix, creator_prefix]
 
-        exec.validate_account_id
+        exec.account_id::validate_structure
         # => []
 
     else
@@ -346,7 +329,7 @@ proc load_storage()
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
     # => [requested_faucet_suffix, requested_faucet_prefix]
 
-    exec.validate_account_id
+    exec.account_id::validate_structure
     # => []
 
     mem_load.MIN_REQUESTED_AMOUNT_ITEM lte.FUNGIBLE_ASSET_MAX_AMOUNT
@@ -363,48 +346,39 @@ proc load_storage()
 
 end
 
-#! Prepares the current public payback or loads the order's fixed private recipient.
+#! Returns creation arguments for the active order's public or private payback.
 #! Only public mode registers full recipient details for output creation.
 #!
 #! Inputs: []
-#! Outputs: []
-proc prepare_payback()
+#! Outputs: [tag, note_type, RECIPIENT]
+proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     mem_load.PAYBACK_NOTE_TYPE_ITEM
     # => [payback_note_type]
 
     if.true
-        mem_load.PUBLIC_CREATOR_SUFFIX_ITEM mem_store.P2ID_STORAGE_PTR
-        mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_store.P2ID_PREFIX_PTR
-        push.0 mem_store.P2ID_SALT_0_PTR
-        push.0 mem_store.P2ID_SALT_1_PTR
-
-        mem_load.PUBLIC_CREATOR_PREFIX_ITEM exec.note_tag::create_account_target
-        # => [payback_tag]
-
-        mem_store.PAYBACK_TAG_ITEM
-        # => []
-
         # Preserve public paybacks: canonical zero-salt P2ID, with PSWAP serial[0] + 1.
-        procref.p2id::main
         exec.active_note::get_serial_number add.1
-        # => [P2ID_SERIAL_NUM, SCRIPT_ROOT]
+        # => [P2ID_SERIAL_NUM]
 
-        push.P2ID_NUM_STORAGE_ITEMS push.P2ID_STORAGE_PTR
-        # => [storage_ptr, num_storage_items, P2ID_SERIAL_NUM, SCRIPT_ROOT]
+        mem_load.PAYBACK_NOTE_TYPE_ITEM
+        mem_load.PUBLIC_CREATOR_PREFIX_ITEM exec.note_tag::create_account_target
+        # => [tag, note_type, P2ID_SERIAL_NUM]
 
-        exec.note::compute_and_store_recipient
-        # => [RECIPIENT]
+        mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
+        # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM]
 
-        mem_storew_le.PAYBACK_RECIPIENT_PTR dropw
-        # => []
+        exec.p2id::prepare_note
+        # => [tag, note_type, RECIPIENT]
     else
-        # The source is unaligned; load its elements individually and store an aligned word.
+        # The recipient starts at an unaligned storage offset.
         mem_load.PRIVATE_RECIPIENT_3_ITEM mem_load.PRIVATE_RECIPIENT_2_ITEM
         mem_load.PRIVATE_RECIPIENT_1_ITEM mem_load.PRIVATE_RECIPIENT_0_ITEM
-        # => [r0, r1, r2, r3]
+        # => [RECIPIENT]
 
-        mem_storew_le.PAYBACK_RECIPIENT_PTR dropw
+        mem_load.PAYBACK_NOTE_TYPE_ITEM mem_load.PAYBACK_TAG_ITEM
+        # => [tag, note_type, RECIPIENT]
     end
+    # => [tag, note_type, RECIPIENT]
 end
 
 # OUTPUT NOTE VALIDATION AND SEALING
@@ -446,7 +420,7 @@ end
 # P2ID NOTE CREATION PROCEDURE
 # =================================================================================================
 
-#! Creates the prepared public or private payback.
+#! Prepares and creates the public or private payback.
 #! Inputs: [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
 @locals(5)
@@ -464,9 +438,9 @@ proc create_p2id_note(
     loc_store.P2ID_REQUESTED_FAUCET_PREFIX
     loc_store.P2ID_AMT_ACCOUNT_FILL
     loc_store.P2ID_AMT_NOTE_FILL
+    # => []
 
-    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
-    mem_load.PAYBACK_NOTE_TYPE_ITEM mem_load.PAYBACK_TAG_ITEM
+    exec.prepare_payback
     # => [tag, note_type, RECIPIENT]
 
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
@@ -695,60 +669,59 @@ proc create_remainder_note(
     # => []
 end
 
-#! Verifies a private recipient opening independently of the executing account.
+#! Verifies a private recipient preimage independently of the executing account.
 #! Advice is the four-element serial followed by canonical P2ID storage (target ID and salt).
 #!
-#! Inputs: []
+#! Inputs: [EXPECTED_RECIPIENT]
 #! Outputs: []
-proc authenticate_cancel()
+@locals(4)
+proc authenticate_cancel(recipient: NoteRecipient)
+    dupw
     push.0.0.0.CANCEL_ADVICE_DOMAIN
-    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    swapw
     exec.poseidon2::merge
-    # => [CANCEL_ADVICE_KEY]
+    # => [CANCEL_ADVICE_KEY, EXPECTED_RECIPIENT]
 
     adv.push_mapvaln
     adv_push
-    # => [num_advice_items, CANCEL_ADVICE_KEY]
+    # => [num_advice_items, CANCEL_ADVICE_KEY, EXPECTED_RECIPIENT]
 
     eq.CANCEL_ADVICE_NUM_ITEMS assert.err=ERR_PSWAP_INVALID_CANCEL_ADVICE
     dropw
-    # => []
+    # => [EXPECTED_RECIPIENT]
 
     padw adv_loadw
-    # => [SERIAL_NUM]
+    # => [SERIAL_NUM, EXPECTED_RECIPIENT]
 
     padw adv_loadw
-    # => [P2ID_STORAGE, SERIAL_NUM]
+    # => [P2ID_STORAGE, SERIAL_NUM, EXPECTED_RECIPIENT]
 
-    mem_storew_le.P2ID_STORAGE_PTR dropw
-    mem_load.P2ID_PREFIX_PTR mem_load.P2ID_STORAGE_PTR exec.validate_account_id
-    # => [SERIAL_NUM]
+    loc_storew_le.P2ID_STORAGE_PTR dropw
+    loc_load.P2ID_PREFIX_PTR loc_load.P2ID_STORAGE_PTR exec.account_id::validate_structure
+    # => [SERIAL_NUM, EXPECTED_RECIPIENT]
 
-    push.P2ID_NUM_STORAGE_ITEMS push.P2ID_STORAGE_PTR exec.note::compute_storage_commitment
-    # => [STORAGE_COMMITMENT, SERIAL_NUM]
+    push.P2ID_NUM_STORAGE_ITEMS locaddr.P2ID_STORAGE_PTR exec.note::compute_storage_commitment
+    # => [STORAGE_COMMITMENT, SERIAL_NUM, EXPECTED_RECIPIENT]
 
     procref.p2id::main
     movupw.2
-    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, EXPECTED_RECIPIENT]
 
     exec.note::compute_recipient
-    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
-    # => [EXPECTED_RECIPIENT, RECIPIENT]
+    # => [RECIPIENT, EXPECTED_RECIPIENT]
 
-    assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_OPENING
+    assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => []
-
 end
 
 #! Returns the full remaining order balance in a private P2ID to its committed recipient.
 #! Does not add a fill attachment. Fees must be funded separately.
 #!
-#! Inputs: []
+#! Inputs: [RECIPIENT, tag]
 #! Outputs: []
 @locals(8)
-proc refund_private()
-    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
-    push.0 mem_load.PAYBACK_TAG_ITEM
+proc refund_private(recipient: NoteRecipient, tag: NoteTag)
+    movup.4 push.0 swap
     # => [tag, private_type, RECIPIENT]
 
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
@@ -777,7 +750,6 @@ proc refund_private()
 
     exec.validate_and_seal_output_note
     # => []
-
 end
 
 #! Loads the note's single offered asset, asserting it equals the amount the note was created with.
@@ -1141,16 +1113,13 @@ end
 #! Validates the note arguments and returns the action followed by the two fill amounts.
 #! The reserved element must be zero, and the action must be ACTION_FILL or ACTION_CANCEL.
 #!
-#! Inputs: [account_fill, note_fill, action, reserved]
+#! Inputs: [action, account_fill, note_fill, reserved]
 #! Outputs: [action, account_fill, note_fill]
 proc parse_note_args(note_args: NoteArgs) -> (u32, AssetAmount, AssetAmount)
     movup.3
-    # => [reserved, account_fill, note_fill, action]
+    # => [reserved, action, account_fill, note_fill]
 
     eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
-    # => [account_fill, note_fill, action]
-
-    movup.2
     # => [action, account_fill, note_fill]
 
     dup eq.ACTION_FILL dup.1 eq.ACTION_CANCEL or
@@ -1158,30 +1127,37 @@ proc parse_note_args(note_args: NoteArgs) -> (u32, AssetAmount, AssetAmount)
 
     assert.err=ERR_PSWAP_INVALID_ACTION
     # => [action, account_fill, note_fill]
-
 end
 
 #! Fills an order using the supplied amounts, with all-zero amounts selecting a full fill.
+#!
+#! Inputs: [account_fill, note_fill]
+#! Outputs: []
 proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     dup.1 eq.0 dup.1 eq.0 and
+    # => [both_zero, account_fill, note_fill]
+
     if.true
         drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
+        # => [account_fill, note_fill]
     end
-    exec.prepare_payback
+    # => [account_fill, note_fill]
+
     exec.execute_pswap
+    # => []
 end
 
 #! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
 #!
-#! NOTE_ARGS in Rust element order are [account_fill, note_fill, action, reserved].
+#! NOTE_ARGS in Rust element order are [action, account_fill, note_fill, reserved].
 #! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.
 #! All-zero amounts select a full fill for other callers. Action 1 cancels orders with private
-#! paybacks using a secret P2ID opening and refunds the full remaining balance to that recipient.
+#! paybacks using a secret P2ID preimage and refunds the full remaining balance to that recipient.
 #! The reserved element is zero. Private cancellation requires zero fill amounts.
 #!
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Private cancellation requires create_note; public reclaim requires receive_asset.
-#! Consumers: any compatible account may fill or prove a private cancellation opening.
+#! Consumers: any compatible account may fill or prove a private cancellation preimage.
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
@@ -1200,16 +1176,23 @@ pub proc main(note_args: NoteArgs)
         # => [account_fill, note_fill]
 
         exec.active_account::get_id
-        mem_load.PUBLIC_CREATOR_SUFFIX_ITEM eq
-        swap mem_load.PUBLIC_CREATOR_PREFIX_ITEM eq and
+        mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
+        # => [creator_suffix, creator_prefix, account_suffix, account_prefix, account_fill, note_fill]
+
+        exec.account_id::eq
         # => [is_creator, account_fill, note_fill]
 
         if.true
             drop drop
+            # => []
+
             exec.handle_reclaim
+            # => []
         else
             exec.fill
+            # => []
         end
+        # => []
     else
         eq.ACTION_CANCEL
         # => [is_cancel, account_fill, note_fill]
@@ -1221,10 +1204,22 @@ pub proc main(note_args: NoteArgs)
             # => []
 
             exec.prepare_payback
+            # => [tag, private_type, RECIPIENT]
+
+            swap drop movdn.4
+            # => [RECIPIENT, tag]
+
+            dupw
             exec.authenticate_cancel
+            # => [RECIPIENT, tag]
+
             exec.refund_private
+            # => []
         else
             exec.fill
+            # => []
         end
+        # => []
     end
+    # => []
 end
