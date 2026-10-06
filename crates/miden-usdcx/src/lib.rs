@@ -23,8 +23,13 @@ pub mod xreserve_lib;
 /// into the deployable, attestation-gated xUSDC faucet
 /// [`account::xreserve::XReserveStablecoinBuilder`]-composed `Account`. Surfaced at the
 /// library root so account construction is traceable from the top. Beside it, the genesis-only
-/// mutation that records consumed deposit nonces on a built faucet.
-pub use account::xreserve::{build_faucet_account, record_used_nonces};
+/// mutations that record consumed deposit nonces on a built faucet and upgrade it to the V2
+/// token policy manager.
+pub use account::xreserve::{
+    build_faucet_account,
+    record_used_nonces,
+    upgrade_to_token_policy_manager_v2,
+};
 
 /// Path of the one canonical golden-vector artifact, loaded by reference from both the Rust
 /// unit tests and the MASM execution tests.

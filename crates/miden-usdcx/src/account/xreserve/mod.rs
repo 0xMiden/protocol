@@ -11,6 +11,7 @@ pub use builder::{
     DOM_PAUSER_ROLE,
     DOM_UNPAUSER_ROLE,
     MIN_BURN_SIZE_FLOOR,
+    PolicyManagerVersion,
     USDCX_DECIMALS,
     USDCX_TOKEN_SYMBOL,
     XRESERVE_SET_ATTESTER_PROC_PATH,
@@ -19,4 +20,5 @@ pub use builder::{
     XReserveStablecoinBuilderError,
     build_faucet_account,
     record_used_nonces,
+    upgrade_to_token_policy_manager_v2,
 };
