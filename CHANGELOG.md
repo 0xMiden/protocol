@@ -5,6 +5,7 @@
 ### Features
 
 - Added `TokenPolicyManagerV2`, whose transfer callbacks ignore the pause state so a paused fee faucet does not block fee payments.
+- Added the `policy_manager` input to `XReserveStablecoinBuilder` to build the xUSDC faucet with `TokenPolicyManagerV2`, and `upgrade_to_token_policy_manager_v2` to upgrade an existing V1 faucet in place.
 
 ## v0.17.0 (2026-10-01)
 

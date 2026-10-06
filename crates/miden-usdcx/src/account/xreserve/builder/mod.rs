@@ -60,7 +60,12 @@ mod error;
 mod network_auth;
 
 use construction::build_usdcx_faucet;
-pub use construction::{XReserveFaucetExtension, build_faucet_account, record_used_nonces};
+pub use construction::{
+    XReserveFaucetExtension,
+    build_faucet_account,
+    record_used_nonces,
+    upgrade_to_token_policy_manager_v2,
+};
 pub use error::XReserveStablecoinBuilderError;
 
 /// Dedicated role symbols mapped to attester administration, pause and unpause by
@@ -94,6 +99,20 @@ pub const XRESERVE_SET_ATTESTER_PROC_PATH: &str =
 /// Path of the procedure exported by the burn policy component.
 pub const XRESERVE_BURN_POLICY_PROC_PATH: &str =
     "xreserve::components::faucet_burn_policy::check_burn_policy";
+
+/// The token policy manager version the faucet installs.
+///
+/// The V2 manager does not apply the pause check to transfers, so a pause of the faucet does not
+/// block the fee payments of the network. See [`TokenPolicyManagerV2`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PolicyManagerVersion {
+    /// The [`TokenPolicyManager`].
+    #[default]
+    V1,
+    /// The [`TokenPolicyManagerV2`].
+    V2,
+}
 
 /// The smallest admissible `min_burn_amount` (the zero floor). The stock [`MinBurnAmount`]
 /// policy
@@ -156,6 +175,8 @@ pub struct XReserveStablecoinBuilder {
     min_burn_amount: AssetAmount,
     /// The composed faucet extension.
     faucet_extension: XReserveFaucetExtension,
+    /// The token policy manager version. Defaults to [`PolicyManagerVersion::V1`].
+    policy_manager: PolicyManagerVersion,
 }
 
 #[bon]
@@ -183,6 +204,8 @@ impl XReserveStablecoinBuilder {
     /// via [`XReserveFaucetExtension`]. The active mint and burn policies are fixed by the
     /// composition. The burn policy reads `min_burn_amount` from [`MinBurnAmount`]; this builder
     /// input defaults to [`MIN_BURN_SIZE_FLOOR`].
+    /// `policy_manager` selects the token policy manager and defaults to
+    /// [`PolicyManagerVersion::V1`].
     ///
     /// # Errors
     ///
@@ -205,6 +228,7 @@ impl XReserveStablecoinBuilder {
         domain: CircleDomain,
         #[builder(default)] attesters: Vec<PublicKey>,
         min_burn_amount: Option<AssetAmount>,
+        #[builder(default)] policy_manager: PolicyManagerVersion,
     ) -> Result<Self, XReserveStablecoinBuilderError> {
         let min_burn_amount = min_burn_amount.unwrap_or(
             AssetAmount::new(MIN_BURN_SIZE_FLOOR)
@@ -239,6 +263,7 @@ impl XReserveStablecoinBuilder {
             fee_asset_id,
             min_burn_amount,
             faucet_extension,
+            policy_manager,
         })
     }
 }
@@ -256,25 +281,16 @@ impl XReserveStablecoinBuilder {
     pub fn build_components(
         &self,
     ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
+        self.assert_roles_isolated()?;
         let manager = self.token_policy_manager()?;
-        self.compose_components(manager)
+        match self.policy_manager {
+            PolicyManagerVersion::V1 => self.compose_components(manager),
+            PolicyManagerVersion::V2 => self.compose_components(TokenPolicyManagerV2::new(manager)),
+        }
     }
 
-    /// Returns the components of [`Self::build_components`] with [`TokenPolicyManagerV2`] in place
-    /// of the V1 manager, so a pause no longer blocks transfers of the faucet's asset.
-    pub fn build_components_v2(
-        &self,
-    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
-        let manager = TokenPolicyManagerV2::new(self.token_policy_manager()?);
-        self.compose_components(manager)
-    }
-
-    /// Validates the role holders and composes the faucet components around the given token
-    /// policy manager components.
-    fn compose_components(
-        &self,
-        manager: impl IntoIterator<Item = AccountComponent>,
-    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
+    /// Asserts that the `BLK_MANAGER` and `DOM_PAUSER` holders hold no other role.
+    fn assert_roles_isolated(&self) -> Result<(), XReserveStablecoinBuilderError> {
         let overlaps = |left: &[AccountId], right: &[AccountId]| {
             left.iter().any(|member| right.contains(member))
         };
@@ -302,6 +318,14 @@ impl XReserveStablecoinBuilder {
                 return Err(XReserveStablecoinBuilderError::PauserNotIsolated { collides_with });
             }
         }
+        Ok(())
+    }
+
+    /// Composes the faucet components around the given token policy manager components.
+    fn compose_components(
+        &self,
+        manager: impl IntoIterator<Item = AccountComponent>,
+    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
         let mut components = Vec::new();
         components.push(self.faucet.clone().into());
         components.push(Pausable::unpaused().into());

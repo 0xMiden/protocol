@@ -5,7 +5,8 @@
 //! of the transaction that creates the unpause note. The V2 callback does not check the pause
 //! flag.
 //!
-//! In these tests, the faucet is the chain's fee faucet and pays its own fees from its vault, and
+//! The tests cover a faucet built with the V2 manager and a V1 faucet upgraded to it. In the pause
+//! flow, the faucet is the chain's fee faucet and pays its own fees from its vault, and
 //! the unpauser is a wallet that pays its fees in the faucet's asset.
 
 mod support;
@@ -14,6 +15,7 @@ use anyhow::Result;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{AssetAmount, AssetCallbacks, AssetVault, FungibleAsset};
+use miden_protocol::errors::AccountError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::access::PausableStorage;
@@ -23,7 +25,13 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::TxFeeNote;
 use miden_standards::note::config::{PauseConfig, PauseConfigNote};
 use miden_testing::MockChain;
-use miden_usdcx::account::xreserve::XReserveStablecoinBuilder;
+use miden_usdcx::account::xreserve::{
+    PolicyManagerVersion,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
+};
+use miden_usdcx::upgrade_to_token_policy_manager_v2;
+use rstest::rstest;
 use support::{TEST_DOMAIN, test_account_id};
 
 const VERIFICATION_BASE_FEE: u32 = 500;
@@ -42,7 +50,10 @@ fn serial_number(seed: u32) -> Word {
 // ================================================================================================
 
 /// Returns the production builder with `unpauser` as the only `DOM_UNPAUSER`.
-fn production_builder_with_unpauser(unpauser: AccountId) -> Result<XReserveStablecoinBuilder> {
+fn production_builder_with_unpauser(
+    unpauser: AccountId,
+    policy_manager: PolicyManagerVersion,
+) -> Result<XReserveStablecoinBuilder> {
     Ok(XReserveStablecoinBuilder::builder()
         .token_supply(AssetAmount::ZERO)
         .owner(test_account_id(1))
@@ -53,7 +64,28 @@ fn production_builder_with_unpauser(unpauser: AccountId) -> Result<XReserveStabl
         .fee_parameters(support::test_fee_parameters())
         .fee_asset_id(support::test_fee_asset_id())
         .domain(TEST_DOMAIN)
+        .policy_manager(policy_manager)
         .build()?)
+}
+
+/// Builds the network faucet with the V2 manager, either directly or by upgrading a V1 faucet.
+fn v2_faucet(unpauser: AccountId, upgraded: bool) -> Result<Account> {
+    let policy_manager = if upgraded {
+        PolicyManagerVersion::V1
+    } else {
+        PolicyManagerVersion::V2
+    };
+    let builder = production_builder_with_unpauser(unpauser, policy_manager)?;
+    let faucet = support::build_network_faucet_account(
+        builder.build_components()?,
+        support::test_fee_parameters(),
+        support::test_fee_asset_id(),
+    )?;
+    if upgraded {
+        Ok(upgrade_to_token_policy_manager_v2(faucet)?)
+    } else {
+        Ok(faucet)
+    }
 }
 
 /// Returns `account` with a vault that holds `amount` of the asset issued by `faucet_id`.
@@ -136,15 +168,13 @@ fn is_paused(mock_chain: &MockChain, faucet_id: AccountId) -> Result<bool> {
 
 /// With the V2 manager, fee payments work while the faucet is paused, so the unpauser can create
 /// the unpause note and the faucet can consume it.
+#[rstest]
+#[case::built_directly(false)]
+#[case::upgraded_from_v1(true)]
 #[tokio::test]
-async fn paused_v2_faucet_keeps_fee_payments_working() -> Result<()> {
+async fn paused_v2_faucet_keeps_fee_payments_working(#[case] upgraded: bool) -> Result<()> {
     let wallet = fee_paying_wallet()?;
-    let builder = production_builder_with_unpauser(wallet.id())?;
-    let faucet = support::build_network_faucet_account(
-        builder.build_components_v2()?,
-        support::test_fee_parameters(),
-        support::test_fee_asset_id(),
-    )?;
+    let faucet = v2_faucet(wallet.id(), upgraded)?;
     let faucet_id = faucet.id();
     let faucet = with_balance(faucet, faucet_id, FAUCET_FEE_BALANCE)?;
     let wallet = with_balance(wallet, faucet_id, WALLET_BALANCE)?;
@@ -186,6 +216,64 @@ async fn paused_v2_faucet_keeps_fee_payments_working() -> Result<()> {
 
     commit_tx(&mut mock_chain, faucet_id, faucet_id, &unpause, &[]).await?;
     assert!(!is_paused(&mock_chain, faucet_id)?);
+
+    Ok(())
+}
+
+/// Builds an existing network faucet (nonce one, no seed) with the given manager version.
+fn existing_faucet(policy_manager: PolicyManagerVersion) -> Result<Account> {
+    let builder = production_builder_with_unpauser(test_account_id(3), policy_manager)?;
+    support::build_network_faucet_account(
+        builder.build_components()?,
+        support::test_fee_parameters(),
+        support::test_fee_asset_id(),
+    )
+}
+
+/// The upgrade keeps the account ID, vault and nonce, and yields the code and storage of a faucet
+/// built directly with the V2 manager.
+#[test]
+fn upgrade_matches_direct_v2_build() -> Result<()> {
+    let v1_faucet = existing_faucet(PolicyManagerVersion::V1)?;
+    let direct_v2_faucet = existing_faucet(PolicyManagerVersion::V2)?;
+
+    let upgraded_faucet = upgrade_to_token_policy_manager_v2(v1_faucet.clone())?;
+
+    assert_eq!(upgraded_faucet.id(), v1_faucet.id());
+    assert_eq!(upgraded_faucet.vault(), v1_faucet.vault());
+    assert_eq!(upgraded_faucet.nonce(), v1_faucet.nonce());
+    assert_eq!(upgraded_faucet.code().commitment(), direct_v2_faucet.code().commitment());
+    assert_eq!(
+        upgraded_faucet.storage().to_commitment(),
+        direct_v2_faucet.storage().to_commitment()
+    );
+
+    Ok(())
+}
+
+/// The upgrade rejects a faucet that does not have the V1 token policy manager.
+#[test]
+fn upgrade_rejects_non_v1_faucet() -> Result<()> {
+    let result = upgrade_to_token_policy_manager_v2(existing_faucet(PolicyManagerVersion::V2)?);
+
+    assert!(matches!(
+        result,
+        Err(XReserveStablecoinBuilderError::AccountComposition(AccountError::Other { .. }))
+    ));
+
+    Ok(())
+}
+
+/// The upgrade rejects a new account, whose seed derives its ID from the V1 code.
+#[test]
+fn upgrade_rejects_new_account() -> Result<()> {
+    let new_v1_faucet =
+        production_builder_with_unpauser(test_account_id(3), PolicyManagerVersion::V1)?
+            .build_account([7; 32])?;
+
+    let result = upgrade_to_token_policy_manager_v2(new_v1_faucet);
+
+    assert!(matches!(result, Err(XReserveStablecoinBuilderError::AccountComposition(_))));
 
     Ok(())
 }
