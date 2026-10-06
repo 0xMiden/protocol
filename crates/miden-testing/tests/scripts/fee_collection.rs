@@ -60,7 +60,7 @@ use crate::scripts::fee_manager::{
 
 /// The lowest reclaim height a FEE_SPONSORSHIP note can have: height 0 encodes a disabled reclaim,
 /// so block 1 is the earliest block from which the note can be reclaimed.
-const MIN_RECLAIM_HEIGHT: BlockNumber = BlockNumber::FIRST;
+const MIN_RECLAIM_HEIGHT: BlockNumber = BlockNumber::ONE;
 
 // COLLECT SPONSORED FEES
 // ================================================================================================
