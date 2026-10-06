@@ -216,7 +216,11 @@ impl TransactionLogs {
     /// Hash domain for private transaction log commitments.
     pub const PRIVATE_COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0004);
 
-    /// Returns the transaction log commitment for the native account's visibility.
+    /// Returns the transaction log commitment for the account against which the transaction
+    /// executes.
+    ///
+    /// The native account determines whether transaction logs are public or private, including
+    /// transaction logs emitted by foreign accounts during FPI.
     ///
     /// Public transaction logs use [`Self::commitment`]. Nonempty private transaction logs hash
     /// that commitment together with `secret_salt`. The caller must supply a fresh, random,
