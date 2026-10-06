@@ -1,12 +1,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::transaction::{
-    OrderedTransactionHeaders,
-    TransactionLog,
-    TransactionLogData,
-    TransactionLogDataError,
-};
+#[cfg(any(test, feature = "testing"))]
+use crate::Word;
+use crate::transaction::{OrderedTransactionHeaders, TransactionLogData, TransactionLogDataError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -19,13 +16,10 @@ use crate::{
     MAX_LOG_DATA_BYTES_PER_BLOCK,
     MAX_LOG_DATA_TRANSACTIONS_PER_BATCH,
     MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK,
-    MAX_LOG_PAYLOAD_WORDS_PER_TX,
-    MAX_LOGS_PER_TX,
     MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH,
     MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK,
     MAX_PUBLIC_LOGS_PER_BATCH,
     MAX_PUBLIC_LOGS_PER_BLOCK,
-    Word,
 };
 
 // The collection count and each entry's byte length are encoded as u32 values.
@@ -220,12 +214,7 @@ impl Deserializable for TransactionLogDataCollection {
                 "too many transaction log data entries".into(),
             ));
         }
-        // The largest public entry contains the visibility tag, transaction log count,
-        // metadata for every transaction log, and the maximum total payload. This is also
-        // larger than a private entry, which contains only its tag and one commitment word.
-        let max_transaction_size = TransactionLogData::min_serialized_size()
-            + MAX_LOGS_PER_TX * TransactionLog::min_serialized_size()
-            + MAX_LOG_PAYLOAD_WORDS_PER_TX * Word::SERIALIZED_SIZE;
+        let max_transaction_size = TransactionLogData::max_serialized_size();
         let mut budget = LogDataScope::Block.budget();
         let mut data = Vec::new();
         for _ in 0..count {
