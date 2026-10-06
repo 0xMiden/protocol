@@ -87,7 +87,7 @@ impl ExecutedTransaction {
         self.tx_outputs.logs()
     }
 
-    /// Returns the proof-bound log commitment.
+    /// Returns the transaction log commitment included in the transaction proof.
     pub fn logs_commitment(&self) -> Word {
         self.tx_outputs.logs_commitment()
     }

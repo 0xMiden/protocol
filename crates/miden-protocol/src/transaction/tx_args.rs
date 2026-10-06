@@ -137,15 +137,17 @@ impl TransactionArgs {
         self
     }
 
-    /// Sets the private log opening; see
-    /// [`TransactionLogs::commitment_for_account`](crate::transaction::TransactionLogs::commitment_for_account).
+    /// Sets the secret salt used to compute the private transaction log commitment.
+    ///
+    /// See [`TransactionLogs::commitment_for_account`](crate::transaction::TransactionLogs::commitment_for_account)
+    /// for the salt requirements.
     #[must_use]
     pub fn with_log_salt(mut self, salt: Word) -> Self {
         self.log_salt = salt;
         self
     }
 
-    /// Returns the private log opening used by the transaction kernel.
+    /// Returns the secret salt used by the transaction kernel for private transaction logs.
     pub fn log_salt(&self) -> Word {
         self.log_salt
     }

@@ -71,7 +71,8 @@ impl TransactionEffects {
         }
     }
 
-    /// Attaches full local records and validates their private opening.
+    /// Attaches local transaction logs and checks the salt required for nonempty private
+    /// transaction logs.
     pub fn with_logs(
         mut self,
         logs: TransactionLogs,
@@ -90,12 +91,12 @@ impl TransactionEffects {
         Ok(self)
     }
 
-    /// Returns the full local transaction log records.
+    /// Returns the complete local transaction logs.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
     }
 
-    /// Returns the private log opening.
+    /// Returns the secret salt used for private transaction log commitments.
     pub fn log_salt(&self) -> Word {
         self.log_salt
     }
@@ -104,7 +105,7 @@ impl TransactionEffects {
     pub fn logs_commitment(&self) -> Word {
         self.logs
             .commitment_for_account(self.account_patch.id(), self.log_salt)
-            .expect("effects log opening is valid")
+            .expect("transaction log salt in the effects is valid")
     }
 
     // PUBLIC ACCESSORS
