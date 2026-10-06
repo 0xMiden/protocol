@@ -98,6 +98,7 @@ pub proc create_tx_summary_with_block(block_number: BlockNumber, user_params: [f
     exec.native_account::compute_delta_commitment movdnw.2
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
     #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
 end
 
 #! Creates the transaction summary bound to the transaction's reference block and returns it in the
@@ -121,16 +122,23 @@ pub proc create_tx_summary(user_params: [felt; 6])
     exec.create_tx_summary_with_block
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
     #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
 end
 
-#! Creates and hashes the reference-block summary, retaining its preimage in the advice map.
+#! Creates and hashes the reference block summary, retaining its preimage in the advice map.
 #!
 #! Inputs:  [user_params(6)]
 #! Outputs: [TX_SUMMARY_COMMITMENT]
+#!
 #! Invocation: exec
 pub proc get_tx_summary_commitment(user_params: [felt; 6]) -> word
     exec.create_tx_summary
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+    #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     exec.hash_and_insert_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
 end
 
 #! Creates and hashes a summary bound to `block_number`, retaining its preimage in the advice map.
@@ -138,10 +146,16 @@ end
 #!
 #! Inputs:  [block_number, user_params(6)]
 #! Outputs: [TX_SUMMARY_COMMITMENT]
+#!
 #! Invocation: exec
 pub proc get_tx_summary_commitment_with_block(block_number: BlockNumber, user_params: [felt; 6]) -> word
     exec.create_tx_summary_with_block
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+    #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     exec.hash_and_insert_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
 end
 
 #! Hashes the provided transaction summary, inserts its preimage into the advice map keyed by the
@@ -157,7 +171,8 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!   Advice map: {
 #!     TX_SUMMARY_COMMITMENT: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT,
-#!                             INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+#!                             INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!                             BLOCK_COMMITMENT, LOGS_COMMITMENT]
 #!   }
 #!
 #! Where:
@@ -171,6 +186,16 @@ end
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 #! - TX_SUMMARY_COMMITMENT is the commitment to the transaction summary.
 #!
+#! Locals (in hashing order):
+#! - 0..4: PARAMS_HEAD
+#! - 4..8: PARAMS_TAIL
+#! - 8..12: ACCOUNT_DELTA_COMMITMENT
+#! - 12..16: INPUT_NOTES_COMMITMENT
+#! - 16..20: OUTPUT_NOTES_COMMITMENT
+#! - 20..24: BLOCK_COMMITMENT
+#! - 24..28: LOGS_COMMITMENT
+#! - 28..32: padding for the final double word read by hash_elements
+#!
 #! Invocation: exec
 @locals(32)
 pub proc hash_and_insert_tx_summary(
@@ -182,15 +207,37 @@ pub proc hash_and_insert_tx_summary(
     block_commitment: word,
     logs_commitment: word
 ) -> word
+    # Save the seven words in hashing order, keeping the preimage for the advice map.
     loc_storew_le.SUMMARY_PARAMS_HEAD_LOC dropw
+    # => [PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+    #     BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     loc_storew_le.SUMMARY_PARAMS_TAIL_LOC dropw
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+    #     BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC dropw
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     loc_storew_le.SUMMARY_INPUT_NOTES_LOC dropw
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     loc_storew_le.SUMMARY_OUTPUT_NOTES_LOC dropw
+    # => [BLOCK_COMMITMENT, LOGS_COMMITMENT]
+
     loc_storew_le.SUMMARY_BLOCK_COMMITMENT_LOC dropw
+    # => [LOGS_COMMITMENT]
+
     loc_storew_le.SUMMARY_LOGS_LOC dropw
+    # => []
+
+    # The preimage has 28 elements. hash_elements sets capacity to 28 % 8 and pads the last
+    # rate block, matching the Rust transaction summary commitment.
     push.TX_SUMMARY_NUM_ELEMENTS locaddr.SUMMARY_PARAMS_HEAD_LOC
+    # => [start_ptr, num_elements]
+
     exec.poseidon2::hash_elements
+    # => [TX_SUMMARY_COMMITMENT]
 
     # insert the preimage stored in the locals into the advice map keyed by the commitment
     locaddr.SUMMARY_PARAMS_HEAD_LOC dup add.TX_SUMMARY_NUM_ELEMENTS
@@ -204,4 +251,5 @@ pub proc hash_and_insert_tx_summary(
 
     movup.4 drop movup.4 drop
     # => [TX_SUMMARY_COMMITMENT]
+
 end

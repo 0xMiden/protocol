@@ -14,11 +14,11 @@ pub mod epilogue
 pub mod faucet
 pub mod fungible_asset
 pub mod input_note
-pub mod log
 pub mod link_map
 pub mod memory
 pub mod note
 pub mod output_note
 pub mod prologue
 pub mod tx
+pub mod tx_log
 pub mod types
