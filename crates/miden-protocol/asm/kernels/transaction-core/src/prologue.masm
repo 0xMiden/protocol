@@ -18,8 +18,7 @@ use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_ASSET_ADDED_TO_N
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
-use {SALT_PTR} from miden::tx_kernel_core::tx_log
-use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
+use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, LOG_SALT_PTR, PARTIAL_BLOCKCHAIN_PTR,
      PROTOCOL_CONFIG_SECTION_OFFSET}
     from miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
@@ -1399,7 +1398,7 @@ pub proc prepare_transaction(block_commitment: Commitment, initial_account_commi
     # => []
 
     # Initialize the salt before any transaction logs can be emitted.
-    padw adv_loadw mem_storew_le.SALT_PTR dropw
+    padw adv_loadw mem_storew_le.LOG_SALT_PTR dropw
     # => []
 
     push.MAX_BLOCK_NUM exec.memory::set_expiration_block_num

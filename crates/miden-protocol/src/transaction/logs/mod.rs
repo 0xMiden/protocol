@@ -1,4 +1,8 @@
 //! Transaction logs, submitted data, and their ordered commitment.
+//!
+//! Hash domains use the protocol range proposed by the [Poseidon2 domain registry RFC][registry].
+//!
+//! [registry]: https://github.com/0xMiden/crypto/pull/1026
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -187,9 +191,12 @@ impl Deserializable for TransactionLog {
 /// ```text
 /// P_i = hash_elements(flatten(payload_i))
 /// M_i = [emitter_suffix, emitter_prefix, topic_0, topic_1]
-/// L_i = merge_in_domain([M_i, P_i], 0x02_0005)
-/// commitment = hash_elements_in_domain(L_1 || ... || L_n, 0x02_0003)
+/// L_i = merge_in_domain([M_i, P_i], TransactionLog::COMMITMENT_DOMAIN)
+/// commitment = hash_elements_in_domain(L_1 || ... || L_n, TransactionLogs::COMMITMENT_DOMAIN)
 /// ```
+///
+/// The domains are defined by [`TransactionLog::COMMITMENT_DOMAIN`] and
+/// [`TransactionLogs::COMMITMENT_DOMAIN`].
 ///
 /// An empty collection has commitment [`Word::empty`]. The collection hash binds transaction log
 /// order and duplicate occurrences. The payload hash binds content and length.
@@ -209,7 +216,11 @@ impl TransactionLogs {
     /// Hash domain for private transaction log commitments.
     pub const PRIVATE_COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0004);
 
-    /// Returns the transaction log commitment for the native account's visibility.
+    /// Returns the transaction log commitment for the account against which the transaction
+    /// executes.
+    ///
+    /// The native account determines whether transaction logs are public or private, including
+    /// transaction logs emitted by foreign accounts during FPI.
     ///
     /// Public transaction logs use [`Self::commitment`]. Nonempty private transaction logs hash
     /// that commitment together with `secret_salt`. The caller must supply a fresh, random,

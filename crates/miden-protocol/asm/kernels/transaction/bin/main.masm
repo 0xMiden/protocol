@@ -72,6 +72,7 @@ const EPILOGUE_END_EVENT = event("miden::protocol::tx::epilogue_end")
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
 #! - tx_expiration_block_num is the transaction expiration block number.
+#! - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
 @locals(1)
 proc main(block_commitment: Commitment, initial_account_commitment: Commitment, input_notes_commitment: Commitment, account_id: AccountId, block_num: BlockNumber, padding: [felt; 1]) -> (Commitment, Commitment, BlockNumber, Commitment, [felt; 3])
     # Prologue
