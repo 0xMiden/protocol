@@ -9,14 +9,14 @@ use crate::utils::serde::{
     Serializable,
 };
 
-/// Submitted public records or a private commitment, with visibility set by the native account.
+/// Transaction log data submitted according to the native account's visibility.
 ///
 /// Validating a private commitment requires the transaction proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionLogData {
-    /// Complete public records, with their commitment derived from the records.
+    /// Complete public logs, with their commitment derived from the logs.
     Public(TransactionLogs),
-    /// A supplied commitment without private records or opening data.
+    /// A commitment to the private transaction logs.
     Private(Word),
 }
 
