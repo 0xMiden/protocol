@@ -2,6 +2,7 @@ use {BlockNumber} from miden::protocol::types
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::crypto::hashes::poseidon2
+use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 
 pub mod eip712
 pub mod eip712_transaction_summary
@@ -19,15 +20,15 @@ pub mod tx_script_allowlist
 
 # hash_and_insert_tx_summary locals: the seven words of the summary preimage in hashing order.
 const SUMMARY_PARAMS_HEAD_LOC = 0
-const SUMMARY_PARAMS_TAIL_LOC = 4
-const SUMMARY_ACCOUNT_DELTA_LOC = 8
-const SUMMARY_INPUT_NOTES_LOC = 12
-const SUMMARY_OUTPUT_NOTES_LOC = 16
-const SUMMARY_BLOCK_COMMITMENT_LOC = 20
-const SUMMARY_LOGS_LOC = 24
+const SUMMARY_PARAMS_TAIL_LOC = SUMMARY_PARAMS_HEAD_LOC + WORD_NUM_ELEMENTS
+const SUMMARY_ACCOUNT_DELTA_LOC = SUMMARY_PARAMS_TAIL_LOC + WORD_NUM_ELEMENTS
+const SUMMARY_INPUT_NOTES_LOC = SUMMARY_ACCOUNT_DELTA_LOC + WORD_NUM_ELEMENTS
+const SUMMARY_OUTPUT_NOTES_LOC = SUMMARY_INPUT_NOTES_LOC + WORD_NUM_ELEMENTS
+const SUMMARY_BLOCK_COMMITMENT_LOC = SUMMARY_OUTPUT_NOTES_LOC + WORD_NUM_ELEMENTS
+const SUMMARY_LOGS_LOC = SUMMARY_BLOCK_COMMITMENT_LOC + WORD_NUM_ELEMENTS
 
 # Number of felts in the transaction summary preimage (7 words).
-const TX_SUMMARY_NUM_ELEMENTS = 28
+const TX_SUMMARY_NUM_ELEMENTS = SUMMARY_LOGS_LOC + WORD_NUM_ELEMENTS
 
 # Layout version of the transaction summary preimage.
 const TX_SUMMARY_VERSION = 2
