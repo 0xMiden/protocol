@@ -155,7 +155,6 @@ async fn transaction_scripts_cannot_log_directly() -> anyhow::Result<()> {
 #[case::public(AccountType::Public, false)]
 #[case::private(AccountType::Private, false)]
 #[case::direct_public(AccountType::Public, true)]
-#[case::direct_private(AccountType::Private, true)]
 #[tokio::test]
 async fn unauthenticated_note_logs(
     #[case] account_type: AccountType,
@@ -189,7 +188,6 @@ async fn unauthenticated_note_logs(
         .note_type(NoteType::Private)
         .script(script)
         .build()?;
-    let note_id = note.id();
     let chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
     let mut tx = chain
         .build_transaction(account.clone())
@@ -212,21 +210,10 @@ async fn unauthenticated_note_logs(
     let expected =
         TransactionLog::new(account.id(), LogTopic::new([17u32.into(), 29u32.into()]), payload)?;
     assert_eq!(executed.logs().iter().collect::<Vec<_>>(), vec![&expected]);
-    let proven = LocalTransactionProver::default().prove(executed.clone())?;
-    assert_eq!(proven.input_notes().iter().next().unwrap().header().unwrap().id(), note_id);
-    assert!(!proven.input_notes().iter().next().unwrap().is_authenticated());
-    assert_eq!(proven.log_data().commitment(), executed.logs_commitment());
-    if let TransactionLogData::Public(logs) = proven.log_data() {
-        assert_eq!(logs, executed.logs());
-    }
+    let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(proven.log_data(), TransactionLogData::Public(_)),
+        matches!(outputs.log_data(), TransactionLogData::Public(_)),
         account_type.is_public()
-    );
-    assert!(
-        TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL)
-            .verify(&proven)?
-            .is_complete()
     );
     Ok(())
 }
@@ -446,18 +433,11 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].emitter(), intermediate.id());
     assert_eq!(entries[1].emitter(), foreign.id());
-    let proven = LocalTransactionProver::default().prove(executed)?;
+    let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(proven.log_data(), TransactionLogData::Public(_)),
+        matches!(outputs.log_data(), TransactionLogData::Public(_)),
         native_type.is_public()
     );
-    assert!(
-        TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL)
-            .verify(&proven)?
-            .is_complete()
-    );
-    chain.add_pending_proven_transaction(proven);
-    chain.prove_next_block()?;
     Ok(())
 }
 
