@@ -137,13 +137,13 @@ impl TransactionHeader {
         }
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the commitment to public or private transaction logs.
     pub fn logs_commitment(&self) -> Word {
         self.logs_commitment
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// Returns the unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {

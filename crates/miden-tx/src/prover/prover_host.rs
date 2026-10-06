@@ -68,7 +68,7 @@ where
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes `self` and returns the account delta, input and output notes.
+    /// Consumes `self` and returns the account patch, input and output notes, and transaction logs.
     pub fn into_parts(
         self,
     ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {

@@ -15,6 +15,9 @@ use crate::block::BlockNumber;
 // ================================================================================================
 
 /// The effects of an executed transaction.
+///
+/// Includes complete local transaction logs and their secret salt. Serialized and debug output
+/// may therefore contain private transaction data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionEffects {
     transaction_id: TransactionId,
@@ -36,8 +39,8 @@ impl TransactionEffects {
 
     /// Returns new [`TransactionEffects`] instantiated from the provided data.
     ///
-    /// The [`TransactionId`] is computed from the account state commitments and the note
-    /// commitments, so it cannot disagree with the rest of the effects.
+    /// The [`TransactionId`] is computed from the account state and note commitments, with an
+    /// empty transaction log commitment. [`Self::with_logs`] updates it when attaching logs.
     pub fn new(
         initial_state_commitment: Word,
         final_state_commitment: Word,
@@ -53,7 +56,7 @@ impl TransactionEffects {
             final_state_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
-            Default::default(),
+            Word::empty(),
         );
 
         Self {
@@ -91,6 +94,9 @@ impl TransactionEffects {
         Ok(self)
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the complete local transaction logs.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
@@ -107,9 +113,6 @@ impl TransactionEffects {
             .commitment_for_account(self.account_patch.id(), self.log_salt)
             .expect("transaction log salt in the effects is valid")
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// Returns the unique identifier of the transaction that produced these effects.
     pub fn transaction_id(&self) -> TransactionId {

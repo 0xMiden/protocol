@@ -10,6 +10,7 @@ use super::{
     RawOutputNotes,
     TransactionArgs,
     TransactionId,
+    TransactionLogs,
     TransactionOutputs,
 };
 use crate::Word;
@@ -82,8 +83,11 @@ impl ExecutedTransaction {
         }
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns complete local transaction logs.
-    pub fn logs(&self) -> &super::TransactionLogs {
+    pub fn logs(&self) -> &TransactionLogs {
         self.tx_outputs.logs()
     }
 
@@ -91,9 +95,6 @@ impl ExecutedTransaction {
     pub fn logs_commitment(&self) -> Word {
         self.tx_outputs.logs_commitment()
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// Returns a unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {

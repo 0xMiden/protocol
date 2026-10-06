@@ -215,7 +215,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.output_notes.values().cloned().map(|builder| builder.build()).collect()
     }
 
-    /// Consumes `self` and returns the account delta, input and output notes.
+    /// Consumes `self` and returns the account patch, input and output notes, and transaction logs.
     pub fn into_parts(
         self,
     ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
@@ -227,15 +227,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns the complete transaction logs collected during execution.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
-    }
-
-    pub(crate) fn on_log_added(
-        &mut self,
-        log: TransactionLog,
-    ) -> Result<(), TransactionKernelError> {
-        self.logs.try_push(log).map_err(|err| {
-            TransactionKernelError::other_with_source("invalid transaction logs", err)
-        })
     }
 
     // MUTATORS
@@ -297,6 +288,16 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
+
+    /// Appends a transaction log emitted by the kernel.
+    pub(crate) fn on_log_added(
+        &mut self,
+        log: TransactionLog,
+    ) -> Result<(), TransactionKernelError> {
+        self.logs.try_push(log).map_err(|err| {
+            TransactionKernelError::other_with_source("invalid transaction logs", err)
+        })
+    }
 
     /// Pushes an input note's index and a presence flag onto the advice stack.
     ///

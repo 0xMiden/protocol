@@ -1,9 +1,10 @@
+use alloc::string::ToString;
 use alloc::sync::Arc;
 
 use assert_matches::assert_matches;
 
 use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
-use crate::account::AccountId;
+use crate::account::{AccountHeader, AccountId};
 use crate::assembly::mast::{ExternalNodeBuilder, JoinNodeBuilder, MastForest};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
@@ -26,11 +27,49 @@ use crate::note::{
 };
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_SENDER,
 };
+use crate::transaction::{
+    LogTopic,
+    TransactionLog,
+    TransactionLogDataError,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 use crate::{Felt, Word};
+
+#[test]
+fn private_transaction_outputs_reject_a_missing_salt_when_decoding() {
+    let account_id = ACCOUNT_ID_PRIVATE_SENDER.try_into().unwrap();
+    let account =
+        AccountHeader::new(account_id, Felt::ONE, Word::empty(), Word::empty(), Word::empty());
+    let logs = TransactionLogs::new(vec![
+        TransactionLog::new(account_id, LogTopic::from_name("test::updated"), vec![]).unwrap(),
+    ])
+    .unwrap();
+    let outputs = TransactionOutputs::new(
+        account,
+        Word::empty(),
+        RawOutputNotes::new(vec![]).unwrap(),
+        1u32.into(),
+    )
+    .with_logs(logs, Word::from([1u32, 2, 3, 4]))
+    .unwrap();
+    let mut bytes = outputs.to_bytes();
+    assert_eq!(TransactionOutputs::read_from_bytes(&bytes).unwrap(), outputs);
+
+    // The secret salt is the last field in the local transaction output encoding.
+    let salt_start = bytes.len() - Word::SERIALIZED_SIZE;
+    bytes[salt_start..].fill(0);
+    assert_matches!(
+        TransactionOutputs::read_from_bytes(&bytes),
+        Err(DeserializationError::InvalidValue(message))
+            if message == TransactionLogDataError::MissingPrivateSalt.to_string()
+    );
+}
 
 #[test]
 fn test_duplicate_output_notes() -> anyhow::Result<()> {

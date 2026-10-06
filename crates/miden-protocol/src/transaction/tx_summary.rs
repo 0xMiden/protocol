@@ -23,11 +23,17 @@ use crate::{Felt, WORD_SIZE, Word};
 ///
 /// These are the account delta, the consumed and created notes, the block the summary binds (see
 /// [`TransactionSummaryMetadata`]) together with that block's commitment, the transaction's
-/// expiration block delta and the user-defined parameters (see [`TransactionSummaryUserParams`]).
+/// expiration block delta, transaction logs, and user-defined parameters (see
+/// [`TransactionSummaryUserParams`]).
 ///
 /// Because this data is intended to be signed, the user-defined parameters give an account's
 /// authentication procedure a way to bind arbitrary additional data to that signature, for example
 /// a salt providing replay protection or a maximum fee.
+///
+/// # Privacy
+///
+/// Contains complete transaction logs and the secret salt used for private transaction logs,
+/// including in serialized and debug output. The signer must be trusted with this local data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
     account_delta: AccountDelta,
@@ -102,21 +108,20 @@ impl TransactionSummary {
         Ok(self)
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the complete transaction logs available to the signer.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
     }
 
-    /// Returns the transaction log commitment included in the signing message and transaction
-    /// proof.
+    /// Returns the commitment to the transaction logs authorized by this signing summary.
     pub fn logs_commitment(&self) -> Word {
         self.logs
             .commitment_for_account(self.account_delta.id(), self.log_salt)
             .expect("transaction log salt in the summary is valid")
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// Returns the account delta of this transaction summary.
     pub fn account_delta(&self) -> &AccountDelta {
@@ -192,10 +197,10 @@ impl TransactionSummary {
     /// preimage of a transaction summary commitment.
     ///
     /// `elements` must be a full preimage as returned by [`TransactionSummary::to_elements`]. The
-    /// four commitments are not decoded because they cannot be inverted: a caller reconstructing a
-    /// summary from a preimage must rebuild the committed data from its own state, pass it to
-    /// [`TransactionSummary::new`] alongside the decoded values and check the result against
-    /// [`TransactionSummary::to_commitment`].
+    /// five commitments are not decoded because they cannot be inverted. A caller reconstructing a
+    /// summary must rebuild the committed data from its own state, pass it to [`Self::new`], attach
+    /// the transaction logs and their secret salt with [`Self::with_logs`], and check the resulting
+    /// [`Self::to_commitment`] against the expected commitment.
     ///
     /// # Errors
     ///

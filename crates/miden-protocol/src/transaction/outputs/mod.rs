@@ -31,6 +31,11 @@ mod tests;
 // ================================================================================================
 
 /// Describes the result of executing a transaction.
+///
+/// # Privacy
+///
+/// Contains complete local transaction logs and their secret salt, including in serialized and
+/// debug output. Use [`Self::log_data`] to obtain the data submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
@@ -99,6 +104,9 @@ impl TransactionOutputs {
         Ok(self)
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns all transaction logs, including private transaction logs retained locally.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
@@ -123,9 +131,6 @@ impl TransactionOutputs {
         }
     }
 
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
-
     /// Returns the header of the account's final state.
     pub fn account(&self) -> &AccountHeader {
         &self.account
@@ -149,7 +154,7 @@ impl TransactionOutputs {
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes self and returns the individual parts (that are non-Copy).
+    /// Consumes self and returns the final account header and output notes.
     pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {
         (self.account, self.output_notes)
     }

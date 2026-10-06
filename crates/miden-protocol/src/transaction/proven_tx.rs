@@ -129,14 +129,14 @@ impl ProvenTransaction {
         Ok(self)
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns complete public transaction logs or the private transaction log commitment
     /// included in the transaction proof.
     pub fn log_data(&self) -> &TransactionLogData {
         &self.log_data
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// Returns unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {
@@ -256,7 +256,7 @@ impl ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
-            Default::default(),
+            Word::empty(),
         );
 
         let log_data = if account_update.account_id().is_public() {

@@ -139,21 +139,27 @@ impl TransactionArgs {
 
     /// Sets the secret salt used to compute the private transaction log commitment.
     ///
-    /// See [`TransactionLogs::commitment_for_account`](crate::transaction::TransactionLogs::commitment_for_account)
-    /// for the salt requirements.
+    /// # Privacy
+    ///
+    /// For nonempty private transaction logs, sample a fresh, random, nonzero salt and keep it
+    /// secret. Reuse the same salt when signing and proving that transaction. The kernel rejects
+    /// zero but cannot check randomness or freshness; a predictable salt permits guessing the
+    /// transaction log contents.
+    ///
+    /// See [`TransactionLogs::commitment_for_account`](crate::transaction::TransactionLogs::commitment_for_account).
     #[must_use]
     pub fn with_log_salt(mut self, salt: Word) -> Self {
         self.log_salt = salt;
         self
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the secret salt used by the transaction kernel for private transaction logs.
     pub fn log_salt(&self) -> Word {
         self.log_salt
     }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
 
     /// Returns a reference to the transaction script.
     pub fn tx_script(&self) -> Option<&TransactionScript> {
