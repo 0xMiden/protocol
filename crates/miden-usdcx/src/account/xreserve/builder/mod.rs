@@ -269,18 +269,6 @@ impl XReserveStablecoinBuilder {
         self.compose_components(manager)
     }
 
-    /// Returns the components of the intermediate code of the upgrade to [`TokenPolicyManagerV2`]:
-    /// the components of [`Self::build_components`] plus the V2 manager procedures.
-    ///
-    /// See [`TokenPolicyManagerV2`] for why the upgrade needs this intermediate code.
-    pub fn build_components_v2_upgrade(
-        &self,
-    ) -> Result<Vec<AccountComponent>, XReserveStablecoinBuilderError> {
-        let mut components = self.build_components()?;
-        components.push(TokenPolicyManagerV2::upgrade_component());
-        Ok(components)
-    }
-
     /// Validates the role holders and composes the faucet components around the given token
     /// policy manager components.
     fn compose_components(

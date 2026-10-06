@@ -51,10 +51,6 @@ const MINT_NOTE_METADATA_PTR=4
 # policy `dyncall`, so it can be checked for tampering once the policy returns.
 const MINT_RECIPIENT_PTR=8
 
-# Protocol-reserved asset callback slots. Must match the slot names of the transaction kernel.
-const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
-const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
-
 # ERRORS
 # =================================================================================================
 
@@ -337,35 +333,6 @@ pub proc invoke_receive_policy_v2(asset: Asset, custom_data: felt)
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     exec.invoke_transfer_policy_v2
-    # => [pad(16)]
-end
-
-#! Points the asset callback slots at [`invoke_send_policy_v2`] and [`invoke_receive_policy_v2`].
-#!
-#! An account upgraded from the V1 manager still holds the V1 callback roots in these slots, so it
-#! calls this procedure once to switch to the V2 callbacks.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the caller is not authorized per the installed [`Authority`].
-#! - the account does not have the asset callback slots.
-#!
-#! Invocation: call
-@account_procedure
-pub proc migrate_transfer_callbacks()
-    exec.authority::assert_authorized
-    # => [pad(16)]
-
-    procref.invoke_send_policy_v2
-    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
-    exec.native_account::set_item dropw
-    # => [pad(16)]
-
-    procref.invoke_receive_policy_v2
-    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
-    exec.native_account::set_item dropw
     # => [pad(16)]
 end
 

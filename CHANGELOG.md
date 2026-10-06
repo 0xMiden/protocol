@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added `TokenPolicyManagerV2`, whose transfer callbacks ignore the pause state so a paused fee faucet does not block fee payments, and the `TokenPolicyManagerV2MigrationNote` to switch an upgraded faucet to it.
+- Added `TokenPolicyManagerV2`, whose transfer callbacks ignore the pause state so a paused fee faucet does not block fee payments.
 
 ## v0.17.0 (2026-10-01)
 

@@ -118,13 +118,6 @@ procedure_root!(
     TokenPolicyManagerV2::code()
 );
 
-procedure_root!(
-    POLICY_MANAGER_V2_MIGRATE_TRANSFER_CALLBACKS,
-    POLICY_MANAGER_V2_LIBRARY_PATH,
-    TokenPolicyManagerV2::MIGRATE_TRANSFER_CALLBACKS_PROC_NAME,
-    TokenPolicyManagerV2::code()
-);
-
 // STORAGE SLOT NAMES
 // ================================================================================================
 
@@ -834,17 +827,7 @@ impl IntoIterator for TokenPolicyManager {
 /// still apply the active send and receive policies, so pause only gates mint and burn.
 ///
 /// The storage layout is the same as the one of [`TokenPolicyManager`], except that the
-/// asset-callback slots hold the V2 callback roots. An account upgraded from the V1 manager still
-/// holds the V1 roots in these slots, which the kernel only invokes while they are part of the
-/// account code. Such an account therefore upgrades in two steps:
-///
-/// 1. Upgrade to code that contains both the V1 and the V2 manager (see
-///    [`Self::upgrade_component`]). The account keeps working, because the V1 callbacks are still
-///    installed.
-/// 2. Call `migrate_transfer_callbacks` (see
-///    [`TokenPolicyManagerV2MigrationNote`](crate::note::config::TokenPolicyManagerV2MigrationNote)),
-///    which points the callback slots at the V2 callbacks. In the same transaction or later, the
-///    account can upgrade to code without the V1 manager.
+/// asset-callback slots hold the V2 callback roots.
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManagerV2 {
     manager: TokenPolicyManager,
@@ -863,7 +846,6 @@ impl TokenPolicyManagerV2 {
 
     const INVOKE_SEND_POLICY_PROC_NAME: &'static str = "invoke_send_policy_v2";
     const INVOKE_RECEIVE_POLICY_PROC_NAME: &'static str = "invoke_receive_policy_v2";
-    const MIGRATE_TRANSFER_CALLBACKS_PROC_NAME: &'static str = "migrate_transfer_callbacks";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -903,11 +885,6 @@ impl TokenPolicyManagerV2 {
         *POLICY_MANAGER_V2_INVOKE_RECEIVE_POLICY
     }
 
-    /// Returns the procedure root of the `migrate_transfer_callbacks` account procedure.
-    pub fn migrate_transfer_callbacks_root() -> AccountProcedureRoot {
-        *POLICY_MANAGER_V2_MIGRATE_TRANSFER_CALLBACKS
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         TokenPolicyManager::build_component_metadata(
@@ -915,19 +892,6 @@ impl TokenPolicyManagerV2 {
             Self::DESCRIPTION,
             Self::invoke_send_policy_root(),
             Self::invoke_receive_policy_root(),
-        )
-    }
-
-    /// Returns a component with the procedures of the V2 manager, but without storage slots.
-    ///
-    /// Add it to the components of an account with the V1 manager to build the intermediate code
-    /// of the upgrade to the V2 manager. The V1 manager component already installs the storage
-    /// slots.
-    pub fn upgrade_component() -> AccountComponent {
-        let metadata =
-            AccountComponentMetadata::new(Self::NAME).with_description(Self::DESCRIPTION);
-        AccountComponent::new(Self::code().clone(), Vec::new(), metadata).expect(
-            "token policy manager v2 upgrade component should satisfy the requirements of a valid account component",
         )
     }
 
@@ -939,12 +903,6 @@ impl TokenPolicyManagerV2 {
             Self::invoke_send_policy_root(),
             Self::invoke_receive_policy_root(),
         )
-    }
-}
-
-impl From<TokenPolicyManager> for TokenPolicyManagerV2 {
-    fn from(manager: TokenPolicyManager) -> Self {
-        Self::new(manager)
     }
 }
 

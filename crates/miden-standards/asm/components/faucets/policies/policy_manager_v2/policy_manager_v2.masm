@@ -1,8 +1,6 @@
 # The MASM code of the Token Policy Manager V2 Account Component.
 #
-# Same as the Token Policy Manager, but its transfer callbacks do not apply the pause check. It
-# also exposes `migrate_transfer_callbacks`, which an account upgraded from the V1 manager calls to
-# point its asset callback slots at the V2 callbacks.
+# Same as the Token Policy Manager, but its transfer callbacks do not apply the pause check.
 
 pub use {set_mint_policy} from miden::standards::faucets::policies::policy_manager
 pub use {get_mint_policy} from miden::standards::faucets::policies::policy_manager
@@ -14,4 +12,3 @@ pub use {set_receive_policy} from miden::standards::faucets::policies::policy_ma
 pub use {get_receive_policy} from miden::standards::faucets::policies::policy_manager
 pub use {invoke_send_policy_v2} from miden::standards::faucets::policies::policy_manager
 pub use {invoke_receive_policy_v2} from miden::standards::faucets::policies::policy_manager
-pub use {migrate_transfer_callbacks} from miden::standards::faucets::policies::policy_manager

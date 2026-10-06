@@ -188,8 +188,7 @@ impl XReserveStablecoinBuilder {
     }
 
     /// Returns the code of the faucet composed from `components` and the auth component, e.g. the
-    /// new code for an `UpgradeNote` from [`Self::build_components_v2_upgrade`] or
-    /// [`Self::build_components_v2`].
+    /// code with [`Self::build_components_v2`].
     pub fn build_code(
         &self,
         components: Vec<AccountComponent>,
