@@ -69,7 +69,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # (via note_tag::create_account_target) rather than stored. For private payback notes, the tag
 # is stored explicitly because the recipient digest does not expose the target account ID.
 #
-# The remainder PSWAP note's own tag is not stored: it is copied from the active note's
+# The remainder PSWAP note's own tag is copied from the active note's
 # metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
 const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = 0
@@ -1056,7 +1056,6 @@ proc parse_note_args(note_args: NoteArgs) -> (AssetAmount, AssetAmount)
 
     movup.2 eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
     # => [account_fill, note_fill]
-
 end
 
 #! Fills an order using the supplied amounts, with all-zero amounts selecting a full fill.
