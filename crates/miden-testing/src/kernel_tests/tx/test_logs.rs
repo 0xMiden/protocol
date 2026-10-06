@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -25,6 +26,7 @@ use miden_protocol::transaction::{
     LogTopic,
     ProvenTransaction,
     TransactionEffects,
+    TransactionEventId,
     TransactionLog,
     TransactionLogData,
     TransactionLogs,
@@ -45,9 +47,15 @@ use miden_protocol::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
-use miden_tx::{LocalTransactionProver, TransactionKernelError};
+use miden_tx::{
+    LocalTransactionProver,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionKernelError,
+};
 use rstest::rstest;
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, TestTransactionBuilder};
@@ -329,10 +337,16 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
             for private in [salt.to_bytes(), executed.logs().to_bytes()] {
                 assert!(!encoded.windows(private.len()).any(|window| window == private));
             }
-            vec![(
-                "changed private commitment",
-                TransactionLogData::Private(Word::from([1u32; WORD_SIZE])),
-            )]
+            let changed_salt = Word::from([1u32; WORD_SIZE]);
+            vec![
+                ("removed private transaction logs", TransactionLogData::Private(Word::empty())),
+                (
+                    "changed private salt",
+                    TransactionLogData::Private(
+                        executed.logs().commitment_for_account(account.id(), changed_salt)?,
+                    ),
+                ),
+            ]
         },
     };
     for (case, log_data) in tampered_data {
@@ -349,18 +363,19 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
 }
 
 #[rstest]
-#[case::public(AccountType::Public)]
-#[case::private(AccountType::Private)]
+#[case::public_native_private_emitter(AccountType::Public, AccountType::Private)]
+#[case::private_native_public_emitter(AccountType::Private, AccountType::Public)]
 #[tokio::test]
 async fn foreign_logs_use_the_emitter_and_native_visibility(
     #[case] native_type: AccountType,
+    #[case] foreign_type: AccountType,
 ) -> anyhow::Result<()> {
     let component = log_emitter_component(Word::empty())?;
     let proc_root = component
         .get_procedure_root_by_path(EMIT_LOG_PROC)
         .context("foreign transaction log procedure")?;
     let foreign = AccountBuilder::new([51; 32])
-        .account_type(AccountType::Public)
+        .account_type(foreign_type)
         .with_components(Auth::IncrNonce)
         .with_component(component)
         .build_existing()?;
@@ -390,7 +405,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
         .get_procedure_root_by_path("test::nested_logs::emit_log")
         .context("nested logging procedure")?;
     let intermediate = AccountBuilder::new([53; 32])
-        .account_type(AccountType::Public)
+        .account_type(foreign_type)
         .with_components(Auth::IncrNonce)
         .with_component(intermediate_component)
         .build_existing()?;
@@ -472,11 +487,9 @@ async fn logs_do_not_make_an_empty_transaction_valid() -> anyhow::Result<()> {
 
 #[rstest]
 #[case::public_falcon(AccountType::Public, AuthScheme::Falcon512Poseidon2)]
-#[case::private_falcon(AccountType::Private, AuthScheme::Falcon512Poseidon2)]
-#[case::public_ecdsa(AccountType::Public, AuthScheme::EcdsaK256Keccak)]
 #[case::private_ecdsa(AccountType::Private, AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn standard_auth_signs_nonempty_logs(
+async fn standard_auth_rejects_replayed_transaction_log_signatures(
     #[case] account_type: AccountType,
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
@@ -532,9 +545,145 @@ async fn standard_auth_signs_nonempty_logs(
     )
     .with_logs(executed.logs().clone(), effects.log_salt())?;
     assert_eq!(summary.logs_commitment(), executed.logs_commitment());
-    let keys = miden_standards::testing::account_interface::get_public_keys_from_account(&account);
+    let keys = get_public_keys_from_account(&account);
     let key = Hasher::merge(&[keys[0], summary.to_commitment()]);
-    assert!(executed.advice_witness().map().get(&key).is_some());
+    let signature = executed.advice_witness().map().get(&key).unwrap().to_vec();
+
+    // Replay a real signature with no authenticator available to replace it. First establish
+    // that the same transaction succeeds, then change only its transaction logs or private salt.
+    let replay = chain.build_transaction(account.clone()).build()?;
+    let executor = TransactionExecutor::<_, ()>::new(&replay);
+    let execute = |args| {
+        executor.execute_transaction(
+            account.id(),
+            effects.ref_block_number(),
+            executed.input_notes().clone(),
+            args,
+        )
+    };
+    let mut args = executed.tx_args().clone();
+    args.extend_advice_map([(key, signature.clone())]);
+    assert_eq!(execute(args).await?.id(), executed.id());
+
+    let twice = CodeBuilder::default().compile_tx_script(format!(
+        r"
+        use miden::core::sys
+        @transaction_script
+        pub proc main
+            call.{root} call.{root}
+            # => [pad(16)]
+
+            exec.sys::truncate_stack
+        end
+        "
+    ))?;
+    let doubled = TransactionLogs::new(vec![executed.logs().iter().next().unwrap().clone(); 2])?;
+    let mut mutations = vec![(
+        summary.clone().with_logs(doubled, effects.log_salt())?,
+        executed.tx_args().clone().with_tx_script(twice),
+    )];
+    if account_type.is_private() {
+        let changed_salt = Word::from([9u32, 8, 7, 6]);
+        mutations.push((
+            summary.with_logs(executed.logs().clone(), changed_salt)?,
+            executed.tx_args().clone().with_log_salt(changed_salt),
+        ));
+    }
+    for (changed_summary, mut args) in mutations {
+        let changed_key = Hasher::merge(&[keys[0], changed_summary.to_commitment()]);
+        assert_ne!(key, changed_key);
+        args.extend_advice_map([(changed_key, signature.clone())]);
+        // The supplied signature reaches verification and fails there, rather than failing
+        // because no signature or authenticator was available.
+        let error = execute(args).await.unwrap_err();
+        assert!(
+            matches!(
+                error,
+                TransactionExecutorError::TransactionProgramExecutionFailed(
+                    ExecutionError::OperationError {
+                        err: OperationError::NotU32Values { .. },
+                        ..
+                    } | ExecutionError::DeferredError { .. }
+                )
+            ),
+            "unexpected signature replay failure: {error}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn transaction_scripts_cannot_forge_transaction_log_events() -> anyhow::Result<()> {
+    let script = CodeBuilder::default().compile_tx_script(
+        r#"
+        const TX_LOG_ADDED = event("miden::protocol::tx::log_added")
+        @transaction_script
+        pub proc main
+            emit.TX_LOG_ADDED
+        end
+        "#,
+    )?;
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(script)
+        .build()?
+        .execute()
+        .await;
+    assert!(matches!(
+        result,
+        Err(TransactionExecutorError::PrivilegedEventFromOutsideTransactionKernelContext(
+            TransactionEventId::TxLogAdded
+        ))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
+    let component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "test::omitted_transaction_logs",
+            r#"
+            use miden::protocol::native_account
+            use miden::protocol::tx
+            use miden::standards::auth
+            const UNAUTHORIZED = event("miden::protocol::auth::unauthorized")
+
+            @auth_script
+            pub proc authenticate
+                dropw exec.native_account::incr_nonce drop
+                # => []
+
+                padw push.0.0 exec.auth::get_tx_summary_commitment
+                # => [MESSAGE_WITHOUT_LOGS]
+
+                padw push.29.17 exec.tx::add_log
+                # => [MESSAGE_WITHOUT_LOGS]
+
+                emit.UNAUTHORIZED
+            end
+            "#,
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("test::omitted_transaction_logs"),
+    )?;
+    let account = AccountBuilder::new([77; 32])
+        .account_type(AccountType::Private)
+        .with_component(component)
+        .with_component(BasicWallet)
+        .build_existing()?;
+    let mut tx = TestTransactionBuilder::new(account)
+        .add_advice_map_entry(Word::empty(), vec![])
+        .build()?;
+    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([13u32; WORD_SIZE])));
+    crate::assert_transaction_executor_error!(
+        tx.execute().await,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::Other { message, .. })
+                    if message.as_ref() == "summary transaction log commitment mismatch"
+            )
+    );
     Ok(())
 }
 
@@ -587,12 +736,26 @@ fn tampered_public_log_data(
     let mut altered = entries.clone();
     altered[0] =
         TransactionLog::new(entries[0].emitter(), entries[0].topic(), vec![Word::empty()])?;
+    let mut changed_emitter = entries.clone();
+    changed_emitter[0] = TransactionLog::new(
+        ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
+        entries[0].topic(),
+        entries[0].payload().to_vec(),
+    )?;
+    let mut changed_topic = entries.clone();
+    changed_topic[0] = TransactionLog::new(
+        entries[0].emitter(),
+        LogTopic::from_name("test::changed"),
+        entries[0].payload().to_vec(),
+    )?;
     [
         ("removed all", vec![]),
         ("removed last", entries[..1].to_vec()),
         ("added", added),
         ("reordered", reordered),
         ("changed payload", altered),
+        ("changed emitter", changed_emitter),
+        ("changed topic", changed_topic),
     ]
     .into_iter()
     .map(|(case, entries)| Ok((case, TransactionLogData::Public(TransactionLogs::new(entries)?))))
