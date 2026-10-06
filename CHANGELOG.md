@@ -1,50 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.18.0 (TBD)
 
 ### Features
 
 - Added the `Scheduler` component: a mandatory waiting period in front of flagged authority-gated procedures, keyed by the id of the administrative note that carries them out, with proposer / `CANCELLER` cancellation ([#3XXX](https://github.com/0xMiden/protocol/pull/3XXX)).
 - Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
-- Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
-- Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
-- Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
-- Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
-- Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
-- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
 
-### Changes
-
-- [BREAKING] Upgraded Miden VM and crypto from v0.33.0 to v0.34.0, including Plonky3 v0.8.0 and updated VM AIR and recursive verifier roots. Falcon key generation now requires a `CryptoRng` ([#3952](https://github.com/0xMiden/protocol/pull/3952)).
-- [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
-- [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
-- Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
-
-### Fixes
-
-- Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
-
-## v0.17.0-rc.7 (2026-09-24)
-
-### Fixes
-
-- [BREAKING] `AuthGuardedMultisig` now pays the transaction fee ([#3931](https://github.com/0xMiden/protocol/pull/3931)).
-
-## v0.17.0-rc.6 (2026-09-22)
-
-### Features
-
-- Added canonical Protobuf representations for `Account`, `AccountStorage`, `StorageSlot`, `StorageMap` and `AssetVault` ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
-
-### Changes
-
-- [BREAKING] Moved `AccountFile` from `miden-protocol` and `NoteFile` from `miden-standards` into `miden-objects` and switched both to Protobuf serialization ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
-- [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
-- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
-- [BREAKING] `StorageMap` now drops an entry whose value is empty, which the sparse Merkle tree already treats as absent, so a removed RBAC role no longer fails account reconstruction, and reports an overfull leaf through the new `StorageMapError::MaxLeafEntriesExceeded` instead of panicking ([#3916](https://github.com/0xMiden/protocol/pull/3916)).
-- [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
-
-## v0.17.0-rc.5 (2026-09-17)
+## v0.17.0 (2026-10-01)
 
 ### Features
 
@@ -62,6 +25,12 @@
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
 - Added `TransactionEffects`, which captures the effects of an executed transaction without the inputs required to re-execute it, together with its canonical Protobuf representation ([#3891](https://github.com/0xMiden/protocol/pull/3891)).
+- Added canonical Protobuf representations for `Account`, `AccountStorage`, `StorageSlot`, `StorageMap` and `AssetVault` ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
+- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3949](https://github.com/0xMiden/protocol/pull/3949)).
+- Added the `UpgradeNote` standard note, which upgrades a network account's code to the code it carries in an attachment ([#3958](https://github.com/0xMiden/protocol/pull/3958)).
+- `UpgradeNote` now carries its code in one or more `AccountCodeUpgradeAttachment` chunks and its script copies the code to the advice map ([#3967](https://github.com/0xMiden/protocol/pull/3967)).
+- Moved the `xusdc-encoding` crate from https://github.com/0xMiden/miden-usdcx/ here as `miden-usdcx` ([#3972](https://github.com/0xMiden/protocol/pull/3972)).
 
 ### Changes
 
@@ -132,22 +101,40 @@
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
 - [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - [BREAKING] Multisig approvals now expire through the dedicated `MultisigAuthArgs::with_approval_expiration_delta` ([#3884](https://github.com/0xMiden/protocol/pull/3884)).
+- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 - [BREAKING] `AuthNetworkAccount` now expands into `BasicWallet` as well and `AuthNetworkAccount::new` allowlists the P2ID script root by default, so every network account built with `AuthNetworkAccount::new` can be deployed by consuming a P2ID note ([#3893](https://github.com/0xMiden/protocol/pull/3893)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.33.0. Execution proof and witness transport now use format 2 and reject v0.32.1 artifacts. Deferred proofs carry portable precompile witnesses, batch proving consumes those witnesses in transaction order, and recursive verifier MAST roots change. Routing parameters now support the Eidos sealing-key variants ([#3894](https://github.com/0xMiden/protocol/pull/3894)).
 - [BREAKING] Removed the `Serializable` and `Deserializable` implementations for `ProposedBatch` in favor of its protobuf encoding, which verifies the transactions' proofs ([#3895](https://github.com/0xMiden/protocol/pull/3895)).
+- [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
+- [BREAKING] Moved `AccountFile` from `miden-protocol` and `NoteFile` from `miden-standards` into `miden-objects` and switched both to Protobuf serialization ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
+- [BREAKING] `StorageMap` now drops an entry whose value is empty, which the sparse Merkle tree already treats as absent, so a removed RBAC role no longer fails account reconstruction, and reports an overfull leaf through the new `StorageMapError::MaxLeafEntriesExceeded` instead of panicking ([#3916](https://github.com/0xMiden/protocol/pull/3916)).
+- [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
+- Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
+- [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
+- [BREAKING] Upgraded Miden VM and crypto from v0.33.0 to v0.34.0, including Plonky3 v0.8.0 and updated VM AIR and recursive verifier roots. Falcon key generation now requires a `CryptoRng` ([#3952](https://github.com/0xMiden/protocol/pull/3952)).
+- [BREAKING] `AccountCode`, `NoteScript` and `TransactionScript` now serialize their MAST forest in the hashless format and `NoteScript` element conversions became `NoteScript::{to_elements, try_from_elements}` ([#3961](https://github.com/0xMiden/protocol/pull/3961)).
+- [BREAKING] The USDCx burn policy now rejects burns the withdrawal attester cannot pay out, and the USDCx burn attachment scheme is now `5` ([#3983](https://github.com/0xMiden/protocol/pull/3983)).
+- Documented that procedure thresholds below the default in the multisig auth components also authorize changes to the procedure's output notes, and recommended sealing them ([#3985](https://github.com/0xMiden/protocol/pull/3985)).
+- [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
+- [BREAKING] Upgraded `miden-vm` dependencies to v0.35.
 - [BREAKING] Incremented the MSRV to 1.98.1.
 
 ### Fixes
 
 - The faucet factories now reject a `TokenPolicyManager` whose policies read a storage slot the account does not install ([#3527](https://github.com/0xMiden/protocol/pull/3527)).
+- Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
+- Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
+- [BREAKING] `AuthGuardedMultisig` now pays the transaction fee ([#3931](https://github.com/0xMiden/protocol/pull/3931)).
+- Fixed a panic when verifying a Protobuf `MerklePath` or `PartialMmr` with a path longer than 255 nodes ([#3970](https://github.com/0xMiden/protocol/pull/3970)).
+- [BREAKING] Transaction host creation now returns an error instead of panicking when a new account's partial storage is missing a storage map ([#3971](https://github.com/0xMiden/protocol/pull/3971)).
+- [BREAKING] Fixed `ProposedBlock` rejecting account updates when a later batch contains multiple transactions for the same account ([#3973](https://github.com/0xMiden/protocol/pull/3973)).
 
 ## v0.16.0 (2026-08-06)
 
 - [BREAKING] `NetworkAccountTarget` decoding no longer discards the target account ID when the execution hint slot holds an unrecognized encoding ([#3811](https://github.com/0xMiden/protocol/pull/3811)).
-- Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] AggLayer bridge token registration now rejects keys owned by another faucet, and token-key cleanup verifies ownership before clearing a mapping ([#3754](https://github.com/0xMiden/protocol/pull/3754)).
 - [BREAKING] AggLayer bridges now allow faucet deregistration while paused, so compromised faucets can be revoked without resuming claims and bridge-outs ([#3750](https://github.com/0xMiden/protocol/pull/3753)).
 - Generated constant fee schedules now assign `FEE_SPONSORSHIP` an explicit zero fee, matching the fee-collection exemption while keeping the note allowlisted ([#3580](https://github.com/0xMiden/protocol/issues/3580)).
@@ -177,7 +164,6 @@
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
 - [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
-- Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] Bounded transfer policy dispatch to the reference block ([#3748](https://github.com/0xMiden/protocol/pull/3748)).
 - [BREAKING] AggLayer bridges now allow faucet deregistration while paused, so compromised faucets can be revoked without resuming claims and bridge-outs ([#3750](https://github.com/0xMiden/protocol/pull/3753)).
 - [BREAKING] AggLayer bridge token registration now rejects keys owned by another faucet, and token-key cleanup verifies ownership before clearing a mapping ([#3754](https://github.com/0xMiden/protocol/pull/3754)).
@@ -212,6 +198,7 @@
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 - [BREAKING] Added an emergency pause to the AggLayer bridge via the standards `Pausable`/`PausableManager` components: all bridge entry points except `remove_ger` abort while paused, and the `ADMIN`-gated standards `PAUSE_CONFIG` note toggles the state; the bridge code commitment and note allowlist change ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 - Added the `MinBurnAmountConfigNote` standard note ([#3511](https://github.com/0xMiden/protocol/pull/3511)).
+- Added the `PriceOracle` account component, reporting the conversion rate between two assets over FPI behind a wrapper whose MAST root stays stable as the pricing implementation behind it is replaced.
 - Exposed AggLayer bridge storage readers such as `is_ger_registered`, `network_id`, and `cgi_chain_hash` outside the `testing` feature ([#3617](https://github.com/0xMiden/protocol/pull/3617)).
 
 ### Changes
@@ -227,7 +214,7 @@
 - [BREAKING] Unified the two account-origin authenticators in the transaction kernel's `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
 - [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
-- [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/3382)).
+- [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#3382](https://github.com/0xMiden/protocol/pull/3382)).
 - [BREAKING] Removed the deprecated `TransactionContextBuilder` and the `MockChain::build_tx_context` / `build_tx_context_at` methods; use `MockChain::build_transaction` instead ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 - [BREAKING] Made `MockTransaction::execute_code` and the `executor` module test-only, and removed `MockTransactionBuilder::disable_lazy_loading` ([#1919](https://github.com/0xMiden/protocol/issues/1919)).
 - [BREAKING] Renamed the `FeeManager` component to `FeePolicyManager` and turned it from an account component into the fee-policy configuration of the `AuthNetworkAccount` component ([#3353](https://github.com/0xMiden/protocol/pull/3353)).

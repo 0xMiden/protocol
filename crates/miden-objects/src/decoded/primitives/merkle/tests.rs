@@ -13,6 +13,16 @@ fn merkle_path_verifies() {
 }
 
 #[test]
+fn merkle_path_rejects_256_nodes_without_panicking() {
+    let decoded = proto::primitives::MerklePath {
+        siblings: vec![Word::empty().into(); 256],
+    }
+    .decode_fields()
+    .unwrap();
+    assert!(decoded.verify().is_err());
+}
+
+#[test]
 fn sparse_path_defers_depth_validation() {
     let decoded = proto::primitives::SparseMerklePath {
         empty_nodes_mask: 0,
@@ -177,4 +187,11 @@ fn partial_mmr_rejects_path_depth_for_another_peak() {
             assert_matches!(source, Some(MmrError::UnknownPeak(3)));
         }
     }
+}
+
+#[test]
+fn partial_mmr_rejects_256_node_path() {
+    let mut message = tracked_partial_mmr();
+    message.tracked_leaves[0].path = vec![Word::empty().into(); 256];
+    assert!(message.decode_fields().unwrap().verify().is_err());
 }

@@ -9,6 +9,7 @@ use {RoleSymbol} from miden::standards::access::role_symbol
 # When the optional `Scheduler` component is installed, `assert_authorized` additionally requires a
 # ready proposal for the note being consumed whenever the gated procedure is flagged as scheduled.
 
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
@@ -38,7 +39,6 @@ pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_
 
 # Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
 # Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
-
 pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
 
 # Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
@@ -51,7 +51,7 @@ const FROZEN = 1
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
 const ERR_PROCEDURE_ROLES_REQUIRE_RBAC = "procedure roles require an RBAC-controlled authority"
-const ERR_CANNOT_REASSIGN_SET_PROCEDURE_ROLE = "the role of set_procedure_role cannot be reassigned"
+const ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS = "set_procedure_role requires a role with members"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -95,7 +95,9 @@ end
 #! Assigns the role required to invoke an authority-gated procedure, or clears it.
 #!
 #! Writing `0` unmaps the procedure so it falls back to the `ADMIN` role. Assigning a role that has
-#! no members blocks the procedure for everyone, `ADMIN` included, until it is reassigned.
+#! no members blocks the procedure for everyone, `ADMIN` included, until the role is granted to an
+#! account or the procedure is reassigned. `set_procedure_role` itself can only be assigned a role
+#! that has at least one member.
 #!
 #! Inputs:  [role_symbol, PROCEDURE_ROOT, pad(11)]
 #! Outputs: [pad(16)]
@@ -110,7 +112,8 @@ end
 #! - `set_procedure_role` is flagged as scheduled and the active note was not proposed or is not
 #!   ready yet.
 #! - role_symbol is neither 0 nor a valid role symbol encoding.
-#! - PROCEDURE_ROOT is the root of `set_procedure_role` itself.
+#! - PROCEDURE_ROOT is the root of `set_procedure_role` itself and role_symbol is a non-zero role
+#!   with no members.
 #!
 #! Invocation: call
 @account_procedure
@@ -128,23 +131,23 @@ pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProc
     end
     # => [role_symbol, PROCEDURE_ROOT, pad(11)]
 
-    movdn.4
-    # => [PROCEDURE_ROOT, role_symbol, pad(11)]
-
-    padw caller
-    # => [SELF_ROOT, PROCEDURE_ROOT, role_symbol, pad(11)]
-
-    eqw assertz.err=ERR_CANNOT_REASSIGN_SET_PROCEDURE_ROLE
-    # => [SELF_ROOT, PROCEDURE_ROOT, role_symbol, pad(11)]
-
-    dropw movup.4
-    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
-
-    push.0.0.0 movup.3
-    # => [role_symbol, 0, 0, 0, PROCEDURE_ROOT, pad(11)]
-
-    swapw
+    push.0.0.0 movup.3 swapw
     # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    dupw padw caller
+    # => [SELF_ROOT, PROCEDURE_ROOT, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    exec.word::eq dup.5 neq.0 and
+    # => [is_self_mapped, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    # A role for set_procedure_role itself must have a member, so it stays callable.
+    if.true
+        dup.4 exec.rbac::get_role_member_count
+        # => [member_count, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+        neq.0 assert.err=ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS
+        # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+    end
 
     push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
     # => [slot_suffix, slot_prefix, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
