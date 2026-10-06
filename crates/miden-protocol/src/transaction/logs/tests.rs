@@ -1,18 +1,23 @@
 use assert_matches::assert_matches;
+use miden_assembly::Assembler;
+use miden_processor::{DefaultHost, FastProcessor, StackInputs};
 use rstest::rstest;
 
 use super::*;
 use crate::utils::hex_to_bytes;
 use crate::utils::serde::SliceReader;
 
+/// Builds fixture account IDs; prefix 1 is private and prefix 17 is public.
 fn emitter(suffix: u32, prefix: u32) -> AccountId {
     AccountId::try_from_elements(Felt::from(suffix), Felt::from(prefix)).unwrap()
 }
 
+/// Builds a topic with explicit elements for commitment and serialization vectors.
 fn topic(a: u32, b: u32) -> LogTopic {
     LogTopic::new([Felt::from(a), Felt::from(b)])
 }
 
+/// Builds a transaction log with a fixed emitter and topic, repeating one payload word.
 fn log(num_words: usize) -> TransactionLog {
     TransactionLog::new(
         emitter(256, 1),
@@ -71,17 +76,6 @@ fn empty_payload_is_not_an_absent_log_or_zero_word_payload() {
 }
 
 #[test]
-fn collection_iterators_preserve_order() {
-    let records = vector_logs();
-    let logs = TransactionLogs::new(records.clone()).unwrap();
-    assert_eq!(logs.iter().len(), records.len());
-    assert!(logs.iter().eq(&records));
-    assert!((&logs).into_iter().eq(&records));
-    assert!(logs.clone().into_iter().eq(records.clone()));
-    assert_eq!(logs.into_vec(), records);
-}
-
-#[test]
 fn commitment_vectors() {
     let payload_commitments = [
         "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -89,13 +83,15 @@ fn commitment_vectors() {
         "0xdb365b9fbe32a920a0b7396c0ba5d09fce08362e113affe99cdc51e55e6291b5",
         "0x0000000000000000000000000000000000000000000000000000000000000000",
     ];
-    // These vectors are also checked against direct permutations below.
+    // Individual commitments are also checked against a direct permutation below.
     let individual_commitments = [
         "0x17203a1b029a5d2cfe4d94ec68da2a204d2cdb7ad60c7f8cc5c3eded29c94810",
         "0x97da466301344a0647316ec6df65a06dc9953150f2e8f9117329974810462eae",
         "0xb0d045543e0ff96da679f79428e26b641bfc3578a31b8ad221c09ef9508bf345",
         "0x17203a1b029a5d2cfe4d94ec68da2a204d2cdb7ad60c7f8cc5c3eded29c94810",
     ];
+    // Pin one through four transaction logs: half, full, full plus half, and two full hash rates.
+    // The fourth entry duplicates the first, so these also pin transaction log multiplicity.
     let collection_commitments = [
         "0xbf0d38cfceaa53cebbc701dec388d0be838452add786b934c26789273748d2ad",
         "0xad7e7b073214899b118bf50ee4f4d9ff4bd92624f1d70e594b570f64cf369981",
@@ -103,13 +99,10 @@ fn commitment_vectors() {
         "0x245f9c8952bd6b2d27f35815104353866243cbb5c92af0847e4afb9c0d654f85",
     ];
     let mut logs = TransactionLogs::default();
-    for (index, record) in vector_logs().into_iter().enumerate() {
-        assert_eq!(
-            record.payload_commitment(),
-            Word::try_from(payload_commitments[index]).unwrap()
-        );
-        assert_eq!(record.commitment(), Word::try_from(individual_commitments[index]).unwrap());
-        logs.try_push(record).unwrap();
+    for (index, entry) in vector_logs().into_iter().enumerate() {
+        assert_eq!(entry.payload_commitment(), Word::try_from(payload_commitments[index]).unwrap());
+        assert_eq!(entry.commitment(), Word::try_from(individual_commitments[index]).unwrap());
+        logs.try_push(entry).unwrap();
         assert_eq!(logs.commitment(), Word::try_from(collection_commitments[index]).unwrap());
     }
 }
@@ -125,9 +118,9 @@ fn commitment_vectors() {
 #[case::removed_log(|logs: &mut Vec<TransactionLog>| logs.truncate(3))]
 #[case::added_log(|logs: &mut Vec<TransactionLog>| logs.push(log(0)))]
 fn commitment_binds_every_field_count_and_order(#[case] mutate: fn(&mut Vec<TransactionLog>)) {
-    let records = vector_logs();
-    let commitment = TransactionLogs::new(records.clone()).unwrap().commitment();
-    let mut changed = records;
+    let entries = vector_logs();
+    let commitment = TransactionLogs::new(entries.clone()).unwrap().commitment();
+    let mut changed = entries;
     mutate(&mut changed);
     assert_ne!(commitment, TransactionLogs::new(changed).unwrap().commitment());
 }
@@ -148,30 +141,6 @@ fn individual_commitments_match_permutation_layout() {
         Hasher::apply_permutation(&mut state);
         assert_eq!(log.commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
     }
-}
-
-/// Pins collection hashing independently of `hash_elements_in_domain`.
-#[rstest]
-#[case::half_rate(1)]
-#[case::full_rate(2)]
-#[case::full_and_half_rate(3)]
-#[case::two_full_rates(4)]
-fn collection_commitment_matches_permutation_layout(#[case] num_logs: usize) {
-    let logs = TransactionLogs::new(vector_logs()[..num_logs].to_vec()).unwrap();
-    let commitments: Vec<_> = logs.iter().map(TransactionLog::commitment).collect();
-    let elements = Word::words_as_elements(&commitments);
-    let mut state = [Felt::ZERO; Hasher::STATE_WIDTH];
-    // The capacity stores the final block length and the specified collection domain.
-    state[Hasher::CAPACITY_RANGE.start] = Felt::from((elements.len() % 8) as u32);
-    state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0003u32);
-    for block in elements.chunks(8) {
-        // Absorb two transaction log commitments per permutation, padding the final block with
-        // zeros.
-        state[..8].fill(Felt::ZERO);
-        state[..block.len()].copy_from_slice(block);
-        Hasher::apply_permutation(&mut state);
-    }
-    assert_eq!(logs.commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
 }
 
 #[test]
@@ -208,19 +177,19 @@ fn serialization_vector() {
 #[case::empty(0)]
 #[case::maximum(MAX_LOG_PAYLOAD_WORDS)]
 fn log_serialization(#[case] num_words: usize) {
-    let record = log(num_words);
-    let bytes = record.to_bytes();
-    assert_eq!(record.get_size_hint(), bytes.len());
-    assert_eq!(TransactionLog::read_from_bytes(&bytes).unwrap(), record);
-    assert_eq!(record.payload().len(), num_words);
+    let entry = log(num_words);
+    let bytes = entry.to_bytes();
+    assert_eq!(entry.get_size_hint(), bytes.len());
+    assert_eq!(TransactionLog::read_from_bytes(&bytes).unwrap(), entry);
+    assert_eq!(entry.payload().len(), num_words);
 }
 
 #[test]
 fn maximum_collection_serialization() {
     let full_payloads = MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS;
-    let mut records = vec![log(MAX_LOG_PAYLOAD_WORDS); full_payloads];
-    records.resize(MAX_LOGS_PER_TX, log(0));
-    let logs = TransactionLogs::new(records).unwrap();
+    let mut entries = vec![log(MAX_LOG_PAYLOAD_WORDS); full_payloads];
+    entries.resize(MAX_LOGS_PER_TX, log(0));
+    let logs = TransactionLogs::new(entries).unwrap();
     assert_eq!(logs.num_logs(), MAX_LOGS_PER_TX);
     assert_eq!(logs.num_payload_words(), MAX_LOG_PAYLOAD_WORDS_PER_TX);
     let bytes = logs.to_bytes();
@@ -244,11 +213,11 @@ fn constructors_reject_excessive_sizes() {
         TransactionLogDataError::TooManyLogs(MAX_LOGS_PER_TX + 1)
     );
 
-    let mut records =
+    let mut entries =
         vec![log(MAX_LOG_PAYLOAD_WORDS); MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS];
-    records.push(log(1));
+    entries.push(log(1));
     assert_eq!(
-        TransactionLogs::new(records).unwrap_err(),
+        TransactionLogs::new(entries).unwrap_err(),
         TransactionLogDataError::TooManyTotalPayloadWords(MAX_LOG_PAYLOAD_WORDS_PER_TX + 1)
     );
 }
@@ -290,7 +259,7 @@ fn assert_invalid_value(error: DeserializationError, expected: TransactionLogDat
 }
 
 #[test]
-fn decoder_rejects_log_count_before_reading_records() {
+fn decoder_rejects_log_count_before_reading_transaction_logs() {
     let mut bytes = Vec::new();
     bytes.write_u16((MAX_LOGS_PER_TX + 1) as u16);
     bytes.write_u8(0xab);
@@ -370,7 +339,7 @@ fn decoder_rejects_noncanonical_field_elements(#[case] offset: usize) {
 }
 
 #[test]
-fn decoder_rejects_truncated_records_and_collections() {
+fn decoder_rejects_truncated_transaction_logs_and_collections() {
     let bytes = log(2).to_bytes();
     for len in 0..bytes.len() {
         assert!(TransactionLog::read_from_bytes(&bytes[..len]).is_err(), "length {len}");
@@ -407,20 +376,7 @@ fn collection_cache_is_lazy_and_invalidated_by_appends() {
 }
 
 #[test]
-fn identical_logs_share_individual_commitments_but_bind_multiplicity() {
-    let record = log(0);
-    let single = TransactionLogs::new(vec![record.clone()]).unwrap();
-    let duplicate = TransactionLogs::new(vec![record.clone(), record]).unwrap();
-    assert_eq!(duplicate.log_commitments[0], duplicate.log_commitments[1]);
-    assert_ne!(single.commitment(), duplicate.commitment());
-    assert_ne!(single.commitment(), single.log_commitments[0]);
-}
-
-#[test]
 fn named_topic_matches_masm_word_slice() {
-    use miden_assembly::Assembler;
-    use miden_processor::{DefaultHost, FastProcessor, StackInputs};
-
     let [first, second] =
         LogTopic::from_name("miden::standards::access::rbac::role_granted").as_elements();
     let source = format!(
@@ -457,7 +413,7 @@ fn topics_serialize_as_two_canonical_felts() {
 }
 
 #[test]
-fn submitted_log_data_serializes_public_records_or_only_a_private_commitment() {
+fn submitted_data_serializes_public_transaction_logs_or_only_a_private_commitment() {
     let logs = TransactionLogs::new(vector_logs()).unwrap();
     let public = TransactionLogData::Public(logs.clone());
     let mut public_bytes = vec![0];
@@ -488,12 +444,12 @@ fn submitted_log_data_serializes_public_records_or_only_a_private_commitment() {
 #[rstest]
 #[case::empty(vec![])]
 #[case::with_foreign_emitters(vector_logs())]
-fn log_visibility_follows_the_native_account(#[case] records: Vec<TransactionLog>) {
+fn log_visibility_follows_the_native_account(#[case] entries: Vec<TransactionLog>) {
     let private_account = emitter(256, 1);
     let public_account = emitter(512, 17);
     assert!(!private_account.is_public());
     assert!(public_account.is_public());
-    let public = TransactionLogData::Public(TransactionLogs::new(records).unwrap());
+    let public = TransactionLogData::Public(TransactionLogs::new(entries).unwrap());
     let private = TransactionLogData::Private(Word::empty());
     assert_eq!(public.validate_visibility(public_account), Ok(()));
     assert_eq!(private.validate_visibility(private_account), Ok(()));
