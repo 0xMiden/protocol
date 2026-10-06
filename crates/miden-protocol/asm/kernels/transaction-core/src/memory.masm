@@ -121,8 +121,11 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
-# Transaction log bookkeeping reserves 1300..1312, and the ordered individual transaction log
-# commitments reserve 3000..3256. Their layout is defined in log.masm.
+# TRANSACTION LOG BOOKKEEPING
+# -------------------------------------------------------------------------------------------------
+
+# The transaction log salt, counters, dirty flag, and cached commitment occupy 1300..1312.
+# These addresses are owned by tx_log.masm; the salt is initialized by the prologue.
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
@@ -244,6 +247,12 @@ const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR = 2400
 
 # The memory address at which the partial blockchain peaks are stored
 const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 2404
+
+# TRANSACTION LOG COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+# The ordered individual transaction log commitments occupy 3000..3256 (64 words).
+# Their layout and access are owned by tx_log.masm.
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------

@@ -16,21 +16,23 @@ pub type StorageSlot = u8;
 
 // General layout
 //
-// | Section            | Start address | Size in elements | Comment                                     |
-// | ------------------ | ------------- | ---------------- | ------------------------------------------- |
-// | Kernel procs       | 0             | 1_024            | 255 procedures, 4 elements each + num_procs |
-// | Bookkeeping        | 1_200         | 85               |                                             |
-// | Global inputs      | 1_600         | 40               |                                             |
-// | Block header       | 2_000         | 44               |                                             |
-// | Protocol config    | 2_200         | 24               |                                             |
-// | Partial blockchain | 2_400         | 132              |                                             |
-// | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each         |
-// | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches   |
-// | Account upgrade    | 532_744       | 8                | code + storage upgrade commitment           |
-// | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)     |
-// |                    |               |                  | + 1024 input notes max, 1024 elements each  |
-// | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each   |
-// | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs        |
+// | Section                     | Start address | Size in elements | Comment                                     |
+// | --------------------------- | ------------- | ---------------- | ------------------------------------------- |
+// | Kernel procs                | 0             | 1_024            | 255 procedures, 4 elements each + num_procs |
+// | Bookkeeping                 | 1_200         | 85               |                                             |
+// | Transaction logs            | 1_300         | 12               | Salt, counters, dirty flag, commitment      |
+// | Global inputs               | 1_600         | 40               |                                             |
+// | Block header                | 2_000         | 44               |                                             |
+// | Protocol config             | 2_200         | 24               |                                             |
+// | Partial blockchain          | 2_400         | 132              |                                             |
+// | Transaction log commitments | 3_000         | 256              | 64 individual transaction log commitments   |
+// | Accounts data               | 8_192         | 524_288          | 64 accounts max, 8192 elements each         |
+// | Account delta               | 532_480       | 264              | fungible + non-fungible ptr + 256 patches   |
+// | Account upgrade             | 532_744       | 8                | code + storage upgrade commitment           |
+// | Input notes                 | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)     |
+// |                             |               |                  | + 1024 input notes max, 1024 elements each  |
+// | Output notes                | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each   |
+// | Link Map Memory             | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs        |
 
 // Relative layout of one account
 //
@@ -136,6 +138,15 @@ pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 1216;
 ///       1220             1221              1222                      1284
 /// ```
 pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 1220;
+
+// TRANSACTION LOG BOOKKEEPING
+// ------------------------------------------------------------------------------------------------
+
+/// Secret salt for the private transaction log commitment, initialized by the prologue.
+pub const LOG_SALT_PTR: MemoryAddress = 1300;
+
+/// Number of transaction logs collected by the kernel.
+pub const NUM_LOGS_PTR: MemoryAddress = 1304;
 
 // GLOBAL INPUTS
 // ------------------------------------------------------------------------------------------------
@@ -557,8 +568,3 @@ const _: () = assert!(
     (LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR).is_multiple_of(LINK_MAP_ENTRY_SIZE),
     "the link map memory range should cleanly contain a multiple of the entry size"
 );
-
-/// Number of transaction logs collected by the kernel.
-pub const NUM_LOGS_PTR: u32 = 1300;
-/// Secret salt for the private transaction log commitment.
-pub const LOG_SALT_PTR: u32 = 1308;

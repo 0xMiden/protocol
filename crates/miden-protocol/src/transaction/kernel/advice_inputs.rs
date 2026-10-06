@@ -153,6 +153,7 @@ impl TransactionAdviceInputs {
     ///     TX_SCRIPT_ROOT,
     ///     TX_SCRIPT_ARGS,
     ///     AUTH_ARGS,
+    ///     LOG_SALT,
     /// ]
     fn build_stack(&mut self, tx_inputs: &TransactionInputs) {
         // --- block header data (keep in sync with kernel's process_block_data) --
@@ -171,6 +172,8 @@ impl TransactionAdviceInputs {
 
         // --- auth procedure args --------------------------------------------
         self.extend_stack(tx_args.auth_args());
+
+        // --- private transaction log salt -----------------------------------
         self.extend_stack(tx_args.log_salt());
     }
 

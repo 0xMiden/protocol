@@ -36,7 +36,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
+use miden_protocol::{Felt, Hasher, MAX_LOG_PAYLOAD_WORDS, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -212,29 +212,7 @@ impl TransactionEvent {
 
         let tx_event = match tx_event_id {
             TransactionEventId::TxLogAdded => {
-                let emitter = AccountId::try_from_elements(
-                    process.get_stack_item(1),
-                    process.get_stack_item(2),
-                )
-                .map_err(|err| {
-                    TransactionKernelError::other_with_source("invalid log emitter", err)
-                })?;
-                let topic = LogTopic::new([process.get_stack_item(3), process.get_stack_item(4)]);
-                let payload_commitment = process.get_stack_word(5);
-                let elements = process
-                    .advice_provider()
-                    .get_mapped_values(&payload_commitment)
-                    .ok_or_else(|| TransactionKernelError::other("missing log payload"))?;
-                if elements.len() % 4 != 0
-                    || elements.len() / 4 > miden_protocol::MAX_LOG_PAYLOAD_WORDS
-                {
-                    return Err(TransactionKernelError::other("invalid log payload length"));
-                }
-                let payload =
-                    elements.as_chunks::<4>().0.iter().map(|chunk| Word::new(*chunk)).collect();
-                let log = TransactionLog::new(emitter, topic, payload)
-                    .map_err(|err| TransactionKernelError::other_with_source("invalid log", err))?;
-                Some(TransactionEvent::TxLogAdded(log))
+                Some(TransactionEvent::TxLogAdded(extract_transaction_log(process)?))
             },
             TransactionEventId::AccountBeforeForeignLoad => {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
@@ -714,6 +692,32 @@ pub(crate) enum RecipientData {
         script_root: Word,
         note_storage: NoteStorage,
     },
+}
+
+/// Extracts a transaction log after the kernel has authenticated its emitter and payload.
+fn extract_transaction_log(
+    process: &ProcessorState,
+) -> Result<TransactionLog, TransactionKernelError> {
+    // Expected stack: [event, emitter_suffix, emitter_prefix, topic_0, topic_1,
+    // PAYLOAD_COMMITMENT].
+    let emitter =
+        AccountId::try_from_elements(process.get_stack_item(1), process.get_stack_item(2))
+            .map_err(|err| {
+                TransactionKernelError::other_with_source("invalid transaction log emitter", err)
+            })?;
+    let topic = LogTopic::new([process.get_stack_item(3), process.get_stack_item(4)]);
+    let payload_commitment = process.get_stack_word(5);
+    let elements = process
+        .advice_provider()
+        .get_mapped_values(&payload_commitment)
+        .ok_or_else(|| TransactionKernelError::other("missing transaction log payload"))?;
+    let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
+    if !remainder.is_empty() || words.len() > MAX_LOG_PAYLOAD_WORDS {
+        return Err(TransactionKernelError::other("invalid transaction log payload length"));
+    }
+    let payload = words.iter().copied().map(Word::new).collect();
+    TransactionLog::new(emitter, topic, payload)
+        .map_err(|err| TransactionKernelError::other_with_source("invalid transaction log", err))
 }
 
 /// Checks if the necessary witness for accessing the asset identified by the asset ID is already
