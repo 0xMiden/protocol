@@ -116,7 +116,7 @@ impl ProvenTransaction {
         )
     }
 
-    /// Sets submitted log data and validates its visibility against the native account.
+    /// Sets submitted transaction log data and validates its visibility against the native account.
     pub fn with_log_data(
         mut self,
         log_data: TransactionLogData,
@@ -129,7 +129,8 @@ impl ProvenTransaction {
         Ok(self)
     }
 
-    /// Returns public records or the private proof-bound commitment.
+    /// Returns complete public transaction logs or the private transaction log commitment
+    /// included in the transaction proof.
     pub fn log_data(&self) -> &TransactionLogData {
         &self.log_data
     }

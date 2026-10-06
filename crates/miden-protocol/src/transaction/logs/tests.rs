@@ -22,7 +22,8 @@ fn log(num_words: usize) -> TransactionLog {
     .unwrap()
 }
 
-/// Fixed private/public emitters, odd/even payload lengths, and a duplicate empty-payload log.
+/// Fixed private/public emitters, odd/even payload lengths, and a duplicate transaction log with an
+/// empty payload.
 fn vector_logs() -> Vec<TransactionLog> {
     vec![
         log(0),
@@ -131,7 +132,8 @@ fn commitment_binds_every_field_count_and_order(#[case] mutate: fn(&mut Vec<Tran
     assert_ne!(commitment, TransactionLogs::new(changed).unwrap().commitment());
 }
 
-/// Pins the individual log's metadata order and domain independently of `merge_in_domain`.
+/// Pins the individual transaction log's metadata order and domain independently of
+/// `merge_in_domain`.
 #[test]
 fn individual_commitments_match_permutation_layout() {
     for log in vector_logs() {
@@ -163,7 +165,8 @@ fn collection_commitment_matches_permutation_layout(#[case] num_logs: usize) {
     state[Hasher::CAPACITY_RANGE.start] = Felt::from((elements.len() % 8) as u32);
     state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0003u32);
     for block in elements.chunks(8) {
-        // Absorb two log commitments per permutation, zero-padding an odd final log.
+        // Absorb two transaction log commitments per permutation, padding the final block with
+        // zeros.
         state[..8].fill(Felt::ZERO);
         state[..block.len()].copy_from_slice(block);
         Hasher::apply_permutation(&mut state);
@@ -525,7 +528,7 @@ fn logs_remain_send_and_sync() {
 }
 
 #[test]
-fn private_openings_require_a_secret_and_change_the_commitment() {
+fn private_transaction_logs_require_a_nonzero_salt_and_commit_to_it() {
     let private_account = emitter(256, 1);
     let public_account = emitter(512, 17);
     let logs = TransactionLogs::new(vec![log(1)]).unwrap();

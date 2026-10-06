@@ -560,5 +560,5 @@ const _: () = assert!(
 
 /// Number of transaction logs collected by the kernel.
 pub const NUM_LOGS_PTR: u32 = 1300;
-/// Secret opening for a private transaction's log commitment.
+/// Secret salt for the private transaction log commitment.
 pub const LOG_SALT_PTR: u32 = 1308;

@@ -30,7 +30,7 @@ const ERR_TX_LOG_TOTAL_PAYLOAD = "transaction log payloads exceed 512 words"
 const ERR_TX_LOG_PREIMAGE = "log payload does not match its commitment"
 const ERR_TX_LOG_SALT = "private transaction logs require a nonzero secret salt"
 
-#! Records a log for the active account after verifying its payload and the transaction limits.
+#! Adds a transaction log for the active account after verifying its payload and the transaction limits.
 #! The caller must authenticate the account procedure before invoking this procedure.
 #!
 #! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT]
@@ -82,8 +82,9 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     push.1 mem_store.DIRTY_PTR
 end
 
-#! Returns the proof-bound commitment. Appending another log invalidates the cache.
-#! Private nonempty collections include the secret transaction salt.
+#! Returns the transaction log commitment included in the transaction proof.
+#! Appending another transaction log invalidates the cache.
+#! Nonempty private transaction logs are committed with the secret salt.
 #!
 #! Inputs: []
 #! Outputs: [LOGS_COMMITMENT]

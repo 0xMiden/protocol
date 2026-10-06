@@ -448,7 +448,7 @@ pub proc get_fee_asset_id() -> AssetId
     # => [FEE_ASSET_ID]
 end
 
-#! Emits a log from the active authenticated account.
+#! Emits a transaction log from the active authenticated account.
 #! The advice map must contain the payload elements under PAYLOAD_COMMITMENT.
 #! Visibility follows the native transaction account, including during FPI.
 #! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT]
@@ -461,7 +461,7 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     dropw dropw dropw dropw
 end
 
-#! Returns the current log commitment without closing the log list.
+#! Returns the current transaction log commitment while allowing further transaction logs to be added.
 #! Inputs: []
 #! Outputs: [LOGS_COMMITMENT]
 pub proc get_logs_commitment() -> word

@@ -164,4 +164,4 @@ The ability to facilitate both, local and network transactions, **is one of the 
 
 ## Transaction logs
 
-See [Transaction logs](transaction_logs.md) for account-emitted logs.
+See [Transaction logs](transaction_logs.md) for transaction logs emitted by account procedures.
