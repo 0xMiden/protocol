@@ -81,7 +81,8 @@ impl TransactionOutputs {
         }
     }
 
-    /// Attaches local log records and validates their private opening.
+    /// Attaches local transaction logs and checks the salt required for nonempty private
+    /// transaction logs.
     pub fn with_logs(
         mut self,
         logs: TransactionLogs,
@@ -93,19 +94,22 @@ impl TransactionOutputs {
         Ok(self)
     }
 
-    /// Returns all records, including private records retained locally.
+    /// Returns all transaction logs, including private transaction logs retained locally.
     pub fn logs(&self) -> &TransactionLogs {
         &self.logs
     }
 
-    /// Returns the commitment to the local log records and their private opening.
+    /// Returns the commitment to the local transaction logs.
+    ///
+    /// For nonempty private transaction logs, combines their commitment with the secret salt.
     pub fn logs_commitment(&self) -> Word {
         self.logs
             .commitment_for_account(self.account.id(), self.log_salt)
-            .expect("transaction output log opening is valid")
+            .expect("transaction log salt in the outputs is valid")
     }
 
-    /// Returns the log data that can be submitted to the node.
+    /// Returns complete public transaction logs or only the private transaction log commitment
+    /// for submission to the node.
     pub fn log_data(&self) -> TransactionLogData {
         if self.account.id().is_public() {
             TransactionLogData::Public(self.logs.clone())
