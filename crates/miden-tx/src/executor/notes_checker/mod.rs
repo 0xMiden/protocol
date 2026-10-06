@@ -242,51 +242,64 @@ where
     ) -> Result<Option<FeeCollection>, NoteCheckerError> {
         let account = tx_inputs.account();
         let storage = account.storage();
+
+        // extract the fee asset ID from the storage. Return `None` if there is no fee policy and,
+        // hence, no fee asset ID there
         let Some(fee_asset_id) = FeePolicyManager::fee_asset_id_from_storage(storage.header())
         else {
             return Ok(None);
         };
 
         let mut scheduled_fees = BTreeMap::new();
-        let fee_schedule_slot = storage
-            .header()
-            .find_slot_header_by_name(BasicConstantFeePolicy::fee_schedule_slot_name());
-        if let Some(fee_schedule_slot) = fee_schedule_slot
-            && FeePolicyManager::active_fee_policy(storage.header())
-                == Some(BasicConstantFeePolicy::root())
+
+        // return empty scheduled fees map in case the active fee policy is not the basic constant
+        // fee policy
+        if FeePolicyManager::active_fee_policy(storage.header())
+            != Some(BasicConstantFeePolicy::root())
         {
-            let map_root = fee_schedule_slot.value();
-            let fee_schedule = storage.maps().find(|map| map.root() == map_root);
+            return Ok(Some(FeeCollection::new(fee_asset_id, scheduled_fees)));
+        }
 
-            for script_root in feature_note_roots(bundles) {
-                let key = BasicConstantFeePolicy::fee_schedule_key(script_root);
-                let entry = match fee_schedule.and_then(|map| map.get(&key)) {
-                    Some(entry) => Some(entry),
-                    None => {
-                        let witness = self
-                            .tx_executor
-                            .data_store
-                            .get_storage_map_witness(account.id(), map_root, key)
-                            .await
-                            .map_err(|source| NoteCheckerError::FeeScheduleFetch {
-                                script_root,
-                                source,
-                            })?;
+        // return empty scheduled fees map in case the fee schedule of the basic constant fee policy
+        // is not in the storage
+        let Some(fee_schedule_slot) = storage
+            .header()
+            .find_slot_header_by_name(BasicConstantFeePolicy::fee_schedule_slot_name())
+        else {
+            return Ok(Some(FeeCollection::new(fee_asset_id, scheduled_fees)));
+        };
 
-                        // An entry that is not proven against the account's fee schedule is not
-                        // trusted to reject notes with.
-                        (witness.proof().compute_root() == map_root)
-                            .then(|| witness.get(key))
-                            .flatten()
-                    },
-                };
+        let fee_schedule_map_root = fee_schedule_slot.value();
+        let fee_schedule = storage.maps().find(|map| map.root() == fee_schedule_map_root);
 
-                if let Some(entry) = entry {
-                    scheduled_fees.insert(
-                        script_root,
-                        BasicConstantFeePolicy::fee_from_schedule_entry(entry),
-                    );
-                }
+        for script_root in feature_note_roots(bundles) {
+            let key = BasicConstantFeePolicy::fee_schedule_key(script_root);
+            let entry = match fee_schedule.and_then(|map| map.get(&key)) {
+                Some(entry) => Some(entry),
+                None => {
+                    // if the partial storage map doesn't contain the entry, get it from the data
+                    // store
+                    let witness = self
+                        .tx_executor
+                        .data_store
+                        .get_storage_map_witness(account.id(), fee_schedule_map_root, key)
+                        .await
+                        .map_err(|source| NoteCheckerError::FeeScheduleFetch {
+                            script_root,
+                            source,
+                        })?;
+
+                    // An entry that is not proven against the account's fee schedule is not
+                    // trusted to reject notes with.
+                    (witness.proof().compute_root() == fee_schedule_map_root)
+                        .then(|| witness.get(key))
+                        .flatten()
+                },
+            };
+
+            if let Some(entry) = entry {
+                scheduled_fees
+                    .insert(script_root, BasicConstantFeePolicy::fee_from_schedule_entry(entry));
             }
         }
 

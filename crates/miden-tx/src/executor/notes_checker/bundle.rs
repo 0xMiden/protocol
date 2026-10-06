@@ -86,7 +86,7 @@ impl NoteBundle {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns `true` if the note at index `head_idx` in the provided `notes` array is the 
+/// Returns `true` if the note at index `head_idx` in the provided `notes` array is the
 /// [`FeeSponsorshipNote`]. Returns `false` otherwise.
 fn is_fee_sponsorship_at(notes: &[Note], head_idx: usize) -> bool {
     FeeSponsorshipNote::try_from(&notes[head_idx]).is_ok()
