@@ -2,6 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 use prost::Message;
+use quote::quote;
 
 /// Schemas that are compiled but left out of the exported descriptor set.
 const UNEXPORTED_FILES: [&str; 2] = ["account_file.proto", "note_file.proto"];
@@ -48,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for message in ["primitives.Felt", "primitives.Word", "primitives.ExecutionProof"] {
         prost.message_attribute(
             message,
-            quote::quote!(#[derive(::miden_protobuf::ProtoDecodeValue)]).to_string(),
+            quote!(#[derive(::miden_protobuf::ProtoDecodeValue)]).to_string(),
         );
     }
     miden_protobuf::build::configure_proto_decode_fields(
@@ -175,50 +176,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     prost.field_attribute(
         ".primitives.MastForest.encoded",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::UntrustedMastForest)])
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::UntrustedMastForest)])
             .to_string(),
     );
     prost.field_attribute(
         ".primitives.PublicKey.key.ecdsa_k256_keccak",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey
         >)])
         .to_string(),
     );
     prost.field_attribute(
         ".primitives.Signature.signature.ecdsa_k256_keccak",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature
         >)])
         .to_string(),
     );
     prost.field_attribute(
         ".account_file.AuthSecretKey.key.ecdsa_k256_keccak",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey
         >)])
         .to_string(),
     );
     prost.field_attribute(
-        ".transaction.ProvenTransaction.log_data",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogData
-        >)])
-        .to_string(),
-    );
-    prost.field_attribute(
         ".account_file.AuthSecretKey.key.falcon512_poseidon2",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey
         >)])
         .to_string(),
     );
     prost.field_attribute(
+        ".transaction.ProvenTransaction.log_data",
+        quote!(#[proto_decode(bytes = Canonical<TransactionLogData>)]).to_string(),
+    );
+    prost.field_attribute(
         ".transaction.TransactionEffectsV1.logs",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogs
-        >)])
-        .to_string(),
+        quote!(#[proto_decode(bytes = Canonical<TransactionLogs>)]).to_string(),
     );
     prost.compile_fds(descriptors)?;
     Ok(())

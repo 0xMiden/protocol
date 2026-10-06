@@ -76,7 +76,7 @@ impl Verify for TxAccountUpdate {
 pub use proto::transaction::DecodedProvenTransaction as ProvenTransaction;
 
 /// Checks transaction construction invariants, but not its proof or input-note authentication.
-impl crate::BuildUnchecked for ProvenTransaction {
+impl BuildUnchecked for ProvenTransaction {
     type Output = miden_protocol::transaction::ProvenTransaction;
     type Error = VerificationError;
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
