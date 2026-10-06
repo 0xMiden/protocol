@@ -11,6 +11,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     AccountId,
+    AccountStorage,
     AccountType,
     StorageMap,
     StorageMapKey,
@@ -280,7 +281,15 @@ pub fn upgrade_to_token_policy_manager_v2(
     let v2_code = faucet_code(account.id(), PolicyManagerVersion::V2)?;
 
     let (id, vault, mut storage, _code, nonce, seed) = account.into_parts();
-    for (slot_name, callback_root) in [
+    set_v2_callback_slots(&mut storage)
+        .map_err(XReserveStablecoinBuilderError::AccountComposition)?;
+    Account::new(id, vault, storage, v2_code, nonce, seed)
+        .map_err(XReserveStablecoinBuilderError::AccountComposition)
+}
+
+/// Points the asset callback slots in `storage` at the [`TokenPolicyManagerV2`] callbacks.
+fn set_v2_callback_slots(storage: &mut AccountStorage) -> Result<(), AccountError> {
+    let callback_mappings = [
         (
             AssetCallbacks::on_before_asset_added_to_note_slot(),
             TokenPolicyManagerV2::invoke_send_policy_root(),
@@ -289,13 +298,13 @@ pub fn upgrade_to_token_policy_manager_v2(
             AssetCallbacks::on_before_asset_added_to_account_slot(),
             TokenPolicyManagerV2::invoke_receive_policy_root(),
         ),
-    ] {
-        storage
-            .set_item(slot_name, callback_root.as_word())
-            .map_err(XReserveStablecoinBuilderError::AccountComposition)?;
+    ];
+
+    for (slot_name, callback_root) in callback_mappings {
+        storage.set_item(slot_name, callback_root.as_word())?;
     }
-    Account::new(id, vault, storage, v2_code, nonce, seed)
-        .map_err(XReserveStablecoinBuilderError::AccountComposition)
+
+    Ok(())
 }
 
 /// Returns the code of an xUSDC faucet with the token policy manager `version`.
