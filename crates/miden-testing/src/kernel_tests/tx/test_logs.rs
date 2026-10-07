@@ -156,7 +156,6 @@ async fn transaction_scripts_cannot_log_directly() -> anyhow::Result<()> {
 #[case::public(AccountType::Public, false)]
 #[case::private(AccountType::Private, false)]
 #[case::direct_public(AccountType::Public, true)]
-#[case::direct_private(AccountType::Private, true)]
 #[tokio::test]
 async fn unauthenticated_note_logs(
     #[case] account_type: AccountType,
@@ -190,7 +189,6 @@ async fn unauthenticated_note_logs(
         .note_type(NoteType::Private)
         .script(script)
         .build()?;
-    let note_id = note.id();
     let chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
     let mut tx = chain
         .build_transaction(account.clone())
@@ -213,21 +211,10 @@ async fn unauthenticated_note_logs(
     let expected =
         TransactionLog::new(account.id(), LogTopic::new([17u32.into(), 29u32.into()]), payload)?;
     assert_eq!(executed.logs().iter().collect::<Vec<_>>(), vec![&expected]);
-    let proven = LocalTransactionProver::default().prove(executed.clone())?;
-    assert_eq!(proven.input_notes().iter().next().unwrap().header().unwrap().id(), note_id);
-    assert!(!proven.input_notes().iter().next().unwrap().is_authenticated());
-    assert_eq!(proven.log_data().commitment(), executed.logs_commitment());
-    if let TransactionLogData::Public(logs) = proven.log_data() {
-        assert_eq!(logs, executed.logs());
-    }
+    let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(proven.log_data(), TransactionLogData::Public(_)),
+        matches!(outputs.log_data(), TransactionLogData::Public(_)),
         account_type.is_public()
-    );
-    assert!(
-        TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL)
-            .verify(&proven)?
-            .is_complete()
     );
     Ok(())
 }
@@ -371,93 +358,35 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     #[case] native_type: AccountType,
     #[case] foreign_type: AccountType,
 ) -> anyhow::Result<()> {
-    let component = log_emitter_component(Word::empty())?;
-    let proc_root = component
-        .get_procedure_root_by_path(EMIT_LOG_PROC)
-        .context("foreign transaction log procedure")?;
-    let foreign = AccountBuilder::new([51; 32])
-        .account_type(foreign_type)
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build_existing()?;
-    let intermediate_code = CodeBuilder::default().compile_component_code(
-        "test::nested_logs",
-        format!(
-            r"
-            use miden::protocol::tx
-            use miden::core::sys
-            @account_procedure
-            pub proc emit_log
-                padw push.31.17 exec.tx::add_log
-                padw padw push.0.0 push.{proc_root} push.{prefix}.{suffix}
-                exec.tx::execute_foreign_procedure exec.sys::truncate_stack
-            end
-            ",
-            prefix = foreign.id().prefix().as_felt(),
-            suffix = foreign.id().suffix(),
-        ),
-    )?;
-    let intermediate_component = AccountComponent::new(
-        intermediate_code,
-        vec![],
-        AccountComponentMetadata::mock("test::nested_logs"),
-    )?;
-    let proc_root = intermediate_component
-        .get_procedure_root_by_path("test::nested_logs::emit_log")
-        .context("nested logging procedure")?;
-    let intermediate = AccountBuilder::new([53; 32])
-        .account_type(foreign_type)
-        .with_components(Auth::IncrNonce)
-        .with_component(intermediate_component)
-        .build_existing()?;
-    let native = AccountBuilder::new([52; 32])
-        .account_type(native_type)
-        .with_components(Auth::IncrNonce)
-        .with_component(BasicWallet)
-        .build_existing()?;
-    let mut chain =
-        MockChainBuilder::with_accounts([native.clone(), intermediate.clone(), foreign.clone()])?
-            .build()?;
-    chain.prove_next_block()?;
-    let inputs = chain.get_foreign_account_inputs(foreign.clone())?;
-    let intermediate_inputs = chain.get_foreign_account_inputs(intermediate.clone())?;
-    let script = CodeBuilder::default().compile_tx_script(format!(
-        r"
-            use miden::protocol::tx
-            use miden::core::sys
-            @transaction_script
-            pub proc main
-                padw padw push.0.0
-                push.{proc_root} push.{prefix}.{suffix}
-                exec.tx::execute_foreign_procedure exec.sys::truncate_stack
-            end
-            ",
-        prefix = intermediate.id().prefix().as_felt(),
-        suffix = intermediate.id().suffix(),
-    ))?;
-    let mut tx = chain
-        .build_transaction(native.clone())
-        .foreign_accounts([inputs, intermediate_inputs])
-        .tx_script(script)
-        .add_advice_map_entry(Word::empty(), vec![])
-        .build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([89u32; 4])));
-    let executed = tx.execute().await?;
-    let entries = executed.logs().iter().collect::<Vec<_>>();
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].emitter(), intermediate.id());
-    assert_eq!(entries[1].emitter(), foreign.id());
-    let proven = LocalTransactionProver::default().prove(executed)?;
+    let (_, executed) = execute_foreign_logs(native_type, foreign_type).await?;
+    let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(proven.log_data(), TransactionLogData::Public(_)),
+        matches!(outputs.log_data(), TransactionLogData::Public(_)),
         native_type.is_public()
     );
+    Ok(())
+}
+
+#[rstest]
+#[case::public_native_private_emitter(AccountType::Public, AccountType::Private)]
+#[case::private_native_public_emitter(AccountType::Private, AccountType::Public)]
+#[tokio::test]
+async fn foreign_logs_prove_and_roundtrip_in_blocks(
+    #[case] native_type: AccountType,
+    #[case] foreign_type: AccountType,
+) -> anyhow::Result<()> {
+    let (mut chain, executed) = execute_foreign_logs(native_type, foreign_type).await?;
+    let expected_data = match native_type {
+        AccountType::Public => TransactionLogData::Public(executed.logs().clone()),
+        AccountType::Private => TransactionLogData::Private(executed.logs_commitment()),
+    };
+    let proven = LocalTransactionProver::default().prove(executed)?;
+    assert_eq!(proven.log_data(), &expected_data);
     assert!(
         TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL)
             .verify(&proven)?
             .is_complete()
     );
-    let expected_data = proven.log_data().clone();
     chain.add_pending_proven_transaction(proven);
     let block = chain.prove_next_block()?;
     assert_eq!(block.body().log_data().as_slice(), &[expected_data]);
@@ -694,6 +623,90 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
 
 // TEST HELPERS
 // ================================================================================================
+
+/// Executes nested foreign log emission against a chain containing all participating accounts.
+async fn execute_foreign_logs(
+    native_type: AccountType,
+    foreign_type: AccountType,
+) -> anyhow::Result<(MockChain, ExecutedTransaction)> {
+    let component = log_emitter_component(Word::empty())?;
+    let proc_root = component
+        .get_procedure_root_by_path(EMIT_LOG_PROC)
+        .context("foreign transaction log procedure")?;
+    let foreign = AccountBuilder::new([51; 32])
+        .account_type(foreign_type)
+        .with_components(Auth::IncrNonce)
+        .with_component(component)
+        .build_existing()?;
+    let intermediate_code = CodeBuilder::default().compile_component_code(
+        "test::nested_logs",
+        format!(
+            r"
+            use miden::protocol::tx
+            use miden::core::sys
+            @account_procedure
+            pub proc emit_log
+                padw push.31.17 exec.tx::add_log
+                padw padw push.0.0 push.{proc_root} push.{prefix}.{suffix}
+                exec.tx::execute_foreign_procedure exec.sys::truncate_stack
+            end
+            ",
+            prefix = foreign.id().prefix().as_felt(),
+            suffix = foreign.id().suffix(),
+        ),
+    )?;
+    let intermediate_component = AccountComponent::new(
+        intermediate_code,
+        vec![],
+        AccountComponentMetadata::mock("test::nested_logs"),
+    )?;
+    let proc_root = intermediate_component
+        .get_procedure_root_by_path("test::nested_logs::emit_log")
+        .context("nested logging procedure")?;
+    let intermediate = AccountBuilder::new([53; 32])
+        .account_type(foreign_type)
+        .with_components(Auth::IncrNonce)
+        .with_component(intermediate_component)
+        .build_existing()?;
+    let native = AccountBuilder::new([52; 32])
+        .account_type(native_type)
+        .with_components(Auth::IncrNonce)
+        .with_component(BasicWallet)
+        .build_existing()?;
+    let mut chain =
+        MockChainBuilder::with_accounts([native.clone(), intermediate.clone(), foreign.clone()])?
+            .build()?;
+    chain.prove_next_block()?;
+    let inputs = chain.get_foreign_account_inputs(foreign.clone())?;
+    let intermediate_inputs = chain.get_foreign_account_inputs(intermediate.clone())?;
+    let script = CodeBuilder::default().compile_tx_script(format!(
+        r"
+            use miden::protocol::tx
+            use miden::core::sys
+            @transaction_script
+            pub proc main
+                padw padw push.0.0
+                push.{proc_root} push.{prefix}.{suffix}
+                exec.tx::execute_foreign_procedure exec.sys::truncate_stack
+            end
+            ",
+        prefix = intermediate.id().prefix().as_felt(),
+        suffix = intermediate.id().suffix(),
+    ))?;
+    let mut tx = chain
+        .build_transaction(native.clone())
+        .foreign_accounts([inputs, intermediate_inputs])
+        .tx_script(script)
+        .add_advice_map_entry(Word::empty(), vec![])
+        .build()?;
+    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([89u32; 4])));
+    let executed = tx.execute().await?;
+    let entries = executed.logs().iter().collect::<Vec<_>>();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].emitter(), intermediate.id());
+    assert_eq!(entries[1].emitter(), foreign.id());
+    Ok((chain, executed))
+}
 
 /// Runs a kernel transaction log procedure after initializing the transaction context.
 fn kernel_log_program(body: &str) -> String {

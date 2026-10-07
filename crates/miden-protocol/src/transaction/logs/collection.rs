@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 #[cfg(any(test, feature = "testing"))]
 use crate::Word;
-use crate::transaction::{OrderedTransactionHeaders, TransactionLogData, TransactionLogDataError};
+use crate::transaction::{OrderedTransactionHeaders, TransactionLogData, TransactionLogError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -65,22 +65,21 @@ impl LogDataScope {
 }
 
 impl LogDataBudget {
-    fn consume(&mut self, data: &TransactionLogData) -> Result<(), TransactionLogDataError> {
-        self.entries =
-            self.entries.checked_sub(1).ok_or(TransactionLogDataError::AggregateBudget)?;
+    fn consume(&mut self, data: &TransactionLogData) -> Result<(), TransactionLogError> {
+        self.entries = self.entries.checked_sub(1).ok_or(TransactionLogError::AggregateBudget)?;
         self.bytes = self
             .bytes
             .checked_sub(LENGTH_PREFIX_SIZE + data.get_size_hint())
-            .ok_or(TransactionLogDataError::AggregateBudget)?;
+            .ok_or(TransactionLogError::AggregateBudget)?;
         if let TransactionLogData::Public(logs) = data {
             self.public_logs = self
                 .public_logs
                 .checked_sub(logs.num_logs())
-                .ok_or(TransactionLogDataError::AggregateBudget)?;
+                .ok_or(TransactionLogError::AggregateBudget)?;
             self.payload_words = self
                 .payload_words
                 .checked_sub(logs.num_payload_words())
-                .ok_or(TransactionLogDataError::AggregateBudget)?;
+                .ok_or(TransactionLogError::AggregateBudget)?;
         }
         Ok(())
     }
@@ -91,7 +90,7 @@ impl TransactionLogDataCollection {
     ///
     /// Call [`Self::validate_for_block`] or [`Self::validate_for_batch`] to check each entry
     /// against its transaction header.
-    pub fn new(data: Vec<TransactionLogData>) -> Result<Self, TransactionLogDataError> {
+    pub fn new(data: Vec<TransactionLogData>) -> Result<Self, TransactionLogError> {
         let collection = Self(data);
         Self::validate_block_budget(collection.0.iter())?;
         Ok(collection)
@@ -111,7 +110,7 @@ impl TransactionLogDataCollection {
     pub fn validate_for_batch(
         &self,
         headers: &OrderedTransactionHeaders,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         Self::validate_batch_budget(self.0.iter())?;
         self.validate_headers(headers)
     }
@@ -120,7 +119,7 @@ impl TransactionLogDataCollection {
     pub fn validate_for_block(
         &self,
         headers: &OrderedTransactionHeaders,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         Self::validate_block_budget(self.0.iter())?;
         self.validate_headers(headers)
     }
@@ -128,14 +127,14 @@ impl TransactionLogDataCollection {
     fn validate_headers(
         &self,
         headers: &OrderedTransactionHeaders,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         if self.0.len() != headers.as_slice().len() {
-            return Err(TransactionLogDataError::AssociationCount);
+            return Err(TransactionLogError::AssociationCount);
         }
         for (index, (data, header)) in self.0.iter().zip(headers.as_slice()).enumerate() {
             data.validate_visibility(header.account_id())?;
             if data.commitment() != header.logs_commitment() {
-                return Err(TransactionLogDataError::CommitmentMismatch(index));
+                return Err(TransactionLogError::CommitmentMismatch(index));
             }
         }
         Ok(())
@@ -143,20 +142,20 @@ impl TransactionLogDataCollection {
 
     pub(crate) fn validate_batch_budget<'a>(
         entries: impl IntoIterator<Item = &'a TransactionLogData>,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         Self::validate_budget(entries, LogDataScope::Batch)
     }
 
     pub(crate) fn validate_block_budget<'a>(
         entries: impl IntoIterator<Item = &'a TransactionLogData>,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         Self::validate_budget(entries, LogDataScope::Block)
     }
 
     fn validate_budget<'a>(
         entries: impl IntoIterator<Item = &'a TransactionLogData>,
         scope: LogDataScope,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         let mut budget = scope.budget();
         for data in entries {
             budget.consume(data)?;

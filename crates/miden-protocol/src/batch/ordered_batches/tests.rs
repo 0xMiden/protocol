@@ -16,7 +16,7 @@ use crate::transaction::{
     TransactionLog,
     TransactionLogData,
     TransactionLogDataCollection,
-    TransactionLogDataError,
+    TransactionLogError,
     TransactionLogs,
 };
 use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
@@ -46,16 +46,16 @@ fn transaction_data_rejects_block_log_overflow() {
     let batches = batches_with_logs(MAX_PUBLIC_LOGS_PER_BLOCK / MAX_PUBLIC_LOGS_PER_BATCH + 1);
     let bytes = batches.to_bytes();
 
-    assert_matches!(batches.into_transaction_data(), Err(TransactionLogDataError::AggregateBudget));
+    assert_matches!(batches.into_transaction_data(), Err(TransactionLogError::AggregateBudget));
     let decoded = OrderedBatches::read_from_bytes(&bytes).unwrap();
-    assert_matches!(decoded.into_transaction_data(), Err(TransactionLogDataError::AggregateBudget));
+    assert_matches!(decoded.into_transaction_data(), Err(TransactionLogError::AggregateBudget));
 
     // Batches are the first field in a proposed block. Reject the oversized aggregate before
     // attempting to read any remaining fields, which are deliberately absent here.
     assert_matches!(
         ProposedBlock::read_from_bytes(&bytes),
         Err(DeserializationError::InvalidValue(message))
-            if message == TransactionLogDataError::AggregateBudget.to_string()
+            if message == TransactionLogError::AggregateBudget.to_string()
     );
 }
 

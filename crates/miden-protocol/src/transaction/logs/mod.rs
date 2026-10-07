@@ -1,8 +1,8 @@
 //! Transaction logs, submitted data, and their ordered commitment.
 //!
-//! Hash domains use the protocol range proposed by the [Poseidon2 domain registry RFC][registry].
-//!
-//! [registry]: https://github.com/0xMiden/crypto/pull/1026
+//! Individual transaction logs and ordered collections use distinct hash domains,
+//! defined by [`TransactionLog::COMMITMENT_DOMAIN`] and
+//! [`TransactionLogs::COMMITMENT_DOMAIN`].
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -41,7 +41,7 @@ use crate::{
 /// Errors from validating transaction logs or their submitted data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum TransactionLogDataError {
+pub enum TransactionLogError {
     /// An individual transaction log payload exceeds its word limit.
     #[error("log payload has {0} words, exceeding the maximum of {MAX_LOG_PAYLOAD_WORDS}")]
     TooManyPayloadWords(usize),
@@ -94,7 +94,7 @@ impl TransactionLog {
         emitter: AccountId,
         topic: LogTopic,
         payload: Vec<Word>,
-    ) -> Result<Self, TransactionLogDataError> {
+    ) -> Result<Self, TransactionLogError> {
         Self::validate_payload_size(payload.len())?;
         Ok(Self { emitter, topic, payload })
     }
@@ -139,9 +139,9 @@ impl TransactionLog {
         (self.emitter, self.topic, self.payload)
     }
 
-    fn validate_payload_size(num_words: usize) -> Result<(), TransactionLogDataError> {
+    fn validate_payload_size(num_words: usize) -> Result<(), TransactionLogError> {
         if num_words > MAX_LOG_PAYLOAD_WORDS {
-            return Err(TransactionLogDataError::TooManyPayloadWords(num_words));
+            return Err(TransactionLogError::TooManyPayloadWords(num_words));
         }
         Ok(())
     }
@@ -239,19 +239,19 @@ impl TransactionLogs {
     /// nonzero secret salt to hide predictable private transaction logs.
     ///
     /// Empty transaction logs commit to [`Word::empty`] regardless of the account's visibility.
-    /// Returns [`TransactionLogDataError::MissingPrivateSalt`] if nonempty private transaction
+    /// Returns [`TransactionLogError::MissingPrivateSalt`] if nonempty private transaction
     /// logs are supplied with a zero salt.
     pub fn commitment_for_account(
         &self,
         native_account: AccountId,
         secret_salt: Word,
-    ) -> Result<Word, TransactionLogDataError> {
+    ) -> Result<Word, TransactionLogError> {
         let commitment = self.commitment();
         if native_account.is_public() || self.is_empty() {
             return Ok(commitment);
         }
         if secret_salt.is_empty() {
-            return Err(TransactionLogDataError::MissingPrivateSalt);
+            return Err(TransactionLogError::MissingPrivateSalt);
         }
         Ok(Hasher::merge_in_domain(
             &[commitment, secret_salt],
@@ -263,7 +263,7 @@ impl TransactionLogs {
     ///
     /// Returns an error if the count exceeds [`MAX_LOGS_PER_TX`] or the total payload size
     /// exceeds [`MAX_LOG_PAYLOAD_WORDS_PER_TX`].
-    pub fn new(logs: Vec<TransactionLog>) -> Result<Self, TransactionLogDataError> {
+    pub fn new(logs: Vec<TransactionLog>) -> Result<Self, TransactionLogError> {
         Self::validate_log_count(logs.len())?;
         let mut result = Self::default();
         for log in logs {
@@ -276,7 +276,7 @@ impl TransactionLogs {
     ///
     /// Returns an error if the resulting count exceeds [`MAX_LOGS_PER_TX`] or total payload
     /// size exceeds [`MAX_LOG_PAYLOAD_WORDS_PER_TX`]. On error the collection is unchanged.
-    pub fn try_push(&mut self, log: TransactionLog) -> Result<(), TransactionLogDataError> {
+    pub fn try_push(&mut self, log: TransactionLog) -> Result<(), TransactionLogError> {
         let num_logs = self.logs.len() + 1;
         Self::validate_log_count(num_logs)?;
         Self::validate_total_payload_size(self.num_payload_words() + log.num_payload_words())?;
@@ -327,16 +327,16 @@ impl TransactionLogs {
         self.logs
     }
 
-    fn validate_log_count(num_logs: usize) -> Result<(), TransactionLogDataError> {
+    fn validate_log_count(num_logs: usize) -> Result<(), TransactionLogError> {
         if num_logs > MAX_LOGS_PER_TX {
-            return Err(TransactionLogDataError::TooManyLogs(num_logs));
+            return Err(TransactionLogError::TooManyLogs(num_logs));
         }
         Ok(())
     }
 
-    fn validate_total_payload_size(num_words: usize) -> Result<(), TransactionLogDataError> {
+    fn validate_total_payload_size(num_words: usize) -> Result<(), TransactionLogError> {
         if num_words > MAX_LOG_PAYLOAD_WORDS_PER_TX {
-            return Err(TransactionLogDataError::TooManyTotalPayloadWords(num_words));
+            return Err(TransactionLogError::TooManyTotalPayloadWords(num_words));
         }
         Ok(())
     }

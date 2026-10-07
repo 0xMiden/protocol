@@ -19,7 +19,7 @@ use crate::transaction::{
     TransactionLog,
     TransactionLogData,
     TransactionLogDataCollection,
-    TransactionLogDataError,
+    TransactionLogError,
     TransactionLogs,
 };
 use crate::utils::serde::{ByteWriter, Deserializable, DeserializationError, Serializable};
@@ -75,13 +75,13 @@ fn block_transaction_logs_roundtrip_and_validate_associations() {
         let invalid = TransactionLogDataCollection::new(entries).unwrap();
         assert!(matches!(
             BlockBody::new(vec![], vec![], vec![], invalid, headers.clone()),
-            Err(BlockBodyError::LogData(TransactionLogDataError::AssociationCount))
+            Err(BlockBodyError::LogData(TransactionLogError::AssociationCount))
         ));
     }
     let reversed = TransactionLogDataCollection::new(vec![private, public]).unwrap();
     assert_eq!(
         reversed.validate_for_block(&headers),
-        Err(TransactionLogDataError::VisibilityMismatch)
+        Err(TransactionLogError::VisibilityMismatch)
     );
 
     let changed = TransactionLogDataCollection::new(vec![
@@ -91,7 +91,7 @@ fn block_transaction_logs_roundtrip_and_validate_associations() {
     .unwrap();
     assert_eq!(
         changed.validate_for_block(&headers),
-        Err(TransactionLogDataError::CommitmentMismatch(0))
+        Err(TransactionLogError::CommitmentMismatch(0))
     );
     let duplicate_headers =
         OrderedTransactionHeaders::new_unchecked(vec![headers.as_slice()[0].clone(); 2]);
@@ -158,7 +158,7 @@ fn assert_aggregate_limit(
     entries.push(extra);
     assert_eq!(
         TransactionLogDataCollection::validate_budget(entries.iter(), scope),
-        Err(TransactionLogDataError::AggregateBudget)
+        Err(TransactionLogError::AggregateBudget)
     );
 }
 
@@ -188,7 +188,7 @@ fn decoder_stops_when_public_resources_are_exhausted() {
         assert_eq!(
             TransactionLogDataCollection::read_from_bytes(&bytes),
             Err(DeserializationError::InvalidValue(
-                TransactionLogDataError::AggregateBudget.to_string()
+                TransactionLogError::AggregateBudget.to_string()
             ))
         );
     }

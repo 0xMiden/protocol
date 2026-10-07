@@ -30,7 +30,7 @@ pub use logs::{
     TransactionLog,
     TransactionLogData,
     TransactionLogDataCollection,
-    TransactionLogDataError,
+    TransactionLogError,
     TransactionLogs,
 };
 pub use ordered_transactions::OrderedTransactionHeaders;
