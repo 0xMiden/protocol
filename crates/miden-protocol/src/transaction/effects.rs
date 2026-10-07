@@ -4,7 +4,7 @@ use super::{
     InputNotes,
     RawOutputNotes,
     TransactionId,
-    TransactionLogDataError,
+    TransactionLogError,
     TransactionLogs,
 };
 use crate::Word;
@@ -81,7 +81,7 @@ impl TransactionEffects {
         mut self,
         logs: TransactionLogs,
         log_salt: Word,
-    ) -> Result<Self, TransactionLogDataError> {
+    ) -> Result<Self, TransactionLogError> {
         let commitment = logs.commitment_for_account(self.account_patch.id(), log_salt)?;
         self.transaction_id = TransactionId::new(
             self.initial_state_commitment,

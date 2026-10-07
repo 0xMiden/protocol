@@ -1,7 +1,7 @@
 use alloc::format;
 use alloc::vec::Vec;
 
-use super::{TransactionLogDataError, TransactionLogs};
+use super::{TransactionLogError, TransactionLogs};
 use crate::account::AccountDelta;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
@@ -101,7 +101,7 @@ impl TransactionSummary {
         mut self,
         logs: TransactionLogs,
         log_salt: Word,
-    ) -> Result<Self, TransactionLogDataError> {
+    ) -> Result<Self, TransactionLogError> {
         logs.commitment_for_account(self.account_delta.id(), log_salt)?;
         self.logs = logs;
         self.log_salt = log_salt;
