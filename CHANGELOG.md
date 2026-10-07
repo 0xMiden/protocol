@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.18.0 (TBD)
+
+### Features
+
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+
 ## v0.17.0 (2026-10-01)
 
 ### Features
