@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.18.0 (TBD)
+
+### Features
+
+- Added the `Scheduler` component: a mandatory waiting period in front of flagged authority-gated procedures, keyed by the id of the administrative note that carries them out, with proposer / `CANCELLER` cancellation ([#3XXX](https://github.com/0xMiden/protocol/pull/3XXX)).
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+
 ## v0.17.0 (2026-10-01)
 
 ### Features
