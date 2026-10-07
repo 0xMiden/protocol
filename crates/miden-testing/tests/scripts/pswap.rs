@@ -1599,14 +1599,18 @@ async fn run_partial_fill_ratio_case(
     let mut builder = MockChain::builder();
     let max_supply = 100_000u64;
 
-    let usdc_faucet =
-        builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", max_supply, Some(offered_usdc))?;
+    let usdc_faucet = builder.add_existing_basic_faucet(
+        Auth::IncrNonce,
+        "USDC",
+        max_supply,
+        Some(offered_usdc),
+    )?;
     let eth_faucet =
-        builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", max_supply, Some(fill_eth))?;
+        builder.add_existing_basic_faucet(Auth::IncrNonce, "ETH", max_supply, Some(fill_eth))?;
 
     let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
+        Auth::IncrNonce,
         [FungibleAsset::new(eth_faucet.id(), fill_eth)?.into()],
     )?;
 
