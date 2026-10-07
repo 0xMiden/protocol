@@ -20,7 +20,7 @@ use miden_protocol::errors::{
     TransactionInputError,
     TransactionOutputError,
 };
-use miden_protocol::note::{NoteId, PartialNoteMetadata};
+use miden_protocol::note::{NoteId, NoteScriptRoot, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use miden_prover::ProverError;
@@ -37,6 +37,14 @@ pub enum NoteCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
+    #[error(
+        "failed to fetch the fee the target account charges for note script root {script_root}"
+    )]
+    FeeScheduleFetch {
+        script_root: NoteScriptRoot,
+        #[source]
+        source: DataStoreError,
+    },
 }
 
 // TRANSACTION CHECKER ERROR

@@ -74,7 +74,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
         .check_notes_consumability(target_account_id, block_ref, notes.clone(), tx_args)
@@ -114,7 +114,7 @@ async fn check_note_consumability_custom_notes_success(
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes.clone(), tx_args)
@@ -192,7 +192,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
@@ -266,7 +266,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
@@ -341,7 +341,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
@@ -416,7 +416,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumability_info: NoteConsumptionStatus = notes_checker
         .can_consume(
@@ -514,7 +514,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     let block_ref = mock_tx.tx_inputs().block_header().block_num();
     let tx_args = mock_tx.tx_args();
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
     // --------------------------------------------------------------------------------------------
@@ -667,7 +667,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     let tx_args = mock_tx.tx_args();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
     // --------------------------------------------------------------------------------------------
@@ -760,7 +760,7 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     let tx_args = mock_tx.tx_args();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     // check the note with invalid number of inputs
     // --------------------------------------------------------------------------------------------
@@ -829,7 +829,7 @@ async fn check_note_consumability_static_analysis_fee_sponsorship(
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let status = notes_checker
         .can_consume(
