@@ -23,7 +23,6 @@ use miden_standards::errors::standards::{
     ERR_INVALID_ROLE_SYMBOL,
     ERR_SENDER_LACKS_ROLE,
     ERR_SENDER_NOT_OWNER,
-    ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS,
 };
 use miden_testing::{
     AccountState,
@@ -640,9 +639,10 @@ async fn memberless_role_takes_a_procedure_out_of_service() -> anyhow::Result<()
     Ok(())
 }
 
-/// `set_procedure_role` can hand itself to a populated role, which can later return it to `ADMIN`.
+/// `set_procedure_role` can hand itself to a memberless role without locking the account: `ADMIN`
+/// can still grant that role, and its member can then return `set_procedure_role` to `ADMIN`.
 #[tokio::test]
-async fn set_procedure_role_reassigns_itself_to_a_populated_role() -> anyhow::Result<()> {
+async fn memberless_set_procedure_role_is_recoverable() -> anyhow::Result<()> {
     let role_mngr = test_account_id(32);
     let admin = *ADMIN_ID;
     let self_root = Authority::set_procedure_role_root();
@@ -654,44 +654,23 @@ async fn set_procedure_role_reassigns_itself_to_a_populated_role() -> anyhow::Re
     let reassign = build_set_procedure_role_note(admin, Felt::from(&role("ROLE_MNGR")), self_root)?;
     let admin_restore = build_set_procedure_role_note(admin, Felt::ZERO, self_root)?;
     let role_mngr_restore = build_set_procedure_role_note(role_mngr, Felt::ZERO, self_root)?;
-    for note in [&grant_role_mngr, &reassign, &admin_restore, &role_mngr_restore] {
+    for note in [&reassign, &admin_restore, &grant_role_mngr, &role_mngr_restore] {
         builder.add_output_note(RawOutputNote::Full(note.clone()));
     }
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_role_mngr).await?;
+    // ROLE_MNGR has no members yet, so no one can call `set_procedure_role` after this.
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &reassign).await?;
     assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, Some(role("ROLE_MNGR")));
 
-    // ADMIN no longer holds the role assignment surface; ROLE_MNGR does.
     let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &admin_restore).await;
     assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
+    // ADMIN still administers ROLE_MNGR, so it can grant the role and restore access.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_role_mngr).await?;
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &role_mngr_restore).await?;
-    assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, None);
-
-    Ok(())
-}
-
-/// Handing `set_procedure_role` to a role no one holds is refused.
-#[tokio::test]
-async fn set_procedure_role_cannot_reassign_itself_to_a_memberless_role() -> anyhow::Result<()> {
-    let admin = *ADMIN_ID;
-    let self_root = Authority::set_procedure_role_root();
-
-    let mut builder = MockChain::builder();
-    let faucet = add_rbac_faucet(&mut builder, admin, BTreeMap::new(), 85)?;
-
-    let note = build_set_procedure_role_note(admin, Felt::from(&role("ROLE_MNGR")), self_root)?;
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &note).await;
-    assert_transaction_executor_error!(result, ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS);
     assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, None);
 
     Ok(())
