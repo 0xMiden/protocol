@@ -4,7 +4,7 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
-use crate::transaction::{TransactionLogData, TransactionLogDataError, TransactionLogs};
+use crate::transaction::{TransactionLogData, TransactionLogError, TransactionLogs};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -97,7 +97,7 @@ impl TransactionOutputs {
         mut self,
         logs: TransactionLogs,
         log_salt: Word,
-    ) -> Result<Self, TransactionLogDataError> {
+    ) -> Result<Self, TransactionLogError> {
         logs.commitment_for_account(self.account.id(), log_salt)?;
         self.logs = logs;
         self.log_salt = log_salt;
