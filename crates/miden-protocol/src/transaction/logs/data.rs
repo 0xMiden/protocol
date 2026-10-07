@@ -1,4 +1,4 @@
-use super::{TransactionLogDataError, TransactionLogs};
+use super::{TransactionLogError, TransactionLogs};
 use crate::Word;
 use crate::account::AccountId;
 use crate::utils::serde::{
@@ -44,12 +44,12 @@ impl TransactionLogData {
     pub fn validate_visibility(
         &self,
         native_account: AccountId,
-    ) -> Result<(), TransactionLogDataError> {
+    ) -> Result<(), TransactionLogError> {
         let is_public = matches!(self, Self::Public(_));
         if is_public == native_account.is_public() {
             Ok(())
         } else {
-            Err(TransactionLogDataError::VisibilityMismatch)
+            Err(TransactionLogError::VisibilityMismatch)
         }
     }
 }
@@ -58,11 +58,11 @@ impl Serializable for TransactionLogData {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
             Self::Public(logs) => {
-                target.write_u8(Self::PUBLIC);
+                target.write_u8(Self::PUBLIC_ID);
                 logs.write_into(target);
             },
             Self::Private(commitment) => {
-                target.write_u8(Self::PRIVATE);
+                target.write_u8(Self::PRIVATE_ID);
                 commitment.write_into(target);
             },
         }
@@ -79,8 +79,8 @@ impl Serializable for TransactionLogData {
 impl Deserializable for TransactionLogData {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
-            Self::PUBLIC => Ok(Self::Public(TransactionLogs::read_from(source)?)),
-            Self::PRIVATE => Ok(Self::Private(Word::read_from(source)?)),
+            Self::PUBLIC_ID => Ok(Self::Public(TransactionLogs::read_from(source)?)),
+            Self::PRIVATE_ID => Ok(Self::Private(Word::read_from(source)?)),
             tag => Err(DeserializationError::InvalidValue(format!(
                 "invalid transaction log data tag: {tag}"
             ))),

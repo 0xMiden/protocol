@@ -55,10 +55,7 @@ impl AccountDelta {
     /// Domain separator for the account delta commitment.
     ///
     /// It is placed in the capacity word of the hasher rather than in the hashed elements, so that
-    /// it stays fixed even as the layout of those elements evolves across versions. The value is
-    /// drawn from the protocol range proposed by the [Poseidon2 domain registry RFC][registry].
-    ///
-    /// [registry]: https://github.com/0xMiden/crypto/pull/1026
+    /// it stays fixed even as the layout of those elements evolves across versions.
     const DOMAIN: Felt = Felt::new_unchecked(0x02_0001);
 
     /// Version 1 of the account delta commitment layout.
