@@ -221,8 +221,8 @@ impl TransactionInputs {
     // --------------------------------------------------------------------------------------------
 
     /// Replaces the input notes for the transaction.
-    pub fn set_input_notes(&mut self, new_notes: Vec<Note>) {
-        self.input_notes = new_notes.into();
+    pub fn set_input_notes(&mut self, new_notes: InputNotes<InputNote>) {
+        self.input_notes = new_notes;
     }
 
     /// Replaces the advice inputs for the transaction.
