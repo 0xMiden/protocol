@@ -94,6 +94,28 @@ procedure_root!(
 /// `min_delay` lives in the account rather than the note because a note that declared its own
 /// delay would let its author choose zero. Staleness of a proposed-but-never-consumed note is left
 /// to the note's own expiry.
+///
+/// # Security: the timelock only covers authority-gated procedures
+///
+/// A flag takes effect only for procedures that go through `authority::assert_authorized` or call
+/// `scheduler::assert_ready_if_scheduled` themselves, such as `set_procedure_role`. Role
+/// management on the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
+/// component (`grant_role`, `revoke_role`, `set_role_admin`) is authorized by the role's admin
+/// directly and cannot be scheduled, and `freeze` / `unfreeze` stay immediate by design: flagging
+/// any of their roots has no effect.
+///
+/// # Security: keep cancellation out of `ADMIN`'s reach
+///
+/// The waiting period protects against a compromised `ADMIN` only while someone else can still
+/// cancel. Because role management is immediate, an `ADMIN` that administers the cancel role can
+/// revoke every canceller and then wait out its own proposal. To prevent this:
+/// - map `cancel` to a dedicated role (e.g. `CANCELLER`) whose admin is a self-administered role
+///   (e.g. `CANCELLER_ADMIN`) held by an account independent of `ADMIN`, and keep that admin role
+///   populated, since a memberless admin role falls back to `ADMIN`;
+/// - give `freeze` and `unfreeze` roles administered the same way: while the account is frozen
+///   only a proposer can cancel, so an `ADMIN` holding the freeze role could freeze the account
+///   for the waiting period and unfreeze it in the note that carries out its proposal;
+/// - flag `set_procedure_role`, so `cancel` cannot be remapped to another role without a proposal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scheduler {
     min_delay: u32,
