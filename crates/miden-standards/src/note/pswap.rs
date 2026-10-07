@@ -416,8 +416,16 @@ impl PswapNote {
     // --------------------------------------------------------------------------------------------
 
     /// Domain separator for cancellation advice; ASCII "PSWAPCAN".
-    const CANCEL_ADVICE_DOMAIN: Word =
-        Word::new([Felt::new_unchecked(0x505357415043414e), ZERO, ZERO, ZERO]);
+    const CANCEL_ADVICE_DOMAIN: Word = {
+        let pswapcan = u64::from_be_bytes(*b"PSWAPCAN");
+        Word::new([Felt::new_unchecked(pswapcan), ZERO, ZERO, ZERO])
+    };
+
+    /// Fill action discriminator; matches `ACTION_FILL` in `pswap.masm`.
+    const ACTION_FILL_ID: Felt = ZERO;
+
+    /// Cancel action discriminator; matches `ACTION_CANCEL` in `pswap.masm`.
+    const ACTION_CANCEL_ID: Felt = ONE;
 
     /// Expected number of assets of the PSWAP note.
     ///
@@ -467,18 +475,18 @@ impl PswapNote {
     /// happen for any amount that fits in a [`FungibleAsset`] —
     /// `FungibleAsset::MAX_AMOUNT` is comfortably below `2^63` — but the
     /// conversion is surfaced explicitly rather than hidden behind a panic.
-    pub fn create_args(account_fill: u64, note_fill: u64) -> Result<Word, NoteError> {
+    pub fn create_fill_args(account_fill: u64, note_fill: u64) -> Result<Word, NoteError> {
         let account_fill = Felt::try_from(account_fill)
             .map_err(|e| NoteError::other_with_source("account_fill is not a valid felt", e))?;
         let note_fill = Felt::try_from(note_fill)
             .map_err(|e| NoteError::other_with_source("note_fill is not a valid felt", e))?;
-        Ok(Word::from([ZERO, account_fill, note_fill, ZERO]))
+        Ok(Word::from([Self::ACTION_FILL_ID, account_fill, note_fill, ZERO]))
     }
 
     /// Selects cancellation for orders with private paybacks.
     /// Orders with public paybacks retain creator-account reclaim.
     pub fn create_cancel_args() -> Word {
-        Word::new([ONE, ZERO, ZERO, ZERO])
+        Word::new([Self::ACTION_CANCEL_ID, ZERO, ZERO, ZERO])
     }
 
     /// Returns cancellation advice for a private-payback order: the four-element serial followed
