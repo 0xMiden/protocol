@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+
 ## v0.17.0 (2026-10-01)
 
 ### Features
