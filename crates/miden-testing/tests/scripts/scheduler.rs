@@ -73,7 +73,7 @@ fn add_scheduled_faucet(
         .with_components(AccessControl::Rbac { admin, procedure_roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
-        .with_component(Scheduler::new(min_delay).with_scheduled_procedures(scheduled))
+        .with_component(Scheduler::new(min_delay).with_scheduled_procedures(scheduled)?)
         .with_component(SchedulerManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

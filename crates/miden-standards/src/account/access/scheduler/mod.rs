@@ -118,18 +118,37 @@ impl Scheduler {
     }
 
     /// Flags the given procedures as requiring a proposal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any procedure is one of the [`SchedulerManager`] entrypoints, mirroring
+    /// the onchain `set_procedure_scheduling` check: flagging `schedule` makes proposals
+    /// unreachable, flagging `cancel` makes a non-proposer cancellation wait out the delay, and
+    /// `set_min_delay` and `set_procedure_scheduling` are already scheduled unconditionally.
     pub fn with_scheduled_procedures(
         mut self,
         procedures: impl IntoIterator<Item = AccountProcedureRoot>,
-    ) -> Self {
-        self.scheduled_procedures.extend(procedures);
-        self
+    ) -> Result<Self, SchedulerError> {
+        for procedure in procedures {
+            if SchedulerManager::procedure_roots().contains(&procedure) {
+                return Err(SchedulerError::CannotScheduleOwnProcedure(procedure));
+            }
+            self.scheduled_procedures.insert(procedure);
+        }
+        Ok(self)
     }
 
     /// Flags a single procedure as requiring a proposal.
-    pub fn with_scheduled_procedure(mut self, procedure: AccountProcedureRoot) -> Self {
-        self.scheduled_procedures.insert(procedure);
-        self
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the procedure is one of the [`SchedulerManager`] entrypoints, see
+    /// [`Self::with_scheduled_procedures`].
+    pub fn with_scheduled_procedure(
+        self,
+        procedure: AccountProcedureRoot,
+    ) -> Result<Self, SchedulerError> {
+        self.with_scheduled_procedures([procedure])
     }
 
     // PUBLIC ACCESSORS
@@ -286,9 +305,11 @@ impl From<Scheduler> for AccountComponent {
 // SCHEDULER ERROR
 // ================================================================================================
 
-/// Errors raised when reading the [`Scheduler`] state from storage.
+/// Errors raised when configuring a [`Scheduler`] or reading its state from storage.
 #[derive(Debug, Error)]
 pub enum SchedulerError {
+    #[error("scheduler procedure {0} cannot be scheduled")]
+    CannotScheduleOwnProcedure(AccountProcedureRoot),
     #[error("failed to read scheduler slot from storage")]
     MissingStorageSlot(#[source] AccountError),
     #[error("scheduler storage value is not in canonical form")]
@@ -297,6 +318,8 @@ pub enum SchedulerError {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
 
     #[test]
@@ -304,7 +327,7 @@ mod tests {
         let flagged = AccountProcedureRoot::from_raw(Word::from([1u32, 2, 3, 4]));
         let other = AccountProcedureRoot::from_raw(Word::from([9u32, 9, 9, 9]));
         let component: AccountComponent =
-            Scheduler::new(3_600).with_scheduled_procedure(flagged).into();
+            Scheduler::new(3_600).with_scheduled_procedure(flagged)?.into();
         let storage = AccountStorage::new(component.storage_slots().to_vec())?;
 
         assert_eq!(Scheduler::try_read_min_delay(&storage)?, 3_600);
@@ -316,5 +339,25 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    /// The builder rejects the scheduler's own entrypoints, like the onchain setter: a scheduled
+    /// `schedule` could never create the proposal it would itself require.
+    #[rstest::rstest]
+    #[case::schedule(SchedulerManager::schedule_root())]
+    #[case::cancel(SchedulerManager::cancel_root())]
+    #[case::set_min_delay(SchedulerManager::set_min_delay_root())]
+    #[case::set_procedure_scheduling(SchedulerManager::set_procedure_scheduling_root())]
+    fn own_procedures_cannot_be_scheduled(#[case] root: AccountProcedureRoot) {
+        let other = AccountProcedureRoot::from_raw(Word::from([1u32, 2, 3, 4]));
+
+        assert_matches!(
+            Scheduler::new(3_600).with_scheduled_procedures([other, root]),
+            Err(SchedulerError::CannotScheduleOwnProcedure(rejected)) if rejected == root
+        );
+        assert_matches!(
+            Scheduler::new(3_600).with_scheduled_procedure(root),
+            Err(SchedulerError::CannotScheduleOwnProcedure(rejected)) if rejected == root
+        );
     }
 }

@@ -94,6 +94,16 @@ impl SchedulerManager {
     pub fn set_procedure_scheduling_root() -> AccountProcedureRoot {
         *SCHEDULER_MANAGER_SET_PROCEDURE_SCHEDULING
     }
+
+    /// Returns the roots of the scheduler's own entrypoints, which can never be scheduled.
+    pub(super) fn procedure_roots() -> [AccountProcedureRoot; 4] {
+        [
+            Self::schedule_root(),
+            Self::cancel_root(),
+            Self::set_min_delay_root(),
+            Self::set_procedure_scheduling_root(),
+        ]
+    }
 }
 
 impl From<SchedulerManager> for AccountComponent {
