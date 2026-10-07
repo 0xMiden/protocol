@@ -25,8 +25,8 @@ pub enum TransactionLogData {
 }
 
 impl TransactionLogData {
-    const PUBLIC: u8 = 0;
-    const PRIVATE: u8 = 1;
+    const PUBLIC_ID: u8 = 0;
+    const PRIVATE_ID: u8 = 1;
 
     /// Returns the computed public or supplied private transaction log commitment.
     pub fn commitment(&self) -> Word {
@@ -45,7 +45,8 @@ impl TransactionLogData {
         &self,
         native_account: AccountId,
     ) -> Result<(), TransactionLogDataError> {
-        if matches!(self, Self::Public(_)) == native_account.is_public() {
+        let is_public = matches!(self, Self::Public(_));
+        if is_public == native_account.is_public() {
             Ok(())
         } else {
             Err(TransactionLogDataError::VisibilityMismatch)

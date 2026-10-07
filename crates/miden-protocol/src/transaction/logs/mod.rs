@@ -38,7 +38,7 @@ use crate::{
 /// Errors from validating transaction logs or their submitted data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum TransactionLogDataError {
+pub enum TransactionLogError {
     /// An individual transaction log payload exceeds its word limit.
     #[error("log payload has {0} words, exceeding the maximum of {MAX_LOG_PAYLOAD_WORDS}")]
     TooManyPayloadWords(usize),
