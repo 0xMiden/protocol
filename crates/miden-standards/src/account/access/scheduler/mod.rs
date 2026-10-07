@@ -112,9 +112,9 @@ procedure_root!(
 /// - map `cancel` to a dedicated role (e.g. `CANCELLER`) whose admin is a self-administered role
 ///   (e.g. `CANCELLER_ADMIN`) held by an account independent of `ADMIN`, and keep that admin role
 ///   populated, since a memberless admin role falls back to `ADMIN`;
-/// - give `freeze` and `unfreeze` roles administered the same way: while the account is frozen
-///   only a proposer can cancel, so an `ADMIN` holding the freeze role could freeze the account
-///   for the waiting period and unfreeze it in the note that carries out its proposal;
+/// - give `freeze` and `unfreeze` roles administered the same way: while the account is frozen only
+///   a proposer can cancel, so an `ADMIN` holding the freeze role could freeze the account for the
+///   waiting period and unfreeze it in the note that carries out its proposal;
 /// - flag `set_procedure_role`, so `cancel` cannot be remapped to another role without a proposal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scheduler {
