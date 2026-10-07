@@ -260,7 +260,6 @@ proc min(a: felt, b: felt) -> felt
     # => [a_lt_b, a, b]
     cdrop
     # => [min(a, b)]
-
 end
 
 # PAYBACK PREPARATION
@@ -327,7 +326,6 @@ proc load_storage()
 
     assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
     # => []
-
 end
 
 #! Returns creation arguments for the active order's public or private payback.
@@ -1005,7 +1003,6 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
         # => []
     end
     # => []
-
 end
 
 # ACTION SELECTION
