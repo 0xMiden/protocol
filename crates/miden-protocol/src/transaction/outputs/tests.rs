@@ -34,7 +34,7 @@ use crate::testing::account_id::{
 use crate::transaction::{
     LogTopic,
     TransactionLog,
-    TransactionLogDataError,
+    TransactionLogError,
     TransactionLogs,
     TransactionOutputs,
 };
@@ -67,7 +67,7 @@ fn private_transaction_outputs_reject_a_missing_salt_when_decoding() {
     assert_matches!(
         TransactionOutputs::read_from_bytes(&bytes),
         Err(DeserializationError::InvalidValue(message))
-            if message == TransactionLogDataError::MissingPrivateSalt.to_string()
+            if message == TransactionLogError::MissingPrivateSalt.to_string()
     );
 }
 
