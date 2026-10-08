@@ -27,11 +27,11 @@ const TX_LOG_ADDED_EVENT = event("miden::protocol::tx::log_added")
 # ERRORS
 # =================================================================================================
 
-const ERR_TX_LOG_COUNT = "transaction exceeds 64 logs"
-const ERR_TX_LOG_PAYLOAD = "log payload must contain at most 256 complete words"
-const ERR_TX_LOG_TOTAL_PAYLOAD = "transaction log payloads exceed 512 words"
-const ERR_TX_LOG_PREIMAGE = "log payload does not match its commitment"
-const ERR_TX_LOG_SALT = "private transaction logs require a nonzero secret salt"
+const ERR_TX_LOG_COUNT_EXCEEDED = "transaction exceeds 64 logs"
+const ERR_TX_LOG_PAYLOAD_TOO_LARGE = "log payload must contain at most 256 complete words"
+const ERR_TX_LOG_PAYLOADS_TOO_LARGE = "transaction log payloads exceed 512 words"
+const ERR_TX_LOG_PREIMAGE_MISMATCH = "log payload does not match its commitment"
+const ERR_TX_LOG_INVALID_SALT = "private transaction logs require a nonzero secret salt"
 
 # PUBLIC PROCEDURES
 # =================================================================================================
@@ -53,20 +53,20 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     loc_store.TOPIC_0_LOC loc_store.TOPIC_1_LOC
     # => [PAYLOAD_COMMITMENT]
 
-    mem_load.NUM_LOGS_PTR u32lt.MAX_LOGS_PER_TX assert.err=ERR_TX_LOG_COUNT
+    mem_load.NUM_LOGS_PTR u32lt.MAX_LOGS_PER_TX assert.err=ERR_TX_LOG_COUNT_EXCEEDED
     # => [PAYLOAD_COMMITMENT]
 
-    adv.push_mapvaln adv_push u32assert.err=ERR_TX_LOG_PAYLOAD
+    adv.push_mapvaln adv_push u32assert.err=ERR_TX_LOG_PAYLOAD_TOO_LARGE
     u32divmod.WORD_NUM_ELEMENTS
     # => [remainder, num_words, PAYLOAD_COMMITMENT]
 
     # Check alignment and both payload limits before reading any payload elements.
-    assertz.err=ERR_TX_LOG_PAYLOAD
-    dup u32lte.MAX_LOG_PAYLOAD_WORDS assert.err=ERR_TX_LOG_PAYLOAD
+    assertz.err=ERR_TX_LOG_PAYLOAD_TOO_LARGE
+    dup u32lte.MAX_LOG_PAYLOAD_WORDS assert.err=ERR_TX_LOG_PAYLOAD_TOO_LARGE
     # => [num_words, PAYLOAD_COMMITMENT]
 
     dup mem_load.LOG_PAYLOAD_WORDS_PTR add
-    dup u32lte.MAX_LOG_PAYLOAD_WORDS_PER_TX assert.err=ERR_TX_LOG_TOTAL_PAYLOAD
+    dup u32lte.MAX_LOG_PAYLOAD_WORDS_PER_TX assert.err=ERR_TX_LOG_PAYLOADS_TOO_LARGE
     mem_store.LOG_PAYLOAD_WORDS_PTR
     # => [num_words, PAYLOAD_COMMITMENT]
 
@@ -78,7 +78,7 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     # => [COMPUTED_PAYLOAD_COMMITMENT, PAYLOAD_COMMITMENT]
 
     # Retain the verified commitment for the event and the individual transaction log hash.
-    dupw.1 assert_eqw.err=ERR_TX_LOG_PREIMAGE
+    dupw.1 assert_eqw.err=ERR_TX_LOG_PREIMAGE_MISMATCH
     # => [PAYLOAD_COMMITMENT]
 
     loc_load.TOPIC_1_LOC loc_load.TOPIC_0_LOC exec.memory::get_account_id
@@ -143,7 +143,7 @@ proc compute_commitment() -> word
 
     if.true
         padw mem_loadw_le.LOG_SALT_PTR
-        exec.word::testz not assert.err=ERR_TX_LOG_SALT
+        exec.word::testz not assert.err=ERR_TX_LOG_INVALID_SALT
         # => [SECRET_SALT, LOGS_COMMITMENT]
 
         swapw push.PRIVATE_LOGS_DOMAIN exec.poseidon2::merge_in_domain

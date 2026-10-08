@@ -40,6 +40,7 @@ pub(crate) struct TestTransactionBuilder {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     auth_args: Word,
+    log_salt: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
 }
@@ -55,6 +56,7 @@ impl TestTransactionBuilder {
             tx_script: None,
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
+            log_salt: EMPTY_WORD,
             account_code_upgrade: None,
             note_scripts: BTreeMap::new(),
         }
@@ -135,6 +137,12 @@ impl TestTransactionBuilder {
         self
     }
 
+    /// Sets the secret salt used for private transaction log commitments.
+    pub(crate) fn log_salt(mut self, log_salt: Word) -> Self {
+        self.log_salt = log_salt;
+        self
+    }
+
     /// Set the code upgrade of the native account.
     pub(crate) fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
         self.account_code_upgrade = Some(account_code_upgrade);
@@ -200,6 +208,7 @@ impl TestTransactionBuilder {
             .extend_advice_inputs(self.advice_inputs)
             .tx_script_args(self.tx_script_args)
             .auth_args(self.auth_args)
+            .log_salt(self.log_salt)
             .expected_output_notes(self.expected_output_notes)
             .with_source_manager(self.source_manager);
 
