@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
@@ -13,8 +14,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
-use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::{
+    ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
+    ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO,
+    ERR_NOTE_TOO_MANY_STORAGE_ITEMS,
+};
 use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
+use miden_protocol::errors::{MasmError, NoteError};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -38,10 +44,13 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_INVALID_ACTION,
+    ERR_PSWAP_INVALID_PAYBACK_TAG,
+    ERR_PSWAP_INVALID_PAYBACK_TYPE,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
     ERR_PSWAP_OUTPUT_ALTERED,
     ERR_PSWAP_PARENT_DEPTH_NOT_U32,
+    ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS,
 };
 use miden_standards::note::{
     P2idNoteRecipient,
@@ -120,6 +129,44 @@ fn build_pswap_note(
     let note: Note = pswap.clone().into();
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     Ok((pswap, note))
+}
+
+/// Builds a valid order in either storage layout for storage-validation tests.
+fn setup_storage_test(payback_type: NoteType) -> anyhow::Result<(MockChain, AccountId, Note)> {
+    let mut builder = MockChain::builder();
+    let offered = builder.add_existing_basic_faucet(Auth::IncrNonce, "USDC", 1000, Some(50))?;
+    let requested = builder.add_existing_basic_faucet(Auth::IncrNonce, "ETH", 1000, Some(25))?;
+    let creator = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let consumer = builder.add_existing_wallet_with_assets(
+        Auth::IncrNonce,
+        [FungibleAsset::new(requested.id(), 25)?.into()],
+    )?;
+    let payback = match payback_type {
+        NoteType::Public => PswapPayback::public(creator),
+        NoteType::Private => PswapPayback::private(
+            P2idNoteRecipient::new(P2idNoteStorage::new(creator), builder.rng_mut().draw_word()),
+            NoteTag::default(),
+        ),
+    };
+    let (_, note) = build_pswap_note(
+        &mut builder,
+        creator,
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        NoteType::Public,
+        payback,
+    )?;
+    Ok((builder.build()?, consumer.id(), note))
+}
+
+/// Replaces an order's storage while retaining its script, assets, and serial.
+fn note_with_storage(note: &Note, items: Vec<Felt>) -> anyhow::Result<Note> {
+    Ok(NoteBuilder::new(note.metadata().sender(), SmallRng::seed_from_u64(1))
+        .script(note.script().clone())
+        .serial_number(note.recipient().serial_num())
+        .add_assets(note.assets().iter().copied())
+        .note_storage(items)?
+        .build()?)
 }
 
 #[track_caller]
@@ -515,7 +562,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
 
     let mut rng = RandomCoin::new(Word::default());
     let serial_number = rng.draw_word();
-    let payback_storage = P2idNoteStorage::new(alice.id()).with_salt([ONE, Felt::from(7u32)]);
+    let payback_storage = P2idNoteStorage::new(alice.id());
     let payback_serial = rng.draw_word();
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_note_type {
@@ -1211,12 +1258,9 @@ fn build_private_pswap_note(
     target: AccountId,
     offered: FungibleAsset,
     requested: FungibleAsset,
-    salt: [Felt; 2],
 ) -> anyhow::Result<(PswapNote, Note, P2idNoteRecipient)> {
-    let recipient = P2idNoteRecipient::new(
-        P2idNoteStorage::new(target).with_salt(salt),
-        builder.rng_mut().draw_word(),
-    );
+    let recipient =
+        P2idNoteRecipient::new(P2idNoteStorage::new(target), builder.rng_mut().draw_word());
     let (pswap, note) = build_pswap_note(
         builder,
         sender,
@@ -1246,23 +1290,8 @@ async fn pswap_private_target_can_fill_without_cancelling(
         alice.id(),
         FungibleAsset::new(offered.id(), 50)?,
         FungibleAsset::new(requested.id(), 25)?,
-        [ZERO; 2],
     )?;
     let chain = builder.build()?;
-    for invalid_args in [
-        [ONE, ZERO, ZERO, ZERO],
-        [Felt::from(2u32), ZERO, ZERO, ZERO],
-        [ZERO, ZERO, ZERO, ONE],
-    ] {
-        let result = chain
-            .build_transaction(alice.id())
-            .authenticated_input_note(note.id())
-            .extend_note_args(BTreeMap::from([(note.id(), Word::new(invalid_args))]))
-            .build()?
-            .execute()
-            .await;
-        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_ACTION);
-    }
     let args = if zero_args {
         Word::empty()
     } else {
@@ -1284,152 +1313,131 @@ async fn pswap_private_target_can_fill_without_cancelling(
     Ok(())
 }
 
-/// Rust and MASM reject malformed lengths, account ID structures, and field values.
+/// Both layouts reject short and oversized storage before reading their payload fields.
 #[rstest]
 #[tokio::test]
-async fn pswap_rejects_malformed_storage(
+async fn pswap_rejects_wrong_storage_length(
     #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
+    #[values(0, 4, 6, 8, 11)] length: usize,
 ) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
-    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
-    let alice = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(requested.id(), 25)?.into()],
-    )?;
-    let (pswap, note) = build_pswap_note(
-        &mut builder,
-        alice.id(),
-        FungibleAsset::new(offered.id(), 50)?,
-        FungibleAsset::new(requested.id(), 25)?,
-        NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice.id() },
-    )?;
+    let (chain, consumer, note) = setup_storage_test(payback_type)?;
     let mut items = note.recipient().storage().items().to_vec();
-    if payback_type == NoteType::Private {
-        let recipient = P2idNoteStorage::new(alice.id()).into_recipient(pswap.serial_number());
-        items.truncate(4);
-        items.push(ZERO);
-        items.extend_from_slice(recipient.digest().as_elements());
-        items.push(ZERO);
-    }
-    let storage = PswapNoteStorage::try_from(items.as_slice())?;
-    assert_eq!(NoteStorage::from(storage).items(), items);
-    let raw_note = |items| -> anyhow::Result<Note> {
-        Ok(Note::new(
-            note.assets().clone(),
-            PartialNoteMetadata::new(alice.id(), NoteType::Public).with_tag(note.metadata().tag()),
-            NoteRecipient::new(
-                pswap.serial_number(),
-                PswapNote::script(),
-                NoteStorage::new(items)?,
-            ),
-        ))
-    };
-    let chain = builder.build()?;
-    chain
-        .build_transaction(alice.id())
-        .unauthenticated_input_note(raw_note(items.clone())?)
+    items.resize(length, ZERO);
+
+    assert_matches!(
+        PswapNoteStorage::try_from(items.as_slice()),
+        Err(NoteError::InvalidNoteStorageLength { actual, .. }) if actual == length
+    );
+    let malformed = note_with_storage(&note, items)?;
+    let result = chain
+        .build_transaction(consumer)
+        .unauthenticated_input_note(malformed)
         .build()?
         .execute()
-        .await?;
-
-    let mut malformed = Vec::new();
-    let mut short = items.clone();
-    short.pop();
-    malformed.push(short);
-    let mut long = items.clone();
-    long.push(ZERO);
-    malformed.push(long);
-    for (offset, value) in [
-        (0, items[0] + ONE),
-        (1, ZERO),
-        (2, Felt::MAX),
-        (3, Felt::MAX),
-        (4, Felt::from(2u32)),
-        (4, Felt::from(256u32)),
-    ] {
-        let mut invalid = items.clone();
-        invalid[offset] = value;
-        malformed.push(invalid);
-    }
-    if payback_type == NoteType::Public {
-        for offset in [5, 6] {
-            let mut invalid = items.clone();
-            invalid[offset] = ONE;
-            if offset == 6 {
-                invalid[offset] = ZERO;
-            }
-            malformed.push(invalid);
-        }
-    }
-    if payback_type == NoteType::Private {
-        let mut invalid = items.clone();
-        invalid[9] = Felt::try_from(u64::from(u32::MAX) + 1)?;
-        malformed.push(invalid);
-    }
-    for items in malformed {
-        assert!(PswapNoteStorage::try_from(items.as_slice()).is_err());
-        let result = chain
-            .build_transaction(alice.id())
-            .unauthenticated_input_note(raw_note(items)?)
-            .build()?
-            .execute()
-            .await;
-        assert!(result.is_err(), "MASM must reject malformed storage");
-    }
+        .await;
+    let expected_error = if length > PswapNoteStorage::PRIVATE_NUM_STORAGE_ITEMS {
+        ERR_NOTE_TOO_MANY_STORAGE_ITEMS
+    } else {
+        ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
+    };
+    assert_transaction_executor_error!(result, expected_error);
     Ok(())
 }
 
-/// The script must accept structurally valid creator IDs from future account versions, even
-/// though the current Rust AccountId type cannot parse them yet.
+/// Each case changes one field and checks the corresponding Rust and MASM errors.
+#[rstest]
+#[case::requested_suffix(
+    NoteType::Public,
+    0,
+    ONE,
+    "invalid requested faucet ID",
+    ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
+)]
+#[case::requested_prefix(
+    NoteType::Public,
+    1,
+    ZERO,
+    "invalid requested faucet ID",
+    ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO
+)]
+#[case::requested_amount(
+    NoteType::Private,
+    2,
+    Felt::MAX,
+    "invalid requested asset",
+    ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+)]
+#[case::minimum_fill(
+    NoteType::Private,
+    3,
+    Felt::MAX,
+    "invalid minimum fill step",
+    ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+)]
+#[case::unknown_payback_type(
+    NoteType::Public,
+    4,
+    Felt::from(2u32),
+    "0b10",
+    ERR_PSWAP_INVALID_PAYBACK_TYPE
+)]
+#[case::oversized_payback_type(
+    NoteType::Private,
+    4,
+    Felt::from(256u32),
+    "payback note type exceeds u8",
+    ERR_PSWAP_INVALID_PAYBACK_TYPE
+)]
+#[case::creator_suffix(
+    NoteType::Public,
+    5,
+    ONE,
+    "invalid creator account ID",
+    ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
+)]
+#[case::creator_prefix(
+    NoteType::Public,
+    6,
+    ZERO,
+    "invalid creator account ID",
+    ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO
+)]
+#[case::private_tag(
+    NoteType::Private, 9, Felt::from(u32::MAX) + ONE, "payback tag exceeds u32",
+    ERR_PSWAP_INVALID_PAYBACK_TAG
+)]
 #[tokio::test]
-async fn pswap_public_payback_accepts_future_creator_version() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
-    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
-    let creator = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
-    let filler = builder.add_existing_wallet_with_assets(
-        BASIC_AUTH,
-        [FungibleAsset::new(requested.id(), 25)?.into()],
-    )?;
-    let (_, note) = build_pswap_note(
-        &mut builder,
-        creator.id(),
-        FungibleAsset::new(offered.id(), 50)?,
-        FungibleAsset::new(requested.id(), 25)?,
-        NoteType::Public,
-        PswapPayback::Public { creator_account_id: creator.id() },
-    )?;
+async fn pswap_rejects_malformed_storage_field(
+    #[case] payback_type: NoteType,
+    #[case] index: usize,
+    #[case] value: Felt,
+    #[case] expected_rust_error: &str,
+    #[case] expected_masm_error: MasmError,
+) -> anyhow::Result<()> {
+    let (chain, consumer, note) = setup_storage_test(payback_type)?;
     let mut items = note.recipient().storage().items().to_vec();
-    // The low four prefix bits encode the version. Keep the rest of the ID unchanged.
-    items[6] = Felt::try_from((items[6].as_canonical_u64() & !0xf) | 2)?;
-    let target = [items[5], items[6]];
-    let future_order = Note::new(
-        note.assets().clone(),
-        *note.metadata().partial_metadata(),
-        NoteRecipient::new(
-            note.recipient().serial_num(),
-            PswapNote::script(),
-            NoteStorage::new(items)?,
-        ),
-    );
-    let chain = builder.build()?;
-    let tx = chain
-        .build_transaction(filler.id())
-        .unauthenticated_input_note(future_order)
+    items[index] = value;
+
+    let error = PswapNoteStorage::try_from(items.as_slice()).unwrap_err();
+    assert!(error.to_string().contains(expected_rust_error), "unexpected error: {error}");
+    let malformed = note_with_storage(&note, items)?;
+    let result = chain
+        .build_transaction(consumer)
+        .unauthenticated_input_note(malformed)
         .build()?
         .execute()
-        .await?;
-    let payback = tx.output_notes().get_note(0);
-    assert_eq!(
-        payback.recipient().unwrap().storage().items(),
-        &[target[0], target[1], ZERO, ZERO]
-    );
-    assert_eq!(
-        payback.assets(),
-        &NoteAssets::new(vec![FungibleAsset::new(requested.id(), 25)?.into()])?
-    );
+        .await;
+    if expected_masm_error.code() == ERR_PSWAP_INVALID_PAYBACK_TAG.code() {
+        assert_transaction_executor_error!(
+            result,
+            matches ExecutionError::OperationError {
+                err: OperationError::U32AssertionFailed { err_code, .. },
+                ..
+            } if err_code == expected_masm_error.code()
+        );
+    } else {
+        assert_transaction_executor_error!(result, expected_masm_error);
+    }
     Ok(())
 }
 
