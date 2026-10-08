@@ -1,11 +1,12 @@
 use alloc::string::ToString;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 
 use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::{AccountHeader, AccountId};
-use crate::assembly::mast::{ExternalNodeBuilder, JoinNodeBuilder, MastForest};
+use crate::assembly::mast::{DenseMastForestBuilder, ExternalNodeBuilder, JoinNodeBuilder};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
@@ -185,22 +186,20 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     // Build a large reachable MastForest by joining many external nodes. Each external node stores
     // a 32-byte digest, and each join node keeps the previous nodes reachable after compaction. The
     // joins are balanced to keep recursive traversals shallow.
-    let mut mast = MastForest::new();
-    let mut roots = alloc::vec::Vec::new();
+    //
+    // The dense builder computes the forest commitment once in `build`, while adding nodes to a
+    // `MastForest` directly recomputes it on every external node, which is quadratic.
+    let mut builder = DenseMastForestBuilder::new();
+    let mut roots = Vec::new();
     for i in 0..7_000_u16 {
         let digest = Word::new([Felt::from(i + 1), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-        let external_id = ExternalNodeBuilder::new(digest)
-            .add_to_forest(&mut mast)
-            .expect("adding external node should not fail");
-        roots.push(external_id);
+        roots.push(builder.push_node(ExternalNodeBuilder::new(digest))?);
     }
     while roots.len() > 1 {
-        let mut next_roots = alloc::vec::Vec::with_capacity(roots.len().div_ceil(2));
+        let mut next_roots = Vec::with_capacity(roots.len().div_ceil(2));
         for chunk in roots.chunks(2) {
             let root_id = match chunk {
-                [left, right] => JoinNodeBuilder::new([*left, *right])
-                    .add_to_forest(&mut mast)
-                    .expect("adding join node should not fail"),
+                [left, right] => builder.push_node(JoinNodeBuilder::new([*left, *right]))?,
                 [root] => *root,
                 _ => unreachable!("chunks of two have one or two elements"),
             };
@@ -208,14 +207,13 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
         }
         roots = next_roots;
     }
-    let root_id = roots.pop().expect("at least one root should exist");
-    mast.make_root(root_id);
+    let builder_root_id = roots.pop().expect("at least one root should exist");
+    builder.mark_root(builder_root_id);
+    let (mast, id_map) = builder.build_with_id_map()?;
+    let root_id = id_map.get(builder_root_id).expect("root should be mapped after build");
 
     let script = NoteScript::from_parts(Arc::new(mast), root_id)
         .expect("root_id should be in the MAST forest");
-
-    let serial_num = Word::empty();
-    let storage = NoteStorage::new(alloc::vec::Vec::new())?;
 
     // Create a public note (NoteType::Public is required for PublicOutputNote)
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
@@ -225,6 +223,8 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public)
         .with_tag(NoteTag::with_account_target(sender_id));
 
+    let serial_num = Word::empty();
+    let storage = NoteStorage::default();
     let recipient = NoteRecipient::new(serial_num, script, storage);
     let oversized_note = Note::new(assets, metadata, recipient);
 
@@ -252,7 +252,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
             if note_size > NOTE_MAX_SIZE as usize
     );
 
-    // to_output_note() should also fail
+    // into_output_note() should also fail
     let output_note = RawOutputNote::Full(oversized_note);
     let result = output_note.into_output_note();
 
