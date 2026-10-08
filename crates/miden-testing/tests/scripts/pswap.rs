@@ -458,7 +458,7 @@ async fn pswap_checks_output_before_sealing(
                 chain
                     .build_transaction(alice)
                     .foreign_accounts([chain.get_foreign_account_inputs(filler.id())?])
-                    .authenticated_input_note_with_details(reconstructed)
+                    .authenticated_input_note(reconstructed)
                     .build()?
                     .execute()
                     .await?;
@@ -565,7 +565,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
 
     let mock_tx = mock_chain
         .build_transaction(bob.id())
-        .authenticated_input_note_with_details(pswap_note.clone())
+        .authenticated_input_note(pswap_note.clone())
         .extend_note_args(note_args_map)
         .expected_output_notes(expected_output_notes)
         .build()?;
@@ -674,7 +674,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     assert_eq!(reconstructed_payback.id(), output_p2id.id());
     let mock_tx = mock_chain
         .build_transaction(alice.id())
-        .authenticated_input_note_with_details(reconstructed_payback)
+        .authenticated_input_note(reconstructed_payback)
         .build()?;
 
     let executed_transaction = mock_tx.execute().await?;
@@ -2747,7 +2747,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
         // Alice consumes the retained payback details with an inclusion proof.
         let alice_tx = mock_chain
             .build_transaction(alice.id())
-            .authenticated_input_note_with_details(reconstructed_payback)
+            .authenticated_input_note(reconstructed_payback)
             .build()?
             .execute()
             .await?;
