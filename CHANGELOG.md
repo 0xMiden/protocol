@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.18.0 (TBD)
+
+### Changes
+
+- Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+
 ## v0.17.0 (2026-10-01)
 
 ### Features
