@@ -1,4 +1,5 @@
 use alloc::format;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::{TransactionLogError, TransactionLogs};
@@ -303,7 +304,7 @@ impl Deserializable for TransactionSummary {
             user_params,
         )
         .with_logs(logs, log_salt)
-        .map_err(|err| DeserializationError::InvalidValue(format!("{err}")))
+        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

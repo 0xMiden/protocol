@@ -4,10 +4,10 @@
 
 ### Features
 
-- Preserve ordered public transaction logs and private transaction log commitments in batches and blocks, with bounded encodings and aggregate limits.
-- Added canonical protobuf transport for transaction logs and their commitments, with secret salts retained in private execution data.
-- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries.
-- Added local storage of transaction logs and the secret salt used for private transaction log commitments.
+- Added ordered public transaction logs and private transaction log commitments in batches and blocks, with bounded encodings and aggregate limits ([#3905](https://github.com/0xMiden/protocol/pull/3905)).
+- Added canonical protobuf transport for transaction logs and their commitments, with secret salts retained in private execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
+- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- Added local storage of transaction logs and the secret salt used for private transaction log commitments ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
 - Added Rust transaction log types with two felt topics, bounded serialization, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
 
 ## v0.17.0 (2026-10-01)

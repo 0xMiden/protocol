@@ -59,25 +59,32 @@ use miden_tx::{
 };
 use rstest::rstest;
 
-use crate::{AccountState, Auth, MockChain, MockChainBuilder, TestTransactionBuilder};
+use crate::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    TestTransactionBuilder,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
 
 const EMIT_LOG_PROC: &str = "test::transaction_logs::emit_log";
 
 #[rstest]
 #[case::max_count(MAX_LOGS_PER_TX, 0, None)]
-#[case::count(MAX_LOGS_PER_TX + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT))]
+#[case::count(MAX_LOGS_PER_TX + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
 #[case::max_payload(1, MAX_LOG_PAYLOAD_WORDS, None)]
 #[case::max_total_payload(MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS, None)]
-#[case::individual_payload(1, MAX_LOG_PAYLOAD_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_PAYLOAD))]
-#[case::total_payload(MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS + 1, MAX_LOG_PAYLOAD_WORDS, Some(tx_kernel::ERR_TX_LOG_TOTAL_PAYLOAD))]
+#[case::individual_payload(1, MAX_LOG_PAYLOAD_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_PAYLOAD_TOO_LARGE))]
+#[case::total_payload(MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS + 1, MAX_LOG_PAYLOAD_WORDS, Some(tx_kernel::ERR_TX_LOG_PAYLOADS_TOO_LARGE))]
 #[tokio::test]
-async fn kernel_log_limits(
+async fn kernel_enforces_log_limits(
     #[case] count: usize,
     #[case] payload_words: usize,
     #[case] error: Option<MasmError>,
 ) -> anyhow::Result<()> {
-    let payload = vec![Word::from([71u32; 4]); payload_words];
-    let commitment = Hasher::hash_elements(Word::words_as_elements(&payload));
+    let (payload, commitment) = payload(vec![Word::from([71u32; 4]); payload_words]);
     let tx = TestTransactionBuilder::with_existing_mock_account()
         .add_advice_map_entry(commitment, Word::words_as_elements(&payload).to_vec())
         .build()?;
@@ -89,7 +96,7 @@ async fn kernel_log_limits(
         "
     ));
     if let Some(error) = error {
-        crate::assert_execution_error!(tx.execute_code(&code).await, error);
+        assert_execution_error!(tx.execute_code(&code).await, error);
     } else {
         tx.execute_code(&code).await?;
     }
@@ -97,8 +104,8 @@ async fn kernel_log_limits(
 }
 
 #[rstest]
-#[case::forged_payload(WORD_SIZE, tx_kernel::ERR_TX_LOG_PREIMAGE)]
-#[case::partial_word(WORD_SIZE - 1, tx_kernel::ERR_TX_LOG_PAYLOAD)]
+#[case::forged_payload(WORD_SIZE, tx_kernel::ERR_TX_LOG_PREIMAGE_MISMATCH)]
+#[case::partial_word(WORD_SIZE - 1, tx_kernel::ERR_TX_LOG_PAYLOAD_TOO_LARGE)]
 #[tokio::test]
 async fn kernel_logs_reject_invalid_payloads(
     #[case] num_elements: usize,
@@ -109,7 +116,7 @@ async fn kernel_logs_reject_invalid_payloads(
         .add_advice_map_entry(commitment, vec![71u32.into(); num_elements])
         .build()?;
     let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx_log::add_log"));
-    crate::assert_execution_error!(tx.execute_code(&code).await, error);
+    assert_execution_error!(tx.execute_code(&code).await, error);
     Ok(())
 }
 
@@ -122,7 +129,7 @@ async fn private_transaction_logs_require_a_nonzero_secret_salt() -> anyhow::Res
     let code = kernel_log_program(
         "padw push.29.17 exec.tx_log::add_log exec.tx_log::get_commitment dropw",
     );
-    crate::assert_execution_error!(tx.execute_code(&code).await, tx_kernel::ERR_TX_LOG_SALT);
+    assert_execution_error!(tx.execute_code(&code).await, tx_kernel::ERR_TX_LOG_INVALID_SALT);
     Ok(())
 }
 
@@ -141,7 +148,7 @@ async fn transaction_scripts_cannot_log_directly() -> anyhow::Result<()> {
         .tx_script(script)
         .add_advice_map_entry(Word::empty(), vec![])
         .build()?;
-    crate::assert_transaction_executor_error!(
+    assert_transaction_executor_error!(
         tx.execute().await,
         matches ExecutionError::EventError { error: ref event_err, .. }
             if matches!(
@@ -161,8 +168,7 @@ async fn unauthenticated_note_logs(
     #[case] account_type: AccountType,
     #[case] direct: bool,
 ) -> anyhow::Result<()> {
-    let payload = vec![Word::from([11u32, 22, 33, 44])];
-    let payload_commitment = Hasher::hash_elements(Word::words_as_elements(&payload));
+    let (payload, payload_commitment) = payload(vec![Word::from([11u32, 22, 33, 44])]);
     let component = log_emitter_component(payload_commitment)?;
     let root = component.get_procedure_root_by_path(EMIT_LOG_PROC).unwrap();
     let account = AccountBuilder::new([83; 32])
@@ -190,14 +196,14 @@ async fn unauthenticated_note_logs(
         .script(script)
         .build()?;
     let chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
-    let mut tx = chain
+    let tx = chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
         .add_advice_map_entry(payload_commitment, Word::words_as_elements(&payload).to_vec())
+        .log_salt(Word::from([91u32, 82, 73, 64]))
         .build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([91u32, 82, 73, 64])));
     if direct {
-        crate::assert_transaction_executor_error!(
+        assert_transaction_executor_error!(
             tx.execute().await,
             matches ExecutionError::EventError { error: ref event_err, .. }
                 if matches!(
@@ -251,8 +257,7 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
         ));
     }
     let code = kernel_log_program(&code);
-    let mut tx = builder.build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(salt));
+    let tx = builder.log_salt(salt).build()?;
     tx.execute_code(&code).await?;
     Ok(())
 }
@@ -264,8 +269,7 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
 async fn transaction_logs_execute_prove_verify_and_reject_tampering(
     #[case] account_type: AccountType,
 ) -> anyhow::Result<()> {
-    let payload = vec![Word::from([111u32, 222, 333, 444])];
-    let payload_commitment = Hasher::hash_elements(Word::words_as_elements(&payload));
+    let (payload, payload_commitment) = payload(vec![Word::from([111u32, 222, 333, 444])]);
     let component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "test::log_auth",
@@ -297,10 +301,10 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
         .with_component(BasicWallet)
         .build_existing()?;
     let salt = Word::from([345u32, 678, 123, 901]);
-    let mut tx = TestTransactionBuilder::new(account.clone())
+    let tx = TestTransactionBuilder::new(account.clone())
         .add_advice_map_entry(payload_commitment, Word::words_as_elements(&payload).to_vec())
+        .log_salt(salt)
         .build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(salt));
     let executed = tx.execute().await?;
     assert_eq!(executed.logs().num_logs(), 2);
     let log = &executed.logs().iter().next().unwrap();
@@ -400,7 +404,7 @@ async fn logs_do_not_make_an_empty_transaction_valid() -> anyhow::Result<()> {
     let tx = TestTransactionBuilder::with_noop_auth_account()
         .add_advice_map_entry(Word::empty(), vec![])
         .build()?;
-    crate::assert_execution_error!(
+    assert_execution_error!(
         tx.execute_code(
             r"
             use miden::tx_kernel_core::prologue
@@ -438,7 +442,7 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
         AccountState::Exists,
     )?;
     let chain = builder.build()?;
-    let mut tx = chain
+    let tx = chain
         .build_transaction(account.clone())
         .tx_script(CodeBuilder::default().compile_tx_script(format!(
             r"
@@ -450,8 +454,8 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
             "
         ))?)
         .add_advice_map_entry(Word::empty(), vec![])
+        .log_salt(Word::from([1u32, 2, 3, 4]))
         .build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([1u32, 2, 3, 4])));
     let executed = tx.execute().await?;
     let effects = TransactionEffects::from(&executed);
     let final_nonce = account.nonce() + Felt::ONE;
@@ -605,11 +609,11 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
         .with_component(component)
         .with_component(BasicWallet)
         .build_existing()?;
-    let mut tx = TestTransactionBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .add_advice_map_entry(Word::empty(), vec![])
+        .log_salt(Word::from([13u32; WORD_SIZE]))
         .build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([13u32; WORD_SIZE])));
-    crate::assert_transaction_executor_error!(
+    assert_transaction_executor_error!(
         tx.execute().await,
         matches ExecutionError::EventError { error: ref event_err, .. }
             if matches!(
@@ -693,19 +697,25 @@ async fn execute_foreign_logs(
         prefix = intermediate.id().prefix().as_felt(),
         suffix = intermediate.id().suffix(),
     ))?;
-    let mut tx = chain
+    let tx = chain
         .build_transaction(native.clone())
         .foreign_accounts([inputs, intermediate_inputs])
         .tx_script(script)
         .add_advice_map_entry(Word::empty(), vec![])
+        .log_salt(Word::from([89u32; 4]))
         .build()?;
-    tx.set_tx_args(tx.tx_args().clone().with_log_salt(Word::from([89u32; 4])));
     let executed = tx.execute().await?;
     let entries = executed.logs().iter().collect::<Vec<_>>();
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].emitter(), intermediate.id());
     assert_eq!(entries[1].emitter(), foreign.id());
     Ok((chain, executed))
+}
+
+/// Returns a payload and its commitment for the advice map.
+fn payload(words: Vec<Word>) -> (Vec<Word>, Word) {
+    let commitment = Hasher::hash_elements(Word::words_as_elements(&words));
+    (words, commitment)
 }
 
 /// Runs a kernel transaction log procedure after initializing the transaction context.
