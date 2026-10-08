@@ -28,7 +28,6 @@ use miden_protocol::note::{
     NoteAttachments,
     NoteId,
     NoteRecipient,
-    NoteStorage,
     NoteTag,
     NoteType,
     PartialNoteMetadata,
