@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.18.0 (TBD)
 
 ### Features
 
@@ -10,6 +10,8 @@
 
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private paybacks to use fixed P2ID recipient commitments and independent secret serials, updating the private storage layout, placing the action first in note arguments, and changing the Rust APIs ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
+- Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+- [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 
 ## v0.17.0 (2026-10-01)
 

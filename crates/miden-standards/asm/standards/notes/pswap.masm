@@ -8,6 +8,7 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
+use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
@@ -289,12 +290,13 @@ proc load_storage()
     push.PRIVATE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    dup push.PUBLIC_NUM_STORAGE_ITEMS gte assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
+    dup u32assert u32gte.PUBLIC_NUM_STORAGE_ITEMS
+    assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
     dup mem_store.STORAGE_LENGTH_PTR
     # => [num_storage_items]
 
     mem_load.PAYBACK_NOTE_TYPE_ITEM
-    dup eq.0 dup.1 eq.1 or
+    dup eq.NOTE_TYPE_PRIVATE dup.1 eq.NOTE_TYPE_PUBLIC or
     # => [is_valid_payback_type, payback_note_type, num_storage_items]
 
     assert.err=ERR_PSWAP_INVALID_PAYBACK_TYPE
@@ -310,7 +312,6 @@ proc load_storage()
 
         exec.account_id::validate_structure
         # => []
-
     else
         eq.PRIVATE_NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
         # => []
@@ -320,7 +321,6 @@ proc load_storage()
 
         u32assert.err=ERR_PSWAP_INVALID_PAYBACK_TAG drop
         # => []
-
     end
     # => []
 
@@ -346,6 +346,7 @@ end
 
 #! Returns creation arguments for the active order's public or private payback.
 #! Only public mode registers full recipient details for output creation.
+#! Must run after load_storage has populated and validated the active order's storage.
 #!
 #! Inputs: []
 #! Outputs: [tag, note_type, RECIPIENT]
@@ -1146,7 +1147,7 @@ end
 
 #! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
 #!
-#! NOTE_ARGS in Rust element order are [action, account_fill, note_fill, reserved].
+#! NOTE_ARGS are [action, account_fill, note_fill, reserved].
 #! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.
 #! All-zero amounts select a full fill for other callers. Action 1 cancels orders with private
 #! paybacks using a secret P2ID preimage and refunds the full remaining balance to that recipient.

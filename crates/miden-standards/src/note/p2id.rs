@@ -309,8 +309,7 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 
 /// The preimage of a P2ID recipient commitment: canonical storage and a serial number.
 ///
-/// The script is always [`P2idNote::script`]. Keep this preimage private when it is used for
-/// private swap paybacks, and sample its serial independently of the swap's serial number.
+/// The script is always [`P2idNote::script`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2idNoteRecipient {
     storage: P2idNoteStorage,
