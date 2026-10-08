@@ -221,6 +221,11 @@ impl TransactionInputs {
     // --------------------------------------------------------------------------------------------
 
     /// Replaces the input notes for the transaction.
+    ///
+    /// # Warning
+    ///
+    /// The provided notes are not validated, so the caller is responsible for making sure they are
+    /// consistent with the rest of the transaction inputs.
     pub fn set_input_notes(&mut self, new_notes: InputNotes<InputNote>) {
         self.input_notes = new_notes;
     }
