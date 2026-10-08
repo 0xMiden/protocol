@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] Moved the EIP-712 transaction-summary adapter from `miden::standards::auth::eip712_transaction_summary` to `miden::standards::auth::eip712::transaction_summary` ([#3898](https://github.com/0xMiden/protocol/pull/3898)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 
 ## v0.17.0 (2026-10-01)

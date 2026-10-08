@@ -1,5 +1,7 @@
 use miden::core::crypto::dsa::ecdsa_k256_keccak
 
+pub mod transaction_summary
+
 # CONSTANTS
 # =================================================================================================
 
