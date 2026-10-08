@@ -13,7 +13,7 @@ use crate::Felt;
 ///
 /// The MASM counterparts of these values must be kept in sync.
 ///
-/// [registry]: https://github.com/0xMiden/crypto/pull/1026/changes#diff-94a8c9a4f6fab8a324480a417f30288a6afb93a41278e5299f00df3fd5f6e75b
+/// [registry]: https://github.com/0xMiden/crypto/blob/2156001768d4581f8957b9aa63a0c2d1d660b510/docs/registry/poseidon2-domains.toml
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[repr(u32)]
