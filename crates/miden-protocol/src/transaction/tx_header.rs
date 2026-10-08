@@ -27,8 +27,9 @@ use crate::utils::serde::{
 ///
 /// The header is essentially a direct copy of the transaction's public commitments, in particular
 /// the initial and final account state commitment as well as all nullifiers of consumed notes and
-/// all note IDs of created notes. While account updates may be aggregated and notes may be erased
-/// as part of batch and block building, the header retains the original transaction's data.
+/// all note IDs of created notes, together with the transaction log commitment. While account
+/// updates may be aggregated and notes may be erased as part of batch and block building, the
+/// header retains the original transaction's data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionHeader {
     id: TransactionId,
@@ -47,7 +48,8 @@ impl TransactionHeader {
     /// Constructs a new [`TransactionHeader`] from the provided parameters.
     ///
     /// The [`TransactionId`] is computed from the provided parameters, committing to the initial
-    /// and final account commitments and the input and output note commitments.
+    /// and final account commitments, the input and output note commitments, and the transaction
+    /// log commitment.
     ///
     /// The input notes and output notes must be in the same order as they appeared in the
     /// transaction that this header represents, otherwise an incorrect ID will be computed.
