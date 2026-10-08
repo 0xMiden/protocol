@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Features
+
+- Added private PSWAP cancellation through a separate account, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+
 ### Changes
 
+- [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private paybacks to use fixed P2ID recipient commitments and independent secret serials, updating the private storage layout, placing the action first in note arguments, and changing the Rust APIs ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 
 ## v0.17.0 (2026-10-01)
