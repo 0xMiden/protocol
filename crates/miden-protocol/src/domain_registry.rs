@@ -26,6 +26,12 @@ pub enum ProtocolDomainRegistry {
 
     /// Domain of the [`AccountCodeUpgrade`](crate::account::AccountCodeUpgrade) advice map key.
     AccountCodeUpgradeAdvice = 0x02_0002,
+
+    /// Domain of the ordered [`TransactionLogs`](crate::transaction::TransactionLogs) commitment.
+    TransactionLogs = 0x02_0003,
+
+    /// Domain of an individual [`TransactionLog`](crate::transaction::TransactionLog) commitment.
+    TransactionLog = 0x02_0005,
 }
 
 impl ProtocolDomainRegistry {
