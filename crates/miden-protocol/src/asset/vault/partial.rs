@@ -62,12 +62,7 @@ impl PartialVault {
         let partial_smt = PartialSmt::from_proofs(witnesses.into_iter().map(|witness| {
             // Skip empty values so `entries` only ever tracks valid assets (mirrors
             // `AssetVault::new`).
-            entries.extend(
-                witness
-                    .entries()
-                    .filter(|(_, value)| !value.is_empty())
-                    .map(|(id, value)| (*id, *value)),
-            );
+            entries.extend(witness.entries().map(|(id, value)| (*id, *value)));
             SmtProof::from(witness)
         }))
         .map_err(PartialAssetVaultError::FailedToAddProof)?;
@@ -227,20 +222,26 @@ impl PartialVault {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the new root after the insertion of the leaf and the path does not match the existing root
-    ///   (except when the first leaf is added).
+    /// Returns an error if the root of the witness does not match the root of this vault. The vault
+    /// stays unchanged in this case.
     pub fn add(&mut self, witness: AssetWitness) -> Result<(), PartialAssetVaultError> {
-        // Take ownership of the witness' entries up front so that, if `add_proof` fails, no
-        // partial state escapes into `self.entries`. The type-level guarantee (entries are a
-        // subset of partial_smt) must hold even after an error.
-        let (proof, new_entries) = witness.into_parts();
+        // Check the root before adding the proof, because a partial SMT is left in an inconsistent
+        // state if adding a proof fails.
+        let witness_root = witness.proof().compute_root();
+        if witness_root != self.root() {
+            return Err(PartialAssetVaultError::FailedToAddProof(MerkleError::ConflictingRoots {
+                expected_root: self.root(),
+                actual_root: witness_root,
+            }));
+        }
+
+        // mutation safety: add_proof shouldn't fail because we've just checked root consistency, so
+        // mutating entries before is ok
+        self.entries.extend(witness.entries());
         self.partial_smt
-            .add_proof(proof)
+            .add_proof(SmtProof::from(witness))
             .map_err(PartialAssetVaultError::FailedToAddProof)?;
-        // Skip empty values so `entries` only ever tracks valid assets (mirrors `AssetVault::new`).
-        self.entries
-            .extend(new_entries.into_iter().filter(|(_, value)| !value.is_empty()));
+
         Ok(())
     }
 }
@@ -383,16 +384,13 @@ mod tests {
         let vault_b = AssetVault::new(&[asset_b])?;
 
         let mut partial = PartialVault::with_witnesses([vault_a.open(asset_a.id())])?;
-        let entries_before: Vec<_> = partial.entries().map(|(k, v)| (*k, *v)).collect();
-        let root_before = partial.root();
+        let expected = partial.clone();
 
         let err = partial.add(vault_b.open(asset_b.id())).unwrap_err();
         assert_matches!(err, PartialAssetVaultError::FailedToAddProof(_));
 
-        // Atomicity: failed `add` must not leak entries or shift the root.
-        let entries_after: Vec<_> = partial.entries().map(|(k, v)| (*k, *v)).collect();
-        assert_eq!(entries_before, entries_after);
-        assert_eq!(partial.root(), root_before);
+        // Atomicity: failed `add` must not leak entries or Merkle nodes into the vault.
+        assert_eq!(partial, expected);
 
         Ok(())
     }
