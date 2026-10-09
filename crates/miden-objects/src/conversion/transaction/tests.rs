@@ -104,7 +104,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
     );
     let bytes = message.encode_to_vec();
     let decoded = proto::transaction::TransactionArgs::decode(bytes.as_slice()).unwrap();
-    assert_eq!(decoded.decode_fields().unwrap().verify().unwrap(), args);
+    assert_eq!(decoded.decode_fields()?.verify()?, args);
 }
 
 #[rstest]
