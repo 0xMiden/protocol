@@ -47,6 +47,7 @@ pub struct TransactionArgs {
     advice_inputs: AdviceInputs,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
+    log_salt: Word,
 }
 
 impl TransactionArgs {
@@ -81,6 +82,7 @@ impl TransactionArgs {
             advice_inputs,
             auth_args,
             account_code_upgrade,
+            log_salt: EMPTY_WORD,
         }
     }
 
@@ -135,8 +137,29 @@ impl TransactionArgs {
         self
     }
 
+    /// Sets the secret salt used to compute the private transaction log commitment.
+    ///
+    /// # Privacy
+    ///
+    /// For nonempty private transaction logs, sample a fresh, random, nonzero salt and keep it
+    /// secret. Reuse the same salt when signing and proving that transaction. The kernel rejects
+    /// zero but cannot check randomness or freshness; a predictable salt permits guessing the
+    /// transaction log contents.
+    ///
+    /// See [`TransactionLogs::commitment_for_account`](crate::transaction::TransactionLogs::commitment_for_account).
+    #[must_use]
+    pub fn with_log_salt(mut self, salt: Word) -> Self {
+        self.log_salt = salt;
+        self
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the secret salt used by the transaction kernel for private transaction logs.
+    pub fn log_salt(&self) -> Word {
+        self.log_salt
+    }
 
     /// Returns a reference to the transaction script.
     pub fn tx_script(&self) -> Option<&TransactionScript> {
@@ -269,6 +292,7 @@ impl Serializable for TransactionArgs {
         self.advice_inputs.write_into(target);
         self.auth_args.write_into(target);
         self.account_code_upgrade.write_into(target);
+        self.log_salt.write_into(target);
     }
 }
 
@@ -280,6 +304,7 @@ impl Deserializable for TransactionArgs {
         let advice_inputs = AdviceInputs::read_from(source)?;
         let auth_args = Word::read_from(source)?;
         let account_code_upgrade = Option::<AccountCodeUpgrade>::read_from(source)?;
+        let log_salt = Word::read_from(source)?;
 
         Ok(Self::from_parts(
             tx_script,
@@ -288,7 +313,8 @@ impl Deserializable for TransactionArgs {
             advice_inputs,
             auth_args,
             account_code_upgrade,
-        ))
+        )
+        .with_log_salt(log_salt))
     }
 }
 
@@ -309,7 +335,8 @@ mod tests {
 
     #[test]
     fn test_tx_args_serialization() {
-        let tx_args = TransactionArgs::new(AdviceMap::default());
+        let tx_args =
+            TransactionArgs::new(AdviceMap::default()).with_log_salt(Word::from([1u32, 2, 3, 4]));
         let bytes: std::vec::Vec<u8> = tx_args.to_bytes();
         let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
 

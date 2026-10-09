@@ -489,3 +489,33 @@ fn logs_remain_send_and_sync() {
     assert_send_sync::<TransactionLogs>();
     assert_send_sync::<TransactionLogData>();
 }
+
+#[test]
+fn private_transaction_logs_require_a_nonzero_salt_and_commit_to_it() {
+    let private_account = emitter(256, AccountType::Private);
+    let public_account = emitter(512, AccountType::Public);
+    let logs = TransactionLogs::new(vec![log(1)]).unwrap();
+    let salt = Word::from([17u32, 29, 31, 43]);
+    let other_salt = Word::from([47u32, 53, 59, 61]);
+
+    assert_eq!(
+        logs.commitment_for_account(private_account, Word::empty()),
+        Err(TransactionLogError::MissingPrivateSalt)
+    );
+    let private_commitment = logs.commitment_for_account(private_account, salt).unwrap();
+    assert_ne!(private_commitment, logs.commitment());
+    assert_ne!(
+        private_commitment,
+        logs.commitment_for_account(private_account, other_salt).unwrap()
+    );
+    assert_eq!(
+        logs.commitment_for_account(public_account, Word::empty()).unwrap(),
+        logs.commitment()
+    );
+    assert_eq!(
+        TransactionLogs::default()
+            .commitment_for_account(private_account, Word::empty())
+            .unwrap(),
+        Word::empty()
+    );
+}
