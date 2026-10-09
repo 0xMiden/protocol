@@ -161,6 +161,8 @@ impl TransactionExecutorError {
 pub enum TransactionProverError {
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
+    #[error("stack outputs of the transaction execution do not match the transaction outputs")]
+    StackOutputsMismatch,
     #[error("failed to shrink output note")]
     OutputNoteShrinkFailed(#[source] OutputNoteError),
     #[error("failed to build proven transaction")]

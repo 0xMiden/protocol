@@ -5,7 +5,7 @@ use crate::decoded::VerificationError;
 use crate::{Verify, proto};
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 impl Verify for ForeignAccountSlotName {
     type Verified =
