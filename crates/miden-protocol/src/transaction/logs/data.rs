@@ -1,5 +1,4 @@
-use super::{TransactionLogError, TransactionLogs};
-use crate::Word;
+use super::{TransactionLog, TransactionLogError, TransactionLogs};
 use crate::account::AccountId;
 use crate::utils::serde::{
     ByteReader,
@@ -8,6 +7,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{MAX_LOG_PAYLOAD_WORDS_PER_TX, MAX_LOGS_PER_TX, Word};
 
 /// Submitted transaction log data for the account against which the transaction executes.
 ///
@@ -51,6 +51,14 @@ impl TransactionLogData {
         } else {
             Err(TransactionLogError::VisibilityMismatch)
         }
+    }
+
+    /// Returns the maximum encoded size of a public or private entry, including its visibility tag.
+    pub(super) fn max_serialized_size() -> usize {
+        let max_public_size = TransactionLogs::min_serialized_size()
+            + MAX_LOGS_PER_TX * TransactionLog::min_serialized_size()
+            + MAX_LOG_PAYLOAD_WORDS_PER_TX * Word::SERIALIZED_SIZE;
+        size_of::<u8>() + max_public_size.max(Word::SERIALIZED_SIZE)
     }
 }
 

@@ -31,3 +31,14 @@ witnesses can access this data.
 
 A transaction allows 64 transaction logs, 256 words per payload and 512 total payload words, excluding
 metadata. Transaction logs alone do not make an otherwise empty transaction valid.
+
+Batches and blocks carry one transaction log data entry per transaction header, validating visibility
+and commitments. Transaction IDs bind transaction logs through the existing batch and block
+commitments.
+
+| Aggregate limit | Batch | Block |
+| --- | ---: | ---: |
+| Transaction log data entries, including private and empty entries | 1,024 | 65,536 |
+| Public transaction logs | 4,096 | 65,536 |
+| Public transaction log payload words | 65,536 | 524,288 |
+| Encoded bytes, including metadata | 4 MiB | 32 MiB |

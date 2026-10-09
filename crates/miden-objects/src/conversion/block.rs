@@ -10,6 +10,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{OutputNote, PartialBlockchain};
+use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
 
@@ -79,6 +80,7 @@ impl From<&BlockBody> for proto::blockchain::BlockBody {
                 .iter()
                 .map(|nullifier| nullifier.as_word().into())
                 .collect(),
+            log_data: body.log_data().to_bytes(),
             transactions: body.transactions().as_slice().iter().map(Into::into).collect(),
         }
     }

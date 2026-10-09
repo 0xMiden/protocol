@@ -13,7 +13,7 @@ use crate::block::{
 };
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote};
+use crate::transaction::{OrderedTransactionHeaders, OutputNote, TransactionLogDataCollection};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -43,6 +43,9 @@ pub struct BlockBody {
     /// Nullifiers created by the transactions in this block through the consumption of notes.
     created_nullifiers: Vec<Nullifier>,
 
+    /// Transaction log data in transaction header order.
+    log_data: TransactionLogDataCollection,
+
     /// The aggregated and flattened transaction headers of all batches in the order in which they
     /// appeared in the proposed block.
     transactions: OrderedTransactionHeaders,
@@ -69,6 +72,7 @@ impl BlockBody {
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
+        log_data: TransactionLogDataCollection,
         transactions: OrderedTransactionHeaders,
     ) -> Result<Self, BlockBodyError> {
         if output_note_batches.len() > MAX_BATCHES_PER_BLOCK {
@@ -140,10 +144,13 @@ impl BlockBody {
             }
         }
 
+        log_data.validate_for_block(&transactions)?;
+
         Ok(Self::new_unchecked(
             updated_accounts,
             output_note_batches,
             created_nullifiers,
+            log_data,
             transactions,
         ))
     }
@@ -158,18 +165,25 @@ impl BlockBody {
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
+        log_data: TransactionLogDataCollection,
         transactions: OrderedTransactionHeaders,
     ) -> Self {
         Self {
             updated_accounts,
             output_note_batches,
             created_nullifiers,
+            log_data,
             transactions,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns submitted transaction log data in the same order as the transaction headers.
+    pub fn log_data(&self) -> &TransactionLogDataCollection {
+        &self.log_data
+    }
 
     /// Returns the slice of [`BlockAccountUpdate`]s for all accounts updated in the block.
     pub fn updated_accounts(&self) -> &[BlockAccountUpdate] {
@@ -237,12 +251,14 @@ impl BlockBody {
         Vec<BlockAccountUpdate>,
         Vec<OutputNoteBatch>,
         Vec<Nullifier>,
+        TransactionLogDataCollection,
         OrderedTransactionHeaders,
     ) {
         (
             self.updated_accounts,
             self.output_note_batches,
             self.created_nullifiers,
+            self.log_data,
             self.transactions,
         )
     }
@@ -272,11 +288,14 @@ impl From<ProposedBlock> for BlockBody {
             .collect();
         let created_nullifiers = created_nullifiers.keys().copied().collect::<Vec<_>>();
         // Aggregate the verified transactions of all batches.
-        let transactions = batches.into_transactions();
+        let (transactions, log_data) = batches.into_transaction_data().expect(
+            "ProposedBlock validates the transaction log budget during construction and deserialization",
+        );
         Self {
             updated_accounts,
             output_note_batches,
             created_nullifiers,
+            log_data,
             transactions,
         }
     }
@@ -291,18 +310,19 @@ impl Serializable for BlockBody {
         self.output_note_batches.write_into(target);
         self.created_nullifiers.write_into(target);
         self.transactions.write_into(target);
+        self.log_data.write_into(target);
     }
 }
 
 impl Deserializable for BlockBody {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Self::new(
-            Vec::read_from(source)?,
-            Vec::read_from(source)?,
-            Vec::read_from(source)?,
-            OrderedTransactionHeaders::read_from(source)?,
-        )
-        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
+        let updates = Vec::read_from(source)?;
+        let notes = Vec::read_from(source)?;
+        let nullifiers = Vec::read_from(source)?;
+        let transactions = OrderedTransactionHeaders::read_from(source)?;
+        let log_data = TransactionLogDataCollection::read_from(source)?;
+        Self::new(updates, notes, nullifiers, log_data, transactions)
+            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
 
@@ -332,6 +352,7 @@ mod tests {
         OutputNote,
         RawOutputNote,
         TransactionHeader,
+        TransactionLogDataCollection,
     };
     use crate::utils::serde::{Deserializable, Serializable};
 
@@ -413,7 +434,8 @@ mod tests {
         let (updated_accounts, transactions) =
             public_account_body_parts(&account, initial_state_commitment, final_state_commitment)?;
 
-        BlockBody::new(updated_accounts, vec![], vec![], transactions)?;
+        let log_data = TransactionLogDataCollection::empty_for_headers(&transactions);
+        BlockBody::new(updated_accounts, vec![], vec![], log_data, transactions)?;
 
         Ok(())
     }
@@ -426,7 +448,8 @@ mod tests {
             public_account_body_parts(&account, Word::empty(), final_state_commitment)?;
         let account_commitment = account.to_commitment();
 
-        let result = BlockBody::new(updated_accounts, vec![], vec![], transactions);
+        let log_data = TransactionLogDataCollection::empty_for_headers(&transactions);
+        let result = BlockBody::new(updated_accounts, vec![], vec![], log_data, transactions);
 
         assert_matches!(
             result,
@@ -471,7 +494,14 @@ mod tests {
             .unwrap(),
         ]);
 
-        BlockBody::new(vec![], vec![], created_nullifiers, transactions).unwrap();
+        BlockBody::new(
+            vec![],
+            vec![],
+            created_nullifiers,
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
+        )
+        .unwrap();
     }
 
     #[rstest]
@@ -499,7 +529,14 @@ mod tests {
             .unwrap(),
         ]);
 
-        BlockBody::new(vec![], output_notes, vec![], transactions).unwrap();
+        BlockBody::new(
+            vec![],
+            output_notes,
+            vec![],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -524,6 +561,7 @@ mod tests {
             vec![],
             vec![vec![(0, into_output_note(output_note))]],
             vec![input_note.nullifier()],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
         )
         .unwrap();
@@ -535,7 +573,13 @@ mod tests {
         let nullifier = note.nullifier();
         let transactions = OrderedTransactionHeaders::new_unchecked(vec![]);
 
-        let result = BlockBody::new(vec![], vec![], vec![nullifier, nullifier], transactions);
+        let result = BlockBody::new(
+            vec![],
+            vec![],
+            vec![nullifier, nullifier],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
+        );
 
         assert_matches!(
             result,
@@ -553,6 +597,7 @@ mod tests {
             vec![],
             vec![vec![(0, output_note.clone()), (1, output_note)]],
             vec![],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
         );
 
@@ -588,6 +633,7 @@ mod tests {
             vec![],
             vec![vec![(0, into_output_note(note.clone()))]],
             vec![note.nullifier()],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
         )
         .unwrap();
@@ -605,7 +651,13 @@ mod tests {
             )
             .unwrap(),
         ]);
-        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
+        let invalid_body = BlockBody::new_unchecked(
+            vec![],
+            vec![],
+            vec![],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
+        );
 
         BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
     }
@@ -624,7 +676,13 @@ mod tests {
             )
             .unwrap(),
         ]);
-        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
+        let invalid_body = BlockBody::new_unchecked(
+            vec![],
+            vec![],
+            vec![],
+            TransactionLogDataCollection::empty_for_headers(&transactions),
+            transactions,
+        );
 
         BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
     }

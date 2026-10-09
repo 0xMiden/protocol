@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::{AccountId, AccountUpdateDetails};
@@ -21,7 +22,13 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{
+    InputNoteCommitment,
+    OutputNote,
+    PartialBlockchain,
+    TransactionHeader,
+    TransactionLogDataCollection,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -102,6 +109,7 @@ impl ProposedBlock {
     /// - There are duplicate batches, i.e. they have the same [`BatchId`].
     /// - The expiration block number of any batch is less than the block number of the currently
     ///   proposed block.
+    /// - The combined transaction log data exceeds the block resource limits.
     ///
     /// ## Chain
     ///
@@ -159,6 +167,9 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
+        TransactionLogDataCollection::validate_block_budget(
+            batches.iter().flat_map(|batch| batch.log_data().as_slice()),
+        )?;
 
         // Check timestamp increases monotonically.
         // --------------------------------------------------------------------------------------------
@@ -620,8 +631,14 @@ impl Serializable for ProposedBlock {
 
 impl Deserializable for ProposedBlock {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let batches = OrderedBatches::read_from(source)?;
+        TransactionLogDataCollection::validate_block_budget(
+            batches.as_slice().iter().flat_map(|batch| batch.log_data().as_slice()),
+        )
+        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
+
         let block = Self {
-            batches: OrderedBatches::read_from(source)?,
+            batches,
             timestamp: u32::read_from(source)?,
             account_updated_witnesses: <Vec<(AccountId, AccountUpdateWitness)>>::read_from(source)?,
             output_note_batches: <Vec<OutputNoteBatch>>::read_from(source)?,

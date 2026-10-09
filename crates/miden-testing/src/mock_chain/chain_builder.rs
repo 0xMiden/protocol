@@ -52,7 +52,11 @@ use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
+use miden_protocol::transaction::{
+    OrderedTransactionHeaders,
+    RawOutputNote,
+    TransactionLogDataCollection,
+};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
@@ -303,6 +307,7 @@ impl MockChainBuilder {
             block_account_updates,
             output_note_batches,
             created_nullifiers,
+            TransactionLogDataCollection::empty_for_headers(&transactions),
             transactions,
         );
 
