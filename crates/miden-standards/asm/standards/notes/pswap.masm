@@ -1,5 +1,5 @@
 use {Uint64} from miden::standards::types
-use {AccountId, Asset, AssetAmount, NoteArgs, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
+use {AccountId, Asset, AssetAmount, Bool, NoteArgs, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
@@ -1108,6 +1108,15 @@ end
 # ACTION SELECTION
 # =================================================================================================
 
+#! Returns whether the executing account is the public payback's creator.
+proc is_consumer_creator(creator_id: AccountId) -> Bool
+    exec.active_account::get_id
+    # => [account_suffix, account_prefix, creator_suffix, creator_prefix]
+
+    exec.account_id::eq
+    # => [is_creator]
+end
+
 #! Validates the note arguments and returns the action followed by the two fill amounts.
 #! The reserved element must be zero, and the action must be ACTION_FILL or ACTION_CANCEL.
 #!
@@ -1173,11 +1182,10 @@ pub proc main(note_args: NoteArgs)
         eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
         # => [account_fill, note_fill]
 
-        exec.active_account::get_id
         mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
-        # => [creator_suffix, creator_prefix, account_suffix, account_prefix, account_fill, note_fill]
+        # => [creator_suffix, creator_prefix, account_fill, note_fill]
 
-        exec.account_id::eq
+        exec.is_consumer_creator
         # => [is_creator, account_fill, note_fill]
 
         if.true
