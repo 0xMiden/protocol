@@ -279,7 +279,7 @@ pub fn tx_consume_pswap_note_network(
         .authenticated_input_note(pswap_note.id())
         .extend_note_args(BTreeMap::from([(
             pswap_note.id(),
-            PswapNote::create_args(fill_amount, 0)?,
+            PswapNote::create_fill_args(fill_amount, 0)?,
         )]))
         .expected_output_notes(expected_output_notes)
         .build()

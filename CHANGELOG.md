@@ -2,8 +2,13 @@
 
 ## v0.18.0 (TBD)
 
+### Features
+
+- Added private PSWAP cancellation through a separate account using canonical recipient advice, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+
 ### Changes
 
+- [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private paybacks to use fixed P2ID recipient commitments and independent secret serials, updating the private storage layout, placing the action first in note arguments, and changing the Rust APIs ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
