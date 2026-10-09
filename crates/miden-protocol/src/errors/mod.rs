@@ -52,7 +52,7 @@ use crate::note::{
 };
 use crate::protocol_config::KernelConfig;
 use crate::script::MastForestScriptError;
-use crate::transaction::TransactionId;
+use crate::transaction::{TransactionId, TransactionLogError};
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
@@ -1062,6 +1062,10 @@ pub enum TransactionInputsExtractionError {
 
 #[derive(Debug, Error)]
 pub enum TransactionOutputError {
+    #[error("invalid transaction log data: {0}")]
+    LogData(#[source] TransactionLogError),
+    #[error("transaction log records do not match the kernel output")]
+    LogsCommitmentInconsistent,
     #[error("transaction output note with id {0} is a duplicate")]
     DuplicateOutputNote(NoteId),
     #[error("final account commitment is not in the advice map")]
@@ -1144,6 +1148,8 @@ pub enum TransactionTraceParsingError {
 
 #[derive(Debug, Error)]
 pub enum ProvenTransactionError {
+    #[error("invalid transaction log data: {0}")]
+    LogData(#[source] TransactionLogError),
     #[error(
         "proven transaction's final account commitment {tx_final_commitment} and account details commitment {details_commitment} must match"
     )]

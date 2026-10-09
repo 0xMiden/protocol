@@ -121,6 +121,28 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
+# TRANSACTION LOG STATE
+# -------------------------------------------------------------------------------------------------
+
+# The transaction log state occupies 12 elements starting at address 1300.
+# The prologue initializes the salt; the counters, dirty flag, and cached commitment start at zero.
+
+# The memory address at which the secret salt for private transaction logs is stored (one word).
+pub const LOG_SALT_PTR = 1300
+
+# The memory address at which the number of transaction logs is stored.
+pub const NUM_LOGS_PTR = LOG_SALT_PTR + WORD_NUM_ELEMENTS
+
+# The memory address at which the total number of transaction log payload words is stored.
+pub const LOG_PAYLOAD_WORDS_PTR = NUM_LOGS_PTR + 1
+
+# The memory address at which the transaction log commitment's dirty flag is stored.
+# A value of 1 means a transaction log was added after the cached commitment was computed.
+pub const LOG_COMMITMENT_DIRTY_FLAG_PTR = LOG_PAYLOAD_WORDS_PTR + 1
+
+# Address 1307 is padding to align the cached transaction log commitment to a word boundary.
+pub const LOG_COMMITMENT_PTR = LOG_SALT_PTR + 2 * WORD_NUM_ELEMENTS
+
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
 
@@ -241,6 +263,13 @@ const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR = 2400
 
 # The memory address at which the partial blockchain peaks are stored
 const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 2404
+
+# TRANSACTION LOG COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+# The memory address at which the ordered individual transaction log commitments begin.
+# This section holds 64 words (256 elements), starting at address 3000.
+pub const LOG_COMMITMENTS_PTR = 3000
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------

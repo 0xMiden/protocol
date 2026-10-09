@@ -40,6 +40,7 @@ fn transaction_header_unchecked_build_still_checks_id_and_duplicates() {
         Word::empty(),
         Default::default(),
         vec![],
+        Default::default(),
     )
     .unwrap();
     let wire = proto::transaction::TransactionHeader::from(&header);
@@ -85,6 +86,7 @@ fn transaction_header_conversion_preserves_validation_error_source() {
         Word::from([5_u32, 6, 7, 8]),
         InputNotes::default(),
         vec![*note.header()],
+        Default::default(),
     )
     .unwrap();
     let mut message = proto::transaction::TransactionHeader::from(transaction);
@@ -117,6 +119,7 @@ fn transaction_header_unchecked_build_retains_input_note_error_context() {
         Word::empty(),
         InputNotes::default(),
         vec![],
+        Default::default(),
     )
     .unwrap();
     let mut message = proto::transaction::TransactionHeader::from(transaction);

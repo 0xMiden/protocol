@@ -20,4 +20,5 @@ pub mod note
 pub mod output_note
 pub mod prologue
 pub mod tx
+pub mod tx_log
 pub mod types

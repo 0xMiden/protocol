@@ -1,6 +1,8 @@
 use alloc::format;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use super::{TransactionLogError, TransactionLogs};
 use crate::account::AccountDelta;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
@@ -22,11 +24,17 @@ use crate::{Felt, WORD_SIZE, Word};
 ///
 /// These are the account delta, the consumed and created notes, the block the summary binds (see
 /// [`TransactionSummaryMetadata`]) together with that block's commitment, the transaction's
-/// expiration block delta and the user-defined parameters (see [`TransactionSummaryUserParams`]).
+/// expiration block delta, transaction logs, and user-defined parameters (see
+/// [`TransactionSummaryUserParams`]).
 ///
 /// Because this data is intended to be signed, the user-defined parameters give an account's
 /// authentication procedure a way to bind arbitrary additional data to that signature, for example
 /// a salt providing replay protection or a maximum fee.
+///
+/// # Privacy
+///
+/// Contains complete transaction logs and the secret salt used for private transaction logs,
+/// including in serialized and debug output. The signer must be trusted with this local data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
     account_delta: AccountDelta,
@@ -36,6 +44,8 @@ pub struct TransactionSummary {
     block_commitment: Word,
     expiration_delta: u16,
     user_params: TransactionSummaryUserParams,
+    logs: TransactionLogs,
+    log_salt: Word,
 }
 
 impl TransactionSummary {
@@ -44,7 +54,7 @@ impl TransactionSummary {
 
     /// The layout version of the commitment preimage produced by
     /// [`TransactionSummary::to_elements`].
-    pub(crate) const VERSION: u8 = 1;
+    pub(crate) const VERSION: u8 = 2;
 
     /// The indices of the version, of the packed [`TransactionSummaryMetadata`] element and of the
     /// first user parameter in the commitment preimage.
@@ -54,9 +64,9 @@ impl TransactionSummary {
 
     /// The number of elements in the preimage of a [`TransactionSummary`] commitment, i.e. the
     /// length of the vector returned by [`TransactionSummary::to_elements`]: the version, the
-    /// metadata element, the user parameters and the four commitment words.
+    /// metadata element, the user parameters and the five commitment words.
     pub const NUM_ELEMENTS: usize =
-        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 4 * WORD_SIZE;
+        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 5 * WORD_SIZE;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -82,11 +92,37 @@ impl TransactionSummary {
             block_commitment,
             expiration_delta,
             user_params,
+            logs: TransactionLogs::default(),
+            log_salt: Word::empty(),
         }
+    }
+
+    /// Attaches the local transaction logs that the signature authorizes.
+    pub fn with_logs(
+        mut self,
+        logs: TransactionLogs,
+        log_salt: Word,
+    ) -> Result<Self, TransactionLogError> {
+        logs.commitment_for_account(self.account_delta.id(), log_salt)?;
+        self.logs = logs;
+        self.log_salt = log_salt;
+        Ok(self)
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the complete transaction logs available to the signer.
+    pub fn logs(&self) -> &TransactionLogs {
+        &self.logs
+    }
+
+    /// Returns the commitment to the transaction logs authorized by this signing summary.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs
+            .commitment_for_account(self.account_delta.id(), self.log_salt)
+            .expect("transaction log salt in the summary is valid")
+    }
 
     /// Returns the account delta of this transaction summary.
     pub fn account_delta(&self) -> &AccountDelta {
@@ -138,7 +174,7 @@ impl TransactionSummary {
     ///     [version, metadata, user_param0, user_param1],
     ///     [user_param2, user_param3, user_param4, user_param5],
     ///     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-    ///     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT,
+    ///     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT,
     /// ]
     /// ```
     ///
@@ -162,10 +198,10 @@ impl TransactionSummary {
     /// preimage of a transaction summary commitment.
     ///
     /// `elements` must be a full preimage as returned by [`TransactionSummary::to_elements`]. The
-    /// four commitments are not decoded because they cannot be inverted: a caller reconstructing a
-    /// summary from a preimage must rebuild the committed data from its own state, pass it to
-    /// [`TransactionSummary::new`] alongside the decoded values and check the result against
-    /// [`TransactionSummary::to_commitment`].
+    /// five commitments are not decoded because they cannot be inverted. A caller reconstructing a
+    /// summary must rebuild the committed data from its own state, pass it to [`Self::new`], attach
+    /// the transaction logs and their secret salt with [`Self::with_logs`], and check the resulting
+    /// [`Self::to_commitment`] against the expected commitment.
     ///
     /// # Errors
     ///
@@ -218,6 +254,7 @@ impl SequentialCommit for TransactionSummary {
         elements.extend_from_slice(self.input_notes.commitment().as_elements());
         elements.extend_from_slice(self.output_notes.commitment().as_elements());
         elements.extend_from_slice(self.block_commitment.as_elements());
+        elements.extend_from_slice(self.logs_commitment().as_elements());
         elements
     }
 }
@@ -232,6 +269,8 @@ impl Serializable for TransactionSummary {
         self.block_commitment.write_into(target);
         self.expiration_delta.write_into(target);
         self.user_params.write_into(target);
+        self.logs.write_into(target);
+        self.log_salt.write_into(target);
     }
 }
 
@@ -252,8 +291,10 @@ impl Deserializable for TransactionSummary {
         let block_commitment = source.read()?;
         let expiration_delta = source.read()?;
         let user_params = source.read()?;
+        let logs = source.read()?;
+        let log_salt = source.read()?;
 
-        Ok(Self::new(
+        Self::new(
             account_delta,
             input_notes,
             output_notes,
@@ -261,7 +302,9 @@ impl Deserializable for TransactionSummary {
             block_commitment,
             expiration_delta,
             user_params,
-        ))
+        )
+        .with_logs(logs, log_salt)
+        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

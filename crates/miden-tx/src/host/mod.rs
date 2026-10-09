@@ -13,7 +13,7 @@ pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
-use miden_protocol::transaction::TransactionEventId;
+use miden_protocol::transaction::{TransactionEventId, TransactionLog, TransactionLogs};
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
@@ -110,6 +110,7 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
+    logs: TransactionLogs,
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
@@ -151,6 +152,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             update_tracker: AccountUpdateTracker::new(account)?,
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
+            logs: TransactionLogs::default(),
             input_notes,
             block_commitments,
             core_lib_handlers,
@@ -213,11 +215,18 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.output_notes.values().cloned().map(|builder| builder.build()).collect()
     }
 
-    /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    /// Consumes `self` and returns the account patch, input and output notes, and transaction logs.
+    pub fn into_parts(
+        self,
+    ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (self.update_tracker.into_patch(), self.input_notes, output_notes)
+        (self.update_tracker.into_patch(), self.input_notes, output_notes, self.logs)
+    }
+
+    /// Returns the complete transaction logs collected during execution.
+    pub fn logs(&self) -> &TransactionLogs {
+        &self.logs
     }
 
     // MUTATORS
@@ -279,6 +288,16 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
+
+    /// Appends a transaction log emitted by the kernel.
+    pub(crate) fn on_log_added(
+        &mut self,
+        log: TransactionLog,
+    ) -> Result<(), TransactionKernelError> {
+        self.logs.try_push(log).map_err(|err| {
+            TransactionKernelError::other_with_source("invalid transaction logs", err)
+        })
+    }
 
     /// Pushes an input note's index and a presence flag onto the advice stack.
     ///

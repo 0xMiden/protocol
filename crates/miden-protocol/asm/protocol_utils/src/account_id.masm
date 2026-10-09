@@ -20,6 +20,12 @@ const ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO = "account ID version must be non-z
 # to determine the account version.
 const ACCOUNT_VERSION_MASK_U32 = 0x0f # 0b1111
 
+# Given the least significant 32 bits of an account ID's prefix, this mask selects the public bit.
+const ACCOUNT_TYPE_MASK_U32 = 0x10 # 0b1_0000
+
+# Discriminants must match the AccountType representation on the Rust side.
+pub const ACCOUNT_TYPE_PRIVATE = 0
+
 # Given the least significant 32 bits of an account id's prefix, this mask defines the bit used to
 # determine whether assets issued by the account trigger callbacks.
 const ACCOUNT_ASSET_CALLBACK_FLAG_MASK_U32 = 0x20 # 0b10_0000
@@ -29,6 +35,18 @@ const VERSION_1 = 1
 
 # PROCEDURES
 # =================================================================================================
+
+#! Returns whether the account ID prefix identifies a private account, independently of its version.
+#!
+#! Inputs:  [account_id_prefix]
+#! Outputs: [is_private]
+pub proc is_private(account_id_prefix: felt) -> Bool
+    u32split swap drop
+    # => [account_id_prefix_lo]
+
+    u32and.ACCOUNT_TYPE_MASK_U32 eq.ACCOUNT_TYPE_PRIVATE
+    # => [is_private]
+end
 
 #! Returns a boolean indicating whether the given account_ids are equal.
 #!

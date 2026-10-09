@@ -35,6 +35,7 @@ impl BuildUnchecked for TransactionHeader {
             self.final_state_commitment,
             input_notes,
             output_notes,
+            miden_protocol::Word::empty(),
         )?;
         if header.id() != transmitted {
             return Err(TransactionHeaderBuildError::IdMismatch {

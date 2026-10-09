@@ -81,6 +81,7 @@ pub struct MockTransactionBuilder<'chain> {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     auth_args: Word,
+    log_salt: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
@@ -113,6 +114,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_script: None,
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
+            log_salt: EMPTY_WORD,
             account_code_upgrade: None,
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
@@ -230,6 +232,14 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Sets the secret salt used for private transaction log commitments.
+    ///
+    /// Defaults to zero. Nonempty logs from a private native account require a nonzero salt.
+    pub fn log_salt(mut self, log_salt: Word) -> Self {
+        self.log_salt = log_salt;
+        self
+    }
+
     /// Sets the code upgrade of the native account, which the transaction must provide if it
     /// upgrades the account's code.
     pub fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
@@ -335,7 +345,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         if let Some(tx_script) = self.tx_script {
             tx_args = tx_args.with_tx_script_and_args(tx_script, self.tx_script_args);
         }
-        tx_args = tx_args.with_auth_args(self.auth_args);
+        tx_args = tx_args.with_auth_args(self.auth_args).with_log_salt(self.log_salt);
         if let Some(account_code_upgrade) = self.account_code_upgrade {
             tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
         }

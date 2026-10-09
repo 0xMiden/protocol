@@ -351,6 +351,7 @@ mod tests {
             final_state_commitment,
             input_notes,
             output_notes,
+            Default::default(),
         )
     }
 
@@ -384,6 +385,7 @@ mod tests {
             final_state_commitment,
             InputNotes::default(),
             vec![],
+            Word::empty(),
         )?]);
 
         Ok((vec![update], transactions))

@@ -1,9 +1,9 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_processor::{ContextId, ProcessorState};
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
@@ -28,10 +28,19 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
-use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
+use miden_protocol::transaction::memory::{
+    LOG_SALT_PTR,
+    NOTE_MEM_SIZE,
+    OUTPUT_NOTE_SECTION_OFFSET,
+};
+use miden_protocol::transaction::{
+    LogTopic,
+    TransactionEventId,
+    TransactionLog,
+    TransactionSummary,
+};
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
+use miden_protocol::{Felt, Hasher, MAX_LOG_PAYLOAD_WORDS, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -65,6 +74,7 @@ pub(crate) enum TransactionProgressEvent {
 /// The data necessary to handle a [`TransactionEventId`].
 #[derive(Debug)]
 pub(crate) enum TransactionEvent {
+    TxLogAdded(TransactionLog),
     /// The data necessary to request a foreign account's data from the data store.
     AccountBeforeForeignLoad {
         /// The foreign account's ID.
@@ -205,6 +215,9 @@ impl TransactionEvent {
         }
 
         let tx_event = match tx_event_id {
+            TransactionEventId::TxLogAdded => {
+                Some(TransactionEvent::TxLogAdded(extract_transaction_log(process)?))
+            },
             TransactionEventId::AccountBeforeForeignLoad => {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
                 let account_id_suffix = process.get_stack_item(1);
@@ -685,6 +698,32 @@ pub(crate) enum RecipientData {
     },
 }
 
+/// Extracts a transaction log after the kernel has authenticated its emitter and payload.
+fn extract_transaction_log(
+    process: &ProcessorState,
+) -> Result<TransactionLog, TransactionKernelError> {
+    // Expected stack: [event, emitter_suffix, emitter_prefix, topic_0, topic_1,
+    // PAYLOAD_COMMITMENT].
+    let emitter =
+        AccountId::try_from_elements(process.get_stack_item(1), process.get_stack_item(2))
+            .map_err(|err| {
+                TransactionKernelError::other_with_source("invalid transaction log emitter", err)
+            })?;
+    let topic = LogTopic::new([process.get_stack_item(3), process.get_stack_item(4)]);
+    let payload_commitment = process.get_stack_word(5);
+    let elements = process
+        .advice_provider()
+        .get_mapped_values(&payload_commitment)
+        .ok_or_else(|| TransactionKernelError::other("missing transaction log payload"))?;
+    let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
+    if !remainder.is_empty() || words.len() > MAX_LOG_PAYLOAD_WORDS {
+        return Err(TransactionKernelError::other("invalid transaction log payload length"));
+    }
+    let payload = words.iter().copied().map(Word::new).collect();
+    TransactionLog::new(emitter, topic, payload)
+        .map_err(|err| TransactionKernelError::other_with_source("invalid transaction log", err))
+}
+
 /// Checks if the necessary witness for accessing the asset identified by the asset ID is already
 /// in the merkle store, and:
 /// - If so, returns `None`.
@@ -788,7 +827,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 ///         [version, metadata, user_param0, user_param1],
 ///         [user_param2, user_param3, user_param4, user_param5],
 ///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
+///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -814,6 +853,7 @@ fn extract_tx_summary<'store, STORE>(
     let input_notes_commitment = extract_word(commitments, 12);
     let output_notes_commitment = extract_word(commitments, 16);
     let block_commitment = extract_word(commitments, 20);
+    let logs_commitment = extract_word(commitments, 24);
 
     // Validate the metadata against the kernel state so that a summary preimage carrying
     // fabricated values is rejected rather than presented to the signer.
@@ -828,15 +868,34 @@ fn extract_tx_summary<'store, STORE>(
     // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
     // block the transaction does not authenticate and cross-checks the bound block commitment
     // against the one the host knows for that block.
-    let tx_summary = base_host.build_tx_summary(
-        account_delta_commitment,
-        input_notes_commitment,
-        output_notes_commitment,
-        metadata.block_number(),
-        block_commitment,
-        metadata.expiration_delta(),
-        user_params,
-    )?;
+    let tx_summary = base_host
+        .build_tx_summary(
+            account_delta_commitment,
+            input_notes_commitment,
+            output_notes_commitment,
+            metadata.block_number(),
+            block_commitment,
+            metadata.expiration_delta(),
+            user_params,
+        )?
+        .with_logs(
+            base_host.logs().clone(),
+            process
+                .get_mem_word(ContextId::root(), LOG_SALT_PTR)
+                .map_err(|err| {
+                    TransactionKernelError::other_with_source(
+                        "invalid transaction log salt address",
+                        err,
+                    )
+                })?
+                .unwrap_or_default(),
+        )
+        .map_err(|err| {
+            TransactionKernelError::other_with_source("invalid summary transaction logs", err)
+        })?;
+    if tx_summary.logs_commitment() != logs_commitment {
+        return Err(TransactionKernelError::other("summary transaction log commitment mismatch"));
+    }
 
     if tx_summary.to_commitment() != message {
         return Err(TransactionKernelError::TransactionSummaryConstructionFailed(

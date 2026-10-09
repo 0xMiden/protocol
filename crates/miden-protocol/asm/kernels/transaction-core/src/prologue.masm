@@ -18,7 +18,7 @@ use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_ASSET_ADDED_TO_N
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
-use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
+use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, LOG_SALT_PTR, PARTIAL_BLOCKCHAIN_PTR,
      PROTOCOL_CONFIG_SECTION_OFFSET}
     from miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
@@ -1337,6 +1337,7 @@ end
 #!     TX_SCRIPT_ROOT,
 #!     TX_SCRIPT_ARGS,
 #!     AUTH_ARGS,
+#!     LOG_SALT,
 #!   ]
 #!   Advice map: {
 #!      PARTIAL_BLOCKCHAIN_COMMITMENT: [MMR_PEAKS],
@@ -1373,6 +1374,7 @@ end
 #! - number_of_input_notes is the number of input notes.
 #! - TX_SCRIPT_ROOT is the transaction's script root.
 #! - TX_SCRIPT_ARGS are the arguments provided to the stack, see prologue::process_tx_script_data.
+#! - LOG_SALT is the secret salt used for private transaction log commitments.
 #! - MMR_PEAKS is the MMR peak data, see process_chain_data.
 #! - NOTE_DATA is the input notes' args, nullifier preimages, assets, and authentication data; for
 #!   format see prologue::process_input_note.
@@ -1393,6 +1395,10 @@ pub proc prepare_transaction(block_commitment: Commitment, initial_account_commi
     exec.process_input_notes_data
     exec.process_tx_script_data
     exec.process_auth_procedure_data
+    # => []
+
+    # Initialize the salt before any transaction logs can be emitted.
+    padw adv_loadw mem_storew_le.LOG_SALT_PTR dropw
     # => []
 
     push.MAX_BLOCK_NUM exec.memory::set_expiration_block_num

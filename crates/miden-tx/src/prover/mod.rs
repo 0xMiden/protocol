@@ -86,6 +86,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
+        let log_data = tx_outputs.log_data();
         let (account_header, output_notes) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
@@ -123,6 +124,7 @@ impl LocalTransactionProver {
             expiration_block_num,
             proof,
         )
+        .and_then(|tx| tx.with_log_data(log_data))
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 
@@ -156,6 +158,7 @@ impl LocalTransactionProver {
 
         let block_commitments = tx_inputs.collect_block_commitments();
 
+        let log_salt = tx_inputs.tx_args().log_salt();
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
@@ -188,10 +191,15 @@ impl LocalTransactionProver {
             .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
 
         // Extract transaction outputs and process transaction data.
-        let (account_patch, input_notes, output_notes) = host.into_parts();
-        let tx_outputs =
-            TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-                .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
+        let (account_patch, input_notes, output_notes, logs) = host.into_parts();
+        let tx_outputs = TransactionKernel::from_transaction_parts(
+            &stack_outputs,
+            &advice_inputs,
+            output_notes,
+            logs,
+            log_salt,
+        )
+        .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
 
         self.build_proven_transaction(
             &input_notes,

@@ -27,8 +27,9 @@ use crate::utils::serde::{
 ///
 /// The header is essentially a direct copy of the transaction's public commitments, in particular
 /// the initial and final account state commitment as well as all nullifiers of consumed notes and
-/// all note IDs of created notes. While account updates may be aggregated and notes may be erased
-/// as part of batch and block building, the header retains the original transaction's data.
+/// all note IDs of created notes, together with the transaction log commitment. While account
+/// updates may be aggregated and notes may be erased as part of batch and block building, the
+/// header retains the original transaction's data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionHeader {
     id: TransactionId,
@@ -37,6 +38,7 @@ pub struct TransactionHeader {
     final_state_commitment: Word,
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<NoteHeader>,
+    logs_commitment: Word,
 }
 
 impl TransactionHeader {
@@ -46,7 +48,8 @@ impl TransactionHeader {
     /// Constructs a new [`TransactionHeader`] from the provided parameters.
     ///
     /// The [`TransactionId`] is computed from the provided parameters, committing to the initial
-    /// and final account commitments and the input and output note commitments.
+    /// and final account commitments, the input and output note commitments, and the transaction
+    /// log commitment.
     ///
     /// The input notes and output notes must be in the same order as they appeared in the
     /// transaction that this header represents, otherwise an incorrect ID will be computed.
@@ -66,6 +69,7 @@ impl TransactionHeader {
         final_state_commitment: Word,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
+        logs_commitment: Word,
     ) -> Result<Self, TransactionHeaderError> {
         let mut input_nullifiers = BTreeSet::new();
         for input_note in &input_notes {
@@ -95,6 +99,7 @@ impl TransactionHeader {
             final_state_commitment,
             input_notes_commitment,
             output_notes_commitment,
+            logs_commitment,
         );
 
         Ok(Self {
@@ -104,6 +109,7 @@ impl TransactionHeader {
             final_state_commitment,
             input_notes,
             output_notes,
+            logs_commitment,
         })
     }
 
@@ -120,6 +126,7 @@ impl TransactionHeader {
         final_state_commitment: Word,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
+        logs_commitment: Word,
     ) -> Self {
         Self {
             id,
@@ -128,11 +135,17 @@ impl TransactionHeader {
             final_state_commitment,
             input_notes,
             output_notes,
+            logs_commitment,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the commitment to public or private transaction logs.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs_commitment
+    }
 
     /// Returns the unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {
@@ -191,6 +204,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.account_update().final_state_commitment(),
             tx.input_notes().clone(),
             tx.output_notes().iter().map(|note| *note.header()).collect(),
+            tx.log_data().commitment(),
         )
     }
 }
@@ -205,6 +219,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.final_account().to_commitment(),
             tx.input_notes().to_commitments(),
             tx.output_notes().iter().map(|n| *n.header()).collect(),
+            tx.logs_commitment(),
         )
     }
 }
@@ -221,6 +236,7 @@ impl Serializable for TransactionHeader {
             final_state_commitment,
             input_notes,
             output_notes,
+            logs_commitment,
         } = self;
 
         account_id.write_into(target);
@@ -228,6 +244,7 @@ impl Serializable for TransactionHeader {
         final_state_commitment.write_into(target);
         input_notes.write_into(target);
         output_notes.write_into(target);
+        logs_commitment.write_into(target);
     }
 }
 
@@ -238,6 +255,7 @@ impl Deserializable for TransactionHeader {
         let final_state_commitment = <Word>::read_from(source)?;
         let input_notes = <InputNotes<InputNoteCommitment>>::read_from(source)?;
         let output_notes = <Vec<NoteHeader>>::read_from(source)?;
+        let logs_commitment = Word::read_from(source)?;
 
         Self::new(
             account_id,
@@ -245,6 +263,7 @@ impl Deserializable for TransactionHeader {
             final_state_commitment,
             input_notes,
             output_notes,
+            logs_commitment,
         )
         .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
@@ -283,6 +302,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             inputs,
             vec![],
+            Default::default(),
         )
         .unwrap_err();
 
@@ -303,6 +323,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::default(),
             vec![*note.header(), *note.header()],
+            Default::default(),
         )
         .unwrap_err();
 
@@ -324,6 +345,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::new(vec![input]).unwrap(),
             vec![*note.header()],
+            Default::default(),
         )
         .unwrap_err();
 
@@ -337,12 +359,19 @@ mod tests {
     fn deserialization_rejects_duplicate_output_notes() {
         let note = Note::mock_noop(Word::empty());
         let invalid_header = TransactionHeader::new_unchecked(
-            TransactionId::new(Word::empty(), Word::empty(), Word::empty(), Word::empty()),
+            TransactionId::new(
+                Word::empty(),
+                Word::empty(),
+                Word::empty(),
+                Word::empty(),
+                Default::default(),
+            ),
             account_id(),
             Word::from([1_u32, 2, 3, 4]),
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::default(),
             vec![*note.header(), *note.header()],
+            Default::default(),
         );
 
         let error = TransactionHeader::read_from_bytes(&invalid_header.to_bytes()).unwrap_err();

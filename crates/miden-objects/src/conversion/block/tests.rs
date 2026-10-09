@@ -19,6 +19,7 @@ fn block_body_and_transaction_header_roundtrip() {
         Word::from([5_u32, 6, 7, 8]),
         InputNotes::default(),
         vec![],
+        Default::default(),
     )
     .unwrap();
     let account_update = BlockAccountUpdate::new(
