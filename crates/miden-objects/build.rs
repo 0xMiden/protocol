@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use prost::Message;
 
 /// Schemas that are compiled but left out of the exported descriptor set.
-const UNEXPORTED_FILES: [&str; 2] = ["account_file.proto", "note_file.proto"];
+const UNEXPORTED_FILES: [&str; 3] =
+    ["account_file.proto", "note_file.proto", "mock_chain_snapshot.proto"];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=proto");
@@ -27,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "batch.proto",
         "account_file.proto",
         "note_file.proto",
+        "mock_chain_snapshot.proto",
     ];
 
     let mut compiler = protox::Compiler::new([&proto_dir])?;
@@ -171,6 +173,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".note_file.CommittedNote",
             ".note_file.NoteFile",
             ".note_file.NoteFileV1",
+            ".mock_chain_snapshot.MockChainSnapshot",
+            ".mock_chain_snapshot.MockChainSnapshotV1",
+            ".mock_chain_snapshot.ProvenBlock",
+            ".mock_chain_snapshot.AccountCommitment",
+            ".mock_chain_snapshot.SpentNullifier",
+            ".mock_chain_snapshot.MockChainNote",
+            ".mock_chain_snapshot.PrivateNote",
+            ".mock_chain_snapshot.AccountAuthenticator",
+            ".mock_chain_snapshot.Authenticator",
         ],
     )?;
     prost.field_attribute(

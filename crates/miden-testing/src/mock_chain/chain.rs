@@ -3,22 +3,17 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
-use miden_processor::serde::DeserializationError;
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
-    BlockAccountUpdate,
-    BlockBody,
     BlockHeader,
     BlockInputs,
     BlockNumber,
     BlockSignatures,
     Blockchain,
-    OutputNoteBatch,
     ProposedBlock,
     ProvenBlock,
     ValidatorConfig,
@@ -30,20 +25,19 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
-    OrderedTransactionHeaders,
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
     TransactionInputs,
 };
-use miden_protocol::vm::ExecutionProof;
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
-use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, MockTransactionBuilder};
+
+mod snapshot;
 
 // MOCK CHAIN
 // ================================================================================================
@@ -1162,94 +1156,6 @@ impl Default for MockChain {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-fn read_blocks_with_unchecked_genesis<R: ByteReader>(
-    source: &mut R,
-) -> Result<Vec<ProvenBlock>, DeserializationError> {
-    let block_count = source.read_usize()?;
-    if block_count == 0 {
-        return Ok(Vec::new());
-    }
-
-    let mut blocks = vec![read_genesis_block_unchecked(source)?];
-    let remaining_blocks = source
-        .read_many_iter(block_count - 1)?
-        .collect::<Result<Vec<ProvenBlock>, _>>()?;
-    blocks.extend(remaining_blocks);
-
-    Ok(blocks)
-}
-
-fn read_genesis_block_unchecked<R: ByteReader>(
-    source: &mut R,
-) -> Result<ProvenBlock, DeserializationError> {
-    let header = BlockHeader::read_from(source)?;
-    if header.block_num() != BlockNumber::GENESIS {
-        return Err(DeserializationError::InvalidValue(format!(
-            "first mock chain block must be genesis, got block {}",
-            header.block_num()
-        )));
-    }
-
-    let body = BlockBody::new_unchecked(
-        Vec::<BlockAccountUpdate>::read_from(source)?,
-        Vec::<OutputNoteBatch>::read_from(source)?,
-        Vec::<Nullifier>::read_from(source)?,
-        OrderedTransactionHeaders::read_from(source)?,
-    );
-    let signatures = BlockSignatures::read_from(source)?;
-    let proof = ExecutionProof::read_from(source)?;
-
-    Ok(ProvenBlock::new_unchecked(header, body, signatures, proof))
-}
-
-impl Serializable for MockChain {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.chain.write_into(target);
-        self.blocks.write_into(target);
-        self.nullifier_tree.write_into(target);
-        self.account_tree.write_into(target);
-        self.pending_transactions.write_into(target);
-        self.committed_accounts.write_into(target);
-        self.committed_notes.write_into(target);
-        self.account_authenticators.write_into(target);
-        self.validator_secret_keys.write_into(target);
-        self.protocol_config.write_into(target);
-    }
-}
-
-impl Deserializable for MockChain {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let chain = Blockchain::read_from(source)?;
-        let blocks = read_blocks_with_unchecked_genesis(source)?;
-        let nullifier_tree = NullifierTree::read_from(source)?;
-        let account_tree = AccountTree::read_from(source)?;
-        let pending_transactions = Vec::<ProvenTransaction>::read_from(source)?;
-        let committed_accounts = BTreeMap::<AccountId, Account>::read_from(source)?;
-        let committed_notes = BTreeMap::<NoteId, MockChainNote>::read_from(source)?;
-        let account_authenticators =
-            BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
-        let secret_keys = Vec::<SigningKey>::read_from(source)?;
-        let protocol_config = ProtocolConfig::read_from(source)?;
-
-        Ok(Self {
-            chain,
-            blocks,
-            nullifier_tree,
-            account_tree,
-            pending_transactions,
-            pending_batches: Vec::new(),
-            committed_notes,
-            committed_accounts,
-            account_authenticators,
-            validator_secret_keys: secret_keys,
-            protocol_config,
-        })
-    }
-}
-
 // ACCOUNT STATE
 // ================================================================================================
 
@@ -1288,33 +1194,6 @@ impl PartialEq for AccountAuthenticator {
             (None, None) => true,
             _ => false,
         }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountAuthenticator {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.authenticator
-            .as_ref()
-            .map(|auth| {
-                auth.keys()
-                    .values()
-                    .map(|(secret_key, public_key)| (secret_key, public_key.as_ref().clone()))
-                    .collect::<Vec<_>>()
-            })
-            .write_into(target);
-    }
-}
-
-impl Deserializable for AccountAuthenticator {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let authenticator = Option::<Vec<(AuthSecretKey, PublicKey)>>::read_from(source)?;
-
-        let authenticator = authenticator.map(|keys| BasicAuthenticator::from_key_pairs(&keys));
-
-        Ok(Self { authenticator })
     }
 }
 
@@ -1411,10 +1290,10 @@ mod tests {
     };
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_protocol::transaction::RawOutputNote;
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_standards::account::wallets::BasicWallet;
     use miden_standards::note::P2idNote;
     use miden_standards::tx_script::SendNotesTransactionScript;
-    use miden_tx::utils::serde::SliceReader;
 
     use super::*;
     use crate::Auth;
@@ -1446,23 +1325,6 @@ mod tests {
 
         assert!(update.details().is_private());
         assert!(chain.committed_account(account.id()).is_err());
-
-        Ok(())
-    }
-
-    #[test]
-    fn unchecked_genesis_deserialization_rejects_non_genesis_block() -> anyhow::Result<()> {
-        let mut chain = MockChain::new();
-        let block = chain.prove_next_block()?;
-        let bytes = vec![block].to_bytes();
-
-        let error = read_blocks_with_unchecked_genesis(&mut SliceReader::new(&bytes)).unwrap_err();
-
-        assert!(matches!(
-            error,
-            DeserializationError::InvalidValue(message)
-                if message == "first mock chain block must be genesis, got block 1"
-        ));
 
         Ok(())
     }
@@ -1745,7 +1607,7 @@ mod tests {
 
         let bytes = chain.to_bytes();
 
-        let deserialized = MockChain::read_from_bytes(&bytes).unwrap();
+        let deserialized = MockChain::try_from_bytes(&bytes).unwrap();
 
         assert_eq!(chain.chain.as_mmr().peaks(), deserialized.chain.as_mmr().peaks());
         assert_eq!(chain.blocks, deserialized.blocks);

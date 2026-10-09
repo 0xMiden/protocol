@@ -43,6 +43,12 @@ pub mod proto {
         include!(concat!(env!("OUT_DIR"), "/blockchain.rs"));
     }
 
+    /// Snapshot records for protocol testing. These are excluded from the transport descriptors.
+    #[expect(clippy::module_inception)]
+    pub mod mock_chain_snapshot {
+        include!(concat!(env!("OUT_DIR"), "/mock_chain_snapshot.rs"));
+    }
+
     pub mod note {
         include!(concat!(env!("OUT_DIR"), "/note.rs"));
     }
