@@ -5,10 +5,15 @@ use miden_core::{Felt, ZERO};
 
 use super::{Account, AccountCode, AccountId, PartialStorage};
 use crate::Word;
-use crate::account::{AccountCodeInterface, AccountHeader, validate_account_seed};
-use crate::asset::PartialVault;
+use crate::account::{
+    AccountCodeInterface,
+    AccountHeader,
+    StorageMapWitness,
+    validate_account_seed,
+};
+use crate::asset::{AssetWitness, PartialVault};
 use crate::crypto::SequentialCommit;
-use crate::errors::AccountError;
+use crate::errors::{AccountError, PartialAssetVaultError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -154,6 +159,44 @@ impl PartialAccount {
             self.to_commitment()
         }
     }
+
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Adds an [`AssetWitness`] to the partial vault of this account.
+    ///
+    /// This lets the account track assets that were loaded after its construction, e.g. during
+    /// transaction execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the witness to the partial vault fails. See
+    /// [`PartialVault::add`].
+    pub fn add_asset_witness(
+        &mut self,
+        witness: AssetWitness,
+    ) -> Result<(), PartialAssetVaultError> {
+        self.partial_vault.add(witness)
+    }
+
+    /// Adds a [`StorageMapWitness`] to the partial storage of this account.
+    ///
+    /// This lets the account track storage map entries that were loaded after its construction,
+    /// e.g. during transaction execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the witness to the partial storage fails. See
+    /// [`PartialStorage::add`].
+    pub fn add_storage_map_witness(
+        &mut self,
+        witness: StorageMapWitness,
+    ) -> Result<(), AccountError> {
+        self.partial_storage.add(witness)
+    }
+
+    // CONVERSIONS
+    // --------------------------------------------------------------------------------------------
 
     /// Consumes self and returns the underlying parts of the partial account.
     pub fn into_parts(

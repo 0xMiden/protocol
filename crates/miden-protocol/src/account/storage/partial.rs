@@ -1,3 +1,4 @@
+use alloc::collections::btree_map::Entry;
 use alloc::collections::{BTreeMap, BTreeSet};
 
 use miden_crypto::Word;
@@ -5,7 +6,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtLeaf;
 
 use super::{AccountStorage, AccountStorageHeader, StorageSlotContent};
-use crate::account::PartialStorageMap;
+use crate::account::{PartialStorageMap, StorageMapWitness};
 use crate::errors::AccountError;
 use crate::utils::serde::{
     ByteReader,
@@ -118,6 +119,32 @@ impl PartialStorage {
 
     // TODO: Add from account storage with (slot/[key])?
 
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Adds a [`StorageMapWitness`] to the storage map whose root matches the root of the witness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the root of the witness is not the root of any map slot in this storage.
+    /// - adding the witness to the storage map fails.
+    pub fn add(&mut self, witness: StorageMapWitness) -> Result<(), AccountError> {
+        let map_root = witness.proof().compute_root();
+
+        let partial_map = match self.maps.entry(map_root) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                if !self.header.map_slot_roots().any(|slot_root| slot_root == map_root) {
+                    return Err(AccountError::StorageMapRootNotFound(map_root));
+                }
+                entry.insert(PartialStorageMap::new(map_root))
+            },
+        };
+
+        partial_map.add(witness).map_err(AccountError::FailedToAddStorageMapWitness)
+    }
+
     // ITERATORS
     // --------------------------------------------------------------------------------------------
 
@@ -159,6 +186,7 @@ impl Deserializable for PartialStorage {
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
+    use assert_matches::assert_matches;
     use miden_core::Word;
 
     use crate::account::{
@@ -171,6 +199,7 @@ mod tests {
         StorageSlot,
         StorageSlotName,
     };
+    use crate::errors::AccountError;
 
     #[test]
     pub fn new_partial_storage() -> anyhow::Result<()> {
@@ -200,6 +229,44 @@ mod tests {
         let retrieved_map = partial_storage.maps.get(&slot_header.value()).unwrap();
         assert!(retrieved_map.open(&map_key_absent).is_err());
         assert!(retrieved_map.open(&map_key_present).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn add_map_witness_tracks_entry_in_untracked_map_slot() -> anyhow::Result<()> {
+        let key = StorageMapKey::from_index(1);
+        let value = Word::from([1_u32, 2, 3, 4]);
+        let map = StorageMap::with_entries([(key, value)])?;
+        let storage = AccountStorage::new(vec![StorageSlot::with_map(
+            StorageSlotName::new("miden::test_map")?,
+            map.clone(),
+        )])?;
+
+        let mut partial_storage = PartialStorage::new(AccountStorageHeader::from(&storage), [])?;
+        partial_storage.add(map.open(&key))?;
+
+        let partial_map = partial_storage.maps().next().context("map should be tracked")?;
+        assert_eq!(partial_map.root(), map.root());
+        assert_eq!(partial_map.get(&key), Some(value));
+
+        Ok(())
+    }
+
+    #[test]
+    fn add_map_witness_rejects_witness_of_unknown_map() -> anyhow::Result<()> {
+        let key = StorageMapKey::from_index(1);
+        let storage = AccountStorage::new(vec![StorageSlot::with_map(
+            StorageSlotName::new("miden::test_map")?,
+            StorageMap::with_entries([(key, Word::from([1_u32, 0, 0, 0]))])?,
+        )])?;
+        let other_map = StorageMap::with_entries([(key, Word::from([2_u32, 0, 0, 0]))])?;
+
+        let mut partial_storage = PartialStorage::new(AccountStorageHeader::from(&storage), [])?;
+        let err = partial_storage.add(other_map.open(&key)).unwrap_err();
+
+        assert_matches!(err, AccountError::StorageMapRootNotFound(root) if root == other_map.root());
+        assert_eq!(partial_storage.maps().count(), 0);
+
         Ok(())
     }
 }

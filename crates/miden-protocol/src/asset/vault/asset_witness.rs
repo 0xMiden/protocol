@@ -30,6 +30,8 @@ use crate::utils::serde::{
 /// ID A an [`SmtLeaf::Multiple`](miden_crypto::merkle::smt::SmtLeaf::Multiple) may be present
 /// that contains both SMT keys hash(A) and hash(B). However, B may not be present in the ID-value
 /// pairs and this is a valid state.
+///
+/// The type does not track empty word values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetWitness {
     proof: SmtProof,
@@ -65,9 +67,8 @@ impl AssetWitness {
             if !value.is_empty() {
                 Asset::new(id, value)
                     .map_err(|err| AssetError::AssetWitnessInvalid(Box::new(err)))?;
+                entries.insert(id, value);
             }
-
-            entries.insert(id, value);
         }
 
         Ok(Self { proof, entries })
@@ -82,7 +83,8 @@ impl AssetWitness {
         proof: SmtProof,
         id_values: impl IntoIterator<Item = (AssetId, Word)>,
     ) -> Self {
-        let entries: BTreeMap<AssetId, Word> = id_values.into_iter().collect();
+        let entries: BTreeMap<AssetId, Word> =
+            id_values.into_iter().filter(|(_, value)| !value.is_empty()).collect();
 
         #[cfg(debug_assertions)]
         for (id, value) in &entries {
@@ -131,15 +133,9 @@ impl AssetWitness {
         })
     }
 
-    /// Returns an iterator over the raw `(asset_id, value)` pairs tracked by this witness.
+    /// Returns an iterator over the non-empty `(asset_id, value)` pairs tracked by this witness.
     pub(super) fn entries(&self) -> impl Iterator<Item = (&AssetId, &Word)> {
         self.entries.iter()
-    }
-
-    /// Decomposes the witness into its underlying [`SmtProof`] and the raw `(asset_id, value)`
-    /// entries it tracks.
-    pub(super) fn into_parts(self) -> (SmtProof, BTreeMap<AssetId, Word>) {
-        (self.proof, self.entries)
     }
 
     /// Returns an iterator over every inner node of this witness' merkle path.
