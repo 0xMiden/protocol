@@ -4,7 +4,7 @@
 
 ### Changes
 
-- [BREAKING] Removed salt from P2ID note storage and its Rust APIs. P2ID storage now contains only the target account ID (two elements), changing the P2ID script root and recipients. AggLayer MINT outputs use the two-element P2ID layout.
+- [BREAKING] Removed salt from P2ID note storage and its Rust APIs. P2ID storage now contains only the target account ID (two elements), changing the P2ID script root and recipients. AggLayer MINT outputs use the two-element P2ID layout ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 
