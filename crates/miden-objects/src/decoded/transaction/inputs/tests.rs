@@ -1,7 +1,7 @@
 use crate::test_utils::error_source;
 use crate::{DecodeMessage, Verify, proto};
 
-mod common;
+pub(in crate::decoded::transaction) mod common;
 
 mod errors;
 

@@ -19,6 +19,8 @@ use crate::errors::StorageMapError;
 /// [`SmtLeaf::Multiple`](miden_crypto::merkle::smt::SmtLeaf::Multiple) may be present that contains
 /// both keys hash(A) and hash(B). However, B may not be present in the key-value pairs and this is
 /// a valid state.
+///
+/// The type does not track empty word values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapWitness {
     proof: SmtProof,
@@ -48,7 +50,9 @@ impl StorageMapWitness {
         for key in keys.into_iter() {
             let hashed_map_key = key.hash().as_word();
             let value = proof.get(&hashed_map_key).ok_or(StorageMapError::MissingKey { key })?;
-            entries.insert(key, value);
+            if !value.is_empty() {
+                entries.insert(key, value);
+            }
         }
 
         Ok(Self { proof, entries })
@@ -66,7 +70,7 @@ impl StorageMapWitness {
     ) -> Self {
         Self {
             proof,
-            entries: key_values.into_iter().collect(),
+            entries: key_values.into_iter().filter(|(_, value)| !value.is_empty()).collect(),
         }
     }
 
@@ -87,7 +91,7 @@ impl StorageMapWitness {
         self.proof.get(&hash_word)
     }
 
-    /// Returns an iterator over the key-value pairs in this witness.
+    /// Returns an iterator over the non-empty key-value pairs of the [`StorageMapWitness`].
     pub fn entries(&self) -> impl Iterator<Item = (&StorageMapKey, &Word)> {
         self.entries.iter()
     }
