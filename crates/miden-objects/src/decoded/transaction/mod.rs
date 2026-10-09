@@ -41,6 +41,9 @@ pub use inputs::{
     TransactionInputsV1,
 };
 
+mod witness;
+pub use witness::{TransactionWitness, TransactionWitnessV1};
+
 mod batch;
 pub use batch::{
     BatchAccountUpdate,
