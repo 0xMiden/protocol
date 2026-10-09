@@ -23,7 +23,7 @@ use miden_tx::auth::BasicAuthenticator;
 
 use super::MockTransaction;
 use crate::MockChain;
-use crate::mock_chain::MockTransactionInput;
+use crate::mock_chain::{MockTransactionInput, MockTransactionNoteInput};
 
 // MOCK TRANSACTION BUILDER
 // ================================================================================================
@@ -72,7 +72,7 @@ pub struct MockTransactionBuilder<'chain> {
     chain: &'chain MockChain,
     input: MockTransactionInput,
     reference_block: Option<BlockNumber>,
-    authenticated_notes: Vec<NoteId>,
+    authenticated_notes: Vec<MockTransactionNoteInput>,
     unauthenticated_notes: Vec<Note>,
     authenticator: Option<BasicAuthenticator>,
     advice_inputs: AdviceInputs,
@@ -127,17 +127,21 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Adds an authenticated input note that the transaction consumes.
     ///
     /// The note must already be committed to the chain so that its inclusion proof can be resolved
-    /// in [`Self::build`].
-    pub fn authenticated_input_note(mut self, note_id: NoteId) -> Self {
-        self.authenticated_notes.push(note_id);
+    /// in [`Self::build`]. Pass a [`NoteId`] for a public note, or the full [`Note`] for a note
+    /// whose details the chain does not hold, e.g. a private note.
+    pub fn authenticated_input_note(mut self, note: impl Into<MockTransactionNoteInput>) -> Self {
+        self.authenticated_notes.push(note.into());
         self
     }
 
     /// Adds multiple authenticated input notes that the transaction consumes.
     ///
     /// This is the iterator equivalent of [`Self::authenticated_input_note`].
-    pub fn authenticated_input_notes(mut self, note_ids: impl IntoIterator<Item = NoteId>) -> Self {
-        self.authenticated_notes.extend(note_ids);
+    pub fn authenticated_input_notes(
+        mut self,
+        notes: impl IntoIterator<Item = impl Into<MockTransactionNoteInput>>,
+    ) -> Self {
+        self.authenticated_notes.extend(notes.into_iter().map(Into::into));
         self
     }
 
