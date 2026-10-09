@@ -49,7 +49,8 @@ impl Verify for TransactionArgs {
             self.advice_inputs.verify()?,
             self.auth_args,
             self.account_code_upgrade.verify()?,
-        ))
+        )
+        .with_log_salt(self.log_salt))
     }
 }
 

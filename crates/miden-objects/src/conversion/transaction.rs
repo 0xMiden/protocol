@@ -12,6 +12,7 @@ use miden_protocol::transaction::{
     TransactionScript,
     TxAccountUpdate,
 };
+use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
 
@@ -46,6 +47,7 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
             advice_inputs: Some(value.advice_inputs().into()),
             auth_args: Some(value.auth_args().into()),
             account_code_upgrade: value.account_code_upgrade().map(Into::into),
+            log_salt: Some(value.log_salt().into()),
         }
     }
 }
@@ -84,6 +86,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
             reference_block_commitment: Some(value.ref_block_commitment().into()),
             expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
+            log_data: value.log_data().to_bytes(),
         }
     }
 }
@@ -137,6 +140,7 @@ impl From<&TransactionHeader> for proto::transaction::TransactionHeader {
     fn from(header: &TransactionHeader) -> Self {
         Self {
             transaction_id: Some(header.id().into()),
+            logs_commitment: Some(header.logs_commitment().into()),
             account_id: Some(header.account_id().into()),
             initial_state_commitment: Some(header.initial_state_commitment().into()),
             final_state_commitment: Some(header.final_state_commitment().into()),

@@ -26,7 +26,7 @@ impl Verify for TransactionEffectsV1 {
     type Verified = miden_protocol::transaction::TransactionEffects;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(Self::Verified::new(
+        Self::Verified::new(
             self.initial_state_commitment,
             self.final_state_commitment,
             self.account_patch.verify()?,
@@ -35,6 +35,8 @@ impl Verify for TransactionEffectsV1 {
             unwrap_infallible(self.ref_block_number.verify()),
             self.ref_block_commitment,
             unwrap_infallible(self.expiration_block_num.verify()),
-        ))
+        )
+        .with_logs(self.logs.into_inner(), self.log_salt)
+        .map_err(VerificationError::new)
     }
 }

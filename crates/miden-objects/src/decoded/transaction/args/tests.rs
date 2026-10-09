@@ -89,6 +89,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
             advice_map: Some(proto::primitives::AdviceMap { entries: vec![] }),
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
+        log_salt: Some(Word::empty().into()),
         auth_args: Some(dummy_word(6).into()),
         account_code_upgrade: None,
     }
@@ -128,6 +129,7 @@ fn transaction_args_reject_duplicate_note_ids() {
             advice_map: Some(proto::primitives::AdviceMap { entries: vec![] }),
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
+        log_salt: Some(Word::empty().into()),
         auth_args: Some(dummy_word(5).into()),
         account_code_upgrade: None,
     };
