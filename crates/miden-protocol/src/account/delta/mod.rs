@@ -12,7 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
 
 mod delta_op;
 pub use delta_op::AssetDeltaOperation;
@@ -56,7 +56,7 @@ impl AccountDelta {
     ///
     /// It is placed in the capacity word of the hasher rather than in the hashed elements, so that
     /// it stays fixed even as the layout of those elements evolves across versions.
-    const DOMAIN: Felt = Felt::new_unchecked(0x02_0001);
+    const DOMAIN: Felt = ProtocolDomainRegistry::AccountDelta.as_felt();
 
     /// Version 1 of the account delta commitment layout.
     ///
