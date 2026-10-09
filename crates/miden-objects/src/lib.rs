@@ -61,10 +61,6 @@ pub mod proto {
     }
 
     pub mod transaction {
-        use miden_protocol::transaction::{TransactionLogData, TransactionLogs};
-
-        use crate::decoded::primitives::Canonical;
-
         include!(concat!(env!("OUT_DIR"), "/transaction.rs"));
     }
 }
