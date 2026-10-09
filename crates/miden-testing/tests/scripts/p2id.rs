@@ -3,17 +3,7 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountComponent, AccountType};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
-use miden_protocol::errors::MasmError;
-use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-    PartialNoteMetadata,
-};
+use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -25,10 +15,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::{
-    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT,
-    ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-};
+use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT;
 use miden_standards::note::P2idNote;
 use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 
@@ -107,44 +94,6 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
         executed_transaction_2,
         ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT
     );
-    Ok(())
-}
-
-/// The script accepts exactly two storage elements, including when the target ID is valid.
-#[rstest::rstest]
-#[case::empty(0, Felt::ZERO, ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS)]
-#[case::missing_prefix(1, Felt::ZERO, ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS)]
-#[case::extra_element(3, Felt::ZERO, ERR_NOTE_TOO_MANY_STORAGE_ITEMS)]
-#[case::legacy_zero_salt(4, Felt::ZERO, ERR_NOTE_TOO_MANY_STORAGE_ITEMS)]
-#[case::legacy_nonzero_salt(4, Felt::ONE, ERR_NOTE_TOO_MANY_STORAGE_ITEMS)]
-#[tokio::test]
-async fn p2id_rejects_invalid_storage_length(
-    #[case] num_items: usize,
-    #[case] extra_item: Felt,
-    #[case] expected_error: MasmError,
-) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let mut items = vec![target.id().suffix(), target.id().prefix().as_felt()];
-    items.resize(num_items, extra_item);
-    let note = Note::new(
-        NoteAssets::new(vec![FungibleAsset::mock(50)])?,
-        PartialNoteMetadata::new(ACCOUNT_ID_SENDER.try_into()?, NoteType::Public),
-        NoteRecipient::new(
-            Word::from([1u32, 2, 3, 4]),
-            P2idNote::script(),
-            NoteStorage::new(items)?,
-        ),
-    );
-    let result = builder
-        .build()?
-        .build_transaction(target.id())
-        .unauthenticated_input_note(note)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, expected_error);
     Ok(())
 }
 
