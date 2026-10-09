@@ -1,15 +1,11 @@
 # Changelog
 
-## v0.18.0-rc.1 (TBD)
-
-### Features
-
-- Added local storage of transaction logs and the secret salt used for private transaction log commitments ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
-- Added Rust transaction log types with two felt topics, bounded serialization, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
 ## v0.18.0 (TBD)
 
 ### Changes
 
+- Added local storage of transaction logs and the secret salt used for private transaction log commitments ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
+- Added Rust transaction log types with two felt topics, bounded serialization, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 
