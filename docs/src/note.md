@@ -227,7 +227,7 @@ The P2ID note script implements a simple pay-to-account-ID pattern. It adds the 
 **Key characteristics:**
 
 - **Purpose:** Direct asset transfer to a specific account ID
-- **Storage:** Requires exactly 4 storage items containing the target account ID and two salt elements. A random salt kept secret protects the target account ID against guesses using an exposed storage commitment; the default zero salt does not provide this protection.
+- **Storage:** Requires exactly 2 storage items containing the target account ID: `[target_account_id_suffix, target_account_id_prefix]`.
 - **Validation:** Ensures the consuming account's ID matches the target account ID specified in the note
 - **Requirements:** Target account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
@@ -319,7 +319,7 @@ The SWAP note script implements atomic asset swapping functionality.
 
 PSWAP exchanges part or all of one fungible asset for another. A partial fill creates a P2ID payback and a remainder PSWAP with the same payback configuration. The PSWAP's visibility is independent of its paybacks' visibility.
 
-- **Public paybacks:** the order stores the original creator's account ID. Each fill creates a public, zero-salt P2ID for that creator, using the consumed PSWAP serial with its first element incremented. The creator can reclaim an unspent order or remainder directly into its vault.
+- **Public paybacks:** the order stores the original creator's account ID. Each fill creates a public P2ID for that creator, using the consumed PSWAP serial with its first element incremented. The creator can reclaim an unspent order or remainder directly into its vault.
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
 - **Storage:** 7 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
 

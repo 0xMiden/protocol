@@ -340,7 +340,7 @@ proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     # => [payback_note_type]
 
     if.true
-        # Preserve public paybacks: canonical zero-salt P2ID, with PSWAP serial[0] + 1.
+        # Preserve public paybacks: canonical P2ID, with PSWAP serial[0] + 1.
         exec.active_note::get_serial_number add.1
         # => [P2ID_SERIAL_NUM]
 
