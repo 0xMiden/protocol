@@ -1792,7 +1792,7 @@ async fn pswap_rejects_invalid_cancel_arguments_and_advice() -> anyhow::Result<(
             .await;
         assert_transaction_executor_error!(result, error);
     }
-    for length in [3, 5] {
+    for length in [P2idNoteStorage::NUM_ITEMS - 1, P2idNoteStorage::NUM_ITEMS + 1] {
         let mut invalid = advice.clone();
         invalid[3].1.resize(length, ZERO);
         let result = cancellation

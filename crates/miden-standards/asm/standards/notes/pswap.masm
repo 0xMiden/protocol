@@ -348,7 +348,7 @@ proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     # => [payback_note_type]
 
     if.true
-        # Preserve public paybacks: canonical zero-salt P2ID, with PSWAP serial[0] + 1.
+        # Preserve public paybacks: canonical P2ID, with PSWAP serial[0] + 1.
         exec.active_note::get_serial_number add.1
         # => [P2ID_SERIAL_NUM]
 
@@ -673,7 +673,7 @@ proc authenticate_cancellation(recipient: NoteRecipient)
     dropw procref.p2id::main assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => [STORAGE_COMMITMENT]
 
-    # The storage loader authenticates four items and writes eight with its padding.
+    # The storage loader authenticates two items and writes eight with its padding.
     locaddr.P2ID_STORAGE_PTR movdn.4 push.P2ID_NUM_STORAGE_ITEMS movdn.4
     # => [STORAGE_COMMITMENT, num_storage_items, storage_ptr]
 
