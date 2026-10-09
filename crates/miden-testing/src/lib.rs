@@ -14,6 +14,7 @@ pub use mock_chain::{
     MockChainBuilder,
     MockChainNote,
     MockTransactionInput,
+    MockTransactionNoteInput,
 };
 
 mod mock_transaction;

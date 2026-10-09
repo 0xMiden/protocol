@@ -22,7 +22,6 @@ message TransactionHeader {
   primitives.Word final_state_commitment = 4;
   repeated InputNoteCommitment input_notes = 5;
   repeated note.NoteHeader output_notes = 6;
-  // Commitment to the transaction logs, included in the transaction ID.
   primitives.Word logs_commitment = 7;
 }
 

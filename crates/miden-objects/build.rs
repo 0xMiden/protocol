@@ -209,16 +209,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     prost.field_attribute(
         ".transaction.ProvenTransaction.log_data",
-        quote!(#[proto_decode(bytes = Canonical<TransactionLogData>)]).to_string(),
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::TransactionLogData
+        >)])
+        .to_string(),
     );
     prost.field_attribute(
         ".transaction.TransactionEffectsV1.logs",
-        quote!(#[proto_decode(bytes = Canonical<TransactionLogs>)]).to_string(),
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::TransactionLogs
+        >)])
+        .to_string(),
     );
     for field in [".transaction.ProvenBatch.log_data", ".blockchain.BlockBody.log_data"] {
         prost.field_attribute(
             field,
-            quote!(#[proto_decode(bytes = Canonical<TransactionLogDataCollection>)]).to_string(),
+            quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+                miden_protocol::transaction::TransactionLogDataCollection
+            >)])
+            .to_string(),
         );
     }
     prost.compile_fds(descriptors)?;

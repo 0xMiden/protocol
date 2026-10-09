@@ -79,7 +79,7 @@ fn account_update_roundtrips_through_protobuf_bytes() {
 #[case::with_code_upgrade(Some(AccountCodeUpgrade::new(AccountCode::mock())))]
 fn transaction_args_roundtrip_normalizes_note_args_order(
     #[case] account_code_upgrade: Option<AccountCodeUpgrade>,
-) {
+) -> anyhow::Result<()> {
     let first = note_id(1);
     let second = note_id(2);
     let args = TransactionArgs::from_parts(
@@ -103,8 +103,9 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         vec![first, second]
     );
     let bytes = message.encode_to_vec();
-    let decoded = proto::transaction::TransactionArgs::decode(bytes.as_slice()).unwrap();
-    assert_eq!(decoded.decode_fields().unwrap().verify().unwrap(), args);
+    let decoded = proto::transaction::TransactionArgs::decode(bytes.as_slice())?;
+    assert_eq!(decoded.decode_fields()?.verify()?, args);
+    Ok(())
 }
 
 #[rstest]

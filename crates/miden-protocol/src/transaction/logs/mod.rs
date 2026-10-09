@@ -32,6 +32,7 @@ use crate::{
     MAX_LOG_PAYLOAD_WORDS,
     MAX_LOG_PAYLOAD_WORDS_PER_TX,
     MAX_LOGS_PER_TX,
+    ProtocolDomainRegistry,
     Word,
 };
 
@@ -85,7 +86,7 @@ pub struct TransactionLog {
 
 impl TransactionLog {
     /// Hash domain for individual transaction log commitments.
-    pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0005);
+    pub const COMMITMENT_DOMAIN: Felt = ProtocolDomainRegistry::TransactionLog.as_felt();
 
     /// Creates a transaction log with the provided emitter, topic, and payload.
     ///
@@ -223,10 +224,11 @@ pub struct TransactionLogs {
 
 impl TransactionLogs {
     /// Hash domain for ordered collections of transaction logs.
-    pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0003);
+    pub const COMMITMENT_DOMAIN: Felt = ProtocolDomainRegistry::TransactionLogs.as_felt();
 
     /// Hash domain for private transaction log commitments.
-    pub const PRIVATE_COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0004);
+    pub const PRIVATE_COMMITMENT_DOMAIN: Felt =
+        ProtocolDomainRegistry::PrivateTransactionLogs.as_felt();
 
     /// Returns the transaction log commitment for the account against which the transaction
     /// executes.
