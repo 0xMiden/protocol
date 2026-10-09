@@ -325,7 +325,7 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 
 When reconstructing a private payback or cancellation refund, include its complete on-chain attachment list.
 
-For private cancellation, use note arguments `[1, 0, 0, 0]` in Rust element order and supply the recipient preimage (serial, target account ID, and salt) as private advice. The script verifies the preimage and returns the full remaining offered asset in a private P2ID to the same recipient. The refund is checked and sealed before returning. Anyone holding the preimage can cancel; only the target account can consume the refund.
+For private cancellation, use note arguments `[1, 0, 0, 0]` in Rust element order and supply the canonical `NoteRecipient::to_advice_map_entries` openings as private advice, available through `PswapNote::cancellation_advice`. The script verifies the preimage and returns the full remaining offered asset in a private P2ID to the same recipient. The refund is checked and sealed before returning. Anyone holding the preimage can cancel; only the target account can consume the refund.
 
 To avoid linking cancellation to the target, build and prove locally through a public account with `NoAuth` and the required wallet procedures. Fund fees separately, for example with a private P2ID consumed in the same transaction, and explicitly return unused funding in a private change note. The order is refunded in full; `NoAuth` does not return fee change automatically.
 

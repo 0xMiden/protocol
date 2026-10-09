@@ -23,7 +23,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Hasher, ONE, Word, ZERO};
+use miden_protocol::{Felt, ONE, Word, ZERO};
 
 use crate::StandardsLib;
 use crate::note::costs::{NoteConsumptionCost, PSWAP_CONSUMPTION_CYCLES};
@@ -422,12 +422,6 @@ impl PswapNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Domain separator for cancellation advice; ASCII "PSWAPCAN".
-    const CANCEL_ADVICE_DOMAIN: Word = {
-        let pswapcan = u64::from_be_bytes(*b"PSWAPCAN");
-        Word::new([Felt::new_unchecked(pswapcan), ZERO, ZERO, ZERO])
-    };
-
     /// Fill action discriminator; matches `ACTION_FILL` in `pswap.masm`.
     const ACTION_FILL_ID: Felt = ZERO;
 
@@ -496,8 +490,8 @@ impl PswapNote {
         Word::new([Self::ACTION_CANCEL_ID, ZERO, ZERO, ZERO])
     }
 
-    /// Returns cancellation advice for a private-payback order: the four-element serial followed
-    /// by the complete P2ID storage (target account ID and two salt elements, including zero salt).
+    /// Returns the canonical recipient advice entries for cancelling a private-payback order.
+    /// See [`NoteRecipient::to_advice_map_entries`] for the serial, script, and storage openings.
     ///
     /// Knowledge of this preimage authorizes cancellation through any compatible account, but
     /// the refund is forced to the committed recipient. Keep it secret and prove locally.
@@ -510,12 +504,9 @@ impl PswapNote {
     pub fn cancellation_advice(
         &self,
         recipient: P2idNoteRecipient,
-    ) -> Result<(Word, Vec<Felt>), NoteError> {
+    ) -> Result<[(Word, Vec<Felt>); 5], NoteError> {
         self.validate_private_payback_recipient(recipient)?;
-        let key = Hasher::merge(&[recipient.digest(), Self::CANCEL_ADVICE_DOMAIN]);
-        let mut values = recipient.serial_number().as_elements().to_vec();
-        values.extend_from_slice(NoteStorage::from(recipient.storage()).items());
-        Ok((key, values))
+        Ok(NoteRecipient::from(recipient).to_advice_map_entries())
     }
 
     /// Reconstructs the private cancellation refund of this unspent PSWAP or remainder.

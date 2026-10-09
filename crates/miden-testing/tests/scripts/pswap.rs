@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::advice::AdviceError;
+use miden_processor::advice::{AdviceError, AdviceInputs};
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -19,6 +19,8 @@ use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::protocol::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO,
+    ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT,
+    ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS,
     ERR_NOTE_TOO_MANY_STORAGE_ITEMS,
 };
 use miden_protocol::errors::tx_kernel::{
@@ -51,12 +53,12 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT,
+    ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH,
     ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS,
     ERR_PSWAP_DEPTH_OVERFLOW,
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_INVALID_ACTION,
-    ERR_PSWAP_INVALID_CANCEL_ADVICE,
     ERR_PSWAP_INVALID_PAYBACK_PREIMAGE,
     ERR_PSWAP_INVALID_PAYBACK_TAG,
     ERR_PSWAP_INVALID_PAYBACK_TYPE,
@@ -108,6 +110,82 @@ enum OutputMutation {
     Attachment,
 }
 
+impl OutputMutation {
+    fn callback_component(self, extra: FungibleAsset) -> anyhow::Result<AccountComponent> {
+        let mutation_code = match self {
+            OutputMutation::None => String::from("drop"),
+            OutputMutation::ExtraAsset => format!(
+                "push.{} push.{}
+                 # => [EXTRA_ASSET_ID, EXTRA_ASSET_VALUE, note_idx, pad(7)]
+
+                 call.wallet::move_asset_to_note
+                 # => [pad(16)]
+
+                 dropw dropw dropw dropw",
+                extra.to_value_word(),
+                extra.to_id_word(),
+            ),
+            OutputMutation::BalanceIncrease => String::from(
+                "push.1 exec.active_account::get_id
+                 # => [faucet_suffix, faucet_prefix, amount=1, note_idx, pad(7)]
+
+                 exec.fungible_asset::create
+                 # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                 call.wallet::move_asset_to_note
+                 # => [pad(16)]
+
+                 dropw dropw dropw dropw",
+            ),
+            OutputMutation::Attachment => format!(
+                "push.1.2.3.4.{}
+                 # => [scheme, ATTACHMENT, note_idx, pad(7)]
+
+                 exec.output_note::add_word_attachment",
+                PswapNote::PSWAP_ATTACHMENT_SCHEME.as_u16(),
+            ),
+        };
+        let code = CodeBuilder::default().compile_component_code(
+            "tests::pswap_callback",
+            format!(
+                "use miden::protocol::active_account
+                use miden::protocol::output_note
+                use miden::standards::assets::fungible_asset
+                use miden::standards::wallets::basic as wallet
+
+                @account_procedure
+                pub proc on_before_asset_added_to_note
+                    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                    # Do not recurse when the callback inserts its one-unit mutation.
+                    exec.fungible_asset::to_amount_unchecked eq.1
+                    # => [is_mutation, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                    if.true
+                        dropw dropw drop
+                    else
+                        dropw dropw
+                        # => [note_idx, pad(7)]
+
+                        {mutation_code}
+                    end
+                    # => [pad(16)]
+                end",
+            ),
+        )?;
+        let root = code
+            .as_package()
+            .get_procedure_root_by_path("tests::pswap_callback::on_before_asset_added_to_note")
+            .unwrap();
+        let callback = AccountComponent::new(
+            code,
+            AssetCallbacks::new().on_before_asset_added_to_note(root).into_storage_slots(),
+            AccountComponentMetadata::new("tests::pswap_callback"),
+        )?;
+        Ok(callback)
+    }
+}
+
 /// Extracts the first attachment's word content from a `NoteAttachments`.
 fn first_attachment_word(attachments: &NoteAttachments) -> Word {
     let content = attachments.get(0).expect("expected at least one attachment").content();
@@ -154,12 +232,9 @@ fn build_private_pswap_note(
     target: AccountId,
     offered: FungibleAsset,
     requested: FungibleAsset,
-    salt: [Felt; 2],
 ) -> anyhow::Result<(PswapNote, Note, P2idNoteRecipient)> {
-    let recipient = P2idNoteRecipient::new(
-        P2idNoteStorage::new(target).with_salt(salt),
-        builder.rng_mut().draw_word(),
-    );
+    let recipient =
+        P2idNoteRecipient::new(P2idNoteStorage::new(target), builder.rng_mut().draw_word());
     let (pswap, note) = build_pswap_note(
         builder,
         sender,
@@ -207,12 +282,12 @@ fn private_cancel_transaction<'chain>(
     recipient: P2idNoteRecipient,
 ) -> anyhow::Result<MockTransactionBuilder<'chain>> {
     let note_id = Note::from(pswap.clone()).id();
-    let (key, advice) = pswap.cancellation_advice(recipient)?;
+    let advice = pswap.cancellation_advice(recipient)?;
     Ok(chain
         .build_transaction(canceller)
         .authenticated_input_note(note_id)
         .extend_note_args(BTreeMap::from([(note_id, PswapNote::create_cancel_args())]))
-        .add_advice_map_entry(key, advice))
+        .extend_advice_inputs(AdviceInputs::default().with_map(advice)))
 }
 
 /// Re-executes with private change until the reserved fee matches the final transaction's cost.
@@ -463,76 +538,7 @@ async fn pswap_checks_output_before_sealing(
     let other_issuer = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(100))?;
     let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
     let extra = FungibleAsset::new(other_issuer.id(), 1)?;
-    let mutation_code = match mutation {
-        OutputMutation::None => String::from("drop"),
-        OutputMutation::ExtraAsset => format!(
-            "push.{} push.{}
-             # => [EXTRA_ASSET_ID, EXTRA_ASSET_VALUE, note_idx, pad(7)]
-
-             call.wallet::move_asset_to_note
-             # => [pad(16)]
-
-             dropw dropw dropw dropw",
-            extra.to_value_word(),
-            extra.to_id_word(),
-        ),
-        OutputMutation::BalanceIncrease => String::from(
-            "push.1 exec.active_account::get_id
-             # => [faucet_suffix, faucet_prefix, amount=1, note_idx, pad(7)]
-
-             exec.fungible_asset::create
-             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-             call.wallet::move_asset_to_note
-             # => [pad(16)]
-
-             dropw dropw dropw dropw",
-        ),
-        OutputMutation::Attachment => format!(
-            "push.1.2.3.4.{}
-             # => [scheme, ATTACHMENT, note_idx, pad(7)]
-
-             exec.output_note::add_word_attachment",
-            PswapNote::PSWAP_ATTACHMENT_SCHEME.as_u16(),
-        ),
-    };
-    let code = CodeBuilder::default().compile_component_code(
-        "tests::pswap_callback",
-        format!(
-            "use miden::protocol::active_account
-            use miden::protocol::output_note
-            use miden::standards::assets::fungible_asset
-            use miden::standards::wallets::basic as wallet
-
-            @account_procedure
-            pub proc on_before_asset_added_to_note
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-                # Do not recurse when the callback inserts its one-unit mutation.
-                exec.fungible_asset::to_amount_unchecked eq.1
-                # => [is_mutation, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-                if.true
-                    dropw dropw drop
-                else
-                    dropw dropw
-                    # => [note_idx, pad(7)]
-
-                    {mutation_code}
-                end
-                # => [pad(16)]
-            end",
-        ),
-    )?;
-    let root = code
-        .as_package()
-        .get_procedure_root_by_path("tests::pswap_callback::on_before_asset_added_to_note")
-        .unwrap();
-    let callback = AccountComponent::new(
-        code,
-        AssetCallbacks::new().on_before_asset_added_to_note(root).into_storage_slots(),
-        AccountComponentMetadata::new("tests::pswap_callback"),
-    )?;
+    let callback = mutation.callback_component(extra)?;
     let mut filler = builder.add_account_from_builder(
         BASIC_AUTH,
         Account::builder([92; 32])
@@ -1395,75 +1401,7 @@ async fn pswap_checks_refund_after_asset_callback(
     let other_issuer = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(100))?;
     let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
     let extra = FungibleAsset::new(other_issuer.id(), 1)?;
-    let mutation_code = match mutation {
-        OutputMutation::None => String::from("drop"),
-        OutputMutation::ExtraAsset => format!(
-            "push.{} push.{}
-             # => [EXTRA_ASSET_ID, EXTRA_ASSET_VALUE, note_idx, pad(7)]
-
-             call.wallet::move_asset_to_note
-             # => [pad(16)]
-
-             dropw dropw dropw dropw",
-            extra.to_value_word(),
-            extra.to_id_word(),
-        ),
-        OutputMutation::BalanceIncrease => String::from(
-            "push.1 exec.active_account::get_id
-             # => [faucet_suffix, faucet_prefix, amount=1, note_idx, pad(7)]
-
-             exec.fungible_asset::create
-             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-             call.wallet::move_asset_to_note
-             # => [pad(16)]
-
-             dropw dropw dropw dropw",
-        ),
-        OutputMutation::Attachment => format!(
-            "push.1.2.3.4.{}
-             # => [scheme, ATTACHMENT, note_idx, pad(7)]
-
-             exec.output_note::add_word_attachment",
-            PswapNote::PSWAP_ATTACHMENT_SCHEME.as_u16(),
-        ),
-    };
-    let code = CodeBuilder::default().compile_component_code(
-        "tests::pswap_callback",
-        format!(
-            "use miden::protocol::active_account
-            use miden::protocol::output_note
-            use miden::standards::assets::fungible_asset
-            use miden::standards::wallets::basic as wallet
-
-            @account_procedure
-            pub proc on_before_asset_added_to_note
-                # The nested one-unit insertion must not trigger another mutation.
-                exec.fungible_asset::to_amount_unchecked eq.1
-                # => [is_nested, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-                if.true
-                    dropw dropw drop
-                    # => [pad(16)]
-                else
-                    dropw dropw
-                    # => [note_idx, pad(7)]
-
-                    {mutation_code}
-                end
-                # => [pad(16)]
-            end",
-        ),
-    )?;
-    let root = code
-        .as_package()
-        .get_procedure_root_by_path("tests::pswap_callback::on_before_asset_added_to_note")
-        .unwrap();
-    let callback = AccountComponent::new(
-        code,
-        AssetCallbacks::new().on_before_asset_added_to_note(root).into_storage_slots(),
-        AccountComponentMetadata::new("tests::pswap_callback"),
-    )?;
+    let callback = mutation.callback_component(extra)?;
     let mut canceller = builder.add_account_from_builder(
         BASIC_AUTH,
         AccountBuilder::new([92; 32])
@@ -1478,14 +1416,8 @@ async fn pswap_checks_refund_after_asset_callback(
     canceller.vault_mut().add_asset(FungibleAsset::new(offered_id, 1)?.into())?;
     canceller.vault_mut().add_asset(extra.into())?;
     builder.add_account(canceller.clone())?;
-    let (pswap, _, recipient) = build_private_pswap_note(
-        &mut builder,
-        alice.id(),
-        alice.id(),
-        offered,
-        requested,
-        [ZERO; 2],
-    )?;
+    let (pswap, _, recipient) =
+        build_private_pswap_note(&mut builder, alice.id(), alice.id(), offered, requested)?;
     let mut chain = builder.build()?;
 
     let result = private_cancel_transaction(&chain, canceller.id(), &pswap, recipient)?
@@ -1526,66 +1458,6 @@ async fn pswap_checks_refund_after_asset_callback(
     Ok(())
 }
 
-/// A cancellation refund is immutable before the transaction script starts.
-#[rstest]
-#[tokio::test]
-async fn pswap_rejects_later_refund_mutation(
-    #[values(false, true)] attachment: bool,
-) -> anyhow::Result<()> {
-    let (mut builder, offered, requested) = setup_swap_chain(51, 25)?;
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
-    let extra = FungibleAsset::new(offered.id(), 1)?;
-    let router = add_no_auth_wallet(&mut builder, 93, [extra.into()])?;
-    let (pswap, _, recipient) = build_private_pswap_note(
-        &mut builder,
-        alice.id(),
-        alice.id(),
-        FungibleAsset::new(offered.id(), 50)?,
-        FungibleAsset::new(requested.id(), 25)?,
-        [ZERO; 2],
-    )?;
-    let mutation = if attachment {
-        "push.0.1.2.3.4.5
-         # => [scheme, ATTACHMENT, note_idx]
-
-         exec.::miden::protocol::output_note::add_word_attachment
-         # => []"
-            .to_owned()
-    } else {
-        format!(
-            "push.0.0.0.0.0.0.0.0
-             # => [note_idx, pad(7)]
-
-             push.{} push.{}
-             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-             call.::miden::standards::wallets::basic::move_asset_to_note
-             # => [pad(16)]
-
-             dropw dropw dropw dropw
-             # => []",
-            extra.to_value_word(),
-            extra.to_id_word()
-        )
-    };
-    let script = CodeBuilder::default().compile_tx_script(format!(
-        "@transaction_script
-         pub proc main
-             {mutation}
-         end"
-    ))?;
-    let chain = builder.build()?;
-
-    let result = private_cancel_transaction(&chain, router.id(), &pswap, recipient)?
-        .tx_script(script)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
-    Ok(())
-}
-
 /// The router creates an order for Alice, Bob fills half, and Alice cancels the remainder
 /// through the router before collecting both private P2ID notes in her private account.
 ///
@@ -1605,10 +1477,8 @@ async fn pswap_private_router_half_fill_cancel_and_collect() -> anyhow::Result<(
         .add_existing_wallet_with_assets(BASIC_AUTH, [FungibleAsset::new(eth.id(), 40)?.into()])?;
     let mut router =
         add_no_auth_wallet(&mut builder, 77, [FungibleAsset::new(usdc.id(), 100)?.into()])?;
-    let recipient = P2idNoteRecipient::new(
-        P2idNoteStorage::new(alice.id()).with_salt([ONE, Felt::from(7u32)]),
-        builder.rng_mut().draw_word(),
-    );
+    let recipient =
+        P2idNoteRecipient::new(P2idNoteStorage::new(alice.id()), builder.rng_mut().draw_word());
     let pswap = PswapNote::builder()
         .sender(router.id())
         .storage(
@@ -1743,12 +1613,11 @@ async fn pswap_private_router_half_fill_cancel_and_collect() -> anyhow::Result<(
 /// A public no-auth account cancels the order and refunds its private target account.
 /// Only the target can consume the refund; an existing payback remains spendable.
 #[rstest]
-#[case::original(false, [ZERO; 2])]
-#[case::remainder(true, [ONE, Felt::from(7u32)])]
+#[case::original(false)]
+#[case::remainder(true)]
 #[tokio::test]
 async fn pswap_private_cancel_through_no_auth(
     #[case] cancel_remainder: bool,
-    #[case] salt: [Felt; 2],
 ) -> anyhow::Result<()> {
     let (mut builder, offered, requested) = setup_swap_chain(50, 25)?;
     let mut alice = builder.add_account_from_builder(
@@ -1769,7 +1638,6 @@ async fn pswap_private_cancel_through_no_auth(
         alice.id(),
         FungibleAsset::new(offered.id(), 50)?,
         FungibleAsset::new(requested.id(), 25)?,
-        salt,
     )?;
     // Create an earlier output to ensure the refund uses the actual output-note index.
     let dummy = NoteBuilder::new(router.id(), SmallRng::seed_from_u64(7777)).build()?;
@@ -1793,7 +1661,7 @@ async fn pswap_private_cancel_through_no_auth(
         pswap = remainder.unwrap();
         note = Note::from(pswap.clone());
     }
-    let (key, advice) = pswap.cancellation_advice(recipient)?;
+    let advice = pswap.cancellation_advice(recipient)?;
     let args = BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]);
 
     let refund = pswap.refund_note(router.id(), recipient)?;
@@ -1801,7 +1669,7 @@ async fn pswap_private_cancel_through_no_auth(
         .build_transaction(router.id())
         .authenticated_input_notes([spawn.id(), note.id()])
         .extend_note_args(args)
-        .add_advice_map_entry(key, advice)
+        .extend_advice_inputs(AdviceInputs::default().with_map(advice))
         .expected_output_notes(vec![
             RawOutputNote::Full(dummy.clone()),
             RawOutputNote::Full(refund.clone()),
@@ -1862,9 +1730,8 @@ async fn pswap_rejects_invalid_cancel_arguments_and_advice() -> anyhow::Result<(
         alice.id(),
         FungibleAsset::new(offered.id(), 50)?,
         FungibleAsset::new(requested.id(), 25)?,
-        [ZERO; 2],
     )?;
-    let (key, advice) = pswap.cancellation_advice(recipient)?;
+    let advice = pswap.cancellation_advice(recipient)?;
     let chain = builder.build()?;
 
     // Reject unknown actions, nonzero reserved fields, and fill amounts on cancellation.
@@ -1878,72 +1745,95 @@ async fn pswap_rejects_invalid_cancel_arguments_and_advice() -> anyhow::Result<(
             .build_transaction(alice.id())
             .authenticated_input_note(note.id())
             .extend_note_args(BTreeMap::from([(note.id(), Word::new(args))]))
-            .add_advice_map_entry(key, advice.clone())
+            .extend_advice_inputs(AdviceInputs::default().with_map(advice.clone()))
             .build()?
             .execute()
             .await;
         assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_ACTION);
     }
 
-    // Cancellation advice is exactly two words: serial number and P2ID storage.
-    for len in [7, 9] {
-        let result = chain
-            .build_transaction(alice.id())
-            .authenticated_input_note(note.id())
-            .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
-            .add_advice_map_entry(key, vec![ZERO; len])
-            .build()?
-            .execute()
-            .await;
-        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_CANCEL_ADVICE);
-    }
-    let result = chain
+    // The public outer commitments alone do not authorize cancellation: the serial is required.
+    let mut missing_serial = advice.to_vec();
+    let serial_key = missing_serial.remove(0).0;
+    let cancellation = chain
         .build_transaction(alice.id())
         .authenticated_input_note(note.id())
-        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]));
+    let result = cancellation
+        .clone()
+        .extend_advice_inputs(AdviceInputs::default().with_map(missing_serial))
         .build()?
         .execute()
         .await;
-
     assert_transaction_executor_error!(
         result,
         matches ExecutionError::AdviceError {
             err: AdviceError::MapKeyNotFound { key: missing_key },
             ..
-        } if missing_key == key
+        } if missing_key == serial_key
     );
-    // Each part of the committed recipient must match.
-    let mut wrong_serial = advice.clone();
-    wrong_serial[0] += ONE;
-    let mut wrong_target = advice.clone();
-    wrong_target[4] = offered.id().suffix();
-    wrong_target[5] = offered.id().prefix().as_felt();
-    let mut wrong_salt = advice.clone();
-    wrong_salt[6] += ONE;
-    for wrong in [wrong_serial, wrong_target, wrong_salt] {
-        let result = chain
-            .build_transaction(alice.id())
-            .authenticated_input_note(note.id())
-            .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
-            .add_advice_map_entry(key, wrong)
+
+    // Canonical entries are serial, serial/script, recipient, storage, and script code.
+    // Check each authenticated link, plus the serial opening's required zero padding.
+    for (entry, element, error) in [
+        (0, 0, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH), // serial
+        (0, 4, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH), // serial padding
+        (1, 0, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH), // serial/script link
+        (2, 0, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH), // recipient link
+        (3, 0, ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT), // P2ID storage
+    ] {
+        let mut invalid = advice.clone();
+        invalid[entry].1[element] += ONE;
+        let result = cancellation
+            .clone()
+            .extend_advice_inputs(AdviceInputs::default().with_map(invalid))
             .build()?
             .execute()
             .await;
-        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_PAYBACK_PREIMAGE);
+        assert_transaction_executor_error!(result, error);
     }
-    // Reject invalid account ID structures before checking the recipient commitment.
-    let mut malformed = advice;
-    malformed[5] = ZERO;
+    for length in [3, 5] {
+        let mut invalid = advice.clone();
+        invalid[3].1.resize(length, ZERO);
+        let result = cancellation
+            .clone()
+            .extend_advice_inputs(AdviceInputs::default().with_map(invalid))
+            .build()?
+            .execute()
+            .await;
+        assert_transaction_executor_error!(result, ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS);
+    }
+
+    // A valid opening of a different script must not authorize a non-P2ID refund.
+    let wrong_recipient = NoteRecipient::new(
+        recipient.serial_number(),
+        PswapNote::script(),
+        recipient.storage().into(),
+    );
+    let storage = PswapNoteStorage::builder()
+        .min_requested_asset(*pswap.storage().min_requested_asset())
+        .payback(PswapPayback::Private {
+            recipient: wrong_recipient.digest(),
+            tag: NoteTag::new(1234),
+        })
+        .build();
+    let wrong_note = Note::new(
+        note.assets().clone(),
+        *note.metadata().partial_metadata(),
+        storage.into_recipient(pswap.serial_number()),
+    );
     let result = chain
         .build_transaction(alice.id())
-        .authenticated_input_note(note.id())
-        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
-        .add_advice_map_entry(key, malformed)
+        .extend_note_args(BTreeMap::from([(wrong_note.id(), PswapNote::create_cancel_args())]))
+        .unauthenticated_input_note(wrong_note)
+        .extend_advice_inputs(
+            AdviceInputs::default().with_map(wrong_recipient.to_advice_map_entries()),
+        )
         .build()?
         .execute()
         .await;
+    assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_PAYBACK_PREIMAGE);
 
-    assert_transaction_executor_error!(result, ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO);
     Ok(())
 }
 
@@ -1963,7 +1853,6 @@ async fn pswap_private_target_can_fill_without_cancelling(
         alice.id(),
         FungibleAsset::new(offered.id(), 50)?,
         FungibleAsset::new(requested.id(), 25)?,
-        [ZERO; 2],
     )?;
     let chain = builder.build()?;
     let args = if zero_args {
@@ -2013,7 +1902,6 @@ async fn pswap_private_cancel_with_fee_input(
         alice.id(),
         FungibleAsset::new(offered_id, 50)?,
         FungibleAsset::new(requested.id(), 25)?,
-        [ONE, ONE],
     )?;
     let funding_recipient =
         P2idNoteStorage::new(router.id()).into_recipient(builder.rng_mut().draw_word());
@@ -2036,22 +1924,6 @@ async fn pswap_private_cancel_with_fee_input(
         result,
         ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
     );
-
-    // An unauthenticated funding input is valid, but reveals the funding note ID and sender.
-    let linked = cancellation
-        .clone()
-        .unauthenticated_input_note(funding.clone())
-        .build()?
-        .execute()
-        .await?;
-    let header = TransactionHeader::from(&linked);
-    let revealed = header
-        .input_notes()
-        .iter()
-        .find(|n| n.nullifier() == funding.nullifier())
-        .unwrap();
-    assert_eq!(revealed.header().unwrap().id(), funding.id());
-    assert_eq!(revealed.header().unwrap().metadata().sender(), alice.id());
 
     // Model client fee/change estimation, including the cost of the private change output.
     // Re-execution must stabilize before submitting a transaction with no shared-vault surplus.
@@ -3861,7 +3733,6 @@ async fn pswap_note_offered_asset_drain_is_rejected_test(
             alice,
             offered_asset,
             min_requested_asset,
-            [ZERO; 2],
         )?;
         (note, Some(pswap.cancellation_advice(recipient)?))
     } else {
@@ -3921,8 +3792,8 @@ async fn pswap_note_offered_asset_drain_is_rejected_test(
         .build_transaction(consumer.id())
         .authenticated_input_notes([helper_note_id, pswap_note.id()])
         .extend_note_args(BTreeMap::from([(pswap_note.id(), args)]));
-    if let Some((key, advice)) = cancellation_advice {
-        tx_builder = tx_builder.add_advice_map_entry(key, advice);
+    if let Some(advice) = cancellation_advice {
+        tx_builder = tx_builder.extend_advice_inputs(AdviceInputs::default().with_map(advice));
     }
     let result = tx_builder.build()?.execute().await;
 

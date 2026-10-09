@@ -12,6 +12,7 @@ use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
+use miden::standards::note as std_note
 use miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use {NUM_STORAGE_ITEMS as P2ID_NUM_STORAGE_ITEMS} from miden::standards::notes::p2id
@@ -92,10 +93,6 @@ const PRIVATE_RECIPIENT_3_ITEM = PRIVATE_RECIPIENT_0_ITEM + 3
 # The storage length is retained for remainder creation.
 const STORAGE_LENGTH_PTR = 16
 
-# Domain separator for cancellation advice; ASCII "PSWAPCAN". Matches Rust.
-const CANCEL_ADVICE_DOMAIN = 0x505357415043414e
-const CANCEL_ADVICE_NUM_ITEMS = 4 + P2ID_NUM_STORAGE_ITEMS
-
 # Local memory offsets
 # =================================================================================================
 
@@ -107,10 +104,7 @@ const CALC_FILL_REFERENCE = 1
 const OFFERED_REMAINING_ASSET_PTR = 0
 const OFFERED_INITIAL_ASSET_PTR = 8
 
-# refund_private locals
-const REFUND_EXPECTED_ASSET_PTR = 0
-
-# authenticate_cancel locals
+# authenticate_cancellation locals
 const P2ID_STORAGE_PTR = 0
 const P2ID_PREFIX_PTR = P2ID_STORAGE_PTR + 1
 
@@ -152,7 +146,6 @@ const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP storage length does not mat
 const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or private"
 const ERR_PSWAP_INVALID_PAYBACK_TAG="PSWAP payback tag must fit in u32"
 const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
-const ERR_PSWAP_INVALID_CANCEL_ADVICE="PSWAP cancellation requires a serial and complete P2ID storage"
 const ERR_PSWAP_INVALID_PAYBACK_PREIMAGE="PSWAP cancellation preimage does not match the payback recipient"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
@@ -668,48 +661,26 @@ proc create_remainder_note(
     # => []
 end
 
-#! Verifies a private recipient preimage independently of the executing account.
-#! Advice is the four-element serial followed by canonical P2ID storage (target ID and salt).
+#! Verifies the canonical private P2ID recipient preimage independently of the executing account.
 #!
 #! Inputs: [EXPECTED_RECIPIENT]
 #! Outputs: []
-@locals(4)
-proc authenticate_cancel(recipient: NoteRecipient)
-    dupw
-    push.0.0.0.CANCEL_ADVICE_DOMAIN
-    swapw
-    exec.poseidon2::merge
-    # => [CANCEL_ADVICE_KEY, EXPECTED_RECIPIENT]
+@locals(8)
+proc authenticate_cancellation(recipient: NoteRecipient)
+    exec.std_note::get_recipient_preimage_with_serial
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    adv.push_mapvaln
-    adv_push
-    # => [num_advice_items, CANCEL_ADVICE_KEY, EXPECTED_RECIPIENT]
+    dropw procref.p2id::main assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
+    # => [STORAGE_COMMITMENT]
 
-    eq.CANCEL_ADVICE_NUM_ITEMS assert.err=ERR_PSWAP_INVALID_CANCEL_ADVICE
-    dropw
-    # => [EXPECTED_RECIPIENT]
+    # The storage loader authenticates four items and writes eight with its padding.
+    locaddr.P2ID_STORAGE_PTR movdn.4 push.P2ID_NUM_STORAGE_ITEMS movdn.4
+    # => [STORAGE_COMMITMENT, num_storage_items, storage_ptr]
 
-    padw adv_loadw
-    # => [SERIAL_NUM, EXPECTED_RECIPIENT]
+    exec.active_note::write_storage_to_memory
+    # => []
 
-    padw adv_loadw
-    # => [P2ID_STORAGE, SERIAL_NUM, EXPECTED_RECIPIENT]
-
-    loc_storew_le.P2ID_STORAGE_PTR dropw
     loc_load.P2ID_PREFIX_PTR loc_load.P2ID_STORAGE_PTR exec.account_id::validate_structure
-    # => [SERIAL_NUM, EXPECTED_RECIPIENT]
-
-    push.P2ID_NUM_STORAGE_ITEMS locaddr.P2ID_STORAGE_PTR exec.note::compute_storage_commitment
-    # => [STORAGE_COMMITMENT, SERIAL_NUM, EXPECTED_RECIPIENT]
-
-    procref.p2id::main
-    movupw.2
-    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, EXPECTED_RECIPIENT]
-
-    exec.note::compute_recipient
-    # => [RECIPIENT, EXPECTED_RECIPIENT]
-
-    assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => []
 end
 
@@ -718,9 +689,8 @@ end
 #!
 #! Inputs: [RECIPIENT, tag]
 #! Outputs: []
-@locals(8)
 proc refund_private(recipient: NoteRecipient, tag: NoteTag)
-    movup.4 push.0 swap
+    push.NOTE_TYPE_PRIVATE movup.5
     # => [tag, private_type, RECIPIENT]
 
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
@@ -735,16 +705,13 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    locaddr.REFUND_EXPECTED_ASSET_PTR exec.asset::store
-    # => [note_idx]
-
-    dup locaddr.REFUND_EXPECTED_ASSET_PTR exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+    # Retain the expected asset and note index while the callback handles a copy.
+    repeat.9
+        dup.8
+    end
+    # => [ASSET_ID, ASSET_VALUE, note_idx, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
-    # => [note_idx]
-
-    locaddr.REFUND_EXPECTED_ASSET_PTR exec.asset::load
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.validate_and_seal_output_note
@@ -1216,7 +1183,7 @@ pub proc main(note_args: NoteArgs)
             # => [RECIPIENT, tag]
 
             dupw
-            exec.authenticate_cancel
+            exec.authenticate_cancellation
             # => [RECIPIENT, tag]
 
             exec.refund_private

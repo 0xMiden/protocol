@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added private PSWAP cancellation through a separate account, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Added private PSWAP cancellation through a separate account using canonical recipient advice, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 
 ### Changes
 
