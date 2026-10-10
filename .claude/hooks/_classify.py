@@ -220,6 +220,25 @@ def iter_match_args(
     >>> list(iter_match_args("git status", "git", ["push"]))
     []
     """
+    for tokens, i in _iter_match_segments(command, binary, subcommand):
+        yield tokens[i + len(subcommand) :]
+
+
+def iter_match_global_args(
+    command: str, binary: str, subcommand: list[str]
+) -> Iterator[list[str]]:
+    """Yield global arguments before each matching subcommand.
+
+    Keeping them in order lets git resolve repository-selection flags
+    (including repeated relative `-C` options) just as the command would.
+    """
+    for tokens, i in _iter_match_segments(command, binary, subcommand):
+        yield tokens[1:i]
+
+
+def _iter_match_segments(
+    command: str, binary: str, subcommand: list[str]
+) -> Iterator[tuple[list[str], int]]:
     if not subcommand:
         return
     for tokens in pipeline_segments(command):
@@ -229,7 +248,7 @@ def iter_match_args(
         i = _walk_past_global_flags(tokens, binary, 1)
         # Subcommand chain must appear contiguously starting at `i`.
         if tokens[i : i + len(subcommand)] == list(subcommand):
-            yield tokens[i + len(subcommand) :]
+            yield tokens, i
 
 
 def match_args(command: str, binary: str, subcommand: list[str]) -> list[str] | None:
