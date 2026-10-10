@@ -1,6 +1,6 @@
 [package]
 name    = "miden-standards"
-version = "0.17.0"
+version = "0.18.0"
 
 [lib]
 namespace = "miden::standards"
@@ -8,4 +8,4 @@ path      = "mod.masm"
 
 [dependencies]
 miden-core     = { linkage = "dynamic", version = "0.35" }
-miden-protocol = { linkage = "dynamic", version = "0.17.0" }
+miden-protocol = { linkage = "dynamic", version = "0.18.0" }

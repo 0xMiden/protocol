@@ -10,6 +10,6 @@ version = "0.1.0"
 # `TransactionMastStore::new`).
 [workspace.dependencies]
 miden-core      = { linkage = "dynamic", version = "0.35" }
-miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
-miden-standards = { linkage = "dynamic", version = "0.17.0" }
+miden-protocol  = { linkage = "dynamic", version = "0.18.0" }
+miden-standards = { linkage = "dynamic", version = "0.18.0" }
 xreserve        = { linkage = "static", version = "0.1.0" }
