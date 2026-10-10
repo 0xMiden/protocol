@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] Replaced `MockChain`, `MockChainNote`, and mock authenticator Winterfell serialization with versioned Protobuf snapshots through `MockChain::to_bytes` and `MockChain::try_from_bytes`. Snapshots now retain pending batches. Existing mock chain snapshots must be regenerated.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).

@@ -1,7 +1,5 @@
-use miden_processor::serde::DeserializationError;
 use miden_protocol::note::{Note, NoteAttachments, NoteId, NoteInclusionProof, NoteMetadata};
 use miden_protocol::transaction::InputNote;
-use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
 
 // MOCK CHAIN NOTE
 // ================================================================================================
@@ -69,49 +67,6 @@ impl TryFrom<MockChainNote> for InputNote {
                 "private notes in the mock chain cannot be converted into input notes due to missing details"
             )),
             MockChainNote::Public(note, proof) => Ok(InputNote::Authenticated { note, proof }),
-        }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for MockChainNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            MockChainNote::Private(id, metadata, attachments, proof) => {
-                0u8.write_into(target);
-                id.write_into(target);
-                metadata.write_into(target);
-                attachments.write_into(target);
-                proof.write_into(target);
-            },
-            MockChainNote::Public(note, proof) => {
-                1u8.write_into(target);
-                note.write_into(target);
-                proof.write_into(target);
-            },
-        }
-    }
-}
-
-impl Deserializable for MockChainNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let note_type = u8::read_from(source)?;
-        match note_type {
-            0 => {
-                let id = NoteId::read_from(source)?;
-                let metadata = NoteMetadata::read_from(source)?;
-                let attachments = NoteAttachments::read_from(source)?;
-                let proof = NoteInclusionProof::read_from(source)?;
-                Ok(MockChainNote::Private(id, metadata, attachments, proof))
-            },
-            1 => {
-                let note = Note::read_from(source)?;
-                let proof = NoteInclusionProof::read_from(source)?;
-                Ok(MockChainNote::Public(note, proof))
-            },
-            _ => Err(DeserializationError::InvalidValue(format!("Unknown note type: {note_type}"))),
         }
     }
 }

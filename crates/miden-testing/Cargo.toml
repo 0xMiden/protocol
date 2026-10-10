@@ -13,11 +13,12 @@ rust-version.workspace = true
 version.workspace      = true
 
 [features]
-std = ["miden-protocol/std", "miden-standards/std", "miden-tx/std"]
+std = ["miden-objects/std", "miden-protocol/std", "miden-standards/std", "miden-tx/std"]
 
 [dependencies]
 # Workspace dependencies
 miden-block-prover = { features = ["testing"], workspace = true }
+miden-objects      = { workspace = true }
 miden-protocol     = { features = ["testing"], workspace = true }
 miden-standards    = { features = ["testing"], workspace = true }
 miden-tx           = { features = ["testing"], workspace = true }

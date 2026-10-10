@@ -1,0 +1,78 @@
+syntax = "proto3";
+package mock_chain_snapshot;
+
+import "account.proto";
+import "account_file.proto";
+import "account_state.proto";
+import "batch.proto";
+import "block.proto";
+import "block_number.proto";
+import "note.proto";
+import "primitives.proto";
+import "protocol_config.proto";
+import "transaction.proto";
+import "transaction_inputs.proto";
+
+// A local test-chain snapshot. Contains unencrypted secret keys and is not a transport object.
+message MockChainSnapshot {
+  oneof version {
+    MockChainSnapshotV1 v1 = 1;
+  }
+}
+
+message MockChainSnapshotV1 {
+  // Block order reconstructs the full chain MMR, including the latest block.
+  repeated ProvenBlock blocks = 1;
+  repeated AccountCommitment account_commitments = 2;
+  repeated SpentNullifier spent_nullifiers = 3;
+  repeated transaction.ProvenTransaction pending_transactions = 4;
+  repeated transaction.ProvenBatch pending_batches = 5;
+  repeated account.Account committed_accounts = 6;
+  repeated MockChainNote committed_notes = 7;
+  repeated AccountAuthenticator account_authenticators = 8;
+  repeated account_file.AuthSecretKey validator_secret_keys = 9;
+  protocol_config.ProtocolConfig protocol_config = 10;
+}
+
+message ProvenBlock {
+  blockchain.BlockHeader header = 1;
+  blockchain.BlockBody body = 2;
+  repeated primitives.Signature signatures = 3;
+  primitives.ExecutionProof proof = 4;
+}
+
+message AccountCommitment {
+  account.AccountId account_id = 1;
+  primitives.Word commitment = 2;
+}
+
+message SpentNullifier {
+  primitives.Word nullifier = 1;
+  blockchain.BlockNumber block_num = 2;
+}
+
+// Full details can also be retained for a private genesis note.
+message MockChainNote {
+  oneof details {
+    transaction.AuthenticatedInputNote full = 1;
+    PrivateNote private = 2;
+  }
+}
+
+message PrivateNote {
+  note.NoteMetadata metadata = 1;
+  note.NoteAttachments attachments = 2;
+  // Includes the note ID, since the private note details are not stored here.
+  note.NoteInclusionProof proof = 3;
+}
+
+message AccountAuthenticator {
+  account.AccountId account_id = 1;
+  // Absence differs from an authenticator with an empty key set.
+  optional Authenticator authenticator = 2;
+}
+
+message Authenticator {
+  // Public keys and their commitments are derived from these secret keys on restoration.
+  repeated account_file.AuthSecretKey keys = 1;
+}

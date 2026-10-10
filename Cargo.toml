@@ -43,6 +43,7 @@ lto           = true
 # Workspace crates
 miden-agglayer             = { default-features = false, path = "crates/miden-agglayer", version = "0.17" }
 miden-block-prover         = { default-features = false, path = "crates/miden-block-prover", version = "0.17" }
+miden-objects              = { default-features = false, path = "crates/miden-objects", version = "0.17" }
 miden-protobuf             = { default-features = false, path = "crates/miden-protobuf", version = "0.17" }
 miden-protobuf-derive      = { path = "crates/miden-protobuf-derive", version = "0.17" }
 miden-protocol             = { default-features = false, path = "crates/miden-protocol", version = "0.17" }
