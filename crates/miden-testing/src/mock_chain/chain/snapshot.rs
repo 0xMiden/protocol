@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use anyhow::{Context, ensure};
@@ -7,8 +7,16 @@ use miden_objects::{BuildUnchecked, DecodeMessage, Verify, proto};
 use miden_protocol::account::auth::AuthSecretKey;
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
-use miden_protocol::block::{BlockSignatures, Blockchain, ProvenBlock, ValidatorConfig};
+use miden_protocol::block::{
+    BlockBody,
+    BlockNoteIndex,
+    BlockSignatures,
+    Blockchain,
+    ProvenBlock,
+    ValidatorConfig,
+};
 use miden_protocol::note::{NoteMetadata, NoteType, Nullifier};
+use miden_protocol::transaction::OrderedTransactionHeaders;
 use miden_tx::auth::BasicAuthenticator;
 use proto::mock_chain_snapshot as wire;
 
@@ -39,7 +47,7 @@ impl MockChain {
     /// # Errors
     ///
     /// Returns an error if the snapshot is malformed, has an unsupported version, contains
-    /// duplicate entries, or has inconsistent state.
+    /// duplicate state records, or has inconsistent state.
     pub fn try_from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         let snapshot = wire::MockChainSnapshot::decode(bytes)
             .context("failed to decode mock chain snapshot")?
@@ -114,7 +122,35 @@ impl MockChain {
                 "snapshot chain commitment mismatch at block {index}"
             );
 
-            let body = block.body.build_unchecked()?;
+            // Genesis is a test fixture that need not satisfy normal block-body constraints.
+            // Match MockChainBuilder's unchecked body construction for this block only.
+            let body = if index == 0 {
+                let notes = block.body.output_note_batches.verify()?;
+                // Body accessors assume valid and unique tree positions, even for genesis.
+                for (batch_index, batch) in notes.iter().enumerate() {
+                    let mut positions = BTreeSet::new();
+                    for (note_index, _) in batch {
+                        ensure!(
+                            BlockNoteIndex::new(batch_index, *note_index).is_some(),
+                            "invalid genesis output note index"
+                        );
+                        ensure!(
+                            positions.insert(*note_index),
+                            "duplicate genesis output note index"
+                        );
+                    }
+                }
+                BlockBody::new_unchecked(
+                    block.body.updated_accounts.verify()?,
+                    notes,
+                    block.body.created_nullifiers.map(Nullifier::from_raw),
+                    OrderedTransactionHeaders::new_unchecked(
+                        block.body.transactions.build_unchecked()?,
+                    ),
+                )
+            } else {
+                block.body.build_unchecked()?
+            };
             let signatures = BlockSignatures::new(block.signatures.verify_infallible())?;
             let block = ProvenBlock::new_unchecked(header, body, signatures, block.proof);
             block
@@ -204,6 +240,13 @@ impl MockChain {
                 )
                 .context("snapshot note inclusion proof is invalid")?;
             insert_unique(&mut committed_notes, note.id(), note, "committed note")?;
+        }
+        // MockChain retains every output note, including consumed notes.
+        for note in output_notes.values() {
+            ensure!(
+                committed_notes.contains_key(&note.id()),
+                "snapshot is missing a committed note"
+            );
         }
 
         let mut account_authenticators = BTreeMap::new();
