@@ -26,10 +26,7 @@ use super::{AccountAuthenticator, MockChain, MockChainNote};
 mod tests;
 
 impl MockChain {
-    /// Encodes this chain as a versioned Protobuf snapshot.
-    ///
-    /// The snapshot contains unencrypted account and validator secret keys. It preserves pending
-    /// transactions and batches as well as committed state.
+    /// Encodes committed and pending state as Protobuf, including unencrypted secret keys.
     pub fn to_bytes(&self) -> Vec<u8> {
         wire::MockChainSnapshot {
             version: Some(wire::mock_chain_snapshot::Version::V1(self.to_snapshot())),
@@ -37,17 +34,12 @@ impl MockChain {
         .encode_to_vec()
     }
 
-    /// Restores a chain from a Protobuf snapshot produced by [`Self::to_bytes`].
-    ///
-    /// Checks the snapshot's structure, block history and consistency with its latest state
-    /// roots. This does not re-execute transactions or establish trust in the genesis state.
-    /// Snapshots can contain arbitrarily large histories, so callers must bound untrusted input
-    /// before decoding. The previous Winterfell snapshot format is not accepted.
+    /// Restores a snapshot from [`Self::to_bytes`], checking consistency without re-execution.
+    /// Limit untrusted input size before decoding; genesis state is not authenticated.
     ///
     /// # Errors
     ///
-    /// Returns an error if the snapshot is malformed, has an unsupported version, contains
-    /// duplicate state records, or has inconsistent state.
+    /// Returns an error for malformed, unsupported, or inconsistent snapshots.
     pub fn try_from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         let snapshot = wire::MockChainSnapshot::decode(bytes)
             .context("failed to decode mock chain snapshot")?
@@ -122,11 +114,10 @@ impl MockChain {
                 "snapshot chain commitment mismatch at block {index}"
             );
 
-            // Genesis is a test fixture that need not satisfy normal block-body constraints.
-            // Match MockChainBuilder's unchecked body construction for this block only.
+            // Preserve MockChainBuilder's unchecked genesis fixtures.
             let body = if index == 0 {
                 let notes = block.body.output_note_batches.verify()?;
-                // Body accessors assume valid and unique tree positions, even for genesis.
+                // Body accessors require valid, unique tree positions.
                 for (batch_index, batch) in notes.iter().enumerate() {
                     let mut positions = BTreeSet::new();
                     for (note_index, _) in batch {
@@ -241,7 +232,7 @@ impl MockChain {
                 .context("snapshot note inclusion proof is invalid")?;
             insert_unique(&mut committed_notes, note.id(), note, "committed note")?;
         }
-        // MockChain retains every output note, including consumed notes.
+        // Consumed notes must remain available too.
         for note in output_notes.values() {
             ensure!(
                 committed_notes.contains_key(&note.id()),

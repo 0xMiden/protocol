@@ -46,7 +46,6 @@ fn snapshot_preserves_genesis_fixture_constraints() -> anyhow::Result<()> {
     assert_eq!(original.blocks, restored.blocks);
     assert_eq!(original.committed_notes, restored.committed_notes);
 
-    // The genesis exception must not admit duplicate output notes in subsequent blocks.
     let mut invalid = original.to_snapshot();
     let mut next = invalid.blocks[0].clone();
     let header = next.header.as_mut().unwrap();
@@ -78,8 +77,6 @@ async fn snapshot_resumes_pending_transactions_and_batches() -> anyhow::Result<(
     let next_note = builder.add_p2any_note(public.id(), NoteType::Public, [])?;
     let mut original = builder.build()?;
 
-    // Restoring the genesis snapshot must retain the private account's commitment and the full
-    // private genesis note, without putting the private account into committed_accounts.
     let restored = MockChain::try_from_bytes(&original.to_bytes())?;
     assert!(restored.committed_account(private.id()).is_err());
     assert_eq!(restored.account_tree.get(private.id()), private.to_commitment());
@@ -98,7 +95,6 @@ async fn snapshot_resumes_pending_transactions_and_batches() -> anyhow::Result<(
         original.add_pending_batch(batch);
     }
 
-    // This executes with the ECDSA authenticator restored from its secret key.
     let executed = restored
         .build_transaction(private)
         .authenticated_input_note(private_note)
@@ -114,9 +110,6 @@ async fn snapshot_resumes_pending_transactions_and_batches() -> anyhow::Result<(
     assert_eq!(restored.pending_transactions.len(), 1);
     assert_eq!(original.prove_next_block()?, restored.prove_next_block()?);
 
-    // Restore a non-genesis snapshot with spent nullifiers, then continue with a
-    // Falcon-authenticated transaction. This also exercises regenerated MMR authentication
-    // paths.
     let mut restored = MockChain::try_from_bytes(&restored.to_bytes())?;
     assert_eq!(original.nullifier_tree, restored.nullifier_tree);
     assert_eq!(original.account_tree, restored.account_tree);
@@ -188,7 +181,6 @@ async fn snapshot_restores_private_note_inclusion() -> anyhow::Result<()> {
     chain.add_pending_executed_transaction(&executed)?;
     chain.prove_next_block()?;
 
-    // A valid inclusion proof for an opaque private note ID must not allow different metadata.
     let mut invalid = chain.to_snapshot();
     let Some(wire::mock_chain_note::Details::Private(private)) =
         &mut invalid.committed_notes[0].details

@@ -13,7 +13,7 @@ import "protocol_config.proto";
 import "transaction.proto";
 import "transaction_inputs.proto";
 
-// A local test-chain snapshot. Contains unencrypted secret keys and is not a transport object.
+// Local snapshot containing unencrypted secret keys.
 message MockChainSnapshot {
   oneof version {
     MockChainSnapshotV1 v1 = 1;
@@ -21,7 +21,7 @@ message MockChainSnapshot {
 }
 
 message MockChainSnapshotV1 {
-  // Block order reconstructs the full chain MMR, including the latest block.
+  // Ordered history used to rebuild the chain MMR.
   repeated ProvenBlock blocks = 1;
   repeated AccountCommitment account_commitments = 2;
   repeated SpentNullifier spent_nullifiers = 3;
@@ -51,9 +51,9 @@ message SpentNullifier {
   blockchain.BlockNumber block_num = 2;
 }
 
-// Full details can also be retained for a private genesis note.
 message MockChainNote {
   oneof details {
+    // Includes private genesis notes.
     transaction.AuthenticatedInputNote full = 1;
     PrivateNote private = 2;
   }
@@ -62,17 +62,15 @@ message MockChainNote {
 message PrivateNote {
   note.NoteMetadata metadata = 1;
   note.NoteAttachments attachments = 2;
-  // Includes the note ID, since the private note details are not stored here.
   note.NoteInclusionProof proof = 3;
 }
 
 message AccountAuthenticator {
   account.AccountId account_id = 1;
-  // Absence differs from an authenticator with an empty key set.
+  // Absent and empty authenticators are distinct.
   optional Authenticator authenticator = 2;
 }
 
 message Authenticator {
-  // Public keys and their commitments are derived from these secret keys on restoration.
   repeated account_file.AuthSecretKey keys = 1;
 }
