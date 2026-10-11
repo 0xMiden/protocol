@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.18.0"
+version = "1.0.0"
 
 [workspace.dependencies]
 miden-core           = { linkage = "dynamic", version = "0.35" }
