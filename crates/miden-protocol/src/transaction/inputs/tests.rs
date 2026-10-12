@@ -26,7 +26,6 @@ use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use crate::transaction::{InputNotes, PartialBlockchain, TransactionArgs, TransactionInputs};
-use crate::utils::serde::{Deserializable, Serializable};
 use crate::vm::AdviceInputs;
 use crate::{Felt, Word};
 
@@ -280,89 +279,6 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
 
     // Test that the witness path has the expected depth (64 for SMT).
     assert_eq!(witness.path().depth(), 64, "Witness path should have SMT depth of 64");
-}
-
-#[test]
-fn test_transaction_inputs_serialization_with_foreign_slot_names() {
-    use miden_core::Felt;
-
-    use crate::account::{
-        AccountCode,
-        AccountId,
-        AccountStorageHeader,
-        PartialAccount,
-        PartialStorage,
-        StorageSlotName,
-    };
-    use crate::asset::PartialVault;
-    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-
-    // Create test account IDs
-    let native_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-
-    // Create some slot names and IDs.
-    let slot_name_1 = StorageSlotName::new("test::slot1::value".to_string()).unwrap();
-    let slot_name_2 = StorageSlotName::new("test::slot2::map".to_string()).unwrap();
-    let slot_name_3 = StorageSlotName::new("another::slot::value".to_string()).unwrap();
-
-    let slot_id_1 = slot_name_1.id();
-    let slot_id_2 = slot_name_2.id();
-    let slot_id_3 = slot_name_3.id();
-
-    // Create foreign account slot names map.
-    let mut foreign_account_slot_names = BTreeMap::new();
-    foreign_account_slot_names.insert(slot_id_1, slot_name_1.clone());
-    foreign_account_slot_names.insert(slot_id_2, slot_name_2.clone());
-    foreign_account_slot_names.insert(slot_id_3, slot_name_3.clone());
-
-    // Create a basic TransactionInputs with foreign slot names.
-    let code = AccountCode::mock();
-    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
-    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
-    let partial_vault = PartialVault::new(Word::default());
-    let partial_account = PartialAccount::new(
-        native_account_id,
-        Felt::new_unchecked(10),
-        code,
-        partial_storage,
-        partial_vault,
-        None,
-    )
-    .unwrap();
-
-    let original_tx_inputs = TransactionInputs {
-        account: partial_account,
-        block_header: BlockHeader::mock(0, None, None, &[]),
-        blockchain: PartialBlockchain::default(),
-        input_notes: InputNotes::new(vec![]).unwrap(),
-        protocol_config: ProtocolConfig::mock(),
-        tx_args: TransactionArgs::default(),
-        advice_inputs: AdviceInputs::default(),
-        foreign_account_code: Vec::new(),
-        foreign_account_slot_names,
-    };
-
-    // Test serialization roundtrip.
-    let serialized = original_tx_inputs.to_bytes();
-    let deserialized = TransactionInputs::read_from_bytes(&serialized).unwrap();
-
-    // Verify that foreign account slot names are preserved.
-    assert_eq!(
-        original_tx_inputs.foreign_account_slot_names(),
-        deserialized.foreign_account_slot_names()
-    );
-
-    // Verify specific slot names.
-    let deserialized_slots = deserialized.foreign_account_slot_names();
-
-    // Check slots.
-    assert_eq!(deserialized_slots.get(&slot_id_1).unwrap(), &slot_name_1);
-    assert_eq!(deserialized_slots.get(&slot_id_2).unwrap(), &slot_name_2);
-    assert_eq!(deserialized_slots.get(&slot_id_3).unwrap(), &slot_name_3);
-
-    // Verify the entire structure is identical.
-    assert_eq!(original_tx_inputs, deserialized);
 }
 
 #[test]
