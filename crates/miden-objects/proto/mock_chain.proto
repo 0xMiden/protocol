@@ -1,5 +1,5 @@
 syntax = "proto3";
-package mock_chain_snapshot;
+package mock_chain;
 
 import "account.proto";
 import "account_file.proto";
@@ -11,16 +11,15 @@ import "note.proto";
 import "primitives.proto";
 import "protocol_config.proto";
 import "transaction.proto";
-import "transaction_inputs.proto";
 
 // Local snapshot containing unencrypted secret keys.
-message MockChainSnapshot {
+message MockChain {
   oneof version {
-    MockChainSnapshotV1 v1 = 1;
+    MockChainV1 v1 = 1;
   }
 }
 
-message MockChainSnapshotV1 {
+message MockChainV1 {
   // Ordered history used to rebuild the chain MMR.
   repeated ProvenBlock blocks = 1;
   repeated AccountCommitment account_commitments = 2;
@@ -52,17 +51,12 @@ message SpentNullifier {
 }
 
 message MockChainNote {
-  oneof details {
-    // Includes private genesis notes.
-    transaction.AuthenticatedInputNote full = 1;
-    PrivateNote private = 2;
+  note.NoteInclusionProof proof = 1;
+  oneof note {
+    // Includes private genesis notes with full details.
+    note.Note public = 2;
+    transaction.PrivateOutputNote private = 3;
   }
-}
-
-message PrivateNote {
-  note.NoteMetadata metadata = 1;
-  note.NoteAttachments attachments = 2;
-  note.NoteInclusionProof proof = 3;
 }
 
 message AccountAuthenticator {

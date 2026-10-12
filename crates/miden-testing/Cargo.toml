@@ -18,7 +18,7 @@ std = ["miden-objects/std", "miden-protocol/std", "miden-standards/std", "miden-
 [dependencies]
 # Workspace dependencies
 miden-block-prover = { features = ["testing"], workspace = true }
-miden-objects      = { workspace = true }
+miden-objects      = { features = ["testing"], workspace = true }
 miden-protocol     = { features = ["testing"], workspace = true }
 miden-standards    = { features = ["testing"], workspace = true }
 miden-tx           = { features = ["testing"], workspace = true }

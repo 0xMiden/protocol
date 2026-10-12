@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use prost::Message;
 
 /// Schemas that are compiled but left out of the exported descriptor set.
-const UNEXPORTED_FILES: [&str; 3] =
-    ["account_file.proto", "note_file.proto", "mock_chain_snapshot.proto"];
+const UNEXPORTED_FILES: [&str; 3] = ["account_file.proto", "note_file.proto", "mock_chain.proto"];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=proto");
@@ -28,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "batch.proto",
         "account_file.proto",
         "note_file.proto",
-        "mock_chain_snapshot.proto",
+        "mock_chain.proto",
     ];
 
     let mut compiler = protox::Compiler::new([&proto_dir])?;
@@ -173,15 +172,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".note_file.CommittedNote",
             ".note_file.NoteFile",
             ".note_file.NoteFileV1",
-            ".mock_chain_snapshot.MockChainSnapshot",
-            ".mock_chain_snapshot.MockChainSnapshotV1",
-            ".mock_chain_snapshot.ProvenBlock",
-            ".mock_chain_snapshot.AccountCommitment",
-            ".mock_chain_snapshot.SpentNullifier",
-            ".mock_chain_snapshot.MockChainNote",
-            ".mock_chain_snapshot.PrivateNote",
-            ".mock_chain_snapshot.AccountAuthenticator",
-            ".mock_chain_snapshot.Authenticator",
+            ".mock_chain.MockChain",
+            ".mock_chain.MockChainV1",
+            ".mock_chain.ProvenBlock",
+            ".mock_chain.AccountCommitment",
+            ".mock_chain.SpentNullifier",
+            ".mock_chain.MockChainNote",
+            ".mock_chain.AccountAuthenticator",
+            ".mock_chain.Authenticator",
         ],
     )?;
     prost.field_attribute(

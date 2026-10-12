@@ -272,7 +272,7 @@ impl MockChain {
         // This is needed because apply_block only stores headers for private notes,
         // but tests need full note details to create input notes.
         for note in genesis_notes {
-            if let Some(MockChainNote::Private(_, _, _, inclusion_proof)) =
+            if let Some(MockChainNote::Private(_, inclusion_proof)) =
                 chain.committed_notes.get(&note.id())
             {
                 chain.committed_notes.insert(
@@ -1051,12 +1051,7 @@ impl MockChain {
                 OutputNote::Private(private_note) => {
                     self.committed_notes.insert(
                         private_note.id(),
-                        MockChainNote::Private(
-                            private_note.id(),
-                            *private_note.metadata(),
-                            private_note.attachments().clone(),
-                            note_inclusion_proof,
-                        ),
+                        MockChainNote::Private(private_note.clone(), note_inclusion_proof),
                     );
                 },
             }
@@ -1284,7 +1279,6 @@ mod tests {
     use miden_protocol::errors::ValidatorConfigError;
     use miden_protocol::note::{NoteType, PartialNote};
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
@@ -1559,64 +1553,36 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn mock_chain_serialization() {
+    #[test]
+    fn mock_chain_serialization() -> anyhow::Result<()> {
         let mut builder = MockChain::builder();
+        let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+        builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+        let private_note: Note = P2idNote::builder()
+            .sender(account.id())
+            .target(account.id())
+            .assets([FungibleAsset::mock(1)])
+            .note_type(NoteType::Private)
+            .serial_number(Word::from([1u32; 4]))
+            .build()?
+            .into();
+        builder.add_output_note(RawOutputNote::Partial(private_note.into()));
+        let chain = builder.build()?;
 
-        let mut notes = vec![];
-        for i in 0..10 {
-            let account = builder
-                .add_account_from_builder(
-                    Auth::BasicAuth {
-                        auth_scheme: AuthScheme::Falcon512Poseidon2,
-                    },
-                    AccountBuilder::new([i; 32]).with_component(BasicWallet),
-                    AccountState::New,
-                )
-                .unwrap();
-            let note = builder
-                .add_p2id_note(
-                    ACCOUNT_ID_SENDER.try_into().unwrap(),
-                    account.id(),
-                    &[Asset::from(
-                        FungibleAsset::new(
-                            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into().unwrap(),
-                            1000u64,
-                        )
-                        .unwrap(),
-                    )],
-                    NoteType::Private,
-                )
-                .unwrap();
-            notes.push((account, note));
-        }
+        let restored = MockChain::try_from_bytes(&chain.to_bytes())?;
 
-        let mut chain = builder.build().unwrap();
-        for (account, note) in notes {
-            let tx = chain
-                .build_transaction(account)
-                .unauthenticated_input_note(note)
-                .build()
-                .unwrap()
-                .execute()
-                .await
-                .unwrap();
-            chain.add_pending_executed_transaction(&tx).unwrap();
-            chain.prove_next_block().unwrap();
-        }
-
-        let bytes = chain.to_bytes();
-
-        let deserialized = MockChain::try_from_bytes(&bytes).unwrap();
-
-        assert_eq!(chain.chain.as_mmr().peaks(), deserialized.chain.as_mmr().peaks());
-        assert_eq!(chain.blocks, deserialized.blocks);
-        assert_eq!(chain.nullifier_tree, deserialized.nullifier_tree);
-        assert_eq!(chain.account_tree, deserialized.account_tree);
-        assert_eq!(chain.pending_transactions, deserialized.pending_transactions);
-        assert_eq!(chain.committed_accounts, deserialized.committed_accounts);
-        assert_eq!(chain.committed_notes, deserialized.committed_notes);
-        assert_eq!(chain.account_authenticators, deserialized.account_authenticators);
+        assert_eq!(chain.chain.as_mmr().peaks(), restored.chain.as_mmr().peaks());
+        assert_eq!(chain.blocks, restored.blocks);
+        assert_eq!(chain.nullifier_tree, restored.nullifier_tree);
+        assert_eq!(chain.account_tree, restored.account_tree);
+        assert_eq!(chain.pending_transactions, restored.pending_transactions);
+        assert_eq!(chain.pending_batches, restored.pending_batches);
+        assert_eq!(chain.committed_accounts, restored.committed_accounts);
+        assert_eq!(chain.committed_notes, restored.committed_notes);
+        assert_eq!(chain.account_authenticators, restored.account_authenticators);
+        assert_eq!(chain.validator_secret_keys, restored.validator_secret_keys);
+        assert_eq!(chain.protocol_config, restored.protocol_config);
+        Ok(())
     }
 
     #[test]

@@ -1,56 +1,46 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use anyhow::{Context, ensure};
+use anyhow::Context;
 use miden_objects::prost::Message;
 use miden_objects::{BuildUnchecked, DecodeMessage, Verify, proto};
 use miden_protocol::account::auth::AuthSecretKey;
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
-use miden_protocol::block::{
-    BlockBody,
-    BlockNoteIndex,
-    BlockSignatures,
-    Blockchain,
-    ProvenBlock,
-    ValidatorConfig,
-};
-use miden_protocol::note::{NoteMetadata, NoteType, Nullifier};
+use miden_protocol::block::{BlockBody, BlockSignatures, Blockchain, ProvenBlock};
+use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::OrderedTransactionHeaders;
 use miden_tx::auth::BasicAuthenticator;
-use proto::mock_chain_snapshot as wire;
+use proto::mock_chain as wire;
 
 use super::{AccountAuthenticator, MockChain, MockChainNote};
-
-#[cfg(test)]
-mod tests;
 
 impl MockChain {
     /// Encodes committed and pending state as Protobuf, including unencrypted secret keys.
     pub fn to_bytes(&self) -> Vec<u8> {
-        wire::MockChainSnapshot {
-            version: Some(wire::mock_chain_snapshot::Version::V1(self.to_snapshot())),
+        wire::MockChain {
+            version: Some(wire::mock_chain::Version::V1(self.to_snapshot())),
         }
         .encode_to_vec()
     }
 
-    /// Restores a snapshot from [`Self::to_bytes`], checking consistency without re-execution.
-    /// Limit untrusted input size before decoding; genesis state is not authenticated.
+    /// Restores a trusted local snapshot from [`Self::to_bytes`].
+    /// The caller must ensure the snapshot is valid; chain consistency is not checked.
     ///
     /// # Errors
     ///
-    /// Returns an error for malformed, unsupported, or inconsistent snapshots.
+    /// Returns an error if decoding or reconstructing the snapshot fails.
     pub fn try_from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        let snapshot = wire::MockChainSnapshot::decode(bytes)
+        let snapshot = wire::MockChain::decode(bytes)
             .context("failed to decode mock chain snapshot")?
             .decode_fields()
             .context("invalid mock chain snapshot")?;
-        let wire::mock_chain_snapshot::DecodedVersion::V1(snapshot) = snapshot.version;
+        let wire::mock_chain::DecodedVersion::V1(snapshot) = snapshot.version;
         Self::from_snapshot(snapshot)
     }
 
-    fn to_snapshot(&self) -> wire::MockChainSnapshotV1 {
-        wire::MockChainSnapshotV1 {
+    fn to_snapshot(&self) -> wire::MockChainV1 {
+        wire::MockChainV1 {
             blocks: self
                 .blocks
                 .iter()
@@ -80,7 +70,7 @@ impl MockChain {
             pending_transactions: self.pending_transactions.iter().map(Into::into).collect(),
             pending_batches: self.pending_batches.iter().map(Into::into).collect(),
             committed_accounts: self.committed_accounts.values().map(Into::into).collect(),
-            committed_notes: self.committed_notes.values().map(encode_note).collect(),
+            committed_notes: self.committed_notes.values().map(MockChainNote::encode).collect(),
             account_authenticators: self
                 .account_authenticators
                 .iter()
@@ -100,168 +90,69 @@ impl MockChain {
         }
     }
 
-    fn from_snapshot(snapshot: wire::DecodedMockChainSnapshotV1) -> anyhow::Result<Self> {
+    // TODO: Use the trusted restoration API once available:
+    // https://github.com/0xMiden/protocol/issues/3937.
+    fn from_snapshot(snapshot: wire::DecodedMockChainV1) -> anyhow::Result<Self> {
         let mut chain = Blockchain::new();
-        let mut blocks: Vec<ProvenBlock> = Vec::new();
-        for (index, block) in snapshot.blocks.into_inner().into_iter().enumerate() {
+        let mut blocks = Vec::new();
+        for block in snapshot.blocks.into_inner() {
             let header = block.header.build_unchecked()?;
-            ensure!(
-                header.block_num().as_usize() == index,
-                "snapshot blocks must start at genesis and be consecutive"
+            // Trust the saved body, including MockChainBuilder's unchecked genesis fixtures.
+            let body = BlockBody::new_unchecked(
+                block.body.updated_accounts.verify()?,
+                block.body.output_note_batches.verify()?,
+                block.body.created_nullifiers.map(Nullifier::from_raw),
+                OrderedTransactionHeaders::new_unchecked(
+                    block.body.transactions.build_unchecked()?,
+                ),
             );
-            ensure!(
-                header.chain_commitment() == chain.commitment(),
-                "snapshot chain commitment mismatch at block {index}"
-            );
-
-            // Preserve MockChainBuilder's unchecked genesis fixtures.
-            let body = if index == 0 {
-                let notes = block.body.output_note_batches.verify()?;
-                // Body accessors require valid, unique tree positions.
-                for (batch_index, batch) in notes.iter().enumerate() {
-                    let mut positions = BTreeSet::new();
-                    for (note_index, _) in batch {
-                        ensure!(
-                            BlockNoteIndex::new(batch_index, *note_index).is_some(),
-                            "invalid genesis output note index"
-                        );
-                        ensure!(
-                            positions.insert(*note_index),
-                            "duplicate genesis output note index"
-                        );
-                    }
-                }
-                BlockBody::new_unchecked(
-                    block.body.updated_accounts.verify()?,
-                    notes,
-                    block.body.created_nullifiers.map(Nullifier::from_raw),
-                    OrderedTransactionHeaders::new_unchecked(
-                        block.body.transactions.build_unchecked()?,
-                    ),
-                )
-            } else {
-                block.body.build_unchecked()?
-            };
             let signatures = BlockSignatures::new(block.signatures.verify_infallible())?;
             let block = ProvenBlock::new_unchecked(header, body, signatures, block.proof);
-            block
-                .validate(blocks.last().map(ProvenBlock::header))
-                .with_context(|| format!("invalid snapshot block {index}"))?;
             chain.push(block.header().commitment());
             blocks.push(block);
         }
-        let latest = blocks.last().context("snapshot must contain a genesis block")?.header();
 
-        let mut commitments = BTreeMap::new();
-        for entry in snapshot.account_commitments.into_inner() {
-            insert_unique(
-                &mut commitments,
-                entry.account_id.verify()?,
-                entry.commitment,
-                "account commitment",
-            )?;
-        }
+        let commitments = snapshot
+            .account_commitments
+            .into_inner()
+            .into_iter()
+            .map(|entry| Ok((entry.account_id.verify()?, entry.commitment)))
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let account_tree = AccountTree::with_entries(commitments)?;
-        ensure!(account_tree.root() == latest.account_root(), "snapshot account root mismatch");
-
-        let mut nullifiers = BTreeMap::new();
-        for entry in snapshot.spent_nullifiers.into_inner() {
-            let block_num = entry.block_num.verify()?;
-            ensure!(
-                block_num.as_u32() > 0 && block_num <= latest.block_num(),
-                "invalid spent nullifier block number"
-            );
-            insert_unique(
-                &mut nullifiers,
-                Nullifier::from_raw(entry.nullifier),
-                block_num,
-                "nullifier",
-            )?;
-        }
+        let nullifiers = snapshot
+            .spent_nullifiers
+            .into_inner()
+            .into_iter()
+            .map(|entry| Ok((Nullifier::from_raw(entry.nullifier), entry.block_num.verify()?)))
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let nullifier_tree = NullifierTree::with_entries(nullifiers)?;
-        ensure!(
-            nullifier_tree.root() == latest.nullifier_root(),
-            "snapshot nullifier root mismatch"
-        );
-
-        let mut committed_accounts = BTreeMap::new();
-        for account in snapshot.committed_accounts.verify()? {
-            ensure!(account.id().is_public(), "snapshot committed account must be public");
-            ensure!(
-                account_tree.get(account.id()) == account.to_commitment(),
-                "snapshot account commitment mismatch"
-            );
-            insert_unique(&mut committed_accounts, account.id(), account, "committed account")?;
-        }
-        for (id, _) in account_tree.account_commitments().filter(|(id, _)| id.is_public()) {
-            ensure!(
-                committed_accounts.contains_key(&id),
-                "snapshot is missing a committed public account"
-            );
-        }
-
-        let output_notes: BTreeMap<_, _> = blocks
-            .iter()
-            .flat_map(|block| {
-                block.body().output_notes().map(move |(index, note)| {
-                    ((block.header().block_num(), index.leaf_index_value()), note)
-                })
-            })
+        let committed_accounts = snapshot
+            .committed_accounts
+            .verify()?
+            .into_iter()
+            .map(|account| (account.id(), account))
             .collect();
-        let mut committed_notes = BTreeMap::new();
-        for note in snapshot.committed_notes.into_inner() {
-            let note = decode_note(note)?;
-            let proof = note.inclusion_proof();
-            let block = blocks
-                .get(proof.location().block_num().as_usize())
-                .context("snapshot note references an unknown block")?;
-            let output_note = output_notes
-                .get(&(proof.location().block_num(), proof.location().block_note_tree_index()))
-                .context("snapshot note references an unknown output note")?;
-            ensure!(
-                note.id() == output_note.id() && note.metadata() == output_note.metadata(),
-                "snapshot note does not match its block output"
-            );
-            proof
-                .note_path()
-                .verify(
-                    u64::from(proof.location().block_note_tree_index()),
-                    note.id().as_word(),
-                    &block.header().note_root(),
-                )
-                .context("snapshot note inclusion proof is invalid")?;
-            insert_unique(&mut committed_notes, note.id(), note, "committed note")?;
-        }
-        // Consumed notes must remain available too.
-        for note in output_notes.values() {
-            ensure!(
-                committed_notes.contains_key(&note.id()),
-                "snapshot is missing a committed note"
-            );
-        }
-
-        let mut account_authenticators = BTreeMap::new();
-        for entry in snapshot.account_authenticators.into_inner() {
-            let authenticator = entry
-                .authenticator
-                .into_inner()
-                .map(|auth| {
-                    let keys = auth.keys.verify_infallible();
-                    let authenticator = BasicAuthenticator::new(&keys);
-                    ensure!(
-                        authenticator.keys().len() == keys.len(),
-                        "duplicate authenticator key"
-                    );
-                    Ok(authenticator)
-                })
-                .transpose()?;
-            insert_unique(
-                &mut account_authenticators,
-                entry.account_id.verify()?,
-                AccountAuthenticator::new(authenticator),
-                "account authenticator",
-            )?;
-        }
+        let committed_notes = snapshot
+            .committed_notes
+            .into_inner()
+            .into_iter()
+            .map(|note| {
+                let note = MockChainNote::decode(note)?;
+                Ok((note.id(), note))
+            })
+            .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+        let account_authenticators = snapshot
+            .account_authenticators
+            .into_inner()
+            .into_iter()
+            .map(|entry| {
+                let authenticator = entry
+                    .authenticator
+                    .into_inner()
+                    .map(|auth| BasicAuthenticator::new(&auth.keys.verify_infallible()));
+                Ok((entry.account_id.verify()?, AccountAuthenticator::new(authenticator)))
+            })
+            .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
         let validator_secret_keys = snapshot
             .validator_secret_keys
             .verify_infallible()
@@ -271,19 +162,6 @@ impl MockChain {
                 _ => anyhow::bail!("validator key must use ECDSA secp256k1"),
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let validator_config = ValidatorConfig::new(
-            validator_secret_keys.iter().map(|key| key.public_key()).collect(),
-            validator_secret_keys.len().try_into()?,
-        )?;
-        ensure!(
-            &validator_config == latest.validator_config(),
-            "snapshot validator keys do not match the latest block"
-        );
-        let protocol_config = snapshot.protocol_config.verify()?;
-        ensure!(
-            protocol_config.to_commitment() == latest.protocol_config_commitment(),
-            "snapshot protocol configuration mismatch"
-        );
 
         Ok(Self {
             chain,
@@ -296,64 +174,7 @@ impl MockChain {
             committed_notes,
             account_authenticators,
             validator_secret_keys,
-            protocol_config,
+            protocol_config: snapshot.protocol_config.verify()?,
         })
     }
-}
-
-fn encode_note(note: &MockChainNote) -> wire::MockChainNote {
-    use wire::mock_chain_note::Details;
-    let proof = Some((&note.id(), note.inclusion_proof()).into());
-    let details = match note {
-        MockChainNote::Public(note, _) => {
-            Details::Full(proto::transaction::AuthenticatedInputNote {
-                note: Some(note.into()),
-                proof,
-            })
-        },
-        MockChainNote::Private(_, metadata, attachments, _) => {
-            Details::Private(wire::PrivateNote {
-                metadata: Some((*metadata).into()),
-                attachments: Some(attachments.into()),
-                proof,
-            })
-        },
-    };
-    wire::MockChainNote { details: Some(details) }
-}
-
-fn decode_note(note: wire::DecodedMockChainNote) -> anyhow::Result<MockChainNote> {
-    use wire::mock_chain_note::DecodedDetails;
-    match note.details {
-        DecodedDetails::Full(full) => {
-            let note = full.note.verify()?;
-            let (id, proof) = full.proof.verify()?;
-            ensure!(id == note.id(), "snapshot note ID mismatch");
-            Ok(MockChainNote::Public(note, proof))
-        },
-        DecodedDetails::Private(private) => {
-            let metadata = private.metadata.verify()?;
-            let attachments = private.attachments.verify()?;
-            let (id, proof) = private.proof.verify()?;
-            ensure!(
-                metadata.note_type() == NoteType::Private,
-                "snapshot private note has public metadata"
-            );
-            ensure!(
-                metadata == NoteMetadata::new(*metadata.partial_metadata(), &attachments),
-                "snapshot note attachments mismatch"
-            );
-            Ok(MockChainNote::Private(id, metadata, attachments, proof))
-        },
-    }
-}
-
-fn insert_unique<K: Ord, V>(
-    map: &mut BTreeMap<K, V>,
-    key: K,
-    value: V,
-    entry: &str,
-) -> anyhow::Result<()> {
-    ensure!(map.insert(key, value).is_none(), "duplicate {entry} in snapshot");
-    Ok(())
 }
