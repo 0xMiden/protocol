@@ -4,7 +4,7 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
-use crate::transaction::{TransactionLogData, TransactionLogError, TransactionLogs};
+use crate::transaction::{TransactionLogDetails, TransactionLogError, TransactionLogs};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -35,7 +35,7 @@ mod tests;
 /// # Privacy
 ///
 /// Contains complete local transaction logs and their secret salt, including in serialized and
-/// debug output. Use [`Self::log_data`] to obtain the data submitted with a proven transaction.
+/// debug output. Use [`Self::log_details`] to obtain the data submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
@@ -118,11 +118,11 @@ impl TransactionOutputs {
 
     /// Returns complete public transaction logs or only the private transaction log commitment
     /// for submission to the node.
-    pub fn log_data(&self) -> TransactionLogData {
+    pub fn log_details(&self) -> TransactionLogDetails {
         if self.account.id().is_public() {
-            TransactionLogData::Public(self.logs.clone())
+            TransactionLogDetails::Public(self.logs.clone())
         } else {
-            TransactionLogData::Private(self.logs_commitment())
+            TransactionLogDetails::Private(self.logs_commitment())
         }
     }
 
