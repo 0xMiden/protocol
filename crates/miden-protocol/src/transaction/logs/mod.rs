@@ -152,8 +152,12 @@ impl TransactionLog {
         let num_words = usize::from(source.read_u16()?);
         Self::validate_content_size(num_words)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-        TransactionLogs::validate_total_content_size(previous_content_words + num_words)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
+        let total_content_words = previous_content_words + num_words;
+        if total_content_words > TransactionLogs::MAX_NUM_WORDS {
+            return Err(DeserializationError::InvalidValue(
+                TransactionLogError::TooManyTotalContentWords(total_content_words).to_string(),
+            ));
+        }
 
         let content = source.read_many_iter::<Word>(num_words)?.collect::<Result<_, _>>()?;
         Self::new(emitter, topic, content)
@@ -291,9 +295,10 @@ impl TransactionLogs {
     /// size exceeds [`TransactionLogs::MAX_NUM_WORDS`].
     pub fn new(logs: Vec<TransactionLog>) -> Result<Self, TransactionLogError> {
         Self::validate_log_count(logs.len())?;
-        Self::validate_total_content_size(
-            logs.iter().map(TransactionLog::num_content_words).sum(),
-        )?;
+        let num_content_words = logs.iter().map(TransactionLog::num_content_words).sum::<usize>();
+        if num_content_words > Self::MAX_NUM_WORDS {
+            return Err(TransactionLogError::TooManyTotalContentWords(num_content_words));
+        }
         let mut result = Self { logs, commitment: Word::empty() };
         if !result.is_empty() {
             result.commitment =
@@ -340,13 +345,6 @@ impl TransactionLogs {
     fn validate_log_count(num_logs: usize) -> Result<(), TransactionLogError> {
         if num_logs > TransactionLogs::MAX_COUNT {
             return Err(TransactionLogError::TooManyLogs(num_logs));
-        }
-        Ok(())
-    }
-
-    fn validate_total_content_size(num_words: usize) -> Result<(), TransactionLogError> {
-        if num_words > TransactionLogs::MAX_NUM_WORDS {
-            return Err(TransactionLogError::TooManyTotalContentWords(num_words));
         }
         Ok(())
     }
