@@ -144,7 +144,6 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP storage length does not match payback visibility"
 const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or private"
-const ERR_PSWAP_INVALID_PAYBACK_TAG="PSWAP payback tag must fit in u32"
 const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
 const ERR_PSWAP_INVALID_PAYBACK_PREIMAGE="PSWAP cancellation preimage does not match the payback recipient"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
@@ -295,7 +294,8 @@ proc load_storage()
     assert.err=ERR_PSWAP_INVALID_PAYBACK_TYPE
     # => [payback_note_type, num_storage_items]
 
-    # Validate the length and payback fields of the selected layout.
+    # Validate the length and public creator ID of the selected layout.
+    # Private payback tags are validated by output_note::create.
     if.true
         eq.PUBLIC_NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
         # => []
@@ -307,12 +307,6 @@ proc load_storage()
         # => []
     else
         eq.PRIVATE_NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
-        # => []
-
-        mem_load.PAYBACK_TAG_ITEM
-        # => [payback_tag]
-
-        u32assert.err=ERR_PSWAP_INVALID_PAYBACK_TAG drop
         # => []
     end
     # => []

@@ -60,7 +60,6 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_INVALID_ACTION,
     ERR_PSWAP_INVALID_PAYBACK_PREIMAGE,
-    ERR_PSWAP_INVALID_PAYBACK_TAG,
     ERR_PSWAP_INVALID_PAYBACK_TYPE,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
@@ -1734,6 +1733,24 @@ async fn pswap_rejects_invalid_cancel_arguments_and_advice() -> anyhow::Result<(
     let advice = pswap.cancellation_advice(recipient)?;
     let chain = builder.build()?;
 
+    // Cancellation also relies on output creation to reject an oversized private payback tag.
+    let mut items = note.recipient().storage().items().to_vec();
+    items[9] = Felt::from(u32::MAX) + ONE;
+    let malformed = note_with_storage(&note, items)?;
+    let result = chain
+        .build_transaction(alice.id())
+        .extend_note_args(BTreeMap::from([(malformed.id(), PswapNote::create_cancel_args())]))
+        .unauthenticated_input_note(malformed)
+        .extend_advice_inputs(AdviceInputs::default().with_map(advice.clone()))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if event_err.to_string().contains("failed to decode note tag into u32")
+    );
+
     // Reject unknown actions, nonzero reserved fields, and fill amounts on cancellation.
     for args in [
         [Felt::from(2u32), ZERO, ZERO, ZERO],
@@ -2044,10 +2061,6 @@ async fn pswap_rejects_wrong_storage_length(
     "invalid creator account ID",
     ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO
 )]
-#[case::private_tag(
-    NoteType::Private, 9, Felt::from(u32::MAX) + ONE, "payback tag exceeds u32",
-    ERR_PSWAP_INVALID_PAYBACK_TAG
-)]
 #[tokio::test]
 async fn pswap_rejects_malformed_storage_field(
     #[case] payback_type: NoteType,
@@ -2069,17 +2082,35 @@ async fn pswap_rejects_malformed_storage_field(
         .build()?
         .execute()
         .await;
-    if expected_masm_error.code() == ERR_PSWAP_INVALID_PAYBACK_TAG.code() {
-        assert_transaction_executor_error!(
-            result,
-            matches ExecutionError::OperationError {
-                err: OperationError::U32AssertionFailed { err_code, .. },
-                ..
-            } if err_code == expected_masm_error.code()
-        );
-    } else {
-        assert_transaction_executor_error!(result, expected_masm_error);
-    }
+    assert_transaction_executor_error!(result, expected_masm_error);
+    Ok(())
+}
+
+/// Output creation rejects oversized tags without a duplicate check in PSWAP storage loading.
+#[tokio::test]
+async fn pswap_rejects_oversized_private_payback_tag() -> anyhow::Result<()> {
+    let (chain, consumer, note) = setup_storage_test(NoteType::Private)?;
+    let mut items = note.recipient().storage().items().to_vec();
+    items[9] = Felt::from(u32::MAX) + ONE;
+    let error = PswapNoteStorage::try_from(items.as_slice()).unwrap_err();
+    assert!(
+        error.to_string().contains("payback tag exceeds u32"),
+        "unexpected error: {error}"
+    );
+
+    let malformed = note_with_storage(&note, items)?;
+    let result = chain
+        .build_transaction(consumer)
+        .unauthenticated_input_note(malformed)
+        .build()?
+        .execute()
+        .await;
+    // The before-created host event rejects the tag before the kernel's u32 assertion runs.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if event_err.to_string().contains("failed to decode note tag into u32")
+    );
     Ok(())
 }
 
