@@ -150,16 +150,17 @@ const ERR_XRESERVE_MINT_NOTE_TYPE_NOT_PUBLIC = "mint note output note type must 
 #! - 4..8: RECIPIENT
 #! - 8: note tag
 #! - 9: note_type
-#! - 10: carried hookData length
-#! - 11: the note's asset amount
+#! - 10..12: unused
 #! - 12..28: attachment commitments list (4 words)
 #! - 28..32: the hashed nonce (usedNonces storage-map key == the attested output-note serial)
-#! - 32..1056: the rebuilt DepositIntent preimage
-#! - 1056..2080: the hash-verified transport attachment (MAX_ATTACHMENT_WORDS * 4 felts)
-#!     - 1056..1072: pubkey(16)
-#!     - 1072..1092: signature(17) + pad(3)
-#!     - 1092..1116: the carried mint payload
-#!     - 1116..: packed hookData
+#! - 32..1056: the hash-verified transport attachment (MAX_ATTACHMENT_WORDS * 4 felts)
+#!     - 32..48: pubkey(16)
+#!     - 48..68: signature(17) + pad(3)
+#!     - 68..96: the carried mint intent (7 words)
+#!     - 96..: packed hookData
+#!
+#! The rebuilt DepositIntent (the bytes that get hashed and signature-checked) is not kept in
+#! locals: `rebuild` writes it to global memory at DEPOSIT_INTENT_PTR.
 #!
 #! Invocation: call
 @locals(1056)
