@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0-rc.0 (TBD)
+## v1.0.0-rc.1 (TBD)
 
 ### Changes
 
