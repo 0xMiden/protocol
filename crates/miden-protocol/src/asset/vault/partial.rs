@@ -60,8 +60,6 @@ impl PartialVault {
         let mut entries = BTreeMap::new();
 
         let partial_smt = PartialSmt::from_proofs(witnesses.into_iter().map(|witness| {
-            // Skip empty values so `entries` only ever tracks valid assets (mirrors
-            // `AssetVault::new`).
             entries.extend(witness.entries().map(|(id, value)| (*id, *value)));
             SmtProof::from(witness)
         }))

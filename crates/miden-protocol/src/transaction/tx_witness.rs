@@ -73,6 +73,3 @@ impl From<ExecutedTransaction> for TransactionWitness {
         Self::new_unchecked(tx_inputs, final_account, expiration_block_num)
     }
 }
-
-// SERIALIZATION
-// ================================================================================================
