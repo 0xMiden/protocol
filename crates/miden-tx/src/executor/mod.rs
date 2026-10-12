@@ -366,7 +366,7 @@ where
 
 /// Creates a new [ExecutedTransaction] from the provided data.
 fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenticator + Sync>(
-    mut advice_inputs: AdviceInputs,
+    advice_inputs: AdviceInputs,
     tx_inputs: TransactionInputs,
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
@@ -376,7 +376,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         _input_notes,
         output_notes,
         accessed_foreign_account_code,
-        generated_signatures,
         tx_progress,
         foreign_account_slot_names,
         lazy_loaded_data,
@@ -403,9 +402,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
             output_id: final_account.id(),
         });
     }
-
-    // Introduce generated signatures into the witness inputs.
-    advice_inputs.extend(AdviceInputs::default().with_map(generated_signatures));
 
     // Overwrite advice inputs from after the execution on the transaction inputs. This is
     // guaranteed to be a superset of the original advice inputs.

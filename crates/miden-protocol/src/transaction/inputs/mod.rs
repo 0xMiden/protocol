@@ -7,6 +7,7 @@ use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
 use super::PartialBlockchain;
 use crate::Word;
+use crate::account::auth::{Signature, SignatureKey};
 use crate::account::{
     AccountCode,
     AccountHeader,
@@ -58,6 +59,8 @@ pub struct TransactionInputs {
     foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
     /// Scripts of the output notes the host resolved during execution.
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
+    /// Signatures the authenticator generated during execution.
+    signatures: BTreeMap<SignatureKey, Signature>,
 }
 
 #[bon::bon]
@@ -88,6 +91,7 @@ impl TransactionInputs {
         #[builder(default)] foreign_account_code: Vec<AccountCode>,
         #[builder(default)] foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
         #[builder(default)] note_scripts: Vec<NoteScript>,
+        #[builder(default)] signatures: BTreeMap<SignatureKey, Signature>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
 
@@ -104,6 +108,7 @@ impl TransactionInputs {
             foreign_account_code,
             foreign_account_slot_names,
             note_scripts,
+            signatures,
         })
     }
 
@@ -222,6 +227,11 @@ impl TransactionInputs {
         self.note_scripts.insert(script.root(), script);
     }
 
+    /// Adds a signature, so that re-executing the transaction does not need the authenticator.
+    pub fn add_signature(&mut self, key: SignatureKey, signature: Signature) {
+        self.signatures.insert(key, signature);
+    }
+
     /// Updates the transaction arguments of the inputs.
     #[cfg(feature = "testing")]
     pub fn set_tx_args(&mut self, tx_args: TransactionArgs) {
@@ -295,6 +305,11 @@ impl TransactionInputs {
     /// Returns the output note scripts resolved during execution, keyed by their root.
     pub fn note_scripts(&self) -> &BTreeMap<NoteScriptRoot, NoteScript> {
         &self.note_scripts
+    }
+
+    /// Returns the signatures generated during execution.
+    pub fn signatures(&self) -> &BTreeMap<SignatureKey, Signature> {
+        &self.signatures
     }
 
     /// Returns the advice inputs to be consumed in the transaction.

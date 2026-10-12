@@ -75,6 +75,11 @@ impl TransactionAdviceInputs {
                 .map(|(root, script)| (Word::from(*root), script.to_elements())),
         );
 
+        // SIGNATURE_KEY |-> [ENCODED_SIGNATURE]
+        inputs.extend_map(tx_inputs.signatures().iter().map(|(key, signature)| {
+            (key.to_advice_map_key(), signature.to_encoded_signature(key.message()))
+        }));
+
         // The host reads the new code from this entry when the kernel initializes the upgrade.
         if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {
             let (key, elements) = code_upgrade.to_advice_map_entry();

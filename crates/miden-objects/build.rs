@@ -125,6 +125,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.PrivateAccountUpdate",
             ".note.NoteInclusionProof",
             ".transaction.ForeignAccountSlotName",
+            ".transaction.AuthSignature",
+            ".transaction.SignatureEntry",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
@@ -201,6 +203,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ".primitives.Signature.signature.ecdsa_k256_keccak",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.AuthSignature.signature.ecdsa_k256_keccak",
+        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.AuthSignature.signature.falcon512_poseidon2",
+        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::dsa::falcon512_poseidon2::Signature
         >)])
         .to_string(),
     );

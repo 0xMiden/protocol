@@ -6,7 +6,7 @@ use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
-use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::auth::{AuthScheme, SignatureKey};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -66,7 +66,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
     TransactionSummaryUserParams,
 };
-use miden_protocol::{Felt, Hasher, ONE, Word};
+use miden_protocol::{Felt, ONE, Word};
 use miden_standards::account::interface::{
     AccountComponentInterface,
     AccountInterface,
@@ -1003,13 +1003,15 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
     let pub_keys = get_public_keys_from_account(&account);
     let pub_key = pub_keys.first().expect("expected at least one public key");
 
-    // This is in an internal detail of the tx executor host, but this is the easiest way to check
-    // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[*pub_key, summary_commitment]);
-
-    // The summary commitment should have been signed as part of transaction execution and inserted
-    // into the advice map.
-    tx.advice_witness().map().get(&signature_key).unwrap();
+    // The summary commitment should have been signed as part of transaction execution and the
+    // signature stored in the transaction inputs.
+    let signature_key = SignatureKey::new((*pub_key).into(), summary_commitment);
+    let signature = tx
+        .tx_inputs()
+        .signatures()
+        .get(&signature_key)
+        .context("signature should be in the transaction inputs")?;
+    assert_eq!(signature.auth_scheme(), auth_scheme);
 
     Ok(())
 }
@@ -1378,17 +1380,18 @@ async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    // The advice witness of the executed transaction carries the signature generated during the
-    // first execution, so feeding it back in lets the re-execution authenticate without an
-    // authenticator.
-    let _reexecuted_tx = chain
+    // The executed transaction inputs carry the signature generated during the first execution,
+    // so feeding it back in lets the re-execution authenticate without an authenticator.
+    let mut reexecution = chain
         .build_transaction(account.id())
         .authenticated_input_note(note.id())
         .authenticator(None)
-        .extend_advice_inputs(tx.advice_witness().clone())
-        .build()?
-        .execute()
-        .await?;
+        .extend_advice_inputs(tx.advice_witness().clone());
+    for (key, signature) in tx.tx_inputs().signatures() {
+        reexecution =
+            reexecution.add_signature(key.pub_key_commitment(), key.message(), signature.clone());
+    }
+    let _reexecuted_tx = reexecution.build()?.execute().await?;
 
     Ok(())
 }

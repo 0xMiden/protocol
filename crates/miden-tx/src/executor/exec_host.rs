@@ -6,7 +6,8 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::Word;
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::{
     AccountCode,
     AccountId,
@@ -37,7 +38,6 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
-use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
@@ -77,7 +77,7 @@ where
     tx_progress: TransactionProgress,
 
     /// Serves signature generation requests from the transaction runtime for signatures which are
-    /// not present in the `generated_signatures` field.
+    /// not present in the advice provider.
     authenticator: Option<&'auth AUTH>,
 
     /// The reference block of the transaction.
@@ -90,13 +90,6 @@ where
 
     /// Storage slot names for foreign accounts accessed during transaction execution.
     foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
-
-    /// Contains generated signatures (as a message |-> signature map) required for transaction
-    /// execution. Once a signature was created for a given message, it is inserted into this map.
-    /// After transaction execution, these can be inserted into the advice inputs to re-execute the
-    /// transaction without having to regenerate the signature or requiring access to the
-    /// authenticator that produced it.
-    generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
@@ -158,7 +151,6 @@ where
             ref_block,
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
-            generated_signatures: BTreeMap::new(),
             lazy_loaded_data: LazyLoadedData::default(),
             in_auth_procedure: false,
             source_manager,
@@ -229,16 +221,17 @@ where
         // get the message that will be signed by the authenticator
         let message = signing_inputs.to_commitment();
 
-        let signature: Vec<Felt> = authenticator
+        let signature = authenticator
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
-            .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_encoded_signature(message);
+            .map_err(TransactionKernelError::SignatureGenerationFailed)?;
+        let encoded_signature = signature.to_encoded_signature(message);
 
-        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
-        self.generated_signatures.insert(signature_key, signature.clone());
+        self.lazy_loaded_data
+            .signatures
+            .insert(SignatureKey::new(pub_key_commitment, message), signature);
 
-        Ok(vec![AdviceMutation::extend_advice_stack_with(signature)])
+        Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -406,8 +399,8 @@ where
         }
     }
 
-    /// Consumes `self` and returns the account delta, output notes, generated signatures,
-    /// transaction progress and lazy loaded data.
+    /// Consumes `self` and returns the account delta, output notes, transaction progress and lazy
+    /// loaded data.
     #[allow(clippy::type_complexity)]
     pub(crate) fn into_parts(
         self,
@@ -416,7 +409,6 @@ where
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         Vec<AccountCode>,
-        BTreeMap<Word, Vec<Felt>>,
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
         LazyLoadedData,
@@ -428,7 +420,6 @@ where
             input_notes,
             output_notes,
             self.accessed_foreign_account_code,
-            self.generated_signatures,
             self.tx_progress,
             self.foreign_account_slot_names,
             self.lazy_loaded_data,
@@ -456,6 +447,9 @@ where
 pub(crate) struct LazyLoadedData {
     /// The scripts of output notes whose script was not in the advice provider.
     note_scripts: Vec<NoteScript>,
+
+    /// The signatures the authenticator generated.
+    signatures: BTreeMap<SignatureKey, Signature>,
 }
 
 impl LazyLoadedData {
@@ -463,6 +457,9 @@ impl LazyLoadedData {
     pub(crate) fn add_to(self, tx_inputs: &mut TransactionInputs) {
         for note_script in self.note_scripts {
             tx_inputs.add_note_script(note_script);
+        }
+        for (key, signature) in self.signatures {
+            tx_inputs.add_signature(key, signature);
         }
     }
 }

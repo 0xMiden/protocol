@@ -14,7 +14,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
+use crate::{Felt, Hasher, Word};
 
 // AUTH SCHEME
 // ================================================================================================
@@ -250,7 +250,7 @@ impl Deserializable for AuthSecretKey {
 // ================================================================================================
 
 /// Commitment to a public key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PublicKeyCommitment(Word);
 
 impl core::fmt::Display for PublicKeyCommitment {
@@ -280,6 +280,42 @@ impl From<PublicKeyCommitment> for Word {
 impl From<Word> for PublicKeyCommitment {
     fn from(value: Word) -> Self {
         Self(value)
+    }
+}
+
+// SIGNATURE KEY
+// ================================================================================================
+
+/// Identifies a signature by the commitment to the signer's public key and the signed message.
+///
+/// The message is part of the key because ECDSA signatures need it to recover the public key when
+/// they are encoded for the VM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SignatureKey {
+    pub_key_commitment: PublicKeyCommitment,
+    message: Word,
+}
+
+impl SignatureKey {
+    /// Returns a new [`SignatureKey`] for the given public key commitment and message.
+    pub fn new(pub_key_commitment: PublicKeyCommitment, message: Word) -> Self {
+        Self { pub_key_commitment, message }
+    }
+
+    /// Returns the commitment to the signer's public key.
+    pub fn pub_key_commitment(&self) -> PublicKeyCommitment {
+        self.pub_key_commitment
+    }
+
+    /// Returns the signed message.
+    pub fn message(&self) -> Word {
+        self.message
+    }
+
+    /// Returns the advice map key under which the transaction kernel looks up the encoded
+    /// signature.
+    pub fn to_advice_map_key(&self) -> Word {
+        Hasher::merge(&[self.pub_key_commitment.into(), self.message])
     }
 }
 
@@ -365,7 +401,7 @@ impl Deserializable for PublicKey {
 /// let signature: Signature = secret_key.sign(message).into();
 /// let encoded_signature: Vec<Felt> = signature.to_encoded_signature(message);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Signature {
     Falcon512Poseidon2(falcon512_poseidon2::Signature) = FALCON512_POSEIDON2,
