@@ -26,7 +26,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionHeader,
     TransactionLog,
-    TransactionLogData,
+    TransactionLogDetails,
     TransactionLogs,
     TxAccountUpdate,
 };
@@ -136,9 +136,9 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
     .unwrap();
     let salt = dummy_word(913);
     let data = if account_type.is_public() {
-        TransactionLogData::Public(logs.clone())
+        TransactionLogDetails::Public(logs.clone())
     } else {
-        TransactionLogData::Private(logs.commitment_for_account(account, salt).unwrap())
+        TransactionLogDetails::Private(logs.commitment_for_account(account, salt).unwrap())
     };
     let update =
         TxAccountUpdate::new(account, dummy_word(1), dummy_word(2), patch_commitment, details)
@@ -153,7 +153,7 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
         dummy_execution_proof(),
     )
     .unwrap()
-    .with_log_data(data)
+    .with_log_details(data)
     .unwrap();
     let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();
     let message = proto::transaction::ProvenTransaction::decode(bytes.as_slice()).unwrap();

@@ -86,7 +86,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
             reference_block_commitment: Some(value.ref_block_commitment().into()),
             expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
-            log_data: value.log_data().to_bytes(),
+            log_details: value.log_details().to_bytes(),
         }
     }
 }

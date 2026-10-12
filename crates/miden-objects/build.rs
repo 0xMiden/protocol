@@ -208,9 +208,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".transaction.ProvenTransaction.log_data",
+        ".transaction.ProvenTransaction.log_details",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogData
+            miden_protocol::transaction::TransactionLogDetails
         >)])
         .to_string(),
     );
