@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17.2 (TBD)
+
+### Fixes
+
+- Fixed a panic in `Signature::to_encoded_signature` when the ECDSA public key cannot be recovered; the transaction now fails with an invalid public key commitment error ([#4022](https://github.com/0xMiden/protocol/pull/4022)).
+
 ## v0.17.1 (2026-10-06)
 
 ### Features
