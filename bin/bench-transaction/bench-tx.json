@@ -449,9 +449,9 @@
   },
   "consume PSWAP note (full fill, network account)": {
     "prologue": 4137,
-    "notes_processing": 7252,
+    "notes_processing": 7245,
     "note_execution": {
-      "0xde1849207c6ea72548cf8e5278de0bcc4393ba5a1cf884446b1a844907b7c826": 7210
+      "0x6eb57862cd6a17f3a287f3132c5caa08c7e2766380628f8d6aad666531429ba7": 7203
     },
     "tx_script_processing": 41,
     "epilogue": {
@@ -459,14 +459,14 @@
       "auth_procedure": 10718
     },
     "trace": {
-      "core_rows": 26658,
-      "chiplets_rows": 11915,
+      "core_rows": 26651,
+      "chiplets_rows": 11914,
       "poseidon2_permutation_rows": 31760,
-      "range_rows": 2043,
+      "range_rows": 2031,
       "chiplets_shape": {
         "hasher_rows": 8960,
         "bitwise_rows": 1408,
-        "memory_rows": 1545,
+        "memory_rows": 1544,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -474,9 +474,9 @@
   },
   "consume PSWAP note (partial fill, network account)": {
     "prologue": 4137,
-    "notes_processing": 10228,
+    "notes_processing": 10221,
     "note_execution": {
-      "0xde1849207c6ea72548cf8e5278de0bcc4393ba5a1cf884446b1a844907b7c826": 10186
+      "0x6eb57862cd6a17f3a287f3132c5caa08c7e2766380628f8d6aad666531429ba7": 10179
     },
     "tx_script_processing": 41,
     "epilogue": {
@@ -484,14 +484,14 @@
       "auth_procedure": 10922
     },
     "trace": {
-      "core_rows": 30966,
-      "chiplets_rows": 13810,
+      "core_rows": 30959,
+      "chiplets_rows": 13809,
       "poseidon2_permutation_rows": 33648,
-      "range_rows": 2185,
+      "range_rows": 2159,
       "chiplets_shape": {
         "hasher_rows": 10272,
         "bitwise_rows": 1800,
-        "memory_rows": 1736,
+        "memory_rows": 1735,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -501,7 +501,7 @@
     "prologue": 4128,
     "notes_processing": 7972,
     "note_execution": {
-      "0x2091b7db89deaf8e817cff1dc4b77faee2c091ca9cc6858b1dde3d8d80fc7c1f": 7930
+      "0xd542b6707e76d456e8a33f45ef37187d540444228f0ff721b5e9cc98746b6790": 7930
     },
     "tx_script_processing": 41,
     "epilogue": {
@@ -512,7 +512,7 @@
       "core_rows": 27369,
       "chiplets_rows": 12112,
       "poseidon2_permutation_rows": 32288,
-      "range_rows": 2051,
+      "range_rows": 2067,
       "chiplets_shape": {
         "hasher_rows": 9112,
         "bitwise_rows": 1432,
@@ -526,7 +526,7 @@
     "prologue": 4128,
     "notes_processing": 10941,
     "note_execution": {
-      "0x2091b7db89deaf8e817cff1dc4b77faee2c091ca9cc6858b1dde3d8d80fc7c1f": 10899
+      "0xd542b6707e76d456e8a33f45ef37187d540444228f0ff721b5e9cc98746b6790": 10899
     },
     "tx_script_processing": 41,
     "epilogue": {
@@ -537,7 +537,7 @@
       "core_rows": 31670,
       "chiplets_rows": 13997,
       "poseidon2_permutation_rows": 34112,
-      "range_rows": 2177,
+      "range_rows": 2175,
       "chiplets_shape": {
         "hasher_rows": 10416,
         "bitwise_rows": 1824,
