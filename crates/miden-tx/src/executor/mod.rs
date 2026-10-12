@@ -288,6 +288,8 @@ where
             .await
             .map_err(TransactionExecutorError::FetchTransactionInputsFailed)?;
 
+        // Filter out any asset IDs that the native partial vault already tracks.
+        asset_ids.retain(|asset_id| account.vault().get(*asset_id).is_err());
         let native_account_vault_root = account.vault().root();
 
         let mut tx_inputs = TransactionInputs::builder()
@@ -300,12 +302,8 @@ where
             .map_err(TransactionExecutorError::InvalidTransactionInputs)?
             .with_tx_args(tx_args);
 
-        // filter out any asset IDs for which we already have witnesses in the advice inputs
-        asset_ids.retain(|asset_id| {
-            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_id)
-        });
-
-        // if any of the witnesses are missing, fetch them from the data store and add to tx_inputs
+        // If any of the witnesses are missing, fetch them from the data store and add them to the
+        // native partial account.
         if !asset_ids.is_empty() {
             let asset_witnesses = self
                 .data_store
@@ -313,7 +311,9 @@ where
                 .await
                 .map_err(TransactionExecutorError::FetchAssetWitnessFailed)?;
 
-            tx_inputs = tx_inputs.with_asset_witnesses(asset_witnesses);
+            tx_inputs
+                .add_asset_witnesses(account_id, asset_witnesses)
+                .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
         }
 
         Ok(tx_inputs)

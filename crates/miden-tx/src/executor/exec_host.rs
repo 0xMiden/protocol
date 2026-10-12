@@ -8,7 +8,13 @@ use miden_processor::event::EventError;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
-use miden_protocol::account::{AccountId, AccountPatch, PartialAccount, StorageMapKey};
+use miden_protocol::account::{
+    AccountId,
+    AccountPatch,
+    PartialAccount,
+    StorageMapKey,
+    StorageMapWitness,
+};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
@@ -211,7 +217,7 @@ where
     /// Note that we request witnesses against the _initial_ map root of the accounts. See also
     /// [`Self::on_account_vault_asset_witness_requested`] for more on this topic.
     async fn on_account_storage_map_witness_requested(
-        &self,
+        &mut self,
         active_account_id: AccountId,
         map_root: Word,
         map_key: StorageMapKey,
@@ -226,6 +232,10 @@ where
                 map_key,
                 source: err,
             })?;
+
+        self.lazy_loaded_data
+            .storage_map_witnesses
+            .push((active_account_id, storage_map_witness.clone()));
 
         // Get the nodes in the proof and insert them into the merkle store.
         let merkle_store_ext =
@@ -273,7 +283,7 @@ where
     /// So, for foreign accounts, just like for the native account, we also always request
     /// witnesses for the initial vault root.
     async fn on_account_vault_asset_witness_requested(
-        &self,
+        &mut self,
         active_account_id: AccountId,
         vault_root: Word,
         asset_id: AssetId,
@@ -292,6 +302,10 @@ where
                 asset_id,
                 source: err,
             })?;
+
+        self.lazy_loaded_data
+            .asset_witnesses
+            .extend(asset_witnesses.iter().cloned().map(|witness| (active_account_id, witness)));
 
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
@@ -421,6 +435,16 @@ pub(crate) struct LazyLoadedData {
 
     /// The signatures the authenticator generated.
     signatures: BTreeMap<SignatureKey, Signature>,
+
+    /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
+    ///
+    /// They are fetched against the initial vault roots, so they fit the initial partial accounts.
+    asset_witnesses: Vec<(AccountId, AssetWitness)>,
+
+    /// The storage map witnesses, tagged with the ID of the account whose storage they belong to.
+    ///
+    /// They are fetched against the initial map roots, so they fit the initial partial accounts.
+    storage_map_witnesses: Vec<(AccountId, StorageMapWitness)>,
 }
 
 impl LazyLoadedData {
@@ -441,6 +465,13 @@ impl LazyLoadedData {
         }
         for (key, signature) in self.signatures {
             tx_inputs.add_signature(key, signature);
+        }
+        // Witnesses can belong to foreign accounts, so add witnesses after foreign accounts.
+        for (account_id, witness) in self.asset_witnesses {
+            tx_inputs.add_asset_witnesses(account_id, [witness])?;
+        }
+        for (account_id, witness) in self.storage_map_witnesses {
+            tx_inputs.add_storage_map_witnesses(account_id, [witness])?;
         }
 
         Ok(())

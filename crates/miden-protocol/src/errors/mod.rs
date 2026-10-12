@@ -1005,6 +1005,20 @@ pub enum TransactionInputError {
     DuplicateForeignAccount(AccountId),
     #[error("foreign account {0} is the native account of the transaction")]
     ForeignAccountIsNativeAccount(AccountId),
+    #[error("asset witness does not fit the vault of account {account_id}")]
+    InvalidAssetWitness {
+        account_id: AccountId,
+        #[source]
+        source: Box<PartialAssetVaultError>,
+    },
+    #[error("storage map witness does not fit the storage of account {account_id}")]
+    InvalidStorageMapWitness {
+        account_id: AccountId,
+        #[source]
+        source: Box<AccountError>,
+    },
+    #[error("transaction inputs contain no account {0} to add a witness to")]
+    WitnessForUnknownAccount(AccountId),
     #[error("partial blockchain has length {actual} which does not match block number {expected}")]
     InconsistentChainLength {
         expected: BlockNumber,

@@ -1,8 +1,8 @@
+use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use miden_crypto::merkle::NodeIndex;
 use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
 use super::PartialBlockchain;
@@ -152,19 +152,6 @@ impl TransactionInputs {
         Ok(())
     }
 
-    /// Replaces the transaction inputs and assigns the given asset witnesses.
-    pub fn with_asset_witnesses(mut self, witnesses: Vec<AssetWitness>) -> Self {
-        for witness in witnesses {
-            let leaf = witness.proof().leaf();
-            let witness_inputs = AdviceInputs::default()
-                .with_merkle_store(witness.authenticated_nodes().collect())
-                .with_map([(leaf.hash(), leaf.to_elements().collect())]);
-            self.advice_inputs.extend(witness_inputs);
-        }
-
-        self
-    }
-
     /// Replaces the transaction inputs and assigns the given transaction arguments.
     pub fn with_tx_args(mut self, tx_args: TransactionArgs) -> Self {
         self.set_tx_args_inner(tx_args);
@@ -221,6 +208,80 @@ impl TransactionInputs {
         }
 
         self.foreign_accounts.insert(account_id, foreign_account);
+
+        Ok(())
+    }
+
+    /// Adds asset witnesses to the partial account with the given ID, so that re-executing the
+    /// transaction does not need to fetch them again.
+    ///
+    /// The account can be the native account or one of the foreign accounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The inputs contain no account with the given ID.
+    /// - Any of the witnesses does not fit the account's vault.
+    pub fn add_asset_witnesses(
+        &mut self,
+        account_id: AccountId,
+        witnesses: impl IntoIterator<Item = AssetWitness>,
+    ) -> Result<(), TransactionInputError> {
+        let to_error = |source| TransactionInputError::InvalidAssetWitness {
+            account_id,
+            source: Box::new(source),
+        };
+
+        if account_id == self.account.id() {
+            for witness in witnesses {
+                self.account.add_asset_witness(witness).map_err(to_error)?;
+            }
+        } else {
+            let foreign_account = self
+                .foreign_accounts
+                .get_mut(&account_id)
+                .ok_or(TransactionInputError::WitnessForUnknownAccount(account_id))?;
+            for witness in witnesses {
+                foreign_account.add_asset_witness(witness).map_err(to_error)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Adds storage map witnesses to the partial account with the given ID, so that re-executing
+    /// the transaction does not need to fetch them again.
+    ///
+    /// The account can be the native account or one of the foreign accounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The inputs contain no account with the given ID.
+    /// - Any of the witnesses does not fit a storage map of the account.
+    pub fn add_storage_map_witnesses(
+        &mut self,
+        account_id: AccountId,
+        witnesses: impl IntoIterator<Item = StorageMapWitness>,
+    ) -> Result<(), TransactionInputError> {
+        let to_error = |source| TransactionInputError::InvalidStorageMapWitness {
+            account_id,
+            source: Box::new(source),
+        };
+
+        if account_id == self.account.id() {
+            for witness in witnesses {
+                self.account.add_storage_map_witness(witness).map_err(to_error)?;
+            }
+        } else {
+            let foreign_account = self
+                .foreign_accounts
+                .get_mut(&account_id)
+                .ok_or(TransactionInputError::WitnessForUnknownAccount(account_id))?;
+            for witness in witnesses {
+                foreign_account.add_storage_map_witness(witness).map_err(to_error)?;
+            }
+        }
 
         Ok(())
     }
@@ -386,25 +447,6 @@ impl TransactionInputs {
             asset_witnesses.push(asset_witness);
         }
         Ok(asset_witnesses)
-    }
-
-    /// Returns true if the witness for the specified asset ID is present in these inputs.
-    ///
-    /// Note that this does not verify the witness' validity (i.e., that the witness is for a valid
-    /// asset).
-    pub fn has_vault_asset_witness(&self, vault_root: Word, asset_id: &AssetId) -> bool {
-        let smt_index: NodeIndex = asset_id.hash().to_leaf_index().into();
-
-        // make sure the path is in the Merkle store
-        if !self.advice_inputs.store().has_path(vault_root, smt_index) {
-            return false;
-        }
-
-        // make sure the node pre-image is in the Merkle store
-        match self.advice_inputs.store().get_node(vault_root, smt_index) {
-            Ok(node) => self.advice_inputs.map().contains_key(&node),
-            Err(_) => false,
-        }
     }
 
     /// Reads the asset stored under `asset_id` in the vault with the specified root.
