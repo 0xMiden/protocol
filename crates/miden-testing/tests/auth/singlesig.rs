@@ -1,7 +1,15 @@
+use std::sync::Arc;
+
 use assert_matches::assert_matches;
-use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
+use miden_processor::{ExecutionError, FutureMaybeSend};
+use miden_protocol::account::auth::{
+    AuthScheme,
+    AuthSecretKey,
+    PublicKey,
+    PublicKeyCommitment,
+    Signature,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -11,6 +19,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
@@ -33,8 +42,8 @@ use miden_standards::note::BurnNote;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
-use miden_tx::TransactionExecutorError;
-use miden_tx::auth::BasicAuthenticator;
+use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
+use miden_tx::{AuthenticationError, TransactionExecutor, TransactionExecutorError};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
@@ -197,6 +206,66 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         },
         _ => unreachable!("only the two rstest cases are parameterized"),
     }
+
+    Ok(())
+}
+
+/// Authenticator that returns an ECDSA signature from which no public key can be recovered.
+struct UnrecoverableEcdsaAuthenticator;
+
+impl TransactionAuthenticator for UnrecoverableEcdsaAuthenticator {
+    fn get_signature(
+        &self,
+        _pub_key_commitment: PublicKeyCommitment,
+        _signing_inputs: &SigningInputs,
+    ) -> impl FutureMaybeSend<Result<Signature, AuthenticationError>> {
+        async {
+            // Zero scalars are not valid, so public key recovery fails.
+            let signature = ecdsa_k256_keccak::Signature::from_sec1_bytes_and_recovery_id(
+                [0; 64], 0,
+            )
+            .map_err(|err| AuthenticationError::other_with_source("invalid signature", err))?;
+            Ok(Signature::EcdsaK256Keccak(signature))
+        }
+    }
+
+    fn get_public_key(
+        &self,
+        _pub_key_commitment: PublicKeyCommitment,
+    ) -> impl FutureMaybeSend<Option<Arc<PublicKey>>> {
+        async { None }
+    }
+}
+
+/// An ECDSA signature from which no public key can be recovered must fail the transaction
+/// instead of panicking in the host.
+#[tokio::test]
+async fn test_singlesig_auth_rejects_unrecoverable_ecdsa_signature() -> anyhow::Result<()> {
+    let (account, mock_chain, note, _) =
+        setup_singlesig_with_mock_component(AuthScheme::EcdsaK256Keccak)?;
+
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?;
+
+    let result = TransactionExecutor::new(&mock_tx)
+        .with_source_manager(mock_tx.source_manager())
+        .with_authenticator(&UnrecoverableEcdsaAuthenticator)
+        .execute_transaction(
+            account.id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            mock_tx.input_notes().clone(),
+            mock_tx.tx_args().clone(),
+        )
+        .await;
+
+    // The host encodes the unrecoverable signature as zeros, which do not match the public key
+    // commitment of the account.
+    assert_transaction_executor_error!(
+        result,
+        MasmError::from_static_str("invalid public key commitment")
+    );
 
     Ok(())
 }

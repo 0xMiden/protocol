@@ -380,6 +380,9 @@ impl Signature {
     /// for it. The largest encoding is the one of [`Signature::Falcon512Poseidon2`].
     pub const MAX_NUM_ENCODED_SIGNATURE_FELTS: usize = 2058;
 
+    /// The number of field elements in the encoding of a [`Signature::EcdsaK256Keccak`].
+    const NUM_ENCODED_ECDSA_K256_KECCAK_FELTS: usize = 32;
+
     /// Returns the authentication scheme of this signature.
     pub fn auth_scheme(&self) -> AuthScheme {
         match self {
@@ -396,17 +399,24 @@ impl Signature {
     ///
     /// The order of elements in the returned vector is reversed because it is expected that the
     /// data will be pushed into the advice stack
+    ///
+    /// If the public key cannot be recovered from an [`Signature::EcdsaK256Keccak`] signature and
+    /// `msg`, the returned encoding is all zeros. Verification of it fails in the VM with an
+    /// invalid public key commitment error.
     pub fn to_encoded_signature(&self, msg: Word) -> Vec<Felt> {
-        // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
-        // refactoring
+        // TODO: return an error instead of a zero encoding on recovery failure; this is a
+        // breaking change and will be part of a bigger refactoring.
         match self {
             Signature::Falcon512Poseidon2(sig) => {
                 miden_core_lib::dsa::falcon512_poseidon2::encode_signature(sig.public_key(), sig)
             },
             Signature::EcdsaK256Keccak(sig) => {
-                let pk = ecdsa_k256_keccak::PublicKey::recover_from(msg, sig)
-                    .expect("inferring public key from signature and message should succeed");
-                miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature(&pk, sig)
+                match ecdsa_k256_keccak::PublicKey::recover_from(msg, sig) {
+                    Ok(pub_key) => {
+                        miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature(&pub_key, sig)
+                    },
+                    Err(_) => vec![Felt::ZERO; Self::NUM_ENCODED_ECDSA_K256_KECCAK_FELTS],
+                }
             },
         }
     }
@@ -459,7 +469,10 @@ mod tests {
     /// untrusted encoded signatures they accept.
     #[rstest]
     #[case::falcon512_poseidon2(AuthScheme::Falcon512Poseidon2, 2058)]
-    #[case::ecdsa_k256_keccak(AuthScheme::EcdsaK256Keccak, 32)]
+    #[case::ecdsa_k256_keccak(
+        AuthScheme::EcdsaK256Keccak,
+        Signature::NUM_ENCODED_ECDSA_K256_KECCAK_FELTS
+    )]
     fn encoded_signature_does_not_exceed_max_num_felts(
         #[case] auth_scheme: AuthScheme,
         #[case] expected_num_felts: usize,
