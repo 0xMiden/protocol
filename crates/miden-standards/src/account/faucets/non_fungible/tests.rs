@@ -1,16 +1,18 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
 use super::{
     NonFungibleFaucet,
+    create_guarded_user_non_fungible_faucet,
+    create_multisig_user_non_fungible_faucet,
     create_network_non_fungible_faucet,
-    create_user_non_fungible_faucet,
+    create_singlesig_user_non_fungible_faucet,
 };
 use crate::account::access::AccessControl;
-use crate::account::auth::{Approver, AuthSingleSig};
+use crate::account::auth::{Approver, AuthSingleSig, GuardianConfig};
 use crate::account::faucets::test_utils::{
     allow_all_policy_manager,
     mint_burn_only_policy_manager,
@@ -19,6 +21,8 @@ use crate::account::faucets::test_utils::{
 use crate::account::faucets::{NonFungibleFaucetError, TokenName};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
+use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 
 /// Building a faucet exposes the configured fields.
 #[test]
@@ -42,6 +46,61 @@ fn sample_faucet() -> NonFungibleFaucet {
         .build()
 }
 
+/// Builds one faucet with each user-account factory: single-sig, multisig and guarded.
+fn user_faucets(token_policy_manager: TokenPolicyManager) -> [Account; 3] {
+    let approver = Approver::new(
+        PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
+        AuthScheme::Falcon512Poseidon2,
+    );
+    let approvers: alloc::vec::Vec<_> = (1..=3_u32)
+        .map(|i| {
+            (
+                PublicKeyCommitment::from(Word::new([Felt::from(i); 4])),
+                AuthScheme::Falcon512Poseidon2,
+            )
+        })
+        .collect();
+
+    let singlesig = create_singlesig_user_non_fungible_faucet(
+        [31u8; 32],
+        sample_faucet(),
+        AuthSingleSig::new(approver),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+
+    let multisig = create_multisig_user_non_fungible_faucet(
+        [33u8; 32],
+        sample_faucet(),
+        user_faucet_multisig(approvers.clone(), 2).unwrap(),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+
+    let guarded = create_guarded_user_non_fungible_faucet(
+        [34u8; 32],
+        sample_faucet(),
+        user_faucet_guarded(approvers, 2, GuardianConfig::new(approver)).unwrap(),
+        token_policy_manager,
+        AccountType::Private,
+    )
+    .unwrap();
+
+    [singlesig, multisig, guarded]
+}
+
+/// Every user non-fungible faucet factory installs the faucet component and `BasicWallet`, so the
+/// faucet can receive the native fee asset it pays transaction fees with.
+#[test]
+fn user_non_fungible_faucet_factories_install_basic_wallet() {
+    for faucet in user_faucets(allow_all_policy_manager()) {
+        NonFungibleFaucet::try_from(&faucet).unwrap();
+        assert!(faucet.code().has_procedure(BasicWallet::receive_asset_root().into()));
+    }
+}
+
 /// Every non-fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID
 /// when the policy manager registers a transfer policy, and `Disabled` when it does not.
 #[rstest::rstest]
@@ -53,20 +112,9 @@ fn non_fungible_faucet_factories_encode_transfer_policy_callback_flag(
 ) {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 
-    let approver = Approver::new(
-        PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
-        AuthScheme::Falcon512Poseidon2,
-    );
-
-    let user = create_user_non_fungible_faucet(
-        [31u8; 32],
-        sample_faucet(),
-        AuthSingleSig::new(approver),
-        token_policy_manager.clone(),
-        AccountType::Private,
-    )
-    .unwrap();
-    assert_eq!(user.id().asset_callback_flag(), expected_flag);
+    for user in user_faucets(token_policy_manager.clone()) {
+        assert_eq!(user.id().asset_callback_flag(), expected_flag);
+    }
 
     let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
     let network = create_network_non_fungible_faucet(
@@ -105,7 +153,7 @@ fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
         AuthScheme::Falcon512Poseidon2,
     ));
 
-    let err = create_user_non_fungible_faucet(
+    let err = create_singlesig_user_non_fungible_faucet(
         [21u8; 32],
         sample_faucet(),
         auth_component,
