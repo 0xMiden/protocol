@@ -63,7 +63,7 @@ impl TransactionVerifier {
             transaction.account_update().account_patch_commitment(),
             transaction.output_notes().commitment(),
             transaction.expiration_block_num(),
-            transaction.log_data().commitment(),
+            transaction.log_details().to_commitment(),
         );
 
         // verify transaction proof

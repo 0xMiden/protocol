@@ -46,8 +46,6 @@ impl TransactionLogDetails {
     ///
     /// `native_account` is the account against which the transaction executes. A public foreign
     /// account emitting transaction logs during FPI does not make a private transaction public.
-    // Used by ProvenTransaction in the kernel integration PR.
-    #[allow(dead_code)]
     pub(crate) fn validate_visibility(
         &self,
         native_account: AccountId,

@@ -28,23 +28,14 @@ use miden_protocol::transaction::{
     TransactionEffects,
     TransactionEventId,
     TransactionLog,
-    TransactionLogData,
+    TransactionLogDetails,
     TransactionLogs,
     TransactionSummary,
     TransactionSummaryUserParams,
     TransactionVerifier,
 };
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_protocol::{
-    Felt,
-    Hasher,
-    MAX_LOG_PAYLOAD_WORDS,
-    MAX_LOG_PAYLOAD_WORDS_PER_TX,
-    MAX_LOGS_PER_TX,
-    MIN_PROOF_SECURITY_LEVEL,
-    WORD_SIZE,
-    Word,
-};
+use miden_protocol::{Felt, Hasher, MIN_PROOF_SECURITY_LEVEL, WORD_SIZE, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
@@ -71,12 +62,12 @@ use crate::{
 const EMIT_LOG_PROC: &str = "test::transaction_logs::emit_log";
 
 #[rstest]
-#[case::max_count(MAX_LOGS_PER_TX, 0, None)]
-#[case::count(MAX_LOGS_PER_TX + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
-#[case::max_payload(1, MAX_LOG_PAYLOAD_WORDS, None)]
-#[case::max_total_payload(MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS, None)]
-#[case::individual_payload(1, MAX_LOG_PAYLOAD_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_PAYLOAD_TOO_LARGE))]
-#[case::total_payload(MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS + 1, MAX_LOG_PAYLOAD_WORDS, Some(tx_kernel::ERR_TX_LOG_PAYLOADS_TOO_LARGE))]
+#[case::max_count(TransactionLogs::MAX_COUNT, 0, None)]
+#[case::count(TransactionLogs::MAX_COUNT + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
+#[case::max_payload(1, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::max_total_payload(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::individual_payload(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_PAYLOAD_TOO_LARGE))]
+#[case::total_payload(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS + 1, TransactionLog::MAX_NUM_WORDS, Some(tx_kernel::ERR_TX_LOG_PAYLOADS_TOO_LARGE))]
 #[tokio::test]
 async fn kernel_enforces_log_limits(
     #[case] count: usize,
@@ -218,7 +209,7 @@ async fn unauthenticated_note_logs(
     assert_eq!(executed.logs().iter().collect::<Vec<_>>(), vec![&expected]);
     let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(outputs.log_data(), TransactionLogData::Public(_)),
+        matches!(outputs.log_details(), TransactionLogDetails::Public(_)),
         account_type.is_public()
     );
     Ok(())
@@ -234,19 +225,20 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
     let account = Account::mock(account_id, [NoopAuthComponent]);
     let topic = LogTopic::new([17u32.into(), 29u32.into()]);
     let salt = Word::from([73u32, 37, 19, 91]);
-    let mut logs = TransactionLogs::default();
+    let mut entries = Vec::new();
     let mut builder = TestTransactionBuilder::new(account.clone());
     let mut code = String::from("exec.tx_log::get_commitment padw assert_eqw\n");
-    for num_words in [0usize, 1, 2, 3, MAX_LOG_PAYLOAD_WORDS] {
+    for num_words in [0usize, 1, 2, 3, TransactionLog::MAX_NUM_WORDS] {
         let payload = (0..num_words).map(|i| Word::from([i as u32 + 1; 4])).collect();
         let entry = TransactionLog::new(account.id(), topic, payload)?;
-        let payload_commitment = entry.payload_commitment();
+        let payload_commitment = entry.content_commitment();
         builder = builder.add_advice_map_entry(
             payload_commitment,
-            Word::words_as_elements(entry.payload()).to_vec(),
+            Word::words_as_elements(entry.content()).to_vec(),
         );
-        logs.try_push(entry)?;
-        let expected = logs.commitment_for_account(account.id(), salt)?;
+        entries.push(entry);
+        let expected =
+            TransactionLogs::new(entries.clone())?.commitment_for_account(account.id(), salt)?;
         code.push_str(&format!(
             r"
             push.{payload_commitment} push.29.17 exec.tx_log::add_log
@@ -308,7 +300,7 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
     assert_eq!(executed.logs().num_logs(), 2);
     let log = &executed.logs().iter().next().unwrap();
     assert_eq!(log.emitter(), account.id());
-    assert_eq!(log.payload(), payload);
+    assert_eq!(log.content(), payload);
     let local_copy = ExecutedTransaction::read_from_bytes(&executed.to_bytes())?;
     assert_eq!(local_copy.logs(), executed.logs());
 
@@ -319,29 +311,32 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
     let encoded = proven.to_bytes();
     assert_eq!(ProvenTransaction::read_from_bytes(&encoded)?, proven);
     assert_eq!(
-        matches!(proven.log_data(), TransactionLogData::Public(_)),
+        matches!(proven.log_details(), TransactionLogDetails::Public(_)),
         account_type.is_public()
     );
-    let tampered_data = match proven.log_data() {
-        TransactionLogData::Public(logs) => tampered_public_log_data(logs)?,
-        TransactionLogData::Private(_) => {
+    let tampered_data = match proven.log_details() {
+        TransactionLogDetails::Public(logs) => tampered_public_log_details(logs)?,
+        TransactionLogDetails::Private(_) => {
             for private in [salt.to_bytes(), executed.logs().to_bytes()] {
                 assert!(!encoded.windows(private.len()).any(|window| window == private));
             }
             let changed_salt = Word::from([1u32; WORD_SIZE]);
             vec![
-                ("removed private transaction logs", TransactionLogData::Private(Word::empty())),
+                (
+                    "removed private transaction logs",
+                    TransactionLogDetails::Private(Word::empty()),
+                ),
                 (
                     "changed private salt",
-                    TransactionLogData::Private(
+                    TransactionLogDetails::Private(
                         executed.logs().commitment_for_account(account.id(), changed_salt)?,
                     ),
                 ),
             ]
         },
     };
-    for (case, log_data) in tampered_data {
-        let tampered = proven.clone().with_log_data(log_data)?;
+    for (case, log_details) in tampered_data {
+        let tampered = proven.clone().with_log_details(log_details)?;
         assert!(
             matches!(
                 verifier.verify(&tampered),
@@ -439,7 +434,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     assert_eq!(entries[1].emitter(), foreign.id());
     let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(outputs.log_data(), TransactionLogData::Public(_)),
+        matches!(outputs.log_details(), TransactionLogDetails::Public(_)),
         native_type.is_public()
     );
     Ok(())
@@ -715,9 +710,9 @@ fn log_emitter_component(payload_commitment: Word) -> anyhow::Result<AccountComp
 }
 
 /// Mutations of the two public transaction logs emitted by the proof test.
-fn tampered_public_log_data(
+fn tampered_public_log_details(
     logs: &TransactionLogs,
-) -> anyhow::Result<Vec<(&'static str, TransactionLogData)>> {
+) -> anyhow::Result<Vec<(&'static str, TransactionLogDetails)>> {
     let entries = logs.clone().into_vec();
     let mut added = entries.clone();
     added.push(entries[0].clone());
@@ -730,13 +725,13 @@ fn tampered_public_log_data(
     changed_emitter[0] = TransactionLog::new(
         ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
         entries[0].topic(),
-        entries[0].payload().to_vec(),
+        entries[0].content().to_vec(),
     )?;
     let mut changed_topic = entries.clone();
     changed_topic[0] = TransactionLog::new(
         entries[0].emitter(),
         LogTopic::from_name("test::changed"),
-        entries[0].payload().to_vec(),
+        entries[0].content().to_vec(),
     )?;
     [
         ("removed all", vec![]),
@@ -748,6 +743,8 @@ fn tampered_public_log_data(
         ("changed topic", changed_topic),
     ]
     .into_iter()
-    .map(|(case, entries)| Ok((case, TransactionLogData::Public(TransactionLogs::new(entries)?))))
+    .map(|(case, entries)| {
+        Ok((case, TransactionLogDetails::Public(TransactionLogs::new(entries)?)))
+    })
     .collect()
 }
