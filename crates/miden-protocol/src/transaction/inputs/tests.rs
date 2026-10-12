@@ -282,7 +282,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
 }
 
 #[test]
-fn try_from_parts_preserves_all_transaction_input_components() {
+fn builder_preserves_all_transaction_input_components() {
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let code = AccountCode::mock();
     let account = PartialAccount::new(
@@ -312,18 +312,18 @@ fn try_from_parts_preserves_all_transaction_input_components() {
     let slot_name = StorageSlotName::new("test::slot::value".to_string()).unwrap();
     let foreign_account_slot_names = BTreeMap::from([(slot_name.id(), slot_name)]);
 
-    let tx_inputs = TransactionInputs::try_from_parts(
-        account.clone(),
-        block_header.clone(),
-        protocol_config.clone(),
-        blockchain.clone(),
-        input_notes.clone(),
-        tx_args.clone(),
-        advice_inputs.clone(),
-        foreign_account_code.clone(),
-        foreign_account_slot_names.clone(),
-    )
-    .unwrap();
+    let tx_inputs = TransactionInputs::builder()
+        .account(account.clone())
+        .block_header(block_header.clone())
+        .protocol_config(protocol_config.clone())
+        .blockchain(blockchain.clone())
+        .input_notes(input_notes.clone())
+        .tx_args(tx_args.clone())
+        .advice_inputs(advice_inputs.clone())
+        .foreign_account_code(foreign_account_code.clone())
+        .foreign_account_slot_names(foreign_account_slot_names.clone())
+        .build()
+        .unwrap();
 
     assert_eq!(tx_inputs.account(), &account);
     assert_eq!(tx_inputs.block_header(), &block_header);
@@ -337,7 +337,7 @@ fn try_from_parts_preserves_all_transaction_input_components() {
 }
 
 #[test]
-fn try_from_parts_rejects_an_inconsistent_protocol_config() {
+fn builder_rejects_an_inconsistent_protocol_config() {
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let account = PartialAccount::new(
         account_id,
@@ -355,17 +355,13 @@ fn try_from_parts_rejects_an_inconsistent_protocol_config() {
     let protocol_config =
         ProtocolConfig::current(crate::asset::AssetId::new_fungible(different_fee_faucet)).unwrap();
 
-    let result = TransactionInputs::try_from_parts(
-        account,
-        block_header,
-        protocol_config,
-        blockchain,
-        InputNotes::new(vec![]).unwrap(),
-        TransactionArgs::default(),
-        AdviceInputs::default(),
-        Vec::new(),
-        BTreeMap::new(),
-    );
+    let result = TransactionInputs::builder()
+        .account(account)
+        .block_header(block_header)
+        .protocol_config(protocol_config)
+        .blockchain(blockchain)
+        .input_notes(InputNotes::new(vec![]).unwrap())
+        .build();
 
     assert_matches!(result, Err(TransactionInputError::InconsistentProtocolConfig { .. }));
 }

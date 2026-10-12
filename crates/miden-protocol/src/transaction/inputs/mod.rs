@@ -58,11 +58,15 @@ pub struct TransactionInputs {
     foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
 }
 
+#[bon::bon]
 impl TransactionInputs {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns new [`TransactionInputs`] instantiated with the specified parameters.
+    /// Returns a builder for [`TransactionInputs`].
+    ///
+    /// Required setters: `account`, `block_header`, `protocol_config`, `blockchain` and
+    /// `input_notes`. The other fields default to empty values.
     ///
     /// # Errors
     ///
@@ -70,42 +74,17 @@ impl TransactionInputs {
     /// - The protocol config does not match the one committed to by the block header.
     /// - The partial blockchain does not track the block headers required to prove inclusion of any
     ///   authenticated input note.
+    #[builder]
     pub fn new(
         account: PartialAccount,
         block_header: BlockHeader,
         protocol_config: ProtocolConfig,
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
-    ) -> Result<Self, TransactionInputError> {
-        Self::try_from_parts(
-            account,
-            block_header,
-            protocol_config,
-            blockchain,
-            input_notes,
-            TransactionArgs::default(),
-            AdviceInputs::default(),
-            Vec::new(),
-            BTreeMap::new(),
-        )
-    }
-
-    /// Creates [`TransactionInputs`] from all transaction-input components.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error under the same conditions as [`Self::new`].
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_from_parts(
-        account: PartialAccount,
-        block_header: BlockHeader,
-        protocol_config: ProtocolConfig,
-        blockchain: PartialBlockchain,
-        input_notes: InputNotes<InputNote>,
-        tx_args: TransactionArgs,
-        advice_inputs: AdviceInputs,
-        foreign_account_code: Vec<AccountCode>,
-        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+        #[builder(default)] tx_args: TransactionArgs,
+        #[builder(default)] advice_inputs: AdviceInputs,
+        #[builder(default)] foreign_account_code: Vec<AccountCode>,
+        #[builder(default)] foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
 

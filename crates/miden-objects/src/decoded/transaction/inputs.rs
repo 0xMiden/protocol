@@ -57,9 +57,17 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
                 return Err(TransactionInputsError::DuplicateSlot(id).into());
             }
         }
-        Ok(Self::Output::try_from_parts(
-            account, header, config, chain, notes, args, advice, code, names,
-        )?)
+        Ok(Self::Output::builder()
+            .account(account)
+            .block_header(header)
+            .protocol_config(config)
+            .blockchain(chain)
+            .input_notes(notes)
+            .tx_args(args)
+            .advice_inputs(advice)
+            .foreign_account_code(code)
+            .foreign_account_slot_names(names)
+            .build()?)
     }
 }
 
