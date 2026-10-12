@@ -2,7 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
-use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
@@ -420,19 +419,12 @@ where
         })?;
 
         match result {
-            Ok(execution_output) => {
+            Ok(_execution_output) => {
                 let cycle_counts = tx_progress
                     .note_execution()
                     .iter()
                     .map(|(_, interval)| interval.len())
                     .collect();
-
-                // Set the advice inputs from the successful execution as advice inputs for
-                // reexecution. This avoids calls to the data store (to load data lazily) that have
-                // already been done as part of this execution.
-                let (_, advice_map, merkle_store) = execution_output.advice.into_parts();
-                let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
-                tx_inputs.set_advice_inputs(advice_inputs);
 
                 Ok(cycle_counts)
             },

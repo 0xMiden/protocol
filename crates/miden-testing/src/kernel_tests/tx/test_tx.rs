@@ -52,7 +52,6 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
@@ -1351,47 +1350,6 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     );
     let mock_tx = crate::TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
     _ = mock_tx.execute().await?;
-
-    Ok(())
-}
-
-/// Test that reexecuting a transaction with no authenticator and the advice witness from a first
-/// successful execution is possible. This ensures that the signature generated in the first
-/// execution is present during re-execution.
-#[tokio::test]
-async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    // Use basic auth so the tx requires a signature for successful execution.
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let note = builder.add_p2id_note(
-        ACCOUNT_ID_SENDER.try_into()?,
-        account.id(),
-        &[FungibleAsset::mock(3)],
-        NoteType::Public,
-    )?;
-    let chain = builder.build()?;
-
-    let tx = chain
-        .build_transaction(account.id())
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
-
-    // The executed transaction inputs carry the signature generated during the first execution,
-    // so feeding it back in lets the re-execution authenticate without an authenticator.
-    let mut reexecution = chain
-        .build_transaction(account.id())
-        .authenticated_input_note(note.id())
-        .authenticator(None)
-        .extend_advice_inputs(tx.advice_witness().clone());
-    for (key, signature) in tx.tx_inputs().signatures() {
-        reexecution =
-            reexecution.add_signature(key.pub_key_commitment(), key.message(), signature.clone());
-    }
-    let _reexecuted_tx = reexecution.build()?.execute().await?;
 
     Ok(())
 }

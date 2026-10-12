@@ -25,7 +25,7 @@ impl TransactionAdviceInputs {
     /// The created advice inputs will be populated with the data required for executing a
     /// transaction with the specified transaction inputs.
     pub fn new(tx_inputs: &TransactionInputs) -> Self {
-        let mut inputs = TransactionAdviceInputs(tx_inputs.advice_inputs().clone());
+        let mut inputs = TransactionAdviceInputs::default();
 
         inputs.build_stack(tx_inputs);
         inputs.add_protocol_config(tx_inputs.protocol_config());
