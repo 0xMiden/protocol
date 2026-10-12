@@ -18,7 +18,7 @@ use miden_protocol::asset::{AssetId, PartialVault};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNoteTree};
 use miden_protocol::crypto::merkle::InnerNodeInfo;
 use miden_protocol::crypto::merkle::store::MerkleStore;
-use miden_protocol::note::{Note, NoteInclusionProof};
+use miden_protocol::note::{Note, NoteInclusionProof, NoteScript};
 use miden_protocol::protocol_config::{
     KernelConfig,
     ProofSecurityPolicy,
@@ -192,6 +192,7 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .advice_inputs(advice_inputs)
         .foreign_account_code(foreign_account_code)
         .foreign_account_slot_names(foreign_account_slot_names)
+        .note_scripts(vec![NoteScript::mock()])
         .build()
         .unwrap()
 }

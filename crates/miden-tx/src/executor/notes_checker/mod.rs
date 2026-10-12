@@ -408,10 +408,16 @@ where
             .await
             .map_err(map_execution_error);
 
+        let (tx_progress, lazy_loaded_data) = host.into_notes_checker_parts();
+
+        // Set the lazy loaded from the execution as input for reexecution. This avoids lazy-loading
+        // data that was already loaded from the data store in the next potential run.
+        // This data is valid regardless of whether execution was successful or not.
+        lazy_loaded_data.add_to(tx_inputs);
+
         match result {
             Ok(execution_output) => {
-                let cycle_counts = host
-                    .tx_progress()
+                let cycle_counts = tx_progress
                     .note_execution()
                     .iter()
                     .map(|(_, interval)| interval.len())
@@ -423,10 +429,11 @@ where
                 let (_, advice_map, merkle_store) = execution_output.advice.into_parts();
                 let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
                 tx_inputs.set_advice_inputs(advice_inputs);
+
                 Ok(cycle_counts)
             },
             Err(error) => {
-                let notes = host.tx_progress().note_execution();
+                let notes = tx_progress.note_execution();
 
                 // Empty notes vector means that we didn't process the notes, so an error
                 // occurred.

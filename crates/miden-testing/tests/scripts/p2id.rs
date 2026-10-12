@@ -427,6 +427,13 @@ async fn test_p2id_note_constructors(
         assert_eq!(output_note, &RawOutputNote::Full(expected_note.clone()));
     }
 
+    // The host resolved the script lazily, so the inputs must contain it for re-execution.
+    let p2id_script = P2idNote::script();
+    assert_eq!(
+        executed_transaction.tx_inputs().note_scripts().get(&p2id_script.root()),
+        Some(&p2id_script)
+    );
+
     // Only the target account can consume the created note.
     let rejected = mock_chain
         .build_transaction(sender_account.id())

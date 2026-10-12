@@ -57,6 +57,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
                 return Err(TransactionInputsError::DuplicateSlot(id).into());
             }
         }
+        let note_scripts = self.note_scripts.verify()?;
         Ok(Self::Output::builder()
             .account(account)
             .block_header(header)
@@ -67,6 +68,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .advice_inputs(advice)
             .foreign_account_code(code)
             .foreign_account_slot_names(names)
+            .note_scripts(note_scripts)
             .build()?)
     }
 }

@@ -67,6 +67,14 @@ impl TransactionAdviceInputs {
             }
         }
 
+        // NOTE_SCRIPT_ROOT |-> [NOTE_SCRIPT_ELEMENTS]
+        inputs.extend_map(
+            tx_inputs
+                .note_scripts()
+                .iter()
+                .map(|(root, script)| (Word::from(*root), script.to_elements())),
+        );
+
         // The host reads the new code from this entry when the kernel initializes the upgrade.
         if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {
             let (key, elements) = code_upgrade.to_advice_map_entry();

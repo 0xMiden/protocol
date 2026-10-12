@@ -46,4 +46,5 @@ message TransactionInputsV1 {
   primitives.AdviceInputs advice_inputs = 7;
   repeated account.AccountCode foreign_account_code = 8;
   repeated ForeignAccountSlotName foreign_account_slot_names = 9;
+  repeated note.NoteScript note_scripts = 10;
 }
