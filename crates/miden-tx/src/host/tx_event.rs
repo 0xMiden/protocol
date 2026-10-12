@@ -37,10 +37,11 @@ use miden_protocol::transaction::{
     LogTopic,
     TransactionEventId,
     TransactionLog,
+    TransactionLogs,
     TransactionSummary,
 };
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, MAX_LOG_PAYLOAD_WORDS, WORD_SIZE, Word};
+use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -716,7 +717,7 @@ fn extract_transaction_log(
         .get_mapped_values(&payload_commitment)
         .ok_or_else(|| TransactionKernelError::other("missing transaction log payload"))?;
     let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
-    if !remainder.is_empty() || words.len() > MAX_LOG_PAYLOAD_WORDS {
+    if !remainder.is_empty() || words.len() > TransactionLog::MAX_NUM_WORDS {
         return Err(TransactionKernelError::other("invalid transaction log payload length"));
     }
     let payload = words.iter().copied().map(Word::new).collect();
@@ -879,7 +880,8 @@ fn extract_tx_summary<'store, STORE>(
             user_params,
         )?
         .with_logs(
-            base_host.logs().clone(),
+            TransactionLogs::new(base_host.logs().to_vec())
+                .expect("host validates transaction log limits before appending"),
             process
                 .get_mem_word(ContextId::root(), LOG_SALT_PTR)
                 .map_err(|err| {

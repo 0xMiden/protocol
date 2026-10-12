@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_core::deferred::PrecompileWitness;
 
-use super::{InputNote, ToInputNoteCommitments, TransactionLogData};
+use super::{InputNote, ToInputNoteCommitments, TransactionLogDetails};
 use crate::Word;
 use crate::account::{AccountUpdateDetails, validate_new_public_account};
 use crate::block::BlockNumber;
@@ -64,7 +64,7 @@ pub struct ProvenTransaction {
 
     /// A STARK proof that attests to the correct execution of the transaction.
     proof: ExecutionProof,
-    log_data: TransactionLogData,
+    log_details: TransactionLogDetails,
 }
 
 impl ProvenTransaction {
@@ -117,14 +117,14 @@ impl ProvenTransaction {
     }
 
     /// Sets submitted transaction log data and validates its visibility against the native account.
-    pub fn with_log_data(
+    pub fn with_log_details(
         mut self,
-        log_data: TransactionLogData,
+        log_details: TransactionLogDetails,
     ) -> Result<Self, ProvenTransactionError> {
-        log_data
+        log_details
             .validate_visibility(self.account_id())
             .map_err(ProvenTransactionError::LogData)?;
-        self.log_data = log_data;
+        self.log_details = log_details;
         self.id = TransactionId::from(&self);
         Ok(self)
     }
@@ -134,8 +134,8 @@ impl ProvenTransaction {
 
     /// Returns complete public transaction logs or the private transaction log commitment
     /// included in the transaction proof.
-    pub fn log_data(&self) -> &TransactionLogData {
-        &self.log_data
+    pub fn log_details(&self) -> &TransactionLogDetails {
+        &self.log_details
     }
 
     /// Returns unique identifier of this transaction.
@@ -259,13 +259,13 @@ impl ProvenTransaction {
             Word::empty(),
         );
 
-        let log_data = if account_update.account_id().is_public() {
-            TransactionLogData::Public(Default::default())
+        let log_details = if account_update.account_id().is_public() {
+            TransactionLogDetails::Public(Default::default())
         } else {
-            TransactionLogData::Private(Word::empty())
+            TransactionLogDetails::Private(Word::empty())
         };
         Ok(Self {
-            log_data,
+            log_details,
             id,
             account_update,
             input_notes,
@@ -287,7 +287,7 @@ impl Serializable for ProvenTransaction {
         self.ref_block_commitment.write_into(target);
         self.expiration_block_num.write_into(target);
         self.proof.write_into(target);
-        self.log_data.write_into(target);
+        self.log_details.write_into(target);
     }
 }
 
@@ -302,7 +302,7 @@ impl Deserializable for ProvenTransaction {
         let ref_block_commitment = Word::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
-        let log_data = TransactionLogData::read_from(source)?;
+        let log_details = TransactionLogDetails::read_from(source)?;
 
         Self::from_parts(
             account_update,
@@ -313,7 +313,7 @@ impl Deserializable for ProvenTransaction {
             expiration_block_num,
             proof,
         )
-        .and_then(|tx| tx.with_log_data(log_data))
+        .and_then(|tx| tx.with_log_details(log_details))
         .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
