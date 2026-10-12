@@ -4,7 +4,7 @@ use crate::batch::ProvenBatch;
 use crate::crypto::SequentialCommit;
 use crate::transaction::{
     OrderedTransactionHeaders,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
     TransactionLogError,
 };
 use crate::utils::serde::{
@@ -65,7 +65,7 @@ impl OrderedBatches {
     /// Returns an error if the combined transaction log data exceeds the block resource limits.
     pub fn into_transaction_data(
         self,
-    ) -> Result<(OrderedTransactionHeaders, TransactionLogDataCollection), TransactionLogError>
+    ) -> Result<(OrderedTransactionHeaders, TransactionLogDetailsCollection), TransactionLogError>
     {
         let mut headers = Vec::new();
         let mut data = Vec::new();
@@ -76,7 +76,7 @@ impl OrderedBatches {
         }
         Ok((
             OrderedTransactionHeaders::new_unchecked(headers),
-            TransactionLogDataCollection::new(data)?,
+            TransactionLogDetailsCollection::new(data)?,
         ))
     }
 

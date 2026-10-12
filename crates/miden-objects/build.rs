@@ -208,9 +208,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".transaction.ProvenTransaction.log_data",
+        ".transaction.ProvenTransaction.log_details",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogData
+            miden_protocol::transaction::TransactionLogDetails
         >)])
         .to_string(),
     );
@@ -221,11 +221,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         >)])
         .to_string(),
     );
-    for field in [".transaction.ProvenBatch.log_data", ".blockchain.BlockBody.log_data"] {
+    for field in [".transaction.ProvenBatch.log_details", ".blockchain.BlockBody.log_details"] {
         prost.field_attribute(
             field,
             quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-                miden_protocol::transaction::TransactionLogDataCollection
+                miden_protocol::transaction::TransactionLogDetailsCollection
             >)])
             .to_string(),
         );

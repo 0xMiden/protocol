@@ -239,14 +239,14 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::{OrderedTransactionHeaders, TransactionLogDataCollection};
+    use crate::transaction::{OrderedTransactionHeaders, TransactionLogDetailsCollection};
 
     fn empty_body() -> BlockBody {
         BlockBody::new_unchecked(
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            TransactionLogDataCollection::default(),
+            TransactionLogDetailsCollection::default(),
             OrderedTransactionHeaders::new_unchecked(Vec::new()),
         )
     }

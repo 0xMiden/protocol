@@ -27,7 +27,7 @@ use crate::transaction::{
     OutputNote,
     PartialBlockchain,
     TransactionHeader,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -167,8 +167,8 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
-        TransactionLogDataCollection::validate_block_budget(
-            batches.iter().flat_map(|batch| batch.log_data().as_slice()),
+        TransactionLogDetailsCollection::validate_block_budget(
+            batches.iter().flat_map(|batch| batch.log_details().as_slice()),
         )?;
 
         // Check timestamp increases monotonically.
@@ -632,8 +632,8 @@ impl Serializable for ProposedBlock {
 impl Deserializable for ProposedBlock {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let batches = OrderedBatches::read_from(source)?;
-        TransactionLogDataCollection::validate_block_budget(
-            batches.as_slice().iter().flat_map(|batch| batch.log_data().as_slice()),
+        TransactionLogDetailsCollection::validate_block_budget(
+            batches.as_slice().iter().flat_map(|batch| batch.log_details().as_slice()),
         )
         .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
 

@@ -17,7 +17,7 @@ use crate::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
     TransactionVerifier,
 };
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
@@ -140,8 +140,8 @@ impl ProposedBatch {
             }
         }
 
-        TransactionLogDataCollection::validate_batch_budget(
-            transactions.iter().map(|tx| tx.log_data()),
+        TransactionLogDetailsCollection::validate_batch_budget(
+            transactions.iter().map(|tx| tx.log_details()),
         )?;
 
         // Verify block header and partial blockchain match.

@@ -163,7 +163,7 @@ impl crate::BuildUnchecked for BlockBody {
             updates,
             notes,
             nullifiers,
-            self.log_data.into_inner(),
+            self.log_details.into_inner(),
             miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions),
         )?)
     }

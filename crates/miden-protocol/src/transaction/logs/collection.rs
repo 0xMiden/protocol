@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 #[cfg(any(test, feature = "testing"))]
 use crate::Word;
-use crate::transaction::{OrderedTransactionHeaders, TransactionLogData, TransactionLogError};
+use crate::transaction::{OrderedTransactionHeaders, TransactionLogDetails, TransactionLogError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -30,7 +30,7 @@ const LENGTH_PREFIX_SIZE: usize = size_of::<u32>();
 /// Contains exactly one entry per transaction, including transactions with no transaction logs.
 /// Public entries contain complete transaction logs; private entries contain only commitments.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TransactionLogDataCollection(Vec<TransactionLogData>);
+pub struct TransactionLogDetailsCollection(Vec<TransactionLogDetails>);
 
 #[derive(Clone, Copy)]
 enum LogDataScope {
@@ -65,44 +65,44 @@ impl LogDataScope {
 }
 
 impl LogDataBudget {
-    fn consume(&mut self, data: &TransactionLogData) -> Result<(), TransactionLogError> {
+    fn consume(&mut self, data: &TransactionLogDetails) -> Result<(), TransactionLogError> {
         self.entries = self.entries.checked_sub(1).ok_or(TransactionLogError::AggregateBudget)?;
         self.bytes = self
             .bytes
             .checked_sub(LENGTH_PREFIX_SIZE + data.get_size_hint())
             .ok_or(TransactionLogError::AggregateBudget)?;
-        if let TransactionLogData::Public(logs) = data {
+        if let TransactionLogDetails::Public(logs) = data {
             self.public_logs = self
                 .public_logs
                 .checked_sub(logs.num_logs())
                 .ok_or(TransactionLogError::AggregateBudget)?;
             self.payload_words = self
                 .payload_words
-                .checked_sub(logs.num_payload_words())
+                .checked_sub(logs.num_content_words())
                 .ok_or(TransactionLogError::AggregateBudget)?;
         }
         Ok(())
     }
 }
 
-impl TransactionLogDataCollection {
+impl TransactionLogDetailsCollection {
     /// Creates submitted transaction log data within the block resource limits.
     ///
     /// Call [`Self::validate_for_block`] or [`Self::validate_for_batch`] to check each entry
     /// against its transaction header.
-    pub fn new(data: Vec<TransactionLogData>) -> Result<Self, TransactionLogError> {
+    pub fn new(data: Vec<TransactionLogDetails>) -> Result<Self, TransactionLogError> {
         let collection = Self(data);
         Self::validate_block_budget(collection.0.iter())?;
         Ok(collection)
     }
 
     /// Returns submitted transaction log data in transaction order.
-    pub fn as_slice(&self) -> &[TransactionLogData] {
+    pub fn as_slice(&self) -> &[TransactionLogDetails] {
         &self.0
     }
 
     /// Consumes the collection and returns submitted transaction log data in transaction order.
-    pub fn into_vec(self) -> Vec<TransactionLogData> {
+    pub fn into_vec(self) -> Vec<TransactionLogDetails> {
         self.0
     }
 
@@ -133,7 +133,7 @@ impl TransactionLogDataCollection {
         }
         for (index, (data, header)) in self.0.iter().zip(headers.as_slice()).enumerate() {
             data.validate_visibility(header.account_id())?;
-            if data.commitment() != header.logs_commitment() {
+            if data.to_commitment() != header.logs_commitment() {
                 return Err(TransactionLogError::CommitmentMismatch(index));
             }
         }
@@ -141,19 +141,19 @@ impl TransactionLogDataCollection {
     }
 
     pub(crate) fn validate_batch_budget<'a>(
-        entries: impl IntoIterator<Item = &'a TransactionLogData>,
+        entries: impl IntoIterator<Item = &'a TransactionLogDetails>,
     ) -> Result<(), TransactionLogError> {
         Self::validate_budget(entries, LogDataScope::Batch)
     }
 
     pub(crate) fn validate_block_budget<'a>(
-        entries: impl IntoIterator<Item = &'a TransactionLogData>,
+        entries: impl IntoIterator<Item = &'a TransactionLogDetails>,
     ) -> Result<(), TransactionLogError> {
         Self::validate_budget(entries, LogDataScope::Block)
     }
 
     fn validate_budget<'a>(
-        entries: impl IntoIterator<Item = &'a TransactionLogData>,
+        entries: impl IntoIterator<Item = &'a TransactionLogDetails>,
         scope: LogDataScope,
     ) -> Result<(), TransactionLogError> {
         let mut budget = scope.budget();
@@ -176,9 +176,9 @@ impl TransactionLogDataCollection {
                         "fixture header has nonempty transaction logs"
                     );
                     if header.account_id().is_public() {
-                        TransactionLogData::Public(Default::default())
+                        TransactionLogDetails::Public(Default::default())
                     } else {
-                        TransactionLogData::Private(Word::empty())
+                        TransactionLogDetails::Private(Word::empty())
                     }
                 })
                 .collect(),
@@ -186,7 +186,7 @@ impl TransactionLogDataCollection {
     }
 }
 
-impl Serializable for TransactionLogDataCollection {
+impl Serializable for TransactionLogDetailsCollection {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_u32(self.0.len() as u32);
         for data in &self.0 {
@@ -205,7 +205,7 @@ impl Serializable for TransactionLogDataCollection {
     }
 }
 
-impl Deserializable for TransactionLogDataCollection {
+impl Deserializable for TransactionLogDetailsCollection {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let count = source.read_u32()? as usize;
         if count > MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK {
@@ -213,7 +213,7 @@ impl Deserializable for TransactionLogDataCollection {
                 "too many transaction log data entries".into(),
             ));
         }
-        let max_transaction_size = TransactionLogData::max_serialized_size();
+        let max_transaction_size = TransactionLogDetails::max_serialized_size();
         let mut budget = LogDataScope::Block.budget();
         let mut data = Vec::new();
         for _ in 0..count {
@@ -234,7 +234,7 @@ impl Deserializable for TransactionLogDataCollection {
                 ));
             }
             let encoded = source.read_slice(size)?;
-            let entry = TransactionLogData::read_from_bytes(encoded)?;
+            let entry = TransactionLogDetails::read_from_bytes(encoded)?;
             if entry.get_size_hint() != size {
                 return Err(DeserializationError::InvalidValue(
                     "noncanonical transaction log data frame".into(),

@@ -55,7 +55,7 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{
     OrderedTransactionHeaders,
     RawOutputNote,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
 };
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
@@ -307,7 +307,7 @@ impl MockChainBuilder {
             block_account_updates,
             output_note_batches,
             created_nullifiers,
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
         );
 

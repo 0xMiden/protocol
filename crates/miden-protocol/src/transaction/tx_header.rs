@@ -204,7 +204,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.account_update().final_state_commitment(),
             tx.input_notes().clone(),
             tx.output_notes().iter().map(|note| *note.header()).collect(),
-            tx.log_data().commitment(),
+            tx.log_details().to_commitment(),
         )
     }
 }

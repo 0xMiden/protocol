@@ -20,7 +20,7 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
     TxAccountUpdate,
 };
 use prost::Message;
@@ -73,7 +73,7 @@ fn proven(proposal: &ProposedBatch) -> ProvenBatch {
         proposal.input_notes().clone(),
         proposal.output_notes().to_vec(),
         proposal.batch_expiration_block_num(),
-        TransactionLogDataCollection::empty_for_headers(&headers),
+        TransactionLogDetailsCollection::empty_for_headers(&headers),
         headers,
         dummy_execution_proof(),
     )

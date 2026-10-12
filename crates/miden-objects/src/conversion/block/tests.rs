@@ -7,7 +7,7 @@ use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
     TransactionHeader,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
 };
 use prost::Message;
 
@@ -38,7 +38,7 @@ fn block_body_and_transaction_header_roundtrip() {
         vec![account_update],
         vec![],
         vec![],
-        TransactionLogDataCollection::empty_for_headers(&transactions),
+        TransactionLogDetailsCollection::empty_for_headers(&transactions),
         transactions,
     )
     .unwrap();

@@ -28,8 +28,8 @@ pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel,
 pub use logs::{
     LogTopic,
     TransactionLog,
-    TransactionLogData,
-    TransactionLogDataCollection,
+    TransactionLogDetails,
+    TransactionLogDetailsCollection,
     TransactionLogError,
     TransactionLogs,
 };

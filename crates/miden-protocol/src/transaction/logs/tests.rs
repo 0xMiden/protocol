@@ -20,7 +20,7 @@ fn topic(a: u32, b: u32) -> LogTopic {
     LogTopic::new([Felt::from(a), Felt::from(b)])
 }
 
-/// Builds a transaction log with a fixed emitter and topic, repeating one payload word.
+/// Builds a transaction log with a fixed emitter and topic, repeating one content word.
 fn log(num_words: usize) -> TransactionLog {
     TransactionLog::new(
         emitter(256, AccountType::Private),
@@ -30,8 +30,8 @@ fn log(num_words: usize) -> TransactionLog {
     .unwrap()
 }
 
-/// Fixed private/public emitters, odd/even payload lengths, and a duplicate transaction log with an
-/// empty payload.
+/// Fixed private/public emitters, odd/even content lengths, and a duplicate transaction log with an
+/// empty content.
 fn vector_logs() -> Vec<TransactionLog> {
     vec![
         log(0),
@@ -57,7 +57,7 @@ fn empty_collection() {
     assert_eq!(logs, TransactionLogs::new(vec![]).unwrap());
     assert!(logs.is_empty());
     assert_eq!(logs.num_logs(), 0);
-    assert_eq!(logs.num_payload_words(), 0);
+    assert_eq!(logs.num_content_words(), 0);
     assert_eq!(logs.commitment(), Word::empty());
     assert_eq!(logs.to_bytes(), [0, 0]);
     assert_eq!(logs.get_size_hint(), 2);
@@ -65,26 +65,26 @@ fn empty_collection() {
 }
 
 #[test]
-fn empty_payload_is_not_an_absent_log_or_zero_word_payload() {
-    let empty_payload = log(0);
-    assert_eq!(empty_payload.payload_commitment(), Word::empty());
+fn empty_content_is_not_an_absent_log_or_zero_word_content() {
+    let empty_content = log(0);
+    assert_eq!(empty_content.content_commitment(), Word::empty());
 
-    let mut zero_word_payload = empty_payload.clone();
-    zero_word_payload.payload.push(Word::empty());
-    assert_ne!(zero_word_payload.payload_commitment(), Word::empty());
+    let mut zero_word_content = empty_content.clone();
+    zero_word_content.content.push(Word::empty());
+    assert_ne!(zero_word_content.content_commitment(), Word::empty());
 
-    let logs = TransactionLogs::new(vec![empty_payload]).unwrap();
+    let logs = TransactionLogs::new(vec![empty_content]).unwrap();
     assert!(!logs.is_empty());
     assert_ne!(logs.commitment(), Word::empty());
     assert_ne!(
         logs.commitment(),
-        TransactionLogs::new(vec![zero_word_payload]).unwrap().commitment()
+        TransactionLogs::new(vec![zero_word_content]).unwrap().commitment()
     );
 }
 
 #[test]
 fn commitment_vectors() {
-    let payload_commitments = [
+    let content_commitments = [
         "0x0000000000000000000000000000000000000000000000000000000000000000",
         "0x63889211f82b96d496810b890af36603e52d416bc913f16dfb85c2a453295c2d",
         "0xdb365b9fbe32a920a0b7396c0ba5d09fce08362e113affe99cdc51e55e6291b5",
@@ -105,11 +105,12 @@ fn commitment_vectors() {
         "0x23d2173c6dee33b73935164fc32ede1c3e06ecfb09a4a5efd6be6c6e7fd85dd7",
         "0x245f9c8952bd6b2d27f35815104353866243cbb5c92af0847e4afb9c0d654f85",
     ];
-    let mut logs = TransactionLogs::default();
+    let mut entries = Vec::new();
     for (index, entry) in vector_logs().into_iter().enumerate() {
-        assert_eq!(entry.payload_commitment(), Word::try_from(payload_commitments[index]).unwrap());
-        assert_eq!(entry.commitment(), Word::try_from(individual_commitments[index]).unwrap());
-        logs.try_push(entry).unwrap();
+        assert_eq!(entry.content_commitment(), Word::try_from(content_commitments[index]).unwrap());
+        assert_eq!(entry.to_commitment(), Word::try_from(individual_commitments[index]).unwrap());
+        entries.push(entry);
+        let logs = TransactionLogs::new(entries.clone()).unwrap();
         assert_eq!(logs.commitment(), Word::try_from(collection_commitments[index]).unwrap());
     }
 }
@@ -119,8 +120,8 @@ fn commitment_vectors() {
 #[case::emitter_prefix(|logs: &mut Vec<TransactionLog>| logs[1].emitter = emitter(512, AccountType::Private))]
 #[case::topic_0(|logs: &mut Vec<TransactionLog>| logs[1].topic = topic(0, 6))]
 #[case::topic_1(|logs: &mut Vec<TransactionLog>| logs[1].topic = topic(5, 0))]
-#[case::payload_contents(|logs: &mut Vec<TransactionLog>| logs[1].payload[0] = Word::empty())]
-#[case::payload_length(|logs: &mut Vec<TransactionLog>| logs[1].payload.push(Word::empty()))]
+#[case::content_contents(|logs: &mut Vec<TransactionLog>| logs[1].content[0] = Word::empty())]
+#[case::content_length(|logs: &mut Vec<TransactionLog>| logs[1].content.push(Word::empty()))]
 #[case::order(|logs: &mut Vec<TransactionLog>| logs.swap(0, 1))]
 #[case::removed_log(|logs: &mut Vec<TransactionLog>| logs.truncate(3))]
 #[case::added_log(|logs: &mut Vec<TransactionLog>| logs.push(log(0)))]
@@ -142,11 +143,11 @@ fn individual_commitments_match_permutation_layout() {
         let mut state = [Felt::ZERO; Hasher::STATE_WIDTH];
         // Pin the specified domain rather than reading the implementation's constant.
         state[Hasher::CAPACITY_RANGE.start + 1] = Felt::from(0x02_0005u32);
-        // The rate contains the metadata word followed by the payload commitment.
+        // The rate contains the metadata word followed by the content commitment.
         state[..4].copy_from_slice(&metadata);
-        state[4..8].copy_from_slice(log.payload_commitment().as_elements());
+        state[4..8].copy_from_slice(log.content_commitment().as_elements());
         Hasher::apply_permutation(&mut state);
-        assert_eq!(log.commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
+        assert_eq!(log.to_commitment().as_elements(), &state[Hasher::DIGEST_RANGE]);
     }
 }
 
@@ -182,23 +183,23 @@ fn serialization_vector() {
 
 #[rstest]
 #[case::empty(0)]
-#[case::maximum(MAX_LOG_PAYLOAD_WORDS)]
+#[case::maximum(TransactionLog::MAX_NUM_WORDS)]
 fn log_serialization(#[case] num_words: usize) {
     let entry = log(num_words);
     let bytes = entry.to_bytes();
     assert_eq!(entry.get_size_hint(), bytes.len());
     assert_eq!(TransactionLog::read_from_bytes(&bytes).unwrap(), entry);
-    assert_eq!(entry.payload().len(), num_words);
+    assert_eq!(entry.content().len(), num_words);
 }
 
 #[test]
 fn maximum_collection_serialization() {
-    let full_payloads = MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS;
-    let mut entries = vec![log(MAX_LOG_PAYLOAD_WORDS); full_payloads];
-    entries.resize(MAX_LOGS_PER_TX, log(0));
+    let full_contents = TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS;
+    let mut entries = vec![log(TransactionLog::MAX_NUM_WORDS); full_contents];
+    entries.resize(TransactionLogs::MAX_COUNT, log(0));
     let logs = TransactionLogs::new(entries).unwrap();
-    assert_eq!(logs.num_logs(), MAX_LOGS_PER_TX);
-    assert_eq!(logs.num_payload_words(), MAX_LOG_PAYLOAD_WORDS_PER_TX);
+    assert_eq!(logs.num_logs(), TransactionLogs::MAX_COUNT);
+    assert_eq!(logs.num_content_words(), TransactionLogs::MAX_NUM_WORDS);
     let bytes = logs.to_bytes();
     assert_eq!(logs.get_size_hint(), bytes.len());
     assert_eq!(TransactionLogs::read_from_bytes(&bytes).unwrap(), logs);
@@ -210,53 +211,25 @@ fn constructors_reject_excessive_sizes() {
         TransactionLog::new(
             emitter(256, AccountType::Private),
             topic(0, 0),
-            vec![Word::empty(); MAX_LOG_PAYLOAD_WORDS + 1],
+            vec![Word::empty(); TransactionLog::MAX_NUM_WORDS + 1],
         )
         .unwrap_err(),
-        TransactionLogError::TooManyPayloadWords(MAX_LOG_PAYLOAD_WORDS + 1)
+        TransactionLogError::TooManyContentWords(TransactionLog::MAX_NUM_WORDS + 1)
     );
     assert_eq!(
-        TransactionLogs::new(vec![log(0); MAX_LOGS_PER_TX + 1]).unwrap_err(),
-        TransactionLogError::TooManyLogs(MAX_LOGS_PER_TX + 1)
+        TransactionLogs::new(vec![log(0); TransactionLogs::MAX_COUNT + 1]).unwrap_err(),
+        TransactionLogError::TooManyLogs(TransactionLogs::MAX_COUNT + 1)
     );
 
-    let mut entries =
-        vec![log(MAX_LOG_PAYLOAD_WORDS); MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS];
+    let mut entries = vec![
+        log(TransactionLog::MAX_NUM_WORDS);
+        TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS
+    ];
     entries.push(log(1));
     assert_eq!(
         TransactionLogs::new(entries).unwrap_err(),
-        TransactionLogError::TooManyTotalPayloadWords(MAX_LOG_PAYLOAD_WORDS_PER_TX + 1)
+        TransactionLogError::TooManyTotalContentWords(TransactionLogs::MAX_NUM_WORDS + 1)
     );
-}
-
-#[test]
-fn failed_appends_leave_the_collection_unchanged() {
-    let mut logs = TransactionLogs::new(vec![log(0); MAX_LOGS_PER_TX]).unwrap();
-    let cached = logs.commitment();
-    let before = logs.clone();
-    assert_eq!(
-        logs.try_push(log(0)).unwrap_err(),
-        TransactionLogError::TooManyLogs(MAX_LOGS_PER_TX + 1)
-    );
-    assert_eq!(logs, before);
-    assert_eq!(logs.commitment.get(), Some(&cached));
-    assert_eq!(logs.log_commitments, before.log_commitments);
-
-    let mut logs = TransactionLogs::new(vec![
-        log(MAX_LOG_PAYLOAD_WORDS);
-        MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS
-    ])
-    .unwrap();
-    let cached = logs.commitment();
-    let before = logs.clone();
-    assert_eq!(
-        logs.try_push(log(1)).unwrap_err(),
-        TransactionLogError::TooManyTotalPayloadWords(MAX_LOG_PAYLOAD_WORDS_PER_TX + 1)
-    );
-    assert_eq!(logs, before);
-    assert_eq!(logs.commitment.get(), Some(&cached));
-    assert_eq!(logs.log_commitments, before.log_commitments);
-    logs.try_push(log(0)).unwrap();
 }
 
 fn assert_invalid_value(error: DeserializationError, expected: TransactionLogError) {
@@ -268,12 +241,12 @@ fn assert_invalid_value(error: DeserializationError, expected: TransactionLogErr
 #[test]
 fn decoder_rejects_log_count_before_reading_transaction_logs() {
     let mut bytes = Vec::new();
-    bytes.write_u16((MAX_LOGS_PER_TX + 1) as u16);
+    bytes.write_u16((TransactionLogs::MAX_COUNT + 1) as u16);
     bytes.write_u8(0xab);
     let mut reader = SliceReader::new(&bytes);
     assert_invalid_value(
         TransactionLogs::read_from(&mut reader).unwrap_err(),
-        TransactionLogError::TooManyLogs(MAX_LOGS_PER_TX + 1),
+        TransactionLogError::TooManyLogs(TransactionLogs::MAX_COUNT + 1),
     );
     assert_eq!(reader.read_u8().unwrap(), 0xab);
 }
@@ -281,14 +254,14 @@ fn decoder_rejects_log_count_before_reading_transaction_logs() {
 #[rstest]
 #[case::standalone(false)]
 #[case::collection(true)]
-fn decoder_rejects_payload_length_before_reading_payload(#[case] collection: bool) {
+fn decoder_rejects_content_length_before_reading_content(#[case] collection: bool) {
     let mut bytes = Vec::new();
     if collection {
         bytes.write_u16(1);
     }
     bytes.write(emitter(256, AccountType::Private));
     bytes.write(topic(0, 0));
-    bytes.write_u16((MAX_LOG_PAYLOAD_WORDS + 1) as u16);
+    bytes.write_u16((TransactionLog::MAX_NUM_WORDS + 1) as u16);
     bytes.write_u8(0xab);
     let mut reader = SliceReader::new(&bytes);
     let error = if collection {
@@ -298,18 +271,18 @@ fn decoder_rejects_payload_length_before_reading_payload(#[case] collection: boo
     };
     assert_invalid_value(
         error,
-        TransactionLogError::TooManyPayloadWords(MAX_LOG_PAYLOAD_WORDS + 1),
+        TransactionLogError::TooManyContentWords(TransactionLog::MAX_NUM_WORDS + 1),
     );
     assert_eq!(reader.read_u8().unwrap(), 0xab);
 }
 
 #[test]
-fn decoder_rejects_total_length_before_reading_excess_payload() {
-    let full_payloads = MAX_LOG_PAYLOAD_WORDS_PER_TX / MAX_LOG_PAYLOAD_WORDS;
+fn decoder_rejects_total_length_before_reading_excess_content() {
+    let full_contents = TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS;
     let mut bytes = Vec::new();
-    bytes.write_u16((full_payloads + 1) as u16);
-    for _ in 0..full_payloads {
-        bytes.write(log(MAX_LOG_PAYLOAD_WORDS));
+    bytes.write_u16((full_contents + 1) as u16);
+    for _ in 0..full_contents {
+        bytes.write(log(TransactionLog::MAX_NUM_WORDS));
     }
     bytes.write(emitter(256, AccountType::Private));
     bytes.write(topic(0, 0));
@@ -318,7 +291,7 @@ fn decoder_rejects_total_length_before_reading_excess_payload() {
     let mut reader = SliceReader::new(&bytes);
     assert_invalid_value(
         TransactionLogs::read_from(&mut reader).unwrap_err(),
-        TransactionLogError::TooManyTotalPayloadWords(MAX_LOG_PAYLOAD_WORDS_PER_TX + 1),
+        TransactionLogError::TooManyTotalContentWords(TransactionLogs::MAX_NUM_WORDS + 1),
     );
     assert_eq!(reader.read_u8().unwrap(), 0xab);
 }
@@ -335,7 +308,7 @@ fn decoder_rejects_invalid_account_id() {
 
 #[rstest]
 #[case::topic(AccountId::SERIALIZED_SIZE)]
-#[case::payload(TransactionLog::min_serialized_size())]
+#[case::content(TransactionLog::min_serialized_size())]
 fn decoder_rejects_noncanonical_field_elements(#[case] offset: usize) {
     let mut bytes = log(1).to_bytes();
     bytes[offset..offset + 8].copy_from_slice(&Felt::ORDER.to_le_bytes());
@@ -355,31 +328,6 @@ fn decoder_rejects_truncated_transaction_logs_and_collections() {
     for len in 0..bytes.len() {
         assert!(TransactionLogs::read_from_bytes(&bytes[..len]).is_err(), "length {len}");
     }
-}
-
-#[test]
-fn collection_cache_is_lazy_and_invalidated_by_appends() {
-    let mut logs = TransactionLogs::new(vector_logs()).unwrap();
-    assert!(logs.commitment.get().is_none());
-    let uncached = logs.clone();
-    let commitment = logs.commitment();
-    assert_eq!(logs.commitment.get(), Some(&commitment));
-    assert_eq!(logs.commitment(), commitment);
-    assert_eq!(logs, uncached);
-    assert_eq!(logs.to_bytes(), uncached.to_bytes());
-    assert_eq!(logs.clone().commitment.get(), Some(&commitment));
-    let decoded = TransactionLogs::read_from_bytes(&logs.to_bytes()).unwrap();
-    assert!(decoded.commitment.get().is_none());
-    assert_eq!(decoded, logs);
-    assert_eq!(decoded.commitment(), commitment);
-
-    logs.try_push(log(0)).unwrap();
-    assert!(logs.commitment.get().is_none());
-    assert_ne!(logs.commitment(), commitment);
-    assert_eq!(
-        logs.commitment(),
-        TransactionLogs::new(logs.clone().into_vec()).unwrap().commitment()
-    );
 }
 
 #[test]
@@ -422,30 +370,30 @@ fn topics_serialize_as_two_canonical_felts() {
 #[test]
 fn submitted_data_serializes_public_transaction_logs_or_only_a_private_commitment() {
     let logs = TransactionLogs::new(vector_logs()).unwrap();
-    let public = TransactionLogData::Public(logs.clone());
-    let mut public_bytes = vec![0];
+    let public = TransactionLogDetails::Public(logs.clone());
+    let mut public_bytes = vec![AccountType::Public.as_u8()];
     public_bytes.extend(logs.to_bytes());
     assert_eq!(public.to_bytes(), public_bytes);
-    assert_eq!(public.commitment(), logs.commitment());
+    assert_eq!(public.to_commitment(), logs.commitment());
 
     // Private data stores the supplied commitment without deriving it.
     let commitment = Word::from([11u32, 22, 33, 44]);
-    let private = TransactionLogData::Private(commitment);
-    let mut private_bytes = vec![1];
+    let private = TransactionLogDetails::Private(commitment);
+    let mut private_bytes = vec![AccountType::Private.as_u8()];
     private_bytes.extend(commitment.to_bytes());
     assert_eq!(private.to_bytes(), private_bytes);
     assert_eq!(private.get_size_hint(), 33);
-    assert_eq!(private.commitment(), commitment);
+    assert_eq!(private.to_commitment(), commitment);
 
     for data in [public, private] {
         let bytes = data.to_bytes();
         assert_eq!(data.get_size_hint(), bytes.len());
-        assert_eq!(TransactionLogData::read_from_bytes(&bytes).unwrap(), data);
+        assert_eq!(TransactionLogDetails::read_from_bytes(&bytes).unwrap(), data);
         for len in 0..bytes.len() {
-            assert!(TransactionLogData::read_from_bytes(&bytes[..len]).is_err());
+            assert!(TransactionLogDetails::read_from_bytes(&bytes[..len]).is_err());
         }
     }
-    assert!(TransactionLogData::read_from_bytes(&[2]).is_err());
+    assert!(TransactionLogDetails::read_from_bytes(&[2]).is_err());
 }
 
 #[rstest]
@@ -456,8 +404,8 @@ fn log_visibility_follows_the_native_account(#[case] entries: Vec<TransactionLog
     let public_account = emitter(512, AccountType::Public);
     assert!(!private_account.is_public());
     assert!(public_account.is_public());
-    let public = TransactionLogData::Public(TransactionLogs::new(entries).unwrap());
-    let private = TransactionLogData::Private(Word::empty());
+    let public = TransactionLogDetails::Public(TransactionLogs::new(entries).unwrap());
+    let private = TransactionLogDetails::Private(Word::empty());
     assert_eq!(public.validate_visibility(public_account), Ok(()));
     assert_eq!(private.validate_visibility(private_account), Ok(()));
     assert_eq!(
@@ -472,13 +420,13 @@ fn log_visibility_follows_the_native_account(#[case] entries: Vec<TransactionLog
 
 #[test]
 fn public_submission_decoder_preserves_collection_bounds() {
-    let mut bytes = vec![0];
-    bytes.write_u16((MAX_LOGS_PER_TX + 1) as u16);
+    let mut bytes = vec![AccountType::Public.as_u8()];
+    bytes.write_u16((TransactionLogs::MAX_COUNT + 1) as u16);
     bytes.write_u8(0xab);
     let mut reader = SliceReader::new(&bytes);
     assert_invalid_value(
-        TransactionLogData::read_from(&mut reader).unwrap_err(),
-        TransactionLogError::TooManyLogs(MAX_LOGS_PER_TX + 1),
+        TransactionLogDetails::read_from(&mut reader).unwrap_err(),
+        TransactionLogError::TooManyLogs(TransactionLogs::MAX_COUNT + 1),
     );
     assert_eq!(reader.read_u8().unwrap(), 0xab);
 }
@@ -487,7 +435,7 @@ fn public_submission_decoder_preserves_collection_bounds() {
 fn logs_remain_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<TransactionLogs>();
-    assert_send_sync::<TransactionLogData>();
+    assert_send_sync::<TransactionLogDetails>();
 }
 
 #[test]

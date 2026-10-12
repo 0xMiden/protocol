@@ -14,7 +14,7 @@ use crate::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
     TransactionHeader,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -49,7 +49,7 @@ pub struct ProvenBatch {
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<OutputNote>,
     batch_expiration_block_num: BlockNumber,
-    log_data: TransactionLogDataCollection,
+    log_details: TransactionLogDetailsCollection,
     transactions: OrderedTransactionHeaders,
     proof: ExecutionProof,
 }
@@ -83,7 +83,7 @@ impl ProvenBatch {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
-        log_data: TransactionLogDataCollection,
+        log_details: TransactionLogDetailsCollection,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
@@ -137,7 +137,7 @@ impl ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
-            log_data,
+            log_details,
             transactions,
             proof,
         )
@@ -163,11 +163,11 @@ impl ProvenBatch {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
-        log_data: TransactionLogDataCollection,
+        log_details: TransactionLogDetailsCollection,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
-        log_data.validate_for_batch(&transactions)?;
+        log_details.validate_for_batch(&transactions)?;
 
         // Check that the batch expiration block number is greater than the reference block number.
         if batch_expiration_block_num <= reference_block_num {
@@ -185,7 +185,7 @@ impl ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
-            log_data,
+            log_details,
             transactions,
             proof,
         })
@@ -195,15 +195,15 @@ impl ProvenBatch {
     // --------------------------------------------------------------------------------------------
 
     /// Returns submitted transaction log data in the same order as the transaction headers.
-    pub fn log_data(&self) -> &TransactionLogDataCollection {
-        &self.log_data
+    pub fn log_details(&self) -> &TransactionLogDetailsCollection {
+        &self.log_details
     }
 
     /// Consumes the ordered headers and their submitted transaction log data together.
     pub fn into_transaction_data(
         self,
-    ) -> (OrderedTransactionHeaders, TransactionLogDataCollection) {
-        (self.transactions, self.log_data)
+    ) -> (OrderedTransactionHeaders, TransactionLogDetailsCollection) {
+        (self.transactions, self.log_details)
     }
 
     /// The ID of this batch. See [`BatchId`] for details on how it is computed.
@@ -388,7 +388,7 @@ impl Serializable for ProvenBatch {
         self.batch_expiration_block_num.write_into(target);
         self.transactions.write_into(target);
         self.proof.write_into(target);
-        self.log_data.write_into(target);
+        self.log_details.write_into(target);
     }
 }
 
@@ -402,7 +402,7 @@ impl Deserializable for ProvenBatch {
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
-        let log_data = TransactionLogDataCollection::read_from(source)?;
+        let log_details = TransactionLogDetailsCollection::read_from(source)?;
 
         Self::new(
             reference_block_commitment,
@@ -411,7 +411,7 @@ impl Deserializable for ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
-            log_data,
+            log_details,
             transactions,
             proof,
         )
@@ -454,8 +454,8 @@ mod tests {
         OutputNote,
         RawOutputNote,
         TransactionHeader,
-        TransactionLogData,
-        TransactionLogDataCollection,
+        TransactionLogDetails,
+        TransactionLogDetailsCollection,
     };
     use crate::utils::serde::{Deserializable, Serializable};
     use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
@@ -560,7 +560,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -580,7 +580,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -600,7 +600,7 @@ mod tests {
                 InputNotes::default(),
                 Vec::new(),
                 BlockNumber::from(2),
-                TransactionLogDataCollection::empty_for_headers(&transactions),
+                TransactionLogDetailsCollection::empty_for_headers(&transactions),
                 transactions.clone(),
                 proof,
             )
@@ -623,7 +623,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -658,7 +658,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -688,7 +688,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -710,7 +710,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -754,7 +754,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -800,7 +800,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -832,7 +832,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -854,7 +854,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -884,7 +884,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -905,7 +905,7 @@ mod tests {
             InputNotes::default(),
             output_notes,
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -929,7 +929,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -951,7 +951,7 @@ mod tests {
             input_notes,
             Vec::new(),
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -976,7 +976,7 @@ mod tests {
             InputNotes::default(),
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -1000,7 +1000,7 @@ mod tests {
             input_notes,
             output_notes,
             BlockNumber::from(2),
-            TransactionLogDataCollection::empty_for_headers(&transactions),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -1010,19 +1010,19 @@ mod tests {
     }
 
     #[test]
-    fn private_transaction_log_data_roundtrips_and_rejects_missing_entries() {
-        let data = TransactionLogData::Private(Word::from([23u32; 4]));
+    fn private_transaction_log_details_roundtrips_and_rejects_missing_entries() {
+        let data = TransactionLogDetails::Private(Word::from([23u32; 4]));
         let header = TransactionHeader::new(
             account_id(),
             Word::from([1u32, 2, 3, 4]),
             Word::from([5u32, 6, 7, 8]),
             InputNotes::default(),
             vec![],
-            data.commitment(),
+            data.to_commitment(),
         )
         .unwrap();
         let headers = OrderedTransactionHeaders::new_unchecked(vec![header]);
-        let logs = TransactionLogDataCollection::new(vec![data]).unwrap();
+        let logs = TransactionLogDetailsCollection::new(vec![data]).unwrap();
         let build = |logs| {
             ProvenBatch::new(
                 Word::empty(),
@@ -1038,11 +1038,12 @@ mod tests {
         };
         let batch = build(logs.clone()).unwrap();
         assert_eq!(ProvenBatch::read_from_bytes(&batch.to_bytes()).unwrap(), batch);
-        assert!(build(TransactionLogDataCollection::default()).is_err());
-        let changed =
-            TransactionLogDataCollection::new(vec![TransactionLogData::Private(Word::empty())])
-                .unwrap();
+        assert!(build(TransactionLogDetailsCollection::default()).is_err());
+        let changed = TransactionLogDetailsCollection::new(vec![TransactionLogDetails::Private(
+            Word::empty(),
+        )])
+        .unwrap();
         assert!(build(changed).is_err());
-        assert_eq!(batch.log_data(), &logs);
+        assert_eq!(batch.log_details(), &logs);
     }
 }

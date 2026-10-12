@@ -5,7 +5,7 @@ use crate::block::BlockBody;
 use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
 use crate::protocol_config::NextProtocolConfig;
 #[cfg(test)]
-use crate::transaction::{OrderedTransactionHeaders, TransactionLogDataCollection};
+use crate::transaction::{OrderedTransactionHeaders, TransactionLogDetailsCollection};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -420,7 +420,7 @@ impl BlockHeader {
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            TransactionLogDataCollection::default(),
+            TransactionLogDetailsCollection::default(),
             OrderedTransactionHeaders::new_unchecked(Vec::new()),
         );
         let note_root = body.compute_block_note_tree().root();

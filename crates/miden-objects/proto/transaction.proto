@@ -69,9 +69,9 @@ message ProvenTransaction {
   primitives.Word reference_block_commitment = 5;
   blockchain.BlockNumber expiration_block_num = 6;
   primitives.ExecutionProof proof = 7;
-  // Canonical bounded TransactionLogData encoding: complete public transaction logs or only
+  // Canonical bounded TransactionLogDetails encoding: complete public transaction logs or only
   // a commitment to private transaction logs.
-  bytes log_data = 8;
+  bytes log_details = 8;
 }
 
 message TransactionScript {

@@ -13,7 +13,12 @@ pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
-use miden_protocol::transaction::{TransactionEventId, TransactionLog, TransactionLogs};
+use miden_protocol::transaction::{
+    TransactionEventId,
+    TransactionLog,
+    TransactionLogError,
+    TransactionLogs,
+};
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
@@ -110,7 +115,8 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
-    logs: TransactionLogs,
+    logs: Vec<TransactionLog>,
+    num_log_content_words: usize,
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
@@ -152,7 +158,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             update_tracker: AccountUpdateTracker::new(account)?,
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
-            logs: TransactionLogs::default(),
+            logs: Vec::new(),
+            num_log_content_words: 0,
             input_notes,
             block_commitments,
             core_lib_handlers,
@@ -221,11 +228,17 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (self.update_tracker.into_patch(), self.input_notes, output_notes, self.logs)
+        (
+            self.update_tracker.into_patch(),
+            self.input_notes,
+            output_notes,
+            TransactionLogs::new(self.logs)
+                .expect("host validates transaction log limits before appending"),
+        )
     }
 
     /// Returns the complete transaction logs collected during execution.
-    pub fn logs(&self) -> &TransactionLogs {
+    pub fn logs(&self) -> &[TransactionLog] {
         &self.logs
     }
 
@@ -294,9 +307,23 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         &mut self,
         log: TransactionLog,
     ) -> Result<(), TransactionKernelError> {
-        self.logs.try_push(log).map_err(|err| {
-            TransactionKernelError::other_with_source("invalid transaction logs", err)
-        })
+        let num_logs = self.logs.len() + 1;
+        if num_logs > TransactionLogs::MAX_COUNT {
+            return Err(TransactionKernelError::other_with_source(
+                "invalid transaction logs",
+                TransactionLogError::TooManyLogs(num_logs),
+            ));
+        }
+        let num_words = self.num_log_content_words + log.num_content_words();
+        if num_words > TransactionLogs::MAX_NUM_WORDS {
+            return Err(TransactionKernelError::other_with_source(
+                "invalid transaction logs",
+                TransactionLogError::TooManyTotalContentWords(num_words),
+            ));
+        }
+        self.logs.push(log);
+        self.num_log_content_words = num_words;
+        Ok(())
     }
 
     /// Pushes an input note's index and a presence flag onto the advice stack.

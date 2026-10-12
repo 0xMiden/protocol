@@ -86,7 +86,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let log_data = tx_outputs.log_data();
+        let log_details = tx_outputs.log_details();
         let (account_header, output_notes) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
@@ -124,7 +124,7 @@ impl LocalTransactionProver {
             expiration_block_num,
             proof,
         )
-        .and_then(|tx| tx.with_log_data(log_data))
+        .and_then(|tx| tx.with_log_details(log_details))
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 

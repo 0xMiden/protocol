@@ -13,7 +13,7 @@ use miden_protocol::block::{
     ValidatorConfig,
 };
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
-use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionLogDataCollection};
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionLogDetailsCollection};
 use miden_protocol::utils::serde::Serializable;
 
 use crate::decoded::blockchain::test_utils::block_header_with_scheduled_upgrade;
@@ -60,7 +60,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
             vec![],
             vec![],
             vec![],
-            TransactionLogDataCollection::default(),
+            TransactionLogDetailsCollection::default(),
             OrderedTransactionHeaders::new_unchecked(vec![]),
         )
         .unwrap();
@@ -87,7 +87,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
         vec![],
         vec![],
         vec![],
-        TransactionLogDataCollection::default(),
+        TransactionLogDetailsCollection::default(),
         OrderedTransactionHeaders::new_unchecked(vec![]),
     )
     .unwrap();
@@ -155,20 +155,20 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
 }
 
 #[test]
-fn empty_protobuf_block_body_requires_explicit_log_data() {
+fn empty_protobuf_block_body_requires_explicit_log_details() {
     assert!(proto::blockchain::BlockBody::default().decode_fields().is_err());
     let expected = BlockBody::new(
         vec![],
         vec![],
         vec![],
-        TransactionLogDataCollection::default(),
+        TransactionLogDetailsCollection::default(),
         OrderedTransactionHeaders::new_unchecked(vec![]),
     )
     .unwrap();
 
     assert_eq!(
         proto::blockchain::BlockBody {
-            log_data: TransactionLogDataCollection::default().to_bytes(),
+            log_details: TransactionLogDetailsCollection::default().to_bytes(),
             ..Default::default()
         }
         .decode_fields()

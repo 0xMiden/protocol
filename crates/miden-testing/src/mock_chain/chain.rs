@@ -35,7 +35,7 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionInputs,
-    TransactionLogDataCollection,
+    TransactionLogDetailsCollection,
 };
 use miden_protocol::vm::ExecutionProof;
 use miden_tx::LocalTransactionProver;
@@ -1198,8 +1198,8 @@ fn read_genesis_block_unchecked<R: ByteReader>(
     let notes = Vec::<OutputNoteBatch>::read_from(source)?;
     let nullifiers = Vec::<Nullifier>::read_from(source)?;
     let transactions = OrderedTransactionHeaders::read_from(source)?;
-    let log_data = TransactionLogDataCollection::read_from(source)?;
-    let body = BlockBody::new_unchecked(updates, notes, nullifiers, log_data, transactions);
+    let log_details = TransactionLogDetailsCollection::read_from(source)?;
+    let body = BlockBody::new_unchecked(updates, notes, nullifiers, log_details, transactions);
     let signatures = BlockSignatures::read_from(source)?;
     let proof = ExecutionProof::read_from(source)?;
 
