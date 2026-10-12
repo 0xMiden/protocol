@@ -352,8 +352,6 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// private paybacks can be cancelled by any compatible account using [`Self::create_cancel_args`]
 /// and [`Self::cancellation_advice`]; all remaining assets are returned in a private P2ID to the
 /// committed recipient.
-/// Payback, remainder, and refund outputs are verified and sealed before the script returns,
-/// regardless of their visibility. Later asset or attachment additions fail the transaction.
 ///
 /// # Privacy
 ///
@@ -363,9 +361,7 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// unauthenticated consumption exposes their headers and links them to the consuming account.
 /// To avoid linking cancellation to the target, execute and prove locally through a public
 /// no-auth account. Fund its fee separately, for example with a private funding note consumed as
-/// an authenticated input in the same transaction. The refund contains the full remaining order
-/// balance. Fee estimation and private fee change are client responsibilities. This design does
-/// not hide private data from parties given the full execution witness, including remote provers.
+/// an authenticated input in the same transaction.
 ///
 /// The note can be consumed both in local transactions (where the consumer provides
 /// fill amounts via note_args) and in network transactions (where note_args default to
