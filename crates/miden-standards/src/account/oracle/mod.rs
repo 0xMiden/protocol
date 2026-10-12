@@ -2,7 +2,9 @@
 //! assets.
 //!
 //! The rate is returned as a [`ConversionRate`]. Callers apply it with `fee::convert_amount` on
-//! chain, or with [`ConversionRate::convert`] off chain; the two round the same way.
+//! chain, or with [`ConversionRate::convert`] off chain; the two round the same way. Alongside it
+//! comes the block timestamp of its last update, so a caller can enforce a freshness bound tighter
+//! than the rate provider's own.
 //!
 //! `get_conversion_rate` is a stable MAST root that invokes the rate provider dynamically, so the
 //! provider can be replaced without changing the root consumers reach it by. This module ships the

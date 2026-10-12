@@ -7,6 +7,7 @@
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+- [BREAKING] `PriceOracle::get_conversion_rate` now also returns the `last_updated` block timestamp of the rate, so callers can enforce their own freshness bound; rate providers must return it ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 
 ## v0.17.0 (2026-10-01)
 

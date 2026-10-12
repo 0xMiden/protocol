@@ -4,6 +4,8 @@
 //! MAST root. The pricing behind it is supplied by test-only rate providers, because the point
 //! under test is the interface and its dispatch, not any particular way of deriving a rate.
 
+use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
 use miden_protocol::Word;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
@@ -24,6 +26,7 @@ use miden_standards::account::oracle::PriceOracle;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32,
     ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT,
     ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO,
 };
@@ -35,13 +38,13 @@ use miden_tx::TransactionExecutorError;
 
 const RATE_PROVIDERS_PATH: &str = "test::oracle::rate_providers";
 
-/// Rate providers with the shape `get_conversion_rate` dispatches to. They report fixed rates so a
-/// test can tell which one answered.
+/// Rate providers with the shape `get_conversion_rate` dispatches to. They report fixed rates and
+/// update timestamps so a test can tell which one answered.
 const RATE_PROVIDERS_CODE: &str = r#"
     use miden::core::sys
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, pad(13)]
+    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -49,14 +52,14 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.3 push.1500 push.1
-        # => [has_conversion_rate, num, den, pad(8)]
+        push.1000 push.3 push.1500 push.1
+        # => [has_conversion_rate, num, den, last_updated, pad(8)]
 
         exec.sys::truncate_stack
     end
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, pad(13)]
+    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -64,8 +67,8 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.1 push.7 push.1
-        # => [has_conversion_rate, num, den, pad(8)]
+        push.2000 push.1 push.7 push.1
+        # => [has_conversion_rate, num, den, last_updated, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -74,7 +77,7 @@ const RATE_PROVIDERS_CODE: &str = r#"
     #! to rely on. Both cases report the same rate.
     #!
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, pad(13)]
+    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -82,8 +85,25 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.0 push.0 push.0
-        # => [has_conversion_rate = 0, num = 0, den = 0, pad(8)]
+        push.0 push.0 push.0 push.0
+        # => [has_conversion_rate = 0, num = 0, den = 0, last_updated = 0, pad(8)]
+
+        exec.sys::truncate_stack
+    end
+
+    #! A rate provider breaking the contract with a last_updated of 2^32, one past the u32 range.
+    #!
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc last_updated_above_u32
+        dropw dropw
+        # => [pad(8)]
+
+        push.4294967296 push.1 push.1 push.1
+        # => [has_conversion_rate, num, den, last_updated, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -97,7 +117,7 @@ const FOREIGN_PROVIDER_CODE: &str = r#"
     use miden::core::sys
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, pad(13)]
+    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -105,8 +125,8 @@ const FOREIGN_PROVIDER_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.1 push.2 push.1
-        # => [has_conversion_rate, num, den, pad(8)]
+        push.3000 push.1 push.2 push.1
+        # => [has_conversion_rate, num, den, last_updated, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -172,6 +192,7 @@ fn assert_rate_tx_script_code(
     expected_has_rate: u64,
     expected_num: u64,
     expected_den: u64,
+    expected_last_updated: u64,
 ) -> anyhow::Result<String> {
     Ok(format!(
         r#"
@@ -191,12 +212,13 @@ fn assert_rate_tx_script_code(
             #     foreign_procedure_inputs(16)]
 
             exec.tx::execute_foreign_procedure
-            # => [has_conversion_rate, num, den, pad(13)]
+            # => [has_conversion_rate, num, den, last_updated, pad(12)]
 
             push.{expected_has_rate} assert_eq.err="unexpected has_conversion_rate flag"
             push.{expected_num} assert_eq.err="unexpected rate numerator"
             push.{expected_den} assert_eq.err="unexpected rate denominator"
-            # => [pad(13)]
+            push.{expected_last_updated} assert_eq.err="unexpected last_updated timestamp"
+            # => [pad(12)]
 
             exec.sys::truncate_stack
         end
@@ -224,6 +246,7 @@ async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
         1,
         1_500,
         3,
+        1_000,
     )?)?;
 
     let mut builder = MockChain::builder();
@@ -264,6 +287,7 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
         1,
         1_500,
         3,
+        1_000,
     )?)?;
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
     mock_chain
@@ -301,6 +325,7 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
         1,
         7,
         1,
+        2_000,
     )?)?;
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
     mock_chain
@@ -328,6 +353,7 @@ async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Resul
         0,
         0,
         0,
+        0,
     )?)?;
 
     let mut builder = MockChain::builder();
@@ -344,6 +370,51 @@ async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Resul
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Callers apply u32 arithmetic to `last_updated`, so the interface refuses a provider value past
+/// the u32 range rather than handing it on. The script expects exactly what the provider returns,
+/// so only the interface's own check can make it fail.
+#[tokio::test]
+async fn a_last_updated_past_the_u32_range_is_rejected() -> anyhow::Result<()> {
+    let code = rate_providers_code()?;
+    let oracle = oracle_account(&code, rate_provider_root(&code, "last_updated_above_u32")?)?;
+    let consumer = consumer_account()?;
+
+    let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
+        oracle.id(),
+        1,
+        1,
+        1,
+        1 << 32,
+    )?)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(oracle.clone())?;
+    builder.add_account(consumer.clone())?;
+    let mock_chain = builder.build()?;
+
+    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
+
+    let result = mock_chain
+        .build_transaction(consumer.id())
+        .foreign_accounts([foreign_oracle])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    // `u32assert` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
+    // variant explicitly and assert on its error code.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32.code()
+    );
 
     Ok(())
 }
