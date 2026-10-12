@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 
 use miden_protobuf::unwrap_infallible;
-pub use proto::transaction::DecodedForeignAccountSlotName as ForeignAccountSlotName;
 use proto::transaction::auth_signature::DecodedSignature;
 
 use crate::decoded::VerificationError;
@@ -10,31 +9,14 @@ use crate::{Verify, proto};
 #[cfg(test)]
 pub(super) mod tests;
 
-impl Verify for ForeignAccountSlotName {
-    type Verified =
-        (miden_protocol::account::StorageSlotId, miden_protocol::account::StorageSlotName);
+pub use proto::transaction::DecodedAccountInputs as AccountInputs;
+
+impl Verify for AccountInputs {
+    type Verified = miden_protocol::transaction::AccountInputs;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let id = unwrap_infallible(self.slot_id.verify());
-        let name = miden_protocol::account::StorageSlotName::new(self.slot_name)?;
-        if name.id() != id {
-            return Err(ForeignAccountSlotNameError::IdMismatch {
-                expected: name.id(),
-                actual: id,
-            }
-            .into());
-        }
-        Ok((id, name))
+        Ok(Self::Verified::new(self.account.verify()?, self.witness.verify()?))
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ForeignAccountSlotNameError {
-    #[error("storage slot ID {actual} does not match the name's ID {expected}")]
-    IdMismatch {
-        expected: miden_protocol::account::StorageSlotId,
-        actual: miden_protocol::account::StorageSlotId,
-    },
 }
 
 pub use proto::transaction::DecodedAuthSignature as AuthSignature;
@@ -87,14 +69,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let notes = self.input_notes.verify()?;
         let args = self.tx_args.verify()?;
         let advice = self.advice_inputs.verify()?;
-        let code = self.foreign_account_code.verify()?;
-        let mut names = BTreeMap::new();
-        for name in self.foreign_account_slot_names.into_inner() {
-            let (id, name) = name.verify()?;
-            if names.insert(id, name).is_some() {
-                return Err(TransactionInputsError::DuplicateSlot(id).into());
-            }
-        }
+        let foreign_accounts = self.foreign_accounts.verify()?;
         let note_scripts = self.note_scripts.verify()?;
         let mut signatures = BTreeMap::new();
         for entry in self.signatures.into_inner() {
@@ -111,8 +86,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .input_notes(notes)
             .tx_args(args)
             .advice_inputs(advice)
-            .foreign_account_code(code)
-            .foreign_account_slot_names(names)
+            .foreign_accounts(foreign_accounts)
             .note_scripts(note_scripts)
             .signatures(signatures)
             .build()?)
@@ -121,8 +95,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionInputsError {
-    #[error("duplicate foreign account storage slot ID {0}")]
-    DuplicateSlot(miden_protocol::account::StorageSlotId),
     #[error(
         "duplicate signature for public key commitment {} and message {}",
         .0.pub_key_commitment(),

@@ -12,6 +12,7 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
+    AccountInputs,
     ExecutedTransaction,
     InputNote,
     InputNotes,
@@ -337,10 +338,15 @@ where
             input_notes.iter().map(|n| n.note().script()),
         );
 
-        // To start executing the transaction, the procedure index map only needs to contain the
-        // native account's procedures. Foreign accounts are inserted into the map on first access.
-        let account_procedure_index_map =
-            AccountProcedureIndexMap::new([tx_inputs.account().code()]);
+        // Insert all available account's code into the procedure index map (native and foreign).
+        // The procedures of lazy-loaded foreign accounts are inserted into the map on first access.
+        let account_procedure_index_map = AccountProcedureIndexMap::new(
+            tx_inputs
+                .foreign_accounts()
+                .values()
+                .map(AccountInputs::code)
+                .chain([tx_inputs.account().code()]),
+        );
 
         let host = TransactionExecutorHost::new(
             tx_inputs.account(),
@@ -371,15 +377,8 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    let (
-        account_patch,
-        _input_notes,
-        output_notes,
-        accessed_foreign_account_code,
-        tx_progress,
-        foreign_account_slot_names,
-        lazy_loaded_data,
-    ) = host.into_parts();
+    let (account_patch, _input_notes, output_notes, tx_progress, lazy_loaded_data) =
+        host.into_parts();
 
     let tx_outputs =
         TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
@@ -405,11 +404,10 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 
     // Overwrite advice inputs from after the execution on the transaction inputs. This is
     // guaranteed to be a superset of the original advice inputs.
-    let mut tx_inputs = tx_inputs
-        .with_foreign_account_code(accessed_foreign_account_code)
-        .with_foreign_account_slot_names(foreign_account_slot_names)
-        .with_advice_inputs(advice_inputs);
-    lazy_loaded_data.add_to(&mut tx_inputs);
+    let mut tx_inputs = tx_inputs.with_advice_inputs(advice_inputs);
+    lazy_loaded_data
+        .add_to(&mut tx_inputs)
+        .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
 
     Ok(ExecutedTransaction::new(
         tx_inputs,

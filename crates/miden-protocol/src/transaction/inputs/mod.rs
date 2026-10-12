@@ -8,20 +8,8 @@ use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 use super::PartialBlockchain;
 use crate::Word;
 use crate::account::auth::{Signature, SignatureKey};
-use crate::account::{
-    AccountCode,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    PartialAccount,
-    PartialStorage,
-    StorageMapKey,
-    StorageMapWitness,
-    StorageSlotId,
-    StorageSlotName,
-};
-use crate::asset::{Asset, AssetId, AssetWitness, PartialVault};
-use crate::block::account_tree::{AccountIdKey, AccountWitness};
+use crate::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
+use crate::asset::{Asset, AssetId, AssetWitness};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
@@ -54,9 +42,8 @@ pub struct TransactionInputs {
     input_notes: InputNotes<InputNote>,
     tx_args: TransactionArgs,
     advice_inputs: AdviceInputs,
-    foreign_account_code: Vec<AccountCode>,
-    /// Storage slot names for foreign accounts.
-    foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+    /// Foreign accounts the transaction accessed during execution.
+    foreign_accounts: BTreeMap<AccountId, AccountInputs>,
     /// Scripts of the output notes the host resolved during execution.
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     /// Signatures the authenticator generated during execution.
@@ -79,6 +66,8 @@ impl TransactionInputs {
     /// - The protocol config does not match the one committed to by the block header.
     /// - The partial blockchain does not track the block headers required to prove inclusion of any
     ///   authenticated input note.
+    /// - Any of the conditions of [`Self::add_foreign_account`] is not met.
+    /// - Any of the conditions of [`Self::add_signature`] is not met.
     #[builder]
     pub fn new(
         account: PartialAccount,
@@ -88,8 +77,7 @@ impl TransactionInputs {
         input_notes: InputNotes<InputNote>,
         #[builder(default)] tx_args: TransactionArgs,
         #[builder(default)] advice_inputs: AdviceInputs,
-        #[builder(default)] foreign_account_code: Vec<AccountCode>,
-        #[builder(default)] foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+        #[builder(default)] foreign_accounts: Vec<AccountInputs>,
         #[builder(default)] note_scripts: Vec<NoteScript>,
         #[builder(default)] signatures: BTreeMap<SignatureKey, Signature>,
     ) -> Result<Self, TransactionInputError> {
@@ -97,7 +85,7 @@ impl TransactionInputs {
 
         let note_scripts = note_scripts.into_iter().map(|script| (script.root(), script)).collect();
 
-        Ok(Self {
+        let mut tx_inputs = Self {
             account,
             block_header,
             protocol_config,
@@ -105,11 +93,15 @@ impl TransactionInputs {
             input_notes,
             tx_args,
             advice_inputs,
-            foreign_account_code,
-            foreign_account_slot_names,
+            foreign_accounts: BTreeMap::new(),
             note_scripts,
             signatures,
-        })
+        };
+        for foreign_account in foreign_accounts {
+            tx_inputs.add_foreign_account(foreign_account)?;
+        }
+
+        Ok(tx_inputs)
     }
 
     // VALIDATION
@@ -173,24 +165,9 @@ impl TransactionInputs {
         self
     }
 
-    /// Replaces the transaction inputs and assigns the given foreign account code.
-    pub fn with_foreign_account_code(mut self, foreign_account_code: Vec<AccountCode>) -> Self {
-        self.foreign_account_code = foreign_account_code;
-        self
-    }
-
     /// Replaces the transaction inputs and assigns the given transaction arguments.
     pub fn with_tx_args(mut self, tx_args: TransactionArgs) -> Self {
         self.set_tx_args_inner(tx_args);
-        self
-    }
-
-    /// Replaces the transaction inputs and assigns the given foreign account slot names.
-    pub fn with_foreign_account_slot_names(
-        mut self,
-        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
-    ) -> Self {
-        self.foreign_account_slot_names = foreign_account_slot_names;
         self
     }
 
@@ -220,6 +197,32 @@ impl TransactionInputs {
         let (_stack, map, store) = new_advice_inputs.into_parts();
         self.advice_inputs = AdviceInputs::from(map).with_merkle_store(store);
         self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
+    }
+
+    /// Adds a foreign account, so that re-executing the transaction does not need to fetch it
+    /// again.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The account is the native account.
+    /// - The inputs already contain a foreign account with the same ID.
+    pub fn add_foreign_account(
+        &mut self,
+        foreign_account: AccountInputs,
+    ) -> Result<(), TransactionInputError> {
+        let account_id = foreign_account.id();
+        if account_id == self.account.id() {
+            return Err(TransactionInputError::ForeignAccountIsNativeAccount(account_id));
+        }
+
+        if self.foreign_accounts.contains_key(&account_id) {
+            return Err(TransactionInputError::DuplicateForeignAccount(account_id));
+        }
+
+        self.foreign_accounts.insert(account_id, foreign_account);
+
+        Ok(())
     }
 
     /// Adds a note script, so that re-executing the transaction does not need to fetch it again.
@@ -292,14 +295,9 @@ impl TransactionInputs {
         self.tx_args.tx_script()
     }
 
-    /// Returns the foreign account code to be executed.
-    pub fn foreign_account_code(&self) -> &[AccountCode] {
-        &self.foreign_account_code
-    }
-
-    /// Returns the foreign account storage slot names.
-    pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
-        &self.foreign_account_slot_names
+    /// Returns the foreign accounts accessed during execution, keyed by their ID.
+    pub fn foreign_accounts(&self) -> &BTreeMap<AccountId, AccountInputs> {
+        &self.foreign_accounts
     }
 
     /// Returns the output note scripts resolved during execution, keyed by their root.
@@ -430,105 +428,6 @@ impl TransactionInputs {
             .next()
             .expect("one key requested should yield exactly one witness");
         Ok(witness.find(asset_id))
-    }
-
-    /// Reads `AccountInputs` for a foreign account from the advice inputs.
-    ///
-    /// This function reverses the process of `TransactionAdviceInputs::add_foreign_accounts` by:
-    /// 1. Reading the account header from the advice map using the account_id_key.
-    /// 2. Building a `PartialAccount` from the header and foreign account code.
-    /// 3. Creating an `AccountWitness`.
-    pub fn read_foreign_account_inputs(
-        &self,
-        account_id: AccountId,
-    ) -> Result<AccountInputs, TransactionInputsExtractionError> {
-        if account_id == self.account().id() {
-            return Err(TransactionInputsExtractionError::AccountNotForeign);
-        }
-
-        // Read the account header elements from the advice map.
-        let account_id_key = AccountIdKey::from(account_id);
-        let header_elements = self
-            .advice_inputs
-            .map()
-            .get(&account_id_key.as_word())
-            .ok_or(TransactionInputsExtractionError::ForeignAccountNotFound(account_id))?;
-
-        // Parse the header from elements.
-        let header = AccountHeader::try_from_elements(header_elements)?;
-
-        // Construct and return account inputs.
-        let partial_account = self.read_foreign_partial_account(&header)?;
-        let witness = self.read_foreign_account_witness(&header)?;
-        Ok(AccountInputs::new(partial_account, witness))
-    }
-
-    /// Reads a foreign partial account from the advice inputs based on the account ID corresponding
-    /// to the provided header.
-    fn read_foreign_partial_account(
-        &self,
-        header: &AccountHeader,
-    ) -> Result<PartialAccount, TransactionInputsExtractionError> {
-        // Derive the partial vault from the header.
-        let partial_vault = PartialVault::new(header.vault_root());
-
-        // Find the corresponding foreign account code.
-        let account_code = self
-            .foreign_account_code
-            .iter()
-            .find(|code| code.commitment() == header.code_commitment())
-            .ok_or(TransactionInputsExtractionError::ForeignAccountCodeNotFound(header.id()))?
-            .clone();
-
-        // Try to get storage header from advice map using storage commitment as key.
-        let storage_header_elements = self
-            .advice_inputs
-            .map()
-            .get(&header.storage_commitment())
-            .ok_or(TransactionInputsExtractionError::StorageHeaderNotFound(header.id()))?;
-
-        // Get slot names for this foreign account, or use empty map if not available.
-        let storage_header = AccountStorageHeader::try_from_elements(
-            storage_header_elements,
-            self.foreign_account_slot_names(),
-        )?;
-
-        // Build partial storage.
-        let partial_storage = PartialStorage::new(storage_header, [])?;
-
-        // Create the partial account.
-        let partial_account = PartialAccount::new(
-            header.id(),
-            header.nonce(),
-            account_code,
-            partial_storage,
-            partial_vault,
-            None, // We know that foreign accounts are existing accounts so a seed is not required.
-        )?;
-
-        Ok(partial_account)
-    }
-
-    /// Reads a foreign account witness from the advice inputs based on the account ID corresponding
-    /// to the provided header.
-    fn read_foreign_account_witness(
-        &self,
-        header: &AccountHeader,
-    ) -> Result<AccountWitness, TransactionInputsExtractionError> {
-        // Get the account tree root from the block header.
-        let account_tree_root = self.block_header.account_root();
-        let leaf_index = AccountIdKey::from(header.id()).to_leaf_index().into();
-
-        // Get the Merkle path from the merkle store.
-        let merkle_path = self.advice_inputs.store().get_path(account_tree_root, leaf_index)?;
-
-        // Convert the Merkle path to SparseMerklePath.
-        let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
-
-        // Create the account witness.
-        let witness = AccountWitness::new(header.id(), header.to_commitment(), sparse_path)?;
-
-        Ok(witness)
     }
 
     // CONVERSIONS

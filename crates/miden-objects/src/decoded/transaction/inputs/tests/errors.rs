@@ -3,7 +3,7 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::errors::{StorageSlotNameError, TransactionInputError};
+use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::Note;
 use miden_protocol::protocol_config::ProtocolConfig;
 
@@ -70,10 +70,11 @@ fn input_notes_reject_duplicate_nullifiers_and_preserve_the_domain_source() {
 }
 
 #[test]
-fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
+fn foreign_accounts_reject_duplicate_ids() {
     let mut message = common::dummy_transaction_inputs_message();
-    common::transaction_inputs_v1_mut(&mut message).foreign_account_slot_names[0].slot_name =
-        "invalid".into();
+    let v1 = common::transaction_inputs_v1_mut(&mut message);
+    let duplicate = v1.foreign_accounts[0].clone();
+    v1.foreign_accounts.push(duplicate);
 
     let error = message
         .decode_fields()
@@ -83,16 +84,16 @@ fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
         .unwrap_err();
 
     assert_matches!(
-        error_source::<StorageSlotNameError>(&error),
-        Some(StorageSlotNameError::TooShort)
+        transaction_input_error(&error),
+        TransactionInputError::DuplicateForeignAccount(_)
     );
 }
 
 #[test]
-fn foreign_slot_names_reject_id_name_mismatches() {
+fn foreign_accounts_reject_the_native_account() {
     let mut message = common::dummy_transaction_inputs_message();
     let v1 = common::transaction_inputs_v1_mut(&mut message);
-    v1.foreign_account_slot_names[0].slot_id = v1.foreign_account_slot_names[1].slot_id;
+    v1.foreign_accounts[0].account = v1.account.clone();
 
     let error = message
         .decode_fields()
@@ -102,29 +103,8 @@ fn foreign_slot_names_reject_id_name_mismatches() {
         .unwrap_err();
 
     assert_matches!(
-        error_source::<crate::decoded::transaction::ForeignAccountSlotNameError>(&error),
-        Some(crate::decoded::transaction::ForeignAccountSlotNameError::IdMismatch { .. })
-    );
-}
-
-#[test]
-fn foreign_slot_names_reject_duplicate_ids() {
-    let mut message = common::dummy_transaction_inputs_message();
-    let v1 = common::transaction_inputs_v1_mut(&mut message);
-    let mut duplicate = v1.foreign_account_slot_names[0].clone();
-    duplicate.slot_name = v1.foreign_account_slot_names[0].slot_name.clone();
-    v1.foreign_account_slot_names.push(duplicate);
-
-    let error = message
-        .decode_fields()
-        .unwrap()
-        .build_unchecked()
-        .map_err(ConversionError::new)
-        .unwrap_err();
-
-    assert_matches!(
-        error_source::<crate::decoded::transaction::TransactionInputsError>(&error),
-        Some(crate::decoded::transaction::TransactionInputsError::DuplicateSlot(_))
+        transaction_input_error(&error),
+        TransactionInputError::ForeignAccountIsNativeAccount(_)
     );
 }
 

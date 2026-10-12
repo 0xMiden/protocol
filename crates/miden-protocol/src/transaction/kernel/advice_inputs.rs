@@ -67,6 +67,8 @@ impl TransactionAdviceInputs {
             }
         }
 
+        inputs.add_foreign_accounts(tx_inputs.foreign_accounts().values());
+
         // NOTE_SCRIPT_ROOT |-> [NOTE_SCRIPT_ELEMENTS]
         inputs.extend_map(
             tx_inputs

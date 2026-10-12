@@ -34,9 +34,8 @@ pub use notes::{
 
 mod inputs;
 pub use inputs::{
+    AccountInputs,
     AuthSignature,
-    ForeignAccountSlotName,
-    ForeignAccountSlotNameError,
     SignatureEntry,
     TransactionInputs,
     TransactionInputsError,

@@ -3,21 +3,26 @@ use alloc::vec;
 
 use miden_protocol::account::auth::{Signature, SignatureKey};
 use miden_protocol::account::{
+    Account,
     AccountCode,
     AccountComponent,
     AccountComponentMetadata,
     AccountId,
     AccountIdVersion,
+    AccountStorage,
     AccountStorageHeader,
     AccountType,
     AssetCallbackFlag,
     PartialAccount,
     PartialStorage,
+    StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetId, PartialVault};
+use miden_protocol::asset::{AssetId, AssetVault, PartialVault};
+use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNoteTree};
 use miden_protocol::crypto::merkle::InnerNodeInfo;
+use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::crypto::merkle::store::MerkleStore;
 use miden_protocol::note::{Note, NoteInclusionProof, NoteScript};
 use miden_protocol::protocol_config::{
@@ -29,6 +34,7 @@ use miden_protocol::protocol_config::{
 use miden_protocol::testing::assembler::assemble_test_package;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
+    AccountInputs,
     InputNote,
     InputNotes,
     PartialBlockchain,
@@ -86,6 +92,25 @@ fn dummy_secondary_account_code() -> AccountCode {
     .unwrap();
 
     AccountCode::from_components(&[NoopAuthComponent.into(), component]).unwrap()
+}
+
+/// Returns account inputs for an account with one value slot, one map slot and the given code.
+fn dummy_foreign_account(account_id: AccountId, code: AccountCode) -> AccountInputs {
+    let storage = AccountStorage::new(vec![
+        StorageSlot::with_value(
+            StorageSlotName::new("foreign::first::value").unwrap(),
+            dummy_word(80),
+        ),
+        StorageSlot::with_empty_map(StorageSlotName::new("foreign::second::map").unwrap()),
+    ])
+    .unwrap();
+    let account =
+        Account::new_existing(account_id, AssetVault::default(), storage, code, Felt::from(3_u32));
+
+    let mut account_tree = AccountTree::<Smt>::default();
+    account_tree.insert(account_id, account.to_commitment()).unwrap();
+
+    AccountInputs::new(PartialAccount::from(&account), account_tree.open(account_id))
 }
 
 fn dummy_advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) -> AdviceInputs {
@@ -190,11 +215,10 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         None,
     );
     let advice_inputs = dummy_advice_inputs([60, 61], 62, 63);
-    let foreign_account_code = vec![account_code, dummy_secondary_account_code()];
-    let first_slot = StorageSlotName::new("foreign::first::value").unwrap();
-    let second_slot = StorageSlotName::new("foreign::second::map").unwrap();
-    let foreign_account_slot_names =
-        BTreeMap::from([(second_slot.id(), second_slot), (first_slot.id(), first_slot)]);
+    let foreign_accounts = vec![
+        dummy_foreign_account(dummy_account_id(20), account_code),
+        dummy_foreign_account(dummy_account_id(21), dummy_secondary_account_code()),
+    ];
 
     TransactionInputs::builder()
         .account(account)
@@ -204,8 +228,7 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .input_notes(input_notes)
         .tx_args(tx_args)
         .advice_inputs(advice_inputs)
-        .foreign_account_code(foreign_account_code)
-        .foreign_account_slot_names(foreign_account_slot_names)
+        .foreign_accounts(foreign_accounts)
         .note_scripts(vec![NoteScript::mock()])
         .signatures(dummy_signatures())
         .build()

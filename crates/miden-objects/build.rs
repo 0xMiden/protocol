@@ -124,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.AccountHeader",
             ".account.PrivateAccountUpdate",
             ".note.NoteInclusionProof",
-            ".transaction.ForeignAccountSlotName",
+            ".transaction.AccountInputs",
             ".transaction.AuthSignature",
             ".transaction.SignatureEntry",
             ".transaction.TransactionArgs",

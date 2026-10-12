@@ -413,7 +413,11 @@ where
         // Set the lazy loaded from the execution as input for reexecution. This avoids lazy-loading
         // data that was already loaded from the data store in the next potential run.
         // This data is valid regardless of whether execution was successful or not.
-        lazy_loaded_data.add_to(tx_inputs);
+        lazy_loaded_data.add_to(tx_inputs).map_err(|source| {
+            TransactionCheckerError::TransactionPreparation(
+                TransactionExecutorError::InvalidTransactionInputs(source),
+            )
+        })?;
 
         match result {
             Ok(execution_output) => {

@@ -5,6 +5,7 @@ use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
+    AccountInputs,
     InputNote,
     InputNotes,
     ProvenTransaction,
@@ -152,8 +153,8 @@ impl LocalTransactionProver {
         // conflict on a shared mutable store.
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(tx_inputs.account().code());
-        for account_code in tx_inputs.foreign_account_code() {
-            mast_store.load_account_code(account_code);
+        for foreign_account in tx_inputs.foreign_accounts().values() {
+            mast_store.load_account_code(foreign_account.code());
         }
 
         let script_mast_store = ScriptMastForestStore::new(
@@ -162,7 +163,11 @@ impl LocalTransactionProver {
         );
 
         let account_procedure_index_map = AccountProcedureIndexMap::new(
-            tx_inputs.foreign_account_code().iter().chain([tx_inputs.account().code()]),
+            tx_inputs
+                .foreign_accounts()
+                .values()
+                .map(AccountInputs::code)
+                .chain([tx_inputs.account().code()]),
         );
 
         let block_commitments = tx_inputs.collect_block_commitments();

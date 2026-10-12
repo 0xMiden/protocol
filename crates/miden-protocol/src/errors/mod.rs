@@ -1001,6 +1001,10 @@ impl PartialBlockchainError {
 pub enum TransactionInputError {
     #[error("transaction input note with nullifier {0} is a duplicate")]
     DuplicateInputNote(Nullifier),
+    #[error("foreign account {0} is a duplicate")]
+    DuplicateForeignAccount(AccountId),
+    #[error("foreign account {0} is the native account of the transaction")]
+    ForeignAccountIsNativeAccount(AccountId),
     #[error("partial blockchain has length {actual} which does not match block number {expected}")]
     InconsistentChainLength {
         expected: BlockNumber,
@@ -1029,20 +1033,8 @@ pub enum TransactionInputError {
 
 #[derive(Debug, Error)]
 pub enum TransactionInputsExtractionError {
-    #[error("specified foreign account id matches the transaction input's account id")]
-    AccountNotForeign,
-    #[error("foreign account data not found in advice map for account {0}")]
-    ForeignAccountNotFound(AccountId),
-    #[error("foreign account code not found for account {0}")]
-    ForeignAccountCodeNotFound(AccountId),
-    #[error("storage header data not found in advice map for account {0}")]
-    StorageHeaderNotFound(AccountId),
-    #[error("failed to handle account data")]
-    AccountError(#[from] AccountError),
     #[error("failed to handle merkle data")]
     MerkleError(#[from] MerkleError),
-    #[error("failed to handle account tree data")]
-    AccountTreeError(#[from] AccountTreeError),
     #[error("missing vault root from Merkle store")]
     MissingVaultRoot,
     #[error("missing storage map root from Merkle store")]

@@ -25,9 +25,9 @@ message InputNotes {
   repeated InputNote notes = 1;
 }
 
-message ForeignAccountSlotName {
-  account.StorageSlotId slot_id = 1;
-  string slot_name = 2;
+message AccountInputs {
+  account.PartialAccount account = 1;
+  account.AccountWitness witness = 2;
 }
 
 message AuthSignature {
@@ -59,8 +59,7 @@ message TransactionInputsV1 {
   InputNotes input_notes = 5;
   TransactionArgs tx_args = 6;
   primitives.AdviceInputs advice_inputs = 7;
-  repeated account.AccountCode foreign_account_code = 8;
-  repeated ForeignAccountSlotName foreign_account_slot_names = 9;
-  repeated note.NoteScript note_scripts = 10;
-  repeated SignatureEntry signatures = 11;
+  repeated AccountInputs foreign_accounts = 8;
+  repeated note.NoteScript note_scripts = 9;
+  repeated SignatureEntry signatures = 10;
 }
