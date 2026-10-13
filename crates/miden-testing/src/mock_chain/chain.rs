@@ -666,6 +666,30 @@ impl MockChain {
         }
     }
 
+    /// Resolves the note referenced by `input` into an authenticated [`InputNote`].
+    ///
+    /// For [`MockTransactionNoteInput::NoteId`], the public note committed to the chain is
+    /// returned. For [`MockTransactionNoteInput::Note`], the provided note is combined with the
+    /// inclusion proof the chain holds for it.
+    fn resolve_input_note(&self, input: MockTransactionNoteInput) -> anyhow::Result<InputNote> {
+        let note_id = input.id();
+        let committed_note = self
+            .committed_notes
+            .get(&note_id)
+            .with_context(|| format!("note with id {note_id} not found"))?;
+
+        match input {
+            MockTransactionNoteInput::NoteId(_) => {
+                committed_note.clone().try_into().with_context(|| {
+                    format!("failed to convert mock chain note with id {note_id} into input note")
+                })
+            },
+            MockTransactionNoteInput::Note(note) => {
+                Ok(InputNote::authenticated(note, committed_note.inclusion_proof().clone()))
+            },
+        }
+    }
+
     /// Returns the authenticator the chain holds for the given account, if any.
     pub(crate) fn account_authenticator(
         &self,
@@ -690,7 +714,7 @@ impl MockChain {
         &self,
         reference_block: BlockNumber,
         account: impl Into<PartialAccount>,
-        notes: &[NoteId],
+        notes: &[MockTransactionNoteInput],
         unauthenticated_notes: &[Note],
         required_blocks: impl IntoIterator<Item = BlockNumber>,
     ) -> anyhow::Result<TransactionInputs> {
@@ -711,25 +735,18 @@ impl MockChain {
             }
         }
 
-        for note in notes {
-            let input_note: InputNote = self
-                .committed_notes
-                .get(note)
-                .with_context(|| format!("note with id {note} not found"))?
-                .clone()
-                .try_into()
-                .with_context(|| {
-                    format!("failed to convert mock chain note with id {note} into input note")
-                })?;
+        for note_input in notes {
+            let input_note = self.resolve_input_note(note_input.clone())?;
+            let note_id = input_note.id();
 
             let note_block_num = input_note
                 .location()
-                .with_context(|| format!("note location not available: {note}"))?
+                .with_context(|| format!("note location not available: {note_id}"))?
                 .block_num();
 
             if note_block_num > ref_block.block_num() {
                 anyhow::bail!(
-                    "note with ID {note} was created in block {note_block_num} which is larger than the reference block number {}",
+                    "note with ID {note_id} was created in block {note_block_num} which is larger than the reference block number {}",
                     ref_block.block_num()
                 )
             }
@@ -772,7 +789,7 @@ impl MockChain {
     pub fn get_transaction_inputs(
         &self,
         account: impl Into<PartialAccount>,
-        notes: &[NoteId],
+        notes: &[MockTransactionNoteInput],
         unauthenticated_notes: &[Note],
     ) -> anyhow::Result<TransactionInputs> {
         let latest_block_num = self.latest_block_header().block_num();
@@ -1339,6 +1356,44 @@ impl From<Account> for MockTransactionInput {
     }
 }
 
+// MOCK TRANSACTION NOTE INPUT
+// ================================================================================================
+
+/// Authenticated input note accepted by [`MockTransactionBuilder::authenticated_input_note`] and
+/// [`MockChain::get_transaction_inputs`].
+///
+/// [`MockTransactionNoteInput::NoteId`] resolves a committed public note from the chain, while
+/// [`MockTransactionNoteInput::Note`] supplies caller-owned note details directly, including the
+/// details of a private note. In both cases, the chain supplies the inclusion proof.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
+pub enum MockTransactionNoteInput {
+    NoteId(NoteId),
+    Note(Note),
+}
+
+impl MockTransactionNoteInput {
+    /// Returns the note ID that this input references.
+    pub(crate) fn id(&self) -> NoteId {
+        match self {
+            MockTransactionNoteInput::NoteId(note_id) => *note_id,
+            MockTransactionNoteInput::Note(note) => note.id(),
+        }
+    }
+}
+
+impl From<NoteId> for MockTransactionNoteInput {
+    fn from(note_id: NoteId) -> Self {
+        Self::NoteId(note_id)
+    }
+}
+
+impl From<Note> for MockTransactionNoteInput {
+    fn from(note: Note) -> Self {
+        Self::Note(note)
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -1348,14 +1403,17 @@ mod tests {
     use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::errors::ValidatorConfigError;
-    use miden_protocol::note::NoteType;
+    use miden_protocol::note::{NoteType, PartialNote};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
     use miden_protocol::testing::random_secret_key::random_secret_key;
+    use miden_protocol::transaction::RawOutputNote;
     use miden_standards::account::wallets::BasicWallet;
+    use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
     use miden_tx::utils::serde::SliceReader;
 
     use super::*;
@@ -1589,6 +1647,52 @@ mod tests {
             tx.final_account().to_commitment(),
             mock_chain.account_tree.open(account_id).state_commitment()
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn private_note_is_consumed_as_authenticated_input() -> anyhow::Result<()> {
+        let asset: Asset =
+            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?, 100)?.into();
+        let mut builder = MockChain::builder();
+        let sender = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset])?;
+        let target = builder.add_existing_wallet(Auth::IncrNonce)?;
+        let mut chain = builder.build()?;
+
+        // Genesis notes keep their details in the chain, so the private note is created by a
+        // transaction instead.
+        let note: Note = P2idNote::builder()
+            .sender(sender.id())
+            .target(target.id())
+            .assets([asset])
+            .note_type(NoteType::Private)
+            .serial_number(Word::from([1u32; 4]))
+            .build()?
+            .into();
+        let send_script = SendNotesTransactionScript::new(
+            &sender.code_interface(),
+            &[PartialNote::from(note.clone())],
+        )?;
+        let send_tx = chain
+            .build_transaction(sender.id())
+            .send_notes_script(&send_script)
+            .expected_output_note(RawOutputNote::Full(note.clone()))
+            .build()?
+            .execute()
+            .await?;
+        chain.add_pending_executed_transaction(&send_tx)?;
+        chain.prove_next_block()?;
+
+        let consume_tx = chain
+            .build_transaction(target.id())
+            .authenticated_input_note(note.clone())
+            .build()?
+            .execute()
+            .await?;
+
+        let input_note = consume_tx.input_notes().get_note(0);
+        assert_eq!(input_note.id(), note.id());
 
         Ok(())
     }
