@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use anyhow::Context;
+use assert_matches::assert_matches;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
@@ -197,6 +198,14 @@ impl Sponsorship {
     }
 }
 
+/// The script of a feature note that always fails in execution.
+const FAILING_FEATURE_NOTE_SCRIPT: &str = r#"
+    @note_script
+    pub proc main
+        push.0 assert.err="the failing feature note always aborts"
+    end
+"#;
+
 /// A network account plus the feature notes it can consume and the FEE_SPONSORSHIP notes bound to
 /// them.
 struct Test {
@@ -223,14 +232,26 @@ impl Test {
         /// Number of feature notes to create. Defaults to 1.
         #[builder(default = 1)]
         num_feature_notes: usize,
+        /// Number of feature notes to append whose script always aborts, so that they fail in
+        /// execution. Defaults to 0.
+        #[builder(default = 0)]
+        num_failing_feature_notes: usize,
     ) -> anyhow::Result<Self> {
         let mut rng = RandomCoin::new(Word::empty());
         let mut builder = MockChain::builder();
         let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-        let feature_notes: Vec<Note> = (0..num_feature_notes)
+        let mut feature_notes: Vec<Note> = (0..num_feature_notes)
             .map(|_| builder.add_p2any_note(sponsor.id(), NoteType::Public, []))
             .collect::<anyhow::Result<_>>()?;
+        for _ in 0..num_failing_feature_notes {
+            let note = NoteBuilder::new(sponsor.id(), &mut rng)
+                .note_type(NoteType::Public)
+                .code(FAILING_FEATURE_NOTE_SCRIPT)
+                .build()?;
+            builder.add_output_note(RawOutputNote::Full(note.clone()));
+            feature_notes.push(note);
+        }
         let num_unique_notes = feature_notes.iter().map(Note::id).collect::<BTreeSet<_>>().len();
         assert_eq!(feature_notes.len(), num_unique_notes, "feature notes should be unique");
 
@@ -1781,6 +1802,62 @@ async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> an
         blamed[0].note().id(),
         feature_notes[1].id(),
         "the blame should fall on the note left uncovered, not on the sponsorship"
+    );
+
+    Ok(())
+}
+
+/// A note that fails in its own script takes the notes bound to it down with it: its whole bundle
+/// is eliminated, with the failing note blamed and its sponsorship reported as its collateral,
+/// while an intact pair alongside is still consumed.
+#[tokio::test]
+async fn note_checker_eliminates_the_bundle_of_a_failing_note() -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .num_failing_feature_notes(1)
+        .sponsorship(Sponsorship::new(0, fee_asset(FEE_AMOUNT)?))
+        .sponsorship(Sponsorship::new(1, fee_asset(FEE_AMOUNT)?))
+        .build()?;
+    let (failing_note, failing_note_sponsorship) = (&feature_notes[1], &sponsorship_notes[1]);
+
+    let notes = vec![
+        feature_notes[0].clone(),
+        sponsorship_notes[0].clone(),
+        failing_note.clone(),
+        failing_note_sponsorship.clone(),
+    ];
+    let info = check_notes(&mock_chain, network_account.id(), notes).await?;
+
+    // make sure that correct notes have passed the check
+    assert_eq!(
+        info.successful().iter().map(|note| note.note().id()).collect::<BTreeSet<_>>(),
+        BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]),
+        "the intact pair should survive the failing note"
+    );
+
+    let [first, second] = info.failed() else {
+        panic!("only the failing note's bundle should fail, got {:?}", info.failed());
+    };
+    let (blamed, collateral) = if first.note().id() == failing_note.id() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+
+    assert!(
+        blamed.execution_error().is_some(),
+        "the failing note should be blamed with its execution error"
+    );
+    assert_eq!(collateral.note().id(), failing_note_sponsorship.id());
+    assert_matches!(
+        collateral.failure(),
+        NoteFailure::Collateral { blamed_by } if *blamed_by == failing_note.id(),
+        "the sponsorship should fail as collateral of the note it sponsors"
     );
 
     Ok(())

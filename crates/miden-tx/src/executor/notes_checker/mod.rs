@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
@@ -6,7 +6,7 @@ use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteId};
+use miden_protocol::note::Note;
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -31,12 +31,7 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
-use checker_utils::{
-    NoteBundle,
-    handle_epilogue_error,
-    reject_unconsumable_sponsorships,
-    sponsorship_consumption_status,
-};
+use checker_utils::{NoteBundler, NoteBundles, handle_epilogue_error};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -81,10 +76,10 @@ where
     /// Because of the runtime complexity involved in this function, a limited range of
     /// [`MAX_NUM_CHECKER_NOTES`] input notes is allowed.
     ///
-    /// If some notes succeed and others fail, the failed notes are removed from the candidate set
-    /// and the remaining notes (successful + unattempted) are retried in the next iteration. This
-    /// process continues until either all remaining notes succeed or no notes can be successfully
-    /// executed
+    /// If some notes succeed and others fail, the failed notes are removed from the candidate set,
+    /// together with the notes bound to them, and the remaining notes (successful + unattempted)
+    /// are retried in the next iteration. This process continues until either all remaining notes
+    /// succeed or no notes can be successfully executed.
     ///
     /// For example, given notes A, B, C, D, E, the execution flow would be as follows:
     /// - Try [A, B, C, D, E] → A, B succeed, C fails → Remove C, try again.
@@ -106,48 +101,36 @@ where
         &self,
         target_account_id: AccountId,
         block_ref: BlockNumber,
-        mut notes: Vec<Note>,
+        notes: Vec<Note>,
         tx_args: TransactionArgs,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let num_notes = notes.len();
         if num_notes == 0 || num_notes > MAX_NUM_CHECKER_NOTES {
             return Err(NoteCheckerError::InputNoteCountOutOfRange(num_notes));
         }
-        // Ensure standard notes are ordered first.
-        notes.sort_unstable_by_key(|note| {
-            StandardNote::from_script_root(note.script().root()).is_none()
-        });
 
-        // Drop the notes that can be ruled out without executing anything. The rejected notes are
-        // identified by ID rather than taken from the bundles, so that the notes kept stay in the
-        // order sorted above instead of being reordered into bundles.
-        let (bundles, mut rejected) = NoteBundle::group(&notes);
-        rejected.extend(reject_unconsumable_sponsorships(
-            &bundles,
-            target_account_id,
-            block_ref,
-            self.collected_fee_asset_id,
-        ));
-        if !rejected.is_empty() {
-            let rejected_ids: BTreeSet<NoteId> =
-                rejected.iter().map(|failed| failed.note().id()).collect();
-            notes.retain(|note| !rejected_ids.contains(&note.id()));
-
-            // Nothing is left to execute.
-            if notes.is_empty() {
-                return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
-            }
+        // Group the notes into bundles, dropping the ones that can be ruled out without executing
+        // anything.
+        let (bundles, rejected) =
+            NoteBundler::new(target_account_id, block_ref, self.collected_fee_asset_id)
+                .bundle(&notes);
+        if bundles.is_empty() {
+            return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
         }
 
-        let notes = InputNotes::from(notes);
         let tx_inputs = self
             .tx_executor
-            .prepare_tx_inputs(target_account_id, block_ref, notes, tx_args)
+            .prepare_tx_inputs(
+                target_account_id,
+                block_ref,
+                InputNotes::from(bundles.to_notes()),
+                tx_args,
+            )
             .await
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // Attempt to find an executable set of notes.
-        self.find_executable_notes_by_elimination(tx_inputs, rejected).await
+        self.find_executable_notes_by_elimination(tx_inputs, bundles, rejected).await
     }
 
     /// Checks whether the provided input note could be consumed by the provided account by
@@ -176,14 +159,6 @@ where
         if let Some(standard_note) = StandardNote::from_script_root(note.note().script().root())
             && let Some(consumption_status) =
                 standard_note.is_consumable(note.note(), target_account_id, block_ref)
-        {
-            return Ok(consumption_status);
-        }
-
-        // A FEE_SPONSORSHIP note checked on its own is one whose feature note is absent, which
-        // leaves the reclaim as the only way to consume it.
-        if let Some(consumption_status) =
-            sponsorship_consumption_status(note.note(), target_account_id, block_ref)
         {
             return Ok(consumption_status);
         }
@@ -232,25 +207,24 @@ where
 
     /// Finds a set of executable notes and eliminates failed notes from the list in the process.
     ///
+    /// When a note fails, the whole bundle it belongs to is eliminated: the failed note is blamed,
+    /// and the rest of its bundle is reported as its collateral.
+    ///
     /// The result contains some combination of the input notes partitioned by whether they
     /// succeeded or failed to execute. `failed_notes` seeds the failures reported, so that notes
     /// already ruled out before any execution are accounted for in the result.
     async fn find_executable_notes_by_elimination(
         &self,
         mut tx_inputs: TransactionInputs,
+        mut bundles: NoteBundles,
         mut failed_notes: Vec<FailedNote>,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
-        let mut candidate_notes = tx_inputs
-            .input_notes()
-            .iter()
-            .map(|note| note.clone().into_note())
-            .collect::<Vec<_>>();
-
-        // Attempt to execute notes in a loop. Reduce the set of notes based on failures until
-        // either a set of notes executes without failure or the set of notes cannot be
-        // further reduced.
+        // Attempt to execute notes in a loop. Reduce the set of bundles based on failures until
+        // either a set of notes executes without failure or the set of bundles cannot be further
+        // reduced.
         loop {
-            // Execute the candidate notes.
+            // Execute the notes of the candidate bundles.
+            let candidate_notes = bundles.to_notes();
             tx_inputs.set_input_notes(candidate_notes.clone());
             match self.try_execute_notes(&mut tx_inputs).await {
                 Ok(cycle_counts) => {
@@ -268,10 +242,19 @@ where
                     failed_note_cycle_count,
                     ..
                 }) => {
-                    // SAFETY: Failed note index is in bounds of the candidate notes.
-                    let failed_note = candidate_notes.remove(failed_note_index);
-                    failed_notes.push(FailedNote::new(
-                        failed_note,
+                    // The rest of the failed note's bundle cannot be consumed without it, so the
+                    // whole bundle is eliminated.
+                    let failed_note_id = candidate_notes[failed_note_index].id();
+                    let bundle = bundles
+                        .remove_containing(failed_note_id)
+                        .expect("every candidate note belongs to a bundle");
+                    let blamed_idx = bundle
+                        .notes()
+                        .iter()
+                        .position(|note| note.id() == failed_note_id)
+                        .expect("the bundle holds the failed note");
+                    failed_notes.extend(bundle.failed_notes(
+                        blamed_idx,
                         NoteFailure::Blamed {
                             error,
                             num_cycles: failed_note_cycle_count,
@@ -279,18 +262,14 @@ where
                     ));
 
                     // All possible candidate combinations have been attempted.
-                    if candidate_notes.is_empty() {
+                    if bundles.is_empty() {
                         return Ok(NoteConsumptionInfo::new(Vec::new(), failed_notes));
                     }
                     // Continue and process the next set of candidates.
                 },
                 Err(TransactionCheckerError::EpilogueExecution { .. }) => {
                     let consumption_info = self
-                        .find_largest_executable_combination(
-                            candidate_notes,
-                            failed_notes,
-                            tx_inputs,
-                        )
+                        .find_largest_executable_combination(bundles, failed_notes, tx_inputs)
                         .await;
                     return Ok(consumption_info);
                 },
@@ -307,17 +286,15 @@ where
     /// Attempts to find the largest possible combination of notes that can execute successfully
     /// together.
     ///
-    /// The notes are first grouped into [`NoteBundle`]s, and the search grows a known-good set one
-    /// bundle at a time: each round appends every remaining bundle to the accepted set in turn and
-    /// keeps the first bundle that lets the whole set pass, until a round adds nothing.
+    /// The search grows a known-good set one bundle at a time: each round appends every remaining
+    /// bundle to the accepted set in turn and keeps the first bundle that lets the whole set pass,
+    /// until a round adds nothing.
     async fn find_largest_executable_combination(
         &self,
-        remaining_notes: Vec<Note>,
+        mut remaining_bundles: NoteBundles,
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        // The invalid sponsorships were already rejected before execution, so none are left here.
-        let (mut remaining_bundles, _) = NoteBundle::group(&remaining_notes);
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();
@@ -327,8 +304,9 @@ where
         loop {
             let mut extended = false;
 
-            for idx in 0..remaining_bundles.len() {
-                let bundle_notes = remaining_bundles[idx].notes().to_vec();
+            for idx in 0..remaining_bundles.bundles().len() {
+                let bundle = &remaining_bundles.bundles()[idx];
+                let bundle_notes = bundle.notes().to_vec();
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 
@@ -369,29 +347,15 @@ where
                             _ => (0, None),
                         };
 
-                        let blamed_note = bundle_notes[blamed_idx].clone();
-                        let blamed_id = blamed_note.id();
-
                         // Record every note of the bundle (overwriting previous failures for the
                         // relevant notes), so the reported notes always account for all inputs.
                         // Only the blamed note owns the error; the rest failed with its bundle.
-                        failed_note_index.insert(
-                            blamed_id,
-                            FailedNote::new(
-                                blamed_note,
-                                NoteFailure::Blamed { error: error.into(), num_cycles },
-                            ),
+                        let failed_bundle = bundle.failed_notes(
+                            blamed_idx,
+                            NoteFailure::Blamed { error: error.into(), num_cycles },
                         );
-                        for (note_idx, note) in bundle_notes.iter().enumerate() {
-                            if note_idx != blamed_idx {
-                                failed_note_index.insert(
-                                    note.id(),
-                                    FailedNote::new(
-                                        note.clone(),
-                                        NoteFailure::Collateral { blamed_by: blamed_id },
-                                    ),
-                                );
-                            }
+                        for failed_note in failed_bundle {
+                            failed_note_index.insert(failed_note.note().id(), failed_note);
                         }
                     },
                 }

@@ -7,7 +7,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteId};
-use miden_standards::note::{FeeSponsorshipNote, NoteConsumptionStatus};
+use miden_standards::note::{FeeSponsorshipNote, NoteConsumptionStatus, ReclaimError};
 
 use crate::TransactionExecutorError;
 
@@ -175,66 +175,190 @@ impl NoteConsumptionInfo {
 
 /// A group of input notes that has to be tested for consumability as a unit, such as a feature note
 /// and the notes which sponsor it.
+///
+/// The note heading the bundle comes first: a feature note, or a FEE_SPONSORSHIP note whose feature
+/// note is absent.
 #[derive(Debug)]
 pub(super) struct NoteBundle {
     notes: Vec<Note>,
 }
 
 impl NoteBundle {
-    /// Groups `notes` into bundles that must be consumed together.
+    /// Returns the notes forming the bundle.
+    pub(super) fn notes(&self) -> &[Note] {
+        &self.notes
+    }
+
+    /// Reports every note of the bundle as failed: the note at `blamed_idx` with `failure`, and the
+    /// rest as its collateral, since they cannot be consumed without it.
+    pub(super) fn failed_notes(&self, blamed_idx: usize, failure: NoteFailure) -> Vec<FailedNote> {
+        let blamed_note = &self.notes[blamed_idx];
+        let mut failed_notes: Vec<FailedNote> = self
+            .notes
+            .iter()
+            .map(|note| {
+                FailedNote::new(
+                    note.clone(),
+                    NoteFailure::Collateral { blamed_by: blamed_note.id() },
+                )
+            })
+            .collect();
+        failed_notes[blamed_idx] = FailedNote::new(blamed_note.clone(), failure);
+
+        failed_notes
+    }
+}
+
+// NOTE BUNDLES
+// ================================================================================================
+
+/// The bundles a set of input notes is checked in.
+#[derive(Debug, Default)]
+pub(super) struct NoteBundles(Vec<NoteBundle>);
+
+impl NoteBundles {
+    /// Returns the bundles.
+    pub(super) fn bundles(&self) -> &[NoteBundle] {
+        &self.0
+    }
+
+    /// Returns `true` if there are no bundles.
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the notes of all bundles, bundle by bundle.
+    pub(super) fn to_notes(&self) -> Vec<Note> {
+        self.0.iter().flat_map(|bundle| bundle.notes().iter().cloned()).collect()
+    }
+
+    /// Removes and returns the bundle at `idx`.
+    pub(super) fn remove(&mut self, idx: usize) -> NoteBundle {
+        self.0.remove(idx)
+    }
+
+    /// Removes and returns the bundle holding the note with `note_id`, or `None` if no bundle
+    /// holds it.
+    pub(super) fn remove_containing(&mut self, note_id: NoteId) -> Option<NoteBundle> {
+        let idx = self
+            .0
+            .iter()
+            .position(|bundle| bundle.notes().iter().any(|note| note.id() == note_id))?;
+        Some(self.0.remove(idx))
+    }
+}
+
+// NOTE BUNDLER
+// ================================================================================================
+
+/// Groups input notes into the [`NoteBundles`] they have to be checked in, rejecting the
+/// FEE_SPONSORSHIP notes the native account cannot consume along the way.
+pub(super) struct NoteBundler {
+    /// The account consuming the notes.
+    native_account_id: AccountId,
+    /// The reference block the notes are consumed at.
+    block_ref: BlockNumber,
+    /// The asset the native account collects fees in, or `None` for an account that collects no
+    /// fees, in which case the asset of a sponsorship is not checked.
+    collected_fee_asset_id: Option<AssetId>,
+}
+
+impl NoteBundler {
+    /// Returns a new [`NoteBundler`] for notes consumed by `native_account_id` at `block_ref`.
+    pub(super) fn new(
+        native_account_id: AccountId,
+        block_ref: BlockNumber,
+        collected_fee_asset_id: Option<AssetId>,
+    ) -> Self {
+        Self {
+            native_account_id,
+            block_ref,
+            collected_fee_asset_id,
+        }
+    }
+
+    /// Groups `notes` into bundles that must be consumed together, and rejects the FEE_SPONSORSHIP
+    /// notes that cannot be consumed.
     ///
-    /// A FEE_SPONSORSHIP note joins the bundle of the feature note it sponsors; an unpaired
-    /// sponsorship note forms a bundle of its own, so that it fails alone rather than dropping the
-    /// notes it would otherwise have been grouped with. Every other note type forms a bundle of its
-    /// own.
+    /// A FEE_SPONSORSHIP note joins the bundle of the feature note it sponsors, and every other
+    /// note heads a bundle of its own. A sponsorship whose feature note is absent can only be
+    /// reclaimed, so it forms a bundle of its own as well, and fails alone rather than dropping the
+    /// notes it would otherwise have been grouped with.
     ///
-    /// The feature note is always first in the resulting bundle (if any); bundle preserves the
-    /// relative order of the sponsorship notes in it.
+    /// A FEE_SPONSORSHIP note is rejected when:
+    /// - its feature note is absent, and the native account cannot reclaim it.
+    /// - its feature note is itself a FEE_SPONSORSHIP note.
+    /// - its feature note is present, and it carries an asset other than the one the native account
+    ///   collects fees in.
     ///
-    /// A FEE_SPONSORSHIP note whose feature note is itself a FEE_SPONSORSHIP note can never be
-    /// consumed, so it joins no bundle and is returned among the rejected notes instead.
-    pub(super) fn group(notes: &[Note]) -> (Vec<Self>, Vec<FailedNote>) {
+    /// The bundles keep the order of the notes heading them, and the sponsorships in a bundle keep
+    /// their relative order.
+    pub(super) fn bundle(&self, notes: &[Note]) -> (NoteBundles, Vec<FailedNote>) {
         let note_indices: BTreeMap<NoteId, usize> =
             notes.iter().enumerate().map(|(idx, note)| (note.id(), idx)).collect();
         let mut rejected = Vec::new();
 
-        // Put the feature notes and orphan notes to the values with keys equal to this note index
-        // in the `note_indices`. Sponsorship notes are appended to the values which contain the
-        // corresponding feature note.
-        // Keying by index rather than by note ID keeps the bundles in the caller's order.
+        // Each bundle is keyed by the index of the note heading it, which keeps the bundles in the
+        // caller's order.
         let mut bundles: BTreeMap<usize, Vec<Note>> = BTreeMap::new();
         for (idx, note) in notes.iter().enumerate() {
-            // A sponsorship is only bundled when the note it sponsors is actually an input;
-            // otherwise it can only be reclaimed, which is something it has to attempt on its own.
-            match FeeSponsorshipNote::try_from(note)
-                .ok()
-                .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied())
-            {
-                // Reject a sponsorship which names another sponsorship as its feature note.
-                Some(feature_note_idx)
-                    if FeeSponsorshipNote::try_from(&notes[feature_note_idx]).is_ok() =>
-                {
-                    let reason = SponsorshipRejection::FeatureNoteIsSponsorship {
-                        feature_note_id: notes[feature_note_idx].id(),
-                    };
-                    rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
+            match FeeSponsorshipNote::try_from(note) {
+                // A feature note heads its bundle, whichever side of its sponsorships it arrives
+                // on.
+                Err(_) => bundles.entry(idx).or_default().insert(0, note.clone()),
+                Ok(sponsorship) => {
+                    match self.sponsorship_bundle_key(&sponsorship, idx, notes, &note_indices) {
+                        Ok(bundle_key) => bundles.entry(bundle_key).or_default().push(note.clone()),
+                        Err(reason) => {
+                            rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)))
+                        },
+                    }
                 },
-                Some(feature_note_idx) => {
-                    bundles.entry(feature_note_idx).or_default().push(note.clone())
-                },
-                // This note heads its own bundle, so it goes first whichever side of the notes
-                // bound to it it arrives on.
-                None => bundles.entry(idx).or_default().insert(0, note.clone()),
             }
         }
 
-        let bundles = bundles.into_values().map(|notes| Self { notes }).collect();
-        (bundles, rejected)
+        let bundles = bundles.into_values().map(|notes| NoteBundle { notes }).collect();
+        (NoteBundles(bundles), rejected)
     }
 
-    /// Returns the notes forming the bundle.
-    pub(super) fn notes(&self) -> &[Note] {
-        &self.notes
+    /// Returns the key of the bundle which FEE_SPONSORSHIP note at `idx` in `notes` joins, or why
+    /// it cannot be consumed.
+    fn sponsorship_bundle_key(
+        &self,
+        sponsorship: &FeeSponsorshipNote,
+        idx: usize,
+        notes: &[Note],
+        note_indices: &BTreeMap<NoteId, usize>,
+    ) -> Result<usize, SponsorshipRejection> {
+        match note_indices.get(&sponsorship.feature_note_id()).copied() {
+            // The feature note is absent, so the sponsorship can only be reclaimed, on its own.
+            None => sponsorship
+                .check_reclaim(self.native_account_id, self.block_ref)
+                .map(|()| idx)
+                .map_err(SponsorshipRejection::NotReclaimable),
+            Some(feature_note_idx)
+                if FeeSponsorshipNote::try_from(&notes[feature_note_idx]).is_ok() =>
+            {
+                Err(SponsorshipRejection::FeatureNoteIsSponsorship {
+                    feature_note_id: sponsorship.feature_note_id(),
+                })
+            },
+            Some(feature_note_idx) => {
+                self.reject_unexpected_fee_asset(sponsorship).map_or(Ok(feature_note_idx), Err)
+            },
+        }
+    }
+
+    /// Returns why `sponsorship` cannot pay for the feature note it is bound to, or `None` if it
+    /// can.
+    fn reject_unexpected_fee_asset(
+        &self,
+        sponsorship: &FeeSponsorshipNote,
+    ) -> Option<SponsorshipRejection> {
+        let expected = self.collected_fee_asset_id?;
+        let actual = sponsorship.asset().id();
+
+        (actual != expected).then_some(SponsorshipRejection::WrongFeeAsset { expected, actual })
     }
 }
 
@@ -249,138 +373,13 @@ pub(super) enum SponsorshipRejection {
     )]
     WrongFeeAsset { expected: AssetId, actual: AssetId },
     #[error(
-        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, but the native account {native_account} is not the reclaimer account {reclaimer}"
+        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, which the native account cannot do"
     )]
-    NotReclaimer {
-        native_account: AccountId,
-        reclaimer: AccountId,
-    },
-    #[error(
-        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, and reclaim is disabled"
-    )]
-    ReclaimDisabled,
-    #[error(
-        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed: reclaim block is {reclaim_height}, but the current block is {current_height}"
-    )]
-    ReclaimHeightNotReached {
-        reclaim_height: BlockNumber,
-        current_height: BlockNumber,
-    },
+    NotReclaimable(#[source] ReclaimError),
     #[error(
         "FEE_SPONSORSHIP note names note {feature_note_id} as its feature note, but that note is itself a FEE_SPONSORSHIP note"
     )]
     FeatureNoteIsSponsorship { feature_note_id: NoteId },
-}
-
-/// Rejects the FEE_SPONSORSHIP notes among `bundles` that `native_account_id` cannot consume at
-/// `block_ref`.
-///
-/// This procedure checks the following:
-/// - If a bundle has only a sponsorship note. In that case the note can only be reclaimed, which
-///   requires reclaim to be enabled, its height to have been reached, and the reclaiming account to
-///   be the named reclaimer. The asset a reclaim returns is not constrained, so the fee asset is
-///   not checked here.
-/// - If a bundle contains a feature note. In that case all the sponsorship notes should have the
-///   fee asset the account collects fees in.
-///
-/// `collected_fee_asset_id` is `None` for an account that collects no fees and therefore has no
-/// such asset; the fee asset check is then skipped.
-pub(super) fn reject_unconsumable_sponsorships(
-    bundles: &[NoteBundle],
-    native_account_id: AccountId,
-    block_ref: BlockNumber,
-    collected_fee_asset_id: Option<AssetId>,
-) -> Vec<FailedNote> {
-    let mut rejected = Vec::new();
-
-    for bundle in bundles {
-        let (head, bound_notes) = bundle
-            .notes()
-            .split_first()
-            .expect("a bundle holds at least the note heading it");
-
-        // A sponsorship only heads a bundle when the feature note it names is not an input.
-        if let Ok(sponsorship) = FeeSponsorshipNote::try_from(head)
-            && let Some(reason) =
-                reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref)
-        {
-            rejected.push(FailedNote::new(head.clone(), NoteFailure::from(reason)));
-        }
-
-        for note in bound_notes {
-            // Every note bound to the note heading the bundle is a sponsorship of it.
-            if let Ok(sponsorship) = FeeSponsorshipNote::try_from(note)
-                && let Some(reason) =
-                    reject_unexpected_fee_asset(&sponsorship, collected_fee_asset_id)
-            {
-                rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
-            }
-        }
-    }
-
-    rejected
-}
-
-/// Returns the consumption status of a lone FEE_SPONSORSHIP note, or `None` if `note` is not one.
-///
-/// A note checked on its own is one whose feature note is absent, so the reclaim rules of
-/// [`reject_unconsumable_sponsorships`] decide it.
-pub(super) fn sponsorship_consumption_status(
-    note: &Note,
-    native_account_id: AccountId,
-    block_ref: BlockNumber,
-) -> Option<NoteConsumptionStatus> {
-    let sponsorship = FeeSponsorshipNote::try_from(note).ok()?;
-
-    let status = match reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref) {
-        None => NoteConsumptionStatus::ConsumableWithAuthorization,
-        Some(SponsorshipRejection::ReclaimHeightNotReached { reclaim_height, .. }) => {
-            NoteConsumptionStatus::ConsumableAfter(reclaim_height)
-        },
-        Some(reason) => NoteConsumptionStatus::NeverConsumable(Box::new(reason)),
-    };
-
-    Some(status)
-}
-
-/// Returns why `sponsorship` cannot be reclaimed by `native_account_id` at `block_ref`, or `None`
-/// if it can be.
-///
-/// Mirrors the `miden::standards::note::note_reclaim::assert_reclaimable` procedure the note script
-/// takes the reclaim path through.
-fn reject_orphan_sponsorship(
-    sponsorship: &FeeSponsorshipNote,
-    native_account_id: AccountId,
-    block_ref: BlockNumber,
-) -> Option<SponsorshipRejection> {
-    if sponsorship.reclaimer() != native_account_id {
-        return Some(SponsorshipRejection::NotReclaimer {
-            native_account: native_account_id,
-            reclaimer: sponsorship.reclaimer(),
-        });
-    }
-
-    match sponsorship.reclaim_height() {
-        None => Some(SponsorshipRejection::ReclaimDisabled),
-        Some(reclaim_height) if block_ref < reclaim_height => {
-            Some(SponsorshipRejection::ReclaimHeightNotReached {
-                reclaim_height,
-                current_height: block_ref,
-            })
-        },
-        Some(_) => None,
-    }
-}
-
-/// Returns why `sponsorship` cannot pay for the feature note it is bound to, or `None` if it can.
-fn reject_unexpected_fee_asset(
-    sponsorship: &FeeSponsorshipNote,
-    collected_fee_asset_id: Option<AssetId>,
-) -> Option<SponsorshipRejection> {
-    let expected = collected_fee_asset_id?;
-    let actual = sponsorship.asset().id();
-
-    (actual != expected).then_some(SponsorshipRejection::WrongFeeAsset { expected, actual })
 }
 
 impl From<SponsorshipRejection> for NoteFailure {
