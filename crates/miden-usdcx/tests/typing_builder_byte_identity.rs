@@ -26,14 +26,15 @@ const SEED: [u8; 32] = [7u8; 32];
 const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
-// construction paths deterministic.
+// construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
+// policy code and the fee schedule keyed by note script roots.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([16580452297269410732, 16338703545336871909, 5963658326732254049, 11930573806319131398])";
+    "Word([17092948625233741751, 2349434164334778291, 8299097964558748825, 10984679790768791938])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([9891348590762445977, 13547177522288256996, 8293129559885415511, 13741985320399020474])";
+    "Word([12636044539378469756, 3580097209267422555, 5545353274320500061, 15121423269643480247])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([700992420680455222, 5925581077677362289, 9344583008849397723, 10635872323097036241])";
-const GOLDEN_ACCOUNT_ID: &str = "0x85861b8148c747b1255fbc03da210f";
+    "Word([17271432023237151271, 683563277854396599, 15516754376063234744, 5577544190383212581])";
+const GOLDEN_ACCOUNT_ID: &str = "0x02d94a5e4a5b03f101a72126427396";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

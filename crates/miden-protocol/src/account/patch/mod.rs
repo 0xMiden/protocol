@@ -30,7 +30,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
 
 /// An [`AccountPatch`] describes the new absolute state of an account after one or more
 /// transactions, in contrast to an [`AccountDelta`](crate::account::AccountDelta), which describes
@@ -75,8 +75,8 @@ impl AccountPatch {
     /// Domain separator for the account patch commitment.
     ///
     /// See [`AccountDelta::DOMAIN`](crate::account::AccountDelta) for why it lives in the capacity
-    /// word and where the value is allocated from.
-    const DOMAIN: Felt = Felt::new_unchecked(0x02_0000);
+    /// word.
+    const DOMAIN: Felt = ProtocolDomainRegistry::AccountPatch.as_felt();
 
     /// Version 1 of the account patch commitment layout.
     ///
