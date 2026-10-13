@@ -26,8 +26,10 @@ use super::error::EncodingError;
 /// zero-extends the carried `AssetAmount` back into its uint256 field when the faucet rebuilds the
 /// signed message, which is lossless only at scale zero — at any other scale the remainder the
 /// reduction dropped is unrecoverable and the rebuilt digest stops matching what Circle signed.
-/// `constant_parity.rs` pins the value so a change fails a test rather than shipping a preimage
-/// that can never verify. `DEV-5` stays OPEN.
+/// Two tests keep this value at zero: the `tv_amt_*` tests below check the `amt` golden vectors
+/// (every accepted amount must come out of this conversion unchanged), and
+/// `tests/mint_scale_conformance.rs` mints through the real note path and checks that the minted
+/// amount equals the amount on the wire. `DEV-5` stays OPEN.
 pub(super) const DEPOSIT_SCALE_EXP: u32 = 0;
 
 /// uint256 → AssetAmount at [`DEPOSIT_SCALE_EXP`]: `y = floor(x / 10^DEPOSIT_SCALE_EXP)`, rejecting

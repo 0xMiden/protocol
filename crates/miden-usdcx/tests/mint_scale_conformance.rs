@@ -90,7 +90,8 @@ fn administrator() -> AccountId {
     test_account_id(1)
 }
 
-/// The BLK_MANAGER holder seeded by the production builder (role id 4).
+/// The account that holds BLK_MANAGER in the production fixture (`test_account_id(4)` in
+/// `support`).
 fn blk_manager() -> AccountId {
     test_account_id(4)
 }
