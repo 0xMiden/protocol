@@ -379,7 +379,25 @@ pub struct PswapNote {
 
     offered_asset: FungibleAsset,
 
-    attachment: Option<NoteAttachment>,
+    /// Defaults to the discovery tag for this script and asset pair.
+    #[builder(default = PswapNote::create_tag(note_type, &offered_asset, storage.min_requested_asset()))]
+    tag: NoteTag,
+
+    #[builder(default, into)]
+    attachments: NoteAttachments,
+}
+
+impl<S: pswap_note_builder::State> PswapNoteBuilder<S>
+where
+    S::Attachments: pswap_note_builder::IsUnset,
+{
+    /// Sets a single attachment. Use `attachments` to provide a complete collection.
+    pub fn attachment(
+        self,
+        attachment: impl Into<NoteAttachment>,
+    ) -> PswapNoteBuilder<pswap_note_builder::SetAttachments<S>> {
+        self.attachments(NoteAttachments::from(attachment.into()))
+    }
 }
 
 impl<S: pswap_note_builder::State> PswapNoteBuilder<S>
@@ -391,7 +409,7 @@ where
     /// # Errors
     ///
     /// Returns an error if the offered and requested assets have the same faucet ID, or if the
-    /// note carries a malformed [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment.
+    /// first [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment is malformed.
     pub fn build(self) -> Result<PswapNote, NoteError> {
         let note = self.build_internal();
 
@@ -401,9 +419,8 @@ where
             ));
         }
 
-        if let Some(attachment) = note.attachment.as_ref()
-            && attachment.attachment_scheme() == PswapNote::PSWAP_ATTACHMENT_SCHEME
-        {
+        // The VM uses the first PSWAP attachment; callbacks may append others with this scheme.
+        if let Some(attachment) = note.attachments.find(PswapNote::PSWAP_ATTACHMENT_SCHEME) {
             PswapNoteAttachment::try_from(attachment)?;
         }
 
@@ -491,6 +508,11 @@ impl PswapNote {
         self.note_type
     }
 
+    /// Returns the note's discovery tag, preserved across remainder notes.
+    pub fn tag(&self) -> NoteTag {
+        self.tag
+    }
+
     /// Returns a reference to the offered [`FungibleAsset`].
     pub fn offered_asset(&self) -> &FungibleAsset {
         &self.offered_asset
@@ -503,8 +525,8 @@ impl PswapNote {
     /// remainder PSWAP this contains the [`Self::PSWAP_ATTACHMENT_SCHEME`] word
     /// `[amt_payout, order_id, depth, 0]`. For an original PSWAP (no prior fill),
     /// this is typically empty.
-    pub fn attachments(&self) -> Option<&NoteAttachment> {
-        self.attachment.as_ref()
+    pub fn attachments(&self) -> &NoteAttachments {
+        &self.attachments
     }
 
     /// Returns the order_id of this lineage, equal to `serial_number()[1]`.
@@ -519,10 +541,11 @@ impl PswapNote {
     /// The next round's `current_depth` is computed as `parent_depth() + 1`, matching the
     /// on-chain `get_current_depth` MASM procedure.
     pub fn parent_depth(&self) -> u32 {
-        self.attachment
-            .as_ref()
-            .and_then(|attachment| PswapNoteAttachment::try_from(attachment).ok())
-            .map_or(0, |attachment| attachment.depth())
+        self.attachments.find(Self::PSWAP_ATTACHMENT_SCHEME).map_or(0, |attachment| {
+            PswapNoteAttachment::try_from(attachment)
+                .expect("the builder validates the first PSWAP attachment")
+                .depth()
+        })
     }
 
     // INSTANCE METHODS
@@ -668,7 +691,8 @@ impl PswapNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the calculated payout is not a valid asset amount.
+    /// Returns an error if the calculated payout is not a valid asset amount, or if both
+    /// `fill_amount` and the minimum requested amount are zero.
     pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> Result<u64, NoteError> {
         let min_requested = self.storage.min_requested_amount();
         let total_offered = self.offered_asset.amount().as_u64();
@@ -836,8 +860,8 @@ impl PswapNote {
 
         let assets = NoteAssets::new(vec![offered_asset.into()])?;
 
-        let tag = Self::create_tag(self.note_type, &offered_asset, &min_requested_asset);
-        let metadata = PartialNoteMetadata::new(consumer_account_id, self.note_type).with_tag(tag);
+        let metadata =
+            PartialNoteMetadata::new(consumer_account_id, self.note_type).with_tag(self.tag);
 
         Ok(Note::with_attachments(
             assets,
@@ -895,14 +919,17 @@ impl PswapNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the result does not fit in a valid [`AssetAmount`].
+    /// Returns an error if `fill_reference` is zero or the result does not fit in a valid
+    /// [`AssetAmount`].
     fn calculate_output_amount(
         offered_total: u64,
         fill_reference: u64,
         fill_amount: u64,
     ) -> Result<u64, NoteError> {
         let product = (offered_total as u128) * (fill_amount as u128);
-        let quotient = product / (fill_reference as u128);
+        let quotient = product
+            .checked_div(fill_reference as u128)
+            .ok_or_else(|| NoteError::other("fill reference must be greater than zero"))?;
         let amount = u64::try_from(quotient)
             .map_err(|_| NoteError::other("payout quotient does not fit in u64"))?;
         // Validate the result is a valid fungible asset amount.
@@ -1006,6 +1033,7 @@ impl PswapNote {
             .storage(new_storage)
             .serial_number(remainder_serial_num)
             .note_type(self.note_type)
+            .tag(self.tag)
             .offered_asset(remaining_offered_asset)
             .attachment(attachment)
             .build()
@@ -1015,33 +1043,21 @@ impl PswapNote {
 // CONVERSIONS
 // ================================================================================================
 
-/// Converts a [`PswapNote`] into a protocol [`Note`], computing the final PSWAP tag.
+/// Converts a [`PswapNote`] into a protocol [`Note`], preserving its tag and attachments.
 impl From<PswapNote> for Note {
     fn from(pswap: PswapNote) -> Self {
-        let tag = PswapNote::create_tag(
-            pswap.note_type,
-            &pswap.offered_asset,
-            pswap.storage.min_requested_asset(),
-        );
-
         let recipient = pswap.storage.into_recipient(pswap.serial_number);
 
         let assets = NoteAssets::new(vec![pswap.offered_asset.into()])
             .expect("single fungible asset should be valid");
 
-        let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
+        let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(pswap.tag);
 
-        let attachments = pswap.attachment.map(NoteAttachments::from).unwrap_or_default();
-
-        Note::with_attachments(assets, metadata, recipient, attachments)
+        Note::with_attachments(assets, metadata, recipient, pswap.attachments)
     }
 }
 
 /// Parses a protocol [`Note`] back into a [`PswapNote`] by deserializing its storage.
-///
-/// This wrapper supports at most one attachment. Notes with additional attachments can
-/// still be consumed through the generic [`Note`] API, but cannot be represented as a
-/// [`PswapNote`].
 impl TryFrom<&Note> for PswapNote {
     type Error = NoteError;
 
@@ -1063,21 +1079,14 @@ impl TryFrom<&Note> for PswapNote {
             .as_fungible()
             .ok_or_else(|| NoteError::other("PSWAP note asset must be fungible"))?;
 
-        let attachment = match note.attachments().num_attachments() {
-            0 => None,
-            1 => {
-                Some(note.attachments().get(0).expect("length should have been validated").clone())
-            },
-            _ => return Err(NoteError::other("pswap note supports only one attachment")),
-        };
-
         PswapNote::builder()
             .sender(note.metadata().sender())
             .storage(storage)
             .serial_number(note.recipient().serial_num())
             .note_type(note.metadata().note_type())
+            .tag(note.metadata().tag())
             .offered_asset(offered_asset)
-            .maybe_attachment(attachment)
+            .attachments(note.attachments().clone())
             .build()
     }
 }
@@ -1152,6 +1161,54 @@ mod tests {
 
     // TESTS
     // --------------------------------------------------------------------------------------------
+
+    #[test]
+    fn pswap_zero_request_quote_returns_error() {
+        let (pswap, _) = build_pswap_note(
+            FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap(),
+            FungibleAsset::new(dummy_faucet_id(0xbb), 0).unwrap(),
+            dummy_creator_id(),
+        );
+        assert!(pswap.calculate_offered_for_requested(0).is_err());
+        assert_eq!(pswap.calculate_offered_for_requested(1).unwrap(), 100);
+    }
+
+    #[test]
+    fn pswap_uses_first_matching_attachment() {
+        let (pswap, note) = build_pswap_note(
+            FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap(),
+            FungibleAsset::new(dummy_faucet_id(0xbb), 50).unwrap(),
+            dummy_creator_id(),
+        );
+        let attachments = NoteAttachments::new(vec![
+            NoteAttachment::with_word(NoteAttachmentScheme::new(42).unwrap(), Word::empty()),
+            PswapNoteAttachment::new(AssetAmount::new(10).unwrap(), pswap.order_id(), 7).into(),
+            // A callback may append another PSWAP attachment whose contents must be ignored.
+            NoteAttachment::with_word(PswapNote::PSWAP_ATTACHMENT_SCHEME, Word::from([1u32; 4])),
+        ])
+        .unwrap();
+        let note = Note::with_attachments(
+            note.assets().clone(),
+            *note.metadata().partial_metadata(),
+            note.recipient().clone(),
+            attachments,
+        );
+        let parsed = PswapNote::try_from(&note).unwrap();
+        assert_eq!(parsed.parent_depth(), 7);
+        assert_eq!(parsed.attachments(), note.attachments());
+        assert_eq!(Note::from(parsed).id(), note.id());
+
+        // A later valid attachment must not hide a malformed first PSWAP attachment.
+        let mut attachments = note.attachments().clone().into_vec();
+        attachments.swap(1, 2);
+        let malformed = Note::with_attachments(
+            note.assets().clone(),
+            *note.metadata().partial_metadata(),
+            note.recipient().clone(),
+            NoteAttachments::new(attachments).unwrap(),
+        );
+        assert!(PswapNote::try_from(&malformed).is_err());
+    }
 
     #[test]
     fn pswap_note_creation_and_script() {
@@ -1528,7 +1585,7 @@ mod tests {
 
         let (round_two_payback, _) = remainder.execute(consumer_id, Some(fill), None).unwrap();
         let round_one_attachment = PswapNoteAttachment::try_from(
-            remainder.attachments().expect("remainder carries an attachment"),
+            remainder.attachments().find(PswapNote::PSWAP_ATTACHMENT_SCHEME).unwrap(),
         )
         .unwrap();
         let round_two_attachment = PswapNoteAttachment::new(
