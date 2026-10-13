@@ -28,6 +28,4 @@ message TransactionEffectsV1 {
   // Complete local transaction logs, including private transaction logs.
   // These effects are not a public submission format.
   bytes logs = 9;
-  // Secret salt used for private transaction log commitments.
-  primitives.Word log_salt = 10;
 }

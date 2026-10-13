@@ -4,7 +4,6 @@ use super::{
     InputNotes,
     RawOutputNotes,
     TransactionId,
-    TransactionLogError,
     TransactionLogs,
 };
 use crate::Word;
@@ -16,7 +15,7 @@ use crate::block::BlockNumber;
 
 /// The effects of an executed transaction.
 ///
-/// Includes complete local transaction logs and their secret salt. Serialized and debug output
+/// Includes complete local transaction logs. Serialized and debug output
 /// may therefore contain private transaction data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionEffects {
@@ -30,7 +29,6 @@ pub struct TransactionEffects {
     ref_block_commitment: Word,
     expiration_block_num: BlockNumber,
     logs: TransactionLogs,
-    log_salt: Word,
 }
 
 impl TransactionEffects {
@@ -71,18 +69,13 @@ impl TransactionEffects {
             ref_block_commitment,
             expiration_block_num,
             logs: TransactionLogs::default(),
-            log_salt: Word::empty(),
         }
     }
 
-    /// Attaches local transaction logs and checks the salt required for nonempty private
-    /// transaction logs.
-    pub fn with_logs(
-        mut self,
-        logs: TransactionLogs,
-        log_salt: Word,
-    ) -> Result<Self, TransactionLogError> {
-        let commitment = logs.commitment_for_account(self.account_patch.id(), log_salt)?;
+    /// Attaches local transaction logs and updates the transaction ID.
+    #[must_use]
+    pub fn with_logs(mut self, logs: TransactionLogs) -> Self {
+        let commitment = logs.commitment();
         self.transaction_id = TransactionId::new(
             self.initial_state_commitment,
             self.final_state_commitment,
@@ -91,8 +84,7 @@ impl TransactionEffects {
             commitment,
         );
         self.logs = logs;
-        self.log_salt = log_salt;
-        Ok(self)
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -103,16 +95,9 @@ impl TransactionEffects {
         &self.logs
     }
 
-    /// Returns the secret salt used for private transaction log commitments.
-    pub fn log_salt(&self) -> Word {
-        self.log_salt
-    }
-
     /// Returns the commitment included in the transaction ID and proof.
     pub fn logs_commitment(&self) -> Word {
-        self.logs
-            .commitment_for_account(self.account_patch.id(), self.log_salt)
-            .expect("transaction log salt in the effects is valid")
+        self.logs.commitment()
     }
 
     /// Returns the unique identifier of the transaction that produced these effects.
@@ -173,7 +158,6 @@ impl From<&ExecutedTransaction> for TransactionEffects {
             tx.block_header().commitment(),
             tx.expiration_block_num(),
         )
-        .with_logs(tx.logs().clone(), tx.tx_inputs().tx_args().log_salt())
-        .expect("executed transaction has valid logs")
+        .with_logs(tx.logs().clone())
     }
 }

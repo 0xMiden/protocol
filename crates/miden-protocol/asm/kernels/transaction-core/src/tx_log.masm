@@ -1,9 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
-use miden::core::word
-use miden::protocol_utils::account_id
 use miden::tx_kernel_core::memory
-use {LOG_SALT_PTR, NUM_LOGS_PTR, LOG_PAYLOAD_WORDS_PTR, LOG_COMMITMENT_DIRTY_FLAG_PTR,
+use {NUM_LOGS_PTR, LOG_PAYLOAD_WORDS_PTR, LOG_COMMITMENT_DIRTY_FLAG_PTR,
      LOG_COMMITMENT_PTR, LOG_COMMITMENTS_PTR}
     from miden::tx_kernel_core::memory
 use {MAX_LOGS_PER_TX, MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS_PER_TX, WORD_NUM_ELEMENTS}
@@ -15,7 +13,6 @@ use {MAX_LOGS_PER_TX, MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS_PER_TX, WORD_
 # Hash domains shared with TransactionLog and TransactionLogs in Rust.
 const LOG_DOMAIN = 0x020005
 const LOGS_DOMAIN = 0x020003
-const PRIVATE_LOGS_DOMAIN = 0x020004
 
 # add_log locals: two topic elements, two padding elements, then at most 256 payload words.
 const TOPIC_0_LOC = 0
@@ -31,7 +28,6 @@ const ERR_TX_LOG_COUNT_EXCEEDED = "transaction exceeds 64 logs"
 const ERR_TX_LOG_PAYLOAD_TOO_LARGE = "log payload must contain at most 256 complete words"
 const ERR_TX_LOG_PAYLOADS_TOO_LARGE = "transaction log payloads exceed 512 words"
 const ERR_TX_LOG_PREIMAGE_MISMATCH = "log payload does not match its commitment"
-const ERR_TX_LOG_INVALID_SALT = "private transaction logs require a nonzero secret salt"
 
 # PUBLIC PROCEDURES
 # =================================================================================================
@@ -99,7 +95,6 @@ end
 
 #! Returns the transaction log commitment included in the transaction proof.
 #! Appending another transaction log invalidates the cache.
-#! Nonempty private transaction logs are committed with the secret salt.
 #! Before the first transaction log, the cached commitment is the empty word.
 #!
 #! Inputs:  []
@@ -127,26 +122,12 @@ end
 # =================================================================================================
 
 #! Computes the commitment after at least one transaction log has been added.
-#! Visibility is determined by the native account, including during FPI.
 #!
 #! Inputs:  []
 #! Outputs: [LOGS_COMMITMENT]
-#!
-#! Panics if the native account is private and the secret salt is zero.
 proc compute_commitment() -> word
     push.LOGS_DOMAIN mem_load.NUM_LOGS_PTR mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
     exec.poseidon2::hash_elements_in_domain
     # => [LOGS_COMMITMENT]
 
-    exec.memory::get_native_account_id drop exec.account_id::is_private
-    # => [is_private, LOGS_COMMITMENT]
-
-    if.true
-        padw mem_loadw_le.LOG_SALT_PTR
-        exec.word::testz not assert.err=ERR_TX_LOG_INVALID_SALT
-        # => [SECRET_SALT, LOGS_COMMITMENT]
-
-        swapw push.PRIVATE_LOGS_DOMAIN exec.poseidon2::merge_in_domain
-        # => [PRIVATE_LOGS_COMMITMENT]
-    end
 end

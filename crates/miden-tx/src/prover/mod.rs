@@ -158,7 +158,6 @@ impl LocalTransactionProver {
 
         let block_commitments = tx_inputs.collect_block_commitments();
 
-        let log_salt = tx_inputs.tx_args().log_salt();
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
@@ -197,7 +196,6 @@ impl LocalTransactionProver {
             &advice_inputs,
             output_notes,
             logs,
-            log_salt,
         )
         .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
 

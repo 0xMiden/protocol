@@ -19,14 +19,15 @@ Visibility follows the native account: the account against which the transaction
 native account submits complete transaction logs; a private native account submits only their
 commitment. This also applies during FPI, regardless of the emitting account's visibility.
 
-For nonempty private transaction logs, the hash preimage is the unsalted transaction log commitment
-followed by a secret salt. Sample a fresh, random, nonzero salt for each transaction and pass it to
-`TransactionArgs::with_log_salt`. Keep the same salt through signing and proving. Zero salts are
-rejected; randomness and freshness are the caller's responsibility. Empty transaction logs commit
-to zero, so the presence of transaction logs is visible.
+Public and private transaction logs use the same deterministic commitment. Keeping log contents
+private does not prevent observers from guessing a predictable complete log list and comparing its
+commitment with the published value. Applications that need protection against guessing can include
+fresh, secret randomness in their log contents, for example by appending a random log before
+constructing the signing summary. That log counts toward the usual limits and must be retained for
+proving. Empty transaction logs commit to zero, so the presence of transaction logs is visible.
 
-Local execution data and signing summaries retain complete transaction logs and their salt, including
-when serialized or formatted for debugging. Remote provers and validators that decrypt execution
+Local execution data and signing summaries retain complete transaction logs, including when
+serialized or formatted for debugging. Remote provers and validators that decrypt execution
 witnesses can access this data.
 
 A transaction allows 64 transaction logs, 256 words per payload and 512 total payload words, excluding
