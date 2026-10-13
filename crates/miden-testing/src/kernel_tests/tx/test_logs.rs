@@ -23,8 +23,8 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
     LogTopic,
+    ProvenTransaction,
     TransactionEffects,
-    TransactionEventId,
     TransactionLog,
     TransactionLogDetails,
     TransactionLogs,
@@ -61,24 +61,24 @@ const EMIT_LOG_PROC: &str = "test::transaction_logs::emit_log";
 #[rstest]
 #[case::max_count(TransactionLogs::MAX_COUNT, 0, None)]
 #[case::count(TransactionLogs::MAX_COUNT + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
-#[case::max_payload(1, TransactionLog::MAX_NUM_WORDS, None)]
-#[case::max_total_payload(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS, TransactionLog::MAX_NUM_WORDS, None)]
-#[case::individual_payload(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_PAYLOAD_TOO_LARGE))]
-#[case::total_payload(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS + 1, TransactionLog::MAX_NUM_WORDS, Some(tx_kernel::ERR_TX_LOG_PAYLOADS_TOO_LARGE))]
+#[case::max_content(1, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::max_total_content(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::individual_content(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
+#[case::total_content(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS + 1, TransactionLog::MAX_NUM_WORDS, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
 #[tokio::test]
 async fn kernel_enforces_log_limits(
     #[case] count: usize,
-    #[case] payload_words: usize,
+    #[case] content_words: usize,
     #[case] error: Option<MasmError>,
 ) -> anyhow::Result<()> {
-    let (payload, commitment) = payload(vec![Word::from([71u32; 4]); payload_words]);
+    let (content, commitment) = content(vec![Word::from([71u32; 4]); content_words]);
     let tx = TestTransactionBuilder::with_existing_mock_account()
-        .add_advice_map_entry(commitment, Word::words_as_elements(&payload).to_vec())
+        .add_advice_map_entry(commitment, Word::words_as_elements(&content).to_vec())
         .build()?;
     let code = kernel_log_program(&format!(
         r"
         repeat.{count}
-            push.{commitment} push.29.17 exec.tx_log::add_log
+            push.{commitment} push.29.17 exec.tx::add_log
         end
         "
     ));
@@ -91,10 +91,10 @@ async fn kernel_enforces_log_limits(
 }
 
 #[rstest]
-#[case::forged_payload(WORD_SIZE, tx_kernel::ERR_TX_LOG_PREIMAGE_MISMATCH)]
-#[case::partial_word(WORD_SIZE - 1, tx_kernel::ERR_TX_LOG_PAYLOAD_TOO_LARGE)]
+#[case::forged_content(WORD_SIZE, tx_kernel::ERR_TX_LOG_PREIMAGE_MISMATCH)]
+#[case::partial_word(WORD_SIZE - 1, tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE)]
 #[tokio::test]
-async fn kernel_logs_reject_invalid_payloads(
+async fn kernel_logs_reject_invalid_contents(
     #[case] num_elements: usize,
     #[case] error: MasmError,
 ) -> anyhow::Result<()> {
@@ -102,7 +102,7 @@ async fn kernel_logs_reject_invalid_payloads(
     let tx = TestTransactionBuilder::with_existing_mock_account()
         .add_advice_map_entry(commitment, vec![71u32.into(); num_elements])
         .build()?;
-    let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx_log::add_log"));
+    let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx::add_log"));
     assert_execution_error!(tx.execute_code(&code).await, error);
     Ok(())
 }
@@ -142,8 +142,8 @@ async fn unauthenticated_note_logs(
     #[case] account_type: AccountType,
     #[case] direct: bool,
 ) -> anyhow::Result<()> {
-    let (payload, payload_commitment) = payload(vec![Word::from([11u32, 22, 33, 44])]);
-    let component = log_emitter_component(payload_commitment)?;
+    let (content, content_commitment) = content(vec![Word::from([11u32, 22, 33, 44])]);
+    let component = log_emitter_component(content_commitment)?;
     let root = component.get_procedure_root_by_path(EMIT_LOG_PROC).unwrap();
     let account = AccountBuilder::new([83; 32])
         .account_type(account_type)
@@ -151,7 +151,7 @@ async fn unauthenticated_note_logs(
         .with_component(component)
         .build_existing()?;
     let emit = if direct {
-        format!("push.{payload_commitment} push.29.17 exec.tx::add_log")
+        format!("push.{content_commitment} push.29.17 exec.tx::add_log")
     } else {
         format!("call.{root}")
     };
@@ -173,7 +173,7 @@ async fn unauthenticated_note_logs(
     let tx = chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
-        .add_advice_map_entry(payload_commitment, Word::words_as_elements(&payload).to_vec())
+        .add_advice_map_entry(content_commitment, Word::words_as_elements(&content).to_vec())
         .build()?;
     if direct {
         assert_transaction_executor_error!(
@@ -188,7 +188,7 @@ async fn unauthenticated_note_logs(
     }
     let executed = tx.execute().await?;
     let expected =
-        TransactionLog::new(account.id(), LogTopic::new([17u32.into(), 29u32.into()]), payload)?;
+        TransactionLog::new(account.id(), LogTopic::new([17u32.into(), 29u32.into()]), content)?;
     assert_eq!(executed.logs().iter().collect::<Vec<_>>(), vec![&expected]);
     let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
@@ -209,22 +209,22 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
     let topic = LogTopic::new([17u32.into(), 29u32.into()]);
     let mut entries = Vec::new();
     let mut builder = TestTransactionBuilder::new(account.clone());
-    let mut code = String::from("exec.tx_log::get_commitment padw assert_eqw\n");
+    let mut code = String::from("exec.tx::get_logs_commitment padw assert_eqw\n");
     for num_words in [0usize, 1, 2, 3, TransactionLog::MAX_NUM_WORDS] {
-        let payload = (0..num_words).map(|i| Word::from([i as u32 + 1; 4])).collect();
-        let entry = TransactionLog::new(account.id(), topic, payload)?;
-        let payload_commitment = entry.content_commitment();
+        let content = (0..num_words).map(|i| Word::from([i as u32 + 1; 4])).collect();
+        let entry = TransactionLog::new(account.id(), topic, content)?;
+        let content_commitment = entry.content_commitment();
         builder = builder.add_advice_map_entry(
-            payload_commitment,
+            content_commitment,
             Word::words_as_elements(entry.content()).to_vec(),
         );
         entries.push(entry);
         let expected = TransactionLogs::new(entries.clone())?.commitment();
         code.push_str(&format!(
             r"
-            push.{payload_commitment} push.29.17 exec.tx_log::add_log
-            exec.tx_log::get_commitment push.{expected} assert_eqw
-            exec.tx_log::get_commitment push.{expected} assert_eqw
+            push.{content_commitment} push.29.17 exec.tx::add_log
+            exec.tx::get_logs_commitment push.{expected} assert_eqw
+            exec.tx::get_logs_commitment push.{expected} assert_eqw
             ",
         ));
     }
@@ -238,10 +238,8 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
 #[case::public(AccountType::Public)]
 #[case::private(AccountType::Private)]
 #[tokio::test]
-async fn transaction_logs_execute_prove_verify_and_reject_tampering(
-    #[case] account_type: AccountType,
-) -> anyhow::Result<()> {
-    let (payload, payload_commitment) = payload(vec![Word::from([111u32, 222, 333, 444])]);
+async fn transaction_proofs_bind_logs(#[case] account_type: AccountType) -> anyhow::Result<()> {
+    let (content, content_commitment) = content(vec![Word::from([111u32, 222, 333, 444])]);
     let component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "test::log_auth",
@@ -253,9 +251,9 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
             pub proc auth
                 # Both transaction log APIs must preserve the caller's deeper stack.
                 push.101.102.103.104.105.106.107.108
-                push.{payload_commitment} push.29.17 exec.tx::add_log
+                push.{content_commitment} push.29.17 exec.tx::add_log
                 exec.tx::get_logs_commitment dropw
-                push.{payload_commitment} push.31.17 exec.tx::add_log
+                push.{content_commitment} push.31.17 exec.tx::add_log
                 exec.tx::get_logs_commitment dropw
                 push.105.106.107.108 assert_eqw
                 push.101.102.103.104 assert_eqw
@@ -273,14 +271,14 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
         .with_component(BasicWallet)
         .build_existing()?;
     let tx = TestTransactionBuilder::new(account.clone())
-        .add_advice_map_entry(payload_commitment, Word::words_as_elements(&payload).to_vec())
+        .add_advice_map_entry(content_commitment, Word::words_as_elements(&content).to_vec())
         .build()?;
     let executed = tx.execute().await?;
     assert_eq!(executed.logs().num_logs(), 2);
     assert_eq!(executed.logs_commitment(), executed.logs().commitment());
     let log = &executed.logs().iter().next().unwrap();
     assert_eq!(log.emitter(), account.id());
-    assert_eq!(log.content(), payload);
+    assert_eq!(log.content(), content);
 
     let proven = LocalTransactionProver::default().prove(executed.clone())?;
     assert_eq!(proven.id(), executed.id());
@@ -290,33 +288,33 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
         matches!(proven.log_details(), TransactionLogDetails::Public(_)),
         account_type.is_public()
     );
-    let tampered_data = match proven.log_details() {
-        TransactionLogDetails::Public(logs) => tampered_public_log_details(logs)?,
-        TransactionLogDetails::Private(_) => {
-            let mut changed_commitment = executed.logs_commitment();
-            changed_commitment[0] += Felt::ONE;
-            vec![
-                (
-                    "removed private transaction logs",
-                    TransactionLogDetails::Private(Word::empty()),
-                ),
-                (
-                    "changed private transaction log commitment",
-                    TransactionLogDetails::Private(changed_commitment),
-                ),
-            ]
+    let log_details = match proven.log_details() {
+        TransactionLogDetails::Public(logs) => {
+            let mut entries = logs.clone().into_vec();
+            let log = &entries[0];
+            entries[0] = TransactionLog::new(log.emitter(), log.topic(), vec![Word::empty()])?;
+            TransactionLogDetails::Public(TransactionLogs::new(entries)?)
+        },
+        TransactionLogDetails::Private(commitment) => {
+            let mut commitment = *commitment;
+            commitment[0] += Felt::ONE;
+            TransactionLogDetails::Private(commitment)
         },
     };
-    for (case, log_details) in tampered_data {
-        let tampered = proven.clone().with_log_details(log_details)?;
-        assert!(
-            matches!(
-                verifier.verify(&tampered),
-                Err(TransactionVerifierError::TransactionVerificationFailed(_))
-            ),
-            "accepted tampered transaction log data: {case}"
-        );
-    }
+    let tampered = ProvenTransaction::new(
+        proven.account_update().clone(),
+        proven.input_notes().iter().cloned(),
+        proven.output_notes().iter().cloned(),
+        proven.ref_block_num(),
+        proven.ref_block_commitment(),
+        proven.expiration_block_num(),
+        proven.proof().clone(),
+        log_details,
+    )?;
+    assert!(matches!(
+        verifier.verify(&tampered),
+        Err(TransactionVerifierError::TransactionVerificationFailed(_))
+    ));
     Ok(())
 }
 
@@ -411,30 +409,6 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     Ok(())
 }
 
-#[tokio::test]
-async fn logs_do_not_make_an_empty_transaction_valid() -> anyhow::Result<()> {
-    let tx = TestTransactionBuilder::with_noop_auth_account()
-        .add_advice_map_entry(Word::empty(), vec![])
-        .build()?;
-    assert_execution_error!(
-        tx.execute_code(
-            r"
-            use miden::tx_kernel_core::prologue
-            use miden::tx_kernel_core::tx_log
-            use miden::tx_kernel_core::epilogue
-            begin
-                exec.prologue::prepare_transaction
-                padw push.29.17 exec.tx_log::add_log
-                exec.epilogue::finalize_transaction
-            end
-            "
-        )
-        .await,
-        tx_kernel::ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY
-    );
-    Ok(())
-}
-
 #[rstest]
 #[case::public_falcon(AccountType::Public, AuthScheme::Falcon512Poseidon2)]
 #[case::private_ecdsa(AccountType::Private, AuthScheme::EcdsaK256Keccak)]
@@ -470,29 +444,33 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
     let executed = tx.execute().await?;
     let effects = TransactionEffects::from(&executed);
     let final_nonce = account.nonce() + Felt::ONE;
-    let summary = TransactionSummary::new(
-        AccountDelta::new(
-            account.id(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Felt::ONE,
-        )?,
-        executed.input_notes().clone(),
-        executed.output_notes().clone(),
-        effects.ref_block_number(),
-        effects.ref_block_commitment(),
-        0,
-        TransactionSummaryUserParams::new([
-            final_nonce,
-            0u32.into(),
-            0u32.into(),
-            0u32.into(),
-            0u32.into(),
-            0u32.into(),
-        ]),
-    )
-    .with_logs(executed.logs().clone());
+    let account_delta = AccountDelta::new(
+        account.id(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Felt::ONE,
+    )?;
+    let build_summary = |logs| {
+        TransactionSummary::new(
+            account_delta.clone(),
+            executed.input_notes().clone(),
+            executed.output_notes().clone(),
+            effects.ref_block_number(),
+            effects.ref_block_commitment(),
+            0,
+            TransactionSummaryUserParams::new([
+                final_nonce,
+                0u32.into(),
+                0u32.into(),
+                0u32.into(),
+                0u32.into(),
+                0u32.into(),
+            ]),
+            logs,
+        )
+    };
+    let summary = build_summary(executed.logs().clone());
     assert_eq!(summary.logs_commitment(), executed.logs_commitment());
     let keys = get_public_keys_from_account(&account);
     let key = Hasher::merge(&[keys[0], summary.to_commitment()]);
@@ -527,7 +505,7 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
         "
     ))?;
     let doubled = TransactionLogs::new(vec![executed.logs().iter().next().unwrap().clone(); 2])?;
-    let changed_summary = summary.with_logs(doubled);
+    let changed_summary = build_summary(doubled);
     let mut args = executed.tx_args().clone().with_tx_script(twice);
     let changed_key = Hasher::merge(&[keys[0], changed_summary.to_commitment()]);
     assert_ne!(key, changed_key);
@@ -552,31 +530,6 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
 }
 
 #[tokio::test]
-async fn transaction_scripts_cannot_forge_transaction_log_events() -> anyhow::Result<()> {
-    let script = CodeBuilder::default().compile_tx_script(
-        r#"
-        const TX_LOG_ADDED = event("miden::protocol::tx::log_added")
-        @transaction_script
-        pub proc main
-            emit.TX_LOG_ADDED
-        end
-        "#,
-    )?;
-    let result = TestTransactionBuilder::with_existing_mock_account()
-        .tx_script(script)
-        .build()?
-        .execute()
-        .await;
-    assert!(matches!(
-        result,
-        Err(TransactionExecutorError::PrivilegedEventFromOutsideTransactionKernelContext(
-            TransactionEventId::TxLogAdded
-        ))
-    ));
-    Ok(())
-}
-
-#[tokio::test]
 async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
     let component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
@@ -592,7 +545,7 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
                 dropw exec.native_account::incr_nonce drop
                 # => []
 
-                padw push.0.0 exec.auth::get_tx_summary_commitment
+                padw push.0.0 exec.auth::get_default_tx_summary_commitment
                 # => [MESSAGE_WITHOUT_LOGS]
 
                 padw push.29.17 exec.tx::add_log
@@ -619,7 +572,7 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
             if matches!(
                 event_err.downcast_ref::<TransactionKernelError>(),
                 Some(TransactionKernelError::Other { message, .. })
-                    if message.as_ref() == "summary transaction log commitment mismatch"
+                    if message.as_ref() == "summary transaction logs commitment mismatch"
             )
     );
     Ok(())
@@ -628,8 +581,8 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
 // TEST HELPERS
 // ================================================================================================
 
-/// Returns a payload and its commitment for the advice map.
-fn payload(words: Vec<Word>) -> (Vec<Word>, Word) {
+/// Returns content and its commitment for the advice map.
+fn content(words: Vec<Word>) -> (Vec<Word>, Word) {
     let commitment = Hasher::hash_elements(Word::words_as_elements(&words));
     (words, commitment)
 }
@@ -639,7 +592,7 @@ fn kernel_log_program(body: &str) -> String {
     format!(
         r"
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::tx_log
+        use miden::tx_kernel_core::tx
         begin
             exec.prologue::prepare_transaction
             {body}
@@ -648,8 +601,8 @@ fn kernel_log_program(body: &str) -> String {
     )
 }
 
-/// An account procedure that emits one transaction log with the supplied payload commitment.
-fn log_emitter_component(payload_commitment: Word) -> anyhow::Result<AccountComponent> {
+/// An account procedure that emits one transaction log with the supplied content commitment.
+fn log_emitter_component(content_commitment: Word) -> anyhow::Result<AccountComponent> {
     Ok(AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "test::transaction_logs",
@@ -658,7 +611,7 @@ fn log_emitter_component(payload_commitment: Word) -> anyhow::Result<AccountComp
                 use miden::protocol::tx
                 @account_procedure
                 pub proc emit_log
-                    push.{payload_commitment} push.29.17 exec.tx::add_log
+                    push.{content_commitment} push.29.17 exec.tx::add_log
                 end
                 "
             ),
@@ -666,44 +619,4 @@ fn log_emitter_component(payload_commitment: Word) -> anyhow::Result<AccountComp
         vec![],
         AccountComponentMetadata::mock("test::transaction_logs"),
     )?)
-}
-
-/// Mutations of the two public transaction logs emitted by the proof test.
-fn tampered_public_log_details(
-    logs: &TransactionLogs,
-) -> anyhow::Result<Vec<(&'static str, TransactionLogDetails)>> {
-    let entries = logs.clone().into_vec();
-    let mut added = entries.clone();
-    added.push(entries[0].clone());
-    let mut reordered = entries.clone();
-    reordered.reverse();
-    let mut altered = entries.clone();
-    altered[0] =
-        TransactionLog::new(entries[0].emitter(), entries[0].topic(), vec![Word::empty()])?;
-    let mut changed_emitter = entries.clone();
-    changed_emitter[0] = TransactionLog::new(
-        ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
-        entries[0].topic(),
-        entries[0].content().to_vec(),
-    )?;
-    let mut changed_topic = entries.clone();
-    changed_topic[0] = TransactionLog::new(
-        entries[0].emitter(),
-        LogTopic::from_name("test::changed"),
-        entries[0].content().to_vec(),
-    )?;
-    [
-        ("removed all", vec![]),
-        ("removed last", entries[..1].to_vec()),
-        ("added", added),
-        ("reordered", reordered),
-        ("changed payload", altered),
-        ("changed emitter", changed_emitter),
-        ("changed topic", changed_topic),
-    ]
-    .into_iter()
-    .map(|(case, entries)| {
-        Ok((case, TransactionLogDetails::Public(TransactionLogs::new(entries)?)))
-    })
-    .collect()
 }

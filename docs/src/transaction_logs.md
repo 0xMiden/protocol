@@ -3,17 +3,18 @@
 An authenticated account procedure emits a transaction log with `miden::protocol::tx::add_log`:
 
 ```text
-Stack: [topic_suffix, topic_prefix, PAYLOAD_COMMITMENT]
-Advice map: PAYLOAD_COMMITMENT => payload field elements
+Stack: [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+Advice map: CONTENT_COMMITMENT => content field elements
 ```
 
-The kernel checks the payload and uses the active account as emitter. Note and transaction
+The kernel checks the content and uses the active account as emitter. Note and transaction
 scripts must call an account procedure. Named topics use the first two felts of `word(name)`.
 
 Individual transaction log commitments are hashed in emission order; `TransactionLogs` defines the
 commitment preimage. The kernel caches the aggregate until another log is appended. It is bound to
-transaction outputs, IDs, proofs and signing summaries. Emit all transaction logs before constructing
-the summary that authorizes them.
+transaction outputs, IDs, proofs and signing summaries. The output stack is
+`[OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, expiration_block_num, pad(3)]`.
+Emit all transaction logs before constructing the summary that authorizes them.
 
 Visibility follows the native account: the account against which the transaction executes. A public
 native account submits complete transaction logs; a private native account submits only their
@@ -30,5 +31,5 @@ Local execution data and signing summaries retain complete transaction logs, inc
 output. Protobuf transaction effects also retain them. Remote provers and validators that decrypt
 execution witnesses can access this data.
 
-A transaction allows 64 transaction logs, 256 words per payload and 512 total payload words, excluding
+A transaction allows 64 transaction logs, 256 words per content and 512 total content words, excluding
 metadata. Transaction logs alone do not make an otherwise empty transaction valid.

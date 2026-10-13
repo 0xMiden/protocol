@@ -147,10 +147,10 @@ pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 1220;
 // | Address | Elements | Content                                  |
 // | ------- | -------- | ---------------------------------------- |
 // | 1300    | 1        | Number of transaction logs               |
-// | 1301    | 1        | Total payload words                      |
+// | 1301    | 1        | Total content words                      |
 // | 1302    | 1        | Dirty flag for the cached commitment     |
 // | 1303    | 1        | Padding                                  |
-// | 1304    | 4        | Cached transaction log commitment        |
+// | 1304    | 4        | Cached transaction logs commitment       |
 //
 // The counters, dirty flag, and cached commitment start at zero. Individual transaction log
 // commitments are stored separately.

@@ -695,29 +695,29 @@ pub(crate) enum RecipientData {
     },
 }
 
-/// Extracts a transaction log after the kernel has authenticated its emitter and payload.
+/// Extracts a transaction log after the kernel has authenticated its emitter and content.
 fn extract_transaction_log(
     process: &ProcessorState,
 ) -> Result<TransactionLog, TransactionKernelError> {
-    // Expected stack: [event, emitter_suffix, emitter_prefix, topic_0, topic_1,
-    // PAYLOAD_COMMITMENT].
+    // Expected stack: [event, emitter_suffix, emitter_prefix, topic_suffix, topic_prefix,
+    // CONTENT_COMMITMENT].
     let emitter =
         AccountId::try_from_elements(process.get_stack_item(1), process.get_stack_item(2))
             .map_err(|err| {
                 TransactionKernelError::other_with_source("invalid transaction log emitter", err)
             })?;
     let topic = LogTopic::new([process.get_stack_item(3), process.get_stack_item(4)]);
-    let payload_commitment = process.get_stack_word(5);
+    let content_commitment = process.get_stack_word(5);
     let elements = process
         .advice_provider()
-        .get_mapped_values(&payload_commitment)
-        .ok_or_else(|| TransactionKernelError::other("missing transaction log payload"))?;
+        .get_mapped_values(&content_commitment)
+        .ok_or_else(|| TransactionKernelError::other("missing transaction log content"))?;
     let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
     if !remainder.is_empty() || words.len() > TransactionLog::MAX_NUM_WORDS {
-        return Err(TransactionKernelError::other("invalid transaction log payload length"));
+        return Err(TransactionKernelError::other("invalid transaction log content length"));
     }
-    let payload = words.iter().copied().map(Word::new).collect();
-    TransactionLog::new(emitter, topic, payload)
+    let content = words.iter().copied().map(Word::new).collect();
+    TransactionLog::new(emitter, topic, content)
         .map_err(|err| TransactionKernelError::other_with_source("invalid transaction log", err))
 }
 
@@ -862,26 +862,24 @@ fn extract_tx_summary<'store, STORE>(
         });
     }
 
+    let logs = TransactionLogs::new(base_host.logs().to_vec())
+        .expect("host validates transaction log limits before appending");
+    if logs.commitment() != logs_commitment {
+        return Err(TransactionKernelError::other("summary transaction logs commitment mismatch"));
+    }
+
     // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
     // block the transaction does not authenticate and cross-checks the bound block commitment
     // against the one the host knows for that block.
-    let tx_summary = base_host
-        .build_tx_summary(
-            account_delta_commitment,
-            input_notes_commitment,
-            output_notes_commitment,
-            metadata.block_number(),
-            block_commitment,
-            metadata.expiration_delta(),
-            user_params,
-        )?
-        .with_logs(
-            TransactionLogs::new(base_host.logs().to_vec())
-                .expect("host validates transaction log limits before appending"),
-        );
-    if tx_summary.logs_commitment() != logs_commitment {
-        return Err(TransactionKernelError::other("summary transaction log commitment mismatch"));
-    }
+    let tx_summary = base_host.build_tx_summary(
+        account_delta_commitment,
+        input_notes_commitment,
+        output_notes_commitment,
+        metadata,
+        block_commitment,
+        user_params,
+        logs,
+    )?;
 
     if tx_summary.to_commitment() != message {
         return Err(TransactionKernelError::TransactionSummaryConstructionFailed(

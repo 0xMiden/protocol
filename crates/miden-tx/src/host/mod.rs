@@ -65,6 +65,7 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
+    TransactionSummaryMetadata,
     TransactionSummaryUserParams,
 };
 pub(crate) use tx_event::{
@@ -116,7 +117,6 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// map.
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
     logs: Vec<TransactionLog>,
-    num_log_content_words: usize,
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
@@ -159,7 +159,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             logs: Vec::new(),
-            num_log_content_words: 0,
             input_notes,
             block_commitments,
             core_lib_handlers,
@@ -314,7 +313,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
                 TransactionLogError::TooManyLogs(num_logs),
             ));
         }
-        let num_words = self.num_log_content_words + log.num_content_words();
+        let num_words = self.logs().iter().map(TransactionLog::num_content_words).sum::<usize>()
+            + log.num_content_words();
         if num_words > TransactionLogs::MAX_NUM_WORDS {
             return Err(TransactionKernelError::other_with_source(
                 "invalid transaction logs",
@@ -322,7 +322,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
         self.logs.push(log);
-        self.num_log_content_words = num_words;
         Ok(())
     }
 
@@ -542,11 +541,12 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        block_number: BlockNumber,
+        metadata: TransactionSummaryMetadata,
         block_commitment: Word,
-        expiration_delta: u16,
         user_params: TransactionSummaryUserParams,
+        logs: TransactionLogs,
     ) -> Result<TransactionSummary, TransactionKernelError> {
+        let block_number = metadata.block_number();
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
         let output_notes_vec = self.build_output_notes();
@@ -604,8 +604,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             output_notes,
             block_number,
             block_commitment,
-            expiration_delta,
+            metadata.expiration_delta(),
             user_params,
+            logs,
         ))
     }
 

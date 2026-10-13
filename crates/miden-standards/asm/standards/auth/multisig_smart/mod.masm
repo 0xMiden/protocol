@@ -442,7 +442,7 @@ pub proc auth_tx(
     push.0 movdn.2
     # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
-    exec.auth::get_tx_summary_commitment_with_block
+    exec.auth::get_tx_summary_commitment
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Reading threshold config (default + num_approvers) ------
