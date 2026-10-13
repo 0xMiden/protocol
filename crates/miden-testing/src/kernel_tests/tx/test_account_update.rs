@@ -1050,7 +1050,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         dropw padw push.0.0
         # => [user_params(6), pad(12)]
 
-        exec.::miden::standards::auth::get_tx_summary_commitment
+        exec.::miden::standards::auth::get_default_tx_summary_commitment
         # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
         emit.AUTH_UNAUTHORIZED_EVENT
@@ -1198,7 +1198,7 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
             dropw padw push.0.0
             # => [user_params(6), pad(12)]
 
-            exec.::miden::standards::auth::get_tx_summary_commitment
+            exec.::miden::standards::auth::get_default_tx_summary_commitment
             # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
             emit.AUTH_UNAUTHORIZED_EVENT

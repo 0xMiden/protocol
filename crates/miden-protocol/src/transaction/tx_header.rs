@@ -27,7 +27,7 @@ use crate::utils::serde::{
 ///
 /// The header is essentially a direct copy of the transaction's public commitments, in particular
 /// the initial and final account state commitment as well as all nullifiers of consumed notes and
-/// all note IDs of created notes, together with the transaction log commitment. While account
+/// all note IDs of created notes, together with the transaction logs commitment. While account
 /// updates may be aggregated and notes may be erased as part of batch and block building, the
 /// header retains the original transaction's data.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +49,7 @@ impl TransactionHeader {
     ///
     /// The [`TransactionId`] is computed from the provided parameters, committing to the initial
     /// and final account commitments, the input and output note commitments, and the transaction
-    /// log commitment.
+    /// logs commitment.
     ///
     /// The input notes and output notes must be in the same order as they appeared in the
     /// transaction that this header represents, otherwise an incorrect ID will be computed.
@@ -302,7 +302,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             inputs,
             vec![],
-            Default::default(),
+            Word::empty(),
         )
         .unwrap_err();
 
@@ -323,7 +323,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::default(),
             vec![*note.header(), *note.header()],
-            Default::default(),
+            Word::empty(),
         )
         .unwrap_err();
 
@@ -345,7 +345,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::new(vec![input]).unwrap(),
             vec![*note.header()],
-            Default::default(),
+            Word::empty(),
         )
         .unwrap_err();
 
@@ -364,14 +364,14 @@ mod tests {
                 Word::empty(),
                 Word::empty(),
                 Word::empty(),
-                Default::default(),
+                Word::empty(),
             ),
             account_id(),
             Word::from([1_u32, 2, 3, 4]),
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::default(),
             vec![*note.header(), *note.header()],
-            Default::default(),
+            Word::empty(),
         );
 
         let error = TransactionHeader::read_from_bytes(&invalid_header.to_bytes()).unwrap_err();

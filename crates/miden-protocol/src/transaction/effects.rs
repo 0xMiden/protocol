@@ -14,9 +14,6 @@ use crate::block::BlockNumber;
 // ================================================================================================
 
 /// The effects of an executed transaction.
-///
-/// Includes complete local transaction logs. Serialized and debug output may therefore contain
-/// private transaction data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionEffects {
     transaction_id: TransactionId,
@@ -31,15 +28,15 @@ pub struct TransactionEffects {
     logs: TransactionLogs,
 }
 
+#[bon::bon]
 impl TransactionEffects {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
     /// Returns new [`TransactionEffects`] instantiated from the provided data.
     ///
-    /// The [`TransactionId`] is computed from the account state and note commitments, with an
-    /// empty transaction log commitment. [`Self::with_logs`] updates it when attaching transaction
-    /// logs.
+    /// The [`TransactionId`] is computed from the account state, note, and logs commitments.
+    #[builder]
     pub fn new(
         initial_state_commitment: Word,
         final_state_commitment: Word,
@@ -49,13 +46,14 @@ impl TransactionEffects {
         ref_block_number: BlockNumber,
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
+        logs: TransactionLogs,
     ) -> Self {
         let transaction_id = TransactionId::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
-            Word::empty(),
+            logs.commitment(),
         );
 
         Self {
@@ -68,23 +66,8 @@ impl TransactionEffects {
             ref_block_number,
             ref_block_commitment,
             expiration_block_num,
-            logs: TransactionLogs::default(),
+            logs,
         }
-    }
-
-    /// Attaches local transaction logs and updates the transaction ID.
-    #[must_use]
-    pub fn with_logs(mut self, logs: TransactionLogs) -> Self {
-        let commitment = logs.commitment();
-        self.transaction_id = TransactionId::new(
-            self.initial_state_commitment,
-            self.final_state_commitment,
-            self.input_notes.commitment(),
-            self.output_notes.commitment(),
-            commitment,
-        );
-        self.logs = logs;
-        self
     }
 
     // PUBLIC ACCESSORS
@@ -148,16 +131,16 @@ impl TransactionEffects {
 
 impl From<&ExecutedTransaction> for TransactionEffects {
     fn from(tx: &ExecutedTransaction) -> Self {
-        Self::new(
-            tx.initial_account().initial_commitment(),
-            tx.final_account().to_commitment(),
-            tx.account_patch().clone(),
-            tx.input_notes().clone(),
-            tx.output_notes().clone(),
-            tx.tx_inputs().ref_block(),
-            tx.block_header().commitment(),
-            tx.expiration_block_num(),
-        )
-        .with_logs(tx.logs().clone())
+        Self::builder()
+            .initial_state_commitment(tx.initial_account().initial_commitment())
+            .final_state_commitment(tx.final_account().to_commitment())
+            .account_patch(tx.account_patch().clone())
+            .input_notes(tx.input_notes().clone())
+            .output_notes(tx.output_notes().clone())
+            .ref_block_number(tx.tx_inputs().ref_block())
+            .ref_block_commitment(tx.block_header().commitment())
+            .expiration_block_num(tx.expiration_block_num())
+            .logs(tx.logs().clone())
+            .build()
     }
 }

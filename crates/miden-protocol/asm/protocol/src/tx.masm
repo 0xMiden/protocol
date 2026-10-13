@@ -449,20 +449,20 @@ pub proc get_fee_asset_id() -> AssetId
 end
 
 #! Emits a transaction log from the active authenticated account.
-#! The advice map must contain the payload elements under PAYLOAD_COMMITMENT.
+#! The advice map must contain the content elements under CONTENT_COMMITMENT.
 #! Visibility follows the native transaction account, including during FPI.
 #!
-#! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT]
+#! Inputs:  [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
+pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: word)
     # Align the six inputs to two words so padding can be moved beneath them together.
     push.0 movdn.6 push.0
-    # => [0, topic_0, topic_1, PAYLOAD_COMMITMENT, 0]
+    # => [0, topic_suffix, topic_prefix, CONTENT_COMMITMENT, 0]
 
     padw padw swapdw drop
-    # => [topic_0, topic_1, PAYLOAD_COMMITMENT, pad(9)]
+    # => [topic_suffix, topic_prefix, CONTENT_COMMITMENT, pad(9)]
 
     push.TX_ADD_LOG_OFFSET syscall.exec_kernel_proc
     # => [pad(16)]
@@ -471,7 +471,7 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     # => []
 end
 
-#! Returns the current transaction log commitment while allowing further transaction logs to be added.
+#! Returns the current transaction logs commitment.
 #!
 #! Inputs:  []
 #! Outputs: [LOGS_COMMITMENT]

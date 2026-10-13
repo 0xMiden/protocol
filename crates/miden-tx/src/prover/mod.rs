@@ -123,8 +123,8 @@ impl LocalTransactionProver {
             ref_block_commitment,
             expiration_block_num,
             proof,
+            log_details,
         )
-        .and_then(|tx| tx.with_log_details(log_details))
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 

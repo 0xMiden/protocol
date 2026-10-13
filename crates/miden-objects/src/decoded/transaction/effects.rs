@@ -26,16 +26,16 @@ impl Verify for TransactionEffectsV1 {
     type Verified = miden_protocol::transaction::TransactionEffects;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(Self::Verified::new(
-            self.initial_state_commitment,
-            self.final_state_commitment,
-            self.account_patch.verify()?,
-            self.input_notes.verify()?,
-            self.output_notes.verify()?,
-            unwrap_infallible(self.ref_block_number.verify()),
-            self.ref_block_commitment,
-            unwrap_infallible(self.expiration_block_num.verify()),
-        )
-        .with_logs(self.logs.verify()?))
+        Ok(Self::Verified::builder()
+            .initial_state_commitment(self.initial_state_commitment)
+            .final_state_commitment(self.final_state_commitment)
+            .account_patch(self.account_patch.verify()?)
+            .input_notes(self.input_notes.verify()?)
+            .output_notes(self.output_notes.verify()?)
+            .ref_block_number(unwrap_infallible(self.ref_block_number.verify()))
+            .ref_block_commitment(self.ref_block_commitment)
+            .expiration_block_num(unwrap_infallible(self.expiration_block_num.verify()))
+            .logs(self.logs.verify()?)
+            .build())
     }
 }

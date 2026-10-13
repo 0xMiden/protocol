@@ -51,7 +51,7 @@ impl TransactionSummary {
 
     /// The layout version of the commitment preimage produced by
     /// [`TransactionSummary::to_elements`].
-    pub(crate) const VERSION: u8 = 2;
+    pub(crate) const VERSION: u8 = 1;
 
     /// The indices of the version, of the packed [`TransactionSummaryMetadata`] element and of the
     /// first user parameter in the commitment preimage.
@@ -80,6 +80,7 @@ impl TransactionSummary {
         block_commitment: Word,
         expiration_delta: u16,
         user_params: TransactionSummaryUserParams,
+        logs: TransactionLogs,
     ) -> Self {
         Self {
             account_delta,
@@ -89,15 +90,8 @@ impl TransactionSummary {
             block_commitment,
             expiration_delta,
             user_params,
-            logs: TransactionLogs::default(),
+            logs,
         }
-    }
-
-    /// Attaches the local transaction logs that the signature authorizes.
-    #[must_use]
-    pub fn with_logs(mut self, logs: TransactionLogs) -> Self {
-        self.logs = logs;
-        self
     }
 
     // PUBLIC ACCESSORS
@@ -188,9 +182,9 @@ impl TransactionSummary {
     ///
     /// `elements` must be a full preimage as returned by [`TransactionSummary::to_elements`]. The
     /// five commitments are not decoded because they cannot be inverted. A caller reconstructing a
-    /// summary must rebuild the committed data from its own state, pass it to [`Self::new`], attach
-    /// the transaction logs with [`Self::with_logs`], and check the resulting
-    /// [`Self::to_commitment`] against the expected commitment.
+    /// summary must rebuild the committed data, including transaction logs, from its own state,
+    /// pass it to [`Self::new`], and check the resulting [`Self::to_commitment`] against the
+    /// expected commitment.
     ///
     /// # Errors
     ///
@@ -414,6 +408,7 @@ mod tests {
             Word::from([9u32, 10, 11, 12].map(Felt::from)),
             EXPIRATION_DELTA,
             TransactionSummaryUserParams::new(USER_PARAMS.map(Felt::from)),
+            Default::default(),
         )
     }
 
