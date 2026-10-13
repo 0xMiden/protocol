@@ -15,8 +15,8 @@ use crate::block::BlockNumber;
 
 /// The effects of an executed transaction.
 ///
-/// Includes complete local transaction logs. Serialized and debug output
-/// may therefore contain private transaction data.
+/// Includes complete local transaction logs. Serialized and debug output may therefore contain
+/// private transaction data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionEffects {
     transaction_id: TransactionId,
