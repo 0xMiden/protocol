@@ -45,7 +45,7 @@ use crate::{Felt, Word};
 #[rstest]
 #[case::private(ACCOUNT_ID_PRIVATE_SENDER)]
 #[case::public(ACCOUNT_ID_SENDER)]
-fn transaction_outputs_retain_logs_and_submit_native_visibility(#[case] account_id: u128) {
+fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] account_id: u128) {
     let account_id = account_id.try_into().unwrap();
     let account =
         AccountHeader::new(account_id, Felt::ONE, Word::empty(), Word::empty(), Word::empty());
