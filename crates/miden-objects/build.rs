@@ -65,6 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.ProvenBatch",
             ".transaction.ProposedBatch",
             ".transaction.ProvenTransaction",
+            ".transaction.LogTopic",
+            ".transaction.TransactionLog",
+            ".transaction.TransactionLogs",
+            ".transaction.TransactionLogDetails",
             ".blockchain.SignedBlock",
             ".blockchain.BlockBody",
             ".blockchain.OutputNoteBatch",
@@ -213,20 +217,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ".account_file.AuthSecretKey.key.falcon512_poseidon2",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey
-        >)])
-        .to_string(),
-    );
-    prost.field_attribute(
-        ".transaction.ProvenTransaction.log_details",
-        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogDetails
-        >)])
-        .to_string(),
-    );
-    prost.field_attribute(
-        ".transaction.TransactionEffectsV1.logs",
-        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogs
         >)])
         .to_string(),
     );

@@ -22,9 +22,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
-    ExecutedTransaction,
     LogTopic,
-    ProvenTransaction,
     TransactionEffects,
     TransactionEventId,
     TransactionLog,
@@ -34,7 +32,6 @@ use miden_protocol::transaction::{
     TransactionSummaryUserParams,
     TransactionVerifier,
 };
-use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{Felt, Hasher, MIN_PROOF_SECURITY_LEVEL, WORD_SIZE, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -284,15 +281,11 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
     let log = &executed.logs().iter().next().unwrap();
     assert_eq!(log.emitter(), account.id());
     assert_eq!(log.content(), payload);
-    let local_copy = ExecutedTransaction::read_from_bytes(&executed.to_bytes())?;
-    assert_eq!(local_copy.logs(), executed.logs());
 
     let proven = LocalTransactionProver::default().prove(executed.clone())?;
     assert_eq!(proven.id(), executed.id());
     let verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
     assert!(verifier.verify(&proven)?.is_complete());
-    let encoded = proven.to_bytes();
-    assert_eq!(ProvenTransaction::read_from_bytes(&encoded)?, proven);
     assert_eq!(
         matches!(proven.log_details(), TransactionLogDetails::Public(_)),
         account_type.is_public()
@@ -300,8 +293,6 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
     let tampered_data = match proven.log_details() {
         TransactionLogDetails::Public(logs) => tampered_public_log_details(logs)?,
         TransactionLogDetails::Private(_) => {
-            let private = executed.logs().to_bytes();
-            assert!(!encoded.windows(private.len()).any(|window| window == private));
             let mut changed_commitment = executed.logs_commitment();
             changed_commitment[0] += Felt::ONE;
             vec![

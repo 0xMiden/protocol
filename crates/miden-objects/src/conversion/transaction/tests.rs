@@ -30,7 +30,6 @@ use miden_protocol::transaction::{
     TransactionLogs,
     TxAccountUpdate,
 };
-use miden_protocol::utils::serde::Serializable;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
 use prost::Message;
@@ -161,7 +160,7 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
     let message = proto::transaction::TransactionHeader::decode(header_bytes.as_slice()).unwrap();
     assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), header);
     if account_type.is_private() {
-        let private = logs.to_bytes();
+        let private = proto::transaction::TransactionLogs::from(&logs).encode_to_vec();
         assert!(!bytes.windows(private.len()).any(|window| window == private));
     }
 }

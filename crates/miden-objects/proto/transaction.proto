@@ -69,9 +69,8 @@ message ProvenTransaction {
   primitives.Word reference_block_commitment = 5;
   blockchain.BlockNumber expiration_block_num = 6;
   primitives.ExecutionProof proof = 7;
-  // Canonical bounded TransactionLogDetails encoding: complete public transaction logs or only
-  // a commitment to private transaction logs.
-  bytes log_details = 8;
+  // Complete public logs or only a private commitment.
+  TransactionLogDetails log_details = 8;
 }
 
 message TransactionScript {
@@ -91,4 +90,26 @@ message TransactionArgs {
   primitives.AdviceInputs advice_inputs = 4;
   primitives.Word auth_args = 5;
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
+}
+
+message LogTopic {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
+}
+
+message TransactionLog {
+  account.AccountId emitter = 1;
+  LogTopic topic = 2;
+  repeated primitives.Word content = 3;
+}
+
+message TransactionLogs {
+  repeated TransactionLog logs = 1;
+}
+
+message TransactionLogDetails {
+  oneof visibility {
+    primitives.Word private = 1;
+    TransactionLogs public = 2;
+  }
 }

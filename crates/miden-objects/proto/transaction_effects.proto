@@ -27,5 +27,5 @@ message TransactionEffectsV1 {
   blockchain.BlockNumber expiration_block_num = 8;
   // Complete local transaction logs, including private transaction logs.
   // These effects are not a public submission format.
-  bytes logs = 9;
+  TransactionLogs logs = 9;
 }

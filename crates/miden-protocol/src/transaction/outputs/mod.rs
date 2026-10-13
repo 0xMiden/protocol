@@ -4,13 +4,6 @@ use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
 use crate::transaction::{TransactionLogDetails, TransactionLogs};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 mod notes;
 pub use notes::{
@@ -33,7 +26,7 @@ mod tests;
 ///
 /// # Privacy
 ///
-/// Contains complete local transaction logs, including in serialized and debug output. Use
+/// Contains complete local transaction logs, including in debug output. Use
 /// [`Self::log_details`] to obtain the data submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
@@ -144,28 +137,5 @@ impl TransactionOutputs {
     /// Consumes self and returns the final account header and output notes.
     pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {
         (self.account, self.output_notes)
-    }
-}
-
-impl Serializable for TransactionOutputs {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account.write_into(target);
-        self.account_patch_commitment.write_into(target);
-        self.output_notes.write_into(target);
-        self.expiration_block_num.write_into(target);
-        self.logs.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionOutputs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account = AccountHeader::read_from(source)?;
-        let account_patch_commitment = Word::read_from(source)?;
-        let output_notes = RawOutputNotes::read_from(source)?;
-        let expiration_block_num = BlockNumber::read_from(source)?;
-
-        let logs = TransactionLogs::read_from(source)?;
-        Ok(Self::new(account, account_patch_commitment, output_notes, expiration_block_num)
-            .with_logs(logs))
     }
 }

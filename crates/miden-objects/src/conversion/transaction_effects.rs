@@ -1,5 +1,4 @@
 use miden_protocol::transaction::TransactionEffects;
-use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
 
@@ -20,7 +19,7 @@ impl From<&TransactionEffects> for proto::transaction::TransactionEffectsV1 {
             ref_block_number: Some(effects.ref_block_number().into()),
             ref_block_commitment: Some(effects.ref_block_commitment().into()),
             expiration_block_num: Some(effects.expiration_block_num().into()),
-            logs: effects.logs().to_bytes(),
+            logs: Some(effects.logs().into()),
         }
     }
 }
