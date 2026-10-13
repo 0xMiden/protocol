@@ -111,19 +111,6 @@ async fn kernel_logs_reject_invalid_payloads(
 }
 
 #[tokio::test]
-async fn private_transaction_logs_require_a_nonzero_secret_salt() -> anyhow::Result<()> {
-    let account = Account::mock(ACCOUNT_ID_PRIVATE_SENDER, [NoopAuthComponent]);
-    let tx = TestTransactionBuilder::new(account)
-        .add_advice_map_entry(Word::empty(), vec![])
-        .build()?;
-    let code = kernel_log_program(
-        "padw push.29.17 exec.tx_log::add_log exec.tx_log::get_commitment dropw",
-    );
-    assert_execution_error!(tx.execute_code(&code).await, tx_kernel::ERR_TX_LOG_INVALID_SALT);
-    Ok(())
-}
-
-#[tokio::test]
 async fn transaction_scripts_cannot_log_directly() -> anyhow::Result<()> {
     let script = CodeBuilder::default().compile_tx_script(
         r"
@@ -190,7 +177,6 @@ async fn unauthenticated_note_logs(
         .build_transaction(account.clone())
         .unauthenticated_input_note(note)
         .add_advice_map_entry(payload_commitment, Word::words_as_elements(&payload).to_vec())
-        .log_salt(Word::from([91u32, 82, 73, 64]))
         .build()?;
     if direct {
         assert_transaction_executor_error!(
@@ -224,7 +210,6 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
 ) -> anyhow::Result<()> {
     let account = Account::mock(account_id, [NoopAuthComponent]);
     let topic = LogTopic::new([17u32.into(), 29u32.into()]);
-    let salt = Word::from([73u32, 37, 19, 91]);
     let mut entries = Vec::new();
     let mut builder = TestTransactionBuilder::new(account.clone());
     let mut code = String::from("exec.tx_log::get_commitment padw assert_eqw\n");
@@ -237,8 +222,7 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
             Word::words_as_elements(entry.content()).to_vec(),
         );
         entries.push(entry);
-        let expected =
-            TransactionLogs::new(entries.clone())?.commitment_for_account(account.id(), salt)?;
+        let expected = TransactionLogs::new(entries.clone())?.commitment();
         code.push_str(&format!(
             r"
             push.{payload_commitment} push.29.17 exec.tx_log::add_log
@@ -248,7 +232,7 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
         ));
     }
     let code = kernel_log_program(&code);
-    let tx = builder.log_salt(salt).build()?;
+    let tx = builder.build()?;
     tx.execute_code(&code).await?;
     Ok(())
 }
@@ -291,13 +275,12 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
         .with_component(component)
         .with_component(BasicWallet)
         .build_existing()?;
-    let salt = Word::from([345u32, 678, 123, 901]);
     let tx = TestTransactionBuilder::new(account.clone())
         .add_advice_map_entry(payload_commitment, Word::words_as_elements(&payload).to_vec())
-        .log_salt(salt)
         .build()?;
     let executed = tx.execute().await?;
     assert_eq!(executed.logs().num_logs(), 2);
+    assert_eq!(executed.logs_commitment(), executed.logs().commitment());
     let log = &executed.logs().iter().next().unwrap();
     assert_eq!(log.emitter(), account.id());
     assert_eq!(log.content(), payload);
@@ -317,20 +300,18 @@ async fn transaction_logs_execute_prove_verify_and_reject_tampering(
     let tampered_data = match proven.log_details() {
         TransactionLogDetails::Public(logs) => tampered_public_log_details(logs)?,
         TransactionLogDetails::Private(_) => {
-            for private in [salt.to_bytes(), executed.logs().to_bytes()] {
-                assert!(!encoded.windows(private.len()).any(|window| window == private));
-            }
-            let changed_salt = Word::from([1u32; WORD_SIZE]);
+            let private = executed.logs().to_bytes();
+            assert!(!encoded.windows(private.len()).any(|window| window == private));
+            let mut changed_commitment = executed.logs_commitment();
+            changed_commitment[0] += Felt::ONE;
             vec![
                 (
                     "removed private transaction logs",
                     TransactionLogDetails::Private(Word::empty()),
                 ),
                 (
-                    "changed private salt",
-                    TransactionLogDetails::Private(
-                        executed.logs().commitment_for_account(account.id(), changed_salt)?,
-                    ),
+                    "changed private transaction log commitment",
+                    TransactionLogDetails::Private(changed_commitment),
                 ),
             ]
         },
@@ -425,7 +406,6 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
         .foreign_accounts([inputs, intermediate_inputs])
         .tx_script(script)
         .add_advice_map_entry(Word::empty(), vec![])
-        .log_salt(Word::from([89u32; 4]))
         .build()?;
     let executed = tx.execute().await?;
     let entries = executed.logs().iter().collect::<Vec<_>>();
@@ -495,7 +475,6 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
             "
         ))?)
         .add_advice_map_entry(Word::empty(), vec![])
-        .log_salt(Word::from([1u32, 2, 3, 4]))
         .build()?;
     let executed = tx.execute().await?;
     let effects = TransactionEffects::from(&executed);
@@ -522,14 +501,14 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
             0u32.into(),
         ]),
     )
-    .with_logs(executed.logs().clone(), effects.log_salt())?;
+    .with_logs(executed.logs().clone());
     assert_eq!(summary.logs_commitment(), executed.logs_commitment());
     let keys = get_public_keys_from_account(&account);
     let key = Hasher::merge(&[keys[0], summary.to_commitment()]);
     let signature = executed.advice_witness().map().get(&key).unwrap().to_vec();
 
     // Replay a real signature with no authenticator available to replace it. First establish
-    // that the same transaction succeeds, then change only its transaction logs or private salt.
+    // that the same transaction succeeds, then change only its transaction logs.
     let replay = chain.build_transaction(account.clone()).build()?;
     let executor = TransactionExecutor::<_, ()>::new(&replay);
     let execute = |args| {
@@ -557,37 +536,27 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
         "
     ))?;
     let doubled = TransactionLogs::new(vec![executed.logs().iter().next().unwrap().clone(); 2])?;
-    let mut mutations = vec![(
-        summary.clone().with_logs(doubled, effects.log_salt())?,
-        executed.tx_args().clone().with_tx_script(twice),
-    )];
-    if account_type.is_private() {
-        let changed_salt = Word::from([9u32, 8, 7, 6]);
-        mutations.push((
-            summary.with_logs(executed.logs().clone(), changed_salt)?,
-            executed.tx_args().clone().with_log_salt(changed_salt),
-        ));
-    }
-    for (changed_summary, mut args) in mutations {
-        let changed_key = Hasher::merge(&[keys[0], changed_summary.to_commitment()]);
-        assert_ne!(key, changed_key);
-        args.extend_advice_map([(changed_key, signature.clone())]);
-        // The supplied signature reaches verification and fails there, rather than failing
-        // because no signature or authenticator was available.
-        let error = execute(args).await.unwrap_err();
-        assert!(
-            matches!(
-                error,
-                TransactionExecutorError::TransactionProgramExecutionFailed(
-                    ExecutionError::OperationError {
-                        err: OperationError::NotU32Values { .. },
-                        ..
-                    } | ExecutionError::DeferredError { .. }
-                )
-            ),
-            "unexpected signature replay failure: {error}"
-        );
-    }
+    let changed_summary = summary.with_logs(doubled);
+    let mut args = executed.tx_args().clone().with_tx_script(twice);
+    let changed_key = Hasher::merge(&[keys[0], changed_summary.to_commitment()]);
+    assert_ne!(key, changed_key);
+    args.extend_advice_map([(changed_key, signature.clone())]);
+    // The supplied signature reaches verification and fails there, rather than failing
+    // because no signature or authenticator was available.
+    let error = execute(args).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::OperationError {
+                    err: OperationError::NotU32Values { .. },
+                    ..
+                } | ExecutionError::DeferredError { .. }
+            )
+        ),
+        "unexpected signature replay failure: {error}"
+    );
+
     Ok(())
 }
 
@@ -652,7 +621,6 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
         .build_existing()?;
     let tx = TestTransactionBuilder::new(account)
         .add_advice_map_entry(Word::empty(), vec![])
-        .log_salt(Word::from([13u32; WORD_SIZE]))
         .build()?;
     assert_transaction_executor_error!(
         tx.execute().await,

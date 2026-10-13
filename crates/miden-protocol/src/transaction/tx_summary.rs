@@ -1,8 +1,7 @@
 use alloc::format;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use super::{TransactionLogError, TransactionLogs};
+use super::TransactionLogs;
 use crate::account::AccountDelta;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
@@ -33,7 +32,7 @@ use crate::{Felt, WORD_SIZE, Word};
 ///
 /// # Privacy
 ///
-/// Contains complete transaction logs and the secret salt used for private transaction logs,
+/// Contains complete transaction logs,
 /// including in serialized and debug output. The signer must be trusted with this local data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
@@ -45,7 +44,6 @@ pub struct TransactionSummary {
     expiration_delta: u16,
     user_params: TransactionSummaryUserParams,
     logs: TransactionLogs,
-    log_salt: Word,
 }
 
 impl TransactionSummary {
@@ -93,20 +91,14 @@ impl TransactionSummary {
             expiration_delta,
             user_params,
             logs: TransactionLogs::default(),
-            log_salt: Word::empty(),
         }
     }
 
     /// Attaches the local transaction logs that the signature authorizes.
-    pub fn with_logs(
-        mut self,
-        logs: TransactionLogs,
-        log_salt: Word,
-    ) -> Result<Self, TransactionLogError> {
-        logs.commitment_for_account(self.account_delta.id(), log_salt)?;
+    #[must_use]
+    pub fn with_logs(mut self, logs: TransactionLogs) -> Self {
         self.logs = logs;
-        self.log_salt = log_salt;
-        Ok(self)
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -119,9 +111,7 @@ impl TransactionSummary {
 
     /// Returns the commitment to the transaction logs authorized by this signing summary.
     pub fn logs_commitment(&self) -> Word {
-        self.logs
-            .commitment_for_account(self.account_delta.id(), self.log_salt)
-            .expect("transaction log salt in the summary is valid")
+        self.logs.commitment()
     }
 
     /// Returns the account delta of this transaction summary.
@@ -200,7 +190,7 @@ impl TransactionSummary {
     /// `elements` must be a full preimage as returned by [`TransactionSummary::to_elements`]. The
     /// five commitments are not decoded because they cannot be inverted. A caller reconstructing a
     /// summary must rebuild the committed data from its own state, pass it to [`Self::new`], attach
-    /// the transaction logs and their secret salt with [`Self::with_logs`], and check the resulting
+    /// the transaction logs with [`Self::with_logs`], and check the resulting
     /// [`Self::to_commitment`] against the expected commitment.
     ///
     /// # Errors
@@ -270,7 +260,6 @@ impl Serializable for TransactionSummary {
         self.expiration_delta.write_into(target);
         self.user_params.write_into(target);
         self.logs.write_into(target);
-        self.log_salt.write_into(target);
     }
 }
 
@@ -292,9 +281,8 @@ impl Deserializable for TransactionSummary {
         let expiration_delta = source.read()?;
         let user_params = source.read()?;
         let logs = source.read()?;
-        let log_salt = source.read()?;
 
-        Self::new(
+        Ok(Self::new(
             account_delta,
             input_notes,
             output_notes,
@@ -303,8 +291,7 @@ impl Deserializable for TransactionSummary {
             expiration_delta,
             user_params,
         )
-        .with_logs(logs, log_salt)
-        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        .with_logs(logs))
     }
 }
 

@@ -1062,8 +1062,6 @@ pub enum TransactionInputsExtractionError {
 
 #[derive(Debug, Error)]
 pub enum TransactionOutputError {
-    #[error("invalid transaction log data: {0}")]
-    LogData(#[source] TransactionLogError),
     #[error("transaction log records do not match the kernel output")]
     LogsCommitmentInconsistent,
     #[error("transaction output note with id {0} is a duplicate")]

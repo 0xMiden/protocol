@@ -56,9 +56,6 @@ pub enum TransactionLogError {
     /// Submitted transaction log visibility differs from the native account.
     #[error("log data visibility does not match the native account")]
     VisibilityMismatch,
-    /// The secret salt for nonempty private transaction logs is zero.
-    #[error("private transaction logs require a nonzero secret salt")]
-    MissingPrivateSalt,
 }
 
 // TRANSACTION LOG
@@ -237,7 +234,9 @@ impl Deserializable for TransactionLog {
 /// An empty collection has commitment [`Word::empty`]. The collection hash binds transaction log
 /// order and duplicate occurrences. The content hash binds content and length.
 ///
-/// These commitments do not hide predictable private transaction logs.
+/// These commitments do not hide predictable private transaction logs. Applications that need
+/// protection against guessing should include fresh, secret randomness in the log contents,
+/// for example by appending a random log before constructing the signing summary.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TransactionLogs {
     logs: Vec<TransactionLog>,
@@ -253,41 +252,6 @@ impl TransactionLogs {
 
     /// Hash domain for ordered collections of transaction logs.
     pub const COMMITMENT_DOMAIN: Felt = ProtocolDomainRegistry::TransactionLogs.as_felt();
-
-    /// Hash domain for private transaction log commitments.
-    pub const PRIVATE_COMMITMENT_DOMAIN: Felt =
-        ProtocolDomainRegistry::PrivateTransactionLogs.as_felt();
-
-    /// Returns the transaction log commitment for the account against which the transaction
-    /// executes.
-    ///
-    /// The native account determines whether transaction logs are public or private, including
-    /// transaction logs emitted by foreign accounts during FPI.
-    ///
-    /// Public transaction logs use [`Self::commitment`]. Nonempty private transaction logs hash
-    /// that commitment together with `secret_salt`. The caller must supply a fresh, random,
-    /// nonzero secret salt to hide predictable private transaction logs.
-    ///
-    /// Empty transaction logs commit to [`Word::empty`] regardless of the account's visibility.
-    /// Returns [`TransactionLogError::MissingPrivateSalt`] if nonempty private transaction
-    /// logs are supplied with a zero salt.
-    pub fn commitment_for_account(
-        &self,
-        native_account: AccountId,
-        secret_salt: Word,
-    ) -> Result<Word, TransactionLogError> {
-        let commitment = self.commitment();
-        if native_account.is_public() || self.is_empty() {
-            return Ok(commitment);
-        }
-        if secret_salt.is_empty() {
-            return Err(TransactionLogError::MissingPrivateSalt);
-        }
-        Ok(Hasher::merge_in_domain(
-            &[commitment, secret_salt],
-            Self::PRIVATE_COMMITMENT_DOMAIN,
-        ))
-    }
 
     /// Creates a collection from the provided transaction logs in emission order.
     ///

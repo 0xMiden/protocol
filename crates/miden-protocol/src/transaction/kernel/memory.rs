@@ -20,7 +20,7 @@ pub type StorageSlot = u8;
 // | --------------------------- | ------------- | ---------------- | ------------------------------------------- |
 // | Kernel procs                | 0             | 1_024            | 255 procedures, 4 elements each + num_procs |
 // | Bookkeeping                 | 1_200         | 85               |                                             |
-// | Transaction logs            | 1_300         | 12               | Salt, counters, dirty flag, commitment      |
+// | Transaction logs            | 1_300         | 8                | Counters, dirty flag, commitment            |
 // | Global inputs               | 1_600         | 40               |                                             |
 // | Block header                | 2_000         | 44               |                                             |
 // | Protocol config             | 2_200         | 24               |                                             |
@@ -142,25 +142,21 @@ pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 1220;
 // TRANSACTION LOG STATE
 // ------------------------------------------------------------------------------------------------
 
-// The 12 element state section has the following layout, matching memory.masm:
+// The 8 element state section has the following layout, matching memory.masm:
 //
 // | Address | Elements | Content                                  |
 // | ------- | -------- | ---------------------------------------- |
-// | 1300    | 4        | Secret salt, initialized by the prologue  |
-// | 1304    | 1        | Number of transaction logs               |
-// | 1305    | 1        | Total payload words                      |
-// | 1306    | 1        | Dirty flag for the cached commitment     |
-// | 1307    | 1        | Padding                                  |
-// | 1308    | 4        | Cached transaction log commitment        |
+// | 1300    | 1        | Number of transaction logs               |
+// | 1301    | 1        | Total payload words                      |
+// | 1302    | 1        | Dirty flag for the cached commitment     |
+// | 1303    | 1        | Padding                                  |
+// | 1304    | 4        | Cached transaction log commitment        |
 //
 // The counters, dirty flag, and cached commitment start at zero. Individual transaction log
 // commitments are stored separately: 64 words (256 elements) starting at address 3000.
 
-/// Secret salt for the private transaction log commitment, initialized by the prologue.
-pub const LOG_SALT_PTR: MemoryAddress = 1300;
-
 /// Number of transaction logs collected by the kernel.
-pub const NUM_LOGS_PTR: MemoryAddress = LOG_SALT_PTR + WORD_SIZE as MemoryAddress;
+pub const NUM_LOGS_PTR: MemoryAddress = 1300;
 
 // GLOBAL INPUTS
 // ------------------------------------------------------------------------------------------------
