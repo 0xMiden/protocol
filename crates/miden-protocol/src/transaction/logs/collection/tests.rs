@@ -1,6 +1,7 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use assert_matches::assert_matches;
 use rstest::rstest;
 
 use crate::account::AccountId;
@@ -76,7 +77,7 @@ fn block_transaction_logs_roundtrip_and_validate_associations() {
         ));
     }
     let reversed = TransactionLogDetailsCollection::new(vec![private, public]).unwrap();
-    assert_eq!(
+    assert_matches!(
         reversed.validate_for_block(&headers),
         Err(TransactionLogError::VisibilityMismatch)
     );
@@ -86,7 +87,7 @@ fn block_transaction_logs_roundtrip_and_validate_associations() {
         data.as_slice()[1].clone(),
     ])
     .unwrap();
-    assert_eq!(
+    assert_matches!(
         changed.validate_for_block(&headers),
         Err(TransactionLogError::CommitmentMismatch(0))
     );
@@ -159,7 +160,7 @@ fn assert_aggregate_limit(
     assert_eq!(TransactionLogDetailsCollection::read_from_bytes(&encoded).unwrap(), data);
 
     entries.push(extra);
-    assert_eq!(
+    assert_matches!(
         TransactionLogDetailsCollection::validate_budget(entries.iter(), scope),
         Err(TransactionLogError::AggregateBudget)
     );

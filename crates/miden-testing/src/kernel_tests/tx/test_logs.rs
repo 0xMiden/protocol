@@ -368,10 +368,13 @@ async fn foreign_logs_prove_and_roundtrip_in_blocks(
             .is_complete()
     );
     chain.add_pending_proven_transaction(proven);
+    chain = MockChain::try_from_bytes(&chain.to_bytes())?;
     let block = chain.prove_next_block()?;
     assert_eq!(block.body().log_details().as_slice(), &[expected_data]);
     let copy = ProvenBlock::read_from_bytes(&block.to_bytes())?;
     assert_eq!(copy.body().log_details(), block.body().log_details());
+    let restored = MockChain::try_from_bytes(&chain.to_bytes())?;
+    assert_eq!(restored.latest_block().body().log_details(), block.body().log_details());
     Ok(())
 }
 

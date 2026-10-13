@@ -1,8 +1,8 @@
 //! Transaction logs, submitted data, and their ordered commitment.
 //!
 //! Individual transaction logs and ordered collections use distinct hash domains,
-//! defined by [`TransactionLog::COMMITMENT_DOMAIN`] and
-//! [`TransactionLogs::COMMITMENT_DOMAIN`].
+//! defined by [`ProtocolDomainRegistry::TransactionLog`] and
+//! [`ProtocolDomainRegistry::TransactionLogs`].
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -35,7 +35,7 @@ use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
 // ================================================================================================
 
 /// Errors from validating transaction logs or their submitted data.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum TransactionLogError {
     /// An individual transaction log content exceeds its word limit.
@@ -88,7 +88,7 @@ impl TransactionLog {
     pub const MAX_NUM_WORDS: usize = 256;
 
     /// Hash domain for individual transaction log commitments.
-    pub const COMMITMENT_DOMAIN: Felt = ProtocolDomainRegistry::TransactionLog.as_felt();
+    const DOMAIN: Felt = ProtocolDomainRegistry::TransactionLog.as_felt();
 
     /// Creates a transaction log with the provided emitter, topic, and content.
     ///
@@ -178,15 +178,19 @@ impl SequentialCommit for TransactionLog {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        let [topic_0, topic_1] = self.topic.as_elements();
-        let mut elements =
-            vec![self.emitter.suffix(), self.emitter.prefix().as_felt(), topic_0, topic_1];
+        let [topic_suffix, topic_prefix] = self.topic.as_elements();
+        let mut elements = vec![
+            self.emitter.suffix(),
+            self.emitter.prefix().as_felt(),
+            topic_suffix,
+            topic_prefix,
+        ];
         elements.extend_from_slice(self.content_commitment().as_elements());
         elements
     }
 
     fn to_commitment(&self) -> Word {
-        Hasher::hash_elements_in_domain(&self.to_elements(), Self::COMMITMENT_DOMAIN)
+        Hasher::hash_elements_in_domain(&self.to_elements(), Self::DOMAIN)
     }
 }
 
@@ -229,19 +233,19 @@ impl Deserializable for TransactionLog {
 ///
 /// ```text
 /// CONTENT_COMMITMENT = hash([CONTENT_WORD_0, CONTENT_WORD_1, ..., CONTENT_WORD_N])
-/// METADATA = [emitter_suffix, emitter_prefix, topic_0, topic_1]
-/// LOG_COMMITMENT = hash([METADATA, CONTENT_COMMITMENT], TransactionLog::COMMITMENT_DOMAIN)
+/// METADATA = [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix]
+/// LOG_COMMITMENT = hash([METADATA, CONTENT_COMMITMENT], ProtocolDomainRegistry::TransactionLog)
 /// ```
 ///
 /// The collection commits to these log commitments in emission order:
 ///
 /// ```text
 /// hash([LOG_COMMITMENT_0, LOG_COMMITMENT_1, ..., LOG_COMMITMENT_N],
-///      TransactionLogs::COMMITMENT_DOMAIN)
+///      ProtocolDomainRegistry::TransactionLogs)
 /// ```
 ///
-/// The domains are defined by [`TransactionLog::COMMITMENT_DOMAIN`] and
-/// [`TransactionLogs::COMMITMENT_DOMAIN`].
+/// The domains are defined by [`ProtocolDomainRegistry::TransactionLog`] and
+/// [`ProtocolDomainRegistry::TransactionLogs`].
 ///
 /// An empty collection has commitment [`Word::empty`]. The collection hash binds transaction log
 /// order and duplicate occurrences. The content hash binds content and length.
@@ -263,7 +267,7 @@ impl TransactionLogs {
     pub const MAX_NUM_WORDS: usize = 512;
 
     /// Hash domain for ordered collections of transaction logs.
-    pub const COMMITMENT_DOMAIN: Felt = ProtocolDomainRegistry::TransactionLogs.as_felt();
+    const DOMAIN: Felt = ProtocolDomainRegistry::TransactionLogs.as_felt();
 
     /// Creates a collection from the provided transaction logs in emission order.
     ///
@@ -278,7 +282,7 @@ impl TransactionLogs {
         let mut result = Self { logs, commitment: Word::empty() };
         if !result.is_empty() {
             result.commitment =
-                Hasher::hash_elements_in_domain(&result.to_elements(), Self::COMMITMENT_DOMAIN);
+                Hasher::hash_elements_in_domain(&result.to_elements(), Self::DOMAIN);
         }
         Ok(result)
     }
@@ -330,7 +334,7 @@ impl SequentialCommit for TransactionLogs {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        let mut elements = Vec::with_capacity(self.logs.len() * crate::WORD_SIZE);
+        let mut elements = Vec::with_capacity(self.logs.len() * Word::NUM_ELEMENTS);
         for log in &self.logs {
             elements.extend_from_slice(log.to_commitment().as_elements());
         }
