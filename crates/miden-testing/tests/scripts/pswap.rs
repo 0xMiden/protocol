@@ -214,6 +214,50 @@ fn assert_output_note(output_notes: &RawOutputNotes, expected: impl Into<NoteId>
 // TESTS
 // ================================================================================================
 
+/// Parsing and predicting a remainder must preserve the input tag, as the VM does.
+#[tokio::test]
+async fn pswap_preserves_custom_tag() -> anyhow::Result<()> {
+    let (chain, consumer, original) = setup_storage_test(NoteType::Private)?;
+    let custom_tag = NoteTag::new(1234);
+    assert_ne!(original.metadata().tag(), custom_tag);
+    let note = Note::with_attachments(
+        original.assets().clone(),
+        original.metadata().partial_metadata().with_tag(custom_tag),
+        original.recipient().clone(),
+        original.attachments().clone(),
+    );
+    let pswap = PswapNote::try_from(&note)?;
+    assert_eq!(pswap.tag(), custom_tag);
+    assert_eq!(Note::from(pswap.clone()).id(), note.id());
+
+    let fill = FungibleAsset::new(pswap.storage().requested_faucet_id(), 10)?;
+    let (payback, remainder) = pswap.execute(consumer, Some(fill), None)?;
+    let remainder = remainder.expect("partial fill creates a remainder");
+    let attachment = PswapNoteAttachment::try_from(
+        remainder.attachments().find(PswapNote::PSWAP_ATTACHMENT_SCHEME).unwrap(),
+    )?;
+    let reconstructed = pswap.remainder_note(
+        consumer,
+        &attachment,
+        remainder.offered_asset().amount(),
+        remainder.storage().min_requested_asset().amount(),
+    )?;
+    let predicted = Note::from(remainder);
+    assert_eq!(predicted.metadata().tag(), custom_tag);
+    assert_eq!(reconstructed.id(), predicted.id());
+
+    let executed = chain
+        .build_transaction(consumer)
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_fill_args(10, 0)?)]))
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await?;
+    assert_output_note(executed.output_notes(), payback.id());
+    assert_output_note(executed.output_notes(), predicted.id());
+    Ok(())
+}
+
 /// A filler cannot change assets or attachments after PSWAP seals an output.
 /// The order offers 50 USDC for 25 ETH: filling 25 completes it, while filling 10 leaves a
 /// remainder. Output 0 is the payback; output 1 is the remainder. The filler has spare assets for
@@ -485,6 +529,10 @@ async fn pswap_checks_output_before_sealing(
             assert_eq!(reconstructed.id(), output.id());
 
             if remainder_callback {
+                let parsed = PswapNote::try_from(&reconstructed)?;
+                assert_eq!(parsed.parent_depth(), 1);
+                assert_eq!(Note::from(parsed).id(), reconstructed.id());
+
                 // Even another PSWAP-scheme attachment cannot override the first one's depth.
                 let refilled = chain
                     .build_transaction(filler.clone())
@@ -2519,7 +2567,7 @@ fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
         PswapPayback::Public { creator_account_id: alice },
     )?;
 
-    if let Some(att) = pswap.attachments() {
+    for att in pswap.attachments().iter() {
         assert_ne!(
             att.attachment_scheme(),
             PswapNote::PSWAP_ATTACHMENT_SCHEME,
@@ -2663,7 +2711,10 @@ fn pswap_remainder_carries_pswap_scheme() -> anyhow::Result<()> {
     let (_, remainder_pswap) = pswap.execute(bob.id(), Some(account_fill), None)?;
     let remainder_pswap = remainder_pswap.expect("partial fill should produce a remainder");
 
-    let att = remainder_pswap.attachments().expect("remainder must carry an attachment");
+    let att = remainder_pswap
+        .attachments()
+        .find(PswapNote::PSWAP_ATTACHMENT_SCHEME)
+        .expect("remainder must carry an attachment");
     assert_eq!(
         att.attachment_scheme(),
         PswapNote::PSWAP_ATTACHMENT_SCHEME,
