@@ -1405,16 +1405,15 @@ async fn check_notes(
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
         .with_source_manager(mock_tx.source_manager());
-    Ok(
-        NoteConsumptionChecker::new(&executor, Some(AssetId::new_fungible(fee_faucet_id()?)))
-            .check_notes_consumability(
-                network_account_id,
-                mock_tx.tx_inputs().block_header().block_num(),
-                notes,
-                mock_tx.tx_args().clone(),
-            )
-            .await?,
-    )
+    Ok(NoteConsumptionChecker::new(&executor)
+        .with_fee_asset_id(AssetId::new_fungible(fee_faucet_id()?))
+        .check_notes_consumability(
+            network_account_id,
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?)
 }
 
 /// Runs the checker and returns the note ids it reports as `(successful, failed)`.

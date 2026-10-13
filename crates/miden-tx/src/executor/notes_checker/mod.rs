@@ -54,17 +54,24 @@ where
     AUTH: TransactionAuthenticator + Sync,
     EXEC: ProgramExecutor,
 {
-    /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor and
-    /// fee asset ID.
+    /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
     ///
-    /// `collected_fee_asset_id` is the asset the checked account collects fees in. Pass `None` for
-    /// an account that collects no fees, such as a regular wallet, which has no such asset to check
-    /// against.
-    pub fn new(
-        tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
-        collected_fee_asset_id: Option<AssetId>,
-    ) -> Self {
-        NoteConsumptionChecker { tx_executor, collected_fee_asset_id }
+    /// The checker assumes the checked account collects no fees, such as a regular wallet, and so
+    /// leaves the assets of FEE_SPONSORSHIP notes unchecked. Use [`Self::with_fee_asset_id`] for an
+    /// account that collects fees.
+    pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>) -> Self {
+        NoteConsumptionChecker {
+            tx_executor,
+            collected_fee_asset_id: None,
+        }
+    }
+
+    /// Sets the asset the checked account collects fees in, which every FEE_SPONSORSHIP note it
+    /// consumes has to carry.
+    #[must_use]
+    pub fn with_fee_asset_id(mut self, fee_asset_id: AssetId) -> Self {
+        self.collected_fee_asset_id = Some(fee_asset_id);
+        self
     }
 
     /// Checks whether some set of the provided input notes could be consumed by the provided
