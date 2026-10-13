@@ -1,19 +1,9 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 #[cfg(any(test, feature = "testing"))]
 use crate::Word;
 use crate::transaction::{OrderedTransactionHeaders, TransactionLogDetails, TransactionLogError};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{
-    MAX_LOG_DATA_BYTES_PER_BATCH,
-    MAX_LOG_DATA_BYTES_PER_BLOCK,
     MAX_LOG_DATA_TRANSACTIONS_PER_BATCH,
     MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK,
     MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH,
@@ -21,9 +11,6 @@ use crate::{
     MAX_PUBLIC_LOGS_PER_BATCH,
     MAX_PUBLIC_LOGS_PER_BLOCK,
 };
-
-// The collection count and each entry's byte length are encoded as u32 values.
-const LENGTH_PREFIX_SIZE: usize = size_of::<u32>();
 
 /// Submitted transaction log data in transaction header order.
 ///
@@ -40,7 +27,6 @@ enum LogDataScope {
 
 struct LogDataBudget {
     entries: usize,
-    bytes: usize,
     public_logs: usize,
     payload_words: usize,
 }
@@ -50,13 +36,11 @@ impl LogDataScope {
         match self {
             Self::Batch => LogDataBudget {
                 entries: MAX_LOG_DATA_TRANSACTIONS_PER_BATCH,
-                bytes: MAX_LOG_DATA_BYTES_PER_BATCH - LENGTH_PREFIX_SIZE,
                 public_logs: MAX_PUBLIC_LOGS_PER_BATCH,
                 payload_words: MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH,
             },
             Self::Block => LogDataBudget {
                 entries: MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK,
-                bytes: MAX_LOG_DATA_BYTES_PER_BLOCK - LENGTH_PREFIX_SIZE,
                 public_logs: MAX_PUBLIC_LOGS_PER_BLOCK,
                 payload_words: MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK,
             },
@@ -67,10 +51,6 @@ impl LogDataScope {
 impl LogDataBudget {
     fn consume(&mut self, data: &TransactionLogDetails) -> Result<(), TransactionLogError> {
         self.entries = self.entries.checked_sub(1).ok_or(TransactionLogError::AggregateBudget)?;
-        self.bytes = self
-            .bytes
-            .checked_sub(LENGTH_PREFIX_SIZE + data.get_size_hint())
-            .ok_or(TransactionLogError::AggregateBudget)?;
         if let TransactionLogDetails::Public(logs) = data {
             self.public_logs = self
                 .public_logs
@@ -183,69 +163,6 @@ impl TransactionLogDetailsCollection {
                 })
                 .collect(),
         )
-    }
-}
-
-impl Serializable for TransactionLogDetailsCollection {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u32(self.0.len() as u32);
-        for data in &self.0 {
-            target.write_u32(data.get_size_hint() as u32);
-            data.write_into(target);
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        LENGTH_PREFIX_SIZE
-            + self
-                .0
-                .iter()
-                .map(|data| LENGTH_PREFIX_SIZE + data.get_size_hint())
-                .sum::<usize>()
-    }
-}
-
-impl Deserializable for TransactionLogDetailsCollection {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let count = source.read_u32()? as usize;
-        if count > MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK {
-            return Err(DeserializationError::InvalidValue(
-                "too many transaction log data entries".into(),
-            ));
-        }
-        let max_transaction_size = TransactionLogDetails::max_serialized_size();
-        let mut budget = LogDataScope::Block.budget();
-        let mut data = Vec::new();
-        for _ in 0..count {
-            let size = source.read_u32()? as usize;
-            if budget
-                .bytes
-                .checked_sub(LENGTH_PREFIX_SIZE)
-                .is_none_or(|remaining| size > remaining)
-            {
-                return Err(DeserializationError::InvalidValue(
-                    "transaction log data exceeds block byte budget".into(),
-                ));
-            }
-            // Reject oversized frames before reading or allocating their payloads.
-            if size > max_transaction_size {
-                return Err(DeserializationError::InvalidValue(
-                    "transaction log data frame exceeds transaction limit".into(),
-                ));
-            }
-            let encoded = source.read_slice(size)?;
-            let entry = TransactionLogDetails::read_from_bytes(encoded)?;
-            if entry.get_size_hint() != size {
-                return Err(DeserializationError::InvalidValue(
-                    "noncanonical transaction log data frame".into(),
-                ));
-            }
-            budget
-                .consume(&entry)
-                .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
-            data.push(entry);
-        }
-        Ok(Self(data))
     }
 }
 

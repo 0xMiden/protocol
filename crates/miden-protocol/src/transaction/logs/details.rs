@@ -1,14 +1,7 @@
 use alloc::vec::Vec;
 
-use super::{TransactionLog, TransactionLogError, TransactionLogs};
+use super::{TransactionLogError, TransactionLogs};
 use crate::account::AccountId;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Word};
 
 /// Submitted transaction log data for the account against which the transaction executes.
@@ -27,9 +20,6 @@ pub enum TransactionLogDetails {
 }
 
 impl TransactionLogDetails {
-    const PRIVATE_ID: u8 = 0;
-    const PUBLIC_ID: u8 = 1;
-
     /// Returns the computed public or supplied private transaction log commitment.
     pub fn to_commitment(&self) -> Word {
         match self {
@@ -61,51 +51,5 @@ impl TransactionLogDetails {
         } else {
             Err(TransactionLogError::VisibilityMismatch)
         }
-    }
-
-    /// Returns the maximum encoded size of a public or private entry, including its visibility tag.
-    pub(super) fn max_serialized_size() -> usize {
-        let max_public_size = TransactionLogs::min_serialized_size()
-            + TransactionLogs::MAX_COUNT * TransactionLog::min_serialized_size()
-            + TransactionLogs::MAX_NUM_WORDS * Word::SERIALIZED_SIZE;
-        size_of::<u8>() + max_public_size.max(Word::SERIALIZED_SIZE)
-    }
-}
-
-impl Serializable for TransactionLogDetails {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            Self::Public(logs) => {
-                target.write_u8(Self::PUBLIC_ID);
-                logs.write_into(target);
-            },
-            Self::Private(commitment) => {
-                target.write_u8(Self::PRIVATE_ID);
-                commitment.write_into(target);
-            },
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        1 + match self {
-            Self::Public(logs) => logs.get_size_hint(),
-            Self::Private(_) => Word::SERIALIZED_SIZE,
-        }
-    }
-}
-
-impl Deserializable for TransactionLogDetails {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        match source.read_u8()? {
-            Self::PUBLIC_ID => Ok(Self::Public(TransactionLogs::read_from(source)?)),
-            Self::PRIVATE_ID => Ok(Self::Private(Word::read_from(source)?)),
-            tag => Err(DeserializationError::InvalidValue(format!(
-                "invalid transaction log data tag: {tag}"
-            ))),
-        }
-    }
-
-    fn min_serialized_size() -> usize {
-        1 + TransactionLogs::min_serialized_size()
     }
 }

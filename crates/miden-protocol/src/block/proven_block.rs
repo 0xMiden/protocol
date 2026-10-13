@@ -1,17 +1,8 @@
-use alloc::string::ToString;
-
 use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::vm::ExecutionProof;
 
 // PROVEN BLOCK ERROR
@@ -279,35 +270,6 @@ impl ProvenBlock {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for ProvenBlock {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.header.write_into(target);
-        self.body.write_into(target);
-        self.signatures.write_into(target);
-        self.proof.write_into(target);
-    }
-}
-
-impl Deserializable for ProvenBlock {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block = Self {
-            header: BlockHeader::read_from(source)?,
-            body: BlockBody::read_from(source)?,
-            signatures: BlockSignatures::read_from(source)?,
-            proof: ExecutionProof::read_from(source)?,
-        };
-
-        block
-            .validate_proof()
-            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
-
-        Ok(block)
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -380,11 +342,6 @@ mod tests {
                 ProvenBlock::new(header.clone(), body.clone(), signatures.clone(), proof.clone())
                     .unwrap_err();
             assert!(matches!(error, ProvenBlockError::BlockProofContainsPrecompiles));
-
-            let block =
-                ProvenBlock::new_unchecked(header.clone(), body.clone(), signatures.clone(), proof);
-            let error = ProvenBlock::read_from_bytes(&block.to_bytes()).unwrap_err();
-            assert!(matches!(error, DeserializationError::InvalidValue(_)));
         }
     }
 

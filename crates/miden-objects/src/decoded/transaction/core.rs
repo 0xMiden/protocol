@@ -91,6 +91,6 @@ impl BuildUnchecked for ProvenTransaction {
             unwrap_infallible(self.expiration_block_num.verify()),
             self.proof,
         )?
-        .with_log_details(self.log_details.into_inner())?)
+        .with_log_details(self.log_details.verify()?)?)
     }
 }

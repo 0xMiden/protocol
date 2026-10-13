@@ -65,6 +65,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.ProvenBatch",
             ".transaction.ProposedBatch",
             ".transaction.ProvenTransaction",
+            ".transaction.LogTopic",
+            ".transaction.TransactionLog",
+            ".transaction.TransactionLogs",
+            ".transaction.TransactionLogDetails",
+            ".transaction.TransactionLogDetailsCollection",
             ".blockchain.SignedBlock",
             ".blockchain.BlockBody",
             ".blockchain.OutputNoteBatch",
@@ -216,29 +221,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         >)])
         .to_string(),
     );
-    prost.field_attribute(
-        ".transaction.ProvenTransaction.log_details",
-        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogDetails
-        >)])
-        .to_string(),
-    );
-    prost.field_attribute(
-        ".transaction.TransactionEffectsV1.logs",
-        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::TransactionLogs
-        >)])
-        .to_string(),
-    );
-    for field in [".transaction.ProvenBatch.log_details", ".blockchain.BlockBody.log_details"] {
-        prost.field_attribute(
-            field,
-            quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-                miden_protocol::transaction::TransactionLogDetailsCollection
-            >)])
-            .to_string(),
-        );
-    }
     prost.compile_fds(descriptors)?;
     Ok(())
 }

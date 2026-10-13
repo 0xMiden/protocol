@@ -4,11 +4,17 @@
 
 ### Changes
 
+- [BREAKING] Removed Winterfell serialization for batch and block containers that carry transaction logs; use protobuf for transport ([#3905](https://github.com/0xMiden/protocol/pull/3905)).
+
 - Added ordered public transaction logs and private transaction log commitments in batches and blocks, with bounded encodings and aggregate limits ([#3905](https://github.com/0xMiden/protocol/pull/3905)).
 - Added canonical protobuf transport for transaction logs and their commitments, with private log contents retained in local execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
+- [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+
 - [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
 - Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
-- Added Rust transaction log types with two felt topics, bounded serialization, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+- Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+- [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.
+
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).

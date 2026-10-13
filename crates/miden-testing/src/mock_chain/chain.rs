@@ -1284,7 +1284,7 @@ mod tests {
     };
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_protocol::transaction::RawOutputNote;
-    use miden_protocol::utils::serde::{Deserializable, Serializable};
+    use miden_protocol::utils::serde::Serializable;
     use miden_standards::account::wallets::BasicWallet;
     use miden_standards::note::P2idNote;
     use miden_standards::tx_script::SendNotesTransactionScript;
@@ -1438,26 +1438,6 @@ mod tests {
     fn validator_signing_key_count_overflow_is_rejected() {
         let keys = vec![random_secret_key(); usize::from(u16::MAX) + 1];
         assert!(MockChain::builder().validator_signing_keys(keys).build().is_err());
-    }
-
-    #[test]
-    fn proposed_block_serialization_round_trip() -> anyhow::Result<()> {
-        let chain = MockChain::new();
-        let timestamp = chain.latest_block_header().timestamp() + 1;
-        let next_keys = ValidatorConfig::from_signers(&[random_secret_key()]);
-        let proposed = chain
-            .propose_block_at(Vec::<ProvenBatch>::new(), timestamp)?
-            .with_next_validator_config(next_keys.clone());
-
-        let bytes = proposed.to_bytes();
-        let deserialized = ProposedBlock::read_from_bytes(&bytes).unwrap();
-
-        // `ProposedBlock` does not implement `PartialEq`, so compare via re-serialization and the
-        // round-tripped `next_validator_config` field added by this change.
-        assert_eq!(deserialized.to_bytes(), bytes);
-        assert_eq!(deserialized.next_validator_config(), &next_keys);
-
-        Ok(())
     }
 
     #[tokio::test]

@@ -1,9 +1,7 @@
-use alloc::string::ToString;
-use alloc::vec::Vec;
-
 use assert_matches::assert_matches;
 use rstest::rstest;
 
+use crate::Word;
 use crate::account::AccountId;
 use crate::block::BlockBody;
 use crate::errors::BlockBodyError;
@@ -22,13 +20,6 @@ use crate::transaction::{
     TransactionLogDetailsCollection,
     TransactionLogError,
     TransactionLogs,
-};
-use crate::utils::serde::{ByteWriter, Deserializable, DeserializationError, Serializable};
-use crate::{
-    MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK,
-    MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK,
-    MAX_PUBLIC_LOGS_PER_BLOCK,
-    Word,
 };
 
 fn public_log(words: usize) -> TransactionLog {
@@ -53,7 +44,7 @@ fn header(account: AccountId, data: &TransactionLogDetails, state: u32) -> Trans
 }
 
 #[test]
-fn block_transaction_logs_roundtrip_and_validate_associations() {
+fn block_transaction_logs_validate_associations() {
     let public = TransactionLogDetails::Public(
         TransactionLogs::new(vec![public_log(1), public_log(1)]).unwrap(),
     );
@@ -64,7 +55,7 @@ fn block_transaction_logs_roundtrip_and_validate_associations() {
     ]);
     let data = TransactionLogDetailsCollection::new(vec![public.clone(), private.clone()]).unwrap();
     let block = BlockBody::new(vec![], vec![], vec![], data.clone(), headers.clone()).unwrap();
-    assert_eq!(BlockBody::read_from_bytes(&block.to_bytes()).unwrap(), block);
+    assert_eq!(block.log_details(), &data);
     for entries in [
         vec![],
         vec![public.clone()],
@@ -154,108 +145,11 @@ fn assert_aggregate_limit(
 ) {
     let mut entries = vec![entry; count];
     assert!(TransactionLogDetailsCollection::validate_budget(entries.iter(), scope).is_ok());
-    let data = TransactionLogDetailsCollection::new(entries.clone()).unwrap();
-    let encoded = data.to_bytes();
-    assert_eq!(encoded.len(), data.get_size_hint());
-    assert_eq!(TransactionLogDetailsCollection::read_from_bytes(&encoded).unwrap(), data);
+    TransactionLogDetailsCollection::new(entries.clone()).unwrap();
 
     entries.push(extra);
     assert_matches!(
         TransactionLogDetailsCollection::validate_budget(entries.iter(), scope),
         Err(TransactionLogError::AggregateBudget)
-    );
-}
-
-#[test]
-fn decoder_stops_when_public_resources_are_exhausted() {
-    for (entry, count) in [
-        (
-            TransactionLogDetails::Public(
-                TransactionLogs::new(vec![public_log(0); TransactionLogs::MAX_COUNT]).unwrap(),
-            ),
-            MAX_PUBLIC_LOGS_PER_BLOCK / TransactionLogs::MAX_COUNT,
-        ),
-        (
-            TransactionLogDetails::Public(
-                TransactionLogs::new(vec![public_log(TransactionLog::MAX_NUM_WORDS); 2]).unwrap(),
-            ),
-            MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK / TransactionLogs::MAX_NUM_WORDS,
-        ),
-    ] {
-        let mut bytes = Vec::new();
-        bytes.write_u32(count as u32 + 2);
-        for _ in 0..=count {
-            bytes.write_u32(entry.get_size_hint() as u32);
-            entry.write_into(&mut bytes);
-        }
-        // The next frame is absent. Reject the exhausted budget before trying to read it.
-        assert_eq!(
-            TransactionLogDetailsCollection::read_from_bytes(&bytes),
-            Err(DeserializationError::InvalidValue(
-                TransactionLogError::AggregateBudget.to_string()
-            ))
-        );
-    }
-}
-
-#[test]
-fn decoder_rejects_oversized_counts_and_lengths_before_reading_payloads() {
-    let mut bytes = Vec::new();
-    bytes.write_u32(MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK as u32 + 1);
-    assert!(matches!(
-        TransactionLogDetailsCollection::read_from_bytes(&bytes),
-        Err(DeserializationError::InvalidValue(_))
-    ));
-    bytes.clear();
-    bytes.write_u32(1);
-    bytes.write_u32(u32::MAX);
-    assert!(matches!(
-        TransactionLogDetailsCollection::read_from_bytes(&bytes),
-        Err(DeserializationError::InvalidValue(_))
-    ));
-}
-
-#[test]
-fn decoder_rejects_trailing_bytes_in_a_transaction_frame() {
-    let entry = TransactionLogDetails::Private(Word::empty());
-    let mut bytes = Vec::new();
-    bytes.write_u32(1);
-    bytes.write_u32(entry.get_size_hint() as u32 + 1);
-    entry.write_into(&mut bytes);
-    bytes.push(0);
-    assert!(matches!(
-        TransactionLogDetailsCollection::read_from_bytes(&bytes),
-        Err(DeserializationError::InvalidValue(_))
-    ));
-}
-
-#[test]
-fn decoder_accepts_the_largest_transaction_frame_and_rejects_one_byte_more() {
-    let mut remaining_words = TransactionLogs::MAX_NUM_WORDS;
-    let logs = (0..TransactionLogs::MAX_COUNT)
-        .map(|_| {
-            let words = remaining_words.min(TransactionLog::MAX_NUM_WORDS);
-            remaining_words -= words;
-            public_log(words)
-        })
-        .collect();
-    assert_eq!(remaining_words, 0);
-    let entry = TransactionLogDetails::Public(TransactionLogs::new(logs).unwrap());
-    let frame_size = entry.to_bytes().len();
-    let data = TransactionLogDetailsCollection::new(vec![entry]).unwrap();
-    assert_eq!(
-        TransactionLogDetailsCollection::read_from_bytes(&data.to_bytes()).unwrap(),
-        data
-    );
-
-    // Omit the payload: the size must be rejected before the decoder tries to read it.
-    let mut bytes = Vec::new();
-    bytes.write_u32(1);
-    bytes.write_u32(frame_size as u32 + 1);
-    assert_eq!(
-        TransactionLogDetailsCollection::read_from_bytes(&bytes),
-        Err(DeserializationError::InvalidValue(
-            "transaction log data frame exceeds transaction limit".into()
-        ))
     );
 }

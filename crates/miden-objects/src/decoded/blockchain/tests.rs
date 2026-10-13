@@ -14,7 +14,6 @@ use miden_protocol::block::{
 };
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
 use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionLogDetailsCollection};
-use miden_protocol::utils::serde::Serializable;
 
 use crate::decoded::blockchain::test_utils::block_header_with_scheduled_upgrade;
 use crate::decoded::protocol_config::test_utils::dummy_protocol_config;
@@ -168,7 +167,7 @@ fn empty_protobuf_block_body_requires_explicit_log_details() {
 
     assert_eq!(
         proto::blockchain::BlockBody {
-            log_details: TransactionLogDetailsCollection::default().to_bytes(),
+            log_details: Some((&TransactionLogDetailsCollection::default()).into()),
             ..Default::default()
         }
         .decode_fields()

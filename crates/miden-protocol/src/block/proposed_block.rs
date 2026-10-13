@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::{AccountId, AccountUpdateDetails};
@@ -28,13 +27,6 @@ use crate::transaction::{
     PartialBlockchain,
     TransactionHeader,
     TransactionLogDetailsCollection,
-};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
 };
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
@@ -609,47 +601,6 @@ impl ProposedBlock {
             self.partial_blockchain,
             self.prev_block_header,
         )
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for ProposedBlock {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.batches.write_into(target);
-        self.timestamp.write_into(target);
-        self.account_updated_witnesses.write_into(target);
-        self.output_note_batches.write_into(target);
-        self.created_nullifiers.write_into(target);
-        self.partial_blockchain.write_into(target);
-        self.prev_block_header.write_into(target);
-        self.next_validator_config.write_into(target);
-        self.next_protocol_config.write_into(target);
-    }
-}
-
-impl Deserializable for ProposedBlock {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let batches = OrderedBatches::read_from(source)?;
-        TransactionLogDetailsCollection::validate_block_budget(
-            batches.as_slice().iter().flat_map(|batch| batch.log_details().as_slice()),
-        )
-        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
-
-        let block = Self {
-            batches,
-            timestamp: u32::read_from(source)?,
-            account_updated_witnesses: <Vec<(AccountId, AccountUpdateWitness)>>::read_from(source)?,
-            output_note_batches: <Vec<OutputNoteBatch>>::read_from(source)?,
-            created_nullifiers: <BTreeMap<Nullifier, NullifierWitness>>::read_from(source)?,
-            partial_blockchain: PartialBlockchain::read_from(source)?,
-            prev_block_header: BlockHeader::read_from(source)?,
-            next_validator_config: ValidatorConfig::read_from(source)?,
-            next_protocol_config: <Option<NextProtocolConfig>>::read_from(source)?,
-        };
-
-        Ok(block)
     }
 }
 

@@ -82,7 +82,7 @@ pub const MAX_PUBLIC_LOGS_PER_BLOCK: usize = 65536;
 pub const MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH: usize = 65536;
 /// Maximum public transaction log payload words in a block (16 MiB).
 pub const MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK: usize = 524288;
-/// Maximum serialized transaction log data per batch, including metadata (4 MiB).
+/// Maximum canonical protobuf transaction log data per batch, including metadata (4 MiB).
 pub const MAX_LOG_DATA_BYTES_PER_BATCH: usize = 4 * 1024 * 1024;
-/// Maximum serialized transaction log data per block, including metadata (32 MiB).
+/// Maximum canonical protobuf transaction log data per block, including metadata (32 MiB).
 pub const MAX_LOG_DATA_BYTES_PER_BLOCK: usize = 32 * 1024 * 1024;

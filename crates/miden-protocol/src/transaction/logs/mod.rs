@@ -4,7 +4,6 @@
 //! defined by [`ProtocolDomainRegistry::TransactionLog`] and
 //! [`ProtocolDomainRegistry::TransactionLogs`].
 
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
@@ -22,13 +21,6 @@ pub use details::TransactionLogDetails;
 #[cfg(test)]
 mod tests;
 
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
 
 // ERRORS
@@ -98,7 +90,9 @@ impl TransactionLog {
         topic: LogTopic,
         content: Vec<Word>,
     ) -> Result<Self, TransactionLogError> {
-        Self::validate_content_size(content.len())?;
+        if content.len() > Self::MAX_NUM_WORDS {
+            return Err(TransactionLogError::TooManyContentWords(content.len()));
+        }
         Ok(Self { emitter, topic, content })
     }
 
@@ -143,35 +137,6 @@ impl TransactionLog {
     pub fn into_parts(self) -> (AccountId, LogTopic, Vec<Word>) {
         (self.emitter, self.topic, self.content)
     }
-
-    fn validate_content_size(num_words: usize) -> Result<(), TransactionLogError> {
-        if num_words > TransactionLog::MAX_NUM_WORDS {
-            return Err(TransactionLogError::TooManyContentWords(num_words));
-        }
-        Ok(())
-    }
-
-    /// Checks both content limits before the reader can allocate or read the content words.
-    fn read_with_content_budget<R: ByteReader>(
-        source: &mut R,
-        previous_content_words: usize,
-    ) -> Result<Self, DeserializationError> {
-        let emitter = AccountId::read_from(source)?;
-        let topic = LogTopic::read_from(source)?;
-        let num_words = usize::from(source.read_u16()?);
-        Self::validate_content_size(num_words)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-        let total_content_words = previous_content_words + num_words;
-        if total_content_words > TransactionLogs::MAX_NUM_WORDS {
-            return Err(DeserializationError::InvalidValue(
-                TransactionLogError::TooManyTotalContentWords(total_content_words).to_string(),
-            ));
-        }
-
-        let content = source.read_many_iter::<Word>(num_words)?.collect::<Result<_, _>>()?;
-        Self::new(emitter, topic, content)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
 }
 
 impl SequentialCommit for TransactionLog {
@@ -191,30 +156,6 @@ impl SequentialCommit for TransactionLog {
 
     fn to_commitment(&self) -> Word {
         Hasher::hash_elements_in_domain(&self.to_elements(), Self::DOMAIN)
-    }
-}
-
-impl Serializable for TransactionLog {
-    /// Writes the emitter, topic, content word count as a little-endian u16, and content words.
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.emitter.write_into(target);
-        self.topic.write_into(target);
-        target.write_u16(self.content.len() as u16);
-        target.write_many(&self.content);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        Self::min_serialized_size() + self.content.len() * Word::SERIALIZED_SIZE
-    }
-}
-
-impl Deserializable for TransactionLog {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Self::read_with_content_budget(source, 0)
-    }
-
-    fn min_serialized_size() -> usize {
-        AccountId::SERIALIZED_SIZE + LogTopic::SERIALIZED_SIZE + size_of::<u16>()
     }
 }
 
@@ -274,7 +215,9 @@ impl TransactionLogs {
     /// Returns an error if the count exceeds [`TransactionLogs::MAX_COUNT`] or the total content
     /// size exceeds [`TransactionLogs::MAX_NUM_WORDS`].
     pub fn new(logs: Vec<TransactionLog>) -> Result<Self, TransactionLogError> {
-        Self::validate_log_count(logs.len())?;
+        if logs.len() > Self::MAX_COUNT {
+            return Err(TransactionLogError::TooManyLogs(logs.len()));
+        }
         let num_content_words = logs.iter().map(TransactionLog::num_content_words).sum::<usize>();
         if num_content_words > Self::MAX_NUM_WORDS {
             return Err(TransactionLogError::TooManyTotalContentWords(num_content_words));
@@ -321,13 +264,6 @@ impl TransactionLogs {
     pub fn into_vec(self) -> Vec<TransactionLog> {
         self.logs
     }
-
-    fn validate_log_count(num_logs: usize) -> Result<(), TransactionLogError> {
-        if num_logs > TransactionLogs::MAX_COUNT {
-            return Err(TransactionLogError::TooManyLogs(num_logs));
-        }
-        Ok(())
-    }
 }
 
 impl SequentialCommit for TransactionLogs {
@@ -346,40 +282,4 @@ impl SequentialCommit for TransactionLogs {
     }
 }
 
-impl Serializable for TransactionLogs {
-    /// Writes a little endian u16 transaction log count followed by the contents, without the
-    /// commitment.
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u16(self.logs.len() as u16);
-        target.write_many(&self.logs);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        size_of::<u16>() + self.logs.iter().map(Serializable::get_size_hint).sum::<usize>()
-    }
-}
-
-impl Deserializable for TransactionLogs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_logs = usize::from(source.read_u16()?);
-        Self::validate_log_count(num_logs)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-
-        let mut logs = Vec::with_capacity(num_logs);
-        let mut num_content_words = 0;
-        for _ in 0..num_logs {
-            let log = TransactionLog::read_with_content_budget(source, num_content_words)?;
-            num_content_words += log.num_content_words();
-            logs.push(log);
-        }
-        Self::new(logs).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-
-    fn min_serialized_size() -> usize {
-        size_of::<u16>()
-    }
-}
-
-const _: () = assert!(TransactionLogs::MAX_COUNT <= u16::MAX as usize);
-const _: () = assert!(TransactionLog::MAX_NUM_WORDS <= u16::MAX as usize);
 const _: () = assert!(TransactionLogs::MAX_NUM_WORDS >= TransactionLog::MAX_NUM_WORDS);

@@ -12,7 +12,6 @@ use miden_protocol::transaction::{
     TransactionScript,
     TxAccountUpdate,
 };
-use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
 
@@ -85,7 +84,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
             reference_block_commitment: Some(value.ref_block_commitment().into()),
             expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
-            log_details: value.log_details().to_bytes(),
+            log_details: Some(value.log_details().into()),
         }
     }
 }
