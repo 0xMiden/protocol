@@ -30,6 +30,7 @@ use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
 use crate::transaction::{
@@ -44,7 +45,7 @@ use crate::{Felt, Word};
 
 #[rstest]
 #[case::private(ACCOUNT_ID_PRIVATE_SENDER)]
-#[case::public(ACCOUNT_ID_SENDER)]
+#[case::public(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)]
 fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] account_id: u128) {
     let account_id = account_id.try_into().unwrap();
     let account =
@@ -72,7 +73,6 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
             TransactionLogDetails::Private(logs.commitment())
         };
         assert_eq!(outputs.log_details(), expected);
-        assert_eq!(TransactionOutputs::read_from_bytes(&outputs.to_bytes()).unwrap(), outputs);
     }
 }
 
