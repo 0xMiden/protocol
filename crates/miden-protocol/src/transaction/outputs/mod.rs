@@ -1,10 +1,9 @@
-use alloc::string::ToString;
 use core::fmt::Debug;
 
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
-use crate::transaction::{TransactionLogDetails, TransactionLogError, TransactionLogs};
+use crate::transaction::{TransactionLogDetails, TransactionLogs};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -34,8 +33,8 @@ mod tests;
 ///
 /// # Privacy
 ///
-/// Contains complete local transaction logs and their secret salt, including in serialized and
-/// debug output. Use [`Self::log_details`] to obtain the data submitted with a proven transaction.
+/// Contains complete local transaction logs, including in serialized and debug output. Use
+/// [`Self::log_details`] to obtain the data submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
@@ -48,7 +47,6 @@ pub struct TransactionOutputs {
     /// Defines up to which block the transaction is considered valid.
     expiration_block_num: BlockNumber,
     logs: TransactionLogs,
-    log_salt: Word,
 }
 
 impl TransactionOutputs {
@@ -82,21 +80,14 @@ impl TransactionOutputs {
             output_notes,
             expiration_block_num,
             logs: TransactionLogs::default(),
-            log_salt: Word::empty(),
         }
     }
 
-    /// Attaches local transaction logs and checks the salt required for nonempty private
-    /// transaction logs.
-    pub fn with_logs(
-        mut self,
-        logs: TransactionLogs,
-        log_salt: Word,
-    ) -> Result<Self, TransactionLogError> {
-        logs.commitment_for_account(self.account.id(), log_salt)?;
+    /// Attaches local transaction logs.
+    #[must_use]
+    pub fn with_logs(mut self, logs: TransactionLogs) -> Self {
         self.logs = logs;
-        self.log_salt = log_salt;
-        Ok(self)
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -108,12 +99,8 @@ impl TransactionOutputs {
     }
 
     /// Returns the commitment to the local transaction logs.
-    ///
-    /// For nonempty private transaction logs, combines their commitment with the secret salt.
     pub fn logs_commitment(&self) -> Word {
-        self.logs
-            .commitment_for_account(self.account.id(), self.log_salt)
-            .expect("transaction log salt in the outputs is valid")
+        self.logs.commitment()
     }
 
     /// Returns complete public transaction logs or only the private transaction log commitment
@@ -162,7 +149,6 @@ impl Serializable for TransactionOutputs {
         self.output_notes.write_into(target);
         self.expiration_block_num.write_into(target);
         self.logs.write_into(target);
-        self.log_salt.write_into(target);
     }
 }
 
@@ -174,9 +160,7 @@ impl Deserializable for TransactionOutputs {
         let expiration_block_num = BlockNumber::read_from(source)?;
 
         let logs = TransactionLogs::read_from(source)?;
-        let log_salt = Word::read_from(source)?;
-        Self::new(account, account_patch_commitment, output_notes, expiration_block_num)
-            .with_logs(logs, log_salt)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        Ok(Self::new(account, account_patch_commitment, output_notes, expiration_block_num)
+            .with_logs(logs))
     }
 }
