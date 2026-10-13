@@ -63,8 +63,8 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
             Word::empty(),
             RawOutputNotes::new(vec![]).unwrap(),
             1u32.into(),
-        )
-        .with_logs(logs.clone());
+            logs.clone(),
+        );
         assert_eq!(outputs.logs(), &logs);
         assert_eq!(outputs.logs_commitment(), logs.commitment());
         let expected = if account_id.is_public() {

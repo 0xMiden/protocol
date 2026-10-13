@@ -148,9 +148,8 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
         dummy_word(3),
         3u32.into(),
         dummy_execution_proof(),
+        data,
     )
-    .unwrap()
-    .with_log_details(data)
     .unwrap();
     let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();
     let message = proto::transaction::ProvenTransaction::decode(bytes.as_slice()).unwrap();

@@ -37,17 +37,17 @@ fn transaction_effects() -> TransactionEffects {
     ])
     .unwrap();
 
-    TransactionEffects::new(
-        dummy_word(4),
-        dummy_word(5),
-        account_patch,
-        input_notes,
-        output_notes,
-        BlockNumber::from(17_u32),
-        dummy_word(6),
-        BlockNumber::from(42_u32),
-    )
-    .with_logs(logs)
+    TransactionEffects::builder()
+        .initial_state_commitment(dummy_word(4))
+        .final_state_commitment(dummy_word(5))
+        .account_patch(account_patch)
+        .input_notes(input_notes)
+        .output_notes(output_notes)
+        .ref_block_number(BlockNumber::from(17_u32))
+        .ref_block_commitment(dummy_word(6))
+        .expiration_block_num(BlockNumber::from(42_u32))
+        .logs(logs)
+        .build()
 }
 
 #[test]

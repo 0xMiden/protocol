@@ -20,6 +20,7 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
+    TransactionLogDetails,
     TransactionLogDetailsCollection,
     TxAccountUpdate,
 };
@@ -57,6 +58,7 @@ fn proposal() -> ProposedBatch {
         header.commitment(),
         header.block_num() + 1,
         dummy_execution_proof(),
+        TransactionLogDetails::Private(Word::empty()),
     )
     .unwrap();
     // A dummy proof is deliberate: structural decoding must not perform proof verification.

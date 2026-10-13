@@ -274,8 +274,8 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     expiration_block_num,
     ///     LOGS_COMMITMENT,
+    ///     expiration_block_num,
     /// ]
     /// ```
     ///
@@ -298,8 +298,8 @@ impl TransactionKernel {
         let mut outputs: Vec<Felt> = Vec::with_capacity(13);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
-        outputs.push(Felt::from(expiration_block_num));
         outputs.extend(logs_commitment);
+        outputs.push(Felt::from(expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
     }
@@ -312,8 +312,8 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     expiration_block_num,
     ///     LOGS_COMMITMENT,
+    ///     expiration_block_num,
     /// ]
     /// ```
     ///
@@ -342,6 +342,10 @@ impl TransactionKernel {
             .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
 
+        let logs_commitment = stack
+            .get_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX)
+            .expect("logs_commitment (third word) missing");
+
         let expiration_block_num = stack
             .get_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
             .expect("tx_expiration_block_num missing");
@@ -365,9 +369,7 @@ impl TransactionKernel {
             output_notes_commitment,
             account_update_commitment,
             expiration_block_num,
-            stack
-                .get_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX)
-                .expect("log commitment is present"),
+            logs_commitment,
         ))
     }
 
@@ -382,8 +384,8 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     expiration_block_num,
     ///     LOGS_COMMITMENT,
+    ///     expiration_block_num,
     /// ]
     /// ```
     ///
@@ -413,6 +415,10 @@ impl TransactionKernel {
             logs_commitment,
         ) = Self::parse_output_stack(stack)?;
 
+        if logs.commitment() != logs_commitment {
+            return Err(TransactionOutputError::LogsCommitmentInconsistent);
+        }
+
         let (final_account_commitment, account_patch_commitment) =
             Self::parse_account_update_commitment(account_update_commitment, advice_inputs)?;
 
@@ -434,17 +440,13 @@ impl TransactionKernel {
             });
         }
 
-        let outputs = TransactionOutputs::new(
+        Ok(TransactionOutputs::new(
             account,
             account_patch_commitment,
             output_notes,
             expiration_block_num,
-        )
-        .with_logs(logs);
-        if outputs.logs_commitment() != logs_commitment {
-            return Err(TransactionOutputError::LogsCommitmentInconsistent);
-        }
-        Ok(outputs)
+            logs,
+        ))
     }
 
     /// Returns the final account commitment and account patch commitment extracted from the account

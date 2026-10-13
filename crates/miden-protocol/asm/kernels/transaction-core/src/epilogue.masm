@@ -6,7 +6,7 @@ use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
-use miden::tx_kernel_core::tx_log
+use miden::tx_kernel_core::tx
 
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
@@ -262,13 +262,13 @@ end
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
 #! - applies a pending code upgrade of the native account.
-#! - computes the output notes commitment and transaction log commitment.
+#! - computes the output notes commitment and transaction logs commitment.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
 #!
 #! Inputs:  []
 #! Outputs: [
-#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, LOGS_COMMITMENT
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num
 #! ]
 #!
 #! Where:
@@ -292,7 +292,7 @@ end
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
 @locals(8)
-pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber, Commitment)
+pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, BlockNumber)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
 
@@ -403,15 +403,15 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber, Commitm
 
     # ------ Build output stack ------
 
-    # Append the transaction log commitment to preserve the existing output indices.
-    exec.tx_log::get_commitment swapw
+    # Place the logs commitment below the account update commitment.
+    exec.tx::get_logs_commitment swapw
     # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT]
 
-    # place the expiration block num below the account update commitment word
-    exec.memory::get_expiration_block_num movdn.4
-    # => [ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, LOGS_COMMITMENT]
+    # place the expiration block number below the two commitment words
+    exec.memory::get_expiration_block_num movdn.8
+    # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num]
 
     # load output notes commitment from local
     padw loc_loadw_le.0
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, LOGS_COMMITMENT]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num]
 end

@@ -246,7 +246,7 @@ async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> an
         pub proc emit_auth_request
             # Use the same six user params as the auth procedure.
             push.0.0.0.0.0.0
-            exec.auth::get_tx_summary_commitment
+            exec.auth::get_default_tx_summary_commitment
             # => [MESSAGE, PK_COMM, scheme_id]
 
             # With no pre-supplied signature the host must produce one, which is only allowed inside

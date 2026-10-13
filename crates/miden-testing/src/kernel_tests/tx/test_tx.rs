@@ -565,7 +565,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           push.0.0.0.0.0
           # => [user_params(6), pad(16)]
 
-          exec.auth::get_tx_summary_commitment
+          exec.auth::get_default_tx_summary_commitment
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -629,7 +629,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 }
 
 /// Tests that the transaction summary binds the expiration block delta set during the transaction
-/// and the user-defined parameters passed to `create_tx_summary`.
+/// and the user-defined parameters passed to `create_default_tx_summary`.
 ///
 /// The host verifies that the reconstructed summary commits to the message hashed in the kernel,
 /// so the assertions on the extracted summary prove that these values are part of the signed
@@ -657,7 +657,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           push.0.0.9.8.7
           # => [user_params(6), pad(16)]
 
-          exec.auth::get_tx_summary_commitment
+          exec.auth::get_default_tx_summary_commitment
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -718,8 +718,7 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
           exec.::miden::protocol::native_account::incr_nonce drop
           # => [pad(16)]
 
-          # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT. The commitment is
-          # the deepest word of the preimage, so it cannot be patched in after create_tx_summary.
+          # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT.
           exec.tx::get_logs_commitment
           push.1.2.3.4
           # => [FAKE_BLOCK_COMMITMENT, pad(16)]
@@ -735,7 +734,7 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
 
           # metadata binding the reference block number and an unset expiration delta, preceded by
           # the layout version
-          exec.tx::get_reference_block_number push.2
+          exec.tx::get_reference_block_number push.1
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -816,7 +815,7 @@ async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<(
 
           # metadata binding the block before the reference block, which the transaction does not
           # track, and an unset expiration delta, preceded by the layout version
-          exec.tx::get_reference_block_number sub.1 push.2
+          exec.tx::get_reference_block_number sub.1 push.1
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -894,7 +893,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
           padw push.0.0
           # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
-          push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.2
+          push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.1
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -988,6 +987,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         TransactionSummaryUserParams::new(
             [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0].map(Felt::from),
         ),
+        Default::default(),
     );
 
     let summary_commitment = expected_summary.to_commitment();

@@ -55,12 +55,10 @@ impl TransactionOutputs {
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
     /// The index of the item at which the expiration block height is stored on the output stack.
-    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 8;
+    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 12;
 
-    /// The first stack element of the transaction log commitment.
-    ///
-    /// Appended after the expiration block number to preserve the existing output indices.
-    pub const LOGS_COMMITMENT_WORD_IDX: usize = 9;
+    /// The first stack element of the transaction logs commitment.
+    pub const LOGS_COMMITMENT_WORD_IDX: usize = 8;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -71,21 +69,15 @@ impl TransactionOutputs {
         account_patch_commitment: Word,
         output_notes: RawOutputNotes,
         expiration_block_num: BlockNumber,
+        logs: TransactionLogs,
     ) -> Self {
         Self {
             account,
             account_patch_commitment,
             output_notes,
             expiration_block_num,
-            logs: TransactionLogs::default(),
+            logs,
         }
-    }
-
-    /// Attaches local transaction logs.
-    #[must_use]
-    pub fn with_logs(mut self, logs: TransactionLogs) -> Self {
-        self.logs = logs;
-        self
     }
 
     // PUBLIC ACCESSORS
@@ -101,7 +93,7 @@ impl TransactionOutputs {
         self.logs.commitment()
     }
 
-    /// Returns complete public transaction logs or only the private transaction log commitment
+    /// Returns complete public transaction logs or only the private transaction logs commitment
     /// for submission to the node.
     pub fn log_details(&self) -> TransactionLogDetails {
         if self.account.id().is_public() {

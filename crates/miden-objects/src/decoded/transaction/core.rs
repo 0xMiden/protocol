@@ -82,15 +82,16 @@ impl BuildUnchecked for ProvenTransaction {
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         let inputs = self.input_notes.build_unchecked()?;
         let outputs = self.output_notes.verify()?;
+        let account_update = self.account_update.verify()?;
         Ok(Self::Output::new(
-            self.account_update.verify()?,
+            account_update,
             inputs,
             outputs,
             unwrap_infallible(self.reference_block_num.verify()),
             self.reference_block_commitment,
             unwrap_infallible(self.expiration_block_num.verify()),
             self.proof,
-        )?
-        .with_log_details(self.log_details.verify()?)?)
+            self.log_details.verify()?,
+        )?)
     }
 }

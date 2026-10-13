@@ -10,7 +10,7 @@ use crate::{Felt, Word};
 /// only their commitment. This applies to all transaction logs, including those emitted by
 /// foreign accounts during FPI.
 ///
-/// Validating a private transaction log commitment requires the transaction proof.
+/// Validating a private transaction logs commitment requires the transaction proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionLogDetails {
     /// A commitment to the private transaction logs.
@@ -20,7 +20,7 @@ pub enum TransactionLogDetails {
 }
 
 impl TransactionLogDetails {
-    /// Returns the computed public or supplied private transaction log commitment.
+    /// Returns the computed public or supplied private transaction logs commitment.
     pub fn to_commitment(&self) -> Word {
         match self {
             Self::Private(commitment) => *commitment,

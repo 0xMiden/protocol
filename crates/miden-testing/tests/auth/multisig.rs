@@ -454,6 +454,7 @@ async fn test_multisig_rejects_invalid_eip712_witness(
                 TransactionSummaryUserParams::new(
                     [Felt::new_unchecked(42); TransactionSummaryUserParams::NUM_ELEMENTS],
                 ),
+                tx_summary.logs().clone(),
             );
             let (_, other_summary_witness) =
                 eip712_signature_witness(&secret_keys[0], &public_keys[0], &other_summary)?;
