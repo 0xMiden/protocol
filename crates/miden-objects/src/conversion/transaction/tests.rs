@@ -89,8 +89,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
         dummy_word(8),
         account_code_upgrade,
-    )
-    .with_log_salt(dummy_word(9));
+    );
 
     let message = proto::transaction::TransactionArgs::from(&args);
 
@@ -134,11 +133,10 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
         .unwrap(),
     ])
     .unwrap();
-    let salt = dummy_word(913);
     let data = if account_type.is_public() {
         TransactionLogDetails::Public(logs.clone())
     } else {
-        TransactionLogDetails::Private(logs.commitment_for_account(account, salt).unwrap())
+        TransactionLogDetails::Private(logs.commitment())
     };
     let update =
         TxAccountUpdate::new(account, dummy_word(1), dummy_word(2), patch_commitment, details)
@@ -163,9 +161,8 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
     let message = proto::transaction::TransactionHeader::decode(header_bytes.as_slice()).unwrap();
     assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), header);
     if account_type.is_private() {
-        for secret in [logs.to_bytes(), salt.to_bytes()] {
-            assert!(!bytes.windows(secret.len()).any(|window| window == secret));
-        }
+        let private = logs.to_bytes();
+        assert!(!bytes.windows(private.len()).any(|window| window == private));
     }
 }
 

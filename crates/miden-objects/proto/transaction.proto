@@ -91,7 +91,4 @@ message TransactionArgs {
   primitives.AdviceInputs advice_inputs = 4;
   primitives.Word auth_args = 5;
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
-  // Secret salt for the private transaction log commitment.
-  // Do not include this in a submitted transaction.
-  primitives.Word log_salt = 7;
 }

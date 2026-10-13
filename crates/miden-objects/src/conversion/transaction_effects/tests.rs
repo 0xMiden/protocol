@@ -47,8 +47,7 @@ fn transaction_effects() -> TransactionEffects {
         dummy_word(6),
         BlockNumber::from(42_u32),
     )
-    .with_logs(logs, dummy_word(8))
-    .unwrap()
+    .with_logs(logs)
 }
 
 #[test]

@@ -47,7 +47,6 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
             advice_inputs: Some(value.advice_inputs().into()),
             auth_args: Some(value.auth_args().into()),
             account_code_upgrade: value.account_code_upgrade().map(Into::into),
-            log_salt: Some(value.log_salt().into()),
         }
     }
 }
