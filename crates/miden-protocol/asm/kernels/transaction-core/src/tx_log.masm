@@ -129,5 +129,4 @@ proc compute_commitment() -> word
     push.LOGS_DOMAIN mem_load.NUM_LOGS_PTR mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
     exec.poseidon2::hash_elements_in_domain
     # => [LOGS_COMMITMENT]
-
 end
