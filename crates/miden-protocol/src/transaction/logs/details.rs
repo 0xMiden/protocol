@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use super::{TransactionLogError, TransactionLogs};
 use crate::account::AccountId;
-use crate::crypto::SequentialCommit;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -33,12 +32,18 @@ impl TransactionLogDetails {
 
     /// Returns the computed public or supplied private transaction log commitment.
     pub fn to_commitment(&self) -> Word {
-        <Self as SequentialCommit>::to_commitment(self)
+        match self {
+            Self::Private(commitment) => *commitment,
+            Self::Public(logs) => logs.commitment(),
+        }
     }
 
-    /// Returns the public log commitments or the supplied private commitment as field elements.
-    pub fn to_elements(&self) -> Vec<Felt> {
-        <Self as SequentialCommit>::to_elements(self)
+    /// Returns the public commitment's preimage, or `None` when the logs are private.
+    pub fn to_elements(&self) -> Option<Vec<Felt>> {
+        match self {
+            Self::Private(_) => None,
+            Self::Public(logs) => Some(logs.to_elements()),
+        }
     }
 
     /// Checks that public transaction logs are submitted for a public native account and a
@@ -55,24 +60,6 @@ impl TransactionLogDetails {
             Ok(())
         } else {
             Err(TransactionLogError::VisibilityMismatch)
-        }
-    }
-}
-
-impl SequentialCommit for TransactionLogDetails {
-    type Commitment = Word;
-
-    fn to_elements(&self) -> Vec<Felt> {
-        match self {
-            Self::Private(commitment) => commitment.as_elements().to_vec(),
-            Self::Public(logs) => logs.to_elements(),
-        }
-    }
-
-    fn to_commitment(&self) -> Word {
-        match self {
-            Self::Private(commitment) => *commitment,
-            Self::Public(logs) => logs.commitment(),
         }
     }
 }

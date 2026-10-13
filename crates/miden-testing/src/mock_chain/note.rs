@@ -1,7 +1,7 @@
-use miden_processor::serde::DeserializationError;
+use miden_objects::{Verify, proto};
 use miden_protocol::note::{Note, NoteAttachments, NoteId, NoteInclusionProof, NoteMetadata};
-use miden_protocol::transaction::InputNote;
-use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
+use miden_protocol::transaction::{InputNote, PrivateOutputNote};
+use proto::mock_chain as wire;
 
 // MOCK CHAIN NOTE
 // ================================================================================================
@@ -10,10 +10,9 @@ use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializabl
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MockChainNote {
-    /// Details for a private note only include its [`NoteMetadata`], public [`NoteAttachments`]
-    /// and [`NoteInclusionProof`]. Other details needed to consume the note are expected to be
-    /// stored locally, off-chain.
-    Private(NoteId, NoteMetadata, NoteAttachments, NoteInclusionProof),
+    /// Contains the [`PrivateOutputNote`] alongside its [`NoteInclusionProof`]. Other details
+    /// needed to consume the note are expected to be stored locally, off-chain.
+    Private(PrivateOutputNote, NoteInclusionProof),
     /// Contains the full [`Note`] object alongside its [`NoteInclusionProof`].
     Public(Note, NoteInclusionProof),
 }
@@ -22,7 +21,7 @@ impl MockChainNote {
     /// Returns the note's inclusion details.
     pub fn inclusion_proof(&self) -> &NoteInclusionProof {
         match self {
-            MockChainNote::Private(_, _, _, inclusion_proof)
+            MockChainNote::Private(_, inclusion_proof)
             | MockChainNote::Public(_, inclusion_proof) => inclusion_proof,
         }
     }
@@ -30,7 +29,7 @@ impl MockChainNote {
     /// Returns the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
         match self {
-            MockChainNote::Private(_, metadata, ..) => metadata,
+            MockChainNote::Private(note, _) => note.metadata(),
             MockChainNote::Public(note, _) => note.metadata(),
         }
     }
@@ -38,7 +37,7 @@ impl MockChainNote {
     /// Returns the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         match self {
-            MockChainNote::Private(_, _, attachments, _) => attachments,
+            MockChainNote::Private(note, _) => note.attachments(),
             MockChainNote::Public(note, _) => note.attachments(),
         }
     }
@@ -46,7 +45,7 @@ impl MockChainNote {
     /// Returns the note's ID.
     pub fn id(&self) -> NoteId {
         match self {
-            MockChainNote::Private(id, ..) => *id,
+            MockChainNote::Private(note, _) => note.id(),
             MockChainNote::Public(note, _) => note.id(),
         }
     }
@@ -56,6 +55,31 @@ impl MockChainNote {
         match self {
             MockChainNote::Private(..) => None,
             MockChainNote::Public(note, _) => Some(note),
+        }
+    }
+
+    /// Encodes a committed note for a local mock chain snapshot.
+    pub(super) fn encode(&self) -> wire::MockChainNote {
+        use wire::mock_chain_note::Note;
+
+        let note = match self {
+            Self::Public(note, _) => Note::Public(note.into()),
+            Self::Private(note, _) => Note::Private(note.into()),
+        };
+        wire::MockChainNote {
+            proof: Some((&self.id(), self.inclusion_proof()).into()),
+            note: Some(note),
+        }
+    }
+
+    /// Restores a committed note from a trusted local mock chain snapshot.
+    pub(super) fn decode(note: wire::DecodedMockChainNote) -> anyhow::Result<Self> {
+        use wire::mock_chain_note::DecodedNote;
+
+        let (_, proof) = note.proof.verify()?;
+        match note.note {
+            DecodedNote::Public(note) => Ok(Self::Public(note.verify()?, proof)),
+            DecodedNote::Private(note) => Ok(Self::Private(note.verify()?, proof)),
         }
     }
 }
@@ -69,49 +93,6 @@ impl TryFrom<MockChainNote> for InputNote {
                 "private notes in the mock chain cannot be converted into input notes due to missing details"
             )),
             MockChainNote::Public(note, proof) => Ok(InputNote::Authenticated { note, proof }),
-        }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for MockChainNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            MockChainNote::Private(id, metadata, attachments, proof) => {
-                0u8.write_into(target);
-                id.write_into(target);
-                metadata.write_into(target);
-                attachments.write_into(target);
-                proof.write_into(target);
-            },
-            MockChainNote::Public(note, proof) => {
-                1u8.write_into(target);
-                note.write_into(target);
-                proof.write_into(target);
-            },
-        }
-    }
-}
-
-impl Deserializable for MockChainNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let note_type = u8::read_from(source)?;
-        match note_type {
-            0 => {
-                let id = NoteId::read_from(source)?;
-                let metadata = NoteMetadata::read_from(source)?;
-                let attachments = NoteAttachments::read_from(source)?;
-                let proof = NoteInclusionProof::read_from(source)?;
-                Ok(MockChainNote::Private(id, metadata, attachments, proof))
-            },
-            1 => {
-                let note = Note::read_from(source)?;
-                let proof = NoteInclusionProof::read_from(source)?;
-                Ok(MockChainNote::Public(note, proof))
-            },
-            _ => Err(DeserializationError::InvalidValue(format!("Unknown note type: {note_type}"))),
         }
     }
 }
