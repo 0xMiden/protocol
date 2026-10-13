@@ -12,7 +12,7 @@ use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::{Account, AccountCodeUpgrade};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
@@ -183,8 +183,7 @@ impl TestTransactionBuilder {
         // data (block headers and the chain's Merkle Mountain Range) can be generated for them.
         let mut chain_builder = MockChain::builder();
 
-        let input_note_ids: Vec<NoteId> = self.input_notes.iter().map(Note::id).collect();
-        for input_note in self.input_notes {
+        for input_note in self.input_notes.iter().cloned() {
             chain_builder.add_output_note(RawOutputNote::Full(input_note));
         }
 
@@ -193,10 +192,10 @@ impl TestTransactionBuilder {
         mock_chain.prove_next_block().context("failed to prove second block")?;
 
         // Build the transaction against the ad-hoc chain through the public chain-coupled builder.
-        // The committed input notes are resolved as authenticated input notes by their ID.
+        // The committed input notes are consumed as authenticated input notes.
         let mut builder = mock_chain
             .build_transaction(self.account)
-            .authenticated_input_notes(input_note_ids)
+            .authenticated_input_notes(self.input_notes)
             .extend_advice_inputs(self.advice_inputs)
             .tx_script_args(self.tx_script_args)
             .auth_args(self.auth_args)
