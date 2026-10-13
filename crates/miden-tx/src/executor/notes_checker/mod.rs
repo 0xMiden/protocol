@@ -201,6 +201,10 @@ where
         // further reduced.
         loop {
             // Execute the candidate notes.
+            //
+            // We can safely use unchecked builder for the candidate notes here since the provided
+            // notes were already validated previously in the `check_notes_consumability` via the
+            // `from_unauthenticated_notes` constructor.
             tx_inputs.set_input_notes(InputNotes::new_unchecked(
                 candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
             ));
@@ -283,6 +287,9 @@ where
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 
+                // We can safely use unchecked builder for the candidate notes here since the
+                // provided notes were already validated previously in the
+                // `check_notes_consumability` via the `from_unauthenticated_notes` constructor.
                 tx_inputs.set_input_notes(InputNotes::new_unchecked(
                     candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
                 ));
