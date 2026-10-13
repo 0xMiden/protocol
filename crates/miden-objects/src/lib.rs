@@ -43,6 +43,13 @@ pub mod proto {
         include!(concat!(env!("OUT_DIR"), "/blockchain.rs"));
     }
 
+    /// Test snapshots, excluded from transport descriptors.
+    #[cfg(feature = "testing")]
+    #[expect(clippy::module_inception)]
+    pub mod mock_chain {
+        include!(concat!(env!("OUT_DIR"), "/mock_chain.rs"));
+    }
+
     pub mod note {
         include!(concat!(env!("OUT_DIR"), "/note.rs"));
     }

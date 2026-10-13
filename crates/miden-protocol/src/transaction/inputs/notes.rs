@@ -299,12 +299,6 @@ impl InputNote {
     }
 }
 
-impl From<Vec<Note>> for InputNotes<InputNote> {
-    fn from(notes: Vec<Note>) -> Self {
-        Self::new_unchecked(notes.into_iter().map(InputNote::unauthenticated).collect::<Vec<_>>())
-    }
-}
-
 impl ToInputNoteCommitments for InputNote {
     fn nullifier(&self) -> Nullifier {
         self.note().nullifier()
