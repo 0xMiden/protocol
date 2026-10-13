@@ -104,6 +104,10 @@ where
     /// whose feature note is absent and which the account may not reclaim.
     ///
     /// Returns a list of successfully consumed notes and a list of failed notes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`InputNotes`] cannot be created from the provided notes vector.
     pub async fn check_notes_consumability(
         &self,
         target_account_id: AccountId,
@@ -125,14 +129,12 @@ where
             return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
         }
 
+        let input_notes = InputNotes::from_unauthenticated_notes(bundles.to_notes())
+            .map_err(NoteCheckerError::TransactionInputs)?;
+
         let tx_inputs = self
             .tx_executor
-            .prepare_tx_inputs(
-                target_account_id,
-                block_ref,
-                InputNotes::from(bundles.to_notes()),
-                tx_args,
-            )
+            .prepare_tx_inputs(target_account_id, block_ref, input_notes, tx_args)
             .await
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
@@ -231,8 +233,15 @@ where
         // reduced.
         loop {
             // Execute the notes of the candidate bundles.
+            //
+            // We can safely use unchecked builder for the candidate notes here since the provided
+            // notes were already validated previously in the `check_notes_consumability` via the
+            // `from_unauthenticated_notes` constructor.
             let candidate_notes = bundles.to_notes();
-            tx_inputs.set_input_notes(candidate_notes.clone());
+            tx_inputs.set_input_notes(InputNotes::new_unchecked(
+                candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
+            ));
+
             match self.try_execute_notes(&mut tx_inputs).await {
                 Ok(cycle_counts) => {
                     // A full set of successful notes has been found.
@@ -317,7 +326,12 @@ where
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 
-                tx_inputs.set_input_notes(candidate_notes.clone());
+                // We can safely use unchecked builder for the candidate notes here since the
+                // provided notes were already validated previously in the
+                // `check_notes_consumability` via the `from_unauthenticated_notes` constructor.
+                tx_inputs.set_input_notes(InputNotes::new_unchecked(
+                    candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
+                ));
                 match self.try_execute_notes(&mut tx_inputs).await {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or

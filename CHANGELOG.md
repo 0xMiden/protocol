@@ -4,11 +4,16 @@
 
 ### Changes
 
+- [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 - [BREAKING] Added `NoteConsumptionChecker::with_fee_asset_id` to set the account's fee asset, and the checker now rejects unconsumable `FEE_SPONSORSHIP` notes without executing them and eliminates a note that fails in execution together with the notes bound to it. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - Added `FeeSponsorshipNote::check_reclaim`, and `StandardNote::is_consumable` now decides a lone `FEE_SPONSORSHIP` note by its reclaim rules ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+
+### Fixes
+
+- [BREAKING] `NoteConsumptionChecker::check_notes_consumability` now rejects input notes with duplicate nullifiers via the new `NoteCheckerError::TransactionInputs` variant. Removed `From<Vec<Note>> for InputNotes<InputNote>` and changed `TransactionInputs::set_input_notes` to take `InputNotes<InputNote>` ([#4005](https://github.com/0xMiden/protocol/pull/4005)).
 
 ## v0.17.0 (2026-10-01)
 
