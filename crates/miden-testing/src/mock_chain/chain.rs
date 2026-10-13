@@ -1030,7 +1030,7 @@ impl MockChain {
                 OutputNote::Public(public_note) => {
                     self.committed_notes.insert(
                         public_note.id(),
-                        MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
+                        MockChainNote::Public(public_note.clone(), note_inclusion_proof),
                     );
                 },
                 OutputNote::Private(private_note) => {
