@@ -32,8 +32,8 @@ use crate::{Felt, WORD_SIZE, Word};
 ///
 /// # Privacy
 ///
-/// Contains complete transaction logs,
-/// including in serialized and debug output. The signer must be trusted with this local data.
+/// Contains complete transaction logs, including in serialized and debug output. The signer must
+/// be trusted with this local data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
     account_delta: AccountDelta,
