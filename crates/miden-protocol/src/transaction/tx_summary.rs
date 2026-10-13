@@ -1,4 +1,3 @@
-use alloc::format;
 use alloc::vec::Vec;
 
 use super::TransactionLogs;
@@ -32,7 +31,7 @@ use crate::{Felt, WORD_SIZE, Word};
 ///
 /// # Privacy
 ///
-/// Contains complete transaction logs, including in serialized and debug output. The signer must
+/// Contains complete transaction logs, including in debug output. The signer must
 /// be trusted with this local data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
@@ -249,52 +248,6 @@ impl SequentialCommit for TransactionSummary {
     }
 }
 
-impl Serializable for TransactionSummary {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        Self::VERSION.write_into(target);
-        self.account_delta.write_into(target);
-        self.input_notes.write_into(target);
-        self.output_notes.write_into(target);
-        self.block_number.write_into(target);
-        self.block_commitment.write_into(target);
-        self.expiration_delta.write_into(target);
-        self.user_params.write_into(target);
-        self.logs.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionSummary {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let version: u8 = source.read()?;
-        if version != Self::VERSION {
-            return Err(DeserializationError::InvalidValue(format!(
-                "transaction summary version is {version} but only version {} is supported",
-                Self::VERSION
-            )));
-        }
-
-        let account_delta = source.read()?;
-        let input_notes = source.read()?;
-        let output_notes = source.read()?;
-        let block_number = source.read()?;
-        let block_commitment = source.read()?;
-        let expiration_delta = source.read()?;
-        let user_params = source.read()?;
-        let logs = source.read()?;
-
-        Ok(Self::new(
-            account_delta,
-            input_notes,
-            output_notes,
-            block_number,
-            block_commitment,
-            expiration_delta,
-            user_params,
-        )
-        .with_logs(logs))
-    }
-}
-
 // TRANSACTION SUMMARY METADATA
 // ================================================================================================
 
@@ -487,16 +440,6 @@ mod tests {
         let (metadata, user_params) = TransactionSummary::try_params_from_elements(&elements)?;
         assert_eq!(metadata, summary.metadata());
         assert_eq!(user_params, summary.user_params());
-
-        Ok(())
-    }
-
-    #[test]
-    fn tx_summary_serde_roundtrip() -> anyhow::Result<()> {
-        let summary = mock_summary();
-
-        let deserialized = TransactionSummary::read_from_bytes(&summary.to_bytes())?;
-        assert_eq!(deserialized, summary);
 
         Ok(())
     }
