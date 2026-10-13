@@ -2219,7 +2219,7 @@ end
 
 #! Adds a transaction log from the authenticated active account.
 #!
-#! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT, pad(10)]
+#! Inputs:  [topic_0, topic_1, PAYLOAD_COMMITMENT, pad(10)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: dynexec
@@ -2233,7 +2233,7 @@ end
 
 #! Returns the current transaction log commitment.
 #!
-#! Inputs: [pad(16)]
+#! Inputs:  [pad(16)]
 #! Outputs: [LOGS_COMMITMENT, pad(12)]
 #!
 #! Invocation: dynexec

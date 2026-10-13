@@ -471,7 +471,7 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     # => []
 end
 
-#! Returns the current transaction log commitment while allowing further transaction logs to be added.
+#! Returns the current transaction logs commitment.
 #!
 #! Inputs:  []
 #! Outputs: [LOGS_COMMITMENT]

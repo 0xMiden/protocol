@@ -1146,7 +1146,7 @@ pub enum TransactionTraceParsingError {
 
 #[derive(Debug, Error)]
 pub enum ProvenTransactionError {
-    #[error("invalid transaction log data: {0}")]
+    #[error("invalid transaction log data")]
     LogData(#[source] TransactionLogError),
     #[error(
         "proven transaction's final account commitment {tx_final_commitment} and account details commitment {details_commitment} must match"

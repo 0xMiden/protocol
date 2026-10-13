@@ -110,7 +110,6 @@ pub proc get_commitment() -> word
 
         push.0 mem_store.LOG_COMMITMENT_DIRTY_FLAG_PTR
         # => [LOGS_COMMITMENT]
-
     else
         padw mem_loadw_le.LOG_COMMITMENT_PTR
         # => [LOGS_COMMITMENT]
