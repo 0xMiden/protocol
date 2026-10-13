@@ -19,6 +19,7 @@ mod p2id;
 mod p2ide;
 mod pausable;
 mod pswap;
+mod pswap_payback_space;
 pub(crate) mod rbac;
 mod schema_commitment;
 mod send_note;

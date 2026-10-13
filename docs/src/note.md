@@ -325,6 +325,10 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 
 When reconstructing a private payback or cancellation refund, include its complete on-chain attachment list.
 
+To fill, use note arguments `[0, from_wallet, from_notes, surplus]`, built with `PswapNote::create_fill_args`. The creator's payback is `from_wallet + from_notes`: the consumer's vault pays `from_wallet` and notes consumed in the same transaction pay `from_notes`. `surplus` is the part of the payback above the order's own price and must be below the payback. The rest, capped at the requested amount, is the fill: it sets the offered payout and the remainder at the order's price, and any payback above the requested amount also counts as surplus. The payout is split between the payers in proportion to what they paid. All-zero amounts fill the whole order from the vault.
+
+Both outputs carry the attachment word `[amount, order_id, depth, surplus]`. For a payback, `amount` is the payback and the fill is `amount - surplus`; for a remainder, `amount` is the offered payout and `surplus` is zero. The owner rebuilds the payback from its attachment, and the remainder from the remainder's payout and the payback's fill.
+
 Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
 ### Choosing the Right Note Type

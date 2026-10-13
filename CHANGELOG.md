@@ -9,6 +9,7 @@
 ### Changes
 
 - [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- [BREAKING] Let a partial PSWAP fill pay the creator above the order's price, as a full fill already can: note arguments are now `[action, from_wallet, from_notes, surplus]` and the payback attachment records the surplus, so the owner can still rebuild the remainder ([#4040](https://github.com/0xMiden/protocol/issues/4040)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
