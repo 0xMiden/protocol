@@ -73,7 +73,6 @@ pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
     exec.poseidon2::squeeze_digest movup.4 drop
     # => [COMPUTED_PAYLOAD_COMMITMENT, PAYLOAD_COMMITMENT]
 
-    # Retain the verified commitment for the event and the individual transaction log hash.
     dupw.1 assert_eqw.err=ERR_TX_LOG_PREIMAGE_MISMATCH
     # => [PAYLOAD_COMMITMENT]
 
