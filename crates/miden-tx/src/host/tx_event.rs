@@ -28,11 +28,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::transaction::memory::{
-    LOG_SALT_PTR,
-    NOTE_MEM_SIZE,
-    OUTPUT_NOTE_SECTION_OFFSET,
-};
+use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
 use miden_protocol::transaction::{
     LogTopic,
     TransactionEventId,
@@ -882,19 +878,7 @@ fn extract_tx_summary<'store, STORE>(
         .with_logs(
             TransactionLogs::new(base_host.logs().to_vec())
                 .expect("host validates transaction log limits before appending"),
-            process
-                .get_mem_word(ContextId::root(), LOG_SALT_PTR)
-                .map_err(|err| {
-                    TransactionKernelError::other_with_source(
-                        "invalid transaction log salt address",
-                        err,
-                    )
-                })?
-                .unwrap_or_default(),
-        )
-        .map_err(|err| {
-            TransactionKernelError::other_with_source("invalid summary transaction logs", err)
-        })?;
+        );
     if tx_summary.logs_commitment() != logs_commitment {
         return Err(TransactionKernelError::other("summary transaction log commitment mismatch"));
     }

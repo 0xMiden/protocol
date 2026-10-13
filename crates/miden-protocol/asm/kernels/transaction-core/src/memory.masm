@@ -124,14 +124,11 @@ const MAX_ACCOUNT_STACK_PTR = 1284
 # TRANSACTION LOG STATE
 # -------------------------------------------------------------------------------------------------
 
-# The transaction log state occupies 12 elements starting at address 1300.
-# The prologue initializes the salt; the counters, dirty flag, and cached commitment start at zero.
-
-# The memory address at which the secret salt for private transaction logs is stored (one word).
-pub const LOG_SALT_PTR = 1300
+# The transaction log state occupies 8 elements starting at address 1300.
+# The counters, dirty flag, and cached commitment start at zero.
 
 # The memory address at which the number of transaction logs is stored.
-pub const NUM_LOGS_PTR = LOG_SALT_PTR + WORD_NUM_ELEMENTS
+pub const NUM_LOGS_PTR = 1300
 
 # The memory address at which the total number of transaction log payload words is stored.
 pub const LOG_PAYLOAD_WORDS_PTR = NUM_LOGS_PTR + 1
@@ -140,8 +137,8 @@ pub const LOG_PAYLOAD_WORDS_PTR = NUM_LOGS_PTR + 1
 # A value of 1 means a transaction log was added after the cached commitment was computed.
 pub const LOG_COMMITMENT_DIRTY_FLAG_PTR = LOG_PAYLOAD_WORDS_PTR + 1
 
-# Address 1307 is padding to align the cached transaction log commitment to a word boundary.
-pub const LOG_COMMITMENT_PTR = LOG_SALT_PTR + 2 * WORD_NUM_ELEMENTS
+# Address 1303 is padding to align the cached transaction log commitment to a word boundary.
+pub const LOG_COMMITMENT_PTR = NUM_LOGS_PTR + WORD_NUM_ELEMENTS
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------

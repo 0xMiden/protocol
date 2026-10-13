@@ -382,7 +382,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         &advice_inputs,
         output_notes,
         logs,
-        tx_inputs.tx_args().log_salt(),
     )
     .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 

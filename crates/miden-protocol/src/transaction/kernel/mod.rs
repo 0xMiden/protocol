@@ -405,7 +405,6 @@ impl TransactionKernel {
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
         logs: TransactionLogs,
-        log_salt: Word,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
         let (
             output_notes_commitment,
@@ -441,8 +440,7 @@ impl TransactionKernel {
             output_notes,
             expiration_block_num,
         )
-        .with_logs(logs, log_salt)
-        .map_err(TransactionOutputError::LogData)?;
+        .with_logs(logs);
         if outputs.logs_commitment() != logs_commitment {
             return Err(TransactionOutputError::LogsCommitmentInconsistent);
         }
