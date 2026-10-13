@@ -22,8 +22,11 @@ use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
 use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
+mod bundle;
 mod checker_utils;
+mod sponsorship;
 
+use bundle::{NoteBundler, NoteBundles};
 pub use checker_utils::{
     FailedNote,
     MAX_NUM_CHECKER_NOTES,
@@ -31,7 +34,6 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
-use checker_utils::{NoteBundler, NoteBundles, handle_epilogue_error};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -498,5 +500,31 @@ where
                 }
             },
         }
+    }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Handle the epilogue error during the note consumption check in the `can_consume` method.
+///
+/// The goal of this helper function is to handle the cases where the account couldn't consume the
+/// note because of some epilogue check failure, e.g. absence of the authenticator.
+pub(super) fn handle_epilogue_error(
+    epilogue_error: TransactionExecutorError,
+) -> NoteConsumptionStatus {
+    match epilogue_error {
+        // `Unauthorized` is returned for the multisig accounts if the transaction doesn't have
+        // enough signatures.
+        TransactionExecutorError::Unauthorized(_)
+        // `MissingAuthenticator` is returned for the account with the basic auth if the
+        // authenticator was not provided to the executor (UnreachableAuth).
+        | TransactionExecutorError::MissingAuthenticator => {
+            // Both these cases signal that there is a probability that the provided note could be
+            // consumed if the authentication is provided.
+            NoteConsumptionStatus::ConsumableWithAuthorization
+        },
+        // TODO: apply additional checks to get the verbose error reason
+        _ => NoteConsumptionStatus::UnconsumableConditions,
     }
 }
