@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
@@ -22,7 +23,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{NonFungibleAsset, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
@@ -43,6 +44,7 @@ use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
+use crate::utils::{FixedWidthString, FixedWidthStringError};
 
 #[cfg(test)]
 mod tests;
@@ -61,6 +63,36 @@ pub(crate) static SYMBOL_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
 pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::faucets::non_fungible::asset_status")
         .expect("storage slot name should be valid")
+});
+
+/// Storage slot holding the non-fungible faucet's mutability config word
+/// `[is_token_base_uri_mutable, 0, 0, 0]`.
+///
+/// It is separate from the shared token metadata mutability config, whose layout the fungible
+/// faucet also uses.
+static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::faucets::non_fungible::mutability_config")
+        .expect("storage slot name should be valid")
+});
+
+/// Token base URI (7 Words), split across 7 slots.
+static TOKEN_BASE_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::non_fungible::token_base_uri_6")
+            .expect("valid slot name"),
+    ]
 });
 
 // ASSET STATUS
@@ -99,6 +131,52 @@ impl TryFrom<u8> for AssetStatus {
             STATUS_BURNED => Ok(Self::Burned),
             other => Err(NonFungibleFaucetError::InvalidAssetStatus { status: other.into() }),
         }
+    }
+}
+
+// TOKEN BASE URI
+// ================================================================================================
+
+/// The base URI of a [`NonFungibleFaucet`]'s public token metadata (1 to 195 bytes UTF-8), stored
+/// in 7 Words.
+///
+/// A token's metadata lives at the base URI followed by its token ID, see
+/// [`NonFungibleFaucet::token_uri`]. The base URI is never empty: a faucet without one has private
+/// token metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenBaseUri(FixedWidthString<7>);
+
+impl TokenBaseUri {
+    /// Maximum byte length for a token base URI (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
+
+    /// Creates a token base URI from a UTF-8 string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the string is empty or longer than [`Self::MAX_BYTES`].
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        if s.is_empty() {
+            return Err(FixedWidthStringError::Empty);
+        }
+        FixedWidthString::<7>::new(s).map(Self)
+    }
+
+    /// Returns the token base URI as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Encodes the token base URI into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
+    }
+
+    /// Decodes a token base URI from a 7-Word slice, returning `None` for the empty string that
+    /// marks private token metadata.
+    pub fn try_from_words(words: &[Word]) -> Result<Option<Self>, FixedWidthStringError> {
+        let uri = FixedWidthString::<7>::try_from_words(words)?;
+        Ok((!uri.as_str().is_empty()).then_some(Self(uri)))
     }
 }
 
@@ -153,6 +231,13 @@ procedure_root!(
     NonFungibleFaucet::code()
 );
 
+procedure_root!(
+    NON_FUNGIBLE_FAUCET_SET_TOKEN_BASE_URI,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
+    NonFungibleFaucet::SET_TOKEN_BASE_URI_PROC_NAME,
+    NonFungibleFaucet::code()
+);
+
 /// An [`AccountComponent`] implementing a non-fungible (NFT) faucet.
 ///
 /// The asset value is an opaque word chosen by the caller. By convention the minter sets it to the
@@ -173,16 +258,34 @@ procedure_root!(
 /// - `receive_and_burn`, which receives the NFT from the active note and burns it.
 /// - `get_symbol`, `get_asset_status`, and the metadata accessors/setters (see the embedded
 ///   [`TokenMetadata`]).
+/// - `is_token_base_uri_mutable` and `set_token_base_uri`, for the token base URI.
 ///
 /// `mint_and_send` is gated by the active mint policy from the associated [`TokenPolicyManager`];
 /// `receive_and_burn` is gated by the active burn policy.
 ///
+/// ## Token metadata
+///
+/// Each faucet has either public or private token metadata, fixed at creation. Public and private
+/// refer to the visibility of each token's metadata, not to the faucet's account type or to note
+/// types.
+///
+/// A faucet with a [`TokenBaseUri`] has public token metadata: a token's metadata lives at the
+/// base URI followed by its token ID, see [`token_uri`]. Its asset values are computed by
+/// [`compute_asset_commitment`] with a zero salt, so an asset value is the commitment to the hosted
+/// metadata bytes, which anyone can fetch and verify. The base URI can be updated through
+/// `set_token_base_uri` if it is mutable, but it can never be cleared, and a faucet created without
+/// one can never set it.
+///
 /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
+/// [`token_uri`]: NonFungibleFaucet::token_uri
 #[derive(Debug, Clone)]
 pub struct NonFungibleFaucet {
     symbol: TokenSymbol,
     /// Embeds name, optional fields, and mutability flags.
     metadata: TokenMetadata,
+    /// The base URI of the public token metadata, or `None` if the token metadata is private.
+    token_base_uri: Option<TokenBaseUri>,
+    is_token_base_uri_mutable: bool,
 }
 
 #[bon::bon]
@@ -191,10 +294,17 @@ impl NonFungibleFaucet {
     ///
     /// Required setters: [`name`], [`symbol`]. Optional string fields default to `None`;
     /// mutability flags default to `false`. The collection metadata pointer is named
-    /// `contract_uri` (it reuses the shared `external_link` storage).
+    /// `contract_uri` (it reuses the shared `external_link` storage). Setting [`token_base_uri`]
+    /// makes the faucet's token metadata public.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NonFungibleFaucetError::MutableEmptyTokenBaseUri`] if the token base URI is
+    /// mutable but not set, since the setter can never switch it from empty to non-empty.
     ///
     /// [`name`]: NonFungibleFaucetBuilder::name
     /// [`symbol`]: NonFungibleFaucetBuilder::symbol
+    /// [`token_base_uri`]: NonFungibleFaucetBuilder::token_base_uri
     #[builder]
     pub fn new(
         name: TokenName,
@@ -202,10 +312,12 @@ impl NonFungibleFaucet {
         description: Option<Description>,
         logo_uri: Option<LogoURI>,
         contract_uri: Option<ExternalLink>,
+        token_base_uri: Option<TokenBaseUri>,
         #[builder(default)] is_description_mutable: bool,
         #[builder(default)] is_logo_uri_mutable: bool,
         #[builder(default)] is_contract_uri_mutable: bool,
-    ) -> NonFungibleFaucet {
+        #[builder(default)] is_token_base_uri_mutable: bool,
+    ) -> Result<NonFungibleFaucet, NonFungibleFaucetError> {
         let mut metadata = TokenMetadata::new(name);
         if let Some(desc) = description {
             metadata = metadata.with_description(desc, is_description_mutable);
@@ -223,7 +335,7 @@ impl NonFungibleFaucet {
             metadata = metadata.with_external_link_mutable(is_contract_uri_mutable);
         }
 
-        Self { symbol, metadata }
+        Self::new_validated(symbol, metadata, token_base_uri, is_token_base_uri_mutable)
     }
 }
 
@@ -244,6 +356,34 @@ impl NonFungibleFaucet {
     const SET_DESCRIPTION_PROC_NAME: &'static str = "set_description";
     const SET_LOGO_URI_PROC_NAME: &'static str = "set_logo_uri";
     const SET_CONTRACT_URI_PROC_NAME: &'static str = "set_contract_uri";
+    const SET_TOKEN_BASE_URI_PROC_NAME: &'static str = "set_token_base_uri";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Assembles a faucet from its parts, validating the token base URI configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NonFungibleFaucetError::MutableEmptyTokenBaseUri`] if the token base URI is
+    /// mutable but not set.
+    fn new_validated(
+        symbol: TokenSymbol,
+        metadata: TokenMetadata,
+        token_base_uri: Option<TokenBaseUri>,
+        is_token_base_uri_mutable: bool,
+    ) -> Result<Self, NonFungibleFaucetError> {
+        if token_base_uri.is_none() && is_token_base_uri_mutable {
+            return Err(NonFungibleFaucetError::MutableEmptyTokenBaseUri);
+        }
+
+        Ok(Self {
+            symbol,
+            metadata,
+            token_base_uri,
+            is_token_base_uri_mutable,
+        })
+    }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -278,6 +418,12 @@ impl NonFungibleFaucet {
         *NON_FUNGIBLE_FAUCET_SET_CONTRACT_URI
     }
 
+    /// Returns the procedure root of the `set_token_base_uri` account procedure.
+    /// Authority-gated.
+    pub fn set_token_base_uri_root() -> AccountProcedureRoot {
+        *NON_FUNGIBLE_FAUCET_SET_TOKEN_BASE_URI
+    }
+
     /// Returns the [`StorageSlotName`] holding the token symbol word.
     pub fn symbol_slot() -> &'static StorageSlotName {
         &SYMBOL_SLOT
@@ -286,6 +432,17 @@ impl NonFungibleFaucet {
     /// Returns the [`StorageSlotName`] holding the asset-status registry map.
     pub fn asset_status_slot() -> &'static StorageSlotName {
         &ASSET_STATUS_SLOT
+    }
+
+    /// Returns the [`StorageSlotName`] holding the non-fungible faucet's mutability config word
+    /// `[is_token_base_uri_mutable, 0, 0, 0]`.
+    pub fn mutability_config_slot() -> &'static StorageSlotName {
+        &MUTABILITY_CONFIG_SLOT
+    }
+
+    /// Returns the [`StorageSlotName`] for a token base URI chunk by index (0..=6).
+    pub fn token_base_uri_slot(index: usize) -> &'static StorageSlotName {
+        &TOKEN_BASE_URI_SLOTS[index]
     }
 
     /// Returns the token symbol.
@@ -312,6 +469,29 @@ impl NonFungibleFaucet {
     /// `external_link` slot).
     pub fn contract_uri(&self) -> Option<&ExternalLink> {
         self.metadata.external_link()
+    }
+
+    /// Returns the base URI of the public token metadata, or `None` if the faucet's token
+    /// metadata is private.
+    pub fn token_base_uri(&self) -> Option<&TokenBaseUri> {
+        self.token_base_uri.as_ref()
+    }
+
+    /// Returns whether the token base URI can be updated through `set_token_base_uri`.
+    pub fn is_token_base_uri_mutable(&self) -> bool {
+        self.is_token_base_uri_mutable
+    }
+
+    /// Returns the URI of the given asset's public token metadata, or `None` if the faucet's
+    /// token metadata is private.
+    ///
+    /// The URI is the token base URI followed by the asset's token ID, written as its
+    /// [`AssetClass`](miden_protocol::asset::AssetClass): `0x` followed by the prefix and the
+    /// suffix as 16-digit lowercase hex each. The asset is expected to be issued by this faucet.
+    pub fn token_uri(&self, asset: &NonFungibleAsset) -> Option<String> {
+        self.token_base_uri
+            .as_ref()
+            .map(|base_uri| alloc::format!("{}{}", base_uri.as_str(), asset.id().asset_class()))
     }
 
     /// Computes the off-chain asset commitment `hash(user_data, salt)` that the minter is expected
@@ -402,9 +582,39 @@ impl NonFungibleFaucet {
         )
     }
 
+    /// Returns the storage slot schema entries for the token base URI and the non-fungible
+    /// faucet's mutability config.
+    pub fn token_base_uri_slot_schemas() -> Vec<(StorageSlotName, StorageSlotSchema)> {
+        let mut entries = vec![(
+            Self::mutability_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Non-fungible faucet mutability config",
+                [
+                    FeltSchema::bool("is_token_base_uri_mutable"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )];
+
+        for (i, slot) in TOKEN_BASE_URI_SLOTS.iter().enumerate() {
+            entries.push((
+                slot.clone(),
+                StorageSlotSchema::value(
+                    alloc::format!("Token base URI chunk {i}"),
+                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                ),
+            ));
+        }
+
+        entries
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let mut schema_entries = vec![Self::symbol_slot_schema(), Self::asset_status_slot_schema()];
+        schema_entries.extend(Self::token_base_uri_slot_schemas());
         schema_entries.extend(TokenMetadata::storage_schema());
 
         let storage_schema =
@@ -418,11 +628,34 @@ impl NonFungibleFaucet {
     }
 
     /// Returns the storage slots produced by this faucet (token symbol word + empty asset-status
-    /// map + name + mutability config + description + logo URI + contract URI).
+    /// map + non-fungible mutability config + token base URI + name + mutability config +
+    /// description + logo URI + contract URI).
+    ///
+    /// A faucet with private token metadata stores the token base URI as the empty string.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.symbol_slot_value());
         slots.push(StorageSlot::with_map(Self::asset_status_slot().clone(), StorageMap::default()));
+
+        let mutability_config_word = Word::from([
+            Felt::from(self.is_token_base_uri_mutable as u32),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+        ]);
+        slots.push(StorageSlot::with_value(
+            Self::mutability_config_slot().clone(),
+            mutability_config_word,
+        ));
+
+        let token_base_uri_words = match &self.token_base_uri {
+            Some(token_base_uri) => token_base_uri.to_words(),
+            None => FixedWidthString::<7>::default().to_words(),
+        };
+        for (i, word) in token_base_uri_words.into_iter().enumerate() {
+            slots.push(StorageSlot::with_value(Self::token_base_uri_slot(i).clone(), word));
+        }
+
         slots.extend(self.metadata.into_storage_slots());
         slots
     }
@@ -452,18 +685,6 @@ impl NonFungibleFaucet {
 
         NonFungibleFaucet::try_from(storage)
     }
-
-    /// Reconstructs from the token symbol word and the embedded [`TokenMetadata`].
-    pub(crate) fn from_symbol_word_and_token_metadata(
-        word: Word,
-        metadata: TokenMetadata,
-    ) -> Result<Self, NonFungibleFaucetError> {
-        let [symbol, ..] = *word;
-        let symbol =
-            TokenSymbol::try_from(symbol).map_err(TokenMetadataError::InvalidTokenSymbol)?;
-
-        Ok(Self { symbol, metadata })
-    }
 }
 
 // TRAIT IMPLEMENTATIONS
@@ -483,16 +704,40 @@ impl TryFrom<&AccountStorage> for NonFungibleFaucet {
     type Error = NonFungibleFaucetError;
 
     fn try_from(storage: &AccountStorage) -> Result<Self, Self::Error> {
-        let symbol_word = storage.get_item(Self::symbol_slot()).map_err(|err| {
-            TokenMetadataError::StorageLookupFailed {
-                slot_name: Self::symbol_slot().clone(),
-                source: err,
-            }
-        })?;
+        let get_item = |slot_name: &StorageSlotName| {
+            storage
+                .get_item(slot_name)
+                .map_err(|err| TokenMetadataError::StorageLookupFailed {
+                    slot_name: slot_name.clone(),
+                    source: err,
+                })
+        };
+
+        let [symbol, ..] = *get_item(Self::symbol_slot())?;
+        let symbol =
+            TokenSymbol::try_from(symbol).map_err(TokenMetadataError::InvalidTokenSymbol)?;
+
+        let mut token_base_uri_words = [Word::empty(); 7];
+        for (word, slot_name) in token_base_uri_words.iter_mut().zip(TOKEN_BASE_URI_SLOTS.iter()) {
+            *word = get_item(slot_name)?;
+        }
+        let token_base_uri =
+            TokenBaseUri::try_from_words(&token_base_uri_words).map_err(|err| {
+                TokenMetadataError::InvalidStringField { field: "token_base_uri", source: err }
+            })?;
+
+        let mutability_flag = get_item(Self::mutability_config_slot())?[0].as_canonical_u64();
+        let is_token_base_uri_mutable = match mutability_flag {
+            0 => false,
+            1 => true,
+            value => {
+                return Err(NonFungibleFaucetError::InvalidTokenBaseUriMutabilityFlag { value });
+            },
+        };
 
         let token_metadata = TokenMetadata::try_from_storage(storage)?;
 
-        Self::from_symbol_word_and_token_metadata(symbol_word, token_metadata)
+        Self::new_validated(symbol, token_metadata, token_base_uri, is_token_base_uri_mutable)
     }
 }
 
