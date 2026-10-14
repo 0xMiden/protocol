@@ -23,14 +23,14 @@ pub enum ConversionRateError {
 // CONVERSION RATE
 // ================================================================================================
 
-/// The rate converting one asset into another, as returned by
-/// [`PriceOracle`][crate::account::oracle::PriceOracle].
+/// The rate converting one asset into another.
 ///
 /// `amount` of the source asset is worth `ceil(amount * num / den)` of the target asset, matching
-/// the `ConversionRate` the fee standard applies in `fee::convert_amount`.
+/// the `ConversionRate` the fee standard applies in `fee::convert_amount`. This is also the rate
+/// [`PriceOracle`][crate::account::oracle::PriceOracle] reports.
 ///
-/// Either both terms are non-zero or both are zero. Both zero means the oracle cannot price the
-/// pair, including when its data is too stale to rely on. `fee::convert_amount` rejects a zero in
+/// Either both terms are non-zero or both are zero. Both zero means the pair cannot be priced, for
+/// example when an oracle's data is too stale to rely on. `fee::convert_amount` rejects a zero in
 /// either term, so such a rate cannot be applied by mistake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionRate {
@@ -52,7 +52,7 @@ impl ConversionRate {
         Ok(Self { num, den })
     }
 
-    /// Returns the rate an oracle reports for a pair it cannot price.
+    /// Returns the rate for a pair that cannot be priced.
     pub fn unpriced() -> Self {
         Self { num: Felt::ZERO, den: Felt::ZERO }
     }
@@ -67,7 +67,7 @@ impl ConversionRate {
         self.den
     }
 
-    /// Returns whether the oracle could price the pair.
+    /// Returns whether the rate prices the pair.
     pub fn is_priced(&self) -> bool {
         self.den != Felt::ZERO
     }
