@@ -11,6 +11,7 @@ pub mod address;
 pub mod asset;
 pub mod batch;
 pub mod block;
+mod domain_registry;
 pub mod errors;
 pub mod note;
 pub mod package;
@@ -28,6 +29,7 @@ mod constants;
 // ================================================================================================
 
 pub use constants::*;
+pub use domain_registry::ProtocolDomainRegistry;
 pub use miden_core::mast::{MastForest, MastNodeId};
 pub use miden_core::prettier::PrettyPrint;
 pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};

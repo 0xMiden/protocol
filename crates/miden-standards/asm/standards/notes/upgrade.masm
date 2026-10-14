@@ -22,7 +22,7 @@ const NUM_STORAGE_ITEMS = 4
 const ACCOUNT_CODE_UPGRADE_ATTACHMENT_SCHEME = 7
 
 # Domain of the advice map key under which the host looks up the new code, see the Rust
-# `AccountCodeUpgrade::advice_map_key`.
+# `ProtocolDomainRegistry`.
 const CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN = 0x020002
 
 # Number of elements hashed into the advice map key: the new code commitment.

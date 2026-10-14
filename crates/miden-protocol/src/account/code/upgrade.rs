@@ -9,7 +9,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, WORD_SIZE, Word};
+use crate::{Felt, Hasher, ProtocolDomainRegistry, WORD_SIZE, Word};
 
 // ACCOUNT CODE UPGRADE
 // ================================================================================================
@@ -40,9 +40,8 @@ impl AccountCodeUpgrade {
     /// Domain separator for [`AccountCodeUpgrade::advice_map_key`].
     ///
     /// It keeps the key distinct from the keys of other advice map entries that hash the same
-    /// elements without a domain, such as note storage or note attachment content. See
-    /// [`AccountDelta`](crate::account::AccountDelta) for where the value is allocated from.
-    const ADVICE_MAP_KEY_DOMAIN: Felt = Felt::new_unchecked(0x02_0002);
+    /// elements without a domain, such as note storage or note attachment content.
+    const ADVICE_MAP_KEY_DOMAIN: Felt = ProtocolDomainRegistry::AccountCodeUpgradeAdvice.as_felt();
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
