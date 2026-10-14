@@ -73,7 +73,7 @@ impl From<&ProvenTransaction> for TransactionId {
             tx.account_update().final_state_commitment(),
             tx.input_notes().commitment(),
             tx.output_notes().commitment(),
-            tx.log_details().to_commitment(),
+            tx.log_details().commitment(),
         )
     }
 }

@@ -27,7 +27,7 @@ mod tests;
 /// # Privacy
 ///
 /// Contains complete local transaction logs, including in debug output. Use
-/// [`Self::log_details`] to obtain the data submitted with a proven transaction.
+/// [`Self::into_parts`] to obtain the log details submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
@@ -93,16 +93,6 @@ impl TransactionOutputs {
         self.logs.commitment()
     }
 
-    /// Returns complete public transaction logs or only the private transaction logs commitment
-    /// for submission to the node.
-    pub fn log_details(&self) -> TransactionLogDetails {
-        if self.account.id().is_public() {
-            TransactionLogDetails::Public(self.logs.clone())
-        } else {
-            TransactionLogDetails::Private(self.logs_commitment())
-        }
-    }
-
     /// Returns the header of the account's final state.
     pub fn account(&self) -> &AccountHeader {
         &self.account
@@ -126,8 +116,16 @@ impl TransactionOutputs {
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes self and returns the final account header and output notes.
-    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {
-        (self.account, self.output_notes)
+    /// Consumes self and returns the final account header, output notes, and submitted log details.
+    ///
+    /// The log details contain complete logs for a public native account and only their
+    /// commitment for a private native account.
+    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes, TransactionLogDetails) {
+        let log_details = if self.account.id().is_public() {
+            TransactionLogDetails::Public(self.logs)
+        } else {
+            TransactionLogDetails::Private(self.logs.commitment())
+        };
+        (self.account, self.output_notes, log_details)
     }
 }

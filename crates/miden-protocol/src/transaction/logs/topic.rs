@@ -10,19 +10,24 @@ pub struct LogTopic {
 }
 
 impl LogTopic {
-    /// Creates a topic from its field elements, in metadata order.
-    pub const fn new([suffix, prefix]: [Felt; 2]) -> Self {
+    /// Creates a topic from its suffix and prefix.
+    pub const fn new(suffix: Felt, prefix: Felt) -> Self {
         Self { suffix, prefix }
     }
 
     /// Derives a topic from the first two elements of a MASM `word(name)` constant.
     pub fn from_name(name: &str) -> Self {
         let word = hash_string_to_word(name);
-        Self::new([word[0], word[1]])
+        Self::new(word[0], word[1])
     }
 
-    /// Returns the topic's elements in metadata order.
-    pub const fn as_elements(&self) -> [Felt; 2] {
-        [self.suffix, self.prefix]
+    /// Returns the topic's suffix.
+    pub const fn suffix(&self) -> Felt {
+        self.suffix
+    }
+
+    /// Returns the topic's prefix.
+    pub const fn prefix(&self) -> Felt {
+        self.prefix
     }
 }

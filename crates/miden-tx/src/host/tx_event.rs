@@ -706,7 +706,7 @@ fn extract_transaction_log(
             .map_err(|err| {
                 TransactionKernelError::other_with_source("invalid transaction log emitter", err)
             })?;
-    let topic = LogTopic::new([process.get_stack_item(3), process.get_stack_item(4)]);
+    let topic = LogTopic::new(process.get_stack_item(3), process.get_stack_item(4));
     let content_commitment = process.get_stack_word(5);
     let elements = process
         .advice_provider()

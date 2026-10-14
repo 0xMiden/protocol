@@ -86,8 +86,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let log_details = tx_outputs.log_details();
-        let (account_header, output_notes) = tx_outputs.into_parts();
+        let (account_header, output_notes, log_details) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
         let output_notes: Vec<_> = output_notes

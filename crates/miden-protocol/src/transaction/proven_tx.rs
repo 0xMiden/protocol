@@ -252,7 +252,7 @@ impl ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
-            log_details.to_commitment(),
+            log_details.commitment(),
         );
         Ok(Self {
             log_details,

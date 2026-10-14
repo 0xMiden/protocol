@@ -131,12 +131,11 @@ impl SequentialCommit for TransactionLog {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        let [topic_suffix, topic_prefix] = self.topic.as_elements();
         let mut elements = vec![
             self.emitter.suffix(),
             self.emitter.prefix().as_felt(),
-            topic_suffix,
-            topic_prefix,
+            self.topic.suffix(),
+            self.topic.prefix(),
         ];
         elements.extend_from_slice(self.content_commitment().as_elements());
         elements
