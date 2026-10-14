@@ -73,6 +73,11 @@ impl NoteBundles {
         self.0.iter().flat_map(|bundle| bundle.notes().iter().cloned()).collect()
     }
 
+    /// Consumes the bundles, returning their notes in the same order as [`Self::to_notes`].
+    pub(super) fn into_notes(self) -> Vec<Note> {
+        self.0.into_iter().flat_map(|bundle| bundle.notes).collect()
+    }
+
     /// Removes and returns the bundle at `idx`.
     ///     
     /// # Panics

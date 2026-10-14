@@ -240,15 +240,16 @@ where
             // We can safely use unchecked builder for the candidate notes here since the provided
             // notes were already validated previously in the `check_notes_consumability` via the
             // `from_unauthenticated_notes` constructor.
-            let candidate_notes = bundles.to_notes();
             tx_inputs.set_input_notes(InputNotes::new_unchecked(
-                candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
+                bundles.to_notes().into_iter().map(InputNote::unauthenticated).collect(),
             ));
 
             match self.try_execute_notes(&mut tx_inputs).await {
                 Ok(cycle_counts) => {
-                    // A full set of successful notes has been found.
-                    let successful = candidate_notes
+                    // A full set of successful notes has been found. The bundles hold the notes in
+                    // the order they were executed in, so they line up with the cycle counts.
+                    let successful = bundles
+                        .into_notes()
                         .into_iter()
                         .zip(cycle_counts)
                         .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
@@ -263,7 +264,8 @@ where
                 }) => {
                     // The rest of the failed note's bundle cannot be consumed without it, so the
                     // whole bundle is eliminated.
-                    let failed_note_id = candidate_notes[failed_note_index].id();
+                    let failed_note_id =
+                        tx_inputs.input_notes().get_note(failed_note_index).note().id();
                     let bundle = bundles
                         .remove_containing(failed_note_id)
                         .expect("every candidate note belongs to a bundle");
