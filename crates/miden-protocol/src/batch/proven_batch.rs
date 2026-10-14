@@ -910,7 +910,7 @@ mod tests {
             Word::from([5u32, 6, 7, 8]),
             InputNotes::default(),
             vec![],
-            data.to_commitment(),
+            data.commitment(),
         )
         .unwrap();
         let headers = OrderedTransactionHeaders::new_unchecked(vec![header]);
