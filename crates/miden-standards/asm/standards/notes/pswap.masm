@@ -286,7 +286,8 @@ proc load_storage()
     assert.err=ERR_PSWAP_INVALID_PAYBACK_TYPE
     # => [payback_note_type, num_storage_items]
 
-    # Validate the length and public creator ID of the selected layout.
+    # Validate the selected layout. P2ID preparation commits the creator ID as storage
+    # without checking its structure, so output creation does not replace this check.
     # Private payback tags are validated by output_note::create.
     if.true
         eq.PUBLIC_NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
@@ -303,7 +304,8 @@ proc load_storage()
     end
     # => []
 
-    # Validate fields shared by both layouts.
+    # Validate the raw faucet ID before create_id adds asset metadata to its suffix.
+    # Validating the encoded asset does not validate the original storage field.
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
     # => [requested_faucet_suffix, requested_faucet_prefix]
 
