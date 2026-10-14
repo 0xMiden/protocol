@@ -9,13 +9,6 @@ use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
 use crate::note::{NoteId, NoteRecipient};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::vm::{AdviceInputs, AdviceMap};
 
 // TRANSACTION ARGUMENTS
@@ -32,7 +25,10 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - Note arguments: data put onto the stack right before a note script is executed. These are
 ///   different from note storage, as the user executing the transaction can specify arbitrary note
 ///   args.
-/// - Advice inputs: provides data needed by the runtime, like the details of public output notes.
+/// - Output note recipients: the recipients of the output notes the transaction is expected to
+///   create.
+/// - Signatures: signatures the transaction needs for authentication.
+/// - Advice inputs: provides arbitrary user-defined data needed at runtime.
 /// - Auth arguments: data put onto the stack right before authentication procedure execution. If
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
 ///   [AdviceInputs] are propagated with some user defined map entries, this argument could be used
@@ -44,6 +40,8 @@ pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     note_args: BTreeMap<NoteId, Word>,
+    output_note_recipients: Vec<NoteRecipient>,
+    signatures: Vec<BoundSignature>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
@@ -59,6 +57,8 @@ impl TransactionArgs {
             None,
             EMPTY_WORD,
             BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
             None,
@@ -70,6 +70,8 @@ impl TransactionArgs {
         tx_script: Option<TransactionScript>,
         tx_script_args: Word,
         note_args: BTreeMap<NoteId, Word>,
+        output_note_recipients: Vec<NoteRecipient>,
+        signatures: Vec<BoundSignature>,
         advice_inputs: AdviceInputs,
         auth_args: Word,
         account_code_upgrade: Option<AccountCodeUpgrade>,
@@ -78,6 +80,8 @@ impl TransactionArgs {
             tx_script,
             tx_script_args,
             note_args,
+            output_note_recipients,
+            signatures,
             advice_inputs,
             auth_args,
             account_code_upgrade,
@@ -164,6 +168,16 @@ impl TransactionArgs {
         &self.note_args
     }
 
+    /// Returns the recipients of the output notes the transaction is expected to create.
+    pub fn output_note_recipients(&self) -> &[NoteRecipient] {
+        &self.output_note_recipients
+    }
+
+    /// Returns the signatures the transaction needs for authentication.
+    pub fn signatures(&self) -> &[BoundSignature] {
+        &self.signatures
+    }
+
     /// Returns a reference to the internal [AdviceInputs].
     pub fn advice_inputs(&self) -> &AdviceInputs {
         &self.advice_inputs
@@ -188,50 +202,27 @@ impl TransactionArgs {
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Populates the advice inputs with the expected recipient data for creating output notes.
+    /// Adds the recipient of an output note the transaction is expected to create.
     ///
-    /// The advice inputs' map is extended with the following entries:
-    /// - RECIPIENT: [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT]
-    /// - SERIAL_SCRIPT_HASH: [SERIAL_HASH, SCRIPT_ROOT]
-    /// - SERIAL_HASH: [SERIAL_NUM, EMPTY_WORD]
-    /// - storage_commitment |-> storage_items.
-    /// - script_root |-> script.
-    pub fn add_output_note_recipient<T: AsRef<NoteRecipient>>(&mut self, note_recipient: T) {
-        self.advice_inputs.extend(
-            AdviceInputs::default().with_map(note_recipient.as_ref().to_advice_map_entries()),
-        );
+    /// The recipient details let the host build the full output note when the transaction creates
+    /// a note with the recipient's commitment.
+    pub fn add_output_note_recipient(&mut self, note_recipient: NoteRecipient) {
+        self.output_note_recipients.push(note_recipient);
     }
 
-    /// Adds the `signature` to the advice inputs' map.
-    ///
-    /// The advice inputs' map is extended with the following key:
-    ///
-    /// - [`SignatureKey::to_advice_map_key`](crate::account::auth::SignatureKey::to_advice_map_key)
-    ///   |-> signature (encoded for VM execution).
+    /// Adds a signature the transaction needs for authentication.
     pub fn add_signature(&mut self, signature: BoundSignature) {
-        self.advice_inputs.extend(
-            AdviceInputs::default().with_map([(
-                signature.key().to_advice_map_key(),
-                signature.to_encoded_signature(),
-            )]),
-        );
+        self.signatures.push(signature);
     }
 
-    /// Populates the advice inputs with the specified note recipient details.
+    /// Adds the recipients of output notes the transaction is expected to create.
     ///
-    /// The advice inputs' map is extended with the following keys:
-    ///
-    /// - recipient |-> recipient details (inputs_hash, script_root, serial_num).
-    /// - storage_commitment |-> storage_items.
-    /// - script_root |-> script.
-    pub fn extend_output_note_recipients<T, L>(&mut self, notes: L)
-    where
-        L: IntoIterator<Item = T>,
-        T: AsRef<NoteRecipient>,
-    {
-        for note in notes {
-            self.add_output_note_recipient(note);
-        }
+    /// See [`Self::add_output_note_recipient`] for details.
+    pub fn extend_output_note_recipients(
+        &mut self,
+        note_recipients: impl IntoIterator<Item = NoteRecipient>,
+    ) {
+        self.output_note_recipients.extend(note_recipients);
     }
 
     /// Extends the internal advice inputs' map with the provided key-value pairs.
@@ -258,60 +249,18 @@ impl Default for TransactionArgs {
     }
 }
 
-impl Serializable for TransactionArgs {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.tx_script.write_into(target);
-        self.tx_script_args.write_into(target);
-        self.note_args.write_into(target);
-        self.advice_inputs.write_into(target);
-        self.auth_args.write_into(target);
-        self.account_code_upgrade.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionArgs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let tx_script = Option::<TransactionScript>::read_from(source)?;
-        let tx_script_args = Word::read_from(source)?;
-        let note_args = BTreeMap::<NoteId, Word>::read_from(source)?;
-        let advice_inputs = AdviceInputs::read_from(source)?;
-        let auth_args = Word::read_from(source)?;
-        let account_code_upgrade = Option::<AccountCodeUpgrade>::read_from(source)?;
-
-        Ok(Self::from_parts(
-            tx_script,
-            tx_script_args,
-            note_args,
-            advice_inputs,
-            auth_args,
-            account_code_upgrade,
-        ))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-
-    use miden_core::advice::AdviceMap;
+    use std::vec::Vec;
 
     use crate::note::Note;
     use crate::transaction::TransactionArgs;
-    use crate::utils::serde::{Deserializable, Serializable};
     use crate::vm::AdviceInputs;
     use crate::{Felt, Word};
-
-    #[test]
-    fn test_tx_args_serialization() {
-        let tx_args = TransactionArgs::new(AdviceMap::default());
-        let bytes: std::vec::Vec<u8> = tx_args.to_bytes();
-        let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
-
-        assert_eq!(tx_args, decoded);
-    }
 
     #[test]
     fn from_parts_preserves_note_args_and_advice_inputs() {
@@ -324,6 +273,8 @@ mod tests {
             None,
             Word::new([Felt::from(4_u32); 4]),
             note_args.clone(),
+            Vec::new(),
+            Vec::new(),
             advice_inputs.clone(),
             Word::new([Felt::from(5_u32); 4]),
             None,

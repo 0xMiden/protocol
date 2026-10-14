@@ -77,10 +77,17 @@ impl TransactionAdviceInputs {
                 .map(|(root, script)| (Word::from(*root), script.to_elements())),
         );
 
+        // Recipient preimages, so that the host can build the full output notes.
+        for recipient in tx_inputs.tx_args().output_note_recipients() {
+            inputs.extend_map(recipient.to_advice_map_entries());
+        }
+
         // SIGNATURE_KEY |-> [ENCODED_SIGNATURE]
-        inputs.extend_map(tx_inputs.signatures().iter().map(|signature| {
-            (signature.key().to_advice_map_key(), signature.to_encoded_signature())
-        }));
+        inputs.extend_map(
+            tx_inputs.tx_args().signatures().iter().chain(tx_inputs.signatures()).map(
+                |signature| (signature.key().to_advice_map_key(), signature.to_encoded_signature()),
+            ),
+        );
 
         // The host reads the new code from this entry when the kernel initializes the upgrade.
         if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {

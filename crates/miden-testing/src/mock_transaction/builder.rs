@@ -340,7 +340,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
         }
         tx_args.extend_advice_inputs(self.advice_inputs);
-        tx_args.extend_output_note_recipients(&self.expected_output_notes);
+        tx_args.extend_output_note_recipients(
+            self.expected_output_notes.iter().map(|note| note.recipient().clone()),
+        );
         for (public_key_commitment, message, signature) in self.signatures {
             let signature =
                 BoundSignature::new(SignatureKey::new(public_key_commitment, message), signature)
