@@ -3,18 +3,22 @@ pub use proto::transaction::{
     DecodedLogTopic as LogTopic,
     DecodedTransactionLog as TransactionLog,
     DecodedTransactionLogDetails as TransactionLogDetails,
+    DecodedTransactionLogDetailsCollection as TransactionLogDetailsCollection,
     DecodedTransactionLogs as TransactionLogs,
 };
 
 use crate::decoded::VerificationError;
 use crate::{Verify, proto};
 
+#[cfg(test)]
+mod tests;
+
 impl Verify for LogTopic {
     type Verified = miden_protocol::transaction::LogTopic;
     type Error = core::convert::Infallible;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(Self::Verified::new([self.suffix, self.prefix]))
+        Ok(Self::Verified::new(self.suffix, self.prefix))
     }
 }
 
@@ -36,21 +40,6 @@ impl Verify for TransactionLogs {
     type Error = VerificationError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let logs = self.logs.as_slice();
-        if logs.len() > Self::Verified::MAX_COUNT {
-            return Err(TransactionLogError::TooManyLogs(logs.len()).into());
-        }
-        let mut total_words = 0;
-        for log in logs {
-            let count = log.content.as_slice().len();
-            if count > miden_protocol::transaction::TransactionLog::MAX_NUM_WORDS {
-                return Err(TransactionLogError::TooManyContentWords(count).into());
-            }
-            total_words += count;
-            if total_words > Self::Verified::MAX_NUM_WORDS {
-                return Err(TransactionLogError::TooManyTotalContentWords(total_words).into());
-            }
-        }
         Ok(Self::Verified::new(self.logs.verify()?)?)
     }
 }
@@ -67,11 +56,6 @@ impl Verify for TransactionLogDetails {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
-
-pub use proto::transaction::DecodedTransactionLogDetailsCollection as TransactionLogDetailsCollection;
 
 impl TransactionLogDetailsCollection {
     pub(crate) fn verify_for_batch(

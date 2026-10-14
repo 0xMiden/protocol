@@ -49,7 +49,7 @@ fn batches_with_logs(num_batches: usize) -> OrderedBatches {
     let txs_per_batch = MAX_PUBLIC_LOGS_PER_BATCH / TransactionLogs::MAX_COUNT;
     let mut batches = Vec::new();
     for batch_index in 0..num_batches {
-        let topic = LogTopic::new([Felt::from(batch_index as u32), Felt::ONE]);
+        let topic = LogTopic::new(Felt::from(batch_index as u32), Felt::ONE);
         let transaction_log = TransactionLog::new(account, topic, vec![]).unwrap();
         let entry = TransactionLogDetails::Public(
             TransactionLogs::new(vec![transaction_log; TransactionLogs::MAX_COUNT]).unwrap(),
@@ -65,7 +65,7 @@ fn batches_with_logs(num_batches: usize) -> OrderedBatches {
                         Word::from([state + 1; 4]),
                         InputNotes::default(),
                         vec![],
-                        entry.to_commitment(),
+                        entry.commitment(),
                     )
                     .unwrap()
                 })

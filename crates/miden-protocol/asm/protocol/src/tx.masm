@@ -4,6 +4,7 @@ use {
     AccountProcedureRoot,
     AssetId,
     BlockNumber,
+    LogTopic,
     TransactionScriptRoot,
 } from miden::protocol::types
 use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_ASSET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
@@ -456,7 +457,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: word)
+pub proc add_log(topic: LogTopic, content_commitment: word)
     # Align the six inputs to two words so padding can be moved beneath them together.
     push.0 movdn.6 push.0
     # => [0, topic_suffix, topic_prefix, CONTENT_COMMITMENT, 0]

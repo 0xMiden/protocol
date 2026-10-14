@@ -5,7 +5,7 @@ use crate::{Felt, Word};
 impl LogTopic {
     /// Creates a topic from a suffix and prefix for testing.
     pub fn mock(suffix: u32, prefix: u32) -> Self {
-        Self::new([Felt::from(suffix), Felt::from(prefix)])
+        Self::new(Felt::from(suffix), Felt::from(prefix))
     }
 }
 

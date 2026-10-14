@@ -69,7 +69,7 @@ fn private_log_details_have_no_commitment_preimage() {
     let private = TransactionLogDetails::Private(logs.commitment());
     assert_eq!(public.to_elements(), Some(logs.to_elements()));
     assert_eq!(private.to_elements(), None);
-    assert_eq!(public.to_commitment(), private.to_commitment());
+    assert_eq!(public.commitment(), private.commitment());
 }
 
 #[rstest]

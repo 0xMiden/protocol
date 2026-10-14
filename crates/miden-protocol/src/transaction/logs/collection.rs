@@ -113,7 +113,7 @@ impl TransactionLogDetailsCollection {
         }
         for (index, (data, header)) in self.0.iter().zip(headers.as_slice()).enumerate() {
             data.validate_visibility(header.account_id())?;
-            if data.to_commitment() != header.logs_commitment() {
+            if data.commitment() != header.logs_commitment() {
                 return Err(TransactionLogError::CommitmentMismatch(index));
             }
         }

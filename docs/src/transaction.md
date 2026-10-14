@@ -164,4 +164,52 @@ The ability to facilitate both, local and network transactions, **is one of the 
 
 ## Transaction logs
 
-See [Transaction logs](transaction_logs.md) for transaction logs emitted by account procedures.
+### Emission and commitments
+
+An authenticated account procedure emits a transaction log with `miden::protocol::tx::add_log`.
+The procedure takes a `LogTopic` (a suffix and prefix) and a content commitment. The advice map must
+contain the content field elements under that commitment. Named topics use the first two felts of
+`word(name)`.
+
+The kernel checks the content and uses the active account as emitter. Note and transaction scripts
+must call an account procedure to emit logs.
+
+Individual transaction log commitments are hashed in emission order; `TransactionLogs` defines the
+commitment preimage. The kernel caches the aggregate until another log is appended. The aggregate
+commitment is bound to transaction outputs, IDs, and proofs.
+
+The standard authentication procedures also include the logs in their signing summaries. Applications
+that construct their own summaries or signature schemes must explicitly bind the logs they authorize.
+Emit all transaction logs before constructing the summary that authorizes them.
+
+### Visibility and privacy
+
+Visibility follows the native account: the account against which the transaction executes. A public
+native account submits complete transaction logs; a private native account submits only their
+commitment. This also applies during FPI, regardless of the emitting account's visibility.
+
+Public and private transaction logs use the same deterministic commitment. Keeping log contents
+private does not prevent observers from guessing a predictable complete log list and comparing its
+commitment with the published value. Applications that need protection against guessing can include
+fresh, secret randomness in their log contents, for example by appending a random log before
+constructing the signing summary. That log counts toward the usual limits and must be retained for
+proving. Empty transaction logs commit to zero, so the presence of transaction logs is visible.
+
+Local execution data and standard signing summaries retain complete transaction logs, including in
+debug output. Remote provers and validators that decrypt execution witnesses can access this data.
+
+### Limits
+
+A transaction allows 64 transaction logs, 256 words per content and 512 total content words, excluding
+metadata. Transaction logs alone do not make an otherwise empty transaction valid.
+
+Batches and blocks carry one transaction log details entry per transaction header, validating visibility
+and commitments. Transaction IDs bind transaction logs through the existing batch and block
+commitments.
+
+| Aggregate limit | Batch | Block |
+| --- | ---: | ---: |
+| Transaction log details entries, including private and empty entries | 1,024 | 65,536 |
+| Public transaction logs | 4,096 | 65,536 |
+| Public transaction log content words | 65,536 | 524,288 |
+| Canonical protobuf bytes, including metadata | 4 MiB | 32 MiB |

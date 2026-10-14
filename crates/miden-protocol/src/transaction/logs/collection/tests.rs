@@ -38,7 +38,7 @@ fn header(account: AccountId, data: &TransactionLogDetails, state: u32) -> Trans
         Word::from([state + 1; 4]),
         InputNotes::default(),
         vec![],
-        data.to_commitment(),
+        data.commitment(),
     )
     .unwrap()
 }

@@ -189,11 +189,11 @@ async fn unauthenticated_note_logs(
     }
     let executed = tx.execute().await?;
     let expected =
-        TransactionLog::new(account.id(), LogTopic::new([17u32.into(), 29u32.into()]), content)?;
+        TransactionLog::new(account.id(), LogTopic::new(17u32.into(), 29u32.into()), content)?;
     assert_eq!(executed.logs().iter().collect::<Vec<_>>(), vec![&expected]);
     let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(outputs.log_details(), TransactionLogDetails::Public(_)),
+        matches!(outputs.into_parts().2, TransactionLogDetails::Public(_)),
         account_type.is_public()
     );
     Ok(())
@@ -207,7 +207,7 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
     #[case] account_id: u128,
 ) -> anyhow::Result<()> {
     let account = Account::mock(account_id, [NoopAuthComponent]);
-    let topic = LogTopic::new([17u32.into(), 29u32.into()]);
+    let topic = LogTopic::new(17u32.into(), 29u32.into());
     let mut entries = Vec::new();
     let mut builder = TestTransactionBuilder::new(account.clone());
     let mut code = String::from("exec.tx::get_logs_commitment padw assert_eqw\n");
@@ -330,7 +330,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     let (_, executed) = execute_foreign_logs(native_type, foreign_type).await?;
     let (_, outputs, ..) = executed.into_parts();
     assert_eq!(
-        matches!(outputs.log_details(), TransactionLogDetails::Public(_)),
+        matches!(outputs.into_parts().2, TransactionLogDetails::Public(_)),
         native_type.is_public()
     );
     Ok(())
