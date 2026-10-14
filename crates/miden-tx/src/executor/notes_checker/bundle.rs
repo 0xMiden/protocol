@@ -152,8 +152,11 @@ impl NoteBundler {
                 // on.
                 Err(_) => bundles.entry(idx).or_default().insert(0, note.clone()),
                 Ok(sponsorship) => {
-                    match self.sponsorship_bundle_key(&sponsorship, idx, notes, &note_indices) {
-                        Ok(bundle_key) => bundles.entry(bundle_key).or_default().push(note.clone()),
+                    match self.get_feature_index_by_sponsor(&sponsorship, idx, notes, &note_indices)
+                    {
+                        Ok(feature_note_idx) => {
+                            bundles.entry(feature_note_idx).or_default().push(note.clone())
+                        },
                         Err(reason) => {
                             rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)))
                         },
@@ -166,9 +169,9 @@ impl NoteBundler {
         (NoteBundles(bundles), rejected)
     }
 
-    /// Returns the key of the bundle which FEE_SPONSORSHIP note at `idx` in `notes` joins, or why
-    /// it cannot be consumed.
-    fn sponsorship_bundle_key(
+    /// Returns the index of the feature note which FEE_SPONSORSHIP note at `idx` in `notes` joins,
+    /// or the reason why it cannot be consumed.
+    fn get_feature_index_by_sponsor(
         &self,
         sponsorship: &FeeSponsorshipNote,
         idx: usize,
@@ -181,6 +184,8 @@ impl NoteBundler {
                 .check_reclaim(self.native_account_id, self.block_ref)
                 .map(|()| idx)
                 .map_err(SponsorshipRejection::NotReclaimable),
+
+            // obtained index points to another sponsorship note
             Some(feature_note_idx)
                 if FeeSponsorshipNote::try_from(&notes[feature_note_idx]).is_ok() =>
             {
@@ -188,21 +193,20 @@ impl NoteBundler {
                     feature_note_id: sponsorship.feature_note_id(),
                 })
             },
+
+            // return the feature note index and check that the provided sponsorship note pays fees
+            // using the expected asset
             Some(feature_note_idx) => {
-                self.reject_unexpected_fee_asset(sponsorship).map_or(Ok(feature_note_idx), Err)
+                let actual = sponsorship.asset().id();
+
+                if let Some(expected) = self.collected_fee_asset_id
+                    && actual != expected
+                {
+                    return Err(SponsorshipRejection::WrongFeeAsset { expected, actual });
+                }
+
+                Ok(feature_note_idx)
             },
         }
-    }
-
-    /// Returns why `sponsorship` cannot pay for the feature note it is bound to, or `None` if it
-    /// can.
-    fn reject_unexpected_fee_asset(
-        &self,
-        sponsorship: &FeeSponsorshipNote,
-    ) -> Option<SponsorshipRejection> {
-        let expected = self.collected_fee_asset_id?;
-        let actual = sponsorship.asset().id();
-
-        (actual != expected).then_some(SponsorshipRejection::WrongFeeAsset { expected, actual })
     }
 }
