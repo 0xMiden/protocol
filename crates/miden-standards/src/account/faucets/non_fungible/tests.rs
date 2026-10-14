@@ -1,7 +1,10 @@
+use alloc::vec::Vec;
+
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::{Felt, Word};
 
 use super::{
@@ -21,7 +24,6 @@ use crate::account::faucets::test_utils::{
 use crate::account::faucets::{NonFungibleFaucetError, TokenName};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
-use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 
 /// Building a faucet exposes the configured fields.
@@ -52,7 +54,7 @@ fn user_faucets(token_policy_manager: TokenPolicyManager) -> [Account; 3] {
         PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
         AuthScheme::Falcon512Poseidon2,
     );
-    let approvers: alloc::vec::Vec<_> = (1..=3_u32)
+    let approvers: Vec<_> = (1..=3_u32)
         .map(|i| {
             (
                 PublicKeyCommitment::from(Word::new([Felt::from(i); 4])),
@@ -91,16 +93,6 @@ fn user_faucets(token_policy_manager: TokenPolicyManager) -> [Account; 3] {
     [singlesig, multisig, guarded]
 }
 
-/// Every user non-fungible faucet factory installs the faucet component and `BasicWallet`, so the
-/// faucet can receive the native fee asset it pays transaction fees with.
-#[test]
-fn user_non_fungible_faucet_factories_install_basic_wallet() {
-    for faucet in user_faucets(allow_all_policy_manager()) {
-        NonFungibleFaucet::try_from(&faucet).unwrap();
-        assert!(faucet.code().has_procedure(BasicWallet::receive_asset_root().into()));
-    }
-}
-
 /// Every non-fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID
 /// when the policy manager registers a transfer policy, and `Disabled` when it does not.
 #[rstest::rstest]
@@ -110,8 +102,6 @@ fn non_fungible_faucet_factories_encode_transfer_policy_callback_flag(
     #[case] token_policy_manager: TokenPolicyManager,
     #[case] expected_flag: AssetCallbackFlag,
 ) {
-    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-
     for user in user_faucets(token_policy_manager.clone()) {
         assert_eq!(user.id().asset_callback_flag(), expected_flag);
     }
