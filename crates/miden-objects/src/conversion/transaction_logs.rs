@@ -9,10 +9,9 @@ use crate::proto;
 
 impl From<LogTopic> for proto::transaction::LogTopic {
     fn from(value: LogTopic) -> Self {
-        let [suffix, prefix] = value.as_elements();
         Self {
-            suffix: Some(suffix.into()),
-            prefix: Some(prefix.into()),
+            suffix: Some(value.suffix().into()),
+            prefix: Some(value.prefix().into()),
         }
     }
 }
