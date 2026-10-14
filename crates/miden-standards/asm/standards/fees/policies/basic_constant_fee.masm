@@ -1,3 +1,4 @@
+use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 # miden::standards::fees::policies::basic_constant_fee
 #
 # Basic constant fee policy: derives the fee from a fixed per-note-script fee schedule. It is a
@@ -19,7 +20,6 @@ use miden::protocol::active_account
 use miden::standards::fees::fee_manager
 use miden::standards::note
 
-use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================

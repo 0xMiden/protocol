@@ -1,0 +1,92 @@
+use miden::core::crypto::dsa::ecdsa_k256_keccak
+
+# CONSTANTS
+# =================================================================================================
+
+# EIP-191 prefix for EIP-712 typed data, encoded as a little-endian u16.
+const EIP712_PREFIX = 0x0119
+
+# 2-byte EIP-191 prefix + 32-byte domain separator + 32-byte struct hash.
+const EIP712_PREIMAGE_LENGTH = 66
+
+# Local memory layout for verify:
+#   0..24   EIP-712 digest preimage, zero-padded to three 32-byte chunks
+#   24..28  public-key commitment
+const VERIFY_DIGEST_PREIMAGE_LOC = 0
+const VERIFY_PUBLIC_KEY_COMMITMENT_LOC = 24
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Verifies an ECDSA signature from a raw EIP-712 domain separator and struct hash.
+#!
+#! The caller must derive the domain separator and struct hash from trusted state.
+#!
+#! Inputs:
+#!   Operand stack: [PUBLIC_KEY_COMMITMENT, domain_separator(8), struct_hash(8)]
+#!   Advice stack:  [public_key(16) | signature_r(8) | signature_s(8)]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - PUBLIC_KEY_COMMITMENT is the commitment to public_key(16).
+#! - domain_separator(8) is the EIP-712 domain separator as little-endian u32 limbs with limb 0
+#!   on top.
+#! - struct_hash(8) is the EIP-712 message struct hash in the same representation.
+#! - public_key(16) is the secp256k1 public key as little-endian u32 limbs.
+#! - signature_r(8) and signature_s(8) are the ECDSA signature scalars as little-endian u32
+#!   limbs.
+#!
+#! Panics if:
+#! - the public key, signature, or hash limbs are malformed.
+#! - the public-key commitment is invalid.
+#! - signature verification fails.
+#!
+#! Invocation: exec
+@locals(28)
+pub proc verify_raw(
+    public_key_commitment: word,
+    domain_separator: [u32; 8],
+    struct_hash: [u32; 8]
+)
+    loc_storew_le.VERIFY_PUBLIC_KEY_COMMITMENT_LOC dropw
+    # => [domain_separator(8), struct_hash(8)]
+
+    # clear the final preimage chunk because verify_bytes reads complete 32-byte chunks
+    padw locaddr.VERIFY_DIGEST_PREIMAGE_LOC add.16 mem_storew_le dropw
+    padw locaddr.VERIFY_DIGEST_PREIMAGE_LOC add.20 mem_storew_le dropw
+    # => [domain_separator(8), struct_hash(8)]
+
+    # build 0x1901 || domainSeparator || structHash. The two hashes contain 16 u32 limbs. Since the
+    # two-byte prefix shifts them by half a limb, each iteration writes one limb and carries its
+    # upper 16 bits into the next limb.
+    push.EIP712_PREFIX locaddr.VERIFY_DIGEST_PREIMAGE_LOC
+    # => [digest_preimage_ptr, carry, domain_separator(8), struct_hash(8)]
+
+    repeat.16
+        movup.2
+        # => [limb, digest_preimage_ptr, carry, remaining_limbs]
+
+        dup u32shr.16 movdn.3
+        # => [limb, digest_preimage_ptr, carry, next_carry, remaining_limbs]
+
+        u32shl.16 movup.2 add
+        # => [preimage_limb, digest_preimage_ptr, next_carry, remaining_limbs]
+
+        dup.1 mem_store add.1
+        # => [digest_preimage_ptr + 1, next_carry, remaining_limbs]
+    end
+    # => [digest_preimage_ptr, carry]
+
+    mem_store
+    # => []
+
+    push.EIP712_PREIMAGE_LENGTH locaddr.VERIFY_DIGEST_PREIMAGE_LOC
+    padw loc_loadw_le.VERIFY_PUBLIC_KEY_COMMITMENT_LOC
+    # OS => [PUBLIC_KEY_COMMITMENT, digest_preimage_ptr, preimage_num_bytes=66]
+    # AS => [public_key(16) | signature_r(8) | signature_s(8)]
+
+    exec.ecdsa_k256_keccak::verify_bytes
+    # OS => []
+    # AS => []
+end

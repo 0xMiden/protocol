@@ -1,3 +1,5 @@
+use {Asset, AssetValue, NoteAssetsCommitment} from miden::protocol_utils::types
+use {InputNoteData} from miden::tx_kernel_core::types
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use miden::tx_kernel_core::asset
@@ -48,7 +50,7 @@ const ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND =
 #! - input_note_ptr is the memory address of the data segment for the requested input note.
 #! - num_assets is the number of assets the note was created with.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets the note was created with.
-pub proc get_initial_assets_info
+pub proc get_initial_assets_info(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCommitment, u8)
     # get the number of assets in the note
     dup exec.memory::get_input_note_num_assets
     # => [num_assets, input_note_ptr]
@@ -76,7 +78,7 @@ end
 #!
 #! Panics if:
 #! - the asset index is greater or equal to the number of assets in the note.
-pub proc get_asset
+pub proc get_asset(input_note_ptr: ptr<InputNoteData>, asset_index: u8) -> Asset
     # assert the requested asset index is less than the number of assets in the note
     dup.1 dup.1 exec.memory::get_input_note_num_assets
     # => [num_assets, asset_index, input_note_ptr, asset_index]
@@ -119,7 +121,7 @@ end
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
-pub proc remove_asset
+pub proc remove_asset(asset: Asset, input_note_ptr: ptr<InputNoteData>) -> AssetValue
     # reject the empty asset ID explicitly so that the linear scan doesn't report it as found
     exec.word::testz not assert.err=ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY
     # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
@@ -260,7 +262,7 @@ end
 #! - 2: number of removed (i.e. previously remaining) assets
 #! - 4..132: buffer of the removed assets (MAX_ASSETS_PER_NOTE * ASSET_SIZE elements)
 @locals(132)
-pub proc remove_all_assets
+pub proc remove_all_assets(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCommitment, u8)
     # initialize the number of remaining assets to zero; this is necessary because this procedure
     # can be invoked multiple times and locals may hold values from a previous invocation
     push.0 loc_store.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC
@@ -356,7 +358,7 @@ end
 #!
 #! Inputs:  [note_index]
 #! Outputs: [note_index]
-pub proc assert_note_index_in_bounds
+pub proc assert_note_index_in_bounds(note_index: u16) -> u16
     # assert that the provided note index is less than the total number of notes
     dup exec.memory::get_num_input_notes
     # => [input_notes_num, note_index, note_index]
@@ -378,7 +380,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-pub proc get_input_note_ptr
+pub proc get_input_note_ptr(idx: u16) -> ptr<InputNoteData>
     # asset that the provided input note index is valid
     exec.assert_note_index_in_bounds
     # => [idx]

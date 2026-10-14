@@ -16,7 +16,6 @@ use miden_standards::account::auth::{
     commit_fee_conversion_info,
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     FeeSponsorshipNote,
     NetworkAccountTarget,
@@ -74,7 +73,6 @@ fn network_account(
     Ok(AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_components(auth)
-        .with_component(BasicWallet)
         .with_assets(assets)
         .build_existing()?)
 }

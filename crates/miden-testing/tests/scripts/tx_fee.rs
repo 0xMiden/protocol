@@ -1,22 +1,21 @@
-use miden_protocol::account::Account;
+use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountComponent, AccountType};
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME;
 use miden_protocol::note::{Note, NoteRecipient, NoteStorage, NoteType};
-use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2;
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::TxFeeNote;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 
-/// A TX_FEE note imposes no target restriction, so an account unrelated to the note can consume
-/// it and claim its assets. We use two assets to test the loop inside the script.
+/// The TX_FEE script leaves its assets in the note: a wallet that consumes one without moving the
+/// assets out fails the kernel's asset conservation check. This pins the division of labor:
+/// collecting the fee is the consuming account's job.
 #[tokio::test]
-async fn tx_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
-    // Create assets
-    let fungible_asset_1: Asset = FungibleAsset::mock(123);
-    let fungible_asset_2: Asset =
-        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 456)?.into();
+async fn tx_fee_note_leaves_assets_in_the_note() -> anyhow::Result<()> {
+    let fee_asset: Asset = FungibleAsset::mock(123);
 
     let mut builder = MockChain::builder();
 
@@ -29,37 +28,119 @@ async fn tx_fee_note_consumable_by_any_account() -> anyhow::Result<()> {
     })?;
 
     // Create the note
-    let note =
-        builder.add_tx_fee_note(sender_account.id(), &[fungible_asset_1, fungible_asset_2])?;
+    let note = builder.add_tx_fee_note(sender_account.id(), &[fee_asset])?;
 
     assert_eq!(note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(note.metadata().note_type(), NoteType::Public);
 
     let mock_chain = builder.build()?;
 
-    // CONSTRUCT AND EXECUTE TX (Success)
-    // --------------------------------------------------------------------------------------------
-    // Execute the transaction and get the witness
-    let executed_transaction = mock_chain
+    // a basic wallet has nothing that moves the assets out of the note, so they stay in it and
+    // the transaction fails asset conservation
+    let result = mock_chain
         .build_transaction(consumer_account.id())
         .authenticated_input_note(note.id())
         .build()?
         .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME
+    );
+
+    Ok(())
+}
+
+/// An account whose own code removes the assets from the note collects them; the TX_FEE note
+/// imposes no target restriction, so an account unrelated to the note can do so.
+#[tokio::test]
+async fn tx_fee_note_assets_are_collected_by_account_code() -> anyhow::Result<()> {
+    let fee_asset = FungibleAsset::mock(123);
+
+    let mut builder = MockChain::builder();
+    let sender_account = builder.create_new_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // a component that moves a given asset from an input note into the account's vault
+    let collector_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "fee_collector",
+            "
+            use miden::protocol::asset
+            use miden::protocol::input_note
+            use miden::protocol::native_account
+
+            #! Removes the given asset from the input note at `note_index` and adds it to this
+            #! account's vault.
+            #!
+            #! Inputs:  [ASSET_ID, ASSET_VALUE, note_index, pad(7)]
+            #! Outputs: [pad(16)]
+            @account_procedure
+            @locals(8)
+            pub proc collect_note_asset
+                # keep a copy of the asset so it can be added to the vault after removal
+                dupw.1 dupw.1 locaddr.0 exec.asset::store
+                # => [ASSET_ID, ASSET_VALUE, note_index, pad(7)]
+
+                exec.input_note::remove_asset dropw
+                # => [pad(16)]
+
+                locaddr.0 exec.asset::load exec.native_account::add_asset dropw
+                # => [pad(16)]
+            end
+            ",
+        )?,
+        Vec::new(),
+        AccountComponentMetadata::mock("fee_collector"),
+    )?;
+
+    let mut consumer_account = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(collector_component.clone()),
+        AccountState::Exists,
+    )?;
+
+    let note = builder.add_tx_fee_note(sender_account.id(), &[fee_asset])?;
+    let mock_chain = builder.build()?;
+
+    // the transaction script collects the asset of input note 0 through the account's procedure
+    let tx_script_src = format!(
+        r#"
+        use miden::core::sys
+
+        @transaction_script
+        pub proc main
+            push.0.0.0.0 push.0.0.0
+            push.0
+            push.{asset_value}
+            push.{asset_id}
+            call.::fee_collector::collect_note_asset
+            exec.sys::truncate_stack
+        end
+        "#,
+        asset_value = fee_asset.to_value_word(),
+        asset_id = fee_asset.to_id_word(),
+    );
+    let tx_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(collector_component.component_code())?
+        .compile_tx_script(tx_script_src)?;
+
+    let executed = mock_chain
+        .build_transaction(consumer_account.id())
+        .authenticated_input_note(note.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
         .await?;
 
-    // vault delta
-    let consumer_account_after: Account = Account::new_existing(
-        consumer_account.id(),
-        AssetVault::new(&[fungible_asset_1, fungible_asset_2]).unwrap(),
-        consumer_account.storage().clone(),
-        consumer_account.code().clone(),
-        Felt::new_unchecked(2),
-    );
-
-    assert_eq!(
-        executed_transaction.final_account().to_commitment(),
-        consumer_account_after.to_commitment()
-    );
+    consumer_account.apply_patch(executed.account_patch())?;
+    assert_eq!(consumer_account.vault().get(fee_asset.id()), Some(fee_asset));
 
     Ok(())
 }

@@ -1,3 +1,11 @@
+use {BlockCommitment} from miden::protocol_utils::types
+
+#! Sequential commitment to the ordered batch IDs in a block.
+type BatchesCommitment = word
+
+#! Commitment to the nullifiers created in a block.
+type NullifierCommitment = word
+
 # MAIN
 # =================================================================================================
 
@@ -21,7 +29,7 @@
 #! - NULLIFIER_COMMITMENT is the commitment to the set of nullifiers created in this block. In
 #!   this skeleton it is the empty word.
 #!
-proc main
+proc main(prev_block_commitment: BlockCommitment, batches_commitment: BatchesCommitment, padding: [felt; 8]) -> (BlockCommitment, NullifierCommitment, [felt; 8])
     dropw dropw
     # => [pad(16)]
 end

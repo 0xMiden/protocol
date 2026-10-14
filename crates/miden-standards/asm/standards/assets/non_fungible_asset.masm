@@ -2,6 +2,7 @@
 #!
 #! Provides procedures for creating non-fungible assets.
 
+use {AccountId, Asset, AssetClass, AssetValue} from miden::protocol::types
 use miden::protocol::asset
 use {COMPOSITION_NONE} from miden::protocol::asset
 
@@ -38,7 +39,7 @@ const ASSET_METADATA_NONE = 0x01
 #! - ASSET_VALUE is the value of the created non-fungible asset, which is identical to ASSET_VALUE.
 #!
 #! Invocation: exec
-pub proc create
+pub proc create(faucet_id: AccountId, asset_value: AssetValue) -> Asset
     # merge the non-fungible asset metadata into the lower 8 bits of the suffix
     add.ASSET_METADATA_NONE
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
@@ -68,7 +69,7 @@ end
 #! - the asset class prefix of the asset ID does not match hash1 of the value.
 #!
 #! Invocation: exec
-pub proc validate
+pub proc validate(asset: Asset) -> Asset
     # assert the asset composition is non-fungible (None)
     exec.asset::id_to_composition
     eq.COMPOSITION_NONE
@@ -94,7 +95,7 @@ end
 #! - asset_class is the (suffix, prefix) pair of the non-fungible asset.
 #!
 #! Invocation: exec
-pub proc value_into_asset_class
+pub proc value_into_asset_class(asset_value: AssetValue) -> AssetClass
     # => [asset_class_suffix, asset_class_prefix, value_2, value_3]
     movup.3 drop movup.2 drop
     # => [asset_class_suffix, asset_class_prefix]

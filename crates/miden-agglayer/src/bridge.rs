@@ -199,7 +199,7 @@ procedure_root!(
 ///
 /// Used to seed the bridge account's RBAC role membership at creation. Each role gates a distinct
 /// set of bridge procedures:
-/// - `FAUCET_MNGR` gates `register_faucet` and `store_faucet_metadata_hash`.
+/// - `FAUCET_MNGR` gates `register_faucet`, `store_faucet_metadata_hash` and `deregister_faucet`.
 /// - `GER_INJECTOR` gates `update_ger`.
 /// - `GER_REMOVER` gates `remove_ger`.
 /// - `FEE_MNGR` gates `set_note_fee`.

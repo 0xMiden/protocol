@@ -7,6 +7,7 @@ mod global_index;
 mod leaf_utils;
 mod merkle_tree_frontier;
 mod network_account_regression;
+mod note_targets;
 mod pause;
 mod rbac_rotation;
 mod remove_ger;

@@ -38,7 +38,7 @@ const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
 #! - the provided procedure offset exceeds the number of kernel procedures.
 #!
 #! Invocation: syscall
-pub proc exec_kernel_proc
+pub proc exec_kernel_proc(procedure_offset: u16, ...) -> ...
     # check that the provided procedure offset is within expected bounds
     #
     # the number of procedures is read from memory here instead of through a `memory` accessor so

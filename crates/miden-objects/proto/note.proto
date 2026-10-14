@@ -30,6 +30,15 @@ message NoteMetadata {
   primitives.Word attachments_commitment = 6;
 }
 
+// Metadata without attachment schemes or commitment. Note carries attachments separately and
+// derives those values from their content; NoteHeader instead carries complete NoteMetadata.
+message PartialNoteMetadata {
+  NoteVersion version = 1;
+  account.AccountId sender = 2;
+  NoteType note_type = 3;
+  fixed32 tag = 4;
+}
+
 message NoteAttachment {
   uint32 scheme = 1;
   repeated primitives.Word words = 2;
@@ -55,9 +64,20 @@ message NoteDetails {
 }
 
 message Note {
-  NoteMetadata metadata = 1;
+  PartialNoteMetadata metadata = 1;
   NoteDetails note_details = 2;
   NoteAttachments note_attachments = 3;
+}
+
+// A note whose recipient is known only by its commitment.
+//
+// The note header, and the attachment schemes and commitment of its metadata, are derived from the
+// other fields, so they are not transmitted.
+message PartialNote {
+  PartialNoteMetadata metadata = 1;
+  primitives.Word recipient_digest = 2;
+  repeated asset.Asset assets = 3;
+  NoteAttachments attachments = 4;
 }
 
 message NoteInclusionProof {

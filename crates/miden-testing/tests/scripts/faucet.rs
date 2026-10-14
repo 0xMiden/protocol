@@ -58,7 +58,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::config::{MinBurnAmountConfigNote, NetworkAccountConfigNote};
-use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, P2idNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -70,7 +70,7 @@ use miden_testing::{
 };
 use rand::RngExt;
 
-use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction};
+use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction_complete};
 
 // Shared test utilities for faucet tests
 // ================================================================================================
@@ -666,7 +666,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Prove, serialize/deserialize and verify the transaction
-    prove_and_verify_transaction(executed_transaction.clone()).await?;
+    prove_and_verify_transaction_complete(executed_transaction.clone()).await?;
 
     Ok(())
 }
@@ -2399,8 +2399,7 @@ async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> an
 // TESTS FOR MINT NOTE WITH PRIVATE AND PUBLIC OUTPUT MODES
 // ================================================================================================
 
-/// Tests creating a MINT note with different output note types (private/public)
-/// The MINT note can create output notes with variable-length inputs for public notes.
+/// MINT creates consumable P2ID notes in both output modes.
 #[rstest::rstest]
 #[case::private(NoteType::Private)]
 #[case::public(NoteType::Public)]
@@ -2448,11 +2447,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
-            let p2id_script = StandardNote::P2ID.script();
-            let p2id_storage =
-                vec![target_account.id().suffix(), target_account.id().prefix().as_felt()];
-            let note_storage = NoteStorage::new(p2id_storage)?;
-            let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
+            let recipient = P2idNoteStorage::new(target_account.id()).into_recipient(serial_num);
             MintNoteStorage::new_public(recipient, mint_asset, output_note_tag)?
         },
     };

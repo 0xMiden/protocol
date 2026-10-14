@@ -1,3 +1,4 @@
+use {Bool} from miden::protocol::types
 # miden::standards::access::pausable
 #
 # Pause primitive: storage slot + low-level helpers. The mutation helpers (`pause`, `unpause`)
@@ -46,7 +47,7 @@ const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 #!
 #! Invocation: call
 @account_procedure
-pub proc is_paused
+pub proc is_paused() -> Bool
     push.IS_PAUSED_SLOT[0..2]
     exec.active_account::get_item
     # => [is_paused, 0, 0, 0, pad(16)]
@@ -71,7 +72,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc pause
+pub proc pause()
     push.PAUSED_WORD
     # => [1, 0, 0, 0]
 
@@ -93,7 +94,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc unpause
+pub proc unpause()
     push.UNPAUSED_WORD
     # => [0, 0, 0, 0]
 
@@ -123,7 +124,7 @@ end
 #! - the slot is installed and the paused-state word is not the zero word.
 #!
 #! Invocation: exec
-pub proc assert_not_paused
+pub proc assert_not_paused()
     push.IS_PAUSED_SLOT[0..2]
     exec.active_account::has_storage_slot
     # => [has_slot]
@@ -156,7 +157,7 @@ end
 #! - the paused-state word is the zero word.
 #!
 #! Invocation: exec
-pub proc assert_paused
+pub proc assert_paused()
     push.IS_PAUSED_SLOT[0..2]
     exec.active_account::get_item
     # => [is_paused, 0, 0, 0]

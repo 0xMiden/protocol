@@ -1,3 +1,4 @@
+use {Keccak256Digest, MerkleTreeFrontier} from agglayer::types
 use miden::core::crypto::hashes::keccak256
 use {load_zeros_to_memory} from agglayer::bridge::canonical_zeros
 use {mem_store_double_word} from miden::standards::utils
@@ -144,7 +145,10 @@ const CANONICAL_ZEROES_LOCAL = 8
 #! Panics if:
 #! - The number of leaves in the MTF has reached the maximum limit of 2^32.
 @locals(264) # new_leaf/curr_hash + canonical_zeros
-pub proc append_and_update_frontier
+pub proc append_and_update_frontier(
+    new_leaf: Keccak256Digest,
+    mtf_ptr: ptr<MerkleTreeFrontier>
+) -> (Keccak256Digest, u32)
     # set CUR_HASH = NEW_LEAF and store to local memory
     loc_storew_le.CUR_HASH_LO_LOCAL dropw
     loc_storew_le.CUR_HASH_HI_LOCAL dropw

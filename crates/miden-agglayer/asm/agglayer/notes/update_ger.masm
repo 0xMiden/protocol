@@ -1,6 +1,7 @@
+use {NoteArgs} from miden::protocol::types
 use agglayer::bridge::bridge_config
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -13,7 +14,6 @@ const STORAGE_PTR_GER_UPPER = 4
 # =================================================================================================
 
 const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "UPDATE_GER script expects exactly 8 note storage items"
-const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment target account does not match consuming account"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -28,6 +28,8 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::update_ger procedure.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -41,13 +43,12 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! - number of note storage items is not exactly 8.
 #! - the GER has already been registered in storage.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # Load note storage to memory
@@ -62,7 +63,7 @@ pub proc main
     # Load GER_LOWER and GER_UPPER from note storage
     mem_loadw_le.STORAGE_PTR_GER_UPPER
     # => [GER_UPPER[4], pad(12)]
-    
+
     swapw mem_loadw_le.STORAGE_PTR_GER_LOWER
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 

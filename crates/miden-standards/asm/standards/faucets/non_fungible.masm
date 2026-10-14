@@ -1,3 +1,5 @@
+use {TokenSymbol} from miden::standards::faucets
+use {Asset, NoteRecipient, NoteTag, NoteType, StorageMapKey} from miden::protocol::types
 # miden::standards::faucets::non_fungible
 #
 # Non-fungible (NFT) faucet logic: the token symbol slot and accessor, an asset-status registry
@@ -37,6 +39,13 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::standards::assets::non_fungible_asset
 use miden::standards::faucets::policies::policy_manager
+
+pub type TokenId = struct { suffix: felt, prefix: felt }
+pub type TokenStatus = u8
+pub type TokenStatusValue = struct {
+    status: TokenStatus,
+    padding: [felt; 3]
+}
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -80,7 +89,7 @@ const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT n
 #!   values that collide in their first two elements cannot produce two distinct status keys.
 #!
 #! Invocation: exec
-proc create_status_key
+proc create_status_key(token_id: TokenId) -> StorageMapKey
     push.0 push.0
     # => [0, 0, token_id_suffix, token_id_prefix]
 
@@ -97,7 +106,7 @@ end
 #! - STATUS_VALUE is `[status, 0, 0, 0]`.
 #!
 #! Invocation: exec
-proc build_status_value
+proc build_status_value(status: TokenStatus) -> TokenStatusValue
     push.0 push.0 push.0
     # => [0, 0, 0, status]
 
@@ -114,7 +123,7 @@ end
 #! - status is the first element of the registry value word; the other elements are always zero.
 #!
 #! Invocation: exec
-proc get_status_by_key
+proc get_status_by_key(status_key: StorageMapKey) -> TokenStatus
     push.ASSET_STATUS_SLOT[0..2]
     exec.active_account::get_map_item
     # => [status, 0, 0, 0]
@@ -134,7 +143,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_symbol
+pub proc get_symbol() -> TokenSymbol
     push.SYMBOL_SLOT[0..2] exec.active_account::get_item
     # => [symbol, 0, 0, 0, pad(16)]
 
@@ -157,7 +166,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_asset_status
+pub proc get_asset_status(token_id: TokenId) -> TokenStatus
     exec.create_status_key
     # => [STATUS_KEY, pad(14)]
 
@@ -204,7 +213,12 @@ end
 #! Invocation: call
 @locals(8)
 @account_procedure
-pub proc mint_and_send
+pub proc mint_and_send(
+    asset: Asset,
+    tag: NoteTag,
+    note_type: NoteType,
+    recipient: NoteRecipient
+) -> u16
     # save the MINT note's ASSET_ID
     loc_storew_le.MINT_ASSET_ID_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
@@ -301,7 +315,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc receive_and_burn
+pub proc receive_and_burn(asset: Asset)
     # validate the asset to burn is well-formed before processing it
     # note that the asset's origin is validated by the kernel
     exec.non_fungible_asset::validate

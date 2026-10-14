@@ -1,3 +1,5 @@
+use {RoleSymbol} from miden::standards::access::role_symbol
+use {AccountId, Bool} from miden::protocol::types
 # miden::standards::access::rbac
 #
 # Role-based access control for account components.
@@ -42,6 +44,13 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
 use miden::standards::access::role_symbol
+
+# Membership counts are field elements; the role map does not impose a u32 bound.
+pub type RoleMemberCount = felt
+pub type RoleConfig = struct {
+    member_count: RoleMemberCount,
+    admin: RoleSymbol
+}
 
 # CONSTANTS
 # =================================================================================================
@@ -88,7 +97,7 @@ const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 #!
 #! Invocation: call
 @account_procedure
-pub proc has_role
+pub proc has_role(role_symbol: RoleSymbol, account: AccountId) -> Bool
     exec.has_role_internal
     # => [has_role, pad(15)]
 end
@@ -108,7 +117,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_role_admin
+pub proc get_role_admin(role_symbol: RoleSymbol) -> RoleSymbol
     exec.get_role_admin_internal
     # => [admin_role_symbol, pad(15)]
 end
@@ -129,7 +138,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_role_member_count
+pub proc get_role_member_count(role_symbol: RoleSymbol) -> RoleMemberCount
     exec.get_role_member_count_internal
     # => [member_count, pad(15)]
 end
@@ -163,7 +172,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc set_role_admin
+pub proc set_role_admin(role_symbol: RoleSymbol, admin_role_symbol: RoleSymbol)
     dup exec.role_symbol::validate_encoding
     # => [role_symbol, new_admin_role_symbol, pad(14)]
 
@@ -203,7 +212,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc grant_role
+pub proc grant_role(role_symbol: RoleSymbol, account: AccountId)
     dup exec.role_symbol::validate_encoding
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
@@ -243,7 +252,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc revoke_role
+pub proc revoke_role(role_symbol: RoleSymbol, account: AccountId)
     dup exec.role_symbol::validate_encoding
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
@@ -271,7 +280,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc renounce_role
+pub proc renounce_role(role_symbol: RoleSymbol)
     dup exec.role_symbol::validate_encoding
     # => [role_symbol, pad(15)]
 
@@ -308,7 +317,7 @@ end
 #! - the note sender does not hold the given role.
 #!
 #! Invocation: exec
-pub proc assert_sender_has_role
+pub proc assert_sender_has_role(role_symbol: RoleSymbol)
     exec.is_sender_in_role
     # => [has_role]
 
@@ -325,7 +334,7 @@ end
 #! - the note sender does not hold the ADMIN role.
 #!
 #! Invocation: exec
-pub proc assert_sender_is_admin
+pub proc assert_sender_is_admin()
     push.ADMIN_ROLE exec.assert_sender_has_role
     # => []
 end
@@ -340,7 +349,7 @@ end
 #! Outputs: [member_count, admin_role_symbol]
 #!
 #! Invocation: exec
-proc get_role_config
+proc get_role_config(role_symbol: RoleSymbol) -> RoleConfig
     push.0.0.0
     # => [0, 0, 0, role_symbol]
 
@@ -360,7 +369,7 @@ end
 #! Outputs: [has_role]
 #!
 #! Invocation: exec
-proc has_role_internal
+proc has_role_internal(role_symbol: RoleSymbol, account: AccountId) -> Bool
     push.0
     # => [0, role_symbol, account_suffix, account_prefix]
 
@@ -380,7 +389,7 @@ end
 #! Outputs: [member_count]
 #!
 #! Invocation: exec
-proc get_role_member_count_internal
+proc get_role_member_count_internal(role_symbol: RoleSymbol) -> RoleMemberCount
     exec.get_role_config
     # => [member_count, admin_role_symbol]
 
@@ -394,7 +403,7 @@ end
 #! Outputs: [admin_role_symbol]
 #!
 #! Invocation: exec
-proc get_role_admin_internal
+proc get_role_admin_internal(role_symbol: RoleSymbol) -> RoleSymbol
     exec.get_role_config
     # => [member_count, admin_role_symbol]
 
@@ -408,7 +417,7 @@ end
 #! Outputs: [has_role]
 #!
 #! Invocation: exec
-proc is_sender_in_role
+proc is_sender_in_role(role_symbol: RoleSymbol) -> Bool
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix, role_symbol]
 
@@ -428,7 +437,7 @@ end
 #! Outputs: [effective_admin_role_symbol]
 #!
 #! Invocation: exec
-proc get_effective_role_admin
+proc get_effective_role_admin(role_symbol: RoleSymbol) -> RoleSymbol
     exec.get_role_admin_internal
     # => [admin_role_symbol]
 
@@ -455,7 +464,7 @@ end
 #!   memberless, the `ADMIN` role.
 #!
 #! Invocation: exec
-proc assert_sender_is_role_admin
+proc assert_sender_is_role_admin(role_symbol: RoleSymbol)
     exec.get_effective_role_admin
     # => [effective_admin_role_symbol]
 
@@ -483,7 +492,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc set_role_config
+proc set_role_config(role_symbol: RoleSymbol, config: RoleConfig)
     push.0.0
     # => [0, 0, role_symbol, member_count, admin_role_symbol]
 
@@ -524,7 +533,7 @@ end
 #!
 #! Invocation: exec
 @locals(2)
-proc set_membership_internal
+proc set_membership_internal(is_member: Bool, role_symbol: RoleSymbol, account: AccountId)
     # => [is_member, role_symbol, account_suffix, account_prefix]
 
     # Stash the membership flag and role_symbol; both are needed after the map write.

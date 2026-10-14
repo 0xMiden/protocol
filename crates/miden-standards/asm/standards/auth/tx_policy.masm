@@ -13,7 +13,7 @@ const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES = "transaction must not
 #!
 #! Invocation: exec
 @locals(1) # non-auth called proc count
-pub proc assert_only_one_non_auth_procedure_called
+pub proc assert_only_one_non_auth_procedure_called()
     push.0
     loc_store.0
     # => []
@@ -62,7 +62,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc assert_no_input_notes
+pub proc assert_no_input_notes()
     exec.tx::get_num_input_notes
     # => [num_input_notes]
 
@@ -76,7 +76,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc assert_no_output_notes
+pub proc assert_no_output_notes()
     exec.tx::get_num_output_notes
     # => [num_output_notes]
 

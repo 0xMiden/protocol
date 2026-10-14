@@ -1,7 +1,16 @@
+use {
+    AccountId,
+    Bool,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScriptRoot,
+    NoteSerialNumber,
+    NoteStorageCommitment,
+    NoteTag,
+    NoteType,
+} from miden::protocol::types
 use miden::protocol::account_id
 use miden::core::crypto::hashes::poseidon2
-use {AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot, NoteTag, NoteType}
-    from miden::protocol::types
 
 pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
     from miden::protocol_utils::note
@@ -34,7 +43,10 @@ const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT =
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_storage_commitment(storage_ptr: MemoryAddress, num_storage_items: u16) -> word
+pub proc compute_storage_commitment(
+    storage_ptr: ptr<felt>,
+    num_storage_items: u16
+) -> NoteStorageCommitment
     # check that number of storage items is less than or equal to MAX_NOTE_STORAGE_ITEMS
     dup.1 push.MAX_NOTE_STORAGE_ITEMS
     u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
@@ -79,9 +91,9 @@ end
 #!
 #! Invocation: exec
 pub proc compute_and_store_recipient(
-    storage_ptr: MemoryAddress,
+    storage_ptr: ptr<felt>,
     num_storage_items: u16,
-    serial_num: word,
+    serial_num: NoteSerialNumber,
     script_root: NoteScriptRoot
 ) -> NoteRecipient
     dup.1 dup.1
@@ -134,9 +146,9 @@ end
 #!
 #! Invocation: exec
 pub proc compute_recipient(
-    serial_num: word,
+    serial_num: NoteSerialNumber,
     script_root: NoteScriptRoot,
-    storage_commitment: word
+    storage_commitment: NoteStorageCommitment
 ) -> NoteRecipient
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]

@@ -1,3 +1,4 @@
+use {AccountId, Asset, AssetAmount, AssetId, AssetValue} from miden::protocol::types
 use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::native_account
@@ -41,7 +42,7 @@ const ASSET_METADATA_FUNGIBLE = 0x11
 #! - ASSET_ID is the asset ID for the fungible asset.
 #!
 #! Invocation: exec
-pub proc create_id
+pub proc create_id(faucet_id: AccountId) -> AssetId
     # merge the fungible asset metadata into the lower 8 bits of the suffix
     add.ASSET_METADATA_FUNGIBLE
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
@@ -61,7 +62,7 @@ end
 #! - ASSET_VALUE is the asset value word [amount, 0, 0, 0].
 #!
 #! Invocation: exec
-pub proc create_value
+pub proc create_value(amount: AssetAmount) -> AssetValue
     push.0.0.0 movup.3
     # => [ASSET_VALUE]
 end
@@ -84,7 +85,7 @@ end
 #! - the provided amount exceeds MAX_AMOUNT.
 #!
 #! Invocation: exec
-pub proc create
+pub proc create(faucet_id: AccountId, amount: AssetAmount) -> Asset
     # assert the amount is valid
     dup.2 lte.MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
@@ -117,7 +118,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
-pub proc get_initial_native_account_balance
+pub proc get_initial_native_account_balance(asset_id: AssetId) -> AssetAmount
     # assert that the asset composition is fungible
     exec.asset::id_to_composition
     eq.COMPOSITION_FUNGIBLE
@@ -146,7 +147,7 @@ end
 #! - the asset composition encoded in ASSET_ID is not fungible.
 #!
 #! Invocation: exec
-pub proc get_active_account_balance
+pub proc get_active_account_balance(asset_id: AssetId) -> AssetAmount
     # assert that the asset composition is fungible
     exec.asset::id_to_composition
     eq.COMPOSITION_FUNGIBLE
@@ -173,7 +174,7 @@ end
 #! - amount is the amount of the fungible asset.
 #!
 #! Invocation: exec
-pub proc to_amount_unchecked
+pub proc to_amount_unchecked(asset: Asset) -> (AssetAmount, Asset)
     # => [ASSET_ID, [amount, 0, 0, 0]]
     dup.4
     # => [amount, ASSET_ID, ASSET_VALUE]
@@ -193,7 +194,7 @@ end
 #! - the asset amount exceeds maximum allowed amount.
 #!
 #! Invocation: exec
-pub proc value_into_amount
+pub proc value_into_amount(asset_value: AssetValue) -> AssetAmount
     # assert the amount does not exceed the maximum fungible asset amount
     dup lte.MAX_AMOUNT assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
     # => [amount, e1, e2, e3]
@@ -224,7 +225,7 @@ end
 #! - the asset value is not well-formed (see value_into_amount).
 #!
 #! Invocation: exec
-pub proc validate
+pub proc validate(asset: Asset) -> Asset
     # assert the asset composition is fungible
     exec.asset::id_to_composition
     eq.COMPOSITION_FUNGIBLE

@@ -68,21 +68,21 @@ pub enum RbacConfig {
 }
 
 impl RbacConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the first storage item. Keep in sync with `rbac_config.masm`.
-    const SELECTOR_GRANT_ROLE: u8 = 0;
-    const SELECTOR_REVOKE_ROLE: u8 = 1;
-    const SELECTOR_SET_ROLE_ADMIN: u8 = 2;
-    const SELECTOR_RENOUNCE_ROLE: u8 = 3;
+    // Config note variants stored in the first storage item. Keep in sync with `rbac_config.masm`.
+    const VARIANT_GRANT_ROLE: u8 = 0;
+    const VARIANT_REVOKE_ROLE: u8 = 1;
+    const VARIANT_SET_ROLE_ADMIN: u8 = 2;
+    const VARIANT_RENOUNCE_ROLE: u8 = 3;
 
-    /// Returns the note storage values encoding this action, laid out as `[selector, ..args]`.
+    /// Returns the note storage values encoding this action, laid out as `[variant, ..args]`.
     fn to_storage_values(&self) -> Vec<Felt> {
         match self {
             RbacConfig::GrantRole { role, account } => {
                 vec![
-                    Felt::from(Self::SELECTOR_GRANT_ROLE),
+                    Felt::from(Self::VARIANT_GRANT_ROLE),
                     role.as_element(),
                     account.suffix(),
                     account.prefix().as_felt(),
@@ -90,7 +90,7 @@ impl RbacConfig {
             },
             RbacConfig::RevokeRole { role, account } => {
                 vec![
-                    Felt::from(Self::SELECTOR_REVOKE_ROLE),
+                    Felt::from(Self::VARIANT_REVOKE_ROLE),
                     role.as_element(),
                     account.suffix(),
                     account.prefix().as_felt(),
@@ -100,10 +100,10 @@ impl RbacConfig {
                 // A missing admin role is encoded as 0, the value `rbac::set_role_admin` treats as
                 // "revert to the default ADMIN role".
                 let admin_role = admin_role.as_ref().map_or(Felt::ZERO, RoleSymbol::as_element);
-                vec![Felt::from(Self::SELECTOR_SET_ROLE_ADMIN), role.as_element(), admin_role]
+                vec![Felt::from(Self::VARIANT_SET_ROLE_ADMIN), role.as_element(), admin_role]
             },
             RbacConfig::RenounceRole { role } => {
-                vec![Felt::from(Self::SELECTOR_RENOUNCE_ROLE), role.as_element()]
+                vec![Felt::from(Self::VARIANT_RENOUNCE_ROLE), role.as_element()]
             },
         }
     }
@@ -123,7 +123,7 @@ impl From<RbacConfig> for NoteStorage {
 /// [`RoleBasedAccessControl`](crate::account::access::RoleBasedAccessControl) management action on
 /// the account that consumes it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the component's
+/// A single note script dispatches on the note variant in its storage to one of the component's
 /// management procedures (`grant_role`, `revoke_role`, `set_role_admin`, `renounce_role`). All
 /// authorization is enforced by those procedures against the note sender, so the note carries no
 /// assets and its authorization is bound to `sender` at creation time.
@@ -210,7 +210,7 @@ impl RbacConfigNote {
 
     /// The numbers of storage items the RbacConfig note script accepts.
     ///
-    /// The layout is variable: `GrantRole` / `RevokeRole` use 4 items (`[selector, role_symbol,
+    /// The layout is variable: `GrantRole` / `RevokeRole` use 4 items (`[variant, role_symbol,
     /// account_suffix, account_prefix]`), `SetRoleAdmin` uses 3, and `RenounceRole` uses 2, so
     /// every size in the range is used by one of the actions. Keep in sync with the `NUM_ITEMS_*`
     /// constants in `rbac_config.masm`.
@@ -468,7 +468,7 @@ mod tests {
         });
     }
 
-    /// `GrantRole` storage is `[selector, role_symbol, account_suffix, account_prefix]`.
+    /// `GrantRole` storage is `[variant, role_symbol, account_suffix, account_prefix]`.
     #[test]
     fn grant_role_storage_layout() {
         let grantee = account_id(3);
@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(RbacConfig::SELECTOR_GRANT_ROLE),
+                Felt::from(RbacConfig::VARIANT_GRANT_ROLE),
                 minter.as_element(),
                 grantee.suffix(),
                 grantee.prefix().as_felt(),
@@ -496,7 +496,7 @@ mod tests {
 
         assert_eq!(
             storage.items(),
-            &[Felt::from(RbacConfig::SELECTOR_SET_ROLE_ADMIN), minter.as_element(), Felt::ZERO]
+            &[Felt::from(RbacConfig::VARIANT_SET_ROLE_ADMIN), minter.as_element(), Felt::ZERO]
         );
     }
 
@@ -513,14 +513,14 @@ mod tests {
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(RbacConfig::SELECTOR_SET_ROLE_ADMIN),
+                Felt::from(RbacConfig::VARIANT_SET_ROLE_ADMIN),
                 minter.as_element(),
                 admin.as_element(),
             ]
         );
     }
 
-    /// `RenounceRole` storage is `[selector, role_symbol]`.
+    /// `RenounceRole` storage is `[variant, role_symbol]`.
     #[test]
     fn renounce_role_storage_layout() {
         let minter = role("MINTER");
@@ -528,7 +528,7 @@ mod tests {
 
         assert_eq!(
             storage.items(),
-            &[Felt::from(RbacConfig::SELECTOR_RENOUNCE_ROLE), minter.as_element()]
+            &[Felt::from(RbacConfig::VARIANT_RENOUNCE_ROLE), minter.as_element()]
         );
     }
 }

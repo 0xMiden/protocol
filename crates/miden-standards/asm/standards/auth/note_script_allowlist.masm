@@ -1,3 +1,4 @@
+use {NoteScriptRoot, StorageSlotId} from miden::protocol::types
 # Reusable note-script allowlist primitive.
 #
 # Provides the operations used to restrict what notes an account can consume during a transaction:
@@ -14,7 +15,6 @@ use miden::protocol::native_account
 use miden::protocol::tx
 use miden::protocol::input_note
 use miden::core::word
-use {StorageSlotId, NoteScriptRoot} from miden::protocol::types
 use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 # CONSTANTS

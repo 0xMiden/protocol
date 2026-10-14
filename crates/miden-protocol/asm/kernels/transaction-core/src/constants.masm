@@ -1,13 +1,10 @@
 # CONSTANTS
 # =================================================================================================
 
-pub use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+pub use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 
 # The maximum number of storage items associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
-
-# The maximum number of assets that can be stored in a single note.
-pub const MAX_ASSETS_PER_NOTE = 16
 
 # The maximum number of notes that can be consumed in a single transaction.
 pub const MAX_INPUT_NOTES_PER_TX = 1024

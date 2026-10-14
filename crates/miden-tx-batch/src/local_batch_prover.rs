@@ -18,20 +18,38 @@ use crate::ExecutedBatch;
 #[derive(Clone)]
 pub struct LocalBatchProver {
     prover: Prover,
+    skip_precompile_proof_generation: bool,
 }
 
 impl Default for LocalBatchProver {
     fn default() -> Self {
-        Self {
-            prover: Prover::new().with_hash_fn(Poseidon2),
-        }
+        Self::new(Prover::new().with_hash_fn(Poseidon2))
     }
 }
 
 impl LocalBatchProver {
     /// Creates a new [`LocalBatchProver`] instance.
     pub fn new(prover: Prover) -> Self {
-        Self { prover }
+        Self {
+            prover,
+            skip_precompile_proof_generation: false,
+        }
+    }
+
+    /// Returns the prover with generation of the batch's precompile proof turned off.
+    ///
+    /// [`ProposedBatch::new`] has already verified each transaction's proof, including the binding
+    /// between its deferred witness and its committed precompile root, so the resulting batch is
+    /// unchanged; only the in-circuit evidence for those claims is missing.
+    ///
+    /// This option can be removed once the batch kernel proof recursively verifies the transaction
+    /// precompiles.
+    pub fn skip_precompile_proof_generation(
+        mut self,
+        skip_precompile_proof_generation: bool,
+    ) -> Self {
+        self.skip_precompile_proof_generation = skip_precompile_proof_generation;
+        self
     }
 
     /// Proves the [`ExecutedBatch`] into a [`ProvenBatch`].
@@ -40,18 +58,33 @@ impl LocalBatchProver {
     /// the returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against
     /// the proposed batch's expected values.
     ///
+    /// The precompile claims of the batch's transactions are settled with a single precompile proof
+    /// over their ordered witnesses, unless [`Self::skip_precompile_proof_generation`] was called.
+    /// That proof is discarded rather than attached to the returned batch; see [`ProvenBatch`] for
+    /// what this does and does not establish.
+    ///
     /// # Errors
     ///
-    /// Returns an error if proof generation fails or the batch execution used a precompile.
+    /// Returns an error if proof generation fails.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let (proposed_batch, witness) = executed_batch.into_parts();
-        if witness.has_precompiles() {
-            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
+        let (proposed_batch, witness, precompile_witnesses) = executed_batch.into_parts();
+
+        if !self.skip_precompile_proof_generation && !precompile_witnesses.is_empty() {
+            // The proof is dropped: the batch kernel cannot verify it yet, and shipping it on the
+            // proven batch would add a wire format field that has to be removed again once the
+            // kernel does. Each witness was already bound to its transaction proof by
+            // `ProposedBatch::new`; proving them adds that the aggregate statement holds
+            // in-circuit.
+            let _precompile_proof = self
+                .prover
+                .prove_precompiles(precompile_witnesses)
+                .map_err(|error| ExecutionError::ProvingError(error.to_string()))
+                .map_err(ProvenBatchError::PrecompileProvingFailed)?;
         }
 
         let proof = self
             .prover
-            .prove(witness)
+            .prove_vm_witness(witness)
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
             .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
 

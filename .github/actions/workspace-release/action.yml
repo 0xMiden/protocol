@@ -1,11 +1,7 @@
 name: workspace-release
-description: "Dry-run or publish Rust workspace crates using cargo"
+description: "Run the release preflight checks and package and verify the workspace crates"
 
 inputs:
-  mode:
-    description: "Release mode: dry-run or publish"
-    required: true
-    default: "dry-run"
   verify-branch-head:
     description: "If true, ensure the triggering SHA matches the release branch HEAD"
     required: false
@@ -96,7 +92,7 @@ runs:
 
     # The script itself decides whether the check applies: it only compares MAST roots when
     # the workspace version is in the same Cargo-compatible release line as the latest release
-    # tag (i.e. a patch release), so it is safe to run on every ref and in both modes. It also
+    # tag (i.e. a patch release), so it is safe to run on every ref. It also
     # owns the escape hatch, so the reason for a skip always shows up in its own output.
     - name: Check MAST root stability
       shell: bash
@@ -131,19 +127,8 @@ runs:
         rm -rf ~/.cargo/registry/index
         rm -rf ~/.cargo/registry/src
 
-    # Dry-run vs real publish
-    - name: Dry-run workspace publish
-      if: ${{ inputs.mode == 'dry-run' }}
+    - name: Package and verify workspace crates
       shell: bash
       run: |
         echo "Running cargo publish --workspace --dry-run"
         cargo publish --workspace --dry-run
-
-    - name: Publish workspace crates
-      if: ${{ inputs.mode == 'publish' }}
-      shell: bash
-      env:
-        CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
-      run: |
-        echo "Publishing workspace crates to crates.io"
-        cargo publish --workspace

@@ -5,6 +5,7 @@
 use miden::standards::auth::signature
 use miden::standards::fee
 use miden::protocol::native_account
+use miden::protocol::tx
 
 # CONSTANTS
 # =================================================================================================
@@ -70,6 +71,9 @@ pub proc auth_tx(auth_args: word)
 
     swap movdn.5
     # => [num_extra_cycles, CONVERSION_INFO, scheme_id, pad(12)]
+
+    exec.tx::get_reference_block_number movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, scheme_id, pad(12)]
 
     exec.fee::pay_fee drop
     # => [scheme_id, pad(12)]

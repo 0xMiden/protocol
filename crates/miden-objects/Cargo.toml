@@ -14,17 +14,27 @@ version.workspace      = true
 
 [features]
 default = ["std"]
-std     = ["miden-protocol/std", "prost/std"]
+std     = ["miden-protobuf/std", "miden-protocol/std", "prost/std"]
+testing = []
 
 [dependencies]
+miden-protobuf = { features = ["derive"], workspace = true }
 miden-protocol = { workspace = true }
 prost          = { features = ["derive"], workspace = true }
+thiserror      = { workspace = true }
 
 [build-dependencies]
-prost       = { features = ["derive"], workspace = true }
-prost-build = { workspace = true }
-protox      = { workspace = true }
+miden-protobuf = { features = ["build"], workspace = true }
+prost          = { features = ["derive"], workspace = true }
+prost-build    = { workspace = true }
+protox         = { workspace = true }
+quote          = { workspace = true }
 
 [dev-dependencies]
+anyhow         = { workspace = true }
 assert_matches = { workspace = true }
 miden-protocol = { features = ["testing"], workspace = true }
+rand           = { workspace = true }
+rand_chacha    = { workspace = true }
+rstest         = { workspace = true }
+tempfile       = { version = "3.19" }

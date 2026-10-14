@@ -1,0 +1,118 @@
+# xreserve::packed_mem
+#
+# The primitives for the u32-LE-packed memory region the DepositIntent preimage is staged in.
+#
+# The wire is big-endian and the region holds four wire bytes per felt, so a value arrives there
+# either copied limb for limb or split into u32 halves and byte-swapped on the way. Nothing here
+# knows the DepositIntent layout — `xreserve::deposit_intent` composes these into the writer that
+# does.
+#
+# The bytes32 copy guards the limbs it moves, because those fields identify the deposit and a bad
+# limb there is worth naming: keccak's host-side byte reader refuses a felt above u32 too, but as an
+# anonymous host failure rather than an assertion.
+
+use miden::standards::utils
+
+# CONSTANTS
+# =================================================================================================
+
+# A u64 occupies two packed limbs.
+pub const U64_PACKED_LIMBS = 2
+
+# ERRORS
+# =================================================================================================
+
+const ERR_XRESERVE_MINT_INTENT_LIMB = "mint intent limb is not a valid u32"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Returns num_items divided by four, rounded up.
+#!
+#! Four is the packing factor everywhere on this wire — wire bytes in a packed felt, and felts in
+#! a word — so both conversions are this one routine.
+#!
+#! Inputs:  [num_items]
+#! Outputs: [num_groups]
+#!
+#! Panics if:
+#! - num_items is not a valid u32.
+#!
+#! Invocation: exec
+pub proc div_ceil_four
+    u32divmod.4 neq.0 add
+end
+
+#! Copies a bytes32's eight packed limbs, guarding them.
+#!
+#! Inputs:  [dst_ptr, src_ptr]
+#! Outputs: []
+#!
+#! Panics if:
+#! - a copied limb is not a valid u32 (ERR_XRESERVE_MINT_INTENT_LIMB).
+#!
+#! Invocation: exec
+pub proc memcopy_bytes32
+    swap exec.utils::mem_load_double_word_unaligned
+    # => [B_LOWER, B_UPPER, dst_ptr]
+
+    u32assertw.err=ERR_XRESERVE_MINT_INTENT_LIMB
+    swapw u32assertw.err=ERR_XRESERVE_MINT_INTENT_LIMB swapw
+    # => [B_LOWER, B_UPPER, dst_ptr]
+
+    exec.utils::mem_store_double_word_unaligned
+    # => []
+end
+
+#! Writes a u64-valued felt as its two wire limbs, most significant first.
+#!
+#! The wire is big-endian and the region is u32-LE-packed, so each half is stored byte-swapped.
+#! A u64 value sits at the end of a wider wire field, which is why the caller passes a pointer that
+#! already includes the pad.
+#!
+#! Inputs:  [dst_ptr, value]
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc store_byte_swapped
+    swap u32split
+    # => [value_lo, value_hi, dst_ptr]
+
+    exec.utils::swap_u32_bytes swap exec.utils::swap_u32_bytes
+    # => [packed_hi, packed_lo, dst_ptr]
+
+    dup.2 mem_store
+    # => [packed_lo, dst_ptr]
+
+    swap add.1 mem_store
+    # => []
+end
+
+#! Writes an account id into the low sixteen bytes of its bytes32 field.
+#!
+#! The packaging is the prefix u64 then the suffix u64, each big-endian — two `store_byte_swapped`
+#! writes back to back.
+#!
+#! Inputs:  [dst_ptr, account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - dst_ptr already includes the field's sixteen-byte pad.
+#!
+#! Invocation: exec
+pub proc store_account_id
+    dup movdn.3
+    # => [dst_ptr, account_id_suffix, account_id_prefix, dst_ptr]
+
+    movup.2 swap
+    # => [dst_ptr, account_id_prefix, account_id_suffix, dst_ptr]
+
+    exec.store_byte_swapped
+    # => [account_id_suffix, dst_ptr]
+
+    swap add.U64_PACKED_LIMBS
+    # => [dst_ptr+2, account_id_suffix]
+
+    exec.store_byte_swapped
+    # => []
+end

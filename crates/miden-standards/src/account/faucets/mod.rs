@@ -3,6 +3,7 @@ use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
 
 use crate::account::access::Ownable2StepError;
+use crate::account::policies::{BurnOwnerOnly, MintOwnerOnly, TokenPolicyManager};
 use crate::utils::FixedWidthStringError;
 
 mod fungible;
@@ -28,6 +29,29 @@ pub use non_fungible::{
     create_user_non_fungible_faucet,
 };
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
+
+// OWNER-ONLY POLICY DEPENDENCY CHECK
+// ================================================================================================
+
+/// Returns `true` if `token_policy_manager` registers an owner-gated mint or burn policy, either as
+/// the active policy or as a reserved alternative that `set_mint_policy` / `set_burn_policy` can
+/// activate later.
+///
+/// The owner-controlled policy family calls `ownable2step::assert_sender_is_owner`, which reads a
+/// storage slot installed by [`Ownable2Step`](crate::account::access::Ownable2Step) and owned by no
+/// policy component. A faucet registering such a policy without that component builds successfully
+/// and then aborts on every dispatch to the policy, disabling minting or burning for the lifetime
+/// of the account.
+///
+/// TODO: This is a temporary, faucet-specific check covering the one configuration the factories
+/// can get wrong. Remove it once components can declare their dependencies generally
+/// ([#2621](https://github.com/0xMiden/protocol/issues/2621)): the owner-only policy components
+/// will then declare the ownership component themselves and every account is validated, not just
+/// the ones these factories build.
+pub(crate) fn registers_owner_only_policy(token_policy_manager: &TokenPolicyManager) -> bool {
+    token_policy_manager.allowed_mint_policies().contains(&MintOwnerOnly::root())
+        || token_policy_manager.allowed_burn_policies().contains(&BurnOwnerOnly::root())
+}
 
 // TOKEN METADATA ERROR
 // ================================================================================================
@@ -79,6 +103,10 @@ pub enum FungibleFaucetError {
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
+    #[error(
+        "faucet registers an owner-gated mint or burn policy but does not install the Ownable2Step component the policy reads the owner from"
+    )]
+    OwnerOnlyPolicyWithoutOwnable2Step,
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }
@@ -95,6 +123,10 @@ pub enum NonFungibleFaucetError {
     NotANonFungibleFaucetAccount,
     #[error("asset status registry holds invalid status code {status}: must be 0, 1 or 2")]
     InvalidAssetStatus { status: u64 },
+    #[error(
+        "faucet registers an owner-gated mint or burn policy but does not install the Ownable2Step component the policy reads the owner from"
+    )]
+    OwnerOnlyPolicyWithoutOwnable2Step,
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }

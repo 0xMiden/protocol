@@ -1,10 +1,23 @@
+use {
+    AccountId,
+    Asset,
+    AssetValue,
+    Bool,
+    NoteAssetsCommitment,
+    NoteAttachmentCommitment,
+    NoteAttachmentsCommitment,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScriptRoot,
+    NoteSerialNumber,
+    NoteStorageCommitment,
+} from miden::protocol::types
 use miden::protocol_utils::mem
 use miden::protocol::note
 use miden::protocol::input_note_internal
 use miden::protocol::note_internal
 use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
-use {AccountId, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteScriptRoot}
-    from miden::protocol::types
 
 # ERRORS
 # =================================================================================================
@@ -47,7 +60,7 @@ const ERR_NOTE_TOO_MANY_STORAGE_ITEMS =
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_initial_assets(dest_ptr: MemoryAddress) -> u8
+pub proc get_initial_assets(dest_ptr: ptr<Asset>) -> u8
     # push a placeholder note_index and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0, dest_ptr]
@@ -72,7 +85,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_initial_assets_info
+pub proc get_initial_assets_info() -> (NoteAssetsCommitment, u8)
     # push a placeholder note_index and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0]
@@ -96,7 +109,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_initial_num_assets
+pub proc get_initial_num_assets() -> u8
     exec.get_initial_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 
@@ -122,7 +135,7 @@ end
 #! - the asset index is greater or equal to the number of assets in the note.
 #!
 #! Invocation: exec
-pub proc get_asset
+pub proc get_asset(asset_index: u8) -> Asset
     # push a placeholder note_index below asset_index and the active note flag on top
     push.0 swap push.1
     # => [is_active_note = 1, asset_index, note_index = 0]
@@ -158,7 +171,7 @@ end
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 #!
 #! Invocation: exec
-pub proc remove_asset
+pub proc remove_asset(asset: Asset) -> AssetValue
     # push a placeholder note_index below the asset and the active note flag on top
     push.0 movdn.8 push.1
     # => [is_active_note = 1, ASSET_ID, ASSET_VALUE, note_index = 0]
@@ -194,7 +207,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc remove_all_assets
+pub proc remove_all_assets(dest_ptr: ptr<Asset>) -> u8
     # push a placeholder note_index and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0, dest_ptr]
@@ -258,7 +271,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_storage_info() -> (word, u16)
+pub proc get_storage_info() -> (NoteStorageCommitment, u16)
     # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0]
@@ -284,7 +297,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_storage(dest_ptr: MemoryAddress) -> u16
+pub proc get_storage(dest_ptr: ptr<felt>) -> u16
     # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0, dest_ptr]
@@ -322,7 +335,7 @@ end
 #! - num_storage_items is greater than max_num_storage_items.
 #!
 #! Invocation: exec
-pub proc get_bounded_storage(dest_ptr: MemoryAddress, max_num_storage_items: u16) -> u16
+pub proc get_bounded_storage(dest_ptr: ptr<felt>, max_num_storage_items: u16) -> u16
     exec.get_storage_info
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, max_num_storage_items]
 
@@ -439,7 +452,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_serial_number() -> word
+pub proc get_serial_number() -> NoteSerialNumber
     # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0]
@@ -488,7 +501,11 @@ end
 #! - the items written to memory do not match NOTE_STORAGE_COMMITMENT.
 #!
 #! Invocation: exec
-pub proc write_storage_to_memory
+pub proc write_storage_to_memory(
+    storage_commitment: NoteStorageCommitment,
+    num_storage_items: u16,
+    dest_ptr: ptr<felt>
+)
     # load the inputs from the advice map to the advice stack, padded to the next multiple of 8 so
     # they can be written with `pipe_elements_preimage_to_memory`
     adv.push_mapvaln.8
@@ -533,7 +550,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_attachments_commitment() -> word
+pub proc get_attachments_commitment() -> NoteAttachmentsCommitment
     # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
     push.0.1
     # => [is_active_note = 1, note_index = 0]
@@ -557,7 +574,7 @@ end
 #!   attachments commitment.
 #!
 #! Invocation: exec
-pub proc write_attachment_commitments_to_memory(dest_ptr: MemoryAddress) -> u8
+pub proc write_attachment_commitments_to_memory(dest_ptr: ptr<NoteAttachmentCommitment>) -> u8
     exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
@@ -584,7 +601,7 @@ end
 #!
 #! Invocation: exec
 @locals(16)
-pub proc write_attachment_to_memory(dest_ptr: MemoryAddress, attachment_idx: u8) -> u16
+pub proc write_attachment_to_memory(dest_ptr: ptr<word>, attachment_idx: u8) -> u16
     # write the attachment commitments to local memory
     # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
     # four attachment commitments

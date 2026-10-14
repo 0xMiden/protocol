@@ -1,3 +1,5 @@
+use {Commitment} from miden::standards::types
+use {Bool} from miden::protocol::types
 # miden::standards::faucets
 #
 # Shared token metadata storage layout and accessors for faucet accounts. Holds the token name
@@ -12,6 +14,16 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
+
+pub type TokenSymbol = felt
+pub type MutabilityConfig = struct {
+    description: Bool,
+    logo_uri: Bool,
+    external_link: Bool,
+    max_supply: Bool
+}
+pub type TokenName = struct { first: word, second: word }
+pub type MetadataStringCommitment = word
 
 pub mod fungible
 pub mod non_fungible
@@ -65,7 +77,7 @@ const ERR_EXTERNAL_LINK_NOT_MUTABLE = "external link is not mutable"
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_name
+pub proc get_name() -> TokenName
     exec.get_name_chunk_1
     exec.get_name_chunk_0
     swapdw dropw dropw
@@ -79,7 +91,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_mutability_config
+pub proc get_mutability_config() -> MutabilityConfig
     exec.get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(16)]
     swapw dropw
@@ -93,7 +105,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc is_description_mutable
+pub proc is_description_mutable() -> Bool
     exec.is_description_mutable_internal
     # => [is_description_mutable, pad(16)]
     swap drop
@@ -107,7 +119,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc is_logo_uri_mutable
+pub proc is_logo_uri_mutable() -> Bool
     exec.is_logo_uri_mutable_internal
     # => [is_logo_uri_mutable, pad(16)]
     swap drop
@@ -121,7 +133,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc is_external_link_mutable
+pub proc is_external_link_mutable() -> Bool
     exec.is_external_link_mutable_internal
     # => [is_external_link_mutable, pad(16)]
     swap drop
@@ -154,7 +166,7 @@ end
 #! Invocation: call
 @locals(28)
 @account_procedure
-pub proc set_description
+pub proc set_description(description_hash: MetadataStringCommitment)
     # Check mutability; verify owner.
     # => [DESCRIPTION_HASH, pad(12)]
 
@@ -231,7 +243,7 @@ end
 #! Invocation: call
 @locals(28)
 @account_procedure
-pub proc set_logo_uri
+pub proc set_logo_uri(logo_uri_hash: MetadataStringCommitment)
     # Check mutability; verify owner.
     # => [LOGO_URI_HASH, pad(12)]
 
@@ -307,7 +319,7 @@ end
 #! Invocation: call
 @locals(28)
 @account_procedure
-pub proc set_external_link
+pub proc set_external_link(external_link_hash: MetadataStringCommitment)
     # Check mutability; verify owner.
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
@@ -370,7 +382,7 @@ end
 #!   (word[0] on top after get_item, little-endian).
 #!
 #! Invocation: exec
-pub proc get_mutability_config_word
+pub proc get_mutability_config_word() -> (Bool, Bool, Bool, Bool)
     push.MUTABILITY_CONFIG_SLOT[0..2]
     exec.active_account::get_item
 end
@@ -384,7 +396,7 @@ end
 #! Outputs: [NAME_CHUNK_0]
 #!
 #! Invocation: exec
-proc get_name_chunk_0
+proc get_name_chunk_0() -> word
     push.TOKEN_NAME_0_SLOT[0..2]
     exec.active_account::get_item
 end
@@ -395,7 +407,7 @@ end
 #! Outputs: [NAME_CHUNK_1]
 #!
 #! Invocation: exec
-proc get_name_chunk_1
+proc get_name_chunk_1() -> word
     push.TOKEN_NAME_1_SLOT[0..2]
     exec.active_account::get_item
 end
@@ -408,7 +420,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc pipe_to_memory
+proc pipe_to_memory(write_ptr: ptr<felt>, commitment: Commitment)
     push.7
     exec.mem::pipe_preimage_to_memory
     # => [write_ptr']
@@ -424,7 +436,7 @@ end
 #! Outputs: [is_description_mutable]
 #!
 #! Invocation: exec
-proc is_description_mutable_internal
+proc is_description_mutable_internal() -> Bool
     exec.get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     movdn.3 drop drop drop
@@ -437,7 +449,7 @@ end
 #! Outputs: [is_logo_uri_mutable]
 #!
 #! Invocation: exec
-proc is_logo_uri_mutable_internal
+proc is_logo_uri_mutable_internal() -> Bool
     exec.get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop movdn.2 drop drop
@@ -450,7 +462,7 @@ end
 #! Outputs: [is_external_link_mutable]
 #!
 #! Invocation: exec
-proc is_external_link_mutable_internal
+proc is_external_link_mutable_internal() -> Bool
     exec.get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop drop swap drop

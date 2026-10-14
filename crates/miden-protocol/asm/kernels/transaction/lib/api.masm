@@ -1,3 +1,23 @@
+use {
+    AccountId,
+    AccountProcedureRoot,
+    Asset,
+    AssetId,
+    AssetValue,
+    BlockNumber,
+    Bool,
+    NoteAssetsCommitment,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScriptRoot,
+    NoteSerialNumber,
+    NoteTag,
+    NoteType,
+    StorageSlotId,
+    TransactionScriptRoot,
+} from miden::protocol_utils::types
+use {Commitment, InputNoteData} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
@@ -12,7 +32,6 @@ use {
     UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 } from miden::tx_kernel_core::memory
-use {AccountId} from miden::protocol_utils::types
 
 # PROCEDURE VISIBILITY & INVOCATION
 # =================================================================================================
@@ -72,7 +91,7 @@ const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
 #! - the invocation of the kernel procedure does not originate from the account context.
 #!
 #! Invocation: exec
-proc authenticate_account_origin
+proc authenticate_account_origin()
     # get the hash of the caller
     padw caller
     # => [CALLER]
@@ -93,7 +112,7 @@ end
 #!   of the account.
 #!
 #! Invocation: exec
-proc assert_auth_procedure_origin
+proc assert_auth_procedure_origin()
     # get the hash of the caller
     padw caller
     # => [CALLER]
@@ -122,7 +141,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_commitment
+pub proc account_get_initial_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
 
@@ -139,7 +158,7 @@ pub proc account_get_initial_commitment
     # => [INIT_COMMITMENT, pad(12)]
 end
 
-#! Computes commitment to the state of the active account.
+#! Computes commitment to the state of the native account.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
@@ -149,14 +168,18 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account.
 #!
 #! Invocation: dynexec
-pub proc account_compute_commitment
+pub proc account_compute_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
 
-    # compute the active account commitment
+    # compute the native account commitment
     exec.account::compute_commitment
     # => [ACCOUNT_COMMITMENT, pad(16)]
 
@@ -188,7 +211,7 @@ end
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
 #!
 #! Invocation: dynexec
-pub proc account_compute_delta_commitment
+pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # These two checks are strictly redundant here: a non-empty delta requires the nonce to be
     # incremented, which is already gated to the auth procedure, and an empty delta only ever
     # commits to the (public) empty word. We keep them for consistency with the other account
@@ -205,43 +228,74 @@ pub proc account_compute_delta_commitment
     # => [ACCOUNT_COMMITMENT, pad(12)]
 end
 
-#! Records the commitments describing an upgrade of the native account's code and storage.
+#! Initializes an upgrade of the native account's code, which the epilogue applies after the
+#! authentication procedure.
 #!
-#! This procedure is currently a no-op beyond storing the two commitments in kernel memory.
+#! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
 #!
-#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
-#! Outputs: [pad(16)]
+#! Inputs:
+#!   Operand stack: [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+#!   Advice map: {
+#!     NEW_CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
 #!
 #! Where:
-#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
-#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
+#! - STORAGE_UPGRADE_COMMITMENT is not empty.
+#! - the native account is new.
+#! - a code upgrade is already pending.
+#! - the new code is not valid account code.
+#!
+#! Invocation: dynexec
+pub proc account_upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    exec.account::upgrade
+    # => [pad(16)]
+end
+
+#! Returns the commitment to the pending code upgrade of the native account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [NEW_CODE_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code, or the empty word if no code
+#!   upgrade is pending.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_upgrade
-    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
-    # account as validated in account::{validate_storage, validate_procedures}.
-    # The same applies to the asset callback rule validated in
-    # prologue::validate_asset_callbacks: an upgrade must reject adding an asset callback slot to an
-    # account whose asset callback flag is disabled. Such a callback is not invalid, it simply could
-    # never be invoked, since the flag is immutable, which leaves the account looking configured
-    # while nothing is enforced - the state the creation-time check rejects.
+pub proc account_get_code_upgrade_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
-
-    exec.memory::set_code_upgrade_commitment
-    # => [STORAGE_UPGRADE_COMMITMENT, pad(12)]
-
-    exec.memory::set_storage_upgrade_commitment
     # => [pad(16)]
+
+    exec.memory::get_code_upgrade_commitment
+    # => [NEW_CODE_COMMITMENT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [NEW_CODE_COMMITMENT, pad(12)]
 end
 
 #! Returns the ID of the specified account.
@@ -256,7 +310,7 @@ end
 #!   (native or active, depending on the is_native flag).
 #!
 #! Invocation: dynexec
-pub proc account_get_id
+pub proc account_get_id(is_native: Bool, padding: [felt; 15]) -> (AccountId, [felt; 14])
     # get the native account ID
     exec.memory::get_native_account_id
     # => [native_account_id_suffix, native_account_id_prefix, is_native, pad(15)]
@@ -305,7 +359,7 @@ end
 #! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
-pub proc account_get_nonce
+pub proc account_get_nonce(padding: [felt; 16]) -> (felt, [felt; 15])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
@@ -335,7 +389,7 @@ end
 #! - the nonce has already been incremented.
 #!
 #! Invocation: dynexec
-pub proc account_incr_nonce
+pub proc account_incr_nonce(padding: [felt; 16]) -> (felt, [felt; 15])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [pad(16)]
@@ -362,7 +416,7 @@ end
 #! - CODE_COMMITMENT is the commitment of the account code.
 #!
 #! Invocation: dynexec
-pub proc account_get_code_commitment
+pub proc account_get_code_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # assert that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
@@ -389,7 +443,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_storage_commitment
+pub proc account_get_initial_storage_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
 
@@ -415,7 +469,7 @@ end
 #! - STORAGE_COMMITMENT is the commitment of the account storage.
 #!
 #! Invocation: dynexec
-pub proc account_compute_storage_commitment
+pub proc account_compute_storage_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
@@ -443,7 +497,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #!
 #! Invocation: dynexec
-pub proc account_get_item
+pub proc account_get_item(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
@@ -474,7 +528,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_set_item
+pub proc account_set_item(slot_id: StorageSlotId, value: word, padding: [felt; 10]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
@@ -504,7 +558,7 @@ end
 #! - the requested storage slot type is not map.
 #!
 #! Invocation: dynexec
-pub proc account_get_map_item
+pub proc account_get_map_item(slot_id: StorageSlotId, key: word, padding: [felt; 10]) -> (word, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
@@ -530,7 +584,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_item
+pub proc account_get_initial_item(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
@@ -567,7 +621,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_map_item
+pub proc account_get_initial_map_item(slot_id: StorageSlotId, key: word, padding: [felt; 10]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
@@ -602,7 +656,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_set_map_item
+pub proc account_set_map_item(slot_id: StorageSlotId, key: word, new_value: word, padding: [felt; 6]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
@@ -633,7 +687,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_vault_root
+pub proc account_get_initial_vault_root(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
 
@@ -662,7 +716,7 @@ end
 #! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
-pub proc account_get_vault_root
+pub proc account_get_vault_root(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
@@ -698,7 +752,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_add_asset
+pub proc account_add_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -730,7 +784,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_remove_asset
+pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -758,7 +812,7 @@ end
 #! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
-pub proc account_get_asset
+pub proc account_get_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]
@@ -785,7 +839,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_asset
+pub proc account_get_initial_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
 
@@ -815,7 +869,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_was_procedure_called
+pub proc account_was_procedure_called(proc_root: AccountProcedureRoot, padding: [felt; 12]) -> (Bool, [felt; 15])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [PROC_ROOT, pad(12)]
@@ -841,7 +895,7 @@ end
 #! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
-pub proc account_get_num_procedures
+pub proc account_get_num_procedures(padding: [felt; 16]) -> (u16, [felt; 15])
     # assert that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
@@ -869,7 +923,7 @@ end
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: dynexec
-pub proc account_get_procedure_root
+pub proc account_get_procedure_root(index: u16, padding: [felt; 15]) -> (AccountProcedureRoot, [felt; 12])
     # assert that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [index, pad(15)]
@@ -900,7 +954,7 @@ end
 #! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
-pub proc account_has_procedure
+pub proc account_has_procedure(proc_root: AccountProcedureRoot, padding: [felt; 12]) -> (Bool, [felt; 15])
     # assert that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [PROC_ROOT, pad(12)]
@@ -924,7 +978,7 @@ end
 #! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
 #!
 #! Invocation: dynexec
-pub proc account_has_storage_slot
+pub proc account_has_storage_slot(slot_id: StorageSlotId, padding: [felt; 14]) -> (Bool, [felt; 15])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
@@ -953,7 +1007,7 @@ end
 #! - the asset is not well formed.
 #!
 #! Invocation: dynexec
-pub proc faucet_mint_asset
+pub proc faucet_mint_asset(asset: Asset, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -988,7 +1042,7 @@ end
 #!     transaction via a note or the accounts vault.
 #!
 #! Invocation: dynexec
-pub proc faucet_burn_asset
+pub proc faucet_burn_asset(asset: Asset, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -1027,7 +1081,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_initial_assets_info
+pub proc input_note_get_initial_assets_info(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
     exec.get_requested_note_ptr
@@ -1070,7 +1124,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_asset
+pub proc input_note_get_asset(is_active_note: Bool, asset_index: u8, note_index: u16, padding: [felt; 13]) -> (Asset, [felt; 8])
     # bring note_index directly above is_active_note so the note pointer can be resolved
     movup.2 swap
     # => [is_active_note, note_index, asset_index, pad(13)]
@@ -1127,7 +1181,7 @@ end
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 #!
 #! Invocation: dynexec
-pub proc input_note_remove_asset
+pub proc input_note_remove_asset(is_active_note: Bool, asset: Asset, note_index: u16, padding: [felt; 6]) -> (AssetValue, [felt; 12])
     # bring note_index directly above is_active_note so the note pointer can be resolved
     movup.9 swap
     # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
@@ -1184,7 +1238,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_remove_all_assets
+pub proc input_note_remove_all_assets(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
     exec.authenticate_indexed_input_note_asset_removal
     # => [is_active_note, note_index, pad(14)]
 
@@ -1225,7 +1279,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_recipient
+pub proc input_note_get_recipient(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteRecipient, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1263,7 +1317,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_metadata
+pub proc input_note_get_metadata(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteMetadata, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1305,7 +1359,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_serial_number
+pub proc input_note_get_serial_number(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteSerialNumber, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1345,7 +1399,7 @@ end
 #!   from an incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_note_id
+pub proc input_note_get_note_id(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteId, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1386,7 +1440,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_storage_info
+pub proc input_note_get_storage_info(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (Commitment, u16, [felt; 11])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1430,7 +1484,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_script_root
+pub proc input_note_get_script_root(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteScriptRoot, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1470,7 +1524,7 @@ end
 #!   attachments from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_attachments_commitment
+pub proc input_note_get_attachments_commitment(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (Commitment, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1511,7 +1565,7 @@ end
 #! - the active account is not the native account.
 #!
 #! Invocation: dynexec
-pub proc output_note_create
+pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient, padding: [felt; 10]) -> (u16, [felt; 15])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [tag, note_type, RECIPIENT, pad(10)]
@@ -1537,9 +1591,10 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_asset
+pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
@@ -1551,9 +1606,52 @@ pub proc output_note_add_asset
     # => [pad(16)]
 end
 
+#! Prevents further changes to the specified output note's assets and attachments.
+#! Sealing is idempotent.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the active account is not the native account.
+#! - the note index points to a non-existent output note.
+#!
+#! Invocation: dynexec
+pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
+    exec.memory::assert_native_account
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
+    exec.memory::seal_output_note
+    # => [pad(16)]
+end
+
+#! Returns whether the specified output note is sealed against asset and attachment changes.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [is_sealed, pad(15)]
+#!
+#! Panics if:
+#! - the note index points to a non-existent output note.
+#!
+#! Invocation: dynexec
+pub proc output_note_is_sealed(note_idx: u16, padding: [felt; 15]) -> (Bool, [felt; 15])
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
+    exec.memory::is_output_note_sealed
+    # => [is_sealed, pad(15)]
+end
+
 #! Adds an attachment to the note specified by the index.
 #!
-#! Inputs:  [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
+#! Inputs:  [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
@@ -1564,19 +1662,20 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #! - the attachment scheme is 0 or exceeds 65534.
 #! - the attachment num_words exceeds 256 or is zero.
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_attachment
+pub proc output_note_add_attachment(attachment_scheme: u16, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
     # assert that the provided note index is less than the total number of output notes
     dup.5 exec.output_note::assert_note_index_in_bounds drop
-    # => [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
 
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
 
     exec.output_note::add_attachment
     # => [pad(16)]
@@ -1596,7 +1695,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_assets_info
+pub proc output_note_get_assets_info(note_index: u16, padding: [felt; 15]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
     # => [note_index, pad(15)]
@@ -1625,7 +1724,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_attachments_commitment
+pub proc output_note_get_attachments_commitment(note_index: u16, padding: [felt; 15]) -> (Commitment, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
     # => [note_index, pad(15)]
@@ -1652,7 +1751,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_recipient
+pub proc output_note_get_recipient(note_index: u16, padding: [felt; 15]) -> (NoteRecipient, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
     # => [note_index, pad(15)]
@@ -1683,7 +1782,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_metadata
+pub proc output_note_get_metadata(note_index: u16, padding: [felt; 15]) -> (NoteMetadata, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
     # => [note_index, pad(15)]
@@ -1719,7 +1818,7 @@ end
 #! - INPUT_NOTES_COMMITMENT is the input notes commitment hash.
 #!
 #! Invocation: dynexec
-pub proc tx_get_input_notes_commitment
+pub proc tx_get_input_notes_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     exec.tx::get_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT, pad(16)]
 
@@ -1738,7 +1837,7 @@ end
 #! - OUTPUT_NOTES_COMMITMENT is the output notes commitment.
 #!
 #! Invocation: dynexec
-pub proc tx_get_output_notes_commitment
+pub proc tx_get_output_notes_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # get the output notes commitment
     exec.tx::get_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT, pad(16)]
@@ -1757,7 +1856,7 @@ end
 #! - num_input_notes is the total number of input notes consumed by this transaction.
 #!
 #! Invocation: dynexec
-pub proc tx_get_num_input_notes
+pub proc tx_get_num_input_notes(padding: [felt; 16]) -> (u16, [felt; 15])
     # get the number of input notes
     exec.tx::get_num_input_notes
     # => [num_input_notes, pad(16)]
@@ -1777,7 +1876,7 @@ end
 #!   executed.
 #!
 #! Invocation: dynexec
-pub proc tx_get_tx_script_root
+pub proc tx_get_tx_script_root(padding: [felt; 16]) -> (TransactionScriptRoot, [felt; 12])
     # get the tx script root
     exec.tx::get_tx_script_root
     # => [TX_SCRIPT_ROOT, pad(16)]
@@ -1796,7 +1895,7 @@ end
 #! - num_output_notes is the number of output notes created in this transaction so far.
 #!
 #! Invocation: dynexec
-pub proc tx_get_num_output_notes
+pub proc tx_get_num_output_notes(padding: [felt; 16]) -> (u16, [felt; 15])
     # get the number of input notes
     exec.tx::get_num_output_notes
     # => [num_output_notes, pad(16)]
@@ -1819,7 +1918,7 @@ end
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Invocation: dynexec
-pub proc tx_compute_fee
+pub proc tx_compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Commitment, padding: [felt; 11]) -> (felt, [felt; 15])
     # compute the fee, consuming num_extra_cycles and the exclude notes commitment
     exec.tx::compute_fee
     # => [fee_amount, pad(15)]
@@ -1834,7 +1933,7 @@ end
 #! - FEE_ASSET_ID is the ID of the asset that fees are paid in.
 #!
 #! Invocation: dynexec
-pub proc tx_get_fee_asset_id
+pub proc tx_get_fee_asset_id(padding: [felt; 16]) -> (AssetId, [felt; 12])
     exec.memory::get_fee_asset_id
     # => [FEE_ASSET_ID, pad(16)]
 
@@ -1858,7 +1957,7 @@ end
 #! - block_number exceeds the transaction reference block number.
 #!
 #! Invocation: dynexec
-pub proc tx_get_block_commitment
+pub proc tx_get_block_commitment(block_number: BlockNumber, padding: [felt; 15]) -> (Commitment, [felt; 12])
     exec.tx::get_block_commitment
     # => [BLOCK_COMMITMENT, pad(15)]
 
@@ -1876,7 +1975,7 @@ end
 #! - num is the transaction reference block number.
 #!
 #! Invocation: dynexec
-pub proc tx_get_reference_block_number
+pub proc tx_get_reference_block_number(padding: [felt; 16]) -> (BlockNumber, [felt; 15])
     # get the block number
     exec.tx::get_reference_block_number
     # => [num, pad(16)]
@@ -1893,7 +1992,7 @@ end
 #!
 #! Where:
 #! - timestamp is the timestamp of the reference block for this transaction.
-pub proc tx_get_block_timestamp
+pub proc tx_get_block_timestamp(padding: [felt; 16]) -> (u32, [felt; 15])
     # get the transaction reference block timestamp
     exec.tx::get_block_timestamp
     # => [timestamp, pad(16)]
@@ -1926,9 +2025,10 @@ end
 #! Invocation: dynexec
 pub proc tx_prepare_fpi(
     foreign_account_id: AccountId,
-    foreign_proc_root: word,
-    foreign_procedure_input_15: felt
-)
+    foreign_proc_root: AccountProcedureRoot,
+    foreign_procedure_input_15: felt,
+    padding: [felt; 9]
+) -> [felt; 16]
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
     # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
@@ -1966,7 +2066,7 @@ end
 #! - the root of the foreign procedure is not part of the foreign account's code.
 #!
 #! Invocation: dynexec
-pub proc tx_exec_foreign_proc
+pub proc tx_exec_foreign_proc(...) -> ...
     # move up the pad value to the top of the stack so we could drop it later
     movup.15
     # => [pad, foreign_procedure_inputs(15)]
@@ -2033,7 +2133,7 @@ end
 #! - block_height_delta is the desired expiration time delta (1 to 0xFFFF).
 #!
 #! Invocation: dynexec
-pub proc tx_update_expiration_block_delta
+pub proc tx_update_expiration_block_delta(block_height_delta: u16, padding: [felt; 15]) -> [felt; 16]
     exec.tx::update_expiration_block_delta
     # => [pad(16)]
 end
@@ -2047,7 +2147,7 @@ end
 #! - block_height_delta is the stored expiration time delta (1 to 0xFFFF).
 #!
 #! Invocation: dynexec
-pub proc tx_get_expiration_delta
+pub proc tx_get_expiration_delta(padding: [felt; 16]) -> (u16, [felt; 15])
     exec.tx::get_expiration_delta
     # => [block_height_delta, pad(16)]
 
@@ -2075,7 +2175,7 @@ end
 #! Panics if:
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
-proc authenticate_indexed_input_note_asset_removal
+proc authenticate_indexed_input_note_asset_removal(is_active_note: Bool) -> Bool
     dup eq.0
     if.true
         exec.memory::assert_native_account
@@ -2101,7 +2201,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-proc get_requested_note_ptr
+proc get_requested_note_ptr(is_active_note: Bool, note_index: u16) -> ptr<InputNoteData>
     # get the memory pointer to the note with the specified index and verify it is valid
     swap exec.input_note::get_input_note_ptr swap
     # => [is_active_note, indexed_input_note_ptr]

@@ -136,11 +136,22 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
     @account_procedure
     pub proc compute_commitment
-        exec.active_account::compute_commitment
+        exec.native_account::compute_commitment
         # => [ACCOUNT_COMMITMENT, pad(16)]
 
         exec.sys::truncate_stack
         # => [ACCOUNT_COMMITMENT, pad(12)]
+    end
+
+    #! Inputs:  [pad(16)]
+    #! Outputs: [has_state_changed, pad(15)]
+    @account_procedure
+    pub proc has_state_changed
+        exec.native_account::has_state_changed
+        # => [has_state_changed, pad(16)]
+
+        swap drop
+        # => [has_state_changed, pad(15)]
     end
 
     #! Inputs:  [pad(16)]
@@ -276,7 +287,7 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [DELTA_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+    #! Inputs:  [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc upgrade

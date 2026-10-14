@@ -1,3 +1,4 @@
+use {AccountProcedureRoot, Bool} from miden::protocol::types
 # miden::standards::inspection::code_inspection
 #
 # Read-only introspection over the active account's own code. These procedures wrap the
@@ -7,6 +8,8 @@
 # account can do without being granted access to the account's storage or vault.
 
 use miden::protocol::active_account
+
+pub type CodeCommitment = word
 
 #! Returns the binary flag indicating whether the procedure with the provided root is available on
 #! the active account.
@@ -21,7 +24,7 @@ use miden::protocol::active_account
 #!
 #! Invocation: call
 @account_procedure
-pub proc has_procedure
+pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     exec.active_account::has_procedure
 end
 
@@ -35,7 +38,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_code_commitment
+pub proc get_code_commitment() -> CodeCommitment
     exec.active_account::get_code_commitment
     # => [CODE_COMMITMENT, pad(16)]
 
@@ -54,7 +57,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_num_procedures
+pub proc get_num_procedures() -> u32
     exec.active_account::get_num_procedures
     # => [num_procedures, pad(16)]
 
@@ -77,7 +80,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_procedure_root
+pub proc get_procedure_root(index: u32) -> AccountProcedureRoot
     exec.active_account::get_procedure_root
     # => [PROC_ROOT, pad(15)]
 

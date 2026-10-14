@@ -10,4 +10,5 @@ path      = "lib/mod.masm"
 path = "src/main.masm"
 
 [dependencies]
-miden-core.workspace = true
+miden-core.workspace           = true
+miden-protocol-utils.workspace = true

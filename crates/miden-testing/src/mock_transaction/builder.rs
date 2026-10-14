@@ -10,7 +10,7 @@ use miden_processor::advice::AdviceInputs;
 use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::BlockNumber;
@@ -23,7 +23,7 @@ use miden_tx::auth::BasicAuthenticator;
 
 use super::MockTransaction;
 use crate::MockChain;
-use crate::mock_chain::MockTransactionInput;
+use crate::mock_chain::{MockTransactionInput, MockTransactionNoteInput};
 
 // MOCK TRANSACTION BUILDER
 // ================================================================================================
@@ -72,7 +72,7 @@ pub struct MockTransactionBuilder<'chain> {
     chain: &'chain MockChain,
     input: MockTransactionInput,
     reference_block: Option<BlockNumber>,
-    authenticated_notes: Vec<NoteId>,
+    authenticated_notes: Vec<MockTransactionNoteInput>,
     unauthenticated_notes: Vec<Note>,
     authenticator: Option<BasicAuthenticator>,
     advice_inputs: AdviceInputs,
@@ -81,6 +81,7 @@ pub struct MockTransactionBuilder<'chain> {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     auth_args: Word,
+    account_code_upgrade: Option<AccountCodeUpgrade>,
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
@@ -112,6 +113,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_script: None,
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
+            account_code_upgrade: None,
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
@@ -123,17 +125,21 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Adds an authenticated input note that the transaction consumes.
     ///
     /// The note must already be committed to the chain so that its inclusion proof can be resolved
-    /// in [`Self::build`].
-    pub fn authenticated_input_note(mut self, note_id: NoteId) -> Self {
-        self.authenticated_notes.push(note_id);
+    /// in [`Self::build`]. Pass a [`NoteId`] for a public note, or the full [`Note`] for a note
+    /// whose details the chain does not hold, e.g. a private note.
+    pub fn authenticated_input_note(mut self, note: impl Into<MockTransactionNoteInput>) -> Self {
+        self.authenticated_notes.push(note.into());
         self
     }
 
     /// Adds multiple authenticated input notes that the transaction consumes.
     ///
     /// This is the iterator equivalent of [`Self::authenticated_input_note`].
-    pub fn authenticated_input_notes(mut self, note_ids: impl IntoIterator<Item = NoteId>) -> Self {
-        self.authenticated_notes.extend(note_ids);
+    pub fn authenticated_input_notes(
+        mut self,
+        notes: impl IntoIterator<Item = impl Into<MockTransactionNoteInput>>,
+    ) -> Self {
+        self.authenticated_notes.extend(notes.into_iter().map(Into::into));
         self
     }
 
@@ -221,6 +227,13 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Sets the desired auth arguments.
     pub fn auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
+        self
+    }
+
+    /// Sets the code upgrade of the native account, which the transaction must provide if it
+    /// upgrades the account's code.
+    pub fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
+        self.account_code_upgrade = Some(account_code_upgrade);
         self
     }
 
@@ -323,6 +336,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_args = tx_args.with_tx_script_and_args(tx_script, self.tx_script_args);
         }
         tx_args = tx_args.with_auth_args(self.auth_args);
+        if let Some(account_code_upgrade) = self.account_code_upgrade {
+            tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
+        }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(&self.expected_output_notes);
         for (public_key_commitment, message, signature) in self.signatures {

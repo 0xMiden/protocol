@@ -1,0 +1,60 @@
+# Semantic bridge values. Stack records list the top field first; LeafData describes memory order.
+
+use {AccountId} from ::miden::protocol::types
+use {Digest as Poseidon2Commitment} from ::miden::core::crypto::hashes::poseidon2
+use {EthereumAddress, EthereumBytes32} from ::miden::standards::interop::eth
+
+# Keccak digests use eight u32 limbs in byte-stream order.
+pub type Keccak256Digest = EthereumBytes32
+pub type GlobalIndex = Keccak256Digest
+
+# Token amounts use big-endian byte order, packed into eight little-endian u32 limbs.
+pub type EthereumAmount = struct { limbs: [u32; 8] }
+pub type NetworkId = u32
+pub type AmountScale = u8
+#! Poseidon2 commitment to the leaf or proof data stored in the advice map.
+pub type AdviceMapKey = Poseidon2Commitment
+pub type ClaimNullifier = word
+
+pub type OriginToken = struct {
+    address: EthereumAddress,
+    network: NetworkId
+}
+
+pub type FaucetConversionInfo = struct {
+    token: OriginToken,
+    scale: AmountScale
+}
+
+pub type ConvertedAsset = struct {
+    amount: EthereumAmount,
+    token: OriginToken
+}
+
+pub type TokenRegistryValue = struct {
+    padding: [felt; 2],
+    faucet_id: AccountId
+}
+
+# Unpacked leaf memory, before pack_leaf_data rewrites it into packed u32 limbs.
+pub type LeafData = struct {
+    leaf_type: u8,
+    origin_network: NetworkId,
+    origin_token_address: EthereumAddress,
+    destination_network: NetworkId,
+    destination_address: EthereumAddress,
+    amount: EthereumAmount,
+    metadata_hash: Keccak256Digest,
+    padding: [felt; 3]
+}
+
+pub type ExitRoots = struct {
+    mainnet: Keccak256Digest,
+    rollup: Keccak256Digest
+}
+
+pub type MerkleTreeFrontier = struct {
+    num_leaves: u32,
+    padding: [felt; 3],
+    nodes: [Keccak256Digest; 32]
+}

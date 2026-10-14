@@ -89,12 +89,14 @@ mod current {
         AuthMultisig,
         AuthMultisigSmart,
         AuthNetworkAccount,
+        AuthTxFeeCollector,
         AuthSingleSig,
         NoAuth,
     };
     use miden_standards_current::account::faucets::{FungibleFaucet, NonFungibleFaucet};
     use miden_standards_current::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
     use miden_standards_current::account::inspection::{AccountSchemaCommitment, CodeInspection};
+    use miden_standards_current::account::note_creator::NoteCreator;
     use miden_standards_current::account::policies::{
         AllowlistManager,
         BasicAllowlist,
@@ -109,7 +111,7 @@ mod current {
         TransferAllowAll,
     };
     use miden_standards_current::account::upgrade::UpgradeManager;
-    use miden_standards_current::account::wallets::{BasicWallet, NoteCreator};
+    use miden_standards_current::account::wallets::BasicWallet;
 
     use super::*;
 
@@ -126,6 +128,7 @@ mod current {
         AuthMultisigSmart::code,
         AuthGuardedMultisig::code,
         AuthNetworkAccount::code,
+        AuthTxFeeCollector::code,
         BurnAllowAll::code,
         BurnOwnerOnly::code,
         MinBurnAmount::code,
@@ -197,7 +200,7 @@ mod current {
     }
 
     fn collect_package(package: &Package, roots: &mut Roots) {
-        for module in package.module_infos() {
+        for module in package.module_descriptors() {
             for (_, procedure) in module.procedures() {
                 roots.insert(
                     format!("{}::{}", module.path(), procedure.name),
@@ -222,7 +225,7 @@ mod current {
         }
         let commitment = Hasher::hash_elements(&elements).to_hex();
 
-        for module in code.as_package().module_infos() {
+        for module in code.as_package().module_descriptors() {
             roots.insert(format!("{}::CODE_COMMITMENT", module.path()), commitment.clone());
         }
     }
@@ -248,12 +251,14 @@ mod previous {
         AuthMultisig,
         AuthMultisigSmart,
         AuthNetworkAccount,
+        AuthTxFeeCollector,
         AuthSingleSig,
         NoAuth,
     };
     use miden_standards_previous::account::faucets::{FungibleFaucet, NonFungibleFaucet};
     use miden_standards_previous::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
     use miden_standards_previous::account::inspection::{AccountSchemaCommitment, CodeInspection};
+    use miden_standards_previous::account::note_creator::NoteCreator;
     use miden_standards_previous::account::policies::{
         AllowlistManager,
         BasicAllowlist,
@@ -268,7 +273,7 @@ mod previous {
         TransferAllowAll,
     };
     use miden_standards_previous::account::upgrade::UpgradeManager;
-    use miden_standards_previous::account::wallets::{BasicWallet, NoteCreator};
+    use miden_standards_previous::account::wallets::BasicWallet;
 
     use super::*;
 
@@ -285,6 +290,7 @@ mod previous {
         AuthMultisigSmart::code,
         AuthGuardedMultisig::code,
         AuthNetworkAccount::code,
+        AuthTxFeeCollector::code,
         BurnAllowAll::code,
         BurnOwnerOnly::code,
         MinBurnAmount::code,
@@ -356,7 +362,7 @@ mod previous {
     }
 
     fn collect_package(package: &Package, roots: &mut Roots) {
-        for module in package.module_infos() {
+        for module in package.module_descriptors() {
             for (_, procedure) in module.procedures() {
                 roots.insert(
                     format!("{}::{}", module.path(), procedure.name),
@@ -381,7 +387,7 @@ mod previous {
         }
         let commitment = Hasher::hash_elements(&elements).to_hex();
 
-        for module in code.as_package().module_infos() {
+        for module in code.as_package().module_descriptors() {
             roots.insert(format!("{}::CODE_COMMITMENT", module.path()), commitment.clone());
         }
     }

@@ -44,15 +44,22 @@ pub fn dummy_execution_proof() -> crate::vm::ExecutionProof {
 pub fn dummy_deferred_execution_proof() -> crate::vm::ExecutionProof {
     use alloc::vec::Vec;
 
-    use miden_core::deferred::{DeferredStateWire, TRUE_DIGEST};
+    use miden_core::deferred::{PrecompileWitness, PrecompileWitnessEntry, Tag};
     use miden_verifier::{HashFunction, PrecompileStatus, StarkProof, VmProof};
+
+    let witness = PrecompileWitness::from_entries(vec![PrecompileWitnessEntry::Join {
+        tag: Tag::AND,
+        lhs: 0,
+        rhs: 0,
+    }])
+    .expect("a logged TRUE is a nonempty obligation");
 
     crate::vm::ExecutionProof::new(
         VmProof {
             proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
-            precompile_root: TRUE_DIGEST,
+            precompile_root: witness.root_unchecked(),
         },
-        PrecompileStatus::Deferred(DeferredStateWire::default()),
+        PrecompileStatus::Deferred(witness),
     )
 }
 

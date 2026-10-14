@@ -1,0 +1,32 @@
+# Semantic stack values shared by the standard components and scripts.
+# Struct fields follow operand-stack order, starting at the top.
+
+pub type Commitment = word
+pub type Uint128 = struct { limb0: u32, limb1: u32, limb2: u32, limb3: u32 }
+pub type Uint256 = struct {
+    limb0: u32,
+    limb1: u32,
+    limb2: u32,
+    limb3: u32,
+    limb4: u32,
+    limb5: u32,
+    limb6: u32,
+    limb7: u32
+}
+pub type BigEndianUint256 = struct {
+    limb7: u32,
+    limb6: u32,
+    limb5: u32,
+    limb4: u32,
+    limb3: u32,
+    limb2: u32,
+    limb1: u32,
+    limb0: u32
+}
+pub type Uint64 = struct { lo: u32, hi: u32 }
+
+# Authentication arguments.
+pub type AuthArgs = word
+
+# An integer encoding transformed without assuming its current limb or byte order.
+pub type EncodedUint256 = struct { limbs: [u32; 8] }

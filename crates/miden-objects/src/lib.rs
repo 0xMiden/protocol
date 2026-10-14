@@ -1,17 +1,38 @@
 #![no_std]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
+pub mod account_file;
 pub mod conversion;
+pub mod decoded;
 pub mod error;
+pub mod note_file;
+
+#[cfg(test)]
+pub(crate) mod test_utils;
 
 pub use error::{ConversionError, ConversionResultExt};
+pub use miden_protobuf::{
+    BuildUnchecked,
+    DecodeMessage,
+    DecodeMessageExt,
+    Decoded,
+    Verify,
+    VerifyWith,
+};
 pub use prost;
 
 /// Generated canonical Protobuf messages.
 pub mod proto {
     pub mod account {
         include!(concat!(env!("OUT_DIR"), "/account.rs"));
+    }
+
+    #[expect(clippy::module_inception)]
+    pub mod account_file {
+        include!(concat!(env!("OUT_DIR"), "/account_file.rs"));
     }
 
     pub mod asset {
@@ -22,8 +43,20 @@ pub mod proto {
         include!(concat!(env!("OUT_DIR"), "/blockchain.rs"));
     }
 
+    /// Test snapshots, excluded from transport descriptors.
+    #[cfg(feature = "testing")]
+    #[expect(clippy::module_inception)]
+    pub mod mock_chain {
+        include!(concat!(env!("OUT_DIR"), "/mock_chain.rs"));
+    }
+
     pub mod note {
         include!(concat!(env!("OUT_DIR"), "/note.rs"));
+    }
+
+    #[expect(clippy::module_inception)]
+    pub mod note_file {
+        include!(concat!(env!("OUT_DIR"), "/note_file.rs"));
     }
 
     pub mod primitives {

@@ -16,28 +16,22 @@ message ExecutionProof {
 }
 
 message MastForest {
-  // Canonically serialized MAST forest.
+  // Hashless serialized MAST forest.
   bytes encoded = 1;
 }
 
-enum PublicKeyVariant {
-  PUBLIC_KEY_VARIANT_UNSPECIFIED = 0;
-  PUBLIC_KEY_VARIANT_ECDSA_K256_KECCAK = 1;
-}
-
 message PublicKey {
-  PublicKeyVariant variant = 1;
-  bytes encoded = 2;
-}
-
-enum SignatureVariant {
-  SIGNATURE_VARIANT_UNSPECIFIED = 0;
-  SIGNATURE_VARIANT_ECDSA_K256_KECCAK = 1;
+  oneof key {
+    // Canonically serialized ECDSA public key.
+    bytes ecdsa_k256_keccak = 1;
+  }
 }
 
 message Signature {
-  SignatureVariant variant = 1;
-  bytes encoded = 2;
+  oneof signature {
+    // Canonically serialized ECDSA signature; authenticity is checked by its consumer.
+    bytes ecdsa_k256_keccak = 1;
+  }
 }
 
 message MerklePath {
@@ -47,6 +41,21 @@ message MerklePath {
 message SparseMerklePath {
   fixed64 empty_nodes_mask = 1;
   repeated Word siblings = 2;
+}
+
+// A partial MMR reconstructed from its peaks and tracked leaf openings.
+message PartialMmr {
+  // Number of leaves in the forest.
+  fixed64 forest = 1;
+  repeated Word peaks = 2;
+  // Unique leaves ordered by strictly increasing position.
+  repeated TrackedMmrLeaf tracked_leaves = 3;
+}
+
+message TrackedMmrLeaf {
+  fixed64 position = 1;
+  Word leaf = 2;
+  repeated Word path = 3;
 }
 
 message MmrDelta {

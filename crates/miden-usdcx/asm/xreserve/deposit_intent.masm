@@ -1,0 +1,265 @@
+# xreserve::deposit_intent
+#
+# Circle's DepositIntent: its wire layout, and the faucet's on-chain realization of it.
+#
+# The mint note does not carry the full deposit intent — only the fields the
+# faucet has no other way to learn. Everything else is written here.
+#
+# Whether the intent is ADMISSIBLE is a separate question, and one that does not need the message:
+# `xreserve::mint_intent::validate` answers it over the carried fields, before anything here runs.
+#
+# The wire form is a fixed 240-byte big-endian header followed by variable-length hookData, staged
+# as u32-LE-packed felts (four wire bytes per felt). Several fields are wider than the value they
+# hold and carry it right-aligned behind a zero pad.
+
+use miden::core::mem
+use miden::protocol::account_id
+use miden::protocol::native_account
+use miden::standards::utils
+use xreserve::domain_config
+use xreserve::packed_mem
+use {
+    MINT_INTENT_FELTS, MINT_INTENT_HOOK_DATA_LEN_FELT_OFF, MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF,
+    MINT_INTENT_LOCAL_TOKEN_FELT_OFF, MINT_INTENT_MAX_FEE_FELT_OFF, MINT_INTENT_NONCE_FELT_OFF,
+    MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF, MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF,
+    MINT_INTENT_WORDS
+} from xreserve::mint_intent
+
+# CONSTANTS — wire-field felt offsets (byte offset / 4)
+# =================================================================================================
+
+pub const MAGIC_FELT_OFF = 0
+pub const VERSION_FELT_OFF = 1
+pub const AMOUNT_FELT_OFF = 2
+pub const REMOTE_DOMAIN_FELT_OFF = 10
+pub const REMOTE_TOKEN_FELT_OFF = 11
+pub const REMOTE_RECIPIENT_FELT_OFF = 19
+pub const LOCAL_TOKEN_FELT_OFF = 27
+pub const LOCAL_DEPOSITOR_FELT_OFF = 35
+pub const MAX_FEE_FELT_OFF = 43
+pub const NONCE_FELT_OFF = 51
+pub const HOOK_DATA_LEN_FELT_OFF = 59
+pub const HOOK_DATA_FELT_OFF = 60
+
+# CONSTANTS — right-alignment pads
+# =================================================================================================
+
+# Where the carried value begins inside the wider field that holds it: the field's limb count minus
+# the value's own. An AccountId is four of a bytes32's eight limbs, an AssetAmount two of a
+# uint256's eight. The source-chain addresses fill their field, so they have no pad.
+pub const BYTES32_ACCOUNT_ID_LIMB_OFF = 4
+pub const UINT256_ASSET_AMOUNT_LIMB_OFF = 6
+
+# CONSTANTS — packed compare values and the header's size
+# =================================================================================================
+
+# the wire magic 0x5a2e0acd (big-endian bytes 5a 2e 0a cd) as the u32-LE-packed felt
+pub const DEPOSIT_INTENT_MAGIC_PACKED = 0xcd0a2e5a
+
+# the wire version 1 (big-endian bytes 00 00 00 01) as the u32-LE-packed felt
+pub const DEPOSIT_INTENT_VERSION_PACKED = 0x01000000
+
+pub const DEPOSIT_INTENT_HEADER_BYTES = 240
+
+# CONSTANTS — where each written value lands
+# =================================================================================================
+
+# The field's own offset plus the right-alignment pad its width implies.
+const WRITE_AMOUNT_FELT_OFF = AMOUNT_FELT_OFF + UINT256_ASSET_AMOUNT_LIMB_OFF
+const WRITE_REMOTE_TOKEN_FELT_OFF = REMOTE_TOKEN_FELT_OFF + BYTES32_ACCOUNT_ID_LIMB_OFF
+const WRITE_REMOTE_RECIPIENT_FELT_OFF = REMOTE_RECIPIENT_FELT_OFF + BYTES32_ACCOUNT_ID_LIMB_OFF
+const WRITE_MAX_FEE_FELT_OFF = MAX_FEE_FELT_OFF + UINT256_ASSET_AMOUNT_LIMB_OFF
+
+# `rebuild` memory locals.
+const DEPOSIT_INTENT_PTR_LOC = 0
+const MINT_INTENT_PTR_LOC = 1
+const AMOUNT_LOC = 2
+const HOOK_DATA_LEN_LOC = 3
+
+# ERRORS
+# =================================================================================================
+
+const ERR_XRESERVE_MINT_NOTE_HOOK_LEN_LIMB = "mint note deposit intent hook data length limb is not a valid u32"
+const ERR_XRESERVE_MINT_NOTE_INTENT_WORDS = "mint note deposit intent attachment word count does not match the intent length"
+const ERR_XRESERVE_DOMAIN_NOT_U32 = "faucet domain config is not a valid u32"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Rebuilds the DepositIntent the attestation signed.
+#!
+#! On return the caller holds a message that is byte-for-byte what Circle signed if and only if the
+#! note was honest. Everything left for the caller is the attestation itself and the binding of the
+#! note's own output values.
+#!
+#! Inputs:  [deposit_intent_ptr, mint_intent_ptr, mint_intent_num_words, amount]
+#! Outputs: [intent_num_bytes]
+#!
+#! Where:
+#! - deposit_intent_ptr is the WORD-ALIGNED base of the region to write, in GLOBAL memory. Only the
+#!   fields the message carries are written; the structural pads are left alone, so the region has
+#!   to read as zero before the call. The hookData tail past the header is fully written by the
+#!   copy.
+#! - mint_intent_ptr is the base of the carried mint intent, INSIDE the caller's hash-verified
+#!   transport region.
+#! - mint_intent_num_words is that region's hash-committed word count, past the attestation. It is
+#!   bound to the carried hookData length here, before anything reads past the fixed prefix.
+#! - amount is the deposited amount as an AssetAmount.
+#! - intent_num_bytes is the wire length the attestation covers.
+#!
+#! Panics if:
+#! - the committed word count disagrees with the carried hookData length.
+#! - a carried limb, or the configured domain, is not a valid u32.
+#! - the carried recipient is not a structurally valid account id.
+#!
+#! Locals:
+#! - 0: deposit_intent_ptr
+#! - 1: mint_intent_ptr
+#! - 2: amount
+#! - 3: the carried hookData length
+#!
+#! Invocation: exec
+@locals(4)
+pub proc rebuild
+    loc_store.DEPOSIT_INTENT_PTR_LOC loc_store.MINT_INTENT_PTR_LOC
+    # => [mint_intent_num_words, amount]
+
+    swap loc_store.AMOUNT_LOC
+    # => [mint_intent_num_words]
+
+    # ---- bind the committed word count BEFORE reading past the fixed prefix ----
+    # the hookData length picks both the keccak extent and the copy length, so nothing may read it
+    # until the note has committed to a region big enough to hold what it claims.
+    loc_load.MINT_INTENT_PTR_LOC add.MINT_INTENT_HOOK_DATA_LEN_FELT_OFF mem_load
+    u32assert.err=ERR_XRESERVE_MINT_NOTE_HOOK_LEN_LIMB
+    dup loc_store.HOOK_DATA_LEN_LOC
+    # => [hook_data_len, mint_intent_num_words]
+
+    # bytes -> packed felts -> words, then past the fixed carried fields
+    exec.packed_mem::div_ceil_four exec.packed_mem::div_ceil_four
+    add.MINT_INTENT_WORDS
+    # => [expected_num_words, mint_intent_num_words]
+
+    assert_eq.err=ERR_XRESERVE_MINT_NOTE_INTENT_WORDS
+    # => []
+
+    # ---- the scheme's own two fields. both constants are already in packed form ----
+    push.0.0
+    push.DEPOSIT_INTENT_VERSION_PACKED push.DEPOSIT_INTENT_MAGIC_PACKED
+    # => [magic, version, 0, 0]
+
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.MAGIC_FELT_OFF mem_storew_le dropw
+    # => []
+
+    # ---- the amount, from the note's own asset value ----
+    loc_load.AMOUNT_LOC loc_load.DEPOSIT_INTENT_PTR_LOC add.WRITE_AMOUNT_FELT_OFF
+    # => [dst_ptr, amount]
+
+    exec.packed_mem::store_byte_swapped
+    # => []
+
+    # ---- the configured destination domain, read here so no caller can influence it ----
+    exec.domain_config::get_configured_domain
+    # => [remote_domain]
+
+    u32assert.err=ERR_XRESERVE_DOMAIN_NOT_U32
+    exec.utils::swap_u32_bytes
+    # => [packed_domain]
+
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.REMOTE_DOMAIN_FELT_OFF mem_store
+    # => []
+
+    # ---- the token identifier: this account's own id, read from the kernel ----
+    exec.native_account::get_id
+    # => [own_id_suffix, own_id_prefix]
+
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.WRITE_REMOTE_TOKEN_FELT_OFF
+    # => [dst_ptr, own_id_suffix, own_id_prefix]
+
+    exec.packed_mem::store_account_id
+    # => []
+
+    # ---- the carried recipient ----
+    # validated here because the output note is addressed with it.
+    loc_load.MINT_INTENT_PTR_LOC exec.load_carried_recipient
+    # => [recipient_suffix, recipient_prefix]
+
+    dup.1 dup.1 exec.account_id::validate_structure
+    # => [recipient_suffix, recipient_prefix]
+
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.WRITE_REMOTE_RECIPIENT_FELT_OFF
+    # => [dst_ptr, recipient_suffix, recipient_prefix]
+
+    exec.packed_mem::store_account_id
+    # => []
+
+    # ---- the two source-chain addresses ----
+    # each fills its whole field, so the copy is the same verbatim bytes32 move the nonce takes.
+    loc_load.MINT_INTENT_PTR_LOC add.MINT_INTENT_LOCAL_TOKEN_FELT_OFF
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.LOCAL_TOKEN_FELT_OFF
+    # => [dst_ptr, src_ptr]
+
+    exec.packed_mem::memcopy_bytes32
+    # => []
+
+    loc_load.MINT_INTENT_PTR_LOC add.MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.LOCAL_DEPOSITOR_FELT_OFF
+    # => [dst_ptr, src_ptr]
+
+    exec.packed_mem::memcopy_bytes32
+    # => []
+
+    # ---- the depositor's fee ceiling ----
+    loc_load.MINT_INTENT_PTR_LOC add.MINT_INTENT_MAX_FEE_FELT_OFF mem_load
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.WRITE_MAX_FEE_FELT_OFF
+    # => [dst_ptr, max_fee]
+
+    exec.packed_mem::store_byte_swapped
+    # => []
+
+    # ---- the nonce ----
+    loc_load.MINT_INTENT_PTR_LOC add.MINT_INTENT_NONCE_FELT_OFF
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.NONCE_FELT_OFF
+    # => [dst_ptr, src_ptr]
+
+    exec.packed_mem::memcopy_bytes32
+    # => []
+
+    # ---- the hookData length, and the hookData itself ----
+    loc_load.HOOK_DATA_LEN_LOC exec.utils::swap_u32_bytes
+    # => [packed_hook_data_len]
+
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.HOOK_DATA_LEN_FELT_OFF mem_store
+    # => []
+
+    # hookData is opaque to the faucet — it only has to reach the message verbatim, so the limbs
+    # move unguarded and a bad one surfaces as keccak's own refusal.
+    loc_load.DEPOSIT_INTENT_PTR_LOC add.HOOK_DATA_FELT_OFF
+    loc_load.MINT_INTENT_PTR_LOC add.MINT_INTENT_FELTS
+    loc_load.HOOK_DATA_LEN_LOC exec.packed_mem::div_ceil_four
+    # => [num_elements, src_ptr, dst_ptr]
+
+    exec.mem::memcopy_elements
+    # => []
+
+    loc_load.HOOK_DATA_LEN_LOC add.DEPOSIT_INTENT_HEADER_BYTES
+    # => [intent_num_bytes]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Reads the carried recipient's two account-id felts.
+#!
+#! Inputs:  [mint_intent_ptr]
+#! Outputs: [recipient_suffix, recipient_prefix]
+#!
+#! Invocation: exec
+proc load_carried_recipient
+    dup add.MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF mem_load
+    # => [recipient_prefix, mint_intent_ptr]
+
+    swap add.MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF mem_load
+    # => [recipient_suffix, recipient_prefix]
+end
+

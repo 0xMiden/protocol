@@ -1,3 +1,5 @@
+use {Bool} from miden::protocol_utils::types
+use {LinkMapEntry} from miden::tx_kernel_core::types
 use miden::core::word
 use {LINK_MAP_ENTRY_SIZE, LINK_MAP_REGION_END_PTR, LINK_MAP_REGION_START_PTR, link_map_malloc}
     from miden::tx_kernel_core::memory
@@ -211,7 +213,7 @@ const LINK_MAP_GET_EVENT = event("miden::protocol::link_map::get")
 #! Panics if:
 #! - the host provides faulty advice. See panic sections of assert_entry_ptr_is_valid,
 #!   update_entry, insert_at_head, insert_after_entry and assert_empty_map_op_is_at_head.
-pub proc set
+pub proc set(map_ptr: ptr<ptr<LinkMapEntry>>, key: word, value0: word, value1: word) -> Bool
     emit.LINK_MAP_SET_EVENT
     adv_push adv_push
     # => [operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
@@ -287,7 +289,7 @@ end
 #! - the host provides faulty advice. See panic sections of assert_entry_ptr_is_valid,
 #!   get_existing_value, assert_absent_at_head, assert_absent_after_entry and
 #!   assert_empty_map_op_is_at_head.
-pub proc get
+pub proc get(map_ptr: ptr<ptr<LinkMapEntry>>, key: word) -> (Bool, word, word)
     emit.LINK_MAP_GET_EVENT
     adv_push adv_push
     # => [get_operation, entry_ptr, map_ptr, KEY]
@@ -354,7 +356,7 @@ end
 #!
 #! Inputs:  [map_ptr]
 #! Outputs: [is_empty]
-pub proc is_empty
+pub proc is_empty(map_ptr: ptr<ptr<LinkMapEntry>>) -> Bool
     mem_load eq.0
 end
 
@@ -364,7 +366,7 @@ end
 #!
 #! Inputs:  [map_ptr]
 #! Outputs: [has_next, iter]
-pub proc iter
+pub proc iter(map_ptr: ptr<ptr<LinkMapEntry>>) -> (Bool, ptr<LinkMapEntry>)
     exec.get_head
     # => [entry_ptr]
 
@@ -385,7 +387,9 @@ end
 #!
 #! Inputs:  [iter]
 #! Outputs: [KEY, VALUE0, VALUE1, has_next, next_iter]
-pub proc next_key_double_value
+pub proc next_key_double_value(
+    iter: ptr<LinkMapEntry>
+) -> (word, word, word, Bool, ptr<LinkMapEntry>)
     dup exec.next_key
     # => [KEY, has_next, next_entry_ptr, entry_ptr = iter]
 
@@ -403,7 +407,7 @@ end
 #!
 #! Inputs:  [iter]
 #! Outputs: [KEY, VALUE0, has_next, next_iter]
-pub proc next_key_value
+pub proc next_key_value(iter: ptr<LinkMapEntry>) -> (word, word, Bool, ptr<LinkMapEntry>)
     dup exec.next_key
     # => [KEY, has_next, next_entry_ptr, entry_ptr = iter]
 
@@ -421,7 +425,7 @@ end
 #!
 #! Inputs:  [iter]
 #! Outputs: [KEY, has_next, next_iter]
-pub proc next_key
+pub proc next_key(iter: ptr<LinkMapEntry>) -> (word, Bool, ptr<LinkMapEntry>)
     dup exec.get_next_entry_ptr
     # => [next_entry_ptr, entry_ptr = iter]
 
@@ -442,7 +446,7 @@ end
 #!
 #! Panics if:
 #! - the KEY is not less than the key in the head of the map, unless the map is empty.
-proc insert_at_head
+proc insert_at_head(map_ptr: ptr<ptr<LinkMapEntry>>, key: word, value0: word, value1: word)
     exec.link_map_malloc
     # => [entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
@@ -501,7 +505,7 @@ end
 #!
 #! Panics if:
 #! - the key in the entry does not match the provided KEY.
-proc update_entry
+proc update_entry(entry_ptr: ptr<LinkMapEntry>, key: word, value0: word, value1: word)
     dup movdn.5
     # => [entry_ptr, KEY, entry_ptr, VALUE0, VALUE1]
 
@@ -521,7 +525,13 @@ end
 #! - the KEY is not greater than the key in the prev entry.
 #! - the KEY is not less than the key in prev_entry.next_entry, unless the prev entry is the last
 #!   one in the map.
-proc insert_after_entry
+proc insert_after_entry(
+    prev_entry_ptr: ptr<LinkMapEntry>,
+    map_ptr: ptr<ptr<LinkMapEntry>>,
+    key: word,
+    value0: word,
+    value1: word
+)
     movdn.5
     # => [map_ptr, KEY, prev_entry_ptr, VALUE0, VALUE1]
 
@@ -602,7 +612,13 @@ end
 #!
 #! Inputs:  [entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 #! Outputs: []
-proc insert_pair
+proc insert_pair(
+    entry_ptr: ptr<LinkMapEntry>,
+    map_ptr: ptr<ptr<LinkMapEntry>>,
+    key: word,
+    value0: word,
+    value1: word
+)
     swap dup.1
     # => [entry_ptr, map_ptr, entry_ptr, KEY, VALUE0, VALUE1]
 
@@ -632,7 +648,7 @@ end
 #!
 #! Panics if:
 #! - the KEY is not less than the key in the head of the map, unless the map is empty.
-proc assert_absent_at_head
+proc assert_absent_at_head(map_ptr: ptr<ptr<LinkMapEntry>>, key: word)
     dup exec.is_empty
     # => [is_empty, map_ptr, KEY]
 
@@ -661,7 +677,7 @@ end
 #! Panics if:
 #! - the KEY is not greater than the key in the entry.
 #! - the KEY is not less than the key in entry.next_entry, unless the entry is the last one in the map.
-proc assert_absent_after_entry
+proc assert_absent_after_entry(entry_ptr: ptr<LinkMapEntry>, key: word)
     movdn.4 dupw
     # => [KEY, KEY, entry_ptr]
 
@@ -697,7 +713,7 @@ end
 #!
 #! Panics if:
 #! - the key in the entry does not match KEY.
-proc get_existing_value
+proc get_existing_value(entry_ptr: ptr<LinkMapEntry>, key: word) -> (word, word)
     movdn.4 dup.4
     # => [entry_ptr, KEY, entry_ptr]
 
@@ -715,7 +731,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [has_next]
-proc has_next
+proc has_next(entry_ptr: ptr<LinkMapEntry>) -> Bool
     exec.get_next_entry_ptr eq.0 not
 end
 
@@ -723,7 +739,7 @@ end
 #!
 #! Inputs:  [entry_ptr, next_entry_ptr]
 #! Outputs: []
-proc set_next_entry_ptr
+proc set_next_entry_ptr(entry_ptr: ptr<LinkMapEntry>, next_entry_ptr: ptr<LinkMapEntry>)
     add.NEXT_ENTRY_PTR_OFFSET mem_store
     # => []
 end
@@ -732,7 +748,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [next_entry_ptr]
-proc get_next_entry_ptr
+proc get_next_entry_ptr(entry_ptr: ptr<LinkMapEntry>) -> ptr<LinkMapEntry>
     add.NEXT_ENTRY_PTR_OFFSET mem_load
     # => [next_entry_ptr]
 end
@@ -741,7 +757,7 @@ end
 #!
 #! Inputs:  [entry_ptr, prev_entry_ptr]
 #! Outputs: []
-proc set_prev_entry_ptr
+proc set_prev_entry_ptr(entry_ptr: ptr<LinkMapEntry>, prev_entry_ptr: ptr<LinkMapEntry>)
     add.PREV_ENTRY_PTR_OFFSET mem_store
     # => []
 end
@@ -750,7 +766,7 @@ end
 #!
 #! Inputs:  [entry_ptr, VALUE0, VALUE1]
 #! Outputs: []
-proc set_value
+proc set_value(entry_ptr: ptr<LinkMapEntry>, value0: word, value1: word)
     dup movdn.5
     # => [entry_ptr, VALUE0, entry_ptr, VALUE1]
 
@@ -765,7 +781,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [VALUE0, VALUE1]
-proc get_values
+proc get_values(entry_ptr: ptr<LinkMapEntry>) -> (word, word)
     dup exec.get_value1
     # => [VALUE1, entry_ptr]
 
@@ -777,7 +793,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [VALUE0]
-proc get_value0
+proc get_value0(entry_ptr: ptr<LinkMapEntry>) -> word
     padw movup.4
     # => [entry_ptr, pad(4)]
 
@@ -789,7 +805,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [VALUE1]
-proc get_value1
+proc get_value1(entry_ptr: ptr<LinkMapEntry>) -> word
     padw movup.4
     # => [entry_ptr, pad(4)]
 
@@ -801,7 +817,7 @@ end
 #!
 #! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
-proc set_key
+proc set_key(entry_ptr: ptr<LinkMapEntry>, key: word)
     add.KEY_OFFSET mem_storew_le dropw
 end
 
@@ -809,7 +825,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [KEY]
-proc get_key
+proc get_key(entry_ptr: ptr<LinkMapEntry>) -> word
     padw movup.4
     # => [entry_ptr, pad(4)]
 
@@ -821,7 +837,7 @@ end
 #!
 #! Inputs:  [map_ptr, entry_ptr]
 #! Outputs: []
-proc set_head
+proc set_head(map_ptr: ptr<ptr<LinkMapEntry>>, entry_ptr: ptr<LinkMapEntry>)
     mem_store
 end
 
@@ -829,7 +845,7 @@ end
 #!
 #! Inputs:  [map_ptr]
 #! Outputs: [entry_ptr]
-proc get_head
+proc get_head(map_ptr: ptr<ptr<LinkMapEntry>>) -> ptr<LinkMapEntry>
     mem_load
 end
 
@@ -837,7 +853,7 @@ end
 #!
 #! Inputs:  [entry_ptr, map_ptr]
 #! Outputs: []
-proc set_map_ptr
+proc set_map_ptr(entry_ptr: ptr<LinkMapEntry>, map_ptr: ptr<ptr<LinkMapEntry>>)
     mem_store
 end
 
@@ -845,7 +861,7 @@ end
 #!
 #! Inputs:  [entry_ptr]
 #! Outputs: [map_ptr]
-proc get_map_ptr
+proc get_map_ptr(entry_ptr: ptr<LinkMapEntry>) -> ptr<ptr<LinkMapEntry>>
     mem_load
 end
 
@@ -856,7 +872,7 @@ end
 #!
 #! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
-proc assert_key_is_equal
+proc assert_key_is_equal(entry_ptr: ptr<LinkMapEntry>, key: word)
     exec.get_key swapw
     # => [KEY, ENTRY_KEY]
 
@@ -868,7 +884,7 @@ end
 #!
 #! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
-proc assert_key_is_greater
+proc assert_key_is_greater(entry_ptr: ptr<LinkMapEntry>, key: word)
     exec.get_key
     # => [ENTRY_KEY, KEY]
 
@@ -879,7 +895,7 @@ end
 #!
 #! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
-proc assert_key_is_less
+proc assert_key_is_less(entry_ptr: ptr<LinkMapEntry>, key: word)
     exec.get_key
     # => [ENTRY_KEY, KEY]
 
@@ -906,7 +922,7 @@ end
 #!
 #! Panics if:
 #! - the map is empty and the provided operation is not the *AT_HEAD variant.
-proc assert_empty_map_op_is_at_head
+proc assert_empty_map_op_is_at_head(map_ptr: ptr<ptr<LinkMapEntry>>, is_at_head_op: Bool)
     exec.is_empty
     # => [is_empty_map, is_at_head_op]
 
@@ -928,7 +944,7 @@ end
 #!   - entry ptr is "link map entry"-aligned, i.e. entry_ptr % LINK_MAP_ENTRY_SIZE == 0. This
 #!     works because every entry ptr is a multiple of LINK_MAP_ENTRY_SIZE.
 #!   - entry's map ptr is equal to the given map_ptr.
-proc assert_entry_ptr_is_valid
+proc assert_entry_ptr_is_valid(entry_ptr: ptr<LinkMapEntry>, map_ptr: ptr<ptr<LinkMapEntry>>)
     # Check entry pointer is in valid memory range.
     # -------------------------------------------------------------------------------------------------
     # memory pointers must fit into a u32

@@ -8,6 +8,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::TransactionInputError;
 use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
@@ -29,7 +30,12 @@ use miden_protocol::{Felt, Word};
 use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
+use miden_tx::{
+    NoteCheckerError,
+    NoteConsumptionChecker,
+    TransactionExecutor,
+    TransactionExecutorError,
+};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -199,7 +205,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // First failing note.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error(),
+        first_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -212,7 +218,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // Second failing note.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error(),
+        second_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -348,7 +354,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // First failing note should be the note that does not cause epilogue failure.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error(),
+        first_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -361,7 +367,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // Second failing note should be the note that causes epilogue failure.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error(),
+        second_failed.error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::FailedAssertion { .. },
@@ -766,6 +772,38 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
         .await;
 
     assert_eq!(format!("{:?}", consumption_check_result), expected);
+
+    Ok(())
+}
+
+/// Checks that the [`NoteConsumptionChecker`] errors during the static check if duplicated input
+/// notes were provided.
+#[tokio::test]
+async fn note_checker_rejects_duplicate_notes() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+    let block_ref = mock_chain.latest_block_header().block_num();
+
+    let mock_tx = mock_chain.build_transaction(account.id()).build()?;
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let duplicate_notes = vec![note.clone(), note.clone()];
+
+    let checker_error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            account.id(),
+            block_ref,
+            duplicate_notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .expect_err("checker should return the duplicate input note error");
+
+    assert_matches!(
+        checker_error,
+        NoteCheckerError::TransactionInputs(TransactionInputError::DuplicateInputNote(nullifier)) if nullifier == note.nullifier()
+    );
 
     Ok(())
 }

@@ -7,7 +7,7 @@ use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
-use {Asset} from miden::protocol::types
+use {Asset, BlockNumber} from miden::protocol::types
 use miden::standards::assets::fungible_asset
 use miden::standards::fees
 use miden::standards::notes::tx_fee
@@ -52,7 +52,7 @@ const MAX_CONVERTED_AMOUNT_HI_LIMB = 0x80000000
 const U32_LIMB_MULTIPLIER = 0x0000000100000000
 
 # Domain-separation tag for the fee note's serial number ("fee" in hex): the serial number is
-# derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce, account_id_suffix,
+# derived as hash(FEE_DOMAIN || [serial_number_block, initial_nonce, account_id_suffix,
 # account_id_prefix]) with FEE_DOMAIN = [FEE_DOMAIN_TAG, 0, 0, 0], so a fee note's serial number
 # cannot collide with serial numbers derived from similar tuples in other contexts.
 const FEE_DOMAIN_TAG = 0xFEE
@@ -263,35 +263,40 @@ end
 #! Creates a new TX_FEE output note and funds it with the provided asset from the
 #! account's vault.
 #!
-#! The note's serial number is derived as hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
+#! The note's serial number is derived as hash(FEE_DOMAIN || [serial_number_block, initial_nonce,
 #! account_id_suffix, account_id_prefix]).
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Inputs:  [serial_number_block, ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:
+#! - serial_number_block is the block number used to derive the note's serial number.
 #! - ASSET_ID is the asset ID of the fee payment asset.
 #! - ASSET_VALUE is the value of the fee payment asset.
 #!
 #! Panics if:
+#! - serial_number_block is not a u32.
 #! - the account vault holds less of the payment asset than the amount to be paid.
 #! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
-pub proc create_and_fund_fee_note(asset: Asset)
+pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, asset: Asset)
+    u32assert
+    # => [serial_number_block, ASSET_ID, ASSET_VALUE]
+
     # derive the note's serial number
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
+    # => [account_id_suffix, account_id_prefix, serial_number_block, ASSET_ID, ASSET_VALUE]
 
     exec.active_account::get_nonce
-    # => [initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
+    # => [initial_nonce, account_id_suffix, account_id_prefix, serial_number_block, ASSET_ID, ASSET_VALUE]
 
-    exec.tx::get_reference_block_number
-    # => [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
+    movup.3
+    # => [serial_number_block, initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
 
     # domain-separate the serial number by hashing the tuple with the FEE domain tag
     push.0.0.0 push.FEE_DOMAIN_TAG
-    # => [FEE_DOMAIN, [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix],
+    # => [FEE_DOMAIN, [serial_number_block, initial_nonce, account_id_suffix, account_id_prefix],
     #     ASSET_ID, ASSET_VALUE]
 
     exec.poseidon2::merge
@@ -346,7 +351,7 @@ end
 #! in the cycle estimate and the fee. This prices each network note through its target account's
 #! fee policy via an FPI call, which requires that target to be provisioned as a foreign account.
 #!
-#! Inputs:  [num_extra_cycles, CONVERSION_INFO]
+#! Inputs:  [num_extra_cycles, CONVERSION_INFO, serial_number_block]
 #! Outputs: [total_sponsored_fee_amount]
 #!
 #! Where:
@@ -354,6 +359,7 @@ end
 #!   the end of the authentication procedure.
 #! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
 #!   word if no conversion info was committed (only accepted when the computed fee is zero).
+#! - serial_number_block is the block number used to derive the fee note's serial number.
 #! - total_sponsored_fee_amount is the total amount the sponsorship step moved into sponsorship
 #!   notes.
 #!
@@ -365,68 +371,72 @@ end
 #!   maximum cycle count.
 #! - the computed fee is non-zero and CONVERSION_INFO is the empty word.
 #! - the computed fee is non-zero and CONVERSION_INFO is not the native conversion info.
+#! - the computed fee is non-zero and serial_number_block is not a u32.
 #! - the account vault holds less of the fee asset than the amount to be paid.
 #! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
-pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> felt
+pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo, serial_number_block: BlockNumber) -> felt
     # sponsor any network output notes before the fee is computed, so the sponsorship notes
     # this creates are counted by both the cycle estimate and compute_fee.
     exec.tx::get_fee_asset_id
-    # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO]
+    # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO, serial_number_block]
 
     exec.fees::create_network_note_sponsorships
-    # => [total_sponsored_fee_amount, num_extra_cycles, CONVERSION_INFO]
+    # => [total_sponsored_fee_amount, num_extra_cycles, CONVERSION_INFO, serial_number_block]
 
-    movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, total_sponsored_fee_amount]
+    movdn.6
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
 
     exec.apply_cycle_margins
-    # => [num_estimated_extra_cycles, CONVERSION_INFO, total_sponsored_fee_amount]
+    # => [num_estimated_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
 
     # no output notes are excluded from the fee computation
     padw movup.4
     # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, CONVERSION_INFO,
-    #     total_sponsored_fee_amount]
+    #     serial_number_block, total_sponsored_fee_amount]
 
     exec.tx::compute_fee
-    # => [fee_amount, CONVERSION_INFO, total_sponsored_fee_amount]
+    # => [fee_amount, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
 
     dup eq.0
     if.true
         # a zero fee requires no fee note
-        drop dropw
+        drop dropw drop
         # => [total_sponsored_fee_amount]
     else
         movdn.4
-        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
+        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount]
 
         # a non-zero fee requires committed conversion info
         exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
-        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
+        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount]
 
         # pin the payment to the native fee asset at 1-to-1 rate
         dupw exec.native_conversion_info assert_eqw.err=ERR_FEE_CONVERSION_INFO_NOT_NATIVE
-        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
+        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount]
 
         # convert the fee amount into the payment asset's amount
         # (CONVERSION_INFO reads [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den])
         movup.2 movup.3 movup.4
         # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix,
-        #     total_sponsored_fee_amount]
+        #     serial_number_block, total_sponsored_fee_amount]
 
         movup.2 swap
         # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix,
-        #     total_sponsored_fee_amount]
+        #     serial_number_block, total_sponsored_fee_amount]
 
         exec.convert_amount
-        # => [payment_amount, faucet_id_suffix, faucet_id_prefix, total_sponsored_fee_amount]
+        # => [payment_amount, faucet_id_suffix, faucet_id_prefix, serial_number_block, total_sponsored_fee_amount]
 
         movdn.2
-        # => [faucet_id_suffix, faucet_id_prefix, payment_amount, total_sponsored_fee_amount]
+        # => [faucet_id_suffix, faucet_id_prefix, payment_amount, serial_number_block, total_sponsored_fee_amount]
 
         exec.fungible_asset::create
-        # => [ASSET_ID, ASSET_VALUE, total_sponsored_fee_amount]
+        # => [ASSET_ID, ASSET_VALUE, serial_number_block, total_sponsored_fee_amount]
+
+        movup.8
+        # => [serial_number_block, ASSET_ID, ASSET_VALUE, total_sponsored_fee_amount]
 
         exec.create_and_fund_fee_note
         # => [total_sponsored_fee_amount]

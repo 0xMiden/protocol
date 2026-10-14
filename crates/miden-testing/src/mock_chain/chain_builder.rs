@@ -55,7 +55,7 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use miden_standards::account::auth::SponsorshipPolicy;
+use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::note_creator::NoteCreator;
@@ -66,7 +66,6 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
@@ -124,6 +123,7 @@ pub struct MockChainBuilder {
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
     rng: RandomCoin,
+    validator_signing_keys: Option<Vec<SigningKey>>,
     // Fee parameters.
     fee_faucet_id: AccountId,
     verification_base_fee: u32,
@@ -139,6 +139,9 @@ impl MockChainBuilder {
     /// overwritten using [`Self::fee_faucet_id`].
     ///
     /// The `verification_base_fee` is initialized to 0 which means no fees are required by default.
+    ///
+    /// By default, three random validator signing keys are generated when building the chain.
+    /// Use [`Self::validator_signing_keys`] to supply the keys instead.
     pub fn new() -> Self {
         let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into().expect("account ID should be valid");
 
@@ -147,6 +150,7 @@ impl MockChainBuilder {
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
             rng: RandomCoin::new(Default::default()),
+            validator_signing_keys: None,
             fee_faucet_id,
             verification_base_fee: 0,
         }
@@ -187,6 +191,19 @@ impl MockChainBuilder {
     /// See [`FeeParameters`] for more details.
     pub fn verification_base_fee(mut self, verification_base_fee: u32) -> Self {
         self.verification_base_fee = verification_base_fee;
+        self
+    }
+
+    /// Sets the validator signing keys for genesis and subsequent blocks, until validator rotation.
+    ///
+    /// By default, three random keys are generated. Supplied keys may be in any order; the genesis
+    /// [`ValidatorConfig`] and signatures follow the config's canonical public key order. All keys
+    /// must sign each block.
+    ///
+    /// [`Self::build`] returns an error if the set is empty, contains duplicate keys, or exceeds
+    /// [`ValidatorConfig::MAX_VALIDATORS`].
+    pub fn validator_signing_keys(mut self, keys: Vec<SigningKey>) -> Self {
+        self.validator_signing_keys = Some(keys);
         self
     }
 
@@ -256,9 +273,16 @@ impl MockChainBuilder {
         let fee_parameters = FeeParameters::new(self.verification_base_fee);
         let protocol_config = ProtocolConfig::current(AssetId::new_fungible(self.fee_faucet_id))
             .context("failed to build the genesis protocol config")?;
-        let validator_secret_keys: Vec<SigningKey> =
-            (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect();
-        let validator_config = ValidatorConfig::from_signers(&validator_secret_keys);
+        let validator_secret_keys = self
+            .validator_signing_keys
+            .unwrap_or_else(|| (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect());
+        let quorum = u16::try_from(validator_secret_keys.len())
+            .context("genesis validator count exceeds u16::MAX")?;
+        let validator_config = ValidatorConfig::new(
+            validator_secret_keys.iter().map(|signer| signer.public_key()).collect(),
+            quorum,
+        )
+        .context("failed to build the genesis validator config")?;
 
         let header = BlockHeader::new(
             prev_block_commitment,
@@ -381,10 +405,12 @@ impl MockChainBuilder {
             basic_constant_fee_policy =
                 basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
         }
-        // `with_allowed_notes` always allowlists the config note, which the network auth flow
-        // prices if it is ever consumed, so schedule it too.
-        basic_constant_fee_policy = basic_constant_fee_policy
-            .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+        // `AuthNetworkAccount::new` allowlists its default notes on top, which the network auth
+        // flow prices if they are ever consumed, so schedule them too.
+        for note_script in AuthNetworkAccount::default_allowed_note_scripts() {
+            basic_constant_fee_policy =
+                basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        }
 
         let fee_policy_manager = FeePolicyManager::builder()
             .active_fee_policy(basic_constant_fee_policy.into())
@@ -811,7 +837,8 @@ impl MockChainBuilder {
     /// Creates a new TX_FEE note from the provided parameters and adds it to the list of genesis
     /// notes.
     ///
-    /// In the created [`MockChain`], the note will be immediately spendable by any account.
+    /// In the created [`MockChain`], the note can be consumed right away by an account whose own
+    /// code collects its assets.
     pub fn add_tx_fee_note(
         &mut self,
         sender_account_id: AccountId,

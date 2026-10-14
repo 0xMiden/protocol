@@ -147,6 +147,12 @@ fn validate_proc_policies(
 ///
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
+/// # Security
+///
+/// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
+/// [`AuthMultisig`], so a procedure with such a policy should seal the notes it creates for the
+/// reasons described there.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,

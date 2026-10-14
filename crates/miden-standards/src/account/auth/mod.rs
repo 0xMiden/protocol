@@ -1,11 +1,17 @@
 mod approver;
 pub use approver::{Approver, ApproverSet};
 
+mod eip712;
+pub use eip712::{Eip712Digest, Eip712TransactionSummary};
+
 mod fee;
 pub use fee::{FeeConversionInfo, commit_fee_conversion_info};
 
 mod no_auth;
 pub use no_auth::NoAuth;
+
+mod tx_fee_collector;
+pub use tx_fee_collector::AuthTxFeeCollector;
 
 mod singlesig;
 pub use singlesig::AuthSingleSig;

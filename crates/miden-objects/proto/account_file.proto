@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+// The account file format.
+package account_file;
+
+import "account_state.proto";
+
+// A secret key of one of the protocol's supported authentication schemes.
+message AuthSecretKey {
+  oneof key {
+    // Canonically serialized ECDSA secp256k1 signing key.
+    bytes ecdsa_k256_keccak = 1;
+    // Canonically serialized Falcon512-Poseidon2 secret key.
+    bytes falcon512_poseidon2 = 2;
+  }
+}
+
+message AccountFile {
+  oneof version {
+    AccountFileV1 v1 = 1;
+  }
+}
+
+message AccountFileV1 {
+  account.Account account = 1;
+  repeated AuthSecretKey auth_secret_keys = 2;
+}

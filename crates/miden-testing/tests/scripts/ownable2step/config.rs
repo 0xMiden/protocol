@@ -9,10 +9,10 @@ use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS};
 use miden_standards::errors::standards::{
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
     ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC,
-    ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_OWNER_CONFIG_UNKNOWN_SELECTOR,
+    ERR_OWNER_CONFIG_UNKNOWN_VARIANT,
 };
 use miden_standards::note::config::{OwnerConfig, OwnerConfigNote};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
@@ -135,9 +135,9 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let account = create_ownable_account(owner)?;
@@ -146,7 +146,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
@@ -154,11 +154,11 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNKNOWN_VARIANT);
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
@@ -169,7 +169,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // TransferOwnership selector (0) but only one storage item instead of the expected three
+    // TransferOwnership variant (0) but only one storage item instead of the expected three
     let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
@@ -231,7 +231,10 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
     Ok(())
 }
 

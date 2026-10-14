@@ -19,6 +19,13 @@ permissions:
 
 jobs:
   test:
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name != github.repository ||
+        github.event.pull_request.head.ref != 'next' ||
+        github.event.pull_request.base.ref != 'main'
+      }}
     name: test
     runs-on: warp-ubuntu-latest-x64-8x
     steps:
@@ -42,8 +49,17 @@ jobs:
         run: make test-release-build
       - name: test
         run: make test-release # runs without debug mode
+      - name: Test protobuf build support
+        run: cargo test -p miden-protobuf --all-features --locked
 
   doc-tests:
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name != github.repository ||
+        github.event.pull_request.head.ref != 'next' ||
+        github.event.pull_request.base.ref != 'main'
+      }}
     name: doc-tests
     runs-on: warp-ubuntu-latest-x64-8x
     steps:

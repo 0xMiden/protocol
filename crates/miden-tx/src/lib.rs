@@ -15,6 +15,7 @@ pub use executor::{
     MastForestStore,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
+    NoteFailure,
     ProgramExecutor,
     SuccessfulNote,
     TransactionExecutor,

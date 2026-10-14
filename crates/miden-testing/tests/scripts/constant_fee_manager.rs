@@ -22,7 +22,6 @@ use miden_standards::account::fees::{
     ConstantFeeManager,
     FeePolicyManager,
 };
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
     ERR_FEE_ASSET_ID_MISMATCH,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT,
@@ -104,7 +103,6 @@ pub(super) fn build_manageable_fee_account(
         .build();
 
     Ok(NetworkAccount::builder([7; 32], admin_note_roots, fee_policy_manager)?
-        .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_component(ConstantFeeManager::for_basic_constant_fee_policy())

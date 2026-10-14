@@ -1,8 +1,16 @@
-use {ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_NONCE_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_GET_CODE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_VAULT_ROOT_OFFSET, ACCOUNT_GET_ITEM_OFFSET, ACCOUNT_HAS_STORAGE_SLOT_OFFSET, ACCOUNT_GET_MAP_ITEM_OFFSET, ACCOUNT_GET_ASSET_OFFSET, ACCOUNT_GET_NUM_PROCEDURES_OFFSET, ACCOUNT_GET_PROCEDURE_ROOT_OFFSET, ACCOUNT_HAS_PROCEDURE_OFFSET}
+use {
+    AccountId,
+    AccountProcedureRoot,
+    AssetId,
+    AssetValue,
+    Bool,
+    NoteStorageCommitment,
+    StorageMapKey,
+    StorageSlotId,
+} from miden::protocol::types
+use {ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_NONCE_OFFSET, ACCOUNT_GET_CODE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_VAULT_ROOT_OFFSET, ACCOUNT_GET_ITEM_OFFSET, ACCOUNT_HAS_STORAGE_SLOT_OFFSET, ACCOUNT_GET_MAP_ITEM_OFFSET, ACCOUNT_GET_ASSET_OFFSET, ACCOUNT_GET_NUM_PROCEDURES_OFFSET, ACCOUNT_GET_PROCEDURE_ROOT_OFFSET, ACCOUNT_HAS_PROCEDURE_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::core::word
-use {AccountId, AccountProcedureRoot, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId}
-    from miden::protocol::types
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -74,34 +82,6 @@ end
 # COMMITMENTS
 # -------------------------------------------------------------------------------------------------
 
-#! Computes and returns commitment to the state of the active account.
-#!
-#! Inputs:  []
-#! Outputs: [ACCOUNT_COMMITMENT]
-#!
-#! Where:
-#! - ACCOUNT_COMMITMENT is the commitment of the account data.
-#!
-#! Panics if:
-#! - the invocation of this procedure does not originate from the account context.
-#!
-#! Invocation: exec
-pub proc compute_commitment() -> word
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
-
-    push.ACCOUNT_COMPUTE_COMMITMENT_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [ACCOUNT_COMMITMENT, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [ACCOUNT_COMMITMENT]
-end
-
 #! Gets the code commitment of the active account.
 #!
 #! Notice that the account code cannot be changed during the user code execution, so the code
@@ -158,7 +138,7 @@ end
 #! - STORAGE_COMMITMENT is the commitment of the account storage.
 #!
 #! Invocation: exec
-pub proc compute_storage_commitment() -> word
+pub proc compute_storage_commitment() -> NoteStorageCommitment
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]

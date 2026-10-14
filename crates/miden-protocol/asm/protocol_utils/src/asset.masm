@@ -1,3 +1,5 @@
+use {AccountId, Asset, AssetId, AssetValue, AssetClass, AssetMetadata, AssetComposition, AssetAmount} from miden::protocol_utils::types
+
 # ERRORS
 # =================================================================================================
 
@@ -64,7 +66,7 @@ const METADATA_RESERVED_MASK = 0xffffffc0 # lower 8 bits: 0b1100_0000
 #! - ptr is the memory address where the asset will be stored.
 #! - ASSET_ID is the 4-element word representing the asset ID.
 #! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc store
+pub proc store(dest: ptr<Asset>, asset: Asset)
     # store asset ID
     movdn.4 dup.4
     # => [ptr, ASSET_ID, ptr, ASSET_VALUE]
@@ -86,7 +88,7 @@ end
 #! - ptr is the memory address of the asset.
 #! - ASSET_ID is the 4-element word representing the asset ID.
 #! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc load
+pub proc load(src: ptr<Asset>) -> Asset
     # load asset value
     padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
     # => [ASSET_VALUE, ptr]
@@ -106,7 +108,7 @@ end
 #! Where:
 #! - faucet_id is the account ID in the asset ID.
 #! - ASSET_ID is the asset ID from which to extract the faucet ID.
-pub proc id_to_faucet_id
+pub proc id_to_faucet_id(asset_id: AssetId) -> (AccountId, AssetId)
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
     dup.3 dup.3
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_ID]
@@ -125,7 +127,7 @@ end
 #! Where:
 #! - faucet_id is the account ID in the asset ID.
 #! - ASSET_ID is the asset ID from which to extract the faucet ID.
-pub proc id_into_faucet_id
+pub proc id_into_faucet_id(asset_id: AssetId) -> AccountId
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
     drop drop
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
@@ -142,7 +144,7 @@ end
 #! Where:
 #! - asset_class is the asset class in the asset ID.
 #! - ASSET_ID is the asset ID from which to extract the asset class.
-pub proc id_to_asset_class
+pub proc id_to_asset_class(asset_id: AssetId) -> (AssetClass, AssetId)
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix]
     dup.1 dup.1
     # => [asset_class_suffix, asset_class_prefix, ASSET_ID]
@@ -156,7 +158,7 @@ end
 #! Where:
 #! - asset_class is the asset class in the asset ID.
 #! - ASSET_ID is the asset ID from which to extract the asset class.
-pub proc id_into_asset_class
+pub proc id_into_asset_class(asset_id: AssetId) -> AssetClass
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix]
     movup.2 drop movup.2 drop
     # => [asset_class_suffix, asset_class_prefix]
@@ -171,7 +173,7 @@ end
 #! - faucet_id_suffix_and_metadata is the faucet ID suffix merged with the asset metadata.
 #! - faucet_id_suffix is the suffix of the account ID.
 #! - asset_metadata is the asset metadata.
-pub proc split_suffix_and_metadata
+pub proc split_suffix_and_metadata(faucet_id_suffix_and_metadata: felt) -> (AssetMetadata, felt)
     u32split
     # => [suffix_metadata_lo, suffix_metadata_hi]
 
@@ -204,7 +206,7 @@ end
 #! - encodes an unknown asset ID version.
 #! - has reserved bits 6 or 7 set.
 #! - encodes an unknown asset composition.
-pub proc validate_metadata
+pub proc validate_metadata(asset_metadata: felt)
     # assert that the metadata fits in a u8
     u32split swap
     # => [hi, asset_metadata]
@@ -240,7 +242,7 @@ end
 #! Where:
 #! - asset_metadata is the asset metadata.
 #! - asset_composition is the composition value (see COMPOSITION_* constants).
-proc metadata_into_composition
+proc metadata_into_composition(asset_metadata: AssetMetadata) -> AssetComposition
     # extract composition bits from the metadata
     u32and.COMPOSITION_MASK u32shr.COMPOSITION_SHIFT
     # => [asset_composition]
@@ -254,7 +256,7 @@ end
 #! Where:
 #! - ASSET_ID is the asset ID from which to extract the composition.
 #! - asset_composition is the composition value (see COMPOSITION_* constants).
-pub proc id_to_composition
+pub proc id_to_composition(asset_id: AssetId) -> (AssetComposition, AssetId)
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
     dup.2
     # => [faucet_id_suffix_and_metadata, ASSET_ID]
@@ -274,7 +276,7 @@ end
 #! Where:
 #! - ASSET_ID is the asset ID from which to extract the composition.
 #! - asset_composition is the composition value (see COMPOSITION_* constants).
-pub proc id_into_composition
+pub proc id_into_composition(asset_id: AssetId) -> AssetComposition
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
     drop drop
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
@@ -299,7 +301,7 @@ end
 #! Where:
 #! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
-pub proc fungible_value_into_amount_unchecked
+pub proc fungible_value_into_amount_unchecked(asset_value: AssetValue) -> AssetAmount
     movdn.3 drop drop drop
     # => [balance]
 end

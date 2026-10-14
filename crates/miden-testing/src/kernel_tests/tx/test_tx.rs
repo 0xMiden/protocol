@@ -12,6 +12,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountCode,
+    AccountCodePatch,
     AccountComponent,
     AccountDelta,
     AccountStorage,
@@ -924,21 +925,22 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
         .context("failed to build account")?;
 
     let mock_chain = MockChain::builder().build()?;
-    let reference_block = mock_chain.latest_block_header().block_num();
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
     let error = mock_tx.execute().await.unwrap_err();
 
-    // The transaction never set an expiration, so the kernel reports no deadline while the forged
-    // summary claims one.
+    // The transaction never set an expiration delta, so the kernel reports zero while the forged
+    // summary claims 777.
     assert_matches!(
         error,
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::EventError { error: ref event_err, .. }
         ) if matches!(
             event_err.downcast_ref::<TransactionKernelError>(),
-            Some(TransactionKernelError::TransactionSummaryExpirationMismatch { expected, actual })
-                if *expected == BlockNumber::MAX && *actual == reference_block + 777
+            Some(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
+                expected,
+                actual,
+            }) if *expected == 0 && *actual == 777
         )
     );
 
@@ -976,7 +978,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account.id(),
         AccountStoragePatch::default(),
         AccountVaultDelta::default(),
-        None,
+        AccountCodePatch::default(),
         nonce_delta,
     )?;
     let expected_summary = TransactionSummary::new(

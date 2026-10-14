@@ -36,15 +36,15 @@ push.0 gt           # same answer, 16 cycles
 
 ```masm
 # Good: cdrop for ternary selection
-# stack: [b, a, cond]
+# stack: [c, b, a]
 cdrop
-# stack: [a if cond else b]
+# stack: [b if c = 1 else a]
 
 # Bad: branchy equivalent
 if.true
-    drop      # drop b, keep a
-else
     swap drop # drop a, keep b
+else
+    drop      # drop b, keep a
 end
 ```
 

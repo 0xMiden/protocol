@@ -1,11 +1,15 @@
+use {AccountId} from miden::protocol::types
 use miden::standards::utils
 use miden::protocol::account_id
 
 # TYPE ALIASES
 # =================================================================================================
 
-pub type EthereumAddress = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
-pub type EthereumBytes32 = struct { a: felt, b: felt, c: felt, d: felt, e: felt, f: felt, g: felt, h: felt }
+# Two numeric u32 limbs in low-to-high order, with bytes reversed within each limb.
+pub type ByteSwappedU64 = struct { lo: u32, hi: u32 }
+
+pub type EthereumAddress = struct { a: u32, b: u32, c: u32, d: u32, e: u32 }
+pub type EthereumBytes32 = struct { a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32 }
 
 # ERRORS
 # =================================================================================================
@@ -48,7 +52,7 @@ const ERR_BYTES32_PADDING_NONZERO="leading 12 bytes must be zero for a bytes32-e
 #! - the decoded (suffix, prefix) is not a structurally valid AccountId.
 #!
 #! Invocation: exec
-pub proc to_account_id
+pub proc to_account_id(address: EthereumAddress) -> AccountId
     # limb0 must be 0 (most-significant limb, on top)
     assertz.err=ERR_MSB_NONZERO
     # => [limb1, limb2, limb3, limb4]
@@ -102,7 +106,7 @@ end
 #! - to_account_id fails to verify the embedded address.
 #!
 #! Invocation: exec
-pub proc bytes32_to_account_id
+pub proc bytes32_to_account_id(value: EthereumBytes32) -> AccountId
     # the three padding limbs (bytes 0..12) must be 0
     assertz.err=ERR_BYTES32_PADDING_NONZERO
     assertz.err=ERR_BYTES32_PADDING_NONZERO
@@ -126,7 +130,7 @@ end
 #! Outputs: [felt]
 #!
 #! Invocation: exec
-pub proc build_felt
+pub proc build_felt(value: ByteSwappedU64) -> felt
     # --- validate u32 limbs ---
     u32assert2.err=ERR_NOT_U32
     # => [lo_be, hi_be]

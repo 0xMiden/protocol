@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_verifier::{ExecutionClaim, Verifier};
+use miden_verifier::{ExecutionClaim, VerificationError, Verifier};
 
 use crate::BatchVerifierError;
 
@@ -26,6 +26,8 @@ use crate::BatchVerifierError;
 /// taken from the [`ProvenBatch`]'s own fields and are not recomputed from its transactions, so
 /// verification binds nothing that an entity constructing the [`ProvenBatch`] could not also forge.
 /// This verifier must not be relied on at a trust boundary.
+///
+/// The proof also does not cover the precompile claims of the batch's transactions.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     min_proof_security_level: u32,
@@ -76,19 +78,21 @@ impl BatchVerifier {
             stack_outputs,
         );
         let outcome = Verifier::new()
+            .with_min_conjectured_security_level_per_stark(self.min_proof_security_level)
             .verify(&claim, batch.proof())
-            .map_err(BatchVerifierError::BatchVerificationFailed)?;
+            .map_err(|error| match error {
+                VerificationError::InsufficientSecurityLevel { actual, required } => {
+                    BatchVerifierError::InsufficientProofSecurityLevel {
+                        actual,
+                        expected_minimum: required,
+                    }
+                },
+                error => BatchVerifierError::BatchVerificationFailed(error),
+            })?;
         if !outcome.is_complete() {
             return Err(BatchVerifierError::IncompleteProof);
         }
         let verified_security_level = outcome.vm_security_parameters().conjectured_security_level();
-
-        if verified_security_level < self.min_proof_security_level {
-            return Err(BatchVerifierError::InsufficientProofSecurityLevel {
-                actual: verified_security_level,
-                expected_minimum: self.min_proof_security_level,
-            });
-        }
 
         Ok(verified_security_level)
     }

@@ -1,3 +1,4 @@
+use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::types
 # miden::standards::fees::fee_manager
 #
 # Fee estimation reads the procedure root of the active fee policy and dispatches fee estimation
@@ -18,7 +19,6 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::expiration
 
-use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::types
 use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 # DEPENDENCY NOTE

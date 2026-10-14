@@ -47,6 +47,16 @@ impl OrderedTransactionHeaders {
         Self::compute_commitment(self.0.as_slice().iter().map(|tx| (tx.id(), tx.account_id())))
     }
 
+    /// Returns the IDs of the accounts created by these transactions.
+    ///
+    /// Account-creating transactions are identified by their empty initial state commitment.
+    pub fn created_account_ids(&self) -> impl Iterator<Item = AccountId> + '_ {
+        self.0
+            .iter()
+            .filter(|transaction| transaction.initial_state_commitment().is_empty())
+            .map(TransactionHeader::account_id)
+    }
+
     /// Returns a reference to the underlying transaction headers.
     pub fn as_slice(&self) -> &[TransactionHeader] {
         &self.0

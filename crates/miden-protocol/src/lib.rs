@@ -11,6 +11,7 @@ pub mod address;
 pub mod asset;
 pub mod batch;
 pub mod block;
+mod domain_registry;
 pub mod errors;
 pub mod note;
 pub mod package;
@@ -28,6 +29,7 @@ mod constants;
 // ================================================================================================
 
 pub use constants::*;
+pub use domain_registry::ProtocolDomainRegistry;
 pub use miden_core::mast::{MastForest, MastNodeId};
 pub use miden_core::prettier::PrettyPrint;
 pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};
@@ -68,6 +70,7 @@ pub mod utils;
 pub mod vm {
     pub use miden_assembly_syntax::ast::{AttributeSet, QualifiedProcedureName};
     pub use miden_core::advice::{AdviceInputs, AdviceMap, AdviceStack};
+    pub use miden_core::deferred::MAX_PRECOMPILE_ROOTS;
     pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::debug_info::{DebugSourceNodeId, PackageDebugInfo};

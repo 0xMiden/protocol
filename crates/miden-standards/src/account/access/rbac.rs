@@ -624,17 +624,17 @@ mod tests {
         let pauser_role = RoleSymbol::new("DOM_PAUSER")?;
 
         let component: AccountComponent = RoleBasedAccessControl::builder()
-            .role(
-                RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin),
-            )
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
             // DOM_MANAGER administers itself, so ADMIN cannot rotate its membership.
             .role(
-                RoleConfig::new(manager_role.clone()).with_member(manager)
-                    .with_admin(manager_role.clone())
+                RoleConfig::new(manager_role.clone())
+                    .with_member(manager)
+                    .with_admin(manager_role.clone()),
             )
             .role(
-                RoleConfig::new(pauser_role.clone()).with_member(pauser)
-                    .with_admin(manager_role.clone())
+                RoleConfig::new(pauser_role.clone())
+                    .with_member(pauser)
+                    .with_admin(manager_role.clone()),
             )
             .build()?
             .into();

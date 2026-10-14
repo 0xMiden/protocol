@@ -607,7 +607,7 @@ pub(crate) enum ParentValidationError {
 mod tests {
     use assert_matches::assert_matches;
     use miden_core::Word;
-    use miden_crypto::rand::test_utils::rand_value;
+    use rand::random;
 
     use super::*;
 
@@ -622,8 +622,8 @@ mod tests {
 
     #[test]
     fn test_serde() {
-        let chain_commitment = rand_value::<Word>();
-        let note_root = rand_value::<Word>();
+        let chain_commitment = random::<Word>();
+        let note_root = random::<Word>();
         let header = BlockHeader::mock(0, Some(chain_commitment), Some(note_root), &[]);
         let serialized = header.to_bytes();
         let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
@@ -634,7 +634,7 @@ mod tests {
     /// Returns `header` with a protocol upgrade scheduled for block 42.
     fn with_scheduled_upgrade(header: &BlockHeader) -> BlockHeader {
         let next_protocol_config =
-            NextProtocolConfig::new(BlockNumber::from(42u32), rand_value::<Word>()).unwrap();
+            NextProtocolConfig::new(BlockNumber::from(42u32), random::<Word>()).unwrap();
 
         BlockHeader::new(
             header.prev_block_commitment(),

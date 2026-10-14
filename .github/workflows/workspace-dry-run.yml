@@ -30,7 +30,6 @@ jobs:
       - name: Dry-run workspace release
         uses: ./.github/actions/workspace-release
         with:
-          mode: "dry-run"
           verify-branch-head: "false"
           # Honour the same escape hatch as the publish workflow so an intended root change does
           # not fail every push to the release branch.
