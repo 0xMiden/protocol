@@ -449,22 +449,22 @@
   },
   "consume PSWAP note (full fill, network account)": {
     "prologue": 4137,
-    "notes_processing": 7245,
+    "notes_processing": 7259,
     "note_execution": {
-      "0x6eb57862cd6a17f3a287f3132c5caa08c7e2766380628f8d6aad666531429ba7": 7203
+      "0x0cdf9f63c24665966ed0c1ede5fa58aba5cf7a1a02b36df91bc1544c6472cdac": 7217
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15184,
-      "auth_procedure": 10718
+      "total": 15188,
+      "auth_procedure": 10722
     },
     "trace": {
-      "core_rows": 26651,
-      "chiplets_rows": 11914,
-      "poseidon2_permutation_rows": 31760,
-      "range_rows": 2031,
+      "core_rows": 26669,
+      "chiplets_rows": 11922,
+      "poseidon2_permutation_rows": 31824,
+      "range_rows": 2027,
       "chiplets_shape": {
-        "hasher_rows": 8960,
+        "hasher_rows": 8968,
         "bitwise_rows": 1408,
         "memory_rows": 1544,
         "kernel_rom_rows": 1,
@@ -474,22 +474,22 @@
   },
   "consume PSWAP note (partial fill, network account)": {
     "prologue": 4137,
-    "notes_processing": 10221,
+    "notes_processing": 10235,
     "note_execution": {
-      "0x6eb57862cd6a17f3a287f3132c5caa08c7e2766380628f8d6aad666531429ba7": 10179
+      "0x0cdf9f63c24665966ed0c1ede5fa58aba5cf7a1a02b36df91bc1544c6472cdac": 10193
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16516,
-      "auth_procedure": 10922
+      "total": 16520,
+      "auth_procedure": 10926
     },
     "trace": {
-      "core_rows": 30959,
-      "chiplets_rows": 13809,
-      "poseidon2_permutation_rows": 33648,
-      "range_rows": 2159,
+      "core_rows": 30977,
+      "chiplets_rows": 13817,
+      "poseidon2_permutation_rows": 33712,
+      "range_rows": 2153,
       "chiplets_shape": {
-        "hasher_rows": 10272,
+        "hasher_rows": 10280,
         "bitwise_rows": 1800,
         "memory_rows": 1735,
         "kernel_rom_rows": 1,
@@ -499,22 +499,22 @@
   },
   "consume PSWAP note (full fill, public payback, network account)": {
     "prologue": 4128,
-    "notes_processing": 7972,
+    "notes_processing": 7980,
     "note_execution": {
-      "0xd542b6707e76d456e8a33f45ef37187d540444228f0ff721b5e9cc98746b6790": 7930
+      "0x6a02fd22dcd3adb0c2b8589fd225ae2e3bfc274fa660fff51920fe6496786c4a": 7938
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15184,
-      "auth_procedure": 10718
+      "total": 15188,
+      "auth_procedure": 10722
     },
     "trace": {
-      "core_rows": 27369,
-      "chiplets_rows": 12112,
-      "poseidon2_permutation_rows": 32288,
-      "range_rows": 2067,
+      "core_rows": 27381,
+      "chiplets_rows": 12120,
+      "poseidon2_permutation_rows": 32320,
+      "range_rows": 2077,
       "chiplets_shape": {
-        "hasher_rows": 9112,
+        "hasher_rows": 9120,
         "bitwise_rows": 1432,
         "memory_rows": 1566,
         "kernel_rom_rows": 1,
@@ -524,22 +524,22 @@
   },
   "consume PSWAP note (partial fill, public payback, network account)": {
     "prologue": 4128,
-    "notes_processing": 10941,
+    "notes_processing": 10949,
     "note_execution": {
-      "0xd542b6707e76d456e8a33f45ef37187d540444228f0ff721b5e9cc98746b6790": 10899
+      "0x6a02fd22dcd3adb0c2b8589fd225ae2e3bfc274fa660fff51920fe6496786c4a": 10907
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16516,
-      "auth_procedure": 10922
+      "total": 16520,
+      "auth_procedure": 10926
     },
     "trace": {
-      "core_rows": 31670,
-      "chiplets_rows": 13997,
-      "poseidon2_permutation_rows": 34112,
-      "range_rows": 2175,
+      "core_rows": 31682,
+      "chiplets_rows": 14005,
+      "poseidon2_permutation_rows": 34144,
+      "range_rows": 2195,
       "chiplets_shape": {
-        "hasher_rows": 10416,
+        "hasher_rows": 10424,
         "bitwise_rows": 1824,
         "memory_rows": 1755,
         "kernel_rom_rows": 1,
