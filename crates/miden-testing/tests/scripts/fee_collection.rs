@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::error::Error;
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
@@ -40,11 +41,18 @@ use miden_standards::note::{
     FeeSponsorshipNoteStorage,
     NetworkAccountTarget,
     P2idNote,
+    ReclaimError,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockTransaction, assert_transaction_executor_error};
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{NoteConsumptionChecker, NoteConsumptionInfo, NoteFailure, TransactionExecutor};
+use miden_tx::{
+    NoteConsumptionChecker,
+    NoteConsumptionInfo,
+    NoteFailure,
+    SponsorshipRejection,
+    TransactionExecutor,
+};
 use rand::SeedableRng;
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::seq::SliceRandom;
@@ -1420,6 +1428,27 @@ async fn check_notes(
         .await?)
 }
 
+/// Returns the reason the checker rejected the note with `note_id` without executing it.
+///
+/// Panics if the note did not fail, failed in execution, or was rejected for a reason other than
+/// an `R`.
+fn rejection_reason<R: Error + 'static>(info: &NoteConsumptionInfo, note_id: NoteId) -> &R {
+    let failed = info
+        .failed()
+        .iter()
+        .find(|failed| failed.note().id() == note_id)
+        .unwrap_or_else(|| panic!("note {note_id} should have failed"));
+    let NoteFailure::Rejected { reason } = failed.failure() else {
+        panic!("note {note_id} should have been rejected without being executed, got {failed:?}");
+    };
+    reason.downcast_ref::<R>().unwrap_or_else(|| {
+        panic!(
+            "note {note_id} should have been rejected with a {}, got: {reason}",
+            core::any::type_name::<R>()
+        )
+    })
+}
+
 /// Runs the checker and returns the note ids it reports as `(successful, failed)`.
 async fn check_consumability(
     mock_chain: &MockChain,
@@ -1545,9 +1574,11 @@ async fn note_checker_fails_an_orphan_sponsorship_alone(
             "a reclaimable orphan should be executed rather than rejected, and fail there"
         );
     } else {
-        assert!(
-            orphan.is_rejected(),
-            "the account is not the orphan's reclaimer, so it should be rejected without being executed"
+        // the account is not the orphan's reclaimer, so it is rejected without being executed
+        assert_matches!(
+            rejection_reason::<SponsorshipRejection>(&info, orphan.note().id()),
+            SponsorshipRejection::NotReclaimable(ReclaimError::NotReclaimer { account_id, .. })
+                if *account_id == network_account.id()
         );
     }
 
@@ -1606,17 +1637,10 @@ async fn note_checker_rejects_a_sponsorship_naming_another_sponsorship(
         info.failed()
     );
 
-    let chained_failure = info
-        .failed()
-        .iter()
-        .find(|failed| failed.note().id() == chained.id())
-        .context("the chained sponsorship should fail")?;
-    let NoteFailure::Rejected { reason } = chained_failure.failure() else {
-        panic!("the chained sponsorship should be rejected, got {chained_failure:?}");
-    };
-    assert!(
-        reason.to_string().contains("is itself a FEE_SPONSORSHIP note"),
-        "the chained sponsorship should be rejected for naming a sponsorship, got: {reason}"
+    assert_matches!(
+        rejection_reason::<SponsorshipRejection>(&info, chained.id()),
+        SponsorshipRejection::FeatureNoteIsSponsorship { feature_note_id }
+            if *feature_note_id == sponsorship.id()
     );
 
     if include_feature_note {
@@ -1793,10 +1817,11 @@ async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> an
 
     let rejected: Vec<_> = info.failed().iter().filter(|failed| failed.is_rejected()).collect();
     assert_eq!(rejected.len(), 1, "only the wrongly funded sponsorship should be rejected");
-    assert_eq!(rejected[0].note().id(), sponsorship_notes[1].id());
-    assert!(
-        rejected[0].execution_error().is_none(),
-        "a rejected note was never executed, so it has no error"
+    assert_matches!(
+        rejection_reason::<SponsorshipRejection>(&info, sponsorship_notes[1].id()),
+        SponsorshipRejection::WrongFeeAsset { expected, actual }
+            if *expected == AssetId::new_fungible(fee_faucet_id()?)
+                && *actual == other_asset(FEE_AMOUNT)?.id()
     );
 
     let blamed: Vec<_> = info.failed().iter().filter(|failed| failed.is_blamed()).collect();

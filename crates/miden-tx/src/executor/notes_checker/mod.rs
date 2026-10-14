@@ -34,6 +34,7 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
+pub use sponsorship::SponsorshipRejection;
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
