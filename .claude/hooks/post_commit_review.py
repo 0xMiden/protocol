@@ -16,6 +16,7 @@ amended commit until it's clean.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -74,11 +75,18 @@ def main() -> None:
 
 def _commit_failed(payload: dict) -> bool:
     """Return True if the commit did not create a new commit (e.g. nothing
-    to commit). Inspects the tool response text for known failure markers."""
+    to commit). A successful commit summary takes precedence over status output."""
     response = payload.get("tool_response", "")
-    if not isinstance(response, str):
+    if isinstance(response, dict):
+        output = [response[key] for key in ("stdout", "stderr") if isinstance(response.get(key), str)]
+        response = "\n".join(output) if output else json.dumps(response)
+    elif not isinstance(response, str):
         response = json.dumps(response)
     text = response.lower()
+    # A commit summary is specific to a created commit. Later commands (or
+    # even the commit message) may contain git status's failure-like wording.
+    if re.search(r"^\[.+ [0-9a-f]{4,64}\](?: |$)", text, re.MULTILINE):
+        return False
     return any(marker in text for marker in _FAILURE_MARKERS)
 
 
