@@ -15,7 +15,6 @@ use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fun
 use miden::standards::note as std_note
 use miden::standards::note::note_tag
 use miden::standards::notes::p2id
-use {NUM_STORAGE_ITEMS as P2ID_NUM_STORAGE_ITEMS} from miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
 
 # CONSTANTS
@@ -103,10 +102,6 @@ const CALC_FILL_REFERENCE = 1
 # Procedure locals of load_offered_asset
 const OFFERED_REMAINING_ASSET_PTR = 0
 const OFFERED_INITIAL_ASSET_PTR = 8
-
-# authenticate_cancellation locals
-const P2ID_STORAGE_PTR = 0
-const P2ID_PREFIX_PTR = P2ID_STORAGE_PTR + 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -198,7 +193,7 @@ end
 #! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
 #! limb check below).
 #!
-#! Inputs: [offered, fill_reference, fill_amount] (offered on top)
+#! Inputs:  [offered, fill_reference, fill_amount] (offered on top)
 #! Outputs: [payout_amount]
 #!
 @locals(2)
@@ -276,7 +271,7 @@ end
 
 #! Loads and validates either storage layout. Private recipient digests remain opaque.
 #!
-#! Inputs: []
+#! Inputs:  []
 #! Outputs: []
 proc load_storage()
     push.PRIVATE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
@@ -337,7 +332,7 @@ end
 #! Only public mode registers full recipient details for output creation.
 #! Must run after load_storage has populated and validated the active order's storage.
 #!
-#! Inputs: []
+#! Inputs:  []
 #! Outputs: [tag, note_type, RECIPIENT]
 proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     mem_load.PAYBACK_NOTE_TYPE_ITEM
@@ -380,7 +375,7 @@ end
 #! The PSWAP attachment is added before callbacks and cannot be replaced or removed.
 #! Additional public attachments are allowed before sealing.
 #!
-#! Inputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+#! Inputs:  [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 #! Outputs: []
 proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     exec.poseidon2::merge
@@ -409,7 +404,7 @@ end
 # =================================================================================================
 
 #! Prepares and creates the public or private payback.
-#! Inputs: [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+#! Inputs:  [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
 @locals(5)
 # P2ID_NOTE_IDX                : note_idx
@@ -661,29 +656,26 @@ end
 #!
 #! Inputs:  [EXPECTED_RECIPIENT]
 #! Outputs: []
-@locals(8)
 proc authenticate_cancellation(recipient: NoteRecipient)
-    exec.std_note::get_recipient_preimage_with_serial
+    exec.std_note::get_recipient_preimage
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
+    # Verifying the secret serial authorizes cancellation. Its value is unused afterward,
+    # but the public recipient commitments alone must not suffice to cancel an order.
     dropw procref.p2id::main assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => [STORAGE_COMMITMENT]
 
-    # The storage loader authenticates two items and writes eight with its padding.
-    locaddr.P2ID_STORAGE_PTR movdn.4 push.P2ID_NUM_STORAGE_ITEMS movdn.4
-    # => [STORAGE_COMMITMENT, num_storage_items, storage_ptr]
+    exec.p2id::pipe_target_preimage
+    # => [target_id_suffix, target_id_prefix]
 
-    exec.active_note::write_storage_to_memory
-    # => []
-
-    loc_load.P2ID_PREFIX_PTR loc_load.P2ID_STORAGE_PTR exec.account_id::validate_structure
+    drop drop
     # => []
 end
 
 #! Returns the full remaining order balance in a private P2ID to its committed recipient.
 #! Does not add a fill attachment. Fees must be funded separately.
 #!
-#! Inputs: [RECIPIENT, tag]
+#! Inputs:  [RECIPIENT, tag]
 #! Outputs: []
 proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     push.NOTE_TYPE_PRIVATE movup.5
@@ -715,7 +707,7 @@ end
 
 #! Loads the note's single offered asset, asserting it equals the amount the note was created with.
 #!
-#! Inputs: []
+#! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
 #! Panics if:
@@ -757,7 +749,7 @@ end
 #!
 #! Called only after the executing account matches the stored public creator.
 #!
-#! Inputs: []
+#! Inputs:  []
 #! Outputs: []
 #!
 proc handle_reclaim()
@@ -867,7 +859,7 @@ end
 #! first) because the account fill portion must be credited to the consumer's vault
 #! on its own, while the combined total is needed to size the remainder note.
 #!
-#! Inputs: [account_fill_amount, note_fill_amount]
+#! Inputs:  [account_fill_amount, note_fill_amount]
 #! Outputs: []
 #!
 @locals(10)
@@ -1082,7 +1074,7 @@ end
 #! Validates the note arguments and returns the action followed by the two fill amounts.
 #! The reserved element must be zero, and the action must be ACTION_FILL or ACTION_CANCEL.
 #!
-#! Inputs: [action, account_fill, note_fill, reserved]
+#! Inputs:  [action, account_fill, note_fill, reserved]
 #! Outputs: [action, account_fill, note_fill]
 proc parse_note_args(note_args: NoteArgs) -> (u32, AssetAmount, AssetAmount)
     movup.3
@@ -1100,7 +1092,7 @@ end
 
 #! Fills an order using the supplied amounts, with all-zero amounts selecting a full fill.
 #!
-#! Inputs: [account_fill, note_fill]
+#! Inputs:  [account_fill, note_fill]
 #! Outputs: []
 proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     dup.1 eq.0 dup.1 eq.0 and

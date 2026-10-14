@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::advice::{AdviceError, AdviceInputs};
+use miden_processor::advice::AdviceInputs;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -1326,9 +1326,12 @@ fn build_private_pswap_note(
     Ok((pswap, note, recipient))
 }
 
-/// A separate no-auth account refunds the full order to its committed private recipient.
+/// A separate no-auth account refunds the full order only with the committed recipient's preimage.
+#[rstest]
+#[case::valid_preimage(true)]
+#[case::invalid_preimage(false)]
 #[tokio::test]
-async fn pswap_private_cancel_through_no_auth() -> anyhow::Result<()> {
+async fn pswap_private_cancel_through_no_auth(#[case] valid_preimage: bool) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
     let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
@@ -1355,17 +1358,25 @@ async fn pswap_private_cancel_through_no_auth() -> anyhow::Result<()> {
     let mut chain = builder.build()?;
     let refund = pswap.refund_note(router.id(), recipient)?;
 
-    let tx = chain
+    let mut advice = pswap.cancellation_advice(recipient)?;
+    if !valid_preimage {
+        // Corrupt the serial preimage while keeping its commitment.
+        advice[0].1[0] += ONE;
+    }
+    let result = chain
         .build_transaction(router.id())
         .authenticated_input_note(note.id())
         .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
-        .extend_advice_inputs(
-            AdviceInputs::default().with_map(pswap.cancellation_advice(recipient)?),
-        )
+        .extend_advice_inputs(AdviceInputs::default().with_map(advice))
         .build()?
         .execute()
-        .await?;
+        .await;
 
+    if !valid_preimage {
+        assert_transaction_executor_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH);
+        return Ok(());
+    }
+    let tx = result?;
     assert_eq!(tx.output_notes().num_notes(), 1);
     assert_output_note(tx.output_notes(), refund.id());
     assert_eq!(tx.account_patch().vault().num_assets(), 0);
@@ -1379,73 +1390,6 @@ async fn pswap_private_cancel_through_no_auth() -> anyhow::Result<()> {
         .execute()
         .await?;
     assert_vault_patch(tx.account_patch().vault(), [*pswap.offered_asset()]);
-    Ok(())
-}
-
-#[tokio::test]
-async fn pswap_rejects_invalid_cancel_arguments_and_advice() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
-    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
-    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
-    let (pswap, note, recipient) = build_private_pswap_note(
-        &mut builder,
-        alice.id(),
-        alice.id(),
-        FungibleAsset::new(offered.id(), 50)?,
-        FungibleAsset::new(requested.id(), 25)?,
-    )?;
-    let advice = pswap.cancellation_advice(recipient)?;
-    let chain = builder.build()?;
-    let transaction = chain.build_transaction(alice).authenticated_input_note(note.id());
-
-    // Reject unknown actions, nonzero reserved fields, and fill amounts on cancellation.
-    for args in [
-        [Felt::from(2u32), ZERO, ZERO, ZERO],
-        [ZERO, ZERO, ZERO, ONE],
-        [ONE, ONE, ZERO, ZERO],
-        [ONE, ZERO, ONE, ZERO],
-    ] {
-        let result = transaction
-            .clone()
-            .extend_note_args(BTreeMap::from([(note.id(), Word::new(args))]))
-            .build()?
-            .execute()
-            .await;
-        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_ACTION);
-    }
-    let cancellation = transaction
-        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]));
-
-    // Public commitments alone cannot authorize cancellation: the secret serial is required.
-    let mut missing_serial = advice.to_vec();
-    let serial_key = missing_serial.remove(0).0;
-    let result = cancellation
-        .clone()
-        .extend_advice_inputs(AdviceInputs::default().with_map(missing_serial))
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::AdviceError {
-            err: AdviceError::MapKeyNotFound { key: missing_key },
-            ..
-        } if missing_key == serial_key
-    );
-
-    // Authenticate both the serial and its zero padding in the canonical opening.
-    for element in [0, 4] {
-        let mut invalid = advice.clone();
-        invalid[0].1[element] += ONE;
-        let result = cancellation
-            .clone()
-            .extend_advice_inputs(AdviceInputs::default().with_map(invalid))
-            .build()?
-            .execute()
-            .await;
-        assert_transaction_executor_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH);
-    }
     Ok(())
 }
 

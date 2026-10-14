@@ -506,7 +506,7 @@ impl PswapNote {
     }
 
     /// Returns the canonical recipient advice entries for cancelling a private-payback order.
-    /// See [`NoteRecipient::to_advice_map_entries`] for the serial, script, and storage openings.
+    /// See [`NoteRecipient::to_advice_map_entries`] for the serial, script, and storage preimages.
     ///
     /// Knowledge of this preimage authorizes cancellation through any compatible account, but
     /// the refund is forced to the committed recipient. Keep it secret and prove locally.

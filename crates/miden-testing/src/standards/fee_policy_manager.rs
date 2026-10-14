@@ -18,9 +18,8 @@ use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::{Auth, TestTransactionBuilder};
 
-/// `output_note_get_recipient_preimage` must recover an output note's script root
-/// and storage commitment from the recipient it exposes via the advice map entries that
-/// compute_and_store_recipient inserts.
+/// Recipient helpers recover the serial, script root, and storage commitment from the advice
+/// entries inserted by compute_and_store_recipient; the output-note wrapper omits the serial.
 #[tokio::test]
 async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
@@ -46,6 +45,14 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
             push.0.0
             # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
             exec.note::compute_and_store_recipient
+            # => [RECIPIENT]
+
+            dupw exec.std_note::get_recipient_preimage
+            # => [SERIAL_NUM, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
+
+            push.{serial_num} assert_eqw
+            push.{script_root} assert_eqw
+            padw assert_eqw
             # => [RECIPIENT]
 
             # create an output note carrying that recipient
