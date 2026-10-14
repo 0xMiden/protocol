@@ -3,8 +3,8 @@
 # The user-facing price oracle interface: a single procedure returning the rate between two assets.
 #
 # The rate is returned as a `ConversionRate`. Callers apply it with `fee::convert_amount`.
-# Alongside it comes the block timestamp of its last update, so a caller can enforce a freshness
-# bound tighter than the rate provider's own.
+# Alongside it comes the time the rate was observed, so a caller can enforce a freshness bound
+# tighter than the rate provider's own.
 #
 # `get_conversion_rate` is a stable MAST root that invokes the rate provider dynamically.
 
@@ -12,7 +12,7 @@ use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
-use {AccountProcedureRoot, AssetId, Bool} from miden::protocol::types
+use {AccountProcedureRoot, AssetId} from miden::protocol::types
 use {ConversionRate} from miden::standards::fee
 
 # CONSTANTS - errors
@@ -21,6 +21,7 @@ use {ConversionRate} from miden::standards::fee
 const ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO = "rate provider procedure root must be non-zero"
 const ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT = "rate provider procedure is not part of this account"
 const ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32 = "rate provider returned a last_updated value that is not a u32"
+const ERR_PRICE_ORACLE_LAST_UPDATED_DEN_MISMATCH = "rate provider must return a zero last_updated exactly when the rate denominator is zero"
 
 # CONSTANTS - slot names
 # =================================================================================================
@@ -36,32 +37,25 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 #! updated.
 #!
 #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-#! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+#! Outputs: [last_updated, num, den, pad(13)]
 #!
 #! Where:
 #! - SOURCE_ASSET_ID is the asset being converted from.
 #! - TARGET_ASSET_ID is the asset being converted to.
-#! - has_conversion_rate is 1 when the active rate provider can price the pair, 0 otherwise. It is
-#!   0 both for a pair the provider has no data for and for one whose data is too stale to rely on.
-#! - num and den express the rate, and are only valid when has_conversion_rate is 1: `amount` of the
-#!   source asset is worth `ceil(amount * num / den)` of the target asset. Both are 0 otherwise, so
-#!   handing the rate to `fee::convert_amount` without checking the flag aborts rather than
-#!   converting at a wrong rate.
-#! - last_updated is the block timestamp, in the units of `tx::get_block_timestamp`, at which the
-#!   provider's rate for the pair was last written. It is 0 when has_conversion_rate is 0. A caller
-#!   needing fresher data than the provider's own bound compares it against
-#!   `tx::get_block_timestamp`. That timestamp is of the reference block the executor chose, so such
-#!   a bound only holds as tightly as the caller's expiration delta.
+#! - last_updated is when the rate was observed, in the units of `tx::get_block_timestamp`, or 0
+#!   when the active rate provider cannot price the pair.
+#! - num and den express the rate, and are only valid when last_updated is non-zero.
 #!
 #! Panics if:
 #! - no rate provider is configured.
 #! - the active rate provider aborts.
 #! - the active rate provider returns a last_updated that is not a u32.
+#! - exactly one of last_updated and den returned by the active rate provider is zero.
 #!
 #! Invocation: call
 @locals(4)
 @account_procedure
-pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (Bool, ConversionRate, u32)
+pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (u32, ConversionRate)
     push.ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [RATE_PROVIDER_PROC_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
@@ -72,11 +66,19 @@ pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (Bool, Convers
     # => [rate_provider_proc_root_ptr, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
     dyncall
-    # => [has_conversion_rate, num, den, last_updated, pad(12)]
+    # => [last_updated, num, den, pad(13)]
 
     # callers apply u32 ops to last_updated, so the interface guarantees its bound once here
-    dup.3 u32assert.err=ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32 drop
-    # => [has_conversion_rate, num, den, last_updated, pad(12)]
+    u32assert.err=ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32
+    # => [last_updated, num, den, pad(13)]
+
+    # last_updated also marks whether the pair is priced, so it must agree with den: a caller that
+    # skips the check then still hands `fee::convert_amount` a zero den and aborts
+    dup eq.0 dup.3 eq.0
+    # => [is_den_zero, is_unpriced, last_updated, num, den, pad(13)]
+
+    assert_eq.err=ERR_PRICE_ORACLE_LAST_UPDATED_DEN_MISMATCH
+    # => [last_updated, num, den, pad(13)]
 end
 
 # CONFIGURATION PROCEDURES

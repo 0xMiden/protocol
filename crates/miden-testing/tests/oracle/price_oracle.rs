@@ -21,17 +21,20 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
+use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::account::access::Authority;
 use miden_standards::account::oracle::PriceOracle;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_PRICE_ORACLE_LAST_UPDATED_DEN_MISMATCH,
     ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32,
     ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT,
     ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO,
 };
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
+use rstest::rstest;
 
 // TEST RATE PROVIDERS
 // ================================================================================================
@@ -44,7 +47,7 @@ const RATE_PROVIDERS_CODE: &str = r#"
     use miden::core::sys
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+    #! Outputs: [last_updated, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -52,14 +55,14 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.1000 push.3 push.1500 push.1
-        # => [has_conversion_rate, num, den, last_updated, pad(8)]
+        push.3 push.1500 push.1000
+        # => [last_updated, num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+    #! Outputs: [last_updated, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -67,8 +70,8 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.2000 push.1 push.7 push.1
-        # => [has_conversion_rate, num, den, last_updated, pad(8)]
+        push.1 push.7 push.2000
+        # => [last_updated, num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -77,7 +80,7 @@ const RATE_PROVIDERS_CODE: &str = r#"
     #! to rely on. Both cases report the same rate.
     #!
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+    #! Outputs: [last_updated, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -85,8 +88,8 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.0 push.0 push.0 push.0
-        # => [has_conversion_rate = 0, num = 0, den = 0, last_updated = 0, pad(8)]
+        push.0 push.0 push.0
+        # => [last_updated = 0, num = 0, den = 0, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -94,7 +97,7 @@ const RATE_PROVIDERS_CODE: &str = r#"
     #! A rate provider breaking the contract with a last_updated of 2^32, one past the u32 range.
     #!
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+    #! Outputs: [last_updated, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -102,8 +105,43 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.4294967296 push.1 push.1 push.1
-        # => [has_conversion_rate, num, den, last_updated, pad(8)]
+        push.1 push.1 push.4294967296
+        # => [last_updated, num, den, pad(8)]
+
+        exec.sys::truncate_stack
+    end
+
+    #! A rate provider breaking the contract by marking the pair unpriced while still handing out
+    #! a rate, which a caller skipping the check would convert at.
+    #!
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [last_updated, num, den, pad(13)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc unpriced_with_rate
+        dropw dropw
+        # => [pad(8)]
+
+        push.3 push.1500 push.0
+        # => [last_updated = 0, num, den, pad(8)]
+
+        exec.sys::truncate_stack
+    end
+
+    #! A rate provider breaking the contract by marking the pair priced with a zero rate.
+    #!
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [last_updated, num, den, pad(13)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc priced_without_rate
+        dropw dropw
+        # => [pad(8)]
+
+        push.0 push.0 push.1000
+        # => [last_updated, num = 0, den = 0, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -117,7 +155,7 @@ const FOREIGN_PROVIDER_CODE: &str = r#"
     use miden::core::sys
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [has_conversion_rate, num, den, last_updated, pad(12)]
+    #! Outputs: [last_updated, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -125,8 +163,8 @@ const FOREIGN_PROVIDER_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.3000 push.1 push.2 push.1
-        # => [has_conversion_rate, num, den, last_updated, pad(8)]
+        push.1 push.2 push.3000
+        # => [last_updated, num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -189,10 +227,9 @@ fn asset_id_of(faucet_id: u128) -> anyhow::Result<Word> {
 /// Builds a transaction script reading a rate over FPI and asserting what came back.
 fn assert_rate_tx_script_code(
     oracle_id: AccountId,
-    expected_has_rate: u64,
+    expected_last_updated: u64,
     expected_num: u64,
     expected_den: u64,
-    expected_last_updated: u64,
 ) -> anyhow::Result<String> {
     Ok(format!(
         r#"
@@ -212,13 +249,12 @@ fn assert_rate_tx_script_code(
             #     foreign_procedure_inputs(16)]
 
             exec.tx::execute_foreign_procedure
-            # => [has_conversion_rate, num, den, last_updated, pad(12)]
+            # => [last_updated, num, den, pad(13)]
 
-            push.{expected_has_rate} assert_eq.err="unexpected has_conversion_rate flag"
+            push.{expected_last_updated} assert_eq.err="unexpected last_updated timestamp"
             push.{expected_num} assert_eq.err="unexpected rate numerator"
             push.{expected_den} assert_eq.err="unexpected rate denominator"
-            push.{expected_last_updated} assert_eq.err="unexpected last_updated timestamp"
-            # => [pad(12)]
+            # => [pad(13)]
 
             exec.sys::truncate_stack
         end
@@ -231,22 +267,23 @@ fn assert_rate_tx_script_code(
     ))
 }
 
-// TESTS
-// ================================================================================================
-
-/// The interface hands back whatever the registered rate provider produced, unchanged.
-#[tokio::test]
-async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
+/// Reads a rate over FPI from an oracle dispatching to the named test provider, asserting the
+/// given values came back, and returns the outcome.
+async fn read_rate(
+    provider: &str,
+    expected_last_updated: u64,
+    expected_num: u64,
+    expected_den: u64,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, rate_provider_root(&code, "fixed_rate_1500_over_3")?)?;
+    let oracle = oracle_account(&code, rate_provider_root(&code, provider)?)?;
     let consumer = consumer_account()?;
 
     let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
         oracle.id(),
-        1,
-        1_500,
-        3,
-        1_000,
+        expected_last_updated,
+        expected_num,
+        expected_den,
     )?)?;
 
     let mut builder = MockChain::builder();
@@ -256,13 +293,22 @@ async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
 
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
 
-    mock_chain
+    Ok(mock_chain
         .build_transaction(consumer.id())
         .foreign_accounts([foreign_oracle])
         .tx_script(tx_script)
         .build()?
         .execute()
-        .await?;
+        .await)
+}
+
+// TESTS
+// ================================================================================================
+
+/// The interface hands back whatever the registered rate provider produced, unchanged.
+#[tokio::test]
+async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
+    read_rate("fixed_rate_1500_over_3", 1_000, 1_500, 3).await??;
 
     Ok(())
 }
@@ -284,10 +330,9 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
     // the originally registered provider answers
     let before = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
         oracle.id(),
-        1,
+        1_000,
         1_500,
         3,
-        1_000,
     )?)?;
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
     mock_chain
@@ -322,10 +367,9 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
     // the same wrapper root now answers with the new provider's pricing
     let after = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
         oracle.id(),
-        1,
+        2_000,
         7,
         1,
-        2_000,
     )?)?;
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
     mock_chain
@@ -339,37 +383,12 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
     Ok(())
 }
 
-/// A pair the rate provider cannot price comes back as a zero denominator, unchanged, rather than
-/// aborting inside the oracle. The consumer decides what an unpriceable pair means to it, and one
-/// that does not check still fails closed once the rate reaches `fee::convert_amount`.
+/// A pair the rate provider cannot price comes back as all zeros, unchanged, rather than aborting
+/// inside the oracle. The consumer decides what an unpriceable pair means to it, and one that does
+/// not check still fails closed once the zero rate reaches `fee::convert_amount`.
 #[tokio::test]
-async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Result<()> {
-    let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, rate_provider_root(&code, "unpriced")?)?;
-    let consumer = consumer_account()?;
-
-    let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
-        oracle.id(),
-        0,
-        0,
-        0,
-        0,
-    )?)?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(oracle.clone())?;
-    builder.add_account(consumer.clone())?;
-    let mock_chain = builder.build()?;
-
-    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
-
-    mock_chain
-        .build_transaction(consumer.id())
-        .foreign_accounts([foreign_oracle])
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await?;
+async fn an_unpriceable_pair_comes_back_as_all_zeros() -> anyhow::Result<()> {
+    read_rate("unpriced", 0, 0, 0).await??;
 
     Ok(())
 }
@@ -379,32 +398,7 @@ async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Resul
 /// so only the interface's own check can make it fail.
 #[tokio::test]
 async fn a_last_updated_past_the_u32_range_is_rejected() -> anyhow::Result<()> {
-    let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, rate_provider_root(&code, "last_updated_above_u32")?)?;
-    let consumer = consumer_account()?;
-
-    let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
-        oracle.id(),
-        1,
-        1,
-        1,
-        1 << 32,
-    )?)?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(oracle.clone())?;
-    builder.add_account(consumer.clone())?;
-    let mock_chain = builder.build()?;
-
-    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
-
-    let result = mock_chain
-        .build_transaction(consumer.id())
-        .foreign_accounts([foreign_oracle])
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await;
+    let result = read_rate("last_updated_above_u32", 1 << 32, 1, 1).await?;
 
     // `u32assert` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
     // variant explicitly and assert on its error code.
@@ -415,6 +409,25 @@ async fn a_last_updated_past_the_u32_range_is_rejected() -> anyhow::Result<()> {
             ..
         } if err_code == ERR_PRICE_ORACLE_LAST_UPDATED_NOT_U32.code()
     );
+
+    Ok(())
+}
+
+/// A zero `last_updated` is what marks a pair unpriced, so the interface refuses a provider whose
+/// `last_updated` and denominator disagree.
+#[rstest]
+#[case::unpriced_with_rate("unpriced_with_rate", 0, 1_500, 3)]
+#[case::priced_without_rate("priced_without_rate", 1_000, 0, 0)]
+#[tokio::test]
+async fn a_last_updated_disagreeing_with_the_rate_is_rejected(
+    #[case] provider: &str,
+    #[case] last_updated: u64,
+    #[case] num: u64,
+    #[case] den: u64,
+) -> anyhow::Result<()> {
+    let result = read_rate(provider, last_updated, num, den).await?;
+
+    assert_transaction_executor_error!(result, ERR_PRICE_ORACLE_LAST_UPDATED_DEN_MISMATCH);
 
     Ok(())
 }
@@ -442,9 +455,7 @@ fn set_rate_provider_tx_script_code(root: Word) -> String {
 /// Runs a `set_rate_provider` transaction against a freshly built oracle and returns the outcome.
 async fn set_rate_provider(
     root: Word,
-) -> anyhow::Result<
-    Result<miden_protocol::transaction::ExecutedTransaction, TransactionExecutorError>,
-> {
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let code = rate_providers_code()?;
     let oracle = oracle_account(&code, rate_provider_root(&code, "fixed_rate_1500_over_3")?)?;
 
