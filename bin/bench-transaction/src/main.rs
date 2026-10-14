@@ -18,12 +18,14 @@ async fn run_scenario(
     let mock_tx = build_benchmark_context(bench)
         .await
         .with_context(|| format!("failed to build mock transaction for `{bench}`"))?;
-    let (measurements, trace) = capture_measurements_and_trace_summary(mock_tx)
+    let (measurements, trace, note_labels) = capture_measurements_and_trace_summary(mock_tx)
         .await
         .with_context(|| format!("failed to capture measurements for `{bench}`"))?;
     let total_cycles = u32::try_from(measurements.total_cycles())
         .context("total cycle count does not fit into u32")?;
-    Ok((bench, MeasurementsPrinter::from_parts(measurements, trace), total_cycles))
+    let printer = MeasurementsPrinter::from_parts(measurements, trace, &note_labels)
+        .with_context(|| format!("failed to render measurements for `{bench}`"))?;
+    Ok((bench, printer, total_cycles))
 }
 
 #[tokio::main(flavor = "current_thread")]

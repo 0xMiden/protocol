@@ -49,8 +49,12 @@ Each of the above transactions is measured in two groups:
 
   For each transaction, data is collected on the number of cycles required to complete:
   - Prologue
+  - `total_cycles`: the sum of the prologue, notes-processing, tx-script and epilogue intervals,
+    and the figure the cost tables above are derived from
   - All notes processing
-  - Each note execution
+  - Each note execution, in consumption order and labelled by note kind (`P2ID`, or `P2ID#0` /
+    `P2ID#1` when a scenario consumes several notes of one kind). Notes whose script is neither a
+    standard nor an agglayer one are labelled `UNKNOWN`.
   - Transaction script processing
   - Epilogue:
     - Total number of cycles
