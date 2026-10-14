@@ -352,6 +352,8 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// private paybacks can be cancelled by any compatible account using [`Self::create_cancel_args`]
 /// and [`Self::cancellation_advice`]; all remaining assets are returned in a private P2ID to the
 /// committed recipient.
+/// Paybacks, remainders, and cancellation refunds are verified and sealed before the script
+/// returns. Later asset or attachment additions fail the transaction.
 ///
 /// # Privacy
 ///
