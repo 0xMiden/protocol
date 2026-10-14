@@ -323,7 +323,7 @@ where
             let mut extended = false;
 
             for idx in 0..remaining_bundles.bundles().len() {
-                let bundle = &remaining_bundles.bundles()[idx];
+                let bundle = remaining_bundles.bundles()[idx].clone();
                 let bundle_notes = bundle.notes().to_vec();
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
@@ -334,6 +334,7 @@ where
                 tx_inputs.set_input_notes(InputNotes::new_unchecked(
                     candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
                 ));
+
                 match self.try_execute_notes(&mut tx_inputs).await {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or
@@ -341,13 +342,16 @@ where
                         for note in bundle_notes {
                             failed_note_index.remove(&note.id());
                         }
+
                         // Store the cycle counts from the latest successful execution.
                         successful_cycle_counts = cycle_counts;
+
                         // This combination succeeded; commit it and drop the bundle from the
                         // remaining set.
                         successful_notes = candidate_notes;
                         remaining_bundles.remove(idx);
                         extended = true;
+
                         break;
                     },
                     Err(error) => {
@@ -377,6 +381,7 @@ where
                             blamed_idx,
                             NoteFailure::Blamed { error: error.into(), num_cycles },
                         );
+
                         for failed_note in failed_bundle {
                             failed_note_index.insert(failed_note.note().id(), failed_note);
                         }

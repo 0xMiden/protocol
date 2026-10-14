@@ -36,6 +36,11 @@ impl BlockNumber {
     /// The maximum block number.
     pub const MAX: Self = Self(u32::MAX);
 
+    /// Creates the [`BlockNumber`] with the provided `block_number` value.
+    pub const fn new(block_number: u32) -> Self {
+        BlockNumber(block_number)
+    }
+
     /// Returns the previous block number
     pub fn parent(self) -> Option<BlockNumber> {
         self.checked_sub(1)

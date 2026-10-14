@@ -18,7 +18,7 @@ use super::sponsorship::SponsorshipRejection;
 ///
 /// The note heading the bundle comes first: a feature note, or a FEE_SPONSORSHIP note whose feature
 /// note is absent.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct NoteBundle {
     notes: Vec<Note>,
 }
@@ -29,21 +29,22 @@ impl NoteBundle {
         &self.notes
     }
 
-    /// Reports every note of the bundle as failed: the note at `blamed_idx` with `failure`, and the
-    /// rest as its collateral, since they cannot be consumed without it.
-    pub(super) fn failed_notes(&self, blamed_idx: usize, failure: NoteFailure) -> Vec<FailedNote> {
-        let blamed_note = &self.notes[blamed_idx];
+    /// Consumes the bundle reporting every note of it as failed: the note at `blamed_idx` with
+    /// `failure`, and the rest as its collateral, since they cannot be consumed without it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `blamed_idx` is out of bounds.
+    pub(super) fn failed_notes(self, blamed_idx: usize, failure: NoteFailure) -> Vec<FailedNote> {
+        let blamed_note = self.notes[blamed_idx].clone();
         let mut failed_notes: Vec<FailedNote> = self
             .notes
-            .iter()
+            .into_iter()
             .map(|note| {
-                FailedNote::new(
-                    note.clone(),
-                    NoteFailure::Collateral { blamed_by: blamed_note.id() },
-                )
+                FailedNote::new(note, NoteFailure::Collateral { blamed_by: blamed_note.id() })
             })
             .collect();
-        failed_notes[blamed_idx] = FailedNote::new(blamed_note.clone(), failure);
+        failed_notes[blamed_idx] = FailedNote::new(blamed_note, failure);
 
         failed_notes
     }
@@ -73,6 +74,10 @@ impl NoteBundles {
     }
 
     /// Removes and returns the bundle at `idx`.
+    ///     
+    /// # Panics
+    ///
+    /// Panics if the `idx` is out of bounds.
     pub(super) fn remove(&mut self, idx: usize) -> NoteBundle {
         self.0.remove(idx)
     }

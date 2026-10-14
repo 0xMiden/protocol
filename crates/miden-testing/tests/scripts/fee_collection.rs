@@ -269,6 +269,7 @@ impl Test {
         // The sponsorship notes target the network account, so they can only be built once it
         // exists.
         let mut sponsorship_notes = Vec::new();
+
         for sponsorship in sponsorships {
             let feature_note_id = match sponsorship.sponsored {
                 Sponsored::FeatureNote(idx) => feature_notes.get(idx).with_context(|| {
@@ -279,12 +280,14 @@ impl Test {
                 })?,
             }
             .id();
+
             // The reclaimer and the reclaim height default to the sponsor and to no reclaim at
             // all, which is what a sponsorship that is not meant to be reclaimed here keeps.
             let (reclaimer, reclaim_height) = sponsorship
                 .reclaimable_by_target
                 .then(|| (network_account.id(), MIN_RECLAIM_HEIGHT))
                 .unzip();
+
             let note = Note::from(
                 FeeSponsorshipNote::builder()
                     .sender(sponsor.id())
@@ -296,6 +299,7 @@ impl Test {
                     .maybe_reclaim_height(reclaim_height)
                     .build()?,
             );
+
             builder.add_output_note(RawOutputNote::Full(note.clone()));
             sponsorship_notes.push(note);
         }
