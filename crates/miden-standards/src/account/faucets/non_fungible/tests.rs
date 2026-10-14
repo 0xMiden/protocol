@@ -121,8 +121,6 @@ fn non_fungible_faucet_factories_encode_transfer_policy_callback_flag(
 /// `compute_asset_commitment` is deterministic and salt-sensitive.
 #[test]
 fn compute_asset_commitment_is_salt_sensitive() {
-    use miden_protocol::Word;
-
     let data = b"token #1 metadata";
     let salt_a = Word::from([1u32, 2, 3, 4]);
     let salt_b = Word::from([5u32, 6, 7, 8]);
