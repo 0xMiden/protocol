@@ -10,6 +10,7 @@
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 - [BREAKING] Added `NoteConsumptionChecker::with_fee_asset_id` to set the account's fee asset, and the checker now rejects unconsumable `FEE_SPONSORSHIP` notes without executing them and eliminates a note that fails in execution together with the notes bound to it. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - Added `FeeSponsorshipNote::check_reclaim`, and `StandardNote::is_consumable` now decides a lone `FEE_SPONSORSHIP` note by its reclaim rules ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+- [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
 
 ### Fixes
 
