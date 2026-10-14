@@ -4,7 +4,7 @@
 
 ### Changes
 
-- [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification.
+- [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification ([#4053](https://github.com/0xMiden/protocol/pull/4053)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
