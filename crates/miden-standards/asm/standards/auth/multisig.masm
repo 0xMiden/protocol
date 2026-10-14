@@ -300,7 +300,6 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     exec.cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
 end
-
 #! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
 #!
 #! Inputs:  [pad(16)]
@@ -946,7 +945,7 @@ end
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_poseidon2
+#! - 2 => falcon512_eidos
 #!
 #! This procedure implements multi-signature authentication by:
 #! 1. Computing the transaction summary message that needs to be signed

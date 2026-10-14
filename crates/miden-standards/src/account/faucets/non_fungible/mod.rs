@@ -408,7 +408,7 @@ impl NonFungibleFaucet {
     /// such as `owner_only` rather than `allow_all`; the policy hook receives the full asset value.
     pub fn compute_asset_commitment(user_data: &[u8], salt: Word) -> Word {
         let data_digest = Hasher::hash(user_data);
-        Hasher::merge(&[data_digest, salt])
+        Hasher::hash_double_word(&[data_digest, salt])
     }
 
     /// Reads the issuance [`AssetStatus`] of the token ID derived from `asset_commitment` (the

@@ -1,11 +1,13 @@
 use miden_verifier::{
     ExecutionClaim,
+    ExecutionProof,
     PrecompileStatus,
     VerificationError,
     VerificationOutcome,
     Verifier,
 };
 
+use crate::PROTOCOL_PROOF_HASH;
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
 use crate::vm::ProgramInfo;
@@ -38,7 +40,8 @@ impl TransactionVerifier {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The proof contains settled precompile work.
+    /// - The transaction proof contains settled precompile work.
+    /// - The VM proof does not use the protocol's Eidos transcript hash.
     /// - Transaction verification fails.
     /// - A deferred precompile witness is invalid or does not match the VM proof.
     /// - The security level of the verified proof is insufficient.
@@ -46,9 +49,7 @@ impl TransactionVerifier {
         &self,
         transaction: &ProvenTransaction,
     ) -> Result<VerificationOutcome, TransactionVerifierError> {
-        if matches!(transaction.proof().precompile(), PrecompileStatus::Proven(_)) {
-            return Err(TransactionVerifierError::TransactionProofContainsPrecompiles);
-        }
+        validate_proof_shape(transaction.proof())?;
 
         // build stack inputs and outputs
         let stack_inputs = TransactionKernel::build_input_stack(
@@ -86,5 +87,58 @@ impl TransactionVerifier {
             })?;
 
         Ok(outcome)
+    }
+}
+
+/// Checks the transaction proof lifecycle and protocol transcript hash.
+fn validate_proof_shape(proof: &ExecutionProof) -> Result<(), TransactionVerifierError> {
+    if matches!(proof.precompile(), PrecompileStatus::Proven(_)) {
+        return Err(TransactionVerifierError::TransactionProofContainsPrecompiles);
+    }
+
+    let vm_hash = proof.vm().proof.hash_fn();
+    if vm_hash != PROTOCOL_PROOF_HASH {
+        return Err(TransactionVerifierError::UnsupportedVmProofHash {
+            actual: vm_hash,
+            expected: PROTOCOL_PROOF_HASH,
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use assert_matches::assert_matches;
+    use miden_verifier::{HashFunction, StarkProof};
+
+    use super::*;
+    use crate::testing::{
+        dummy_deferred_execution_proof,
+        dummy_execution_proof,
+        dummy_precompile_execution_proof,
+    };
+
+    #[test]
+    fn proof_shape_requires_eidos_and_rejects_settled_precompiles() {
+        assert_matches!(validate_proof_shape(&dummy_execution_proof()), Ok(()));
+        assert_matches!(validate_proof_shape(&dummy_deferred_execution_proof()), Ok(()));
+        assert_matches!(
+            validate_proof_shape(&dummy_precompile_execution_proof()),
+            Err(TransactionVerifierError::TransactionProofContainsPrecompiles)
+        );
+
+        let (compatibility, mut vm, precompile) = dummy_execution_proof().into_parts();
+        vm.proof = StarkProof::new(Vec::new(), HashFunction::Blake3_256);
+        let proof = ExecutionProof::from_parts(compatibility, vm, precompile);
+        assert_matches!(
+            validate_proof_shape(&proof),
+            Err(TransactionVerifierError::UnsupportedVmProofHash {
+                actual: HashFunction::Blake3_256,
+                expected: PROTOCOL_PROOF_HASH,
+            })
+        );
     }
 }

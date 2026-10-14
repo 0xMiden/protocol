@@ -59,9 +59,8 @@ async fn note_addressed_to_another_bridge_cannot_be_consumed(
     let mut builder = MockChain::builder();
 
     // the sender holds every bridge role, so nothing but the target check can reject the note
-    let privileged_sender = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let privileged_sender =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let target_bridge = add_bridge(&mut builder, privileged_sender.id())?;
     let decoy_bridge = add_bridge(&mut builder, privileged_sender.id())?;

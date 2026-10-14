@@ -18,14 +18,11 @@ async fn execute_with_output(
     let mut builder = MockChain::builder();
 
     let sender = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         output_assets.iter().copied(),
     )?;
-    let target = builder.create_new_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let target =
+        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let sender_id = sender.id();
 
     let output = builder.add_p2id_note(sender_id, target.id(), output_assets, NoteType::Public)?;

@@ -1,47 +1,82 @@
-use crate::Felt;
+use miden_core::Felt;
+use miden_crypto::hash::eidos::domain::{
+    DELEGATED_VERSIONING,
+    DomainVersion,
+    EidosDomain,
+    FeltSequence,
+    namespace,
+};
 
-// PROTOCOL DOMAIN REGISTRY
+// EIDOS DOMAINS
 // ================================================================================================
 
-/// The domain separators of the protocol's domain-separated hashes.
-///
-/// The [Poseidon2 domain registry][registry] delegates the range 0x020000..0x30000 to the
-/// protocol repository. That range is further divided into:
-///
-/// - Protocol: 0x020000..0x28000.
-/// - Standards/Agglayer/USDCx: 0x28000..0x30000.
-///
-/// The MASM counterparts of these values must be kept in sync.
-///
-/// [registry]: https://github.com/0xMiden/crypto/blob/2156001768d4581f8957b9aa63a0c2d1d660b510/docs/registry/poseidon2-domains.toml
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-#[repr(u32)]
-pub enum ProtocolDomainRegistry {
-    /// Domain of the [`AccountPatch`](crate::account::AccountPatch) commitment.
-    AccountPatch = 0x02_0000,
-
-    /// Domain of the [`AccountDelta`](crate::account::AccountDelta) commitment.
-    AccountDelta = 0x02_0001,
-
-    /// Domain of the [`AccountCodeUpgrade`](crate::account::AccountCodeUpgrade) advice map key.
-    AccountCodeUpgradeAdvice = 0x02_0002,
-
-    /// Domain of the ordered [`TransactionLogs`](crate::transaction::TransactionLogs) commitment.
-    TransactionLogs = 0x02_0003,
-
-    /// Domain of an individual [`TransactionLog`](crate::transaction::TransactionLog) commitment.
-    TransactionLog = 0x02_0004,
+miden_crypto::eidos_domain_registry! {
+    /// Eidos domains maintained by the Miden protocol.
+    ///
+    /// Within the `MIDEN_PROTOCOL` namespace, local IDs `0x0000..0x8000` are reserved for
+    /// protocol domains and `0x8000..0x10000` for Standards, Agglayer, and USDCx domains.
+    ///
+    /// Patch and delta commitments delegate versioning to their payload schemas. Non-empty
+    /// payloads start with the layout version as one Felt; empty objects use an empty payload.
+    /// The code-upgrade advice key uses a numbered hash construction over a code commitment.
+    ///
+    /// The MASM selectors must match these domain tags.
+    pub registry ProtocolDomainRegistry {
+        namespace: namespace::MIDEN_PROTOCOL;
+        domains: {
+            pub ACCOUNT_PATCH_COMMITMENT_DOMAIN: AccountPatchCommitmentDomain {
+                local_id: 0,
+                version: DELEGATED_VERSIONING,
+                encoding: FeltSequence,
+                description: "Account patch commitments.",
+                schema: "param0 = Felt count; param1 = param2 = 0; \
+                    first Felt = layout version for non-empty patches; \
+                    empty patches = empty sequence; zero-pad partial or empty block",
+            }
+            pub ACCOUNT_DELTA_COMMITMENT_DOMAIN: AccountDeltaCommitmentDomain {
+                local_id: 1,
+                version: DELEGATED_VERSIONING,
+                encoding: FeltSequence,
+                description: "Account delta commitments.",
+                schema: "param0 = Felt count; param1 = param2 = 0; \
+                    first Felt = layout version for non-empty deltas; \
+                    empty deltas = empty sequence; zero-pad partial or empty block",
+            }
+            pub ACCOUNT_CODE_UPGRADE_ADVICE_DOMAIN: AccountCodeUpgradeAdviceDomain {
+                local_id: 2,
+                version: DomainVersion::numbered(1),
+                encoding: FeltSequence,
+                description: "Account code upgrade advice-map keys.",
+                schema: "param0 = 4 Felts; param1 = 0; param2 = 0; zero-pad the final block",
+            }
+            pub TRANSACTION_LOGS_COMMITMENT_DOMAIN: TransactionLogsCommitmentDomain {
+                local_id: 3,
+                version: DomainVersion::numbered(1),
+                encoding: FeltSequence,
+                description: "Ordered transaction log commitments.",
+                schema: "param0 = Felt count; param1 = param2 = 0; \
+                    log commitments in emission order; zero-pad the final block",
+            }
+            pub TRANSACTION_LOG_COMMITMENT_DOMAIN: TransactionLogCommitmentDomain {
+                local_id: 4,
+                version: DomainVersion::numbered(1),
+                encoding: FeltSequence,
+                description: "Individual transaction log commitments.",
+                schema: "param0 = 8 Felts; param1 = param2 = 0; \
+                    emitter suffix, emitter prefix, topic suffix, topic prefix, content commitment",
+            }
+        }
+    }
 }
 
-impl ProtocolDomainRegistry {
-    /// Returns the domain as a [`u32`].
-    pub const fn as_u32(self) -> u32 {
-        self as u32
-    }
+/// Registered domain ID for account patch commitments.
+pub const ACCOUNT_PATCH_COMMITMENT_DOMAIN_ID: u32 = AccountPatchCommitmentDomain::TAG.as_u32() >> 8;
 
-    /// Returns the domain as a [`Felt`].
-    pub const fn as_felt(self) -> Felt {
-        Felt::from_u32(self.as_u32())
-    }
-}
+/// Registered domain ID for account delta commitments.
+pub const ACCOUNT_DELTA_COMMITMENT_DOMAIN_ID: u32 = AccountDeltaCommitmentDomain::TAG.as_u32() >> 8;
+
+/// Account patch domain tag encoded as a field element.
+pub const ACCOUNT_PATCH_COMMITMENT_SELECTOR: Felt = AccountPatchCommitmentDomain::TAG.as_felt();
+
+/// Account delta domain tag encoded as a field element.
+pub const ACCOUNT_DELTA_COMMITMENT_SELECTOR: Felt = AccountDeltaCommitmentDomain::TAG.as_felt();

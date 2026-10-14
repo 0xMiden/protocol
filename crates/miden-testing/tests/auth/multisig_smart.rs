@@ -89,7 +89,7 @@ fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<T
 /// should let a single-signature transaction that only calls `receive_asset` succeed.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_three_to_one_signature(
     #[case] auth_scheme: AuthScheme,
@@ -355,7 +355,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 /// signer set with new public keys. The new threshold and signers are persisted in storage.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_smart_update_signers_and_thresholds(
     #[case] auth_scheme: AuthScheme,
@@ -458,7 +458,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 /// duplicate public keys, mirroring the check on the plain `multisig` variant.
 #[tokio::test]
 async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
 
@@ -560,7 +560,7 @@ async fn test_multisig_smart_update_signers_rejects_too_many_approvers() -> anyh
 /// `procedure_policies` storage map so subsequent transactions see the new policy.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_smart_set_procedure_policy(
     #[case] auth_scheme: AuthScheme,
@@ -861,7 +861,7 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
     #[case] expected_error: Option<MasmError>,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Eidos)?;
 
     let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
 

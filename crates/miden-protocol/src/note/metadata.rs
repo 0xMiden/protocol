@@ -276,7 +276,7 @@ impl NoteMetadata {
     /// hash(NOTE_METADATA_WORD || ATTACHMENTS_COMMITMENT)
     /// ```
     pub fn to_commitment(&self) -> Word {
-        Hasher::merge(&[self.to_metadata_word(), self.attachments_commitment])
+        Hasher::hash_double_word(&[self.to_metadata_word(), self.attachments_commitment])
     }
 
     /// Consumes self and returns the inner [`PartialNoteMetadata`].

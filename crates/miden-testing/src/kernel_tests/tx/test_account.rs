@@ -67,6 +67,8 @@ use miden_protocol::testing::add_component::AddComponent;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::memory::{
     CODE_UPGRADE_COMMITMENT_PTR,
+    NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR,
+    NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     STORAGE_UPGRADE_COMMITMENT_PTR,
 };
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel, TransactionScript};
@@ -727,6 +729,33 @@ async fn validate_storage_rejects_unsupported_slot_type() -> anyhow::Result<()> 
     Ok(())
 }
 
+#[tokio::test]
+async fn recompute_storage_commitment_handles_empty_storage() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let expected_commitment = AccountStorage::new(Vec::new())?.to_commitment();
+    let code = format!(
+        "
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.1 push.{NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR} mem_store
+            push.0 push.{NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR} mem_store
+
+            exec.account::compute_storage_commitment
+            push.{expected_commitment}
+            assert_eqw.err=\"empty storage must have the canonical commitment\"
+        end
+        "
+    );
+
+    mock_tx.execute_code(&code).await?;
+
+    Ok(())
+}
+
 /// Tests that accessing an unknown slot fails with the expected error message.
 ///
 /// This tests both accounts with empty storage and non-empty storage.
@@ -737,9 +766,8 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     let account_empty_storage = builder.add_existing_mock_account(Auth::IncrNonce)?;
     assert_eq!(account_empty_storage.storage().num_slots(), 0);
 
-    let account_non_empty_storage = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account_non_empty_storage = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     assert_eq!(account_non_empty_storage.storage().num_slots(), 2);
 
     let chain = builder.build()?;
@@ -1315,9 +1343,8 @@ async fn test_account_upgrade_replaces_code(#[case] is_upgrade: bool) -> anyhow:
 #[tokio::test]
 async fn test_account_upgrade_with_signature_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let upgraded_code = upgraded_mock_account_code()?;
@@ -1866,9 +1893,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_for_account],
     )?;
 
@@ -2018,9 +2043,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_for_account],
     )?;
 
@@ -2113,9 +2136,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_for_account],
     )?;
 

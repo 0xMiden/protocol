@@ -78,10 +78,9 @@ mod snapshot;
 /// let mut builder = MockChain::builder();
 ///
 /// // Add a recipient wallet with basic authentication.
-/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Poseidon2 (scheme_id: 2) auth scheme.
-/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {
-///     auth_scheme: AuthScheme::Falcon512Poseidon2,
-/// })?;
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Eidos (scheme_id: 2) auth scheme.
+/// let receiver =
+///     builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -145,20 +144,16 @@ mod snapshot;
 /// let mut builder = MockChain::builder();
 ///
 /// let faucet = builder.create_new_faucet(
-///     Auth::BasicAuth {
-///         auth_scheme: AuthScheme::Falcon512Poseidon2,
-///     },
+///     Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
 ///     "USDT",
 ///     100_000,
 /// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender = builder.create_new_wallet(Auth::BasicAuth {
-///     auth_scheme: AuthScheme::Falcon512Poseidon2,
-/// })?;
-/// let target = builder.create_new_wallet(Auth::BasicAuth {
-///     auth_scheme: AuthScheme::Falcon512Poseidon2,
-/// })?;
+/// let sender =
+///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+/// let target =
+///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///

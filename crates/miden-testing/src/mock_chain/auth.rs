@@ -100,22 +100,18 @@ pub enum Auth {
 
 impl Default for Auth {
     /// Returns the most common authentication scheme used in tests:
-    /// [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Poseidon2`].
+    /// [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Eidos`].
     fn default() -> Self {
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        }
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos }
     }
 }
 
 impl Auth {
-    /// Returns [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Poseidon2`].
+    /// Returns [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Eidos`].
     ///
     /// Prefer ECDSA over Falcon for tests where the auth scheme itself is not under test.
     pub fn basic_falcon() -> Self {
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        }
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos }
     }
 
     /// Returns [`Auth::BasicAuth`] with [`AuthScheme::EcdsaK256Keccak`].

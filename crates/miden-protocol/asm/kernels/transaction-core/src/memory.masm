@@ -121,6 +121,9 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
+# Scratch cell containing the hashed body-block count minus the advised body-block count.
+pub const ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR = 1285
+
 # TRANSACTION LOG STATE
 # -------------------------------------------------------------------------------------------------
 

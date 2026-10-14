@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
+use miden_protocol::PROTOCOL_PROOF_HASH;
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
@@ -15,7 +16,6 @@ use miden_protocol::transaction::{
     TransactionWitness,
     TxAccountUpdate,
 };
-use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::Prover;
 use miden_prover::{ExecutionProof, Word};
 
@@ -47,15 +47,17 @@ pub struct LocalTransactionProver {
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
-        Self::new(Prover::new().with_hash_fn(Poseidon2))
+        Self::new(Prover::new())
     }
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance with the default [`ExecutionOptions`].
+    ///
+    /// Uses the protocol proof hash and preserves the supplied prover's other settings.
     pub fn new(prover: Prover) -> Self {
         Self {
-            prover,
+            prover: prover.with_hash_fn(PROTOCOL_PROOF_HASH),
             execution_options: ExecutionOptions::default(),
         }
     }

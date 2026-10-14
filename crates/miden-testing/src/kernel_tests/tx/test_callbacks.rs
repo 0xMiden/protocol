@@ -274,9 +274,7 @@ async fn test_faucet_without_callback_slot_skips_callback(
     }
 
     let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )?;
@@ -339,9 +337,7 @@ async fn test_faucet_with_invalid_callback_root_fails() -> anyhow::Result<()> {
         .with_component(component);
 
     let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )?;
@@ -851,9 +847,7 @@ fn add_faucet_with_block_list(
         .with_component(block_list);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )
@@ -924,9 +918,7 @@ fn add_faucet_with_callbacks(
         .with_component(callback_component);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )
