@@ -5,9 +5,9 @@
 //! follows the same argument contract and is driven through the same note.
 //!
 //! Unlike the other authority-gated faucet mutators, these three do not take their argument on the
-//! operand stack. The caller passes the Poseidon2 commitment of the new 7-Word value and provides
-//! the preimage in the advice map under it; the setter pipes the preimage back out and validates it
-//! against the commitment.
+//! operand stack. The caller passes the Eidos commitment of the new 7-Word value and
+//! provides the preimage in the advice map under it; the setter pipes the preimage back out and
+//! validates it against the commitment.
 //!
 //! `FaucetMetadataConfigNote` is the standard caller that satisfies this contract, so the tests
 //! below drive the setters through it. The one exception is
@@ -62,7 +62,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 const STRING_NUM_ELEMENTS: usize = 28;
 
 /// Memory address the note scripts below write the note storage to. Word-aligned, as
-/// `poseidon2::hash_elements` requires.
+/// `eidos::hash_elements` requires.
 const STRING_PTR: usize = 0;
 
 fn owner_id() -> AccountId {
@@ -378,8 +378,9 @@ async fn set_token_base_uri_fails_when_sender_is_not_owner() -> anyhow::Result<(
 ///
 /// The setter recomputes the commitment over the piped preimage and asserts it equals the advice
 /// map key. Supplying a key computed by `Hasher::hash_elements` therefore fails unless Rust applies
-/// the same padding rule as `mem::pipe_preimage_to_memory` — both set the first capacity element to
-/// `num_elements % 8`. Callers that compute the commitment outside the VM depend on this.
+/// the same framing rule as `mem::pipe_preimage_to_memory`: both bind the exact logical length into
+/// Eidos's initial chaining word. Callers that compute the commitment outside the VM depend on
+/// this.
 #[tokio::test]
 async fn set_description_accepts_caller_computed_commitment() -> anyhow::Result<()> {
     let owner = owner_id();

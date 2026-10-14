@@ -1,16 +1,14 @@
 use miden::core::mem
-use miden::core::crypto::hashes::poseidon2
-
-use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+use miden::core::crypto::hashes::eidos
 
 #! Writes `num_elements` elements from the advice stack to memory starting at `dest_ptr` and returns
 #! their commitment.
 #!
-#! The elements committed to are an arbitrary-length list , so their count must not necessarily be
+#! The elements committed to are an arbitrary-length list, so their count need not be
 #! word-aligned. For efficiency, the commitment is computed using `pipe_double_words_to_memory`,
 #! which requires that the elements must already be on the advice stack and that they are padded to
-#! the next multiple of 8 (e.g. via `adv.push_mapvaln.8`). The padding zeros do not affect the
-#! commitment.
+#! the next multiple of 8 (e.g. via `adv.push_mapvaln.8`). The exact logical length is bound into
+#! the Eidos chaining word, so these zeros only fill unused lanes of the final physical block.
 #!
 #! Inputs:
 #!   Operand stack: [num_elements, dest_ptr]
@@ -25,40 +23,48 @@ use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 #!
 #! Invocation: exec
 pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>) -> word
-    # compute the number of words required to store the elements: ceil(num_elements / 4)
-    dup u32divmod.WORD_NUM_ELEMENTS neq.0 add
-    # => [num_words, num_elements, dest_ptr]
+    dup eq.0
+    if.true
+        drop drop
+        exec.eidos::empty_felt_sequence_digest
+        # => [COMPUTED_COMMITMENT]
+    else
+        dup u32lt.9
+        if.true
+            # A short preimage occupies exactly one padded advice block.
+            exec.eidos::init
+            # => [BLOCK_LO, BLOCK_HI, CV, dest_ptr]
 
-    # round the number of words up to the next multiple of 2 for `pipe_double_words_to_memory`
-    dup is_odd add
-    # => [even_num_words, num_elements, dest_ptr]
+            adv_pipe compress
+            exec.eidos::digest
+            movup.4 drop
+            # => [COMPUTED_COMMITMENT]
+        else
+            # Round the physical range up to a complete 8-Felt block.
+            dup u32divmod.8 neq.0 add mul.8
+            # => [padded_num_elements, num_elements, dest_ptr]
 
-    # compute end_ptr = dest_ptr + even_num_words * WORD_NUM_ELEMENTS
-    mul.WORD_NUM_ELEMENTS dup.2 add
-    # => [end_ptr, num_elements, dest_ptr]
+            # compute end_ptr = dest_ptr + padded_num_elements
+            dup.2 add
+            # => [end_ptr, num_elements, dest_ptr]
 
-    movup.2
-    # => [dest_ptr, end_ptr, num_elements]
+            movup.2
+            # => [dest_ptr, end_ptr, num_elements]
 
-    # set the first capacity element to `num_elements % 8` to match the capacity as built in
-    # poseidon2::hash_elements
-    movup.2 u32mod.8
-    # => [num_elements_mod_8, dest_ptr, end_ptr]
+            # Initialize Eidos with the exact logical length.
+            movup.2 exec.eidos::init
+            # => [BLOCK_LO, BLOCK_HI, CV, dest_ptr, end_ptr]
 
-    push.0.0.0 movup.3
-    # => [CAPACITY, dest_ptr, end_ptr]
+            # write the elements to memory while hashing them
+            exec.mem::pipe_double_words_to_memory
+            # => [BLOCK_LO, BLOCK_HI, CV, dest_ptr']
 
-    padw padw
-    # => [RATE0, RATE1, CAPACITY, dest_ptr, end_ptr]
+            # extract the computed commitment from the hasher state
+            exec.eidos::digest
+            # => [COMPUTED_COMMITMENT, dest_ptr']
 
-    # write the elements to memory while hashing them
-    exec.mem::pipe_double_words_to_memory
-    # => [RATE0, RATE1, CAPACITY, dest_ptr']
-
-    # extract the computed commitment from the hasher state
-    exec.poseidon2::squeeze_digest
-    # => [COMPUTED_COMMITMENT, dest_ptr']
-
-    movup.4 drop
-    # => [COMPUTED_COMMITMENT]
+            movup.4 drop
+            # => [COMPUTED_COMMITMENT]
+        end
+    end
 end

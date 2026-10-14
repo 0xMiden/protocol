@@ -106,8 +106,8 @@
     ],
     "att": [
       {
-        "cite": "miden-crypto-0.25.1 dsa/ecdsa_k256_keccak/mod.rs:253,:301 + src/lib.rs:156-170",
-        "derivation": "k256 SigningKey::random(StdRng seed 1); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 240B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment @ 0.33.0 (Poseidon2 over the 16 affine pubkey felts)",
+        "cite": "gen_vectors::att_sign65 and miden_crypto::dsa::ecdsa_k256_keccak::PublicKey::to_commitment",
+        "derivation": "k256 SigningKey::random(StdRng seed 1); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 240B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment (Eidos over the 16 affine pubkey felts)",
         "digest_felts": [
           "0x5bcf492f",
           "0xe0e6d041",
@@ -120,10 +120,10 @@
         ],
         "digest_hex": "0x2f49cf5b41d0e6e0dff2fabdcec06a85a26cdbd23842eb6a37cccbe681ec06f4",
         "expected_commitment": [
-          "0xf5b91758da8d358e",
-          "0x7b725b8e11924cfd",
-          "0x2e1c72d1df5aed81",
-          "0x12ab5a3e8ea9d1b0"
+          "0x4bf2b839446c94f4",
+          "0x4ca609b5b0462d2",
+          "0x6e04ba5a653e6165",
+          "0x38f8728fdce01d4d"
         ],
         "id": "att-1",
         "packed_felts": [
@@ -175,8 +175,8 @@
         "v_byte": 0
       },
       {
-        "cite": "miden-crypto-0.25.1 dsa/ecdsa_k256_keccak/mod.rs:253,:301 + src/lib.rs:156-170",
-        "derivation": "k256 SigningKey::random(StdRng seed 2); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 240B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment @ 0.33.0 (Poseidon2 over the 16 affine pubkey felts)",
+        "cite": "gen_vectors::att_sign65 and miden_crypto::dsa::ecdsa_k256_keccak::PublicKey::to_commitment",
+        "derivation": "k256 SigningKey::random(StdRng seed 2); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 240B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment (Eidos over the 16 affine pubkey felts)",
         "digest_felts": [
           "0x49500977",
           "0xd95128b8",
@@ -189,10 +189,10 @@
         ],
         "digest_hex": "0x77095049b82851d9dae97fc20c6d06cd96ce0b8757fe4522a0710cd89aa6f427",
         "expected_commitment": [
-          "0x23d8cdc97ac06fb1",
-          "0xf0c442c83a2c0c54",
-          "0xcc1e5af9131ba184",
-          "0xd9040e50eb13b646"
+          "0x294ce4f51bb04a3e",
+          "0x35dfacbe8d28db7e",
+          "0x484f8de497b3f50e",
+          "0x21c701d70d2c6d86"
         ],
         "id": "att-2",
         "packed_felts": [
@@ -244,8 +244,8 @@
         "v_byte": 1
       },
       {
-        "cite": "miden-crypto-0.25.1 dsa/ecdsa_k256_keccak/mod.rs:253,:301 + src/lib.rs:156-170",
-        "derivation": "k256 SigningKey::random(StdRng seed 3); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 240B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment @ 0.33.0 (Poseidon2 over the 16 affine pubkey felts)",
+        "cite": "gen_vectors::att_sign65 and miden_crypto::dsa::ecdsa_k256_keccak::PublicKey::to_commitment",
+        "derivation": "k256 SigningKey::random(StdRng seed 3); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 240B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment (Eidos over the 16 affine pubkey felts)",
         "digest_felts": [
           "0x91a1ffa2",
           "0x3ccff053",
@@ -258,10 +258,10 @@
         ],
         "digest_hex": "0xa2ffa19153f0cf3c982a581195c08c7140d85a2d5b9c4a35b5a9f3fc56d327fa",
         "expected_commitment": [
-          "0xf3d465281037ad6a",
-          "0x50fa3e9178f86ce5",
-          "0x2c0110a267fe02c0",
-          "0x44373b66994d1c4"
+          "0x4d2c50d673f7895e",
+          "0x2d213737d95bbc8c",
+          "0x40e218cf19be82a3",
+          "0x7505bc059aa654a5"
         ],
         "id": "att-3",
         "packed_felts": [
@@ -313,8 +313,8 @@
         "v_byte": 1
       },
       {
-        "cite": "miden-crypto-0.25.1 dsa/ecdsa_k256_keccak/mod.rs:253,:301 + src/lib.rs:156-170",
-        "derivation": "k256 SigningKey::random(StdRng seed 4); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 250B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment @ 0.33.0 (Poseidon2 over the 16 affine pubkey felts)",
+        "cite": "gen_vectors::att_sign65 and miden_crypto::dsa::ecdsa_k256_keccak::PublicKey::to_commitment",
+        "derivation": "k256 SigningKey::random(StdRng seed 4); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full 250B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment (Eidos over the 16 affine pubkey felts)",
         "digest_felts": [
           "0x25d149e8",
           "0xeaaf81a3",
@@ -327,10 +327,10 @@
         ],
         "digest_hex": "0xe849d125a381afeab1670280814436f1a7c0a145d65f79220014a8366c561861",
         "expected_commitment": [
-          "0xf884370a6fca9d96",
-          "0xa26452229a59670e",
-          "0x718e7f637767f8f2",
-          "0xd15937bc72283926"
+          "0x1fb54559f31682af",
+          "0x634acbfc864550f6",
+          "0x73edbe22ae38f935",
+          "0x199a520907dd5346"
         ],
         "id": "att-4-hookdata",
         "packed_felts": [
@@ -385,13 +385,13 @@
     "b32": [
       {
         "bytes32": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "all-zero bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)",
+        "cite": "generated deterministically by gen_vectors",
+        "derivation": "all-zero bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)",
         "expected_key": [
-          "0x5b31a8b9799ff836",
-          "0xe385174fe60f4b08",
-          "0xe82c6be88d50767c",
-          "0x2778f3b6a18981e2"
+          "0x37b4384a44596761",
+          "0x72816932d5676dd0",
+          "0x32a7a8a862f969d4",
+          "0x21f9144d281fc4ad"
         ],
         "id": "b32-pos-1",
         "packed_felts": [
@@ -413,13 +413,13 @@
       },
       {
         "bytes32": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "all-0xff bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)",
+        "cite": "generated deterministically by gen_vectors",
+        "derivation": "all-0xff bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)",
         "expected_key": [
-          "0x1d067ab9c44dbb5b",
-          "0x762523a374914f4d",
-          "0xb561bb6783cbca75",
-          "0x1cebf5d98c524690"
+          "0x12c3f8505054c117",
+          "0x35602afeef731aa",
+          "0x401dfa581c4fb780",
+          "0x55986f3322e534bb"
         ],
         "id": "b32-pos-2",
         "packed_felts": [
@@ -441,13 +441,13 @@
       },
       {
         "bytes32": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "bytes 0x00..0x1f; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)",
+        "cite": "generated deterministically by gen_vectors",
+        "derivation": "bytes 0x00..0x1f; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)",
         "expected_key": [
-          "0xe0a32b2c7c64989",
-          "0x4c534fbbf6a6de82",
-          "0xf34e34367783ea53",
-          "0x409fabd77b6ba441"
+          "0x76ff9a134c381336",
+          "0xf7549f519ad3057",
+          "0x4ee126c5bb03fcfd",
+          "0x2f34784ad1156dfc"
         ],
         "id": "b32-pos-3",
         "packed_felts": [
@@ -469,13 +469,13 @@
       },
       {
         "bytes32": "0xffffffffffffffff000102030405060708090a0b0c0d0e0f1011121314151617",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed @ v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors",
+        "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed by Hasher::hash_elements",
         "expected_key": [
-          "0xdbabba2292f849d7",
-          "0x655b1c0d9daf6e59",
-          "0x6ca3fdfd006dc3dc",
-          "0xa4d093ce38a42b15"
+          "0x17c4c4222d945101",
+          "0x1bfe72927e6241ff",
+          "0xa2f68893e52c81",
+          "0xd74c5e5f9fc9545"
         ],
         "id": "b32-rej-limb-ge-p",
         "lossless_error": "LimbOutOfField",

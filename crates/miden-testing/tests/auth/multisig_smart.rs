@@ -512,7 +512,7 @@ async fn test_multisig_smart_update_signers_and_thresholds() -> anyhow::Result<(
 /// duplicate public keys, mirroring the check on the plain `multisig` variant.
 #[tokio::test]
 async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
 
@@ -2809,7 +2809,7 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
     #[case] expected_error: Option<MasmError>,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Eidos)?;
 
     let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
 

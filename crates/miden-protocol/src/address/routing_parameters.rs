@@ -55,8 +55,6 @@ const K256_PUBLIC_KEY_LENGTH: usize = 33;
 /// Discriminants for encryption key variants.
 const ENCRYPTION_KEY_X25519_XCHACHA20POLY1305: u8 = 0;
 const ENCRYPTION_KEY_K256_XCHACHA20POLY1305: u8 = 1;
-const ENCRYPTION_KEY_X25519_AEAD_POSEIDON2: u8 = 2;
-const ENCRYPTION_KEY_K256_AEAD_POSEIDON2: u8 = 3;
 const ENCRYPTION_KEY_X25519_AEAD_EIDOS: u8 = 4;
 const ENCRYPTION_KEY_K256_AEAD_EIDOS: u8 = 5;
 
@@ -319,14 +317,6 @@ fn encode_encryption_key(key: &SealingKey, encoded: &mut Vec<u8>) {
             encoded.push(ENCRYPTION_KEY_K256_XCHACHA20POLY1305);
             encoded.extend(&pk.to_bytes());
         },
-        SealingKey::X25519AeadPoseidon2(pk) => {
-            encoded.push(ENCRYPTION_KEY_X25519_AEAD_POSEIDON2);
-            encoded.extend(&pk.to_bytes());
-        },
-        SealingKey::K256AeadPoseidon2(pk) => {
-            encoded.push(ENCRYPTION_KEY_K256_AEAD_POSEIDON2);
-            encoded.extend(&pk.to_bytes());
-        },
         SealingKey::X25519AeadEidos(pk) => {
             encoded.push(ENCRYPTION_KEY_X25519_AEAD_EIDOS);
             encoded.extend(&pk.to_bytes());
@@ -356,12 +346,6 @@ fn decode_encryption_key(
         },
         ENCRYPTION_KEY_K256_XCHACHA20POLY1305 => {
             SealingKey::K256XChaCha20Poly1305(read_k256_pub_key(byte_iter)?)
-        },
-        ENCRYPTION_KEY_X25519_AEAD_POSEIDON2 => {
-            SealingKey::X25519AeadPoseidon2(read_x25519_pub_key(byte_iter)?)
-        },
-        ENCRYPTION_KEY_K256_AEAD_POSEIDON2 => {
-            SealingKey::K256AeadPoseidon2(read_k256_pub_key(byte_iter)?)
         },
         ENCRYPTION_KEY_X25519_AEAD_EIDOS => {
             SealingKey::X25519AeadEidos(read_x25519_pub_key(byte_iter)?)
@@ -534,7 +518,14 @@ mod tests {
     #[test]
     fn routing_parameters_all_encryption_key_variants() -> anyhow::Result<()> {
         // Helper function to test both encoding/decoding and serialization
-        fn test_encryption_key_roundtrip(encryption_key: SealingKey) -> anyhow::Result<()> {
+        fn test_encryption_key_roundtrip(
+            encryption_key: SealingKey,
+            expected_variant: u8,
+        ) -> anyhow::Result<()> {
+            let mut key_bytes = Vec::new();
+            encode_encryption_key(&encryption_key, &mut key_bytes);
+            assert_eq!(key_bytes[0], expected_variant);
+
             let routing_params = RoutingParameters::new(AddressInterface::BasicWallet)
                 .with_encryption_key(encryption_key.clone());
 
@@ -559,7 +550,7 @@ mod tests {
             let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::X25519XChaCha20Poly1305(public_key);
-            test_encryption_key_roundtrip(encryption_key)?;
+            test_encryption_key_roundtrip(encryption_key, 0)?;
         }
 
         // Test K256XChaCha20Poly1305
@@ -568,25 +559,7 @@ mod tests {
             let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::K256XChaCha20Poly1305(public_key);
-            test_encryption_key_roundtrip(encryption_key)?;
-        }
-
-        // Test X25519AeadPoseidon2
-        {
-            use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
-            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
-            let public_key = secret_key.public_key();
-            let encryption_key = SealingKey::X25519AeadPoseidon2(public_key);
-            test_encryption_key_roundtrip(encryption_key)?;
-        }
-
-        // Test K256AeadPoseidon2
-        {
-            use crate::crypto::dsa::ecdsa_k256_keccak::KeyExchangeKey;
-            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
-            let public_key = secret_key.public_key();
-            let encryption_key = SealingKey::K256AeadPoseidon2(public_key);
-            test_encryption_key_roundtrip(encryption_key)?;
+            test_encryption_key_roundtrip(encryption_key, 1)?;
         }
 
         // Test X25519AeadEidos
@@ -595,7 +568,7 @@ mod tests {
             let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::X25519AeadEidos(public_key);
-            test_encryption_key_roundtrip(encryption_key)?;
+            test_encryption_key_roundtrip(encryption_key, 4)?;
         }
 
         // Test K256AeadEidos
@@ -604,9 +577,17 @@ mod tests {
             let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::K256AeadEidos(public_key);
-            test_encryption_key_roundtrip(encryption_key)?;
+            test_encryption_key_roundtrip(encryption_key, 5)?;
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn retired_encryption_key_variants_are_rejected() {
+        for variant in [2_u8, 3] {
+            let err = decode_encryption_key(&mut [variant].into_iter()).unwrap_err();
+            assert!(err.to_string().contains("unknown encryption key variant"));
+        }
     }
 }

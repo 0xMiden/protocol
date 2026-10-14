@@ -110,7 +110,7 @@ impl FaucetMetadataConfig {
     ///
     /// `SetMaxSupply` lays out as `[variant, new_max_supply]`. The string actions lay out as
     /// `[variant, 0, 0, 0, value(28)]`: the variant is padded out to a full word with three
-    /// zeros, so the payload starts word-aligned, as the note script's `poseidon2::hash_elements`
+    /// zeros, so the payload starts word-aligned, as the note script's `eidos::hash_elements`
     /// call requires.
     fn to_storage_values(&self) -> Vec<Felt> {
         let variant = Felt::from(self.variant());

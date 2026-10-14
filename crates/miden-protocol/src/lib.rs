@@ -31,12 +31,12 @@ mod constants;
 // ================================================================================================
 
 pub use constants::*;
-pub use domain_registry::ProtocolDomainRegistry;
+pub use domain_registry::*;
 pub use miden_core::mast::{MastForest, MastNodeId};
 pub use miden_core::prettier::PrettyPrint;
 pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};
 pub use miden_core_lib::CoreLibrary;
-pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
+pub use miden_crypto::hash::eidos::Eidos as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};
 pub use protocol::ProtocolLib;
@@ -92,6 +92,7 @@ pub mod vm {
     pub use miden_verifier::{
         ExecutionProof,
         ExecutionProofCompatibility,
+        HashFunction,
         PrecompileStatus,
         ProofSecurityParameters,
         VerificationOutcome,

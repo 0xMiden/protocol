@@ -3,6 +3,8 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_crypto::SequentialCommit;
+use miden_crypto::merkle::EmptySubtreeRoots;
+use miden_crypto::merkle::smt::SMT_DEPTH;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{ExecutionOutput, Word};
 use miden_protocol::account::{
@@ -91,14 +93,38 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
+use rstest::rstest;
 
 use super::{Felt, ZERO};
+use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, MockTransaction, TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
-async fn test_transaction_prologue() -> anyhow::Result<()> {
+async fn empty_smt_root_constant_matches_crypto() -> anyhow::Result<()> {
+    let output = CodeExecutor::with_default_host()
+        .run(
+            "use {EMPTY_SMT_ROOT} from miden::tx_kernel_core::constants
+
+            begin
+                push.EMPTY_SMT_ROOT
+                swapw dropw
+            end",
+        )
+        .await?;
+
+    assert_eq!(output.get_stack_word(0), *EmptySubtreeRoots::entry(SMT_DEPTH, 0));
+
+    Ok(())
+}
+
+#[rstest]
+#[case::empty(0)]
+#[case::one(1)]
+#[case::multiple(3)]
+#[tokio::test]
+async fn test_transaction_prologue(#[case] num_notes: usize) -> anyhow::Result<()> {
     let mut mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
@@ -115,7 +141,9 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
             [FungibleAsset::mock(111)],
         );
         TestTransactionBuilder::new(account)
-            .input_notes(vec![input_note_1, input_note_2, input_note_3])
+            .input_notes(
+                [input_note_1, input_note_2, input_note_3].into_iter().take(num_notes).collect(),
+            )
             .build()?
     };
 
@@ -136,11 +164,14 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(mock_tx_script_code).unwrap();
 
-    // Input note 2 does not have any note args.
-    let note_args_map = BTreeMap::from([
-        (mock_tx.input_notes().get_note(0).note().id(), Word::from([91u32; 4])),
-        (mock_tx.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
-    ]);
+    // Leave the third note's arguments unspecified to exercise the default empty word.
+    let note_args_map = mock_tx
+        .input_notes()
+        .iter()
+        .take(2)
+        .enumerate()
+        .map(|(index, note)| (note.note().id(), Word::from([91 + index as u32; 4])))
+        .collect::<BTreeMap<_, _>>();
 
     let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().map().clone())
         .with_tx_script(tx_script)

@@ -46,7 +46,7 @@ const ERR_XRESERVE_SET_ATTESTER_NOTE_WRONG_FAUCET = "set_attester note is not bo
 #! - ARGS is unused.
 #!
 #! Note storage is assumed to be as follows:
-#! - PK_COMMITMENT is the Poseidon2 pubkey commitment to write.
+#! - PK_COMMITMENT is the Eidos pubkey commitment to write.
 #! - enabled is 1 (allowlist: write the enabled marker) or 0 (remove: write EMPTY_WORD).
 #!
 #! Panics if:

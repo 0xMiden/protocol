@@ -84,7 +84,7 @@ impl ProvenTransaction {
     /// - The vector of output notes contains duplicates.
     /// - The set of input and output notes contains the same note.
     /// - Log visibility does not match the native account.
-    /// - The transaction is empty, which is the case if the account state is unchanged or the
+    /// - The transaction is empty, which is the case if the account state is unchanged and the
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
     ///   not match its declared account delta commitment.
@@ -686,7 +686,7 @@ mod tests {
             .build_existing()?;
         let patch = AccountPatch::try_from(account.clone())?;
         let actual_patch_commitment = patch.to_commitment();
-        // EMPTY_WORD is all-zeros and differs from a real Rescue hash.
+        // EMPTY_WORD is all-zeros and differs from a canonical Eidos commitment.
         let wrong_commitment = EMPTY_WORD;
         assert_ne!(wrong_commitment, actual_patch_commitment);
         let err = TxAccountUpdate::new(
@@ -705,6 +705,34 @@ mod tests {
             } if expected_patch_commitment == wrong_commitment
                 && returned_actual == actual_patch_commitment
         );
+        Ok(())
+    }
+
+    #[test]
+    fn structurally_empty_transaction_is_rejected() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let unchanged_commitment = Word::from([1_u32, 2, 3, 4]);
+        let account_update = TxAccountUpdate::new(
+            account_id,
+            unchanged_commitment,
+            unchanged_commitment,
+            Word::from([5_u32, 6, 7, 8]),
+            AccountUpdateDetails::Private,
+        )?;
+
+        let err = ProvenTransaction::new(
+            account_update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
+            BlockNumber::from(1),
+            Word::from([9_u32, 10, 11, 12]),
+            BlockNumber::from(2),
+            crate::testing::dummy_execution_proof(),
+            TransactionLogDetails::Private(Word::empty()),
+        )
+        .unwrap_err();
+
+        assert_matches!(err, ProvenTransactionError::EmptyTransaction);
         Ok(())
     }
 }

@@ -11,7 +11,7 @@ use miden::standards::attachments::network_account_target
 use {DEFAULT_TAG} from miden::standards::note::note_tag
 use {ALWAYS} from miden::standards::note::note_execution_hint
 use miden::protocol::output_note
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::standards::access::pausable
 use miden::standards::utils
 use miden::standards::assets::asset_amount
@@ -577,7 +577,7 @@ end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash([num_leaves, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_ID))).
+#! The serial number is computed as hash([num_leaves, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_ID)).
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [SERIAL_NUM]
@@ -592,15 +592,15 @@ proc compute_burn_note_serial_num(asset_id: AssetId) -> NoteSerialNumber
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_ID]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [SERIAL_AND_ASSET_HASH]
 
-    # load num_leaves from its value slot and merge it with the intermediate hash word
+    # Hash num_leaves from its value slot with the intermediate hash word.
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.active_account::get_item
     # => [num_leaves, 0, 0, 0, SERIAL_AND_ASSET_HASH]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [SERIAL_NUM]
 end
 

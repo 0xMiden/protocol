@@ -5,7 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
-use miden_protocol::DoubleWord;
+use miden_protocol::{DoubleWord, Hasher};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
@@ -17,7 +17,6 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScriptRoot};
@@ -292,7 +291,7 @@ impl IntoIterator for BridgeRoles {
 ///   network, scale, metadata hash) for all registered faucets, keyed by sub-key scheme based on
 ///   faucet ID.
 /// - [`Self::network_id_slot_name`]: Stores the bridge's AggLayer network ID.
-/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
+/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (Eidos(leaf_index,
 ///   source_bridge_network) → \[1, 0, 0, 0\]).
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
 /// - [`Self::cgi_chain_hash_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
@@ -568,10 +567,10 @@ impl AggLayerBridge {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
 
-        // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
+        // Compute the expected GER hash: eidos::hash_double_word(GER_LOWER, GER_UPPER)
         let ger_words = DoubleWord::try_from(ger.to_elements().as_slice())
             .expect("exit root should contain 8 felts");
-        let ger_hash = Poseidon2::merge(&[ger_words.lo(), ger_words.hi()]);
+        let ger_hash = Hasher::hash_double_word(&[ger_words.lo(), ger_words.hi()]);
 
         // Get the value stored by the GER hash. If this GER was registered, the value would be
         // equal to [1, 0, 0, 0]
