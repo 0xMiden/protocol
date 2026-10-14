@@ -1,5 +1,6 @@
 mod bridge_in;
 mod bridge_out;
+mod claim_hashing;
 mod config_bridge;
 mod faucet_helpers;
 mod fee_policy;

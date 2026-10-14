@@ -103,9 +103,11 @@ fn compute_recipient_chain(
     script: &NoteScript,
     storage: &NoteStorage,
 ) -> (Word, Word, Word) {
-    let serial_commitment = Hasher::merge(&[serial_num, Word::empty()]);
-    let serial_script_commitment = Hasher::merge(&[serial_commitment, script.root().into()]);
-    let recipient_digest = Hasher::merge(&[serial_script_commitment, storage.commitment()]);
+    let serial_commitment = Hasher::hash_double_word(&[serial_num, Word::empty()]);
+    let serial_script_commitment =
+        Hasher::hash_double_word(&[serial_commitment, script.root().into()]);
+    let recipient_digest =
+        Hasher::hash_double_word(&[serial_script_commitment, storage.commitment()]);
 
     (serial_commitment, serial_script_commitment, recipient_digest)
 }

@@ -106,13 +106,13 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     let asset = FungibleAsset::mock(400);
     let account1 = builder.add_existing_wallet_with_assets(
         Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
+            auth_scheme: AuthScheme::Falcon512Eidos,
         },
         [asset],
     )?;
     let account2 = builder.add_existing_wallet_with_assets(
         Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
+            auth_scheme: AuthScheme::Falcon512Eidos,
         },
         [asset],
     )?;
@@ -945,7 +945,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
 /// Tests that a transaction consuming and creating one note with basic authentication correctly
 /// signs the transaction summary.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_auth_singlesig(

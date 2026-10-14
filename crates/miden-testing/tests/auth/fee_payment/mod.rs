@@ -29,7 +29,7 @@ pub(super) const VERIFICATION_BASE_FEE: u32 = 500;
 // `MULTISIG_AUTH_BASE_CYCLES`) and `miden::standards::fee` (`PAY_FEE_CYCLES` and the epilogue
 // margins).
 const ECDSA_K256_KECCAK_AUTH_CYCLES: usize = 8000;
-const FALCON_512_POSEIDON2_AUTH_CYCLES: usize = 80000;
+const FALCON_512_EIDOS_AUTH_CYCLES: usize = 80000;
 const MULTISIG_AUTH_BASE_CYCLES: usize = 8192;
 const PAY_FEE_CYCLES: usize = 8192;
 const POST_AUTH_EPILOGUE_BASE_CYCLES: usize = 4096;
@@ -42,7 +42,7 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 /// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
 /// procedure cycles.
 pub(super) fn multisig_auth_estimate(num_signers: usize) -> usize {
-    num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
+    num_signers * FALCON_512_EIDOS_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
 }
 
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note

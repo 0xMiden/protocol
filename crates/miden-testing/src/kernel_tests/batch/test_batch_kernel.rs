@@ -11,7 +11,7 @@ use miden_protocol::errors::ProposedBatchError;
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::ProvenTransaction;
 use miden_protocol::vm::{ExecutionProof, PrecompileStatus};
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, PROTOCOL_PROOF_HASH, Word};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 
@@ -144,6 +144,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
+    assert_eq!(proven.proof().vm().proof.hash_fn(), PROTOCOL_PROOF_HASH);
 
     Ok(())
 }

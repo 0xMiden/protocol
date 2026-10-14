@@ -7,6 +7,6 @@ namespace = "agglayer"
 path      = "mod.masm"
 
 [dependencies]
-miden-core      = { linkage = "dynamic", version = "0.36" }
+miden-core      = { linkage = "dynamic", version = "1.0" }
 miden-protocol  = { linkage = "dynamic", version = "1.0.0-rc.1" }
 miden-standards = { linkage = "dynamic", version = "1.0.0-rc.1" }

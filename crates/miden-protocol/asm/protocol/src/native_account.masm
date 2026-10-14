@@ -118,14 +118,14 @@ end
 #! auth procedures are allowed to increment the nonce, a non-empty delta can only be computed from
 #! the auth procedure.
 #!
-#! The commitment to an empty delta is defined as the empty word.
+#! An empty delta commits to the canonical Eidos hash of an empty Felt sequence in the account
+#! delta domain.
 #!
 #! During an account-creating transaction (when the initial nonce is 0), this procedure will not
-#! return the empty word even if the initial storage commitment and the current storage commitment
-#! are identical (storage hasn't changed). This is because the delta for a new account must
-#! represent its entire newly created state, and the initial storage in a transaction is initialized
-#! to the storage that the account ID commits to, which may be non-empty. This does not have any
-#! consequences other than being inconsistent in this edge case.
+#! return the canonical empty-delta commitment even if the initial storage commitment and the
+#! current storage commitment are identical (storage hasn't changed). This is because the delta for
+#! a new account must represent its entire newly created state, and the initial storage in a
+#! transaction is initialized to the storage that the account ID commits to, which may be non-empty.
 #!
 #! Inputs:  []
 #! Outputs: [DELTA_COMMITMENT]

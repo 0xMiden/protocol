@@ -104,9 +104,7 @@ async fn emitted_items_for(items: &XReserveBurnItems) -> anyhow::Result<Vec<Word
     let cap = u64::from(AssetAmount::MAX);
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "USDCX",
         cap,
         Some(cap),

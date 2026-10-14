@@ -80,9 +80,7 @@ fn setup_keys_and_authenticators_with_scheme(
     for _ in 0..num_approvers {
         let sec_key = match auth_scheme {
             AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Poseidon2 => {
-                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
-            },
+            AuthScheme::Falcon512Eidos => AuthSecretKey::new_falcon512_eidos_with_rng(&mut rng),
             _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
         };
         let pub_key = sec_key.public_key();
@@ -187,7 +185,7 @@ fn create_guarded_multisig_account(
 /// configured.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_guarded_multisig_signature_required(
     #[case] auth_scheme: AuthScheme,
@@ -323,7 +321,7 @@ async fn test_guarded_multisig_signature_required(
 async fn test_guarded_multisig_approval_expiration_is_applied_after_the_guardian_signature()
 -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::Falcon512Eidos)?;
     let approvers = public_keys
         .iter()
         .zip(auth_schemes.iter())
@@ -411,7 +409,7 @@ async fn test_guarded_multisig_approval_expiration_is_applied_after_the_guardian
 /// Tests that the guardian public key can be updated and then enforced for guarded multisig.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_guarded_multisig_update_guardian_public_key(
     #[case] auth_scheme: AuthScheme,
@@ -429,7 +427,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let old_guardian_authenticator =
         BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
 
-    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
     let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
     let new_guardian_authenticator =
@@ -587,7 +585,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
 /// `assert_only_one_non_auth_procedure_called`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     #[case] auth_scheme: AuthScheme,
@@ -602,7 +600,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
 
     let old_guardian_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
 
-    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
     let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
 
@@ -792,7 +790,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
 
     let old_guardian_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
 
-    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
     let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
 
@@ -1129,7 +1127,7 @@ async fn test_guarded_multisig_signer_update_enforces_the_guardian_invariant(
 /// signer.
 #[tokio::test]
 async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let approvers = public_keys
@@ -1138,7 +1136,7 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
         .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let guardian_public_key = guardian_secret_key.public_key();
     let guardian_authenticator =
         BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
@@ -1217,7 +1215,7 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
 /// fee on a fee-charging chain.
 #[tokio::test]
 async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let approvers = public_keys
@@ -1226,8 +1224,8 @@ async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> any
         .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let old_guardian_public_key = AuthSecretKey::new_falcon512_poseidon2().public_key();
-    let new_guardian_public_key = AuthSecretKey::new_falcon512_poseidon2().public_key();
+    let old_guardian_public_key = AuthSecretKey::new_falcon512_eidos().public_key();
+    let new_guardian_public_key = AuthSecretKey::new_falcon512_eidos().public_key();
 
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let initial_fee_asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?;

@@ -1,6 +1,6 @@
 use {Asset, AssetValue, NoteAssetsCommitment} from miden::protocol_utils::types
 use {InputNoteData} from miden::tx_kernel_core::types
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::fungible_asset
@@ -244,7 +244,8 @@ end
 #! Returns a commitment to the removed assets and stores them in the advice map under that
 #! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
 #! the assets that remained in the note at the time of the call, i.e. excluding assets that were
-#! already removed. If no assets remain, the commitment is the EMPTY_WORD.
+#! already removed. If no assets remain, the commitment is the canonical Eidos hash of an empty
+#! Felt sequence.
 #!
 #! The note's initial assets info (see get_initial_assets_info) is not affected by this procedure.
 #!
@@ -268,19 +269,15 @@ pub proc remove_all_assets(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCom
     push.0 loc_store.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC
     # => [input_note_ptr]
 
-    # set up the iteration over the note's asset slots
+    # set up the iteration over the note's asset slots; the note pointer stays on the stack
+    # through the scan so the stack depth does not drop below 16 while this runs in the kernel
+    # context (a pop at depth 16 would pull in a zero, changing the procedure's stack effect)
     dup exec.memory::get_input_note_num_assets loc_store.REMOVE_ALL_ASSETS_COUNT_LOC
-    exec.memory::get_input_note_assets_ptr
-    # => [assets_ptr]
+    dup exec.memory::get_input_note_assets_ptr
+    # => [assets_ptr, input_note_ptr]
 
-    # initialize the hasher state for the assets commitment; the hasher state is pushed before the
-    # assets pointer is moved to local memory so the stack depth does not drop below 16 while this
-    # runs in the kernel context
-    exec.poseidon2::init_no_padding
-    # => [RATE0, RATE1, CAPACITY, assets_ptr]
-
-    movup.12 loc_store.REMOVE_ALL_ASSETS_READ_PTR_LOC
-    # => [RATE0, RATE1, CAPACITY]
+    loc_store.REMOVE_ALL_ASSETS_READ_PTR_LOC
+    # => [input_note_ptr]
 
     # iterate the note's asset slots
     # each remaining asset is hashed into the commitment, copied to the local buffer and removed
@@ -288,25 +285,25 @@ pub proc remove_all_assets(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCom
     loc_load.REMOVE_ALL_ASSETS_COUNT_LOC neq.0
     while.true
         loc_load.REMOVE_ALL_ASSETS_READ_PTR_LOC exec.asset::load
-        # => [ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+        # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
 
         # an asset slot with an empty asset ID means the asset was already removed
         exec.word::testz
-        # => [is_slot_empty, ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+        # => [is_slot_empty, ASSET_ID, ASSET_VALUE, input_note_ptr]
 
         if.true
             dropw dropw
-            # => [RATE0, RATE1, CAPACITY]
+            # => [input_note_ptr]
         else
             # copy the asset to the local buffer at
             # locaddr.REMOVE_ALL_ASSETS_ASSETS_LOC + num_remaining * ASSET_SIZE
             dupw.1 dupw.1
             loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC mul.ASSET_SIZE
             locaddr.REMOVE_ALL_ASSETS_ASSETS_LOC add
-            # => [next_asset_ptr, ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+            # => [next_asset_ptr, ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, input_note_ptr]
 
             exec.asset::store
-            # => [ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+            # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
 
             # increment the number of remaining assets
             loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC add.1
@@ -314,11 +311,12 @@ pub proc remove_all_assets(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCom
 
             # remove the asset from the note by writing empty words to its slot
             padw padw loc_load.REMOVE_ALL_ASSETS_READ_PTR_LOC exec.asset::store
-            # => [ASSET_ID, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+            # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
 
-            # absorb the asset into the hasher state
-            swapdw dropw dropw exec.poseidon2::permute
-            # => [RATE0, RATE1, CAPACITY]
+            # The removed assets are hashed from the completed buffer after the scan, when their
+            # exact total length is known.
+            dropw dropw
+            # => [input_note_ptr]
         end
 
         # advance to the next asset slot
@@ -328,18 +326,23 @@ pub proc remove_all_assets(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCom
         # decrement the number of slots left to iterate and continue while it is non-zero
         loc_load.REMOVE_ALL_ASSETS_COUNT_LOC sub.1
         dup loc_store.REMOVE_ALL_ASSETS_COUNT_LOC neq.0
-        # => [should_loop, RATE0, RATE1, CAPACITY]
+        # => [should_loop, input_note_ptr]
     end
 
-    exec.poseidon2::squeeze_digest
-    # => [ASSETS_COMMITMENT]
-
-    # compute the local buffer range holding the removed assets
+    # Compute the local buffer range holding the removed assets and retain a copy for inserting the
+    # preimage into the advice map.
     locaddr.REMOVE_ALL_ASSETS_ASSETS_LOC dup
     loc_load.REMOVE_ALL_ASSETS_NUM_REMAINING_LOC mul.ASSET_SIZE add
-    # => [buffer_end_ptr, buffer_start_ptr, ASSETS_COMMITMENT]
+    swap
+    # => [buffer_start_ptr, buffer_end_ptr, input_note_ptr]
 
-    movdn.5 movdn.4
+    # the note pointer is no longer needed; the stack is now deep enough to drop it without
+    # pulling in a zero
+    movup.2 drop
+    # => [buffer_start_ptr, buffer_end_ptr]
+
+    dup.1 dup.1
+    exec.eidos::hash_words
     # => [ASSETS_COMMITMENT, buffer_start_ptr, buffer_end_ptr]
 
     # store the removed assets in the advice map using ASSETS_COMMITMENT as a key

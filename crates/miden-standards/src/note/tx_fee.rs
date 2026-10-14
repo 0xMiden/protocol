@@ -165,7 +165,7 @@ impl TxFeeNote {
             sender.prefix().as_felt(),
         ]);
 
-        Hasher::merge(&[fee_domain, tuple])
+        Hasher::hash_double_word(&[fee_domain, tuple])
     }
 }
 

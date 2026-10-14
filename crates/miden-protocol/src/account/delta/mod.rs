@@ -12,7 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
+use crate::{ACCOUNT_DELTA_COMMITMENT_DOMAIN, Felt, Hasher, Word};
 
 mod delta_op;
 pub use delta_op::AssetDeltaOperation;
@@ -24,7 +24,7 @@ pub use vault::{AccountVaultDelta, AssetDelta};
 // ================================================================================================
 
 /// The [`AccountDelta`] stores the differences between two account states, which can result from
-/// one or more transaction.
+/// one or more transactions.
 ///
 /// The differences are represented as follows:
 /// - storage: an [`AccountStoragePatch`] that contains the changes to the account storage.
@@ -51,12 +51,6 @@ pub struct AccountDelta {
 impl AccountDelta {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
-
-    /// Domain separator for the account delta commitment.
-    ///
-    /// It is placed in the capacity word of the hasher rather than in the hashed elements, so that
-    /// it stays fixed even as the layout of those elements evolves across versions.
-    const DOMAIN: Felt = ProtocolDomainRegistry::AccountDelta.as_felt();
 
     /// Version 1 of the account delta commitment layout.
     ///
@@ -145,10 +139,11 @@ impl AccountDelta {
     /// ## Computation
     ///
     /// The delta commitment is a sequential hash over a vector of field elements which starts out
-    /// empty and is appended to in the following way. If no asset, storage or code elements were
-    /// appended, the commitment is defined as the empty word. Whenever sorting is expected, it
-    /// is that of a [`Word`]. The hash is domain-separated by the delta's `DOMAIN`, which is
-    /// placed in the capacity word of the hasher.
+    /// empty and is appended to in the following way. A structurally empty delta has an empty
+    /// preimage and commits to the canonical Eidos hash of an empty sequence in the delta domain.
+    /// Any non-empty delta, including one which only changes the nonce, includes the header below.
+    /// Whenever sorting is expected, it is that of a [`Word`]. The registered delta selector is
+    /// bound into Eidos's initial chaining word.
     ///
     /// - Append `[[version = 1, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
@@ -202,7 +197,7 @@ impl AccountDelta {
     /// The rationale for this layout is that hashing in the VM should be as efficient as possible
     /// and minimize the number of branches to be as efficient as possible. Every high-level section
     /// in this bullet point list should add an even number of words since the hasher operates
-    /// on double words. In the VM, each permutation is done immediately, so adding an uneven
+    /// on double words. In the VM, each compression is done immediately, so adding an uneven
     /// number of words in a given step will result in more difficulty in the MASM implementation.
     ///
     /// ## Security
@@ -219,7 +214,7 @@ impl AccountDelta {
     ///   changed slot in the delta, a domain separator is hashed into the delta. The domain
     ///   separator is always at the same index in each layout so it cannot be maliciously crafted
     ///   (see below for an example). These separators only need to be unique _within_ a delta or
-    ///   patch, since the `DOMAIN` of a delta and of a patch already separate the two objects.
+    ///   patch, since their registered Eidos selectors already separate the two objects.
     /// - Storage value slots:
     ///   - since value slots are only included in the patch if their value has changed when the
     ///     operation is `Update`, there is no ambiguity between a value slot being set to
@@ -260,7 +255,7 @@ impl AccountDelta {
     ///
     /// A delta and a patch have identically shaped headers, so their element sequences can be made
     /// to match. They cannot collide because the delta and the patch commitment use distinct hasher
-    /// capacity domains.
+    /// registered Eidos selectors.
     ///
     /// ### Number of Changed Entries
     ///
@@ -346,30 +341,24 @@ impl AccountDelta {
 impl SequentialCommit for AccountDelta {
     type Commitment = Word;
 
-    /// Computes the commitment to the delta, domain-separated by its `DOMAIN`.
+    /// Computes the commitment to the delta under its registered Eidos selector.
     ///
     /// See [AccountDelta::to_commitment()] for more details.
     fn to_commitment(&self) -> Word {
         let elements = self.to_elements();
-
-        // An empty delta produces no elements and its commitment is defined as the empty word.
-        if elements.is_empty() {
-            return Word::empty();
-        }
-
-        Hasher::hash_elements_in_domain(&elements, Self::DOMAIN)
+        Hasher::hash_elements_in_domain(&elements, ACCOUNT_DELTA_COMMITMENT_DOMAIN)
     }
 
     /// Reduces the delta to a sequence of field elements.
     ///
     /// See [AccountDelta::to_commitment()] for more details.
     fn to_elements(&self) -> Vec<Felt> {
-        // The commitment to an empty delta is defined as the empty word.
+        // An empty delta has an empty commitment preimage.
         if self.is_empty() {
             return Vec::new();
         }
 
-        // Minor optimization: At least 24 elements are always added.
+        // Reserve space for the header and a small delta.
         let mut elements = Vec::with_capacity(24);
 
         // Metadata
@@ -471,6 +460,7 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
+    use miden_crypto::hash::eidos::DomainTag;
     use rstest::rstest;
 
     use super::{AccountDelta, AccountStoragePatch, AccountVaultDelta};
@@ -502,24 +492,34 @@ mod tests {
         AccountIdBuilder,
     };
     use crate::utils::serde::Serializable;
-    use crate::{Felt, Word};
+    use crate::{ACCOUNT_DELTA_COMMITMENT_DOMAIN, Felt, Hasher, Word};
 
     #[test]
-    fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
+    fn empty_account_delta_uses_canonical_domain_hash() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
         let empty_delta = AccountDelta::new(
-            AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?,
+            account_id,
             AccountStoragePatch::new(),
             AccountVaultDelta::default(),
             AccountCodePatch::default(),
             Felt::ZERO,
         )?;
-        assert_eq!(empty_delta.to_commitment(), Word::empty());
+        let expected =
+            Hasher::hash_elements_in_domain::<Felt, _>(&[], ACCOUNT_DELTA_COMMITMENT_DOMAIN);
+        let patch_empty = AccountPatch::empty(account_id).to_commitment();
+        let undomained_empty = Hasher::hash_elements::<Felt>(&[]);
+
+        assert_eq!(empty_delta.to_commitment(), expected);
+        assert_ne!(empty_delta.to_commitment(), Word::empty());
+        assert_ne!(empty_delta.to_commitment(), patch_empty);
+        assert_ne!(empty_delta.to_commitment(), undomained_empty);
+        assert_ne!(patch_empty, undomained_empty);
 
         Ok(())
     }
 
-    /// A delta and a patch that reduce to identical element sequences still commit to different
-    /// words, because they use distinct hasher domains.
+    /// Patch and delta commitments bind the layout version in the payload under distinct
+    /// delegated domains, even when the payloads are identical.
     #[test]
     fn account_delta_commitment_domain_separation() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
@@ -540,7 +540,27 @@ mod tests {
             Some(nonce),
         )?;
 
-        assert_eq!(delta.to_elements(), patch.to_elements());
+        let preimage = [
+            Felt::ONE,
+            nonce,
+            account_id.suffix(),
+            account_id.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+        ];
+        assert_eq!(delta.to_elements(), preimage);
+        assert_eq!(patch.to_elements(), preimage);
+
+        for (actual, tag) in
+            [(delta.to_commitment(), 0x0200_0100), (patch.to_commitment(), 0x0200_0000)]
+        {
+            let cv =
+                Hasher::init_chaining_word_with_tag(DomainTag::from_u32(tag).unwrap(), [8, 0, 0]);
+            assert_eq!(actual, Hasher::compress(cv, preimage));
+        }
+
         assert_ne!(delta.to_commitment(), Word::empty());
         assert_ne!(delta.to_commitment(), patch.to_commitment());
 

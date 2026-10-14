@@ -7,7 +7,7 @@ use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
+use miden_protocol::crypto::dsa::falcon512_eidos::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::{
@@ -58,9 +58,8 @@ use crate::{
 async fn test_note_setup() -> anyhow::Result<()> {
     let mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -103,9 +102,8 @@ async fn test_note_setup() -> anyhow::Result<()> {
 async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     let mut mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -200,9 +198,8 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
 #[tokio::test]
 async fn active_note_id_is_reported_for_every_executed_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let p2id_note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -378,10 +375,9 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             # => [HASH_15, HASH_8, HASH_5]
 
             push.0.{base_addr}
-            # check that calling `compute_storage_commitment` procedure with 0 elements will result in an
-            # empty word
+            # compute the canonical Eidos commitment for empty note storage
             exec.note::compute_storage_commitment
-            # => [0, 0, 0, 0, HASH_15, HASH_8, HASH_5]
+            # => [HASH_EMPTY, HASH_15, HASH_8, HASH_5]
 
             # truncate the stack
             exec.sys::truncate_stack
@@ -413,7 +409,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
     inputs_15.extend_from_slice(&word_4[0..3]);
     let note_storage_15_hash = NoteStorage::new(inputs_15)?.commitment();
 
-    assert_eq!(exec_output.get_stack_word(0), Word::empty());
+    assert_eq!(exec_output.get_stack_word(0), NoteStorage::default().commitment());
     assert_eq!(exec_output.get_stack_word(4), note_storage_15_hash);
     assert_eq!(exec_output.get_stack_word(8), note_storage_8_hash);
     assert_eq!(exec_output.get_stack_word(12), note_storage_5_hash);

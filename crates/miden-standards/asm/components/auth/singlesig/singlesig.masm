@@ -21,7 +21,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_poseidon2
+#! - 2 => falcon512_eidos
 #!
 #! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
 #! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
