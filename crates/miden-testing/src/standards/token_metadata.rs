@@ -5,7 +5,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_crypto::hash::poseidon2::Poseidon2;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
@@ -19,7 +18,7 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::access::Pausable;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
@@ -172,10 +171,10 @@ fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
     value
 }
 
-/// Compute the Poseidon2 hash of the field data (used as the advice map key).
+/// Compute the Eidos hash of the field data (used as the advice map key).
 fn compute_field_hash(data: &[Word; 7]) -> Word {
     let felts = field_advice_map_value(data);
-    Poseidon2::hash_elements(&felts)
+    Hasher::hash_elements(&felts)
 }
 
 /// Execute a tx script against the given account and assert success.

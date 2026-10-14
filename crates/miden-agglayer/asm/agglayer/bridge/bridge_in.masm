@@ -9,7 +9,7 @@ use miden::standards::utils
 use miden::standards::assets::asset_amount
 use miden::standards::interop::eth
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::mem
 use miden::core::word
 use miden::protocol::active_account
@@ -37,11 +37,19 @@ const ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH = "claim leaf destination netw
 # Claim Nullifier Flag
 const IS_CLAIMED_FLAG = ONE_WORD
 
+# Generic Felt-sequence Eidos chaining word for a claim-nullifier preimage.
+const CLAIM_NULLIFIER_INIT_CV = [
+    4280581857092831745,
+    2688637132020383746,
+    1947077364412317696,
+    6620516959492505600
+]
+
 # Storage slots
 # -------------------------------------------------------------------------------------------------
 
 # The slot in this component's storage layout where claim nullifiers are stored.
-# Map entries: Poseidon2(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+# Map entries: Eidos(leaf_index, source_bridge_network) => [1, 0, 0, 0]
 const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
 
 # Storage slot constants for the CGI (claimed global index) chain hash.
@@ -664,7 +672,7 @@ proc verify_leaf(leaf_value: Keccak256Digest, proof_data_key: AdviceMapKey)
     # => []
 end
 
-#! Computes the claim nullifier as Poseidon2(leaf_index, source_bridge_network), then checks that
+#! Computes the claim nullifier as Eidos(leaf_index, source_bridge_network), then checks that
 #! the claim has not been spent and marks it as spent.
 #!
 #! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
@@ -678,18 +686,14 @@ end
 #!
 #! Invocation: exec
 proc set_and_check_claimed(leaf_index: u32, source_bridge_network: NetworkId)
-    # Write both values to memory for hashing
-    # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
-    # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = source_bridge_network
-    mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
-    # => [source_bridge_network]
+    padw push.0.0
+    # => [0, 0, 0, 0, 0, 0, leaf_index, source_bridge_network]
 
-    mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
-    # => []
+    movup.7 movup.7
+    # => [leaf_index, source_bridge_network, 0, 0, 0, 0, 0, 0]
 
-    # Hash the two elements using Poseidon2 to produce the nullifier
-    push.2 push.CLAIM_LEAF_INDEX_MEM_ADDR
-    exec.poseidon2::hash_elements
+    push.CLAIM_NULLIFIER_INIT_CV
+    exec.eidos::compress_double_word
     # => [NULLIFIER]
 
     exec.assert_claim_not_spent
@@ -699,7 +703,7 @@ end
 #! Checks that the CLAIM note has not already been spent, and marks it as spent by storing
 #! [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
 #!
-#! The nullifier is computed as Poseidon2(leaf_index, source_bridge_network), which uniquely
+#! The nullifier is computed as Eidos(leaf_index, source_bridge_network), which uniquely
 #! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
 #!
 #! Inputs:  [NULLIFIER]

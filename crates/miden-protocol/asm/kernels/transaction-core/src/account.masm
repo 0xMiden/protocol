@@ -16,7 +16,7 @@ use miden::tx_kernel_core::callbacks
 use miden::tx_kernel_core::memory
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::mem
 use miden::core::word
 use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE}
@@ -33,6 +33,14 @@ use {
 
 # Re-exported for testing purposes.
 pub use {validate as validate_id} from miden::protocol_utils::account_id
+
+# Generic Felt-sequence Eidos chaining word for 16-Felt account preimages.
+const EIDOS_INIT_CV_16 = [
+    4280581857092831745,
+    2688637132020383760,
+    1947077364412317696,
+    6620516959492505600
+]
 
 # ERRORS
 # =================================================================================================
@@ -307,11 +315,8 @@ pub use {get_init_account_commitment as get_initial_commitment} from miden::tx_k
 
 #! Computes commitment to the state of the active account.
 #!
-#! Notice that there is no caching (and, hence, dirty flag) for the commitment of the entire
-#! account. If the storage commitment is up-to-date (which is ensured by this procedure), computing 
-#! account commitment is relatively cheap — essentially is consists of just 2 permutations of the 
-#! hash function and takes relatively small number of cycles, so it would not be worth adding a 
-#! separate caching mechanism for this.
+#! This procedure first refreshes the storage commitment. It does not cache the full account
+#! commitment because computing it takes only two hash compressions.
 #!
 #! Inputs:  []
 #! Outputs: [ACCOUNT_COMMITMENT]
@@ -325,17 +330,17 @@ pub proc compute_commitment() -> Commitment
 
     # prepare the stack for computing the account commitment
     exec.memory::get_active_account_data_ptr
-    exec.poseidon2::init_no_padding
-    # => [RATE0, RATE1, CAPACITY, account_data_ptr]
+    push.EIDOS_INIT_CV_16 padw padw
+    # => [BLOCK_LO, BLOCK_HI, CV, account_data_ptr]
 
     # stream account data and compute sequential hash. We perform two `mem_stream` operations
     # because the account data consists of exactly 4 words.
-    mem_stream exec.poseidon2::permute
-    mem_stream exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, account_data_ptr']
+    mem_stream compress
+    mem_stream compress
+    # => [BLOCK_LO, BLOCK_HI, CV, account_data_ptr']
 
     # extract account commitment
-    exec.poseidon2::squeeze_digest
+    exec.eidos::digest
     # => [ACCOUNT_COMMITMENT, account_data_ptr']
 
     # drop account_data_ptr
@@ -1026,33 +1031,33 @@ end
 pub proc validate_seed()
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
-    # initialize capacity of the hasher and rate1 with the code commitment
-    padw exec.memory::get_account_code_commitment
-    # => [CODE_COMMITMENT, CAPACITY]
+    # Initialize the 16-Felt Eidos chain and place the code commitment in the high block word.
+    push.EIDOS_INIT_CV_16 exec.memory::get_account_code_commitment
+    # => [CODE_COMMITMENT, CV]
 
     # push the advice map key at which the seed is located
     exec.memory::get_native_account_id
     exec.create_id_key
-    # => [ACCOUNT_ID_KEY, CODE_COMMITMENT, CAPACITY]
+    # => [ACCOUNT_ID_KEY, CODE_COMMITMENT, CV]
 
     # overwrite ACCOUNT_ID_KEY with the SEED
     adv.push_mapval adv_loadw
-    # => [SEED, CODE_COMMITMENT, CAPACITY]
+    # => [SEED, CODE_COMMITMENT, CV]
 
-    # perform first permutation over (SEED, CODE_COMMITMENT)
-    exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY]
+    # compress the first block (SEED, CODE_COMMITMENT)
+    compress
+    # => [BLOCK_LO, BLOCK_HI, CV]
 
-    # clear rate elements
+    # discard the block words while retaining the chaining word
     dropw dropw
-    # => [CAPACITY]
+    # => [CV]
 
-    # perform second permutation over (STORAGE_COMMITMENT, EMPTY_WORD)
+    # compress the second block (STORAGE_COMMITMENT, EMPTY_WORD)
     padw exec.memory::get_account_storage_commitment
-    # => [STORAGE_COMMITMENT, EMPTY_WORD, CAPACITY]
+    # => [STORAGE_COMMITMENT, EMPTY_WORD, CV]
 
-    exec.poseidon2::permute
-    exec.poseidon2::squeeze_digest
+    compress
+    exec.eidos::digest
     # => [DIGEST]
     # => [digest0, digest1, digest2, digest3]
 
@@ -1416,29 +1421,34 @@ pub proc save_account_storage_data(storage_commitment: Commitment)
     # OS => [num_storage_slots, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
 
-    # setup acct_storage_slots_ptr and end_ptr for reading from advice stack
-    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_active_storage_slots_section_ptr
-    dup movdn.2 add swap
-    # OS => [acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
-    # AS => [[STORAGE_SLOT_DATA]]
+    # The empty account has no storage data to copy from advice.
+    dup eq.0
+    if.true
+        drop
+        exec.eidos::empty_felt_sequence_digest
+        # OS => [DIGEST, STORAGE_COMMITMENT]
+    else
+        # Each storage slot occupies one complete Eidos block.
+        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+        exec.memory::get_account_active_storage_slots_section_ptr
+        dup movdn.2 add swap
+        # OS => [acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
+        # AS => [[STORAGE_SLOT_DATA]]
 
-    # initialize hasher state before reading from advice stack
-    exec.poseidon2::init_no_padding
-    # OS => [RATE0, RATE1, CAPACITY, acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
-    # AS => [[STORAGE_SLOT_DATA]]
+        # Initialize Eidos with the exact storage length.
+        dup.1 dup.1 sub exec.eidos::init
+        # OS => [BLOCK_LO, BLOCK_HI, CV, acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
 
-    # read the data from advice stack to memory and hash
-    exec.mem::pipe_double_words_to_memory
-    # OS => [RATE0, RATE1, CAPACITY, end_ptr', STORAGE_COMMITMENT]
-    # AS => []
+        exec.mem::pipe_double_words_to_memory
+        # OS => [BLOCK_LO, BLOCK_HI, CV, end_ptr', STORAGE_COMMITMENT]
+        # AS => []
 
-    # extract the digest
-    exec.poseidon2::squeeze_digest
-    # OS => [DIGEST, end_ptr', STORAGE_COMMITMENT]
+        exec.eidos::digest
+        # OS => [DIGEST, end_ptr', STORAGE_COMMITMENT]
 
-    # drop end_ptr
-    movup.4 drop
-    # OS => [DIGEST, STORAGE_COMMITMENT]
+        movup.4 drop
+        # OS => [DIGEST, STORAGE_COMMITMENT]
+    end
 
     # verify hashed account storage slots match account storage commitment
     assert_eqw.err=ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH
@@ -1507,11 +1517,11 @@ pub proc save_account_procedure_data(code_section_ptr: ptr<felt>, code_commitmen
 
     # read the data from advice stack to memory and hash
     exec.mem::pipe_words_to_memory
-    # OS => [RATE0, RATE1, CAPACITY, end_ptr', CODE_COMMITMENT]
+    # OS => [BLOCK_LO, BLOCK_HI, CV, end_ptr', CODE_COMMITMENT]
     # AS => []
 
     # extract the digest
-    exec.poseidon2::squeeze_digest
+    exec.eidos::digest
     # OS => [DIGEST, end_ptr', CODE_COMMITMENT]
 
     # drop end_ptr
@@ -2171,7 +2181,7 @@ end
 #! Inputs:  [KEY]
 #! Outputs: [HASHED_KEY]
 proc hash_map_key(key: StorageMapKey) -> Commitment
-    exec.poseidon2::hash
+    exec.eidos::hash
     # => [HASHED_KEY]
 end
 
@@ -2192,34 +2202,38 @@ proc refresh_storage_commitment()
     # => [should_recompute_storage_commitment]
 
     if.true
-        # dirty flag being equal 1 ensures that we have at least one storage slot, so we have to
-        # hash the storage anyway
-
         # get number of storage slots
         exec.memory::get_num_storage_slots
         # => [num_storage_slots]
 
-        # setup start and end ptr
-        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
-        exec.memory::get_account_active_storage_slots_section_ptr
-        dup movdn.2 add swap
-        # => [start_ptr, end_ptr]
+        dup eq.0
+        if.true
+            drop
+            exec.eidos::empty_felt_sequence_digest
+            # => [DIGEST]
+        else
+            # setup start and end ptr
+            mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+            exec.memory::get_account_active_storage_slots_section_ptr
+            dup movdn.2 add swap
+            # => [start_ptr, end_ptr]
 
-        # pad stack to read and hash from memory
-        exec.poseidon2::init_no_padding
-        # => [RATE0, RATE1, CAPACITY, start_ptr, end_ptr]
+            # Initialize Eidos with the exact storage length.
+            dup.1 dup.1 sub exec.eidos::init
+            # => [BLOCK_LO, BLOCK_HI, CV, start_ptr, end_ptr]
 
-        # hash elements from memory
-        exec.poseidon2::absorb_double_words_from_memory
-        # => [RATE0, RATE1, CAPACITY, start_ptr, end_ptr]
+            # hash elements from memory
+            exec.eidos::absorb_double_words_from_memory
+            # => [BLOCK_LO, BLOCK_HI, CV, start_ptr, end_ptr]
 
-        # extract the digest
-        exec.poseidon2::squeeze_digest
-        # => [DIGEST, end_ptr, end_ptr]
+            # extract the digest
+            exec.eidos::digest
+            # => [DIGEST, end_ptr, end_ptr]
 
-        # clean stack
-        movup.4 drop movup.4 drop
-        # => [DIGEST]
+            # clean stack
+            movup.4 drop movup.4 drop
+            # => [DIGEST]
+        end
 
         # set new account storage commitment
         exec.memory::set_account_storage_commitment dropw

@@ -37,12 +37,12 @@ Recall that an [account's nonce](index.md#nonce) must be incremented whenever it
 
 ### Signature schemes and privacy
 
-The standard signature-based authentication components support two schemes, and they differ in what they reveal at proving time:
+The standard signature-based authentication components support two schemes:
 
-- `falcon512_poseidon2` is verified entirely in-circuit. The public key is supplied non-deterministically and checked against the on-chain `Poseidon2(pk)` commitment inside the proof, so neither the public key nor the signature leaves the prover.
-- `ecdsa_k256_keccak` is verified via a precompile. Under the current native re-verification model, the precompile calldata - the raw compressed secp256k1 public key and the signature - must be carried inside the transaction proof for it to verify: the verifier recomputes the precompile transcript from that calldata and binds it into the proof's public inputs, so it cannot be stripped or withheld. As a consequence, the public key and signature are disclosed to the node operator and to any party on the transaction submission or gossip path, even though the account commits on-chain only to `Poseidon2(pk)`.
+- `falcon512_eidos` verifies the signature in the VM trace.
+- `ecdsa_k256_keccak` commits to a deferred signature relation in the VM trace. The transaction carries the precompile witness for verification during batch proving.
 
-In other words, `ecdsa_k256_keccak` does not provide the public-key privacy that commitment-based storage otherwise implies. Integrators requiring signer-key privacy should select `falcon512_poseidon2`.
+Both schemes give the public key and signature to the prover as witness data and bind the public key to the account's `Eidos(pk)` commitment. Falcon proofs do not carry the raw public key or signature. ECDSA transaction proofs do: their deferred precompile witness includes both, making them visible to anyone who receives the transaction proof, including the batch prover. Later batch proving does not undo that disclosure. Applications that outsource proof generation must disclose the witness to their prover for either scheme.
 
 ### Procedure invocation checks
 

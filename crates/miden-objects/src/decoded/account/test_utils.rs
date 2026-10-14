@@ -99,7 +99,7 @@ pub(crate) fn mock_new_account() -> Account {
 /// Returns one deterministic secret key per [`AuthScheme`].
 pub(crate) fn auth_secret_keys() -> Vec<AuthSecretKey> {
     let mut rng = ChaCha20Rng::from_seed([7; 32]);
-    [AuthScheme::Falcon512Poseidon2, AuthScheme::EcdsaK256Keccak]
+    [AuthScheme::Falcon512Eidos, AuthScheme::EcdsaK256Keccak]
         .into_iter()
         .map(|scheme| {
             AuthSecretKey::with_scheme_and_rng(scheme, &mut rng)

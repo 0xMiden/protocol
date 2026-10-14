@@ -1,6 +1,6 @@
 use {NoteArgs} from miden::protocol::types
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::standards::account_upgrade
@@ -23,7 +23,7 @@ const ACCOUNT_CODE_UPGRADE_ATTACHMENT_SCHEME = 7
 
 # Domain of the advice map key under which the host looks up the new code, see the Rust
 # `ProtocolDomainRegistry`.
-const CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN = 0x020002
+const CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN = 0x02000201
 
 # Number of elements hashed into the advice map key: the new code commitment.
 const CODE_UPGRADE_ADVICE_MAP_KEY_NUM_ELEMENTS = 4
@@ -180,14 +180,14 @@ proc insert_code_into_advice_map(new_code_commitment: word)
     # => [NEW_CODE_COMMITMENT, end_ptr]
 
     # compute the domain-separated advice map key over the four elements of the commitment
-    push.0.0.CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN.CODE_UPGRADE_ADVICE_MAP_KEY_NUM_ELEMENTS
-    exec.poseidon2::init_with_capacity
-    # => [RATE0 = EMPTY_WORD, RATE1 = EMPTY_WORD, CAPACITY, NEW_CODE_COMMITMENT, end_ptr]
+    push.CODE_UPGRADE_ADVICE_MAP_KEY_NUM_ELEMENTS.CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN
+    exec.eidos::init_chaining_word_in_domain
+    # => [CV, NEW_CODE_COMMITMENT, end_ptr]
 
-    dropw movupw.2
-    # => [NEW_CODE_COMMITMENT, RATE1 = EMPTY_WORD, CAPACITY, end_ptr]
+    padw movupw.2
+    # => [NEW_CODE_COMMITMENT, EMPTY_WORD, CV, end_ptr]
 
-    exec.poseidon2::permute exec.poseidon2::squeeze_digest
+    compress exec.eidos::digest
     # => [KEY, end_ptr]
 
     locaddr.CODE_LOC movdn.4

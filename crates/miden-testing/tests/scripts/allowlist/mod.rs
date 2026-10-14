@@ -101,9 +101,7 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
         .with_component(AllowlistManager);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )
@@ -582,9 +580,7 @@ fn add_rbac_faucet_with_allowlist(
         .with_component(AllowlistManager);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )

@@ -190,14 +190,14 @@ end
 
 #! Computes the commitment to the native account's delta.
 #!
-#! The commitment to an empty delta is defined as the empty word.
+#! An empty delta commits to the canonical Eidos hash of an empty Felt sequence in the account
+#! delta domain.
 #!
 #! During an account-creating transaction (when the initial nonce is 0), this procedure may not
-#! return the empty word even if the initial storage commitment and the current storage commitment
-#! are identical (storage hasn't changed). This is because the delta for a new account must
-#! represent its entire newly created state, and the initial storage in a transaction is
-#! initialized to the the storage that the account ID commits to, which may be non-empty. This
-#! does not have any consequences other than being inconsistent in this edge case.
+#! return the canonical empty-delta commitment even if the initial storage commitment and the
+#! current storage commitment are identical (storage hasn't changed). This is because the delta for
+#! a new account must represent its entire newly created state, and the initial storage in a
+#! transaction is initialized to the storage that the account ID commits to, which may be non-empty.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [DELTA_COMMITMENT, pad(12)]
@@ -212,10 +212,6 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
-    # These two checks are strictly redundant here: a non-empty delta requires the nonce to be
-    # incremented, which is already gated to the auth procedure, and an empty delta only ever
-    # commits to the (public) empty word. We keep them for consistency with the other account
-    # procedures and may drop them later.
     exec.memory::assert_native_account
     exec.authenticate_account_origin
 
@@ -225,7 +221,7 @@ pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [
 
     # truncate the stack
     swapw dropw
-    # => [ACCOUNT_COMMITMENT, pad(12)]
+    # => [DELTA_COMMITMENT, pad(12)]
 end
 
 #! Initializes an upgrade of the native account's code, which the epilogue applies after the
@@ -1215,7 +1211,8 @@ end
 #! Returns a commitment to the removed assets and stores them in the advice map under that
 #! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
 #! the assets that remained in the note at the time of the call, i.e. excluding assets that were
-#! already removed. If no assets remain, the commitment is the EMPTY_WORD.
+#! already removed. If no assets remain, the commitment is the canonical Eidos hash of an empty
+#! Felt sequence.
 #!
 #! The note's initial assets info (see input_note_get_initial_assets_info) is not affected by this
 #! procedure.
@@ -1914,7 +1911,8 @@ end
 #! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
 #!   before computing the fee.
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
-#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#!   excluded from the fee computation. EMPTY_WORD is an absence sentinel indicating that no
+#!   exclusion preimage was supplied.
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Invocation: dynexec

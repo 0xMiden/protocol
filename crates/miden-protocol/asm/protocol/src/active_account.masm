@@ -88,15 +88,6 @@ end
 #! commitment doesn't change during transaction execution: commitment returned by this procedure
 #! could be used as both the initial and the current.
 #!
-#! The commitment to an empty delta is defined as the empty word.
-#!
-#! During an account-creating transaction (when the initial nonce is 0), this procedure will not
-#! return the empty word even if the initial storage commitment and the current storage commitment
-#! are identical (storage hasn't changed). This is because the delta for a new account must
-#! represent its entire newly created state, and the initial storage in a transaction is
-#! initialized to the the storage that the account ID commits to, which may be non-empty. This
-#! does not have any consequences other than being inconsistent in this edge case.
-#!
 #! Inputs:  []
 #! Outputs: [CODE_COMMITMENT]
 #!

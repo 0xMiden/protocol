@@ -173,7 +173,7 @@ async fn execute_signed_multisig_tx(
 /// The multisig auth procedure pays the transaction fee after verifying the signatures by
 /// creating a TX_FEE note funded with the native fee asset.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
@@ -197,7 +197,7 @@ async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Resu
 /// blocks.
 #[rstest]
 #[case::zero_fee(AuthScheme::EcdsaK256Keccak, 0, 9)]
-#[case::falcon_before_expiration(AuthScheme::Falcon512Poseidon2, VERIFICATION_BASE_FEE, 9)]
+#[case::falcon_before_expiration(AuthScheme::Falcon512Eidos, VERIFICATION_BASE_FEE, 9)]
 #[case::ecdsa_before_expiration(AuthScheme::EcdsaK256Keccak, VERIFICATION_BASE_FEE, 9)]
 #[case::ecdsa_at_expiration(AuthScheme::EcdsaK256Keccak, VERIFICATION_BASE_FEE, 10)]
 #[case::ecdsa_after_expiration(AuthScheme::EcdsaK256Keccak, VERIFICATION_BASE_FEE, 11)]
@@ -294,7 +294,7 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
 /// signed block. The additional cycles increase the fee without changing the signed block, the
 /// account nonce or the transaction summary, which binds the max fee rather than the fee note.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
@@ -522,7 +522,7 @@ async fn multisig_max_fee_covers_sponsored_fees() -> anyhow::Result<()> {
 /// so the replayed transaction's summary commitment equals the signed one, which the account
 /// recorded as executed.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn multisig_fee_payment_preserves_replay_protection(

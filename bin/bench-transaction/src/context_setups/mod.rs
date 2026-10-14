@@ -255,7 +255,7 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
 // ================================================================================================
 
 pub fn tx_create_single_p2id_note_falcon() -> Result<MockTransaction> {
-    tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+    tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Eidos)
 }
 
 pub fn tx_create_single_p2id_note_ecdsa() -> Result<MockTransaction> {
@@ -329,7 +329,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
 }
 
 pub fn tx_consume_single_p2id_note_falcon() -> Result<MockTransaction> {
-    tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+    tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Eidos)
 }
 
 pub fn tx_consume_single_p2id_note_ecdsa() -> Result<MockTransaction> {
@@ -367,7 +367,7 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Mock
 }
 
 pub fn tx_consume_two_p2id_notes_falcon() -> Result<MockTransaction> {
-    tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Poseidon2)
+    tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Eidos)
 }
 
 pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<MockTransaction> {
@@ -431,19 +431,16 @@ fn setup_bridge_fixture(
     with_fee: bool,
 ) -> Result<BridgeFixture> {
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER REMOVER ACCOUNT (sends the REMOVE_GER note)
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
     // the dummy admin only matters for ADMIN-gated operations, which the benches do not exercise

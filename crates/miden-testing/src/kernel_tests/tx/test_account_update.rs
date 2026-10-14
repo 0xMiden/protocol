@@ -30,6 +30,10 @@ use miden_protocol::account::{
     StorageValuePatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_DELTA_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH,
+    ERR_ACCOUNT_PATCH_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH,
+};
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
@@ -39,19 +43,122 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use rand::{RngExt, random};
+use rstest::rstest;
 
-use crate::{Auth, MockChain, TestTransactionBuilder};
+use super::ExecutionOutputExt;
+use crate::{Auth, MockChain, TestTransactionBuilder, assert_execution_error};
 
 // ACCOUNT DELTA TESTS
 //
 // For the approach to these tests, see `AccountUpdateTest::execute`.
 // ================================================================================================
 
-/// Tests that an empty account delta commits to the empty word.
+/// Checks Rust/MASM hash agreement and caller-stack preservation for empty and non-empty
+/// commitments.
+#[rstest]
+#[case::empty_patch(false, false)]
+#[case::storage_patch(false, true)]
+#[case::empty_delta(true, false)]
+#[case::storage_delta(true, true)]
 #[tokio::test]
-async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
+async fn account_commitments_match_rust_and_preserve_stack(
+    #[case] is_delta: bool,
+    #[case] change_storage: bool,
+) -> anyhow::Result<()> {
+    const RESULT_PTR: u32 = 4096;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let new_value = Word::from([9, 10, 11, 12u32]);
+    let (storage_patch, setup) = if change_storage {
+        (
+            AccountStoragePatch::builder()
+                .update_value(MOCK_VALUE_SLOT0.clone(), new_value)
+                .build(),
+            format!(
+                "push.{new_value} push.MOCK_VALUE_SLOT0[0..2]
+                 exec.account::set_item dropw
+                 exec.account::incr_nonce drop"
+            ),
+        )
+    } else {
+        (AccountStoragePatch::new(), String::new())
+    };
+    let (procedure, expected) = if is_delta {
+        (
+            "compute_delta_commitment",
+            AccountDelta::new(
+                mock_tx.account().id(),
+                storage_patch,
+                AccountVaultDelta::default(),
+                AccountCodePatch::default(),
+                Felt::from(u32::from(change_storage)),
+            )?
+            .to_commitment(),
+        )
+    } else {
+        (
+            "compute_patch_commitment",
+            AccountPatch::new(
+                mock_tx.account().id(),
+                storage_patch,
+                AccountVaultPatch::default(),
+                AccountCodePatch::default(),
+                change_storage.then_some(mock_tx.account().nonce() + Felt::ONE),
+            )?
+            .to_commitment(),
+        )
+    };
+
+    let code = format!(
+        r#"
+        const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
+
+        use miden::core::sys
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::account_update
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+            {setup}
+
+            push.1.2.3.4.5.6.7.8.9.10.11.12.13.14.15.16
+            exec.sys::truncate_stack
+            exec.account_update::{procedure}
+            mem_storew_le.{RESULT_PTR} dropw
+        end
+        "#,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
+    );
+
+    let output = mock_tx.execute_code(&code).await?;
+    assert_eq!(output.get_kernel_mem_word(RESULT_PTR), expected);
+    for index in 0..16 {
+        assert_eq!(output.get_stack_element(index), Felt::from(16 - index as u32));
+    }
+
+    Ok(())
+}
+
+/// Tests that the kernel and Rust agree on the canonical domain-separated commitment to an empty
+/// account delta.
+#[tokio::test]
+async fn empty_account_delta_commitment_matches_rust() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    // Use IncrNonce to make the transaction non-empty after this explicit pre-auth delta check.
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+
+    let expected = AccountDelta::new(
+        account.id(),
+        AccountStoragePatch::new(),
+        AccountVaultDelta::default(),
+        AccountCodePatch::default(),
+        ZERO,
+    )?
+    .to_commitment();
+    assert_ne!(expected, Word::empty());
+
     let tx_script = CodeBuilder::with_mock_packages()
-        .compile_tx_script(
+        .compile_tx_script(format!(
             r#"
       use miden::core::sys
       use mock::account as mock_account
@@ -61,17 +168,15 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
           call.mock_account::compute_delta_commitment
           # => [DELTA_COMMITMENT, pad(12)]
 
-          padw assert_eqw.err="empty account delta should commit to the empty word"
+          push.{expected}
+          assert_eqw.err="kernel and Rust empty-delta commitments must agree"
 
           exec.sys::truncate_stack
       end
       "#,
-        )
+        ))
         .context("failed to compile tx script")?;
 
-    let mut builder = MockChain::builder();
-    // Use IncrNonce to make the transaction non-empty.
-    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
     mock_chain
@@ -81,6 +186,123 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
         .execute()
         .await
         .context("failed to execute transaction")?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn patch_commitment_rejects_incorrect_advised_body_block_count() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code = r#"
+        use miden::tx_kernel_core::account_update
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.account_update::compute_patch_commitment
+        end
+    "#;
+
+    let result = mock_tx
+        .execute_code_with_account_commitment_body_block_count_response(code, Some(Felt::ONE), None)
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PATCH_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn patch_commitment_rejects_too_few_advised_body_blocks() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code = r#"
+        use miden::tx_kernel_core::account_update
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.9.10.11.12
+            push.0.0.0.0
+            push.1.2.3.4
+            exec.account_update::update_asset
+
+            exec.account_update::compute_patch_commitment
+        end
+    "#;
+
+    let result = mock_tx
+        .execute_code_with_account_commitment_body_block_count_response(
+            code,
+            Some(Felt::ZERO),
+            None,
+        )
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PATCH_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn delta_commitment_rejects_incorrect_advised_body_block_count() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code = r#"
+        use miden::tx_kernel_core::account_update
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.account_update::compute_delta_commitment
+        end
+    "#;
+
+    let result = mock_tx
+        .execute_code_with_account_commitment_body_block_count_response(code, None, Some(Felt::ONE))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_DELTA_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn delta_commitment_rejects_too_few_advised_body_blocks() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code = format!(
+        r#"
+        const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
+
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::account_update
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.9.10.11.12
+            push.MOCK_VALUE_SLOT0[0..2]
+            exec.account::set_item dropw
+
+            exec.account_update::compute_delta_commitment
+        end
+        "#,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
+    );
+
+    let result = mock_tx
+        .execute_code_with_account_commitment_body_block_count_response(
+            &code,
+            None,
+            Some(Felt::ZERO),
+        )
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_DELTA_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH);
 
     Ok(())
 }

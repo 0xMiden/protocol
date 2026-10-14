@@ -48,14 +48,12 @@ fn auth_secret_key_protobuf_rejects_non_canonical_key_bytes() {
             panic!("the encoder always sets the key");
         };
         let (mut trailing, empty) = match encoded {
-            Key::Falcon512Poseidon2(bytes) => {
-                (bytes, Key::Falcon512Poseidon2(alloc::vec::Vec::new()))
-            },
+            Key::Falcon512Eidos(bytes) => (bytes, Key::Falcon512Eidos(alloc::vec::Vec::new())),
             Key::EcdsaK256Keccak(bytes) => (bytes, Key::EcdsaK256Keccak(alloc::vec::Vec::new())),
         };
         trailing.push(0);
         let trailing = match &empty {
-            Key::Falcon512Poseidon2(_) => Key::Falcon512Poseidon2(trailing),
+            Key::Falcon512Eidos(_) => Key::Falcon512Eidos(trailing),
             Key::EcdsaK256Keccak(_) => Key::EcdsaK256Keccak(trailing),
         };
 

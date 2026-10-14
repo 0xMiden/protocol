@@ -92,7 +92,10 @@ fn note_attachments_serde() -> anyhow::Result<()> {
 #[test]
 fn note_attachments_commitment_empty() {
     let attachments = NoteAttachments::empty();
-    assert_eq!(attachments.to_commitment(), Word::empty());
+    let expected = Hasher::hash_elements::<Felt>(&[]);
+
+    assert_ne!(expected, Word::empty());
+    assert_eq!(attachments.to_commitment(), expected);
 }
 
 #[test]
