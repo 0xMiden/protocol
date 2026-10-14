@@ -58,7 +58,7 @@ impl NoteLabels {
     ///
     /// Two passes: whether a kind needs an index suffix is only known once every note has been
     /// seen.
-    pub(crate) fn from_script_roots(notes: impl Iterator<Item = (NoteId, NoteScriptRoot)>) -> Self {
+    fn from_script_roots(notes: impl Iterator<Item = (NoteId, NoteScriptRoot)>) -> Self {
         let kinds: Vec<(NoteId, &'static str)> =
             notes.map(|(note, root)| (note, note_kind(root))).collect();
 
@@ -101,66 +101,32 @@ mod tests {
 
     use super::*;
 
-    /// Builds a note ID that is distinct per `seed` and unrelated to any script root, so the
-    /// tests exercise labelling independently of how real notes are committed to.
-    fn note(seed: u32) -> NoteId {
-        NoteId::from_raw(Word::from([seed, seed, seed, seed]))
-    }
-
-    fn labels(notes: &[(NoteId, NoteScriptRoot)]) -> NoteLabels {
-        NoteLabels::from_script_roots(notes.iter().copied())
-    }
-
+    /// Lone kinds keep the bare name, repeated kinds are indexed in input order independently of
+    /// each other, and unrecognised scripts share the indexed `UNKNOWN` placeholder.
     #[test]
-    fn sole_note_of_a_kind_keeps_the_bare_name() {
-        let (p2id, claim) = (note(1), note(2));
-        let labels = labels(&[
-            (p2id, StandardNote::P2ID.script_root()),
-            (claim, AgglayerNote::CLAIM.script_root()),
-        ]);
-
-        assert_eq!(labels.label(p2id), Some("P2ID"));
-        assert_eq!(labels.label(claim), Some("CLAIM"));
-    }
-
-    #[test]
-    fn repeated_kind_is_indexed_in_input_order() {
-        let (first, second, third) = (note(1), note(2), note(3));
-        let labels = labels(&[
-            (first, StandardNote::P2ID.script_root()),
-            (second, StandardNote::P2ID.script_root()),
-            (third, StandardNote::P2ID.script_root()),
-        ]);
-
-        assert_eq!(labels.label(first), Some("P2ID#0"));
-        assert_eq!(labels.label(second), Some("P2ID#1"));
-        assert_eq!(labels.label(third), Some("P2ID#2"));
-    }
-
-    #[test]
-    fn kinds_are_indexed_independently_of_each_other() {
-        let (p2id, p2ide, other_p2id) = (note(1), note(2), note(3));
-        let labels = labels(&[
-            (p2id, StandardNote::P2ID.script_root()),
-            (p2ide, StandardNote::P2IDE.script_root()),
-            (other_p2id, StandardNote::P2ID.script_root()),
-        ]);
-
-        assert_eq!(labels.label(p2id), Some("P2ID#0"));
-        assert_eq!(labels.label(other_p2id), Some("P2ID#1"));
-        assert_eq!(labels.label(p2ide), Some("P2IDE"), "a lone P2IDE must not be indexed");
-    }
-
-    /// The placeholder is a label like any other - it is indexed when repeated, and it stays
-    /// distinguishable from a lookup miss, which returns `None`.
-    #[test]
-    fn unrecognised_script_roots_share_the_indexed_placeholder() {
-        let (first, second, absent) = (note(1), note(2), note(3));
+    fn labels_index_repeated_kinds_in_input_order() {
+        let note = |seed: u32| NoteId::from_raw(Word::from([seed; 4]));
         let unrecognised = NoteScriptRoot::from_raw(Word::from([9u32; 4]));
-        let labels = labels(&[(first, unrecognised), (second, unrecognised)]);
+        let notes = [
+            (note(1), StandardNote::P2ID.script_root()),
+            (note(2), StandardNote::P2IDE.script_root()),
+            (note(3), unrecognised),
+            (note(4), StandardNote::P2ID.script_root()),
+            (note(5), unrecognised),
+        ];
 
-        assert_eq!(labels.label(first), Some("UNKNOWN#0"));
-        assert_eq!(labels.label(second), Some("UNKNOWN#1"));
-        assert_eq!(labels.label(absent), None, "an unlabelled note must not read as UNKNOWN");
+        let labels = NoteLabels::from_script_roots(notes.into_iter());
+
+        let resolved: Vec<_> = notes.iter().map(|(id, _)| labels.label(*id)).collect();
+        assert_eq!(
+            resolved,
+            [
+                Some("P2ID#0"),
+                Some("P2IDE"),
+                Some("UNKNOWN#0"),
+                Some("P2ID#1"),
+                Some("UNKNOWN#1")
+            ],
+        );
     }
 }

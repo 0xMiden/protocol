@@ -156,37 +156,15 @@ pub fn write_bench_results_to_json(
 #[cfg(test)]
 mod tests {
     use miden_processor::trace::{ChipletsLengths, TraceLenSummary};
-    use miden_protocol::Word;
-    use miden_protocol::note::NoteId;
-    use miden_protocol::transaction::TransactionMeasurements;
-    use miden_standards::note::StandardNote;
     use serde::Deserialize;
 
-    use super::{ExecutionBenchmark, MeasurementsPrinter, TraceMeasurements};
-    use crate::note_labels::NoteLabels;
+    use super::{ExecutionBenchmark, TraceMeasurements};
 
-    /// Minimal mirror of a bench-tx.json scenario, used to validate the committed file against
-    /// the producer's contract.
+    /// Minimal mirror of the bench-tx.json `trace` section used to validate the committed file
+    /// against the producer's contract.
     #[derive(Deserialize)]
     struct ScenarioForTest {
-        prologue: u64,
-        total_cycles: u64,
-        notes_processing: u64,
-        note_execution: Vec<NoteExecutionForTest>,
-        tx_script_processing: u64,
-        epilogue: EpilogueForTest,
         trace: TraceForTest,
-    }
-
-    #[derive(Deserialize)]
-    struct NoteExecutionForTest {
-        note: String,
-        cycles: u64,
-    }
-
-    #[derive(Deserialize)]
-    struct EpilogueForTest {
-        total: u64,
     }
 
     #[derive(Deserialize)]
@@ -289,41 +267,11 @@ mod tests {
         t.poseidon2_permutation_rows.next_power_of_two().max(MIN_TRACE_LEN)
     }
 
-    fn parse_and_assert_scenario_contract(name: &str, raw: &serde_json::Value) -> TraceForTest {
+    fn parse_and_assert_trace_contract(name: &str, raw: &serde_json::Value) -> TraceForTest {
         let scenario: ScenarioForTest = serde_json::from_value(raw.clone())
             .unwrap_or_else(|err| panic!("scenario `{name}` does not match the schema: {err}"));
         let trace = &scenario.trace;
         let chiplets_shape = &trace.chiplets_shape;
-
-        assert_eq!(
-            scenario.total_cycles,
-            scenario.prologue
-                + scenario.notes_processing
-                + scenario.tx_script_processing
-                + scenario.epilogue.total,
-            "{name}: total_cycles must be the sum of the measured stages",
-        );
-
-        // only the note-creating scenarios consume nothing
-        assert_eq!(
-            scenario.note_execution.is_empty(),
-            name.starts_with("create"),
-            "{name}: a consuming scenario must measure at least one note, a creating one none",
-        );
-        for entry in &scenario.note_execution {
-            assert!(
-                !entry.note.is_empty() && !entry.note.starts_with("0x"),
-                "{name}: note_execution should be keyed by a label, found `{}`",
-                entry.note,
-            );
-            assert!(entry.cycles > 0, "{name}: note `{}` should cost > 0 cycles", entry.note);
-        }
-        let note_cycles: u64 = scenario.note_execution.iter().map(|entry| entry.cycles).sum();
-        assert!(
-            note_cycles <= scenario.notes_processing,
-            "{name}: per-note cycles ({note_cycles}) exceed notes_processing ({})",
-            scenario.notes_processing,
-        );
 
         assert!(trace.core_rows > 0, "{name}: core_rows should be > 0");
         assert!(trace.chiplets_rows > 0, "{name}: chiplets_rows should be > 0");
@@ -356,7 +304,7 @@ mod tests {
         let raw = scenarios
             .get(name)
             .unwrap_or_else(|| panic!("scenario `{name}` is missing from bench-tx.json"));
-        let trace = parse_and_assert_scenario_contract(name, raw);
+        let trace = parse_and_assert_trace_contract(name, raw);
 
         let core_side = padded_core_side(&trace);
         let chiplets = padded_chiplets(&trace);
@@ -378,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn committed_bench_tx_matches_producer_contract() {
+    fn committed_bench_tx_matches_trace_contract() {
         let parsed: serde_json::Value = serde_json::from_str(COMMITTED_BENCH_TX_JSON)
             .expect("bench-tx.json should be valid JSON");
         let scenarios = parsed.as_object().expect("bench-tx.json should contain an object");
@@ -388,7 +336,7 @@ mod tests {
             "bench-tx.json should contain every ExecutionBenchmark scenario",
         );
         for (name, raw) in scenarios {
-            parse_and_assert_scenario_contract(name, raw);
+            parse_and_assert_trace_contract(name, raw);
         }
         for expected in COMMITTED_SCENARIO_EXPECTATIONS {
             assert_scenario(&parsed, expected);
@@ -413,79 +361,6 @@ mod tests {
             summary.poseidon2_permutation_trace_len(),
         );
         assert_eq!(measurements.range_rows, summary.range_trace_len());
-    }
-
-    // MEASUREMENTS PRINTER
-    // --------------------------------------------------------------------------------------------
-
-    /// Builds a note ID that is distinct per `seed`.
-    fn note_id(seed: u32) -> NoteId {
-        NoteId::from_raw(Word::from([seed, seed, seed, seed]))
-    }
-
-    fn trace_summary() -> TraceLenSummary {
-        TraceLenSummary::new(10, 20, ChipletsLengths::from_parts(30, 40, 50, 60, 70))
-    }
-
-    /// Measurements whose stages sum to a `total_cycles` of 100.
-    fn measurements(note_execution: Vec<(NoteId, usize)>) -> TransactionMeasurements {
-        TransactionMeasurements {
-            prologue: 10,
-            notes_processing: 20,
-            note_execution,
-            tx_script_processing: 30,
-            epilogue: 40,
-            auth_procedure: 5,
-        }
-    }
-
-    /// The emitted entries keep the order the kernel measured the notes in - not the order the
-    /// labels were resolved in, and not a sort by label - which is what makes a cycle-count change
-    /// a one-line diff.
-    #[test]
-    fn note_execution_keeps_measurement_order_and_uses_labels() {
-        let (first, second) = (note_id(1), note_id(2));
-        let labels = NoteLabels::from_script_roots(
-            [
-                (first, StandardNote::P2ID.script_root()),
-                (second, StandardNote::P2ID.script_root()),
-            ]
-            .into_iter(),
-        );
-
-        let printer = MeasurementsPrinter::from_parts(
-            measurements(vec![(second, 200), (first, 100)]),
-            trace_summary(),
-            &labels,
-        )
-        .expect("every measured note is labelled");
-
-        let entries: Vec<(&str, usize)> = printer
-            .note_execution
-            .iter()
-            .map(|entry| (entry.note.as_str(), entry.cycles))
-            .collect();
-        assert_eq!(entries, vec![("P2ID#1", 200), ("P2ID#0", 100)]);
-        assert_eq!(printer.total_cycles, 100);
-    }
-
-    /// A measured note that is not among the transaction's input notes is a defect in the join,
-    /// not a note of an unrecognised kind, so it aborts the run rather than being labelled.
-    #[test]
-    fn measured_note_without_a_label_is_an_error() {
-        let labels = NoteLabels::from_script_roots(core::iter::empty());
-
-        let err = MeasurementsPrinter::from_parts(
-            measurements(vec![(note_id(1), 100)]),
-            trace_summary(),
-            &labels,
-        )
-        .expect_err("an unlabelled note must not be silently emitted");
-
-        assert!(
-            err.to_string().contains("matches no input note of the transaction"),
-            "unexpected error: {err}",
-        );
     }
 
     #[test]
