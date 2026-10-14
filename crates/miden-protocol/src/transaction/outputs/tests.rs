@@ -72,7 +72,10 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
         } else {
             TransactionLogDetails::Private(logs.commitment())
         };
-        assert_eq!(outputs.log_details(), expected);
+        let (final_account, output_notes, log_details) = outputs.into_parts();
+        assert_eq!(final_account, account);
+        assert!(output_notes.is_empty());
+        assert_eq!(log_details, expected);
     }
 }
 
