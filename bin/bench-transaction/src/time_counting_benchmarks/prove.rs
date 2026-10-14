@@ -91,7 +91,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     tx_consume_single_p2id_note_falcon()
                         .expect("failed to create a context which consumes single P2ID note")
                 },
-                |mock_tx| async move { black_box(mock_tx.execute().await) },
+                |mock_tx| async move { black_box(mock_tx.execute().await.expect("execute failed")) },
                 BatchSize::SmallInput,
             );
     });
@@ -103,7 +103,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     tx_consume_single_p2id_note_ecdsa()
                         .expect("failed to create a context which consumes single P2ID note")
                 },
-                |mock_tx| async move { black_box(mock_tx.execute().await) },
+                |mock_tx| async move { black_box(mock_tx.execute().await.expect("execute failed")) },
                 BatchSize::SmallInput,
             );
     });
@@ -118,7 +118,7 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |mock_tx| async move {
                     // benchmark the transaction execution
-                    black_box(mock_tx.execute().await)
+                    black_box(mock_tx.execute().await.expect("execute failed"))
                 },
                 BatchSize::SmallInput,
             );
@@ -134,7 +134,7 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |mock_tx| async move {
                     // benchmark the transaction execution
-                    black_box(mock_tx.execute().await)
+                    black_box(mock_tx.execute().await.expect("execute failed"))
                 },
                 BatchSize::SmallInput,
             );
@@ -175,12 +175,14 @@ fn core_benchmarks(c: &mut Criterion) {
                             .expect("failed to create a context which consumes single P2ID note")
                     },
                     |mock_tx| async move {
-                        black_box(prove_transaction(
-                            mock_tx
-                                .execute()
-                                .await
-                                .expect("execution of the single P2ID note consumption tx failed"),
-                        ))
+                        black_box(
+                            prove_transaction(
+                                mock_tx.execute().await.expect(
+                                    "execution of the single P2ID note consumption tx failed",
+                                ),
+                            )
+                            .expect("prove failed"),
+                        )
                     },
                     BatchSize::SmallInput,
                 );
@@ -197,12 +199,14 @@ fn core_benchmarks(c: &mut Criterion) {
                             .expect("failed to create a context which consumes single P2ID note")
                     },
                     |mock_tx| async move {
-                        black_box(prove_transaction(
-                            mock_tx
-                                .execute()
-                                .await
-                                .expect("execution of the single P2ID note consumption tx failed"),
-                        ))
+                        black_box(
+                            prove_transaction(
+                                mock_tx.execute().await.expect(
+                                    "execution of the single P2ID note consumption tx failed",
+                                ),
+                            )
+                            .expect("prove failed"),
+                        )
                     },
                     BatchSize::SmallInput,
                 );
@@ -220,12 +224,15 @@ fn core_benchmarks(c: &mut Criterion) {
                     },
                     |mock_tx| async move {
                         // benchmark the transaction execution and proving
-                        black_box(prove_transaction(
-                            mock_tx
-                                .execute()
-                                .await
-                                .expect("execution of the two P2ID note consumption tx failed"),
-                        ))
+                        black_box(
+                            prove_transaction(
+                                mock_tx
+                                    .execute()
+                                    .await
+                                    .expect("execution of the two P2ID note consumption tx failed"),
+                            )
+                            .expect("prove failed"),
+                        )
                     },
                     BatchSize::SmallInput,
                 );
@@ -243,12 +250,15 @@ fn core_benchmarks(c: &mut Criterion) {
                     },
                     |mock_tx| async move {
                         // benchmark the transaction execution and proving
-                        black_box(prove_transaction(
-                            mock_tx
-                                .execute()
-                                .await
-                                .expect("execution of the two P2ID note consumption tx failed"),
-                        ))
+                        black_box(
+                            prove_transaction(
+                                mock_tx
+                                    .execute()
+                                    .await
+                                    .expect("execution of the two P2ID note consumption tx failed"),
+                            )
+                            .expect("prove failed"),
+                        )
                     },
                     BatchSize::SmallInput,
                 );
@@ -298,7 +308,7 @@ where
             for _ in 0..iters {
                 let mock_tx = build_mock_tx().await.expect("failed to build mock transaction");
                 let start = Instant::now();
-                let _ = black_box(mock_tx.execute().await);
+                let _ = black_box(mock_tx.execute().await.expect("execute failed"));
                 total += start.elapsed();
             }
             total
@@ -320,7 +330,7 @@ where
                 let mock_tx = build_mock_tx().await.expect("failed to build mock transaction");
                 let start = Instant::now();
                 let executed = mock_tx.execute().await.expect("execute failed");
-                let _ = black_box(prove_transaction(executed));
+                let _ = black_box(prove_transaction(executed).expect("prove failed"));
                 total += start.elapsed();
             }
             total
