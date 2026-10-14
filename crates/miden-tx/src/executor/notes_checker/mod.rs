@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
-use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::{
@@ -14,6 +13,7 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::{ProgramExecutor, TransactionExecutor};
@@ -24,9 +24,10 @@ use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
 mod bundle;
 mod checker_utils;
+mod fee_collection;
 mod sponsorship;
 
-use bundle::{NoteBundler, NoteBundles};
+use bundle::{NoteBundle, NoteBundler, NoteBundles};
 pub use checker_utils::{
     FailedNote,
     MAX_NUM_CHECKER_NOTES,
@@ -34,6 +35,8 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
+pub use fee_collection::FeeRejection;
+use fee_collection::{FeeCollection, feature_note_roots};
 pub use sponsorship::SponsorshipRejection;
 
 // NOTE CONSUMPTION CHECKER
@@ -46,9 +49,6 @@ pub use sponsorship::SponsorshipRejection;
 /// account.
 pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor> {
     tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
-    /// The asset the target account collects fees in, which every FEE_SPONSORSHIP note it consumes
-    /// has to carry.
-    collected_fee_asset_id: Option<AssetId>,
 }
 
 impl<'a, STORE, AUTH, EXEC> NoteConsumptionChecker<'a, STORE, AUTH, EXEC>
@@ -59,54 +59,38 @@ where
 {
     /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
     ///
-    /// The checker assumes the checked account collects no fees, such as a regular wallet, and so
-    /// leaves the assets of FEE_SPONSORSHIP notes unchecked. Use [`Self::with_fee_asset_id`] for an
-    /// account that collects fees.
+    /// The fee configuration of the checked account is read from its storage, so it needs no
+    /// configuring here.
     pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>) -> Self {
-        NoteConsumptionChecker {
-            tx_executor,
-            collected_fee_asset_id: None,
-        }
+        NoteConsumptionChecker { tx_executor }
     }
 
-    /// Sets the asset the checked account collects fees in, which every FEE_SPONSORSHIP note it
-    /// consumes has to carry.
-    #[must_use]
-    pub fn with_fee_asset_id(mut self, fee_asset_id: AssetId) -> Self {
-        self.collected_fee_asset_id = Some(fee_asset_id);
-        self
-    }
-
-    /// Checks whether some set of the provided input notes could be consumed by the provided
-    /// account by executing the transaction with varying combination of notes.
-    ///
-    /// This function attempts to find the maximum set of notes that can be successfully executed
-    /// together by the target account.
+    /// Finds the largest set of the provided input notes that the target account can consume
+    /// together.
     ///
     /// Because of the runtime complexity involved in this function, a limited range of
     /// [`MAX_NUM_CHECKER_NOTES`] input notes is allowed.
     ///
-    /// If some notes succeed and others fail, the failed notes are removed from the candidate set,
-    /// together with the notes bound to them, and the remaining notes (successful + unattempted)
-    /// are retried in the next iteration. This process continues until either all remaining notes
-    /// succeed or no notes can be successfully executed.
+    /// The notes go through the following checks, each dropping the notes it rules out before the
+    /// next one runs:
+    /// 1. Static checks that need no account state. The notes are grouped into bundles that are
+    ///    only consumable together, such as a feature note and the FEE_SPONSORSHIP notes bound to
+    ///    it, and the following notes are rejected:
+    ///    - a FEE_SPONSORSHIP note naming another FEE_SPONSORSHIP note as its feature note.
+    ///    - a FEE_SPONSORSHIP note whose feature note is absent and which the account may not
+    ///      reclaim.
+    /// 2. Static checks against the account's fee configuration, read from its storage. They apply
+    ///    only to an account with a fee policy manager, and reject:
+    ///    - a FEE_SPONSORSHIP note carrying an asset other than the one the account collects fees
+    ///      in.
+    ///    - a feature note the account schedules no fee for, or whose fee the FEE_SPONSORSHIP notes
+    ///      bound to it do not cover, together with those sponsorships. This is only checked for an
+    ///      account pricing notes through [`BasicConstantFeePolicy`].
+    /// 3. Execution. The remaining notes are executed, and the ones that fail are eliminated
+    ///    together with the notes bound to them until a set of notes executes successfully.
     ///
-    /// For example, given notes A, B, C, D, E, the execution flow would be as follows:
-    /// - Try [A, B, C, D, E] → A, B succeed, C fails → Remove C, try again.
-    /// - Try [A, B, D, E] → A, B, D succeed, E fails → Remove E, try again.
-    /// - Try [A, B, D] → All succeed → Return successful=[A, B, D], failed=[C, E].
-    ///
-    /// If a failure occurs at the epilogue phase of the transaction execution, the relevant set of
-    /// otherwise-successful notes are retried in various combinations in an attempt to find a
-    /// combination that passes the epilogue phase successfully. Notes that are only consumable
-    /// together, such as a feature note and the FEE_SPONSORSHIP notes bound to it, are grouped and
-    /// retried as a unit.
-    ///
-    /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
-    /// anything is executed: one carrying an asset other than the account's fee asset, and one
-    /// whose feature note is absent and which the account may not reclaim.
-    ///
-    /// Returns a list of successfully consumed notes and a list of failed notes.
+    /// Returns a list of successfully consumed notes and a list of failed notes. A note ruled out
+    /// by a static check is reported as [`NoteFailure::Rejected`].
     ///
     /// # Errors
     ///
@@ -123,11 +107,10 @@ where
             return Err(NoteCheckerError::InputNoteCountOutOfRange(num_notes));
         }
 
-        // Group the notes into bundles, dropping the ones that can be ruled out without executing
-        // anything.
-        let (bundles, rejected) =
-            NoteBundler::new(target_account_id, block_ref, self.collected_fee_asset_id)
-                .bundle(&notes);
+        // Group the notes into bundles, dropping the ones that can be ruled out without the
+        // account's state.
+        let (mut bundles, mut rejected) =
+            NoteBundler::new(target_account_id, block_ref).bundle(&notes);
         if bundles.is_empty() {
             return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
         }
@@ -140,6 +123,20 @@ where
             .prepare_tx_inputs(target_account_id, block_ref, input_notes, tx_args)
             .await
             .map_err(NoteCheckerError::TransactionPreparation)?;
+
+        // Drop the notes that fail the account's fee collection.
+        if let Some(fee_collection) =
+            self.read_fee_collection(&tx_inputs, bundles.bundles()).await?
+        {
+            let unfunded = fee_collection.reject_unfunded_bundles(bundles.bundles());
+            if !unfunded.is_empty() {
+                bundles.remove_notes(&unfunded);
+                rejected.extend(unfunded);
+                if bundles.is_empty() {
+                    return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
+                }
+            }
+        }
 
         // Attempt to find an executable set of notes.
         self.find_executable_notes_by_elimination(tx_inputs, bundles, rejected).await
@@ -217,10 +214,107 @@ where
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
 
+    /// Reads the fee configuration of the account in `tx_inputs` from its storage, including the
+    /// fees it charges for the feature notes heading `bundles`.
+    ///
+    /// Returns `None` for an account without a fee policy manager, which collects no fees. The fees
+    /// are only read for an account pricing notes through [`BasicConstantFeePolicy`]; for any other
+    /// fee policy they are left undetermined. A fee schedule entry that the account's partial
+    /// storage does not track is fetched from the data store.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data store fails to provide a fee schedule entry.
+    async fn read_fee_collection(
+        &self,
+        tx_inputs: &TransactionInputs,
+        bundles: &[NoteBundle],
+    ) -> Result<Option<FeeCollection>, NoteCheckerError> {
+        let account = tx_inputs.account();
+        let storage = account.storage();
+
+        // extract the fee asset ID from the storage. Return `None` if there is no fee policy and,
+        // hence, no fee asset ID there
+        let Some(fee_asset_id) = FeePolicyManager::fee_asset_id_from_storage(storage.header())
+        else {
+            return Ok(None);
+        };
+
+        let mut scheduled_fees = BTreeMap::new();
+
+        // return empty scheduled fees map in case the active fee policy is not the basic constant
+        // fee policy
+        if FeePolicyManager::active_fee_policy(storage.header())
+            != Some(BasicConstantFeePolicy::root())
+        {
+            return Ok(Some(FeeCollection::new(fee_asset_id, scheduled_fees)));
+        }
+
+        // return empty scheduled fees map in case the fee schedule of the basic constant fee policy
+        // is not in the storage
+        let Some(fee_schedule_slot) = storage
+            .header()
+            .find_slot_header_by_name(BasicConstantFeePolicy::fee_schedule_slot_name())
+        else {
+            return Ok(Some(FeeCollection::new(fee_asset_id, scheduled_fees)));
+        };
+
+        let fee_schedule_map_root = fee_schedule_slot.value();
+        let fee_schedule = storage.maps().find(|map| map.root() == fee_schedule_map_root);
+
+        for script_root in feature_note_roots(bundles) {
+            let key = BasicConstantFeePolicy::fee_schedule_key(script_root);
+            let entry = match fee_schedule.and_then(|map| map.get(&key)) {
+                Some(entry) => Some(entry),
+                None => {
+                    // if the partial storage map doesn't contain the entry, get it from the data
+                    // store
+                    let witness = self
+                        .tx_executor
+                        .data_store
+                        .get_storage_map_witness(account.id(), fee_schedule_map_root, key)
+                        .await
+                        .map_err(|source| NoteCheckerError::FeeScheduleFetch {
+                            script_root,
+                            source,
+                        })?;
+
+                    // An entry that is not proven against the account's fee schedule is not
+                    // trusted to reject notes with.
+                    (witness.proof().compute_root() == fee_schedule_map_root)
+                        .then(|| witness.get(key))
+                        .flatten()
+                },
+            };
+
+            if let Some(entry) = entry {
+                scheduled_fees
+                    .insert(script_root, BasicConstantFeePolicy::fee_from_schedule_entry(entry));
+            }
+        }
+
+        Ok(Some(FeeCollection::new(fee_asset_id, scheduled_fees)))
+    }
+
     /// Finds a set of executable notes and eliminates failed notes from the list in the process.
     ///
-    /// When a note fails, the whole bundle it belongs to is eliminated: the failed note is blamed,
-    /// and the rest of its bundle is reported as its collateral.
+    /// This function attempts to find the maximum set of notes that can be successfully executed
+    /// together by the target account.
+    ///
+    /// If some notes succeed and others fail, the failed notes are removed from the candidate set,
+    /// together with the notes bound to them, and the remaining notes (successful + unattempted)
+    /// are retried in the next iteration. This process continues until either all remaining notes
+    /// succeed or no notes can be successfully executed. A failed note is blamed, and the rest of
+    /// its bundle is reported as its collateral.
+    ///
+    /// For example, given notes A, B, C, D, E, the execution flow would be as follows:
+    /// - Try [A, B, C, D, E] → A, B succeed, C fails → Remove C, try again.
+    /// - Try [A, B, D, E] → A, B, D succeed, E fails → Remove E, try again.
+    /// - Try [A, B, D] → All succeed → Return successful=[A, B, D], failed=[C, E].
+    ///
+    /// If a failure occurs at the epilogue phase of the transaction execution, the relevant set of
+    /// otherwise-successful notes are retried in various combinations in an attempt to find a
+    /// combination that passes the epilogue phase successfully, bundle by bundle.
     ///
     /// The result contains some combination of the input notes partitioned by whether they
     /// succeeded or failed to execute. `failed_notes` seeds the failures reported, so that notes
