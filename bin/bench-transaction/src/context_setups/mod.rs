@@ -176,10 +176,16 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
             network_wallet::tx_consume_swap_note_network(NoteType::Private)
         },
         ExecutionBenchmark::ConsumePswapFullFillNetwork => {
-            network_wallet::tx_consume_pswap_note_network(true)
+            network_wallet::tx_consume_pswap_note_network(true, NoteType::Private)
         },
         ExecutionBenchmark::ConsumePswapPartialFillNetwork => {
-            network_wallet::tx_consume_pswap_note_network(false)
+            network_wallet::tx_consume_pswap_note_network(false, NoteType::Private)
+        },
+        ExecutionBenchmark::ConsumePswapFullFillPublicPaybackNetwork => {
+            network_wallet::tx_consume_pswap_note_network(true, NoteType::Public)
+        },
+        ExecutionBenchmark::ConsumePswapPartialFillPublicPaybackNetwork => {
+            network_wallet::tx_consume_pswap_note_network(false, NoteType::Public)
         },
         ExecutionBenchmark::ConsumeMintFungibleNetwork => {
             network_faucet::tx_consume_mint_note_fungible_network()

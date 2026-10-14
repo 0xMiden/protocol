@@ -86,6 +86,8 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::PSWAP) => &[
                 ExecutionBenchmark::ConsumePswapFullFillNetwork,
                 ExecutionBenchmark::ConsumePswapPartialFillNetwork,
+                ExecutionBenchmark::ConsumePswapFullFillPublicPaybackNetwork,
+                ExecutionBenchmark::ConsumePswapPartialFillPublicPaybackNetwork,
             ],
             PricedNote::Standard(StandardNote::MINT) => &[
                 ExecutionBenchmark::ConsumeMintFungibleNetwork,
@@ -229,8 +231,12 @@ fn path_label(bench: ExecutionBenchmark) -> &'static str {
         ExecutionBenchmark::ConsumeP2ideReclaimNetwork => "reclaim",
         ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork => "public payback",
         ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork => "private payback",
-        ExecutionBenchmark::ConsumePswapFullFillNetwork => "full fill",
-        ExecutionBenchmark::ConsumePswapPartialFillNetwork => "partial fill",
+        ExecutionBenchmark::ConsumePswapFullFillNetwork => "full fill, private payback",
+        ExecutionBenchmark::ConsumePswapPartialFillNetwork => "partial fill, private payback",
+        ExecutionBenchmark::ConsumePswapFullFillPublicPaybackNetwork => "full fill, public payback",
+        ExecutionBenchmark::ConsumePswapPartialFillPublicPaybackNetwork => {
+            "partial fill, public payback"
+        },
         ExecutionBenchmark::ConsumeMintFungibleNetwork => "fungible faucet",
         ExecutionBenchmark::ConsumeMintNonFungibleNetwork => "non-fungible faucet",
         ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork => "with feature note",

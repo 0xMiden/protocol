@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
