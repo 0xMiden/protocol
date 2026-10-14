@@ -1,18 +1,19 @@
-//! Transfer blocklist — who is allowed to block, run against a MockChain.
+//! Transfer blocklist, who is allowed to block, run against a MockChain.
 //!
 //! This file covers the delegation contract only: the authorization around the block and unblock
-//! admin notes. What being blocked actually does to transfers, burns, and consumption is the
-//! sibling `transfer_blocklist_semantics.rs`; the two are split only to keep each file within its
-//! size ceiling. The decision record behind the feature is the transfer-blocklist decision
-//! document under `docs/`.
+//! admin notes. What being blocked does to a holder's outgoing transfer and burn notes is the
+//! sibling `transfer_blocklist_semantics.rs`; what it does to an incoming note (the listed
+//! recipient cannot consume it) is `mint_to_a_blocked_recipient_succeeds_then_strands` in
+//! `mint_scale_conformance.rs`. The design notes behind the feature are the blocklist paragraphs
+//! of `docs/DEVIATIONS.md` and `docs/ARCHITECTURE.md` in the miden-usdcx repository.
 //!
-//! The two new admin notes `block_account` / `unblock_account` are gated on the dedicated
+//! The two admin notes `block_account` / `unblock_account` are gated on the dedicated
 //! `BLK_MANAGER` role held by an EXTERNAL entity, NOT the administrator. A block/unblock from the
 //! BLK_MANAGER holder SUCCEEDS and mutates the `blocked_accounts` map; from a stranger, the OWNER
-//! (two-way capability isolation — the administrator has NO block power), or a DIFFERENT role
+//! (two-way capability isolation: the administrator has NO block power), or a DIFFERENT role
 //! holder (spoof-proof) it is REJECTED with the EXACT stock rbac role error; after the
 //! administrator (as `ADMIN`) revokes `BLK_MANAGER` via the EXISTING `revoke_role` note, the former
-//! holder is REJECTED — rotation with ZERO new machinery.
+//! holder is REJECTED, a rotation with ZERO new machinery.
 
 mod support;
 
