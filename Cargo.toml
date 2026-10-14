@@ -54,19 +54,19 @@ miden-tx                   = { default-features = false, path = "crates/miden-tx
 miden-tx-batch             = { default-features = false, path = "crates/miden-tx-batch", version = "=1.0.0-rc.1" }
 
 # Miden dependencies
-miden-assembly         = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-assembly-syntax  = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-core             = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-core-lib         = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-crypto           = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-crypto-derive    = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-mast-package     = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-package-registry = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-processor        = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-project          = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-prover           = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-utils-sync       = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
-miden-verifier         = { branch = "al/eidos-api-next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-assembly         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-assembly-syntax  = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-core             = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-core-lib         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-crypto           = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-crypto-derive    = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-mast-package     = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-package-registry = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-processor        = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-project          = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-prover           = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-utils-sync       = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
+miden-verifier         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-vm" }
 
 # External dependencies
 alloy-sol-types  = { default-features = false, version = "1.5" }
