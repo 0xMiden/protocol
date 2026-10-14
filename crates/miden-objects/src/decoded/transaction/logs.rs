@@ -36,21 +36,6 @@ impl Verify for TransactionLogs {
     type Error = VerificationError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let logs = self.logs.as_slice();
-        if logs.len() > Self::Verified::MAX_COUNT {
-            return Err(TransactionLogError::TooManyLogs(logs.len()).into());
-        }
-        let mut total_words = 0;
-        for log in logs {
-            let count = log.content.as_slice().len();
-            if count > miden_protocol::transaction::TransactionLog::MAX_NUM_WORDS {
-                return Err(TransactionLogError::TooManyContentWords(count).into());
-            }
-            total_words += count;
-            if total_words > Self::Verified::MAX_NUM_WORDS {
-                return Err(TransactionLogError::TooManyTotalContentWords(total_words).into());
-            }
-        }
         Ok(Self::Verified::new(self.logs.verify()?)?)
     }
 }
