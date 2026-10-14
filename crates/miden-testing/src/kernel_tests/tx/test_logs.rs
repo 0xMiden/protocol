@@ -192,8 +192,9 @@ async fn unauthenticated_note_logs(
         TransactionLog::new(account.id(), LogTopic::new(17u32.into(), 29u32.into()), content)?;
     assert_eq!(executed.logs().iter().collect::<Vec<_>>(), vec![&expected]);
     let (_, outputs, ..) = executed.into_parts();
+    let (_, _, log_details) = outputs.into_parts();
     assert_eq!(
-        matches!(outputs.into_parts().2, TransactionLogDetails::Public(_)),
+        matches!(log_details, TransactionLogDetails::Public(_)),
         account_type.is_public()
     );
     Ok(())
@@ -329,10 +330,8 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
 ) -> anyhow::Result<()> {
     let (_, executed) = execute_foreign_logs(native_type, foreign_type).await?;
     let (_, outputs, ..) = executed.into_parts();
-    assert_eq!(
-        matches!(outputs.into_parts().2, TransactionLogDetails::Public(_)),
-        native_type.is_public()
-    );
+    let (_, _, log_details) = outputs.into_parts();
+    assert_eq!(matches!(log_details, TransactionLogDetails::Public(_)), native_type.is_public());
     Ok(())
 }
 
