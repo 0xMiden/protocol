@@ -1,3 +1,5 @@
+use {BatchId} from miden::batch_kernel::types
+use miden::core::collections::sorted_array
 use miden::core::mem
 use miden::core::word
 
@@ -68,7 +70,7 @@ const ERR_BATCH_NOTE_LIST_TOO_LONG =
 #! Panics if:
 #! - the advice-supplied list length is not a multiple of `NOTE_ENTRY_FELT_LEN`.
 #! - the list contains more entries than the maximum allowed.
-proc load_note_list
+proc load_note_list(key: word, write_ptr: ptr<sorted_array::Entry>) -> u32
     adv.push_mapvaln
     # OS => [KEY, write_ptr]
     # AS => [len_felts, [note_list_entries]]
@@ -118,7 +120,10 @@ end
 #! - `start_ptr > end_ptr`.
 #! - any adjacent key pair is not strictly increasing.
 @locals(1)
-proc assert_list_strictly_sorted
+proc assert_list_strictly_sorted(
+    start_ptr: ptr<sorted_array::Entry>,
+    end_ptr: ptr<sorted_array::Entry>
+) -> (ptr<sorted_array::Entry>, ptr<sorted_array::Entry>)
     # locals:
     # 0: current_ptr
     dup add.NOTE_ENTRY_FELT_LEN loc_store.0
@@ -157,7 +162,7 @@ end
 #! Panics if:
 #! - [`load_note_list`] fails to verify.
 #! - the list is not strictly sorted (see [`assert_list_strictly_sorted`]).
-proc prepare_input_note_list
+proc prepare_input_note_list()
     push.INPUT_NOTES_PTR
     push.INPUT_NOTE_LIST_KEY
     # => [KEY, input_notes_ptr]
@@ -185,7 +190,7 @@ end
 #! Panics if:
 #! - [`load_note_list`] fails to verify.
 #! - the list is not strictly sorted (see [`assert_list_strictly_sorted`]).
-proc prepare_output_note_list
+proc prepare_output_note_list()
     push.OUTPUT_NOTES_PTR
     push.OUTPUT_NOTE_LIST_KEY
     # => [KEY, output_notes_ptr]
@@ -245,7 +250,7 @@ end
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
 #!       BLOCK_COMMITMENT.
 #! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
-pub proc prepare_batch
+pub proc prepare_batch(batch_id: BatchId)
     # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
     # ---------------------------------------------------------------------------------------------
 

@@ -1,3 +1,4 @@
+use {BatchNoteTreeRoot, InputNotesCommitment} from miden::batch_kernel::types
 use miden::core::crypto::hashes::poseidon2
 
 use miden::batch_kernel::memory
@@ -36,7 +37,7 @@ const HASHER_CAPACITY_OFFSET = 2 * WORD_NUM_ELEMENTS
 #!
 #! Panics if:
 #! - an output-note list entry was not created by any transaction.
-proc assert_all_output_notes_created
+proc assert_all_output_notes_created()
     exec.memory::get_num_output_notes
     # => [num_output_notes]
 
@@ -64,7 +65,7 @@ end
 #!
 #! Inputs:  [hasher_state_ptr]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc load_hasher_state
+proc load_hasher_state(hasher_state_ptr: ptr<poseidon2::State>) -> poseidon2::State
     padw dup.4 add.HASHER_CAPACITY_OFFSET mem_loadw_le
     # => [CAPACITY, hasher_state_ptr]
 
@@ -81,7 +82,7 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY, hasher_state_ptr]
 #! Outputs: []
-proc store_hasher_state
+proc store_hasher_state(state: poseidon2::State, hasher_state_ptr: ptr<poseidon2::State>)
     movup.12
     # => [hasher_state_ptr, RATE0, RATE1, CAPACITY]
 
@@ -114,7 +115,7 @@ end
 #!   Operand stack: []
 #!   Memory:
 #!     hasher_state_ptr |-> [RATE0', RATE1', CAPACITY']
-proc absorb_input_entry
+proc absorb_input_entry(input_note_idx: u32, hasher_state_ptr: ptr<poseidon2::State>)
     # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
     exec.memory::get_input_note_entry_ptr
     # => [entry_ptr, hasher_state_ptr]
@@ -151,7 +152,10 @@ end
 #!
 #! Panics if:
 #! - the input note was not consumed by any transaction.
-proc process_input_entry
+proc process_input_entry(
+    input_note_idx: u32,
+    hasher_state_ptr: ptr<poseidon2::State>
+) -> (u32, ptr<poseidon2::State>)
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx, hasher_state_ptr]
 
@@ -196,7 +200,7 @@ end
 #! - [`process_input_entry`] fails to verify any entry.
 #!
 @locals(12) # the three words of a poseidon2 hasher state: RATE0, RATE1 and CAPACITY.
-proc compute_input_notes_commitment
+proc compute_input_notes_commitment() -> InputNotesCommitment
     # Initialize the hasher state in this procedure's local memory.
     exec.poseidon2::init_no_padding
     locaddr.0 movdn.12
@@ -239,7 +243,7 @@ end
 #! Outputs: [BATCH_NOTE_TREE_ROOT]
 #!
 #! TODO: hash the batch's output notes into the batch note tree (SMT) root.
-proc compute_batch_note_tree_root
+proc compute_batch_note_tree_root() -> BatchNoteTreeRoot
     padw
 end
 
@@ -259,7 +263,7 @@ end
 #! - [`assert_all_output_notes_created`] or [`compute_input_notes_commitment`] fails to verify.
 #!
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
-pub proc finalize
+pub proc finalize() -> (InputNotesCommitment, BatchNoteTreeRoot)
     exec.assert_all_output_notes_created
     exec.compute_batch_note_tree_root
     # => [BATCH_NOTE_TREE_ROOT]

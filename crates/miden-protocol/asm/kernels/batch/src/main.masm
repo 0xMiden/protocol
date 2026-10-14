@@ -1,16 +1,8 @@
+use {BlockCommitment, BlockNumber} from miden::protocol_utils::types
+use {BatchId, BatchNoteTreeRoot, InputNotesCommitment} from miden::batch_kernel::types
 use miden::batch_kernel::prologue
 use miden::batch_kernel::note_tracker
 use miden::batch_kernel::epilogue
-use {BlockCommitment, BlockNumber} from miden::protocol_utils::types
-
-#! Commitment to the transactions in a batch.
-type BatchId = word
-
-#! Sequential commitment to the input notes of the batch's transactions.
-type InputNotesCommitment = word
-
-#! Root of the batch note tree over the transactions' output notes.
-type BatchNoteTreeRoot = word
 
 # MAIN
 # =================================================================================================

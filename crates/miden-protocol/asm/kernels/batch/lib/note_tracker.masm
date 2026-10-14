@@ -1,3 +1,10 @@
+use {Bool, NoteId} from miden::protocol_utils::types
+use {
+    InputNoteEntry,
+    Nullifier,
+    OutputNoteCommitments,
+    OutputNoteEntry,
+} from miden::batch_kernel::types
 use miden::core::mem
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
@@ -49,7 +56,7 @@ const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED =
 #!
 #! Inputs:  [NULLIFIER]
 #! Outputs: [is_found, input_note_ptr]
-proc find_input_note
+proc find_input_note(nullifier: Nullifier) -> (Bool, ptr<InputNoteEntry>)
     push.INPUT_NOTES_PTR movdn.4
     exec.memory::get_input_notes_end_ptr movdn.5
     # => [NULLIFIER, input_notes_ptr, input_notes_end_ptr]
@@ -67,7 +74,7 @@ end
 #!
 #! Inputs:  [NOTE_ID]
 #! Outputs: [is_found, output_note_ptr]
-proc find_output_note
+proc find_output_note(note_id: NoteId) -> (Bool, ptr<OutputNoteEntry>)
     push.OUTPUT_NOTES_PTR movdn.4
     exec.memory::get_output_notes_end_ptr movdn.5
     # => [NOTE_ID, output_notes_ptr, output_notes_end_ptr]
@@ -86,7 +93,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: []
-proc set_input_erasure_expected
+proc set_input_erasure_expected(input_note_idx: u32)
     push.ERASURE_EXPECTED swap
     # => [input_note_idx, ERASURE_EXPECTED]
 
@@ -98,7 +105,7 @@ end
 #!
 #! Inputs:  [output_note_idx, input_note_idx]
 #! Outputs: []
-proc set_output_erases_input
+proc set_output_erases_input(output_note_idx: u32, input_note_idx: u32)
     push.1 swap
     # => [output_note_idx, will_be_erased = 1, input_note_idx]
 
@@ -115,7 +122,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: []
-proc cross_reference_one_input
+proc cross_reference_one_input(input_note_idx: u32)
     dup exec.memory::get_input_note_entry_ptr add.NOTE_ENTRY_VALUE_OFFSET
     # => [note_id_ptr, input_note_idx]
 
@@ -151,7 +158,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-proc cross_reference_erasure
+proc cross_reference_erasure()
     exec.memory::get_num_input_notes
     # => [num_input_notes]
 
@@ -179,7 +186,7 @@ end
 #!
 #! Panics if:
 #! - the output note was already created in this batch.
-proc mark_output_note_created
+proc mark_output_note_created(output_note_idx: u32)
     dup exec.memory::get_output_note_is_created
     # => [is_created, output_note_idx]
 
@@ -200,7 +207,7 @@ end
 #!
 #! Panics if:
 #! - the input note is not in the `ERASURE_EXPECTED` state.
-proc mark_input_note_erased
+proc mark_input_note_erased(input_note_idx: u32)
     dup exec.memory::get_input_note_erasure_state
     # => [erasure_state, input_note_idx]
 
@@ -225,7 +232,7 @@ end
 #! - the output note is not in the note-id-sorted output-note list.
 #! - the output note was already created in this batch.
 #! - the input note it erases is not in the `ERASURE_EXPECTED` state.
-proc bind_one_output_note
+proc bind_one_output_note(verified_output_note_ptr: ptr<OutputNoteCommitments>)
     # Derive the output note's id as merge(details_commitment, metadata_commitment).
     dup padw movup.4 mem_loadw_le
     # => [DETAILS, verified_output_note_ptr]
@@ -275,7 +282,10 @@ end
 #!
 #! Panics if:
 #! - [`bind_one_output_note`] fails to verify any of them.
-proc bind_scratch_output_notes
+proc bind_scratch_output_notes(
+    num_output_notes: u32,
+    scratch_ptr: ptr<OutputNoteCommitments>
+)
     # => [num_output_notes, scratch_ptr]
 
     # Iterate from num_output_notes - 1 down to 0.
@@ -311,7 +321,7 @@ end
 #! - the piped tuples do not hash to `OUTPUT_NOTES_COMMITMENT_idx`.
 #! - [`bind_scratch_output_notes`] fails to verify.
 @locals(8192) # MAX_NOTES_PER_BATCH * NOTE_ENTRY_FELT_LEN
-proc process_tx_output_notes
+proc process_tx_output_notes(tx_index: u32)
     dup exec.memory::get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
 
@@ -362,7 +372,7 @@ end
 #!
 #! Panics if:
 #! - the input note was already consumed in this batch.
-proc mark_input_note_consumed
+proc mark_input_note_consumed(input_note_idx: u32)
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx]
 
@@ -384,7 +394,7 @@ end
 #!
 #! Panics if:
 #! - the input note was consumed before being created.
-proc assert_input_not_consumed_before_created
+proc assert_input_not_consumed_before_created(input_note_idx: u32)
     exec.memory::get_input_note_erasure_state
     # => [erasure_state]
 
@@ -408,7 +418,7 @@ end
 #! - the claimed note id does not match the verified note id.
 #! - the input note was consumed before being created.
 #! - the input note was already consumed in this batch.
-proc bind_one_input_note
+proc bind_one_input_note(verified_input_note_ptr: ptr<InputNoteEntry>)
     # Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
     dup padw movup.4 mem_loadw_le
     # => [NULLIFIER, verified_input_note_ptr]
@@ -453,7 +463,7 @@ end
 #!
 #! Panics if:
 #! - [`bind_one_input_note`] fails to verify any of them.
-proc bind_scratch_input_notes
+proc bind_scratch_input_notes(num_input_notes: u32, scratch_ptr: ptr<InputNoteEntry>)
     # => [num_input_notes, scratch_ptr]
 
     # Iterate from num_input_notes - 1 down to 0.
@@ -489,7 +499,7 @@ end
 #! - the piped tuples do not hash to `INPUT_NOTES_COMMITMENT_idx`.
 #! - [`bind_scratch_input_notes`] fails to verify.
 @locals(8192) # MAX_NOTES_PER_BATCH * NOTE_ENTRY_FELT_LEN
-proc process_tx_input_notes
+proc process_tx_input_notes(tx_index: u32)
     dup exec.memory::get_tx_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
 
@@ -548,7 +558,7 @@ end
 #!
 #! Panics if:
 #! - [`process_tx_input_notes`] or [`process_tx_output_notes`] fails to verify any transaction.
-proc bind_per_tx_notes
+proc bind_per_tx_notes()
     exec.memory::get_num_transactions
     push.0
     # => [tx_index, num_transactions]
@@ -580,7 +590,7 @@ end
 #!
 #! Panics if:
 #! - [`bind_per_tx_notes`] fails to verify.
-pub proc track_notes
+pub proc track_notes()
     exec.cross_reference_erasure
     exec.bind_per_tx_notes
 end

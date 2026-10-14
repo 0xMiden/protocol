@@ -1,3 +1,12 @@
+use {Bool} from miden::protocol_utils::types
+use {
+    InputNoteEntry,
+    OutputNoteEntry,
+    TransactionCommitments,
+    TransactionId,
+    TransactionTuple,
+} from miden::batch_kernel::types
+
 # MEMORY LAYOUT
 # =================================================================================================
 #
@@ -122,6 +131,15 @@ pub enum InputNoteErasureState : u8 {
     ERASED = 2,
 }
 
+# A word of the input-note flags array. Each flag occupies a separate felt.
+type InputNoteFlags = struct {
+    erasure_state: InputNoteErasureState,
+    erasure_state_padding: [u8; 3],
+    is_consumed: Bool,
+    is_consumed_padding: [u8; 3],
+    padding: [felt; 2],
+}
+
 # Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #   `[NOTE_ID, 0, 0, 0, 0]`
 # where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
@@ -141,6 +159,16 @@ const OUTPUT_NOTE_IS_CREATED_OFFSET = 1
 
 # Felt offset of the `erased_by_input_note_idx` field within an output-note flag word.
 const OUTPUT_NOTE_ERASED_BY_OFFSET = 2
+
+# A word of the output-note flags array. Each field occupies a separate felt.
+type OutputNoteFlags = struct {
+    will_be_erased: Bool,
+    will_be_erased_padding: [u8; 3],
+    is_created: Bool,
+    is_created_padding: [u8; 3],
+    erased_by_input_note_idx: u32,
+    padding: felt,
+}
 
 # CAPACITY LIMITS
 # =================================================================================================
@@ -162,7 +190,7 @@ pub const MAX_NOTES_PER_BATCH = 1024
 #!
 #! Inputs:  [num_transactions]
 #! Outputs: []
-pub proc set_num_transactions
+pub proc set_num_transactions(num_transactions: u32)
     mem_store.NUM_TRANSACTIONS_PTR
 end
 
@@ -170,7 +198,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [num_transactions]
-pub proc get_num_transactions
+pub proc get_num_transactions() -> u32
     mem_load.NUM_TRANSACTIONS_PTR
 end
 
@@ -181,7 +209,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [tx_tuple_ptr]
-pub proc get_tx_tuple_ptr
+pub proc get_tx_tuple_ptr(tx_index: u32) -> ptr<TransactionTuple>
     mul.TX_TUPLE_FELT_LEN add.TX_TUPLES_PTR
 end
 
@@ -189,7 +217,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [TX_ID]
-pub proc get_tx_id
+pub proc get_tx_id(tx_index: u32) -> TransactionId
     exec.get_tx_tuple_ptr
     padw movup.4 mem_loadw_le
 end
@@ -198,7 +226,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [tx_header_ptr]
-pub proc get_tx_header_ptr
+pub proc get_tx_header_ptr(tx_index: u32) -> ptr<TransactionCommitments>
     mul.TX_HEADER_FELT_LEN add.TX_HEADERS_PTR
 end
 
@@ -206,7 +234,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [INPUT_NOTES_COMMITMENT_idx]
-pub proc get_tx_input_notes_commitment
+pub proc get_tx_input_notes_commitment(tx_index: u32) -> word
     exec.get_tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET
     padw movup.4 mem_loadw_le
 end
@@ -215,7 +243,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [OUTPUT_NOTES_COMMITMENT_idx]
-pub proc get_tx_output_notes_commitment
+pub proc get_tx_output_notes_commitment(tx_index: u32) -> word
     exec.get_tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET
     padw movup.4 mem_loadw_le
 end
@@ -227,7 +255,7 @@ end
 #!
 #! Inputs:  [num_input_notes]
 #! Outputs: []
-pub proc set_num_input_notes
+pub proc set_num_input_notes(num_input_notes: u32)
     mem_store.NUM_INPUT_NOTES_PTR
 end
 
@@ -235,7 +263,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [num_input_notes]
-pub proc get_num_input_notes
+pub proc get_num_input_notes() -> u32
     mem_load.NUM_INPUT_NOTES_PTR
 end
 
@@ -243,7 +271,7 @@ end
 #!
 #! Inputs:  [num_output_notes]
 #! Outputs: []
-pub proc set_num_output_notes
+pub proc set_num_output_notes(num_output_notes: u32)
     mem_store.NUM_OUTPUT_NOTES_PTR
 end
 
@@ -251,7 +279,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [num_output_notes]
-pub proc get_num_output_notes
+pub proc get_num_output_notes() -> u32
     mem_load.NUM_OUTPUT_NOTES_PTR
 end
 
@@ -260,7 +288,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [input_notes_end_ptr]
-pub proc get_input_notes_end_ptr
+pub proc get_input_notes_end_ptr() -> ptr<InputNoteEntry>
     exec.get_num_input_notes mul.NOTE_ENTRY_FELT_LEN add.INPUT_NOTES_PTR
 end
 
@@ -268,7 +296,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [output_notes_end_ptr]
-pub proc get_output_notes_end_ptr
+pub proc get_output_notes_end_ptr() -> ptr<OutputNoteEntry>
     exec.get_num_output_notes mul.NOTE_ENTRY_FELT_LEN add.OUTPUT_NOTES_PTR
 end
 
@@ -276,7 +304,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: [input_note_ptr]
-pub proc get_input_note_entry_ptr
+pub proc get_input_note_entry_ptr(input_note_idx: u32) -> ptr<InputNoteEntry>
     mul.NOTE_ENTRY_FELT_LEN add.INPUT_NOTES_PTR
 end
 
@@ -284,7 +312,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: [input_note_flags_ptr]
-proc get_input_note_flags_ptr
+proc get_input_note_flags_ptr(input_note_idx: u32) -> ptr<InputNoteFlags>
     mul.NOTE_FLAGS_FELT_LEN add.INPUT_NOTE_FLAGS_PTR
 end
 
@@ -292,7 +320,7 @@ end
 #!
 #! Inputs:  [output_note_idx]
 #! Outputs: [output_note_flags_ptr]
-proc get_output_note_flags_ptr
+proc get_output_note_flags_ptr(output_note_idx: u32) -> ptr<OutputNoteFlags>
     mul.NOTE_FLAGS_FELT_LEN add.OUTPUT_NOTE_FLAGS_PTR
 end
 
@@ -303,7 +331,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: [erasure_state]
-pub proc get_input_note_erasure_state
+pub proc get_input_note_erasure_state(input_note_idx: u32) -> InputNoteErasureState
     exec.get_input_note_flags_ptr add.INPUT_NOTE_ERASURE_STATE_OFFSET
     # => [erasure_state_ptr]
 
@@ -314,7 +342,10 @@ end
 #!
 #! Inputs:  [input_note_idx, erasure_state]
 #! Outputs: []
-pub proc set_input_note_erasure_state
+pub proc set_input_note_erasure_state(
+    input_note_idx: u32,
+    erasure_state: InputNoteErasureState
+)
     exec.get_input_note_flags_ptr add.INPUT_NOTE_ERASURE_STATE_OFFSET
     # => [erasure_state_ptr, erasure_state]
 
@@ -325,7 +356,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: [is_consumed]
-pub proc get_input_note_is_consumed
+pub proc get_input_note_is_consumed(input_note_idx: u32) -> Bool
     exec.get_input_note_flags_ptr add.INPUT_NOTE_IS_CONSUMED_OFFSET
     # => [is_consumed_ptr]
 
@@ -336,7 +367,7 @@ end
 #!
 #! Inputs:  [input_note_idx, is_consumed]
 #! Outputs: []
-pub proc set_input_note_is_consumed
+pub proc set_input_note_is_consumed(input_note_idx: u32, is_consumed: Bool)
     exec.get_input_note_flags_ptr add.INPUT_NOTE_IS_CONSUMED_OFFSET
     # => [is_consumed_ptr, is_consumed]
 
@@ -347,7 +378,7 @@ end
 #!
 #! Inputs:  [output_note_idx]
 #! Outputs: [is_created]
-pub proc get_output_note_is_created
+pub proc get_output_note_is_created(output_note_idx: u32) -> Bool
     exec.get_output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET
     # => [is_created_ptr]
 
@@ -358,7 +389,7 @@ end
 #!
 #! Inputs:  [output_note_idx, is_created]
 #! Outputs: []
-pub proc set_output_note_is_created
+pub proc set_output_note_is_created(output_note_idx: u32, is_created: Bool)
     exec.get_output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET
     # => [is_created_ptr, is_created]
 
@@ -373,7 +404,7 @@ end
 #!
 #! Inputs:  [output_note_idx]
 #! Outputs: [will_be_erased, erased_by_input_note_idx]
-pub proc get_output_note_erasure
+pub proc get_output_note_erasure(output_note_idx: u32) -> (Bool, u32)
     exec.get_output_note_flags_ptr
     # => [output_note_flags_ptr]
 
@@ -388,7 +419,11 @@ end
 #!
 #! Inputs:  [output_note_idx, will_be_erased, erased_by_input_note_idx]
 #! Outputs: []
-pub proc set_output_note_erasure
+pub proc set_output_note_erasure(
+    output_note_idx: u32,
+    will_be_erased: Bool,
+    erased_by_input_note_idx: u32
+)
     exec.get_output_note_flags_ptr
     # => [output_note_flags_ptr, will_be_erased, erased_by_input_note_idx]
 
@@ -406,7 +441,7 @@ end
 #!
 #! Inputs:  [input_note_ptr]
 #! Outputs: [input_note_idx]
-pub proc get_input_note_idx_from_ptr
+pub proc get_input_note_idx_from_ptr(input_note_ptr: ptr<InputNoteEntry>) -> u32
     sub.INPUT_NOTES_PTR div.NOTE_ENTRY_FELT_LEN
 end
 
@@ -415,6 +450,6 @@ end
 #!
 #! Inputs:  [output_note_ptr]
 #! Outputs: [output_note_idx]
-pub proc get_output_note_idx_from_ptr
+pub proc get_output_note_idx_from_ptr(output_note_ptr: ptr<OutputNoteEntry>) -> u32
     sub.OUTPUT_NOTES_PTR div.NOTE_ENTRY_FELT_LEN
 end

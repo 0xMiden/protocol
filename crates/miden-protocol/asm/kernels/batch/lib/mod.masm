@@ -8,3 +8,4 @@ pub mod epilogue
 pub mod memory
 pub mod note_tracker
 pub mod prologue
+pub mod types

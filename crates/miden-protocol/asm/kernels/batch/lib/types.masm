@@ -1,0 +1,44 @@
+# Shared representations used by the batch kernel's internal interfaces.
+
+use {AccountId, NoteId} from miden::protocol_utils::types
+
+#! Commitment to the transactions in a batch.
+pub type BatchId = word
+
+#! Sequential commitment to the input notes of the batch's transactions.
+pub type InputNotesCommitment = word
+
+#! Root of the batch note tree over the transactions' output notes.
+pub type BatchNoteTreeRoot = word
+
+#! Identifier of a transaction: the hash of its `TransactionCommitments`.
+pub type TransactionId = word
+
+#! Nullifier of an input note.
+pub type Nullifier = word
+
+#! A transaction committed to by `BATCH_ID`: its id and the account it executed against.
+pub type TransactionTuple = struct {
+    id: TransactionId,
+    account_id: AccountId,
+    padding: [felt; 2],
+}
+
+#! The commitments that make up the preimage of a `TransactionId`.
+pub type TransactionCommitments = struct {
+    init_account_commitment: word,
+    final_account_commitment: word,
+    input_notes_commitment: word,
+    output_notes_commitment: word,
+}
+
+#! An input note as committed to by a transaction's input notes commitment, and as stored in the
+#! nullifier-sorted input-note list: its nullifier and, for an unauthenticated note, its note id
+#! (the empty word otherwise).
+pub type InputNoteEntry = struct { nullifier: Nullifier, note_id_or_empty: word }
+
+#! An output note as committed to by a transaction's output notes commitment.
+pub type OutputNoteCommitments = struct { details_commitment: word, metadata_commitment: word }
+
+#! An entry of the note-id-sorted output-note list. The value word is unused.
+pub type OutputNoteEntry = struct { note_id: NoteId, unused: word }
