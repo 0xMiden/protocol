@@ -3019,6 +3019,7 @@ dependencies = [
  "miden-core",
  "miden-core-lib",
  "miden-crypto",
+ "miden-objects",
  "miden-processor",
  "miden-protocol",
  "miden-standards",

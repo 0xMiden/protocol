@@ -7,7 +7,9 @@
 //! `AccountIdBuilder::build_with_seed`. Every family is derived independently of the code it
 //! checks, except the `mi` carried and rebuilt felts, which are recorded from the Rust mirror and
 //! pinned against the MASM writer. Regeneration is an explicit, reviewed act:
-//! `cargo run --bin gen_vectors`.
+//! `cargo run -p miden-usdcx --features vectors --bin gen_vectors`. The binary needs the
+//! `vectors` feature. It finds the vectors file through the crate's manifest directory, so the
+//! command works from any directory in the workspace.
 //!
 //! Wire-format byte offsets used below: magic@0, version@4, amount@8, remoteDomain@40,
 //! remoteToken@44, remoteRecipient@76, localToken@108, localDepositor@140, maxFee@172,
