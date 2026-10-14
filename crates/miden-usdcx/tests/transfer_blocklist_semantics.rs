@@ -5,15 +5,16 @@
 //! holder of the dedicated `BLK_MANAGER` role can change, through the standard blocklist config
 //! note. Whenever USDCx moves out of or into an account, the transaction kernel calls back into
 //! the faucet, which looks the moving account up in that list and aborts the transaction if the
-//! account is listed. OpenZeppelin (finding N-07, issue 0xMiden/miden-usdcx#175) asked for a test
-//! showing that a listed account can create neither a transfer note nor a burn note; who may
-//! block is covered in `transfer_blocklist_e2e.rs`, and the receive side (a listed account cannot
-//! consume an incoming note) in `mint_scale_conformance.rs`. Each case below funds a holder wallet
-//! through the real attested mint path on the production faucet, shows the holder can create the
-//! note while unlisted, has the `BLK_MANAGER` holder block it, shows the same kind of note can no
-//! longer be created and that the holder's balance is untouched, then unblocks the holder and
-//! shows the note can be created again. If the "cannot create" step ever passed, a blocked holder
-//! could still move or redeem USDCx, which is the freeze the blocklist exists to enforce.
+//! account is listed. OpenZeppelin (finding N-07 of the final report, filed as H-02 in issue
+//! 0xMiden/miden-usdcx#175) asked for a test showing that a listed account can create neither a
+//! transfer note nor a burn note; who may block is covered in `transfer_blocklist_e2e.rs`, and the
+//! receive side (a listed account cannot consume an incoming note) in `mint_scale_conformance.rs`.
+//! Each case below funds a holder wallet through the real attested mint path on the production
+//! faucet, shows the holder can create the note while unlisted, has the `BLK_MANAGER` holder block
+//! the holder, shows the same kind of note can no longer be created and that the holder's balance
+//! is untouched, then unblocks the holder and shows the note can be created again. If the "cannot
+//! create" step ever passed, a blocked holder could still move or redeem USDCx, and the blocklist
+//! would no longer freeze anything.
 
 mod support;
 
@@ -59,16 +60,17 @@ enum Outgoing {
     Burn,
 }
 
-/// The production faucet, a holder wallet funded through the real mint path, and the index of the
-/// seeded block and unblock admin notes (both sent by the `BLK_MANAGER` holder and addressed at
-/// the holder) inside `pf.seeded_notes`.
+/// The production faucet and the holder wallet it funded through the real mint path. The block and
+/// unblock admin notes (both sent by the `BLK_MANAGER` holder, both naming the holder) sit in
+/// `pf.seeded_notes` at `BLOCK_NOTE` and `UNBLOCK_NOTE`.
 struct Fixture {
     pf: ProductionFaucet,
     holder_id: AccountId,
 }
 
 /// `pf.seeded_notes[BLOCK_NOTE]` blocks the holder, `pf.seeded_notes[UNBLOCK_NOTE]` unblocks it.
-/// Index 0 is the administrator's `set_attester` note the bring-up consumes.
+/// Index 0 is the administrator's `set_attester` note, which `funded_fixture` has the faucet
+/// consume first.
 const BLOCK_NOTE: usize = 1;
 const UNBLOCK_NOTE: usize = 2;
 
@@ -107,9 +109,9 @@ async fn funded_fixture() -> Result<Fixture> {
         )
         .context("building the administrator set_attester note")?,
         stock_block_note(blk_manager(), faucet_id, holder_id, 953)
-            .context("building the BLK_MANAGER block note addressed at the holder")?,
+            .context("building the BLK_MANAGER block note that names the holder")?,
         stock_unblock_note(blk_manager(), faucet_id, holder_id, 954)
-            .context("building the BLK_MANAGER unblock note addressed at the holder")?,
+            .context("building the BLK_MANAGER unblock note that names the holder")?,
     ];
     for note in &seeded_notes {
         mc.add_output_note(RawOutputNote::Full(note.clone()));
@@ -175,7 +177,8 @@ fn holder_balance(chain: &MockChain, holder_id: AccountId, faucet_id: AccountId)
 }
 
 /// Whether `account` is on the faucet's blocklist, read from the faucet's committed
-/// `blocked_accounts` storage map (the primitive's key is `[0, 0, suffix, prefix]`).
+/// `blocked_accounts` storage map, which the blocklist component keys by `[0, 0, suffix, prefix]`
+/// of the account id.
 fn is_listed(faucet: &Account, account: AccountId) -> Result<bool> {
     let key = Word::from([Felt::ZERO, Felt::ZERO, account.suffix(), account.prefix().as_felt()]);
     let entry = faucet
@@ -221,7 +224,9 @@ fn outgoing_note(
 }
 
 /// The holder creates `note` in its own transaction and the block is committed. Used for the
-/// positive controls, where creation must succeed.
+/// positive controls, where creation must succeed. `try_emit_burn_note` is the suite's generic
+/// driver for a holder moving one asset into a note of any kind; its name predates the transfer
+/// case.
 async fn create_and_commit(f: &mut Fixture, note: &Note, asset: &FungibleAsset) -> Result<()> {
     let tx = try_emit_burn_note(&f.pf.mock_chain, note, asset, f.pf.faucet_id, f.holder_id)
         .await
@@ -234,9 +239,27 @@ async fn create_and_commit(f: &mut Fixture, note: &Note, asset: &FungibleAsset) 
     Ok(())
 }
 
+/// What a note of each kind must look like: the pay-to-id script with no attachments for a
+/// transfer, the burn script with its two attachments (the routing target that addresses the note
+/// to the faucet, and the withdrawal payload) for a burn. Checked in the test body against the
+/// case's own `kind`, so a later edit of `outgoing_note` cannot quietly turn the burn case into a
+/// second transfer case.
+fn assert_note_kind(note: &Note, kind: Outgoing) {
+    let (script, attachments) = match kind {
+        Outgoing::Transfer => (P2idNote::script_root(), 0),
+        Outgoing::Burn => (XReserveBurnNote::script_root(), 2),
+    };
+    assert_eq!(note.script().root(), script, "the {kind:?} note must carry the {kind:?} script");
+    assert_eq!(
+        note.attachments().num_attachments(),
+        attachments,
+        "the {kind:?} note must carry the attachments of its kind"
+    );
+}
+
 /// A listed holder can create neither a transfer note nor a burn note, and unlisting restores
-/// both. One case per note kind; the steps are identical, so a regression in either path names
-/// itself.
+/// both. One case per note kind; the steps are identical, so a failure names the note kind that
+/// regressed.
 #[rstest]
 #[case::transfer_note(Outgoing::Transfer)]
 #[case::burn_note(Outgoing::Burn)]
@@ -250,6 +273,7 @@ async fn blocked_holder_cannot_create_the_note(#[case] kind: Outgoing) -> Result
     // two attempts is the holder's entry in the blocklist.
     assert!(!is_listed(&committed(&f.pf.mock_chain, faucet_id)?, holder_id)?);
     let (note, asset) = outgoing_note(kind, holder_id, faucet_id, 10)?;
+    assert_note_kind(&note, kind);
     create_and_commit(&mut f, &note, &asset).await?;
     assert_eq!(
         holder_balance(&f.pf.mock_chain, holder_id, faucet_id)?,
@@ -257,8 +281,8 @@ async fn blocked_holder_cannot_create_the_note(#[case] kind: Outgoing) -> Result
         "the positive control really moved USDCx out of the holder's vault"
     );
 
-    // The BLK_MANAGER holder blocks the holder: the faucet consumes the block note and the block
-    // is committed, so the faucet state every later callback reads carries the entry.
+    // The BLK_MANAGER holder blocks the holder: the faucet consumes the block note in a committed
+    // block, so every later callback reads a faucet state that lists the holder.
     consume_seeded_admin_note(&mut f.pf, BLOCK_NOTE).await?;
     assert!(
         is_listed(&committed(&f.pf.mock_chain, faucet_id)?, holder_id)?,
@@ -271,6 +295,7 @@ async fn blocked_holder_cannot_create_the_note(#[case] kind: Outgoing) -> Result
     // blocklist and aborts with the policy's own error. Nothing reaches a consumer, because there
     // is nothing to consume.
     let (note, asset) = outgoing_note(kind, holder_id, faucet_id, 11)?;
+    assert_note_kind(&note, kind);
     let result = try_emit_burn_note(&f.pf.mock_chain, &note, &asset, faucet_id, holder_id).await;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
     assert!(
@@ -290,6 +315,7 @@ async fn blocked_holder_cannot_create_the_note(#[case] kind: Outgoing) -> Result
         "precondition: the unblock note removed the holder from the faucet's blocklist"
     );
     let (note, asset) = outgoing_note(kind, holder_id, faucet_id, 12)?;
+    assert_note_kind(&note, kind);
     create_and_commit(&mut f, &note, &asset).await?;
     assert_eq!(
         holder_balance(&f.pf.mock_chain, holder_id, faucet_id)?,

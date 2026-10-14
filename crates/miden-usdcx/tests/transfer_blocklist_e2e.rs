@@ -1,19 +1,21 @@
 //! Transfer blocklist, who is allowed to block, run against a MockChain.
 //!
-//! This file covers the delegation contract only: the authorization around the block and unblock
-//! admin notes. What being blocked does to a holder's outgoing transfer and burn notes is the
-//! sibling `transfer_blocklist_semantics.rs`; what it does to an incoming note (the listed
-//! recipient cannot consume it) is `mint_to_a_blocked_recipient_succeeds_then_strands` in
+//! This file covers only who is allowed to send the block and unblock admin notes. What being
+//! blocked does to a holder's outgoing transfer and burn notes is the sibling
+//! `transfer_blocklist_semantics.rs`; what it does to an incoming note (the listed recipient
+//! cannot consume it) is `mint_to_a_blocked_recipient_succeeds_then_strands` in
 //! `mint_scale_conformance.rs`. The design notes behind the feature are the blocklist paragraphs
 //! of `docs/DEVIATIONS.md` and `docs/ARCHITECTURE.md` in the miden-usdcx repository.
 //!
-//! The two admin notes `block_account` / `unblock_account` are gated on the dedicated
-//! `BLK_MANAGER` role held by an EXTERNAL entity, NOT the administrator. A block/unblock from the
-//! BLK_MANAGER holder SUCCEEDS and mutates the `blocked_accounts` map; from a stranger, the OWNER
-//! (two-way capability isolation: the administrator has NO block power), or a DIFFERENT role
-//! holder (spoof-proof) it is REJECTED with the EXACT stock rbac role error; after the
-//! administrator (as `ADMIN`) revokes `BLK_MANAGER` via the EXISTING `revoke_role` note, the former
-//! holder is REJECTED, a rotation with ZERO new machinery.
+//! The stock blocklist config note (its `BlockAccount` and `UnblockAccount` actions) is accepted
+//! only when its sender holds the `BLK_MANAGER` role, which the faucet's role map gives to an
+//! external account and never to the administrator. The tests show that a block or unblock from
+//! the `BLK_MANAGER` holder succeeds and changes the `blocked_accounts` map; that the same note
+//! from a stranger, from the administrator, or from the holder of a different role is rejected
+//! with the standard role error (the sender does not hold the required role) and leaves the map
+//! unchanged; and that once the administrator revokes `BLK_MANAGER` through the existing
+//! `revoke_role` note, the former holder is rejected too, so rotating the blocklist manager needs
+//! no new code.
 
 mod support;
 
