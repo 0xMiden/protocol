@@ -3,7 +3,7 @@ description: "Run the release preflight checks and package and verify the worksp
 
 inputs:
   verify-branch-head:
-    description: "If true, ensure the triggering SHA matches the release branch HEAD"
+    description: "If true, ensure the release tag and checkout match the release branch HEAD"
     required: false
     default: "false"
   release-branch:
@@ -24,6 +24,7 @@ runs:
       shell: bash
       env:
         RELEASE_BRANCH: ${{ inputs.release-branch }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
       run: |
         case "$RELEASE_BRANCH" in
           "" | -*)
@@ -37,12 +38,31 @@ runs:
           exit 1
         fi
 
-        git fetch origin "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" --depth=1
-        branch_sha="$(git rev-parse "refs/remotes/origin/$RELEASE_BRANCH")"
-        tag_sha="$(git rev-parse HEAD)"
+        if [ -z "$RELEASE_TAG" ] || ! git check-ref-format "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+          echo "::error::Invalid release tag name: $RELEASE_TAG"
+          exit 1
+        fi
+
+        if [ "$GITHUB_REF" != "refs/tags/$RELEASE_TAG" ]; then
+          echo "::error::The triggering ref does not match release tag $RELEASE_TAG. Aborting."
+          exit 1
+        fi
+
+        git fetch origin \
+          "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" \
+          "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG" --depth=1
+        branch_sha="$(git rev-parse "refs/remotes/origin/$RELEASE_BRANCH^{commit}")"
+        tag_sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+        head_sha="$(git rev-parse HEAD)"
 
         echo "branch_sha=$branch_sha"
         echo "tag_sha=$tag_sha"
+        echo "head_sha=$head_sha"
+
+        if [ "$head_sha" != "$tag_sha" ]; then
+          echo "::error::The checkout commit does not match release tag $RELEASE_TAG. Aborting."
+          exit 1
+        fi
 
         if [ "$branch_sha" != "$tag_sha" ]; then
           echo "::error::The release/tag commit does not match origin/$RELEASE_BRANCH HEAD. Aborting."
