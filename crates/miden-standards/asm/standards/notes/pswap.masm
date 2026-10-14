@@ -659,7 +659,7 @@ end
 
 #! Verifies the canonical private P2ID recipient preimage independently of the executing account.
 #!
-#! Inputs: [EXPECTED_RECIPIENT]
+#! Inputs:  [EXPECTED_RECIPIENT]
 #! Outputs: []
 @locals(8)
 proc authenticate_cancellation(recipient: NoteRecipient)
@@ -701,7 +701,6 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    # Retain the expected asset and note index while the callback handles a copy.
     repeat.9
         dup.8
     end
