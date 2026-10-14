@@ -1,7 +1,7 @@
 use {BlockNumber} from miden::protocol::types
 use miden::protocol::native_account
 use miden::protocol::tx
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
 pub mod eip712
 pub mod eip712_transaction_summary
@@ -27,6 +27,14 @@ const SUMMARY_BLOCK_COMMITMENT_LOC = 20
 
 # Number of felts in the transaction summary preimage (6 words).
 const TX_SUMMARY_NUM_ELEMENTS = 24
+
+# Generic Felt-sequence Eidos chaining word for a complete transaction summary.
+const TX_SUMMARY_INIT_CV = [
+    4280581857092831745,
+    2688637132020383768,
+    1947077364412317696,
+    6620516959492505600
+]
 
 # Layout version of the transaction summary preimage.
 const TX_SUMMARY_VERSION = 1
@@ -157,47 +165,48 @@ pub proc hash_and_insert_tx_summary(
     output_notes_commitment: word,
     block_commitment: word
 ) -> word
-    # save the first pair of rate words to the locals for the advice map insertion below
+    # save the first input block to the locals for the advice map insertion below
     loc_storew_le.SUMMARY_PARAMS_HEAD_LOC
     swapw loc_storew_le.SUMMARY_PARAMS_TAIL_LOC swapw
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    # pad capacity element of the hasher
-    padw movdnw.2
-    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # Initialize Eidos for the complete 24-Felt summary, then place its chaining word below the
+    # first input block.
+    push.TX_SUMMARY_INIT_CV movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, CV, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    compress
+    # => [BLOCK_LO, BLOCK_HI, CV, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    # drop rate words
+    # drop the block words
     dropw dropw
-    # => [CAPACITY, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # => [CV, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     movdnw.2
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CV, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    # save the second pair of rate words to the locals
+    # save the second input block to the locals
     loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC
     swapw loc_storew_le.SUMMARY_INPUT_NOTES_LOC swapw
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CV, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    compress
+    # => [BLOCK_LO, BLOCK_HI, CV, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    # drop rate words
+    # drop the block words
     dropw dropw
-    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # => [CV, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     movdnw.2
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CV]
 
-    # save the third pair of rate words to the locals
+    # save the third input block to the locals
     loc_storew_le.SUMMARY_OUTPUT_NOTES_LOC
     swapw loc_storew_le.SUMMARY_BLOCK_COMMITMENT_LOC swapw
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CV]
 
-    exec.poseidon2::permute
-    exec.poseidon2::squeeze_digest
+    compress
+    exec.eidos::digest
     # => [TX_SUMMARY_COMMITMENT]
 
     # insert the preimage stored in the locals into the advice map keyed by the commitment

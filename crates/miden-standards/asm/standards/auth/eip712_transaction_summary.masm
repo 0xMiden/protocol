@@ -1,5 +1,5 @@
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::standards::auth::eip712
 
 # CONSTANTS
@@ -39,7 +39,7 @@ pub proc compute_signature_key(raw_signature_key: word) -> word
     # => [EIP712_DOMAIN, RAW_SIGNATURE_KEY]
 
     swapw
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [EIP712_SIGNATURE_KEY]
 end
 

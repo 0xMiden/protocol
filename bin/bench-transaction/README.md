@@ -57,90 +57,16 @@ Each of the above transactions is measured in two groups:
     - Authentication procedure
     - After tx cycles were obtained (The number of cycles the epilogue took to execute after the number of transaction cycles were obtained)
 
-  In the same pass we also rebuild the `ExecutionTrace` for each scenario and emit per-component trace row counts (`core_rows`, `chiplets_rows`, `poseidon2_permutation_rows`, `range_rows`) plus the per-chiplet shape breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, `ace_rows`).
+  The same pass rebuilds the `ExecutionTrace` for each scenario. It records the AIR row totals (`core_rows`, `chiplets_rows`, `eidos_compression_rows`, and `byte_pair_lookup_rows`) and the per-chiplet breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, and `ace_rows`).
 
   Results of this benchmark will be stored in the [`bin/bench-tx/bench-tx.json`](bench-tx.json) file.
 - Benchmarking the transaction execution and proving.
   
   For each transaction in this group we measure how much time it takes to execute the transaction and to execute and prove the transaction.
 
-  Notice that the `Poseidon2` hash function is used during the proving process.
+  Proving benchmarks use Eidos, matching the protocol proof-hash policy.
 
-  This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. The benchmark ID encodes what was measured as separate path segments: the signing scheme of the benchmarked account (`falcon`/`ecdsa`) and, for the proving group, the hash function used during proving (`poseidon2`). Network-authenticated transactions (CLAIM, B2AGG) carry no signing scheme. Results are printed to the terminal and look like so:
-  ```zsh
-  Execute transaction/falcon/single-p2id-note
-                          time:   [4.3236 ms 4.3544 ms 4.3862 ms]
-                          change: [-7.0844% -4.9883% -3.4045%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute transaction/ecdsa/single-p2id-note
-                          time:   [2.1275 ms 2.1294 ms 2.1317 ms]
-                          change: [-6.5976% -6.1261% -5.7058%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute transaction/falcon/two-p2id-notes
-                          time:   [5.1385 ms 5.1585 ms 5.1815 ms]
-                          change: [-8.6872% -8.0431% -7.4236%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute transaction/ecdsa/two-p2id-notes
-                          time:   [3.0454 ms 3.0503 ms 3.0567 ms]
-                          change: [-5.9796% -5.5470% -5.1069%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute transaction/claim-note-l1
-                          time:   [3.9404 ms 3.9586 ms 3.9790 ms]
-                          change: [-7.4014% -6.1927% -5.0437%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute transaction/claim-note-l2
-                          time:   [4.4660 ms 4.4774 ms 4.4902 ms]
-                          change: [-9.7807% -8.4338% -7.1374%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute transaction/b2agg-note
-                          time:   [30.228 ms 30.283 ms 30.367 ms]
-                          change: [-6.6415% -6.1561% -5.6679%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-
-  Execute and prove transaction/poseidon2/falcon/single-p2id-note
-                          time:   [3.3744 s 3.3833 s 3.3942 s]
-                          change: [-11.007% -10.319% -9.7045%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute and prove transaction/poseidon2/ecdsa/single-p2id-note
-                          time:   [870.68 ms 874.08 ms 877.59 ms]
-                          change: [-12.232% -10.510% -8.9920%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute and prove transaction/poseidon2/falcon/two-p2id-notes
-                          time:   [3.4046 s 3.4149 s 3.4255 s]
-                          change: [-1.9928% -1.0219% -0.2023%] (p = 0.03 < 0.05)
-                          Change within noise threshold.
-
-  Execute and prove transaction/poseidon2/ecdsa/two-p2id-notes
-                          time:   [873.72 ms 876.86 ms 880.41 ms]
-                          change: [-3.7161% -2.4053% -1.1572%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute and prove transaction/poseidon2/claim-note-l1
-                          time:   [1.7146 s 1.7209 s 1.7276 s]
-                          change: [-15.987% -13.815% -11.896%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute and prove transaction/poseidon2/claim-note-l2
-                          time:   [1.7157 s 1.7250 s 1.7364 s]
-                          change: [-8.5252% -6.8302% -5.0772%] (p = 0.00 < 0.05)
-                          Performance has improved.
-
-  Execute and prove transaction/poseidon2/b2agg-note
-                          time:   [6.8425 s 6.8683 s 6.8967 s]
-                          change: [-10.551% -9.8033% -9.0014%] (p = 0.00 < 0.05)
-                          Performance has improved.
-  ```
-
-  The results above were obtained on the MacBook Pro M2 with 32 GB of RAM.
+  This group uses [Criterion.rs](https://github.com/bheisler/criterion.rs) to measure elapsed time. Benchmark IDs use separate path segments for the account's signing scheme (`falcon` or `ecdsa`) and, for proving benchmarks, the proof hash (`eidos`). Network-authenticated CLAIM and B2AGG transactions omit the signing-scheme segment. Example IDs include `Execute transaction/falcon/single-p2id-note` and `Execute and prove transaction/eidos/falcon/single-p2id-note`.
 
 ## Running Benchmarks
 
@@ -166,19 +92,19 @@ cargo bench --bin bench-transaction --bench time_counting_benchmarks --features 
 
 ## Trace shape and miden-vm's synthetic benchmark
 
-The `trace` section in `bench-tx.json` is the input contract for miden-vm's `miden-vm-synthetic-bench`. Its hard targets are the AIR-side row totals (`trace.core_rows`, `trace.chiplets_rows`, `trace.poseidon2_permutation_rows`, `trace.range_rows`); the `trace.chiplets_shape.*` per-chiplet breakdown is advisory profiling metadata and is required to satisfy the chiplet-bus invariant `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
+The `trace` section in `bench-tx.json` is the input contract for miden-vm's `miden-vm-synthetic-bench`. Its hard targets are the four AIR row totals: `trace.core_rows`, `trace.chiplets_rows`, `trace.eidos_compression_rows`, and `trace.byte_pair_lookup_rows`. The `trace.chiplets_shape.*` breakdown is profiling metadata. It must satisfy the chiplet-bus invariant `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
 
 The consumer's hard match is on padded power-of-two brackets, not raw row equality:
 
-- `padded_core_side = max(64, next_pow2(max(core_rows, range_rows)))`
-- `padded_chiplets  = max(64, next_pow2(chiplets_rows))`
-- `padded_poseidon2 = max(64, next_pow2(poseidon2_permutation_rows))`
+- `padded_core              = max(64, next_pow2(core_rows))`
+- `padded_chiplets          = max(64, next_pow2(chiplets_rows))`
+- `padded_eidos_compression = max(64, next_pow2(eidos_compression_rows))`
+- `padded_byte_pair_lookup  = max(64, next_pow2(byte_pair_lookup_rows))`
 
-These three can land in different brackets on the same workload (e.g. `consume two P2ID notes with Falcon signing` currently has `padded_core_side = 131072` but `padded_chiplets = 16384`).
+These values can fall into different brackets for the same workload. For example, `consume two P2ID notes with Falcon signing` has `padded_core = 65536`, `padded_chiplets = 8192`, `padded_eidos_compression = 131072`, and `padded_byte_pair_lookup = 65536`.
 
-Raw `range_rows` can vary slightly with witness values between producer runs. The checked contract
-is the generated scenario, its authoritative Poseidon2 count, and the independently pinned padded
-brackets rather than byte stability across separate executions.
+The checked contract is the generated scenario, its four authoritative AIR row counts, and the
+independently pinned padded brackets rather than byte stability across separate executions.
 
 To feed the snapshot into `miden-vm`, regenerate `bench-tx.json` here and copy it across:
 
@@ -186,6 +112,7 @@ To feed the snapshot into `miden-vm`, regenerate `bench-tx.json` here and copy i
 cargo run --release --bin bench-transaction --features concurrent
 cp bin/bench-transaction/bench-tx.json \
    ../miden-vm/benches/synthetic-bench/snapshots/bench-tx.json
+cd ../miden-vm
 cargo bench -p miden-vm-synthetic-bench
 ```
 

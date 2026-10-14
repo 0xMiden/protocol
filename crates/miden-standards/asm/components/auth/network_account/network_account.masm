@@ -46,21 +46,16 @@ const ERR_NETWORK_ACCOUNT_SPONSORED_FEES_EXCEED_COLLECTED = "the fees moved into
 #! Consuming an input note, creating an output note, or changing the account state counts as an
 #! effect. Transaction metadata changes do not affect the account commitment and do not count.
 #!
-#! This intentionally differs from the transaction epilogue's post-authentication non-empty check.
-#! The input notes commitment is checked in the same way, but the account's current commitment is
-#! compared with its initial commitment because its delta cannot be computed before the auth
-#! procedure increments the nonce. Output notes also count here because this auth procedure may
-#! sponsor them and change the account state after this pre-fee check.
+#! This check runs before fee payment. The current account commitment is compared with its initial
+#! commitment because the account delta cannot be computed before authentication increments the
+#! nonce. Output notes also count because authentication may sponsor them after this check.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Invocation: exec
 proc assert_tx_has_effect()
-    exec.tx::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, pad(16)]
-
-    exec.word::eqz not
+    exec.tx::get_num_input_notes neq.0
     # => [has_input_notes, pad(16)]
 
     exec.tx::get_num_output_notes neq.0

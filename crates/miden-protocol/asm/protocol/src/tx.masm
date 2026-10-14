@@ -402,7 +402,8 @@ end
 #!   before computing the fee. This allows accounting for cycles that are spent after this call, e.g.
 #!   for signature verification or the epilogue.
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
-#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#!   excluded from the fee computation. EMPTY_WORD is an absence sentinel indicating that no
+#!   exclusion preimage was supplied.
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Invocation: exec

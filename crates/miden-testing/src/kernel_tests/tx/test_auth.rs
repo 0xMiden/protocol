@@ -315,7 +315,7 @@ async fn test_auth_request_verification_outside_auth_procedure_is_allowed() -> a
     // by `merge(pub_key_commitment, message)`, which is exactly where the host looks it up, so the
     // event resolves to the verification path rather than production.
     let message = Word::from([1u32, 2, 3, 4]);
-    let secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let secret_key = AuthSecretKey::new_falcon512_eidos();
     let pub_key_commitment = secret_key.public_key().to_commitment();
     let authenticator = BasicAuthenticator::new(core::slice::from_ref(&secret_key));
     let signature = authenticator
@@ -374,9 +374,9 @@ async fn test_auth_request_with_invalid_encoded_signature_length_is_rejected(
     // Emit the request from a script with a precomputed message, but plant a malformed entry where
     // the host looks the signature up.
     let message = Word::from([1u32, 2, 3, 4]);
-    let secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let secret_key = AuthSecretKey::new_falcon512_eidos();
     let pub_key_commitment = secret_key.public_key().to_commitment();
-    let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+    let signature_key = Hasher::hash_double_word(&[pub_key_commitment.into(), message]);
     let scheme_id = secret_key.auth_scheme().as_u8();
 
     let tx_script_source = format!(
@@ -430,9 +430,8 @@ async fn test_auth_request_with_invalid_encoded_signature_length_is_rejected(
 #[tokio::test]
 async fn test_privileged_event_from_script_is_rejected() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let chain = builder.build()?;
 
     // A script executes in a non-root `dyncall` context, so it must not be able to emit the

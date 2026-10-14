@@ -10,7 +10,7 @@
 //! collide.
 //!
 //! The canonical answer is to HASH instead of reinterpret: pack the bytes into eight
-//! u32-little-endian field elements and take their Poseidon2 hash. That is total — every possible
+//! u32-little-endian field elements and take their Eidos hash. That is total — every possible
 //! bytes32 has a key — and collision-resistant, so distinct nonces stay distinct. The faucet's MASM
 //! computes the identical Word on-chain.
 //!
@@ -29,7 +29,7 @@ use super::error::EncodingError;
 /// Derives the canonical Word for an arbitrary 32-byte value (the deposit nonce): the `usedNonces`
 /// replay-guard map key and the attested output note's serial are both this Word.
 ///
-/// The bytes are packed into eight u32 field elements and hashed with Poseidon2. It cannot fail:
+/// The bytes are packed into eight u32 field elements and hashed with Eidos. It cannot fail:
 /// any 32 bytes pack to valid u32s, so every input has a key — which is what makes it safe for
 /// values that arrive from outside Miden. The faucet's `hash_nonce` computes the same Word.
 pub fn bytes32_to_storage_map_key(b: &[u8; 32]) -> StorageMapKey {
@@ -85,7 +85,7 @@ mod tests {
     use super::*;
     use crate::vectors::{load, word_from_hex};
 
-    /// TV-B32-1 (happy path, written first): known bytes32 → expected Poseidon2 Word.
+    /// TV-B32-1 (happy path, written first): known bytes32 → expected Eidos Word.
     #[test]
     fn tv_b32_1_hash_to_word_positive() {
         let v = load();

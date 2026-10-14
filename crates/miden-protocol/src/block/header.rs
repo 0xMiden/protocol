@@ -114,7 +114,7 @@ impl BlockHeader {
         // produce the final hash. This is done to make the note_root easily accessible
         // without having to unhash the entire header. Having the note_root easily
         // accessible is useful when authenticating notes.
-        let commitment = Hasher::merge(&[sub_commitment, note_root]);
+        let commitment = Hasher::hash_double_word(&[sub_commitment, note_root]);
 
         Self {
             version,

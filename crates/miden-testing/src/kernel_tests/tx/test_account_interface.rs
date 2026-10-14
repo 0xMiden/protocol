@@ -240,9 +240,8 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -390,9 +389,8 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),

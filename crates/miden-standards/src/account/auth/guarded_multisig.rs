@@ -216,12 +216,9 @@ impl AuthGuardedMultisigConfig {
 ///
 /// # Privacy
 ///
-/// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public
-/// key and signature at proving time and therefore do not get public-key privacy; those using
-/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
-///
-/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
-/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
+/// Approvers' and the guardian's public keys and signatures are visible to the transaction prover.
+/// For ECDSA they are also visible to recipients of the transaction proof; see
+/// [`Approver`](super::Approver).
 #[derive(Debug)]
 pub struct AuthGuardedMultisig {
     multisig: AuthMultisig,
@@ -396,9 +393,9 @@ mod tests {
     #[test]
     fn test_guarded_multisig_component_setup() {
         // Create test secret keys
-        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_1 = AuthSecretKey::new_falcon512_eidos();
+        let sec_key_2 = AuthSecretKey::new_falcon512_eidos();
+        let sec_key_3 = AuthSecretKey::new_falcon512_eidos();
         let guardian_key = AuthSecretKey::new_ecdsa_k256_keccak();
 
         // Create approvers list for multisig config
@@ -481,7 +478,7 @@ mod tests {
     fn test_guarded_multisig_component_minimum_threshold() {
         let approver_key = AuthSecretKey::new_ecdsa_k256_keccak();
         let pub_key = approver_key.public_key().to_commitment();
-        let guardian_key = AuthSecretKey::new_falcon512_poseidon2();
+        let guardian_key = AuthSecretKey::new_falcon512_eidos();
         let approvers = vec![approver(&approver_key)];
         let threshold = 1u32;
 

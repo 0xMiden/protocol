@@ -178,12 +178,8 @@ impl AuthMultisigConfig {
 ///
 /// # Privacy
 ///
-/// Approvers using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature
-/// at proving time and therefore do not get public-key privacy; approvers using
-/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
-///
-/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
-/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
+/// Approvers' public keys and signatures are visible to the transaction prover. For ECDSA they
+/// are also visible to recipients of the transaction proof; see [`Approver`](super::Approver).
 ///
 /// # Security: private accounts and state withholding
 ///
@@ -621,9 +617,9 @@ mod tests {
     #[test]
     fn test_multisig_component_setup() {
         // Create test secret keys
-        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_1 = AuthSecretKey::new_falcon512_eidos();
+        let sec_key_2 = AuthSecretKey::new_falcon512_eidos();
+        let sec_key_3 = AuthSecretKey::new_falcon512_eidos();
 
         // Create approvers list for multisig config
         let approvers = vec![

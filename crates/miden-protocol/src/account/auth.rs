@@ -5,7 +5,7 @@ use core::str::FromStr;
 
 use rand::{CryptoRng, Rng};
 
-use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
+use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_eidos};
 use crate::errors::AuthSchemeError;
 use crate::utils::serde::{
     ByteReader,
@@ -20,10 +20,10 @@ use crate::{Felt, Word};
 // ================================================================================================
 
 /// Identifier of signature schemes use for transaction authentication
-const FALCON512_POSEIDON2: u8 = 2;
+const FALCON512_EIDOS: u8 = 2;
 const ECDSA_K256_KECCAK: u8 = 1;
 
-const FALCON512_POSEIDON2_STR: &str = "Falcon512Poseidon2";
+const FALCON512_EIDOS_STR: &str = "Falcon512Eidos";
 const ECDSA_K256_KECCAK_STR: &str = "EcdsaK256Keccak";
 
 /// Defines standard authentication schemes (i.e., signature schemes) available in the Miden
@@ -34,28 +34,17 @@ const ECDSA_K256_KECCAK_STR: &str = "EcdsaK256Keccak";
 pub enum AuthScheme {
     /// A deterministic Falcon512 signature scheme.
     ///
-    /// This version differs from the reference Falcon512 implementation in its use of the poseidon2
+    /// This version differs from the reference Falcon512 implementation in its use of the Eidos
     /// hash function in its hash-to-point algorithm to make signatures very efficient to verify
     /// inside Miden VM.
-    Falcon512Poseidon2 = FALCON512_POSEIDON2,
+    Falcon512Eidos = FALCON512_EIDOS,
 
     /// ECDSA signature scheme over secp256k1 curve using Keccak to hash the messages when signing.
     ///
-    /// # Privacy
-    ///
-    /// Unlike [`Falcon512Poseidon2`](Self::Falcon512Poseidon2), which is verified entirely
-    /// in-circuit, this scheme is verified via a precompile. Under the current native
-    /// re-verification model, the precompile calldata - the raw 33-byte compressed secp256k1 public
-    /// key and the 65-byte signature - must be carried inside the transaction proof for it to
-    /// verify: the verifier recomputes the precompile transcript from that calldata and binds it
-    /// into the proof's public inputs, so it cannot be stripped or withheld. As a result the public
-    /// key and signature are disclosed to the node operator and to any party on the transaction
-    /// submission or gossip path, even though the account commits on-chain only to `Poseidon2(pk)`.
-    ///
-    /// This means `EcdsaK256Keccak` does not provide the public-key privacy that commitment-based
-    /// storage otherwise implies. Integrators requiring signer-key privacy should select
-    /// [`Falcon512Poseidon2`](Self::Falcon512Poseidon2) instead, which emits no public-key or
-    /// signature calldata.
+    /// Verification uses a deferred precompile. The transaction proof carries the public key and
+    /// signature in its precompile witness for verification during batch proving, so both are
+    /// visible to recipients of the transaction proof. The VM binds the public key to the account
+    /// commitment.
     EcdsaK256Keccak = ECDSA_K256_KECCAK,
 }
 
@@ -69,7 +58,7 @@ impl AuthScheme {
 impl core::fmt::Display for AuthScheme {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Falcon512Poseidon2 => f.write_str(FALCON512_POSEIDON2_STR),
+            Self::Falcon512Eidos => f.write_str(FALCON512_EIDOS_STR),
             Self::EcdsaK256Keccak => f.write_str(ECDSA_K256_KECCAK_STR),
         }
     }
@@ -80,7 +69,7 @@ impl TryFrom<u8> for AuthScheme {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            FALCON512_POSEIDON2 => Ok(Self::Falcon512Poseidon2),
+            FALCON512_EIDOS => Ok(Self::Falcon512Eidos),
             ECDSA_K256_KECCAK => Ok(Self::EcdsaK256Keccak),
             value => Err(AuthSchemeError::InvalidAuthSchemeIdentifier(value.to_string())),
         }
@@ -92,7 +81,7 @@ impl FromStr for AuthScheme {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match input {
-            FALCON512_POSEIDON2_STR => Ok(AuthScheme::Falcon512Poseidon2),
+            FALCON512_EIDOS_STR => Ok(AuthScheme::Falcon512Eidos),
             ECDSA_K256_KECCAK_STR => Ok(AuthScheme::EcdsaK256Keccak),
             other => Err(AuthSchemeError::InvalidAuthSchemeIdentifier(other.to_owned())),
         }
@@ -113,7 +102,7 @@ impl Serializable for AuthScheme {
 impl Deserializable for AuthScheme {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
-            FALCON512_POSEIDON2 => Ok(Self::Falcon512Poseidon2),
+            FALCON512_EIDOS => Ok(Self::Falcon512Eidos),
             ECDSA_K256_KECCAK => Ok(Self::EcdsaK256Keccak),
             value => Err(DeserializationError::InvalidValue(format!(
                 "auth scheme identifier `{value}` is not valid"
@@ -130,38 +119,30 @@ impl Deserializable for AuthScheme {
 #[non_exhaustive]
 #[repr(u8)]
 pub enum AuthSecretKey {
-    Falcon512Poseidon2(falcon512_poseidon2::SecretKey) = FALCON512_POSEIDON2,
+    Falcon512Eidos(falcon512_eidos::SecretKey) = FALCON512_EIDOS,
     EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey) = ECDSA_K256_KECCAK,
 }
 
 impl AuthSecretKey {
-    /// Generates an Falcon512Poseidon2 secret key from the OS-provided randomness.
+    /// Generates a Falcon512Eidos secret key from OS-provided randomness.
     #[cfg(feature = "std")]
-    pub fn new_falcon512_poseidon2() -> Self {
-        Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::new())
+    pub fn new_falcon512_eidos() -> Self {
+        Self::Falcon512Eidos(falcon512_eidos::SecretKey::new())
     }
 
-    /// Generates a Falcon512Poseidon2 secret key using the provided cryptographic random number
+    /// Generates a Falcon512Eidos secret key using the provided cryptographic random number
     /// generator.
-    pub fn new_falcon512_poseidon2_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
-        Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::with_rng::<R>(rng))
+    pub fn new_falcon512_eidos_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
+        Self::Falcon512Eidos(falcon512_eidos::SecretKey::with_rng::<R>(rng))
     }
 
     /// Generates an EcdsaK256Keccak secret key from the OS-provided randomness.
-    ///
-    /// Note: the EcdsaK256Keccak scheme discloses the signer's public key and signature at proving
-    /// time and therefore does not provide public-key privacy. See
-    /// [`AuthScheme::EcdsaK256Keccak`] for details.
     #[cfg(feature = "std")]
     pub fn new_ecdsa_k256_keccak() -> Self {
         Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::new())
     }
 
     /// Generates an EcdsaK256Keccak secret key using the provided random number generator.
-    ///
-    /// Note: the EcdsaK256Keccak scheme discloses the signer's public key and signature at proving
-    /// time and therefore does not provide public-key privacy. See
-    /// [`AuthScheme::EcdsaK256Keccak`] for details.
     pub fn new_ecdsa_k256_keccak_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
         Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::with_rng::<R>(rng))
     }
@@ -175,7 +156,7 @@ impl AuthSecretKey {
         rng: &mut R,
     ) -> Result<Self, AuthSchemeError> {
         match scheme {
-            AuthScheme::Falcon512Poseidon2 => Ok(Self::new_falcon512_poseidon2_with_rng(rng)),
+            AuthScheme::Falcon512Eidos => Ok(Self::new_falcon512_eidos_with_rng(rng)),
             AuthScheme::EcdsaK256Keccak => Ok(Self::new_ecdsa_k256_keccak_with_rng(rng)),
         }
     }
@@ -187,7 +168,7 @@ impl AuthSecretKey {
     #[cfg(feature = "std")]
     pub fn with_scheme(scheme: AuthScheme) -> Result<Self, AuthSchemeError> {
         match scheme {
-            AuthScheme::Falcon512Poseidon2 => Ok(Self::new_falcon512_poseidon2()),
+            AuthScheme::Falcon512Eidos => Ok(Self::new_falcon512_eidos()),
             AuthScheme::EcdsaK256Keccak => Ok(Self::new_ecdsa_k256_keccak()),
         }
     }
@@ -195,7 +176,7 @@ impl AuthSecretKey {
     /// Returns the authentication scheme of this secret key.
     pub fn auth_scheme(&self) -> AuthScheme {
         match self {
-            AuthSecretKey::Falcon512Poseidon2(_) => AuthScheme::Falcon512Poseidon2,
+            AuthSecretKey::Falcon512Eidos(_) => AuthScheme::Falcon512Eidos,
             AuthSecretKey::EcdsaK256Keccak(_) => AuthScheme::EcdsaK256Keccak,
         }
     }
@@ -203,9 +184,7 @@ impl AuthSecretKey {
     /// Returns a public key associated with this secret key.
     pub fn public_key(&self) -> PublicKey {
         match self {
-            AuthSecretKey::Falcon512Poseidon2(key) => {
-                PublicKey::Falcon512Poseidon2(key.public_key())
-            },
+            AuthSecretKey::Falcon512Eidos(key) => PublicKey::Falcon512Eidos(key.public_key()),
             AuthSecretKey::EcdsaK256Keccak(key) => PublicKey::EcdsaK256Keccak(key.public_key()),
         }
     }
@@ -213,9 +192,7 @@ impl AuthSecretKey {
     /// Signs the provided message with this secret key.
     pub fn sign(&self, message: Word) -> Signature {
         match self {
-            AuthSecretKey::Falcon512Poseidon2(key) => {
-                Signature::Falcon512Poseidon2(key.sign(message))
-            },
+            AuthSecretKey::Falcon512Eidos(key) => Signature::Falcon512Eidos(key.sign(message)),
             AuthSecretKey::EcdsaK256Keccak(key) => Signature::EcdsaK256Keccak(key.sign(message)),
         }
     }
@@ -225,7 +202,7 @@ impl Serializable for AuthSecretKey {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.auth_scheme().write_into(target);
         match self {
-            AuthSecretKey::Falcon512Poseidon2(key) => key.write_into(target),
+            AuthSecretKey::Falcon512Eidos(key) => key.write_into(target),
             AuthSecretKey::EcdsaK256Keccak(key) => key.write_into(target),
         }
     }
@@ -234,9 +211,9 @@ impl Serializable for AuthSecretKey {
 impl Deserializable for AuthSecretKey {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read::<AuthScheme>()? {
-            AuthScheme::Falcon512Poseidon2 => {
-                let secret_key = falcon512_poseidon2::SecretKey::read_from(source)?;
-                Ok(AuthSecretKey::Falcon512Poseidon2(secret_key))
+            AuthScheme::Falcon512Eidos => {
+                let secret_key = falcon512_eidos::SecretKey::read_from(source)?;
+                Ok(AuthSecretKey::Falcon512Eidos(secret_key))
             },
             AuthScheme::EcdsaK256Keccak => {
                 let secret_key = ecdsa_k256_keccak::SigningKey::read_from(source)?;
@@ -259,8 +236,8 @@ impl core::fmt::Display for PublicKeyCommitment {
     }
 }
 
-impl From<falcon512_poseidon2::PublicKey> for PublicKeyCommitment {
-    fn from(value: falcon512_poseidon2::PublicKey) -> Self {
+impl From<falcon512_eidos::PublicKey> for PublicKeyCommitment {
+    fn from(value: falcon512_eidos::PublicKey) -> Self {
         Self(value.to_commitment())
     }
 }
@@ -287,7 +264,7 @@ impl From<Word> for PublicKeyCommitment {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum PublicKey {
-    Falcon512Poseidon2(falcon512_poseidon2::PublicKey),
+    Falcon512Eidos(falcon512_eidos::PublicKey),
     EcdsaK256Keccak(ecdsa_k256_keccak::PublicKey),
 }
 
@@ -295,7 +272,7 @@ impl PublicKey {
     /// Returns the authentication scheme of this public key.
     pub fn auth_scheme(&self) -> AuthScheme {
         match self {
-            PublicKey::Falcon512Poseidon2(_) => AuthScheme::Falcon512Poseidon2,
+            PublicKey::Falcon512Eidos(_) => AuthScheme::Falcon512Eidos,
             PublicKey::EcdsaK256Keccak(_) => AuthScheme::EcdsaK256Keccak,
         }
     }
@@ -303,7 +280,7 @@ impl PublicKey {
     /// Returns a commitment to this public key.
     pub fn to_commitment(&self) -> PublicKeyCommitment {
         match self {
-            PublicKey::Falcon512Poseidon2(key) => key.to_commitment().into(),
+            PublicKey::Falcon512Eidos(key) => key.to_commitment().into(),
             PublicKey::EcdsaK256Keccak(key) => key.to_commitment().into(),
         }
     }
@@ -311,7 +288,7 @@ impl PublicKey {
     /// Verifies the provided signature against the provided message and this public key.
     pub fn verify(&self, message: Word, signature: Signature) -> bool {
         match (self, signature) {
-            (PublicKey::Falcon512Poseidon2(key), Signature::Falcon512Poseidon2(sig)) => {
+            (PublicKey::Falcon512Eidos(key), Signature::Falcon512Eidos(sig)) => {
                 key.verify(message, &sig)
             },
             (PublicKey::EcdsaK256Keccak(key), Signature::EcdsaK256Keccak(sig)) => {
@@ -326,7 +303,7 @@ impl Serializable for PublicKey {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.auth_scheme().write_into(target);
         match self {
-            PublicKey::Falcon512Poseidon2(pub_key) => pub_key.write_into(target),
+            PublicKey::Falcon512Eidos(pub_key) => pub_key.write_into(target),
             PublicKey::EcdsaK256Keccak(pub_key) => pub_key.write_into(target),
         }
     }
@@ -335,9 +312,9 @@ impl Serializable for PublicKey {
 impl Deserializable for PublicKey {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read::<AuthScheme>()? {
-            AuthScheme::Falcon512Poseidon2 => {
-                let pub_key = falcon512_poseidon2::PublicKey::read_from(source)?;
-                Ok(PublicKey::Falcon512Poseidon2(pub_key))
+            AuthScheme::Falcon512Eidos => {
+                let pub_key = falcon512_eidos::PublicKey::read_from(source)?;
+                Ok(PublicKey::Falcon512Eidos(pub_key))
             },
             AuthScheme::EcdsaK256Keccak => {
                 let pub_key = ecdsa_k256_keccak::PublicKey::read_from(source)?;
@@ -357,7 +334,7 @@ impl Deserializable for PublicKey {
 /// provider. To encode the signature, use the provided [`Signature::to_encoded_signature`] method:
 /// ```rust,no_run
 /// use miden_protocol::account::auth::Signature;
-/// use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
+/// use miden_protocol::crypto::dsa::falcon512_eidos::SecretKey;
 /// use miden_protocol::{Felt, Word};
 ///
 /// let secret_key = SecretKey::new();
@@ -368,7 +345,7 @@ impl Deserializable for PublicKey {
 #[derive(Clone, Debug)]
 #[repr(u8)]
 pub enum Signature {
-    Falcon512Poseidon2(falcon512_poseidon2::Signature) = FALCON512_POSEIDON2,
+    Falcon512Eidos(falcon512_eidos::Signature) = FALCON512_EIDOS,
     EcdsaK256Keccak(ecdsa_k256_keccak::Signature) = ECDSA_K256_KECCAK,
 }
 
@@ -377,13 +354,13 @@ impl Signature {
     /// for any variant.
     ///
     /// This lets consumers reject an encoded signature of an impossible length before allocating
-    /// for it. The largest encoding is the one of [`Signature::Falcon512Poseidon2`].
+    /// for it. The largest encoding is the one of [`Signature::Falcon512Eidos`].
     pub const MAX_NUM_ENCODED_SIGNATURE_FELTS: usize = 2058;
 
     /// Returns the authentication scheme of this signature.
     pub fn auth_scheme(&self) -> AuthScheme {
         match self {
-            Signature::Falcon512Poseidon2(_) => AuthScheme::Falcon512Poseidon2,
+            Signature::Falcon512Eidos(_) => AuthScheme::Falcon512Eidos,
             Signature::EcdsaK256Keccak(_) => AuthScheme::EcdsaK256Keccak,
         }
     }
@@ -400,8 +377,8 @@ impl Signature {
         // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
         // refactoring
         match self {
-            Signature::Falcon512Poseidon2(sig) => {
-                miden_core_lib::dsa::falcon512_poseidon2::encode_signature(sig.public_key(), sig)
+            Signature::Falcon512Eidos(sig) => {
+                miden_core_lib::dsa::falcon512_eidos::encode_signature(sig.public_key(), sig)
             },
             Signature::EcdsaK256Keccak(sig) => {
                 let pk = ecdsa_k256_keccak::PublicKey::recover_from(msg, sig)
@@ -412,9 +389,9 @@ impl Signature {
     }
 }
 
-impl From<falcon512_poseidon2::Signature> for Signature {
-    fn from(signature: falcon512_poseidon2::Signature) -> Self {
-        Signature::Falcon512Poseidon2(signature)
+impl From<falcon512_eidos::Signature> for Signature {
+    fn from(signature: falcon512_eidos::Signature) -> Self {
+        Signature::Falcon512Eidos(signature)
     }
 }
 
@@ -422,7 +399,7 @@ impl Serializable for Signature {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.auth_scheme().write_into(target);
         match self {
-            Signature::Falcon512Poseidon2(signature) => signature.write_into(target),
+            Signature::Falcon512Eidos(signature) => signature.write_into(target),
             Signature::EcdsaK256Keccak(signature) => signature.write_into(target),
         }
     }
@@ -431,9 +408,9 @@ impl Serializable for Signature {
 impl Deserializable for Signature {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read::<AuthScheme>()? {
-            AuthScheme::Falcon512Poseidon2 => {
-                let signature = falcon512_poseidon2::Signature::read_from(source)?;
-                Ok(Signature::Falcon512Poseidon2(signature))
+            AuthScheme::Falcon512Eidos => {
+                let signature = falcon512_eidos::Signature::read_from(source)?;
+                Ok(Signature::Falcon512Eidos(signature))
             },
             AuthScheme::EcdsaK256Keccak => {
                 let signature = ecdsa_k256_keccak::Signature::read_from(source)?;
@@ -458,7 +435,7 @@ mod tests {
     /// [`Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS`], which consumers rely on to bound the
     /// untrusted encoded signatures they accept.
     #[rstest]
-    #[case::falcon512_poseidon2(AuthScheme::Falcon512Poseidon2, 2058)]
+    #[case::falcon512_eidos(AuthScheme::Falcon512Eidos, 2058)]
     #[case::ecdsa_k256_keccak(AuthScheme::EcdsaK256Keccak, 32)]
     fn encoded_signature_does_not_exceed_max_num_felts(
         #[case] auth_scheme: AuthScheme,
@@ -476,7 +453,7 @@ mod tests {
         // Match exhaustively on `Signature` so adding a variant breaks compilation as a reminder
         // to add a case above and to re-check the maximum.
         match signature {
-            Signature::Falcon512Poseidon2(_) | Signature::EcdsaK256Keccak(_) => {},
+            Signature::Falcon512Eidos(_) | Signature::EcdsaK256Keccak(_) => {},
         }
 
         Ok(())

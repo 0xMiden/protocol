@@ -146,6 +146,14 @@ where
                 self.base_host.on_account_on_asset_delta_computation(delta)
             },
 
+            TransactionEvent::AccountPushPatchCommitmentBodyBlockCount => {
+                self.base_host.on_account_push_patch_commitment_body_block_count()
+            },
+
+            TransactionEvent::AccountPushDeltaCommitmentBodyBlockCount => {
+                self.base_host.on_account_push_delta_commitment_body_block_count()
+            },
+
             TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {
                 self.base_host.on_account_storage_after_set_item(slot_name, new_value)
             },

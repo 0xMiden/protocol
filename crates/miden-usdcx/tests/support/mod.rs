@@ -1050,7 +1050,7 @@ pub struct AttesterVector {
     pub pubkey_felts: Vec<Felt>,
     /// 17-felt u32-LE-packed r||s||v signature over keccak256(payload).
     pub sig_felts: Vec<Felt>,
-    /// Poseidon2 commitment Word = the `xReserveAttesters` allowlist key for this pubkey.
+    /// Eidos commitment Word = the `xReserveAttesters` allowlist key for this pubkey.
     pub commitment: Word,
     /// The decoded key itself (what the relayer hands `XUsdcMintNote::create`); the 33-byte
     /// compressed SEC1 wire form it was read from is recovered with `Serializable::to_bytes`.

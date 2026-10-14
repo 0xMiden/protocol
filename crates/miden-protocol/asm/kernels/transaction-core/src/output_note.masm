@@ -134,6 +134,11 @@ pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> 
     # emit event to signal that a new note is created
     emit.NOTE_AFTER_CREATED_EVENT
 
+    # Zeroed memory does not contain the canonical commitment of an empty asset list. Mark the
+    # cache dirty so its first read computes and stores the commitment.
+    dup.4 push.1 swap exec.memory::set_output_note_dirty_flag
+    # => [NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
+
     # set the metadata for the output note
     dup.4
     # => [note_ptr, NOTE_METADATA, note_ptr, RECIPIENT, note_idx]

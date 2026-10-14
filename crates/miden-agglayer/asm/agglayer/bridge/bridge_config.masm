@@ -3,7 +3,7 @@ use {Keccak256Digest, NetworkId, AmountScale, OriginToken, FaucetConversionInfo,
 use {AccountId, StorageMapKey} from miden::protocol::types
 use {EthereumAddress} from miden::standards::interop::eth
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 use miden::protocol::account_id
 use miden::protocol::active_account
@@ -47,8 +47,13 @@ const REMOVED_GER_HASH_CHAIN_HI_SLOT = word("agglayer::bridge::removed_ger_hash_
 const GER_KNOWN_FLAG = ONE_WORD
 const FAUCET_REGISTERED_FLAG = 1
 
-# Offset in the local memory of the `hash_token_address` procedure
-const TOKEN_ADDR_HASH_PTR = 0
+# Generic Felt-sequence Eidos chaining word for an origin token address and network.
+const TOKEN_ADDRESS_INIT_CV = [
+    4280581857092831745,
+    2688637132020383750,
+    1947077364412317696,
+    6620516959492505600
+]
 
 # Local memory slot offsets used inside the `register_faucet` procedure
 const REG_TOKEN_HASH_LOC = 0
@@ -74,7 +79,7 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
-#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and stores it in a map with value
+#! Computes hash(GER) = eidos::hash_double_word(GER_LOWER, GER_UPPER) and stores it in a map with value
 #! GER_KNOWN_FLAG to indicate the GER is known.
 #!
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
@@ -93,8 +98,8 @@ pub proc update_ger(ger: Keccak256Digest)
     exec.pausable::assert_not_paused
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
-    # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER)
-    exec.poseidon2::merge
+    # compute hash(GER) = eidos::hash_double_word(GER_LOWER, GER_UPPER)
+    exec.eidos::hash_double_word
     # => [GER_HASH, pad(12)]
 
     # prepare VALUE = GER_KNOWN_FLAG
@@ -118,10 +123,9 @@ end
 #! Removes a Global Exit Root (GER) from the bridge account storage and folds it into the running
 #! removed-GER keccak256 hash chain.
 #!
-#! Deliberately exempt from the emergency-pause check: a paused bridge must still be able to
-#! revoke a fraudulent GER.
+#! This procedure bypasses the emergency-pause check so a paused bridge can revoke a fraudulent GER.
 #!
-#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), overwrites the map entry with
+#! Computes hash(GER) = eidos::hash_double_word(GER_LOWER, GER_UPPER), overwrites the map entry with
 #! [0, 0, 0, 0] (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`) while asserting
 #! that the previous map value equals GER_KNOWN_FLAG (i.e. the GER was currently known), and
 #! updates the removed-GER hash chain as NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER).
@@ -145,8 +149,8 @@ pub proc remove_ger(ger: Keccak256Digest)
     dupw.1 dupw.1
     # => [GER_LOWER, GER_UPPER, GER_LOWER, GER_UPPER, pad(8)]
 
-    # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) on the top copy.
-    exec.poseidon2::merge
+    # compute hash(GER) = eidos::hash_double_word(GER_LOWER, GER_UPPER) on the top copy.
+    exec.eidos::hash_double_word
     # => [GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
 
     # prepare VALUE = [0, 0, 0, 0] to mark the entry removed.
@@ -175,7 +179,7 @@ end
 
 #! Asserts that the provided GER is valid (exists in storage).
 #!
-#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and looks up the hash in the GER
+#! Computes hash(GER) = eidos::hash_double_word(GER_LOWER, GER_UPPER) and looks up the hash in the GER
 #! storage map. Panics if the GER has never been stored.
 #!
 #! Inputs: [GER_ROOT[8]]
@@ -187,7 +191,7 @@ end
 #! Invocation: exec
 pub proc assert_valid_ger(ger: Keccak256Digest)
     # compute hash(GER)
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [GER_HASH]
 
     push.GER_MAP_STORAGE_SLOT[0..2]
@@ -750,25 +754,20 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Hashes the (origin_token_address, origin_network) pair using Poseidon2.
+#! Hashes the (origin_token_address, origin_network) pair using Eidos.
 #!
-#! Writes the 6 felts to memory and computes the Poseidon2 hash.
+#! Builds the single Eidos block directly on the stack.
 #!
 #! Inputs:  [origin_token_addr(5), origin_network]
 #! Outputs: [TOKEN_ADDR_HASH]
 #!
 #! Invocation: exec
-@locals(8)
 proc hash_token_address(token: OriginToken) -> StorageMapKey
-    # Write the (origin_token_addr, origin_network) felts to local memory for hashing
-    loc_storew_le.TOKEN_ADDR_HASH_PTR dropw
-    locaddr.TOKEN_ADDR_HASH_PTR add.4 mem_store
-    locaddr.TOKEN_ADDR_HASH_PTR add.5 mem_store
-    # => []
+    push.0.0 movdn.7 movdn.7
+    # => [origin_token_addr(5), origin_network, 0, 0]
 
-    # Hash the pair: poseidon2::hash_elements(num_elements=6, start_ptr)
-    push.6 locaddr.TOKEN_ADDR_HASH_PTR
-    exec.poseidon2::hash_elements
+    push.TOKEN_ADDRESS_INIT_CV
+    exec.eidos::compress_double_word
     # => [TOKEN_ADDR_HASH]
 end
 

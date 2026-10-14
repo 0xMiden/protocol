@@ -215,7 +215,7 @@ impl TransactionArgs {
     ) {
         let pk_word: Word = pub_key.into();
         self.advice_inputs.extend(AdviceInputs::default().with_map([(
-            Hasher::merge(&[pk_word, message]),
+            Hasher::hash_double_word(&[pk_word, message]),
             signature.to_encoded_signature(message),
         )]));
     }

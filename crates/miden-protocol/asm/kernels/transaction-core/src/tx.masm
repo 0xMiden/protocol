@@ -296,8 +296,9 @@ end
 #! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
 #!   before computing the fee.
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
-#!   excluded from the fee computation, or the empty word if no notes are excluded. Excluding notes
-#!   does not affect the fee yet, since notes are not part of the fee.
+#!   excluded from the fee computation. EMPTY_WORD is an absence sentinel indicating that no
+#!   exclusion preimage was supplied. Excluding notes does not affect the fee yet, since notes are
+#!   not part of the fee.
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Panics if:
@@ -396,7 +397,8 @@ end
 #!
 #! Where:
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to the list of output note indices to exclude from the
-#!   fee computation, or the empty word if no notes are excluded.
+#!   fee computation. EMPTY_WORD is an absence sentinel indicating that no exclusion preimage was
+#!   supplied.
 #!
 #! Panics if:
 #! - the number of committed indices exceeds the maximum number of output notes per transaction.
@@ -404,7 +406,7 @@ end
 #!
 #! Invocation: exec
 proc write_exclude_notes(exclude_notes_commitment: Commitment, exclude_notes_ptr: ptr<u16>) -> u16
-    # an empty commitment means there are no notes to exclude
+    # the EMPTY_WORD absence sentinel means there is no exclusion preimage to load
     exec.word::testz
     # => [is_empty, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
 
@@ -414,8 +416,8 @@ proc write_exclude_notes(exclude_notes_commitment: Commitment, exclude_notes_ptr
         # => [num_excluded_notes = 0]
     else
         # load the committed indices from the advice map onto the advice stack, padded to the next
-        # multiple of 8 so they can be written with `pipe_elements_preimage_to_memory`. The padding
-        # zeros do not affect the commitment.
+        # multiple of 8 so they can be written with `pipe_elements_preimage_to_memory`. The helper
+        # binds the exact number of indices, so these zeros only fill the final physical block.
         adv.push_mapvaln.8
         # OS => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
         # AS => [num_excluded_notes, [INDICES]]
