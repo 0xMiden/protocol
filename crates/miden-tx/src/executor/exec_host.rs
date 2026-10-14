@@ -7,7 +7,7 @@ use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::Word;
-use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
+use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, SignatureKey};
 use miden_protocol::account::{
     AccountId,
     AccountPatch,
@@ -185,7 +185,8 @@ where
 
     /// Pushes a signature to the advice stack as a response to the `AuthRequest` event.
     ///
-    /// The signature is requested from the host's authenticator.
+    /// The signature is requested from the host's authenticator, unless it was already generated
+    /// for an earlier request, so that the lazy loaded data holds at most one signature per key.
     pub async fn on_auth_requested(
         &mut self,
         pub_key_commitment: PublicKeyCommitment,
@@ -193,21 +194,33 @@ where
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let signing_inputs = SigningInputs::TransactionSummary(Box::new(tx_summary));
 
-        let authenticator =
-            self.authenticator.ok_or(TransactionKernelError::MissingAuthenticator)?;
-
         // get the message that will be signed by the authenticator
         let message = signing_inputs.to_commitment();
+        let signature_key = SignatureKey::new(pub_key_commitment, message);
+
+        if let Some(signature) = self
+            .lazy_loaded_data
+            .signatures
+            .iter()
+            .find(|signature| signature.key() == signature_key)
+        {
+            return Ok(vec![AdviceMutation::extend_advice_stack_with(
+                signature.to_encoded_signature(),
+            )]);
+        }
+
+        let authenticator =
+            self.authenticator.ok_or(TransactionKernelError::MissingAuthenticator)?;
 
         let signature = authenticator
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?;
-        let encoded_signature = signature.to_encoded_signature(message);
+        let signature = BoundSignature::new(signature_key, signature)
+            .map_err(TransactionKernelError::InvalidAuthenticatorSignature)?;
+        let encoded_signature = signature.to_encoded_signature();
 
-        self.lazy_loaded_data
-            .signatures
-            .insert(SignatureKey::new(pub_key_commitment, message), signature);
+        self.lazy_loaded_data.signatures.push(signature);
 
         Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
     }
@@ -434,7 +447,7 @@ pub(crate) struct LazyLoadedData {
     note_scripts: Vec<NoteScript>,
 
     /// The signatures the authenticator generated.
-    signatures: BTreeMap<SignatureKey, Signature>,
+    signatures: Vec<BoundSignature>,
 
     /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
     ///
@@ -463,8 +476,8 @@ impl LazyLoadedData {
         for note_script in self.note_scripts {
             tx_inputs.add_note_script(note_script);
         }
-        for (key, signature) in self.signatures {
-            tx_inputs.add_signature(key, signature);
+        for signature in self.signatures {
+            tx_inputs.add_signature(signature)?;
         }
         // Witnesses can belong to foreign accounts, so add witnesses after foreign accounts.
         for (account_id, witness) in self.asset_witnesses {

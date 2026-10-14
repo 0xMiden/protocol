@@ -1,5 +1,3 @@
-use alloc::collections::BTreeMap;
-
 use miden_protobuf::unwrap_infallible;
 use proto::transaction::auth_signature::DecodedSignature;
 
@@ -37,20 +35,18 @@ impl Verify for AuthSignature {
     }
 }
 
-pub use proto::transaction::DecodedSignatureEntry as SignatureEntry;
+pub use proto::transaction::DecodedBoundSignature as BoundSignature;
 
-impl Verify for SignatureEntry {
-    type Verified = (
-        miden_protocol::account::auth::SignatureKey,
-        miden_protocol::account::auth::Signature,
-    );
-    type Error = core::convert::Infallible;
+/// Binds the signature to its key; authenticity is checked by the transaction kernel.
+impl Verify for BoundSignature {
+    type Verified = miden_protocol::account::auth::BoundSignature;
+    type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let key = miden_protocol::account::auth::SignatureKey::new(
             self.pub_key_commitment.into(),
             self.message,
         );
-        Ok((key, unwrap_infallible(self.signature.verify())))
+        Ok(Self::Verified::new(key, unwrap_infallible(self.signature.verify()))?)
     }
 }
 
@@ -70,13 +66,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let args = self.tx_args.verify()?;
         let foreign_accounts = self.foreign_accounts.verify()?;
         let note_scripts = self.note_scripts.verify()?;
-        let mut signatures = BTreeMap::new();
-        for entry in self.signatures.into_inner() {
-            let (key, signature) = unwrap_infallible(entry.verify());
-            if signatures.insert(key, signature).is_some() {
-                return Err(TransactionInputsError::DuplicateSignature(key).into());
-            }
-        }
+        let signatures = self.signatures.verify()?;
         Ok(Self::Output::builder()
             .account(account)
             .block_header(header)
@@ -89,16 +79,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .signatures(signatures)
             .build()?)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum TransactionInputsError {
-    #[error(
-        "duplicate signature for public key commitment {} and message {}",
-        .0.pub_key_commitment(),
-        .0.message()
-    )]
-    DuplicateSignature(miden_protocol::account::auth::SignatureKey),
 }
 
 pub use proto::transaction::DecodedTransactionInputs as TransactionInputs;

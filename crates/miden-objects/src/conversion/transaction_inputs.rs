@@ -1,5 +1,5 @@
 use miden_protocol::Word;
-use miden_protocol::account::auth::{Signature, SignatureKey};
+use miden_protocol::account::auth::{BoundSignature, Signature};
 use miden_protocol::transaction::{AccountInputs, InputNote, InputNotes, TransactionInputs};
 use miden_protocol::utils::serde::Serializable;
 
@@ -49,12 +49,12 @@ impl From<&Signature> for proto::transaction::AuthSignature {
     }
 }
 
-impl From<(&SignatureKey, &Signature)> for proto::transaction::SignatureEntry {
-    fn from((key, signature): (&SignatureKey, &Signature)) -> Self {
+impl From<&BoundSignature> for proto::transaction::BoundSignature {
+    fn from(signature: &BoundSignature) -> Self {
         Self {
-            pub_key_commitment: Some(Word::from(key.pub_key_commitment()).into()),
-            message: Some(key.message().into()),
-            signature: Some(signature.into()),
+            pub_key_commitment: Some(Word::from(signature.key().pub_key_commitment()).into()),
+            message: Some(signature.key().message().into()),
+            signature: Some(signature.signature().into()),
         }
     }
 }

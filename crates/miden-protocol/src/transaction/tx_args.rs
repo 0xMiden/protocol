@@ -7,7 +7,7 @@ use super::script::TransactionScript;
 use super::{Felt, Word};
 use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
-use crate::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
+use crate::account::auth::BoundSignature;
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
     ByteReader,
@@ -202,22 +202,19 @@ impl TransactionArgs {
         );
     }
 
-    /// Adds the `signature` corresponding to `pub_key` on `message` to the advice inputs' map.
+    /// Adds the `signature` to the advice inputs' map.
     ///
     /// The advice inputs' map is extended with the following key:
     ///
-    /// - [`SignatureKey::to_advice_map_key`] |-> signature (encoded for VM execution).
-    pub fn add_signature(
-        &mut self,
-        pub_key: PublicKeyCommitment,
-        message: Word,
-        signature: Signature,
-    ) {
-        let signature_key = SignatureKey::new(pub_key, message);
-        self.advice_inputs.extend(AdviceInputs::default().with_map([(
-            signature_key.to_advice_map_key(),
-            signature.to_encoded_signature(message),
-        )]));
+    /// - [`SignatureKey::to_advice_map_key`](crate::account::auth::SignatureKey::to_advice_map_key)
+    ///   |-> signature (encoded for VM execution).
+    pub fn add_signature(&mut self, signature: BoundSignature) {
+        self.advice_inputs.extend(
+            AdviceInputs::default().with_map([(
+                signature.key().to_advice_map_key(),
+                signature.to_encoded_signature(),
+            )]),
+        );
     }
 
     /// Populates the advice inputs with the specified note recipient details.

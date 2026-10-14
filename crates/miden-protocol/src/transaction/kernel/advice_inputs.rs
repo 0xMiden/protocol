@@ -78,8 +78,8 @@ impl TransactionAdviceInputs {
         );
 
         // SIGNATURE_KEY |-> [ENCODED_SIGNATURE]
-        inputs.extend_map(tx_inputs.signatures().iter().map(|(key, signature)| {
-            (key.to_advice_map_key(), signature.to_encoded_signature(key.message()))
+        inputs.extend_map(tx_inputs.signatures().iter().map(|signature| {
+            (signature.key().to_advice_map_key(), signature.to_encoded_signature())
         }));
 
         // The host reads the new code from this entry when the kernel initializes the upgrade.

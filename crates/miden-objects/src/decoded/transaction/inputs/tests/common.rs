@@ -1,7 +1,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
+use alloc::vec::Vec;
 
-use miden_protocol::account::auth::{Signature, SignatureKey};
+use miden_protocol::account::auth::{BoundSignature, SignatureKey};
 use miden_protocol::account::{
     Account,
     AccountCode,
@@ -130,13 +131,14 @@ fn dummy_advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) ->
 }
 
 /// Returns one valid signature per authentication scheme.
-pub fn dummy_signatures() -> BTreeMap<SignatureKey, Signature> {
+pub fn dummy_signatures() -> Vec<BoundSignature> {
     auth_secret_keys()
         .into_iter()
         .map(|secret_key| {
             let message = dummy_word(70);
             let key = SignatureKey::new(secret_key.public_key().to_commitment(), message);
-            (key, secret_key.sign(message))
+            BoundSignature::new(key, secret_key.sign(message))
+                .expect("signature should be bound to the key of its signer")
         })
         .collect()
 }

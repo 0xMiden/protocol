@@ -6,7 +6,7 @@ use core::str::FromStr;
 use rand::{CryptoRng, Rng};
 
 use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
-use crate::errors::AuthSchemeError;
+use crate::errors::{AuthSchemeError, BoundSignatureError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -388,19 +388,8 @@ impl Deserializable for PublicKey {
 
 /// Represents a signature object ready for native verification.
 ///
-/// In order to use this signature within the Miden VM, an encoding step may be necessary to
-/// convert the native signature into a vector of field elements that can be loaded into the advice
-/// provider. To encode the signature, use the provided [`Signature::to_encoded_signature`] method:
-/// ```rust,no_run
-/// use miden_protocol::account::auth::Signature;
-/// use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
-/// use miden_protocol::{Felt, Word};
-///
-/// let secret_key = SecretKey::new();
-/// let message = Word::default();
-/// let signature: Signature = secret_key.sign(message).into();
-/// let encoded_signature: Vec<Felt> = signature.to_encoded_signature(message);
-/// ```
+/// To use this signature within the Miden VM, bind it to the [`SignatureKey`] it signs with
+/// [`BoundSignature`], which can encode it for the advice provider.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Signature {
@@ -409,8 +398,8 @@ pub enum Signature {
 }
 
 impl Signature {
-    /// The maximum number of field elements that [`Signature::to_encoded_signature`] can return
-    /// for any variant.
+    /// The maximum number of field elements that [`BoundSignature::to_encoded_signature`] can
+    /// return for any variant.
     ///
     /// This lets consumers reject an encoded signature of an impossible length before allocating
     /// for it. The largest encoding is the one of [`Signature::Falcon512Poseidon2`].
@@ -424,25 +413,21 @@ impl Signature {
         }
     }
 
-    /// Converts this signature to a sequence of field elements in the format expected by the
-    /// native verification procedure in the VM.
+    /// Returns the commitment to the public key of the signer of `message`.
     ///
-    /// The returned vector contains at most [`Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS`]
-    /// elements.
+    /// # Errors
     ///
-    /// The order of elements in the returned vector is reversed because it is expected that the
-    /// data will be pushed into the advice stack
-    pub fn to_encoded_signature(&self, msg: Word) -> Vec<Felt> {
-        // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
-        // refactoring
+    /// Returns an error if the public key of an ECDSA signature cannot be recovered from the
+    /// signature and `message`.
+    fn signer_commitment(&self, message: Word) -> Result<PublicKeyCommitment, BoundSignatureError> {
         match self {
-            Signature::Falcon512Poseidon2(sig) => {
-                miden_core_lib::dsa::falcon512_poseidon2::encode_signature(sig.public_key(), sig)
-            },
+            Signature::Falcon512Poseidon2(sig) => Ok(sig.public_key().to_commitment().into()),
             Signature::EcdsaK256Keccak(sig) => {
-                let pk = ecdsa_k256_keccak::PublicKey::recover_from(msg, sig)
-                    .expect("inferring public key from signature and message should succeed");
-                miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature(&pk, sig)
+                let pub_key =
+                    ecdsa_k256_keccak::PublicKey::recover_from(message, sig).map_err(|source| {
+                        BoundSignatureError::EcdsaPublicKeyRecoveryFailed { message, source }
+                    })?;
+                Ok(pub_key.into())
             },
         }
     }
@@ -479,11 +464,76 @@ impl Deserializable for Signature {
     }
 }
 
+// BOUND SIGNATURE
+// ================================================================================================
+
+/// A [`Signature`] bound to the [`SignatureKey`] it signs.
+///
+/// The public key of the signer matches the public key commitment of the key, so the signature can
+/// always be encoded for the VM.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundSignature {
+    key: SignatureKey,
+    signature: Signature,
+}
+
+impl BoundSignature {
+    /// Returns a new [`BoundSignature`] that binds `signature` to `key`.
+    ///
+    /// This does not check that the signature is valid since that is an expensive computation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the public key of an ECDSA signature cannot be recovered from the signature and message.
+    /// - the commitment to the public key of the signer does not match the commitment of `key`.
+    pub fn new(key: SignatureKey, signature: Signature) -> Result<Self, BoundSignatureError> {
+        let actual = signature.signer_commitment(key.message())?;
+        if actual != key.pub_key_commitment() {
+            return Err(BoundSignatureError::PublicKeyCommitmentMismatch {
+                expected: key.pub_key_commitment(),
+                actual,
+            });
+        }
+
+        Ok(Self { key, signature })
+    }
+
+    /// Returns the key this signature is bound to.
+    pub fn key(&self) -> SignatureKey {
+        self.key
+    }
+
+    /// Returns the signature.
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    /// Converts this signature to a sequence of field elements in the format expected by the
+    /// native verification procedure in the VM.
+    ///
+    /// The returned vector contains at most [`Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS`]
+    /// elements.
+    pub fn to_encoded_signature(&self) -> Vec<Felt> {
+        match &self.signature {
+            Signature::Falcon512Poseidon2(sig) => {
+                miden_core_lib::dsa::falcon512_poseidon2::encode_signature(sig.public_key(), sig)
+            },
+            Signature::EcdsaK256Keccak(sig) => {
+                let pub_key = ecdsa_k256_keccak::PublicKey::recover_from(self.key.message(), sig)
+                    .expect("constructor should have checked that the public key is recoverable");
+                miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature(&pub_key, sig)
+            },
+        }
+    }
+}
+
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use rstest::rstest;
@@ -503,17 +553,59 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed([0; 32]);
         let secret_key = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng)?;
         let message = Word::from([1u32, 2, 3, 4]);
-        let signature = secret_key.sign(message);
+        let key = SignatureKey::new(secret_key.public_key().to_commitment(), message);
+        let signature = BoundSignature::new(key, secret_key.sign(message))?;
 
-        let encoded_signature = signature.to_encoded_signature(message);
+        let encoded_signature = signature.to_encoded_signature();
         assert_eq!(encoded_signature.len(), expected_num_felts);
         assert!(encoded_signature.len() <= Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS);
 
         // Match exhaustively on `Signature` so adding a variant breaks compilation as a reminder
         // to add a case above and to re-check the maximum.
-        match signature {
+        match signature.signature() {
             Signature::Falcon512Poseidon2(_) | Signature::EcdsaK256Keccak(_) => {},
         }
+
+        Ok(())
+    }
+
+    /// An ECDSA signature from which no public key can be recovered cannot be bound.
+    #[test]
+    fn binding_unrecoverable_ecdsa_signature_fails() -> anyhow::Result<()> {
+        let ecdsa_signature =
+            ecdsa_k256_keccak::Signature::from_sec1_bytes_and_recovery_id([0; 64], 0)?;
+        let key = SignatureKey::new(
+            PublicKeyCommitment::from(Word::empty()),
+            Word::from([1u32, 2, 3, 4]),
+        );
+
+        assert_matches!(
+            BoundSignature::new(key, Signature::EcdsaK256Keccak(ecdsa_signature)),
+            Err(BoundSignatureError::EcdsaPublicKeyRecoveryFailed { .. })
+        );
+
+        Ok(())
+    }
+
+    /// A signature cannot be bound to a key with the commitment of a different public key.
+    #[rstest]
+    #[case::falcon512_poseidon2(AuthScheme::Falcon512Poseidon2)]
+    #[case::ecdsa_k256_keccak(AuthScheme::EcdsaK256Keccak)]
+    fn binding_signature_to_other_pub_key_commitment_fails(
+        #[case] auth_scheme: AuthScheme,
+    ) -> anyhow::Result<()> {
+        let mut rng = ChaCha20Rng::from_seed([0; 32]);
+        let secret_key = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng)?;
+        let message = Word::from([1u32, 2, 3, 4]);
+        let other_commitment = PublicKeyCommitment::from(Word::from([5u32, 6, 7, 8]));
+        let key = SignatureKey::new(other_commitment, message);
+
+        assert_matches!(
+            BoundSignature::new(key, secret_key.sign(message)),
+            Err(BoundSignatureError::PublicKeyCommitmentMismatch { expected, actual })
+                if expected == other_commitment
+                    && actual == secret_key.public_key().to_commitment()
+        );
 
         Ok(())
     }

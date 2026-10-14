@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
 use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
+use super::crypto::dsa::ecdsa_k256_keccak;
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{
@@ -23,6 +24,7 @@ use super::{
     MAX_OUTPUT_NOTES_PER_BATCH,
     Word,
 };
+use crate::account::auth::{PublicKeyCommitment, SignatureKey};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
@@ -1004,6 +1006,12 @@ pub enum TransactionInputError {
     DuplicateForeignAccount(AccountId),
     #[error("foreign account {0} is the native account of the transaction")]
     ForeignAccountIsNativeAccount(AccountId),
+    #[error(
+        "signature for public key commitment {} and message {} is a duplicate",
+        .0.pub_key_commitment(),
+        .0.message()
+    )]
+    DuplicateSignature(SignatureKey),
     #[error("asset witness does not fit the vault of account {account_id}")]
     InvalidAssetWitness {
         account_id: AccountId,
@@ -1779,6 +1787,26 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// BOUND SIGNATURE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BoundSignatureError {
+    #[error("failed to recover the ECDSA public key from the signature and message {message}")]
+    EcdsaPublicKeyRecoveryFailed {
+        message: Word,
+        #[source]
+        source: ecdsa_k256_keccak::PublicKeyError,
+    },
+    #[error(
+        "signer's public key commitment {actual} does not match the expected public key commitment {expected}"
+    )]
+    PublicKeyCommitmentMismatch {
+        expected: PublicKeyCommitment,
+        actual: PublicKeyCommitment,
+    },
 }
 
 // TRANSACTION VERIFIER ERROR

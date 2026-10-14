@@ -2,7 +2,10 @@ use alloc::vec;
 use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
+use crate::account::auth::{AuthScheme, AuthSecretKey, BoundSignature, SignatureKey};
 use crate::account::{
     Account,
     AccountCode,
@@ -165,6 +168,25 @@ fn builder_rejects_an_inconsistent_protocol_config() -> anyhow::Result<()> {
         .build();
 
     assert_matches!(result, Err(TransactionInputError::InconsistentProtocolConfig { .. }));
+
+    Ok(())
+}
+
+#[test]
+fn add_signature_rejects_a_duplicate_key() -> anyhow::Result<()> {
+    let mut tx_inputs = empty_tx_inputs()?;
+    let mut rng = ChaCha20Rng::from_seed([0; 32]);
+    let secret_key = AuthSecretKey::with_scheme_and_rng(AuthScheme::EcdsaK256Keccak, &mut rng)?;
+    let message = Word::from([1u32, 2, 3, 4]);
+    let key = SignatureKey::new(secret_key.public_key().to_commitment(), message);
+    let signature = BoundSignature::new(key, secret_key.sign(message))?;
+
+    tx_inputs.add_signature(signature.clone())?;
+    assert_matches!(
+        tx_inputs.add_signature(signature),
+        Err(TransactionInputError::DuplicateSignature(duplicate_key)) if duplicate_key == key
+    );
+    assert_eq!(tx_inputs.signatures().len(), 1);
 
     Ok(())
 }

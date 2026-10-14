@@ -124,8 +124,8 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
     // through the data store, so they need to be added via the transaction arguments.
     // TODO: This should be addressed in https://github.com/0xMiden/protocol/issues/2293.
     let mut tx_args = tx_inputs.tx_args().clone();
-    for (key, signature) in tx_inputs.signatures() {
-        tx_args.add_signature(key.pub_key_commitment(), key.message(), signature.clone());
+    for signature in tx_inputs.signatures() {
+        tx_args.add_signature(signature.clone());
     }
     let data_store = TransactionInputsDataStore::new(tx_inputs.clone());
     let reexecuted_tx = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store)
