@@ -20,8 +20,8 @@ pub enum TransactionLogDetails {
 }
 
 impl TransactionLogDetails {
-    /// Returns the computed public or supplied private transaction log commitment.
-    pub fn to_commitment(&self) -> Word {
+    /// Returns the cached public or supplied private transaction logs commitment.
+    pub fn commitment(&self) -> Word {
         match self {
             Self::Private(commitment) => *commitment,
             Self::Public(logs) => logs.commitment(),
