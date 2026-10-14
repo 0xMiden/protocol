@@ -432,9 +432,10 @@ fn masm_rust_constant_parity() {
     );
     // DC-5 has no cross-language parity row left: the MASM side no longer HAS a scale, because the
     // writer zero-extends the note's AssetAmount instead of verifying a witness against a staged
-    // uint256. The one thing left to pin is the value of the single Rust constant, and it is
-    // asserted where it is defined (`amount.rs`, `deposit_scale_exp_is_zero`) — the constant is
-    // module-private, so there is no second spelling that could drift from it.
+    // uint256. The one thing left to pin is the value of the single Rust constant. This file does
+    // not check it; the `tv_amt_*` tests in `amount.rs` and `tests/mint_scale_conformance.rs` do,
+    // and they fail if it is not zero. The constant is module-private, so there is no second copy
+    // that could drift from it.
 }
 
 // Error-string parity has no test left. `build.rs` generates the Rust `ERR_XRESERVE_*` constants

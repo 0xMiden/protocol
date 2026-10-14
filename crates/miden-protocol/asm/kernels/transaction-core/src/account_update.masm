@@ -44,7 +44,8 @@ const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT =
 # CONSTANTS
 # =================================================================================================
 
-# The domains of the delta and patch commitments. They are absorbed via the hasher capacity word.
+# The domains of the delta and patch commitments, see the Rust `ProtocolDomainRegistry`. They are
+# absorbed via the hasher capacity word.
 const DOMAIN_DELTA = 0x020001
 const DOMAIN_PATCH = 0x020000
 
