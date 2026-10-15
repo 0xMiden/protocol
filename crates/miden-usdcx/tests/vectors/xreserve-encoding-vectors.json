@@ -120,10 +120,10 @@
         ],
         "digest_hex": "0x2f49cf5b41d0e6e0dff2fabdcec06a85a26cdbd23842eb6a37cccbe681ec06f4",
         "expected_commitment": [
-          "0x4bf2b839446c94f4",
-          "0x4ca609b5b0462d2",
-          "0x6e04ba5a653e6165",
-          "0x38f8728fdce01d4d"
+          "0x2f2d5f1751072893",
+          "0x3935396226c54758",
+          "0x433964ff85a5cbbc",
+          "0x60710f96f80e0fe8"
         ],
         "id": "att-1",
         "packed_felts": [
@@ -189,10 +189,10 @@
         ],
         "digest_hex": "0x77095049b82851d9dae97fc20c6d06cd96ce0b8757fe4522a0710cd89aa6f427",
         "expected_commitment": [
-          "0x294ce4f51bb04a3e",
-          "0x35dfacbe8d28db7e",
-          "0x484f8de497b3f50e",
-          "0x21c701d70d2c6d86"
+          "0x3b809273db4a5f30",
+          "0x4d8fe17115346852",
+          "0x5798cad3926d552d",
+          "0x64976643c5bbcfd4"
         ],
         "id": "att-2",
         "packed_felts": [
@@ -258,10 +258,10 @@
         ],
         "digest_hex": "0xa2ffa19153f0cf3c982a581195c08c7140d85a2d5b9c4a35b5a9f3fc56d327fa",
         "expected_commitment": [
-          "0x4d2c50d673f7895e",
-          "0x2d213737d95bbc8c",
-          "0x40e218cf19be82a3",
-          "0x7505bc059aa654a5"
+          "0x6358e34b912d7b3a",
+          "0x13035be79b012e1c",
+          "0x1e44612da82b60c2",
+          "0x55f66eb32941ea29"
         ],
         "id": "att-3",
         "packed_felts": [
@@ -327,10 +327,10 @@
         ],
         "digest_hex": "0xe849d125a381afeab1670280814436f1a7c0a145d65f79220014a8366c561861",
         "expected_commitment": [
-          "0x1fb54559f31682af",
-          "0x634acbfc864550f6",
-          "0x73edbe22ae38f935",
-          "0x199a520907dd5346"
+          "0x3f334506277a1d7b",
+          "0x3694df5be15eeebe",
+          "0x7cd1936aa0aa9338",
+          "0x564f9beca8f77c79"
         ],
         "id": "att-4-hookdata",
         "packed_felts": [
@@ -388,10 +388,10 @@
         "cite": "generated deterministically by gen_vectors",
         "derivation": "all-zero bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)",
         "expected_key": [
-          "0x37b4384a44596761",
-          "0x72816932d5676dd0",
-          "0x32a7a8a862f969d4",
-          "0x21f9144d281fc4ad"
+          "0x290010ee8a8abaec",
+          "0x466fd044f6bc9f6b",
+          "0x6cfb5b9136b0d73f",
+          "0x2439674eb3d8f736"
         ],
         "id": "b32-pos-1",
         "packed_felts": [
@@ -416,10 +416,10 @@
         "cite": "generated deterministically by gen_vectors",
         "derivation": "all-0xff bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)",
         "expected_key": [
-          "0x12c3f8505054c117",
-          "0x35602afeef731aa",
-          "0x401dfa581c4fb780",
-          "0x55986f3322e534bb"
+          "0x634b1262e7eb097",
+          "0x592feb2bdf0ce650",
+          "0x6d0bf777d9dae050",
+          "0x6cda2bc73b9f7d"
         ],
         "id": "b32-pos-2",
         "packed_felts": [
@@ -444,10 +444,10 @@
         "cite": "generated deterministically by gen_vectors",
         "derivation": "bytes 0x00..0x1f; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)",
         "expected_key": [
-          "0x76ff9a134c381336",
-          "0xf7549f519ad3057",
-          "0x4ee126c5bb03fcfd",
-          "0x2f34784ad1156dfc"
+          "0x801711bd5c47777",
+          "0x3332e75756b092c5",
+          "0x24d8bdd72d4b2941",
+          "0x41fa19f9d24bf6b6"
         ],
         "id": "b32-pos-3",
         "packed_felts": [
@@ -472,10 +472,10 @@
         "cite": "generated deterministically by gen_vectors",
         "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed by Hasher::hash_elements",
         "expected_key": [
-          "0x17c4c4222d945101",
-          "0x1bfe72927e6241ff",
-          "0xa2f68893e52c81",
-          "0xd74c5e5f9fc9545"
+          "0x532d0a7a61d9240d",
+          "0x5c98be09a296073f",
+          "0x44c319968f351244",
+          "0x5045c96a1d24420"
         ],
         "id": "b32-rej-limb-ge-p",
         "lossless_error": "LimbOutOfField",

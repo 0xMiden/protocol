@@ -36,9 +36,9 @@ pub use {validate as validate_id} from miden::protocol_utils::account_id
 
 # Generic Felt-sequence Eidos chaining word for 16-Felt account preimages.
 const EIDOS_INIT_CV_16 = [
-    4280581857092831745,
-    2688637132020383760,
-    1947077364412317696,
+    13503953893947607553,
+    11912009168875159568,
+    11170449401267093504,
     6620516959492505600
 ]
 
