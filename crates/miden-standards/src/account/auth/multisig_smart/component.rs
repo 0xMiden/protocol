@@ -76,8 +76,8 @@ static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
         .expect("storage slot name should be valid")
 });
 
-static DELAY_MODE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::delay_mode_config")
+static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::delay_config")
         .expect("storage slot name should be valid")
 });
 
@@ -288,8 +288,8 @@ impl AuthMultisigSmart {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
 
-    pub fn delay_mode_config_slot() -> &'static StorageSlotName {
-        &DELAY_MODE_CONFIG_SLOT_NAME
+    pub fn delay_config_slot() -> &'static StorageSlotName {
+        &DELAY_CONFIG_SLOT_NAME
     }
 
     pub fn tx_proposals_slot() -> &'static StorageSlotName {
@@ -353,11 +353,11 @@ impl AuthMultisigSmart {
         )
     }
 
-    pub fn delay_mode_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn delay_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::delay_mode_config_slot().clone(),
+            Self::delay_config_slot().clone(),
             StorageSlotSchema::value(
-                "Delay-mode config: [min_delay, propose_expiration_delta, 0, 0]",
+                "Delay config: [min_delay, propose_expiration_delta, 0, 0]",
                 SchemaType::native_word(),
             ),
         )
@@ -425,10 +425,10 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
-        // Delay-mode config slot (value: [min_delay, propose_expiration_delta, 0, 0]).
+        // Delay config slot (value: [min_delay, propose_expiration_delta, 0, 0]).
         let delayed_execution_policy = multisig.config.delayed_execution_policy();
         storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::delay_mode_config_slot().clone(),
+            AuthMultisigSmart::delay_config_slot().clone(),
             Word::from([
                 delayed_execution_policy.min_delay(),
                 delayed_execution_policy.propose_expiration_delta() as u32,
@@ -450,7 +450,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
             AuthMultisigSmart::procedure_policies_slot_schema(),
-            AuthMultisigSmart::delay_mode_config_slot_schema(),
+            AuthMultisigSmart::delay_config_slot_schema(),
             AuthMultisigSmart::tx_proposals_slot_schema(),
         ])
         .expect("storage schema should be valid");

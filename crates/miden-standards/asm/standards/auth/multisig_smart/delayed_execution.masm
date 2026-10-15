@@ -19,7 +19,7 @@ use {SignatureThreshold} from miden::standards::auth::multisig
 # =================================================================================================
 
 # [min_delay, propose_expiration_delta, 0, 0]
-const DELAY_MODE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_mode_config")
+const DELAY_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_config")
 
 # Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
@@ -90,7 +90,7 @@ pub proc update_delayed_execution_policy(min_delay: u32, propose_expiration_delt
     push.0.0 movdn.3 movdn.3
     # => [min_delay, propose_expiration_delta, 0, 0]
 
-    push.DELAY_MODE_CONFIG_SLOT[0..2]
+    push.DELAY_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, 0, 0]
 
     exec.native_account::set_item
@@ -100,7 +100,7 @@ pub proc update_delayed_execution_policy(min_delay: u32, propose_expiration_delt
     # => []
 end
 
-#! Loads the delayed execution policy configuration from the initial `DELAY_MODE_CONFIG_SLOT`.
+#! Loads the delayed execution policy configuration from the initial `DELAY_CONFIG_SLOT`.
 #!
 #! Reads the transaction's initial storage state, so a policy update earlier in the same
 #! transaction does not affect the proposal that transaction records or consumes.
@@ -115,8 +115,8 @@ end
 #!   unsatisfied proposals expire after `propose_expiration_delta` blocks.
 #!
 #! Invocation: exec
-proc get_initial_delayed_execution_config() -> (u32, u16)
-    push.DELAY_MODE_CONFIG_SLOT[0..2]
+proc get_initial_delay_config() -> (u32, u16)
+    push.DELAY_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
     exec.native_account::get_initial_item
@@ -126,21 +126,21 @@ proc get_initial_delayed_execution_config() -> (u32, u16)
     # => [min_delay, propose_expiration_delta]
 end
 
-#! Returns `min_delay` from the initial `DELAY_MODE_CONFIG_SLOT`.
+#! Returns `min_delay` from the initial `DELAY_CONFIG_SLOT`.
 #!
 #! Inputs:  []
 #! Outputs: [min_delay]
 #!
 #! Invocation: exec
 proc get_initial_min_delay() -> u32
-    exec.get_initial_delayed_execution_config
+    exec.get_initial_delay_config
     # => [min_delay, propose_expiration_delta]
 
     swap drop
     # => [min_delay]
 end
 
-#! Returns `propose_expiration_delta` from the initial `DELAY_MODE_CONFIG_SLOT`.
+#! Returns `propose_expiration_delta` from the initial `DELAY_CONFIG_SLOT`.
 #!
 #! Callers stage a proposal by piping the returned delta through
 #! `tx::update_expiration_block_delta` so that proposal-bearing transactions expire within the
@@ -151,7 +151,7 @@ end
 #!
 #! Invocation: exec
 proc get_initial_propose_expiration_delta() -> u16
-    exec.get_initial_delayed_execution_config
+    exec.get_initial_delay_config
     # => [min_delay, propose_expiration_delta]
 
     drop

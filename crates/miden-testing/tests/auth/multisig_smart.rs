@@ -1505,7 +1505,7 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
     // Stored policy reflects the new values.
     let stored_policy = multisig_account
         .storage()
-        .get_item(AuthMultisigSmart::delay_mode_config_slot())
+        .get_item(AuthMultisigSmart::delay_config_slot())
         .expect("delayed-execution slot should exist");
     assert_eq!(
         stored_policy,
