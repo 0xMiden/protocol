@@ -29,6 +29,7 @@ use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
     ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
     ERR_MULTISIG_APPROVAL_EXPIRED,
+    ERR_PROC_POLICY_ON_DELAY_ACTION,
     ERR_PROC_ROOT_NOT_IN_ACCOUNT,
     ERR_TOO_MANY_APPROVERS,
 };
@@ -706,6 +707,61 @@ async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root() -> anyh
         .await;
 
     assert_transaction_executor_error!(result, ERR_PROC_ROOT_NOT_IN_ACCOUNT);
+
+    Ok(())
+}
+
+/// A policy on `propose_transaction` or `cancel_transaction_proposal` would be accepted but never
+/// enforced: a propose/cancel transaction takes the `auth_tx` branch that does not consult
+/// procedure policies. `set_procedure_policy` rejects those roots so the misconfiguration fails
+/// loudly instead of lending false confidence.
+#[rstest]
+#[case::propose("propose_transaction")]
+#[case::cancel("cancel_transaction_proposal")]
+#[tokio::test]
+async fn test_multisig_smart_set_procedure_policy_rejects_delay_action_roots(
+    #[case] proc_name: &str,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let delay_action_path =
+        format!("miden::standards::components::auth::multisig_smart::{proc_name}");
+    let delay_action_root = AuthMultisigSmart::code()
+        .get_procedure_root_by_path(delay_action_path.as_str())
+        .expect("delay action should be exported by the component")
+        .as_word();
+
+    // Valid policy values so execution reaches the delay-action guard.
+    let set_policy_script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{root}
+            push.0
+            push.0
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
+        end
+        ",
+        root = StorageMapKey::from_raw(delay_action_root),
+    ))?;
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(set_policy_script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt(730),
+        ))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_POLICY_ON_DELAY_ACTION);
 
     Ok(())
 }

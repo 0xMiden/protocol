@@ -69,6 +69,8 @@ const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
 const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
 
+const ERR_PROC_POLICY_ON_DELAY_ACTION = "procedure policies cannot be set on propose_transaction or cancel_transaction_proposal"
+
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
 
@@ -117,6 +119,8 @@ const AUTH_TX_APPROVAL_EXPIRATION_LOC = 3
 #! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
 #! - note_restrictions is non-zero while both thresholds are zero.
 #! - PROC_ROOT is not one of the account's procedures.
+#! - PROC_ROOT is `propose_transaction` or `cancel_transaction_proposal`, whose policies the auth
+#!   procedure would ignore (`ERR_PROC_POLICY_ON_DELAY_ACTION`).
 #!
 #! Invocation: call
 @locals(3)
@@ -185,6 +189,25 @@ pub proc set_procedure_policy(policy: ProcedurePolicy, proc_root: AccountProcedu
     # ----- Validate PROC_ROOT is one of the account's procedures. -----
     dupw exec.active_account::has_procedure
     assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT]
+
+    # ----- Reject the delay actions: a propose/cancel transaction takes the dispatch branch of
+    # `auth_tx` that never consults procedure policies, so a policy on these roots would be accepted
+    # but silently ignored. -----
+    # `eqw` leaves both words on the stack, so the pushed root is dropped after each comparison.
+    procref.delayed_execution::propose_transaction eqw
+    # => [is_propose, PROPOSE_ROOT, PROC_ROOT]
+
+    movdn.4 dropw movdn.4
+    # => [PROC_ROOT, is_propose]
+
+    procref.delayed_execution::cancel_transaction_proposal eqw
+    # => [is_cancel, CANCEL_ROOT, PROC_ROOT, is_propose]
+
+    movdn.4 dropw
+    # => [is_cancel, PROC_ROOT, is_propose]
+
+    movup.5 or assertz.err=ERR_PROC_POLICY_ON_DELAY_ACTION
     # => [PROC_ROOT]
 
     # ----- Write [immediate, delayed, note_restrictions, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT].
