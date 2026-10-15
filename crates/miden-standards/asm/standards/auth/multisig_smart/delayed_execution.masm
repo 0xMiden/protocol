@@ -205,34 +205,43 @@ pub proc is_tx_proposed(tx_summary_commitment: word) -> Bool
     # => [is_proposed]
 end
 
-#! Deletes the proposal entry for `TX_SUMMARY_COMMITMENT` by writing `EMPTY_WORD`.
+#! Deletes the proposal entry for `TX_SUMMARY_COMMITMENT` by writing `EMPTY_WORD` and returns the
+#! entry it replaced.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
-#! Outputs: []
+#! Outputs: [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 #!
 #! Where:
 #! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - unlock_timestamp, proposal_timestamp and min_cancel_sigs are the removed entry's fields, all
+#!   zero when no proposal existed.
 #!
 #! Invocation: exec
-proc remove_tx_proposal(tx_summary_commitment: word)
+proc remove_tx_proposal(tx_summary_commitment: word) -> (u32, u32, SignatureThreshold)
     push.0.0.0
     # => [0, 0, 0, TX_SUMMARY_COMMITMENT]
 
     # Writing zero unlock/proposal/cancel fields stores EMPTY_WORD, i.e. clears the entry.
     exec.write_tx_proposal
-    # => []
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 end
 
-#! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally.
+#! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally and returns the entry it
+#! replaced.
+#!
+#! Returning the previous entry lets callers learn whether a proposal already existed from the
+#! write itself, instead of reading the map first.
 #!
 #! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-#! Outputs: []
+#! Outputs: [old_unlock_timestamp, old_proposal_timestamp, old_min_cancel_sigs]
 #!
 #! Where:
 #! - unlock_timestamp is the earliest timestamp at which the proposal can be executed.
 #! - proposal_timestamp is the timestamp at which the proposal was recorded.
 #! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
 #! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - old_unlock_timestamp, old_proposal_timestamp and old_min_cancel_sigs are the replaced entry's
+#!   fields, all zero when no proposal existed.
 #!
 #! Invocation: exec
 proc write_tx_proposal(
@@ -240,7 +249,7 @@ proc write_tx_proposal(
     proposal_timestamp: u32,
     min_cancel_sigs: SignatureThreshold,
     tx_summary_commitment: word
-)
+) -> (u32, u32, SignatureThreshold)
     push.0
     # => [0, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
@@ -256,8 +265,8 @@ proc write_tx_proposal(
     exec.native_account::set_map_item
     # => [OLD_PROPOSAL_WORD]
 
-    dropw
-    # => []
+    movup.3 drop
+    # => [old_unlock_timestamp, old_proposal_timestamp, old_min_cancel_sigs]
 end
 
 #! Computes the unlock timestamp for the current proposal.
@@ -314,23 +323,25 @@ proc assert_unlock_reached(unlock_timestamp: u32)
     # => []
 end
 
-#! Asserts that `TX_SUMMARY_COMMITMENT` is proposed and that its unlock timestamp has been reached.
+#! Asserts that a proposal entry exists and that its unlock timestamp has been reached.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - unlock_timestamp, proposal_timestamp and min_cancel_sigs are a proposal entry's fields, as
+#!   returned by `remove_tx_proposal`; an all-zero entry means no proposal exists.
 #!
 #! Panics if:
-#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - the entry is empty, i.e. no proposal exists (`ERR_TX_NOT_PROPOSED`).
 #! - `assert_unlock_reached` fails.
 #!
 #! Invocation: exec
-proc assert_tx_proposed_and_unlocked(tx_summary_commitment: word)
-    exec.get_tx_proposal
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
-
+proc assert_tx_proposed_and_unlocked(
+    unlock_timestamp: u32,
+    proposal_timestamp: u32,
+    min_cancel_sigs: SignatureThreshold
+)
     swap neq.0 assert.err=ERR_TX_NOT_PROPOSED
     # => [unlock_timestamp, min_cancel_sigs]
 
@@ -418,19 +429,13 @@ end
 #!   propose.
 #!
 #! Panics if:
-#! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
 #! - no signature verifies over `TX_SUMMARY_COMMITMENT` (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
 #! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
+#! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc propose_transaction(tx_summary_commitment: word)
-    # Note: a transaction that was already executed can still be proposed here; it is not worth an
-    # extra `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing
-    # it later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
-    dupw exec.is_tx_proposed assertz.err=ERR_TX_ALREADY_PROPOSED
-    # => [TX_SUMMARY_COMMITMENT]
-
     # ---- Verify at least one approver signature over the target commitment. ----
     exec.multisig::get_initial_threshold_and_num_approvers drop
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
@@ -450,6 +455,14 @@ pub proc propose_transaction(tx_summary_commitment: word)
     # => [unlock_timestamp, proposal_timestamp, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.write_tx_proposal
+    # => [old_unlock_timestamp, old_proposal_timestamp, old_min_cancel_sigs]
+
+    # The write returns the entry it replaced: a non-zero proposal timestamp means a proposal already
+    # existed, and the abort reverts the overwrite. A transaction that was already executed can
+    # still be proposed here; it is not worth an extra `EXECUTED_TXS_SLOT` lookup to reject it,
+    # because such a proposal is harmless - executing it later fails in `multisig::assert_new_tx`
+    # (the executed-transactions replay guard).
+    drop swap drop assertz.err=ERR_TX_ALREADY_PROPOSED
     # => []
 end
 
@@ -514,15 +527,18 @@ pub proc cancel_transaction_proposal(tx_summary_commitment: word)
     # => [TX_SUMMARY_COMMITMENT]
 
     exec.remove_tx_proposal
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
+
+    drop drop drop
     # => []
 end
 
 #! Consumes the proposal matching the current transaction, enforcing the timelock.
 #!
 #! Called by the auth procedure when the current transaction matches an existing proposal. Asserts
-#! the approval carries an expiration, that the proposal exists and its unlock timestamp has been
-#! reached, then deletes the proposal entry. Replay protection against re-execution is provided by
-#! the multisig executed-transactions set.
+#! the approval carries an expiration, then deletes the proposal entry and asserts on the entry it
+#! held that a proposal existed and its unlock timestamp has been reached. Replay protection
+#! against re-execution is provided by the multisig executed-transactions set.
 #!
 #! A proposal is a standing authorization: the approver signatures are over this commitment, and the
 #! same commitment is what the execute transaction reproduces, so those signatures stay usable until
@@ -558,9 +574,13 @@ pub proc consume_tx_proposal(
     neq.0 assert.err=ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION
     # => [TX_SUMMARY_COMMITMENT]
 
-    dupw exec.assert_tx_proposed_and_unlocked
-    # => [TX_SUMMARY_COMMITMENT]
-
+    # Remove first and assert on the entry the removal returns, so the proposal is read once. On the
+    # execution path no procedure of this transaction can have touched the entry (the delay actions
+    # take the other dispatch branch), so the removed entry is the initial one; a failed assertion
+    # aborts the transaction and with it the removal.
     exec.remove_tx_proposal
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
+
+    exec.assert_tx_proposed_and_unlocked
     # => []
 end
