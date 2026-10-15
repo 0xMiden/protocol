@@ -27,7 +27,7 @@ mod burn;
 pub use burn::BurnNote;
 
 mod fee_sponsorship;
-pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
+pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage, ReclaimError};
 
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
@@ -397,6 +397,20 @@ impl StandardNote {
                     )))
                 } else {
                     Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
+                }
+            },
+
+            // A FEE_SPONSORSHIP note checked on its own is one whose feature note is absent, which
+            // leaves the reclaim as the only way to consume it.
+            StandardNote::FEE_SPONSORSHIP => {
+                let sponsorship = FeeSponsorshipNote::try_from(note)?;
+
+                match sponsorship.check_reclaim(target_account_id, block_ref) {
+                    Ok(()) => Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization)),
+                    Err(ReclaimError::ReclaimHeightNotReached { reclaim_height, .. }) => {
+                        Ok(Some(NoteConsumptionStatus::ConsumableAfter(reclaim_height)))
+                    },
+                    Err(err) => Ok(Some(NoteConsumptionStatus::NeverConsumable(Box::new(err)))),
                 }
             },
 
