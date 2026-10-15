@@ -1,7 +1,12 @@
+use alloc::format;
 use alloc::vec::Vec;
 
+use miden_processor::advice::AdviceInputs;
+use miden_protocol::Felt;
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::{Note, NoteId};
+use miden_protocol::transaction::TransactionScript;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
@@ -36,6 +41,17 @@ pub enum FeeError {
         /// The fee the account charges for the feature note, if it could be determined.
         required: Option<AssetAmount>,
     },
+}
+
+impl FeeError {
+    /// Sets the fee the account charges for the feature note of a [`FeeError::FeeNotCovered`],
+    /// leaving any other error unchanged.
+    pub(super) fn with_required_fee(mut self, required_fee: Option<AssetAmount>) -> Self {
+        if let FeeError::FeeNotCovered { required, .. } = &mut self {
+            *required = required_fee;
+        }
+        self
+    }
 }
 
 impl NoteBundle {
@@ -85,4 +101,57 @@ pub(super) fn fee_error(
         provided,
         required: None,
     })
+}
+
+// FEE ESTIMATION
+// ================================================================================================
+
+/// Returns the transaction script and the advice inputs that estimate the fee the account charges
+/// for `note` through its fee manager, as [`fee_from_estimation_stack`] reads it from the stack the
+/// script leaves.
+///
+/// The note is priced with a timeframe and priority of 0, which is what fee collection passes. The
+/// advice inputs carry the preimage of the note's recipient, which fee policies may recover.
+///
+/// Returns `None` if the script cannot be compiled.
+pub(super) fn fee_estimation_script(note: &Note) -> Option<(TransactionScript, AdviceInputs)> {
+    let source = format!(
+        r#"
+        use miden::standards::assets::fungible_asset
+        use miden::standards::fees::fee_manager
+
+        @transaction_script
+        pub proc main
+            # place the note parameters with a timeframe and priority of 0, and the padding
+            push.0.0.0.0
+            push.{attachments_commitment}
+            push.{assets_commitment}
+            push.{recipient}
+            # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2),
+            #     SCRIPT_ARGS, pad(12)]
+
+            call.fee_manager::estimate_note_fee
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8), SCRIPT_ARGS, pad(12)]
+
+            dropw exec.fungible_asset::value_into_amount_unchecked
+            # => [fee_amount, pad(8), SCRIPT_ARGS, pad(12)]
+
+            # drop the padding, keeping the stack at 16 elements
+            movdn.8 dropw dropw swap drop
+            # => [fee_amount, pad(15)]
+        end
+        "#,
+        attachments_commitment = note.attachments().to_commitment(),
+        assets_commitment = note.assets().commitment(),
+        recipient = note.recipient().digest(),
+    );
+    let script = CodeBuilder::default().compile_tx_script(source).ok()?;
+    let advice_inputs = AdviceInputs::default().with_map(note.recipient().to_advice_map_entries());
+
+    Some((script, advice_inputs))
+}
+
+/// Returns the fee the [`fee_estimation_script`] left on top of `stack`.
+pub(super) fn fee_from_estimation_stack(stack: &[Felt; 16]) -> Option<AssetAmount> {
+    AssetAmount::new(stack[0].as_canonical_u64()).ok()
 }
