@@ -276,12 +276,9 @@ proc compute_unlock_timestamp() -> (u32, u32)
     dup exec.get_initial_min_delay
     # => [min_delay, proposal_timestamp, proposal_timestamp]
 
-    add
-    # => [unlock_timestamp, proposal_timestamp]
-
-    # Ensure the sum did not overflow u32; otherwise the proposal would be recorded with an
-    # unlock_timestamp that can never satisfy the u32 timestamp comparison at execution time.
-    u32assert.err=ERR_TIMESTAMPS_NOT_U32
+    # Otherwise the proposal would be recorded with an unlock_timestamp that can never satisfy the
+    # u32 timestamp comparison at execution time.
+    u32overflowing_add assertz.err=ERR_TIMESTAMPS_NOT_U32
     # => [unlock_timestamp, proposal_timestamp]
 end
 
