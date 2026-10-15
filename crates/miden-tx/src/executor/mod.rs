@@ -37,7 +37,7 @@ pub use data_store::DataStore;
 mod notes_checker;
 pub use notes_checker::{
     FailedNote,
-    FeeRejection,
+    FeeError,
     MAX_NUM_CHECKER_NOTES,
     NoteConsumptionChecker,
     NoteConsumptionInfo,

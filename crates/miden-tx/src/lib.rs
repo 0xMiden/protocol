@@ -11,7 +11,7 @@ pub use executor::{
     DataStore,
     ExecutionOptions,
     FailedNote,
-    FeeRejection,
+    FeeError,
     MAX_NUM_CHECKER_NOTES,
     MastForestStore,
     NoteConsumptionChecker,
