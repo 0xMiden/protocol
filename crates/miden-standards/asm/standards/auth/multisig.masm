@@ -95,7 +95,7 @@ const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::proced
 const IS_EXECUTED_FLAG = ONE_WORD
 
 # The maximum number of approvers the signer set may contain.
-const MAX_NUM_APPROVERS = 64
+pub const MAX_NUM_APPROVERS = 64
 
 # Number of words in the auth args preimage.
 const AUTH_ARGS_NUM_WORDS = 3

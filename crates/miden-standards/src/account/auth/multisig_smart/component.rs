@@ -187,7 +187,10 @@ fn validate_proc_policies(
 /// Procedures whose policy requires delayed execution must first be proposed (recorded in the
 /// proposals map) and can only execute once the timelock has elapsed. Both `propose_transaction`
 /// and the eventual execution verify the approver signatures over the *proposed transaction's*
-/// commitment, so approvers sign the actual transaction they intend to run.
+/// commitment, so approvers sign the actual transaction they intend to run. The auth procedure
+/// takes the immediate path whenever the verified signatures reach the transaction's immediate
+/// threshold and falls back to the delayed path otherwise, so a proposal only ever opens the
+/// cheaper path; it cannot hold back a transaction that has the signatures to execute immediately.
 ///
 /// # Auth args
 ///
@@ -222,6 +225,13 @@ fn validate_proc_policies(
 ///   [`AuthMultisigSmart::cancel_signing_message`], which is domain-separated from the proposed
 ///   commitment, so the public proposal signatures cannot be replayed to cancel a proposal; only
 ///   approvers who sign the cancel message can veto it.
+///
+/// - A proposal cannot block execution. The path is chosen from the verified signatures, so a
+///   transaction carrying enough signatures for immediate execution runs whether or not someone
+///   proposed its commitment, and any such proposal is dropped when it executes. A rogue approver
+///   or a relayer holding a single signature can therefore only open the delayed path for a
+///   commitment, never force a fully signed transaction through the timelock or make an
+///   immediate-only procedure unexecutable.
 ///
 /// A policy protects a procedure only while the procedures that can weaken it are protected at
 /// least as strongly. `update_delayed_execution_policy` shortens the timelock,

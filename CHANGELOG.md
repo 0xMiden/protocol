@@ -76,6 +76,7 @@
 - Cancelling a smart multisig proposal requires at most as many signatures as there are current approvers, so a proposal stays cancellable after the approver set shrinks.
 - `AuthMultisigSmart::set_procedure_policy` rejects `propose_transaction` and `cancel_transaction_proposal`, whose policies would be ignored.
 - [BREAKING] The smart multisig `min_delay` is counted in blocks, and a proposal unlocks `min_delay` blocks after the latest block it can be included in (`reference_block + propose_expiration_delta + min_delay`), so a stale reference block cannot shorten the delay.
+- The smart multisig auth procedure selects the execution path from the verified signatures: a transaction reaching its immediate threshold executes immediately whether or not it was proposed, so a proposal can no longer block or delay a fully signed transaction.
 - Added `AuthMultisigSmart::update_signers_and_threshold_root` and `AuthMultisigSmart::set_procedure_policy_root`, so a procedure policy can guard approver-set rotation and policy edits at a higher threshold than the account default.
 - [BREAKING] A smart multisig transaction executing through the timelock must now carry an approval expiration in its `MultisigAuthArgs`, bounding the window in which the approvals for a proposal stay usable.
 - [BREAKING] TX_FEE notes leave their assets in the note for the consuming account's own code to collect ([#3843](https://github.com/0xMiden/protocol/pull/3843)).

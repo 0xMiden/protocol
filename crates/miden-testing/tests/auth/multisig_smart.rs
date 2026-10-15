@@ -889,6 +889,7 @@ use miden_standards::errors::standards::{
     ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION,
     ERR_PROC_POLICY_INVALID_MODE,
     ERR_TX_ALREADY_PROPOSED,
+    ERR_TX_NOT_PROPOSED,
     ERR_TX_STILL_TIMELOCKED,
 };
 use miden_testing::MockChain;
@@ -994,17 +995,17 @@ async fn execute_script_with_signers(
 // ================================================================================================
 
 /// A procedure whose policy only declares a `delay_threshold` (no `immediate_threshold`) cannot run
-/// on the immediate path. The execution mode is derived from proposal presence, so calling such a
-/// procedure directly (with no matching proposal) evaluates it in immediate mode, which its policy
-/// does not support — the transaction aborts at the procedure-policy layer with
-/// `ERR_PROC_POLICY_INVALID_MODE` before any signature check.
+/// on the immediate path, however many signatures the transaction carries: its immediate threshold
+/// is unreachable, so the transaction falls through to the delayed path, which requires a proposal.
+/// Called directly with no matching proposal and every approver's signature, it fails in
+/// `consume_tx_proposal` with `ERR_TX_NOT_PROPOSED`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_proposal(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(
         2,
@@ -1030,21 +1031,199 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
         end
         ",
     )?;
+    let exec_auth_args =
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(901))
+            .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
 
-    // Called directly with no proposal, the execution mode is immediate, which a delay-only
-    // procedure does not support, so it aborts at the policy layer before verifying signatures.
+    // Both approvers sign, which reaches the delayed threshold but can never reach the immediate
+    // one, so the only path left is the delayed one, and nothing was proposed.
+    let result = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        update_timelock_script,
+        exec_auth_args,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?;
+    assert_transaction_executor_error!(result, ERR_TX_NOT_PROPOSED);
+
+    Ok(())
+}
+
+/// A transaction whose called procedures leave no execution path open, one allowing only immediate
+/// and another only delayed execution, can never be authorized, whatever the signatures. The auth
+/// procedure reports that as `ERR_PROC_POLICY_INVALID_MODE` rather than as a signature shortfall.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_conflicting_policies_leave_no_execution_path(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_smart_account(
+        2,
+        &public_keys,
+        100,
+        vec![
+            (
+                AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+                ProcedurePolicy::with_delay_threshold(1)?,
+            ),
+            (
+                AuthMultisigSmart::set_procedure_policy_root().as_word(),
+                ProcedurePolicy::with_immediate_threshold(1)?,
+            ),
+        ],
+    )?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    // Calls the immediate-only `set_procedure_policy` (on an unrelated root) and the delayed-only
+    // `update_delayed_execution_policy` in one transaction.
+    let script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{root}
+            push.0
+            push.0
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
+            drop drop drop dropw
+
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop drop
+        end
+        ",
+        root = AuthMultisigSmart::update_signers_and_threshold_root().as_word(),
+    ))?;
+
     let result = mock_chain
         .build_transaction(account_id)
-        .tx_script(update_timelock_script)
+        .tx_script(script)
         .multisig_auth_args(MultisigAuthArgs::new(
             mock_chain.latest_block_header().block_num(),
-            salt(901),
+            salt(902),
         ))
         .build()?
         .execute()
         .await;
-
     assert_transaction_executor_error!(result, ERR_PROC_POLICY_INVALID_MODE);
+
+    Ok(())
+}
+
+/// A proposal can only open the delayed path; it can never close the immediate one. Anyone holding
+/// a single approver signature over a pending transaction's commitment could otherwise propose it
+/// first and force it through the timelock, or, for an immediate-only procedure, make it
+/// unexecutable until the proposal is cancelled. The path is selected from the verified signatures,
+/// so a fully signed transaction executes immediately whether or not it was proposed, and the
+/// proposal is dropped on the way.
+#[rstest]
+#[case::immediate_only(true)]
+#[case::unpolicied(false)]
+#[tokio::test]
+async fn test_multisig_smart_proposal_cannot_block_immediate_execution(
+    #[case] immediate_only_policy: bool,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let proc_policies = if immediate_only_policy {
+        vec![(
+            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            ProcedurePolicy::with_immediate_threshold(2)?,
+        )]
+    } else {
+        vec![]
+    };
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, proc_policies)?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let execute_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
+            drop
+        end
+        ",
+    )?;
+    let bound_block = mock_chain.latest_block_header().block_num();
+    // No approval expiration: the immediate path does not require one.
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(910));
+    let tx_summary = mock_chain
+        .build_transaction(account_id)
+        .tx_script(execute_script.clone())
+        .multisig_auth_args(exec_auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let target_commitment = tx_summary.as_ref().to_commitment();
+
+    // A single approver proposes the pending transaction's commitment before it is included.
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        target_commitment,
+        MultisigAuthArgs::new(bound_block, salt(911)),
+        &[0],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("a single signature should satisfy a propose threshold of 1");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+    let stored_before = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    assert_ne!(stored_before, Word::empty(), "proposal must be written to storage");
+
+    // The fully signed transaction executes right away, with no timelock to wait out.
+    let executed_tx = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        execute_script,
+        exec_auth_args,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("a fully signed transaction should execute immediately despite the proposal");
+    multisig_account.apply_patch(executed_tx.account_patch())?;
+
+    // Immediate execution drops the proposal, which could never be consumed anyway.
+    let stored_after = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    assert_eq!(stored_after, Word::empty(), "proposal must be dropped by immediate execution");
 
     Ok(())
 }
@@ -1230,14 +1409,15 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Immediately try to execute: the unlock block is 30 blocks past the proposal's expiration
-    // block.
+    // One signature is below the immediate threshold of 2 and reaches the delayed threshold of 1,
+    // so the transaction takes the delayed path. Immediately try to execute: the unlock block is 30
+    // blocks past the proposal's expiration block.
     let result = execute_script_with_signers(
         &mock_chain,
         account_id,
         execute_script,
         exec_auth_args,
-        &[0, 1],
+        &[0],
         &public_keys,
         &authenticators,
         None,
@@ -1356,13 +1536,14 @@ async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
     assert_eq!(elements[1].as_canonical_u64(), u64::from(stale_block_num));
 
     // Right after inclusion the delay has not elapsed, even though the stale reference block is
-    // more than `min_delay` blocks in the past...
+    // more than `min_delay` blocks in the past. One signature keeps the transaction on the delayed
+    // path...
     let early = execute_script_with_signers(
         &mock_chain,
         account_id,
         execute_script.clone(),
         exec_auth_args,
-        &[0, 1],
+        &[0],
         &public_keys,
         &authenticators,
         None,
@@ -1378,7 +1559,7 @@ async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
         account_id,
         execute_script,
         exec_auth_args,
-        &[0, 1],
+        &[0],
         &public_keys,
         &authenticators,
         None,
@@ -1472,13 +1653,14 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     // Fast-forward past the unlock block (`bound_block + propose_expiration_delta + min_delay`).
     mock_chain.prove_until_block(bound_block + 40u32)?;
 
-    // Execute. Threshold = `max(default=2, delay=1) = 2`, so both keys sign.
+    // Execute through the delayed path: one signature is below the immediate threshold of 2 and
+    // reaches the delayed threshold of 1.
     let executed_tx = execute_script_with_signers(
         &mock_chain,
         account_id,
         execute_script,
         exec_auth_args,
-        &[0, 1],
+        &[0],
         &public_keys,
         &authenticators,
         None,
@@ -1999,8 +2181,8 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
     let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(950))
         .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
 
-    // The immediate path still costs the procedure's immediate threshold of 3, so one signature is
-    // not enough without going through the timelock.
+    // The immediate path still costs the procedure's immediate threshold of 3. One signature only
+    // reaches the delayed threshold, and that path requires a proposal.
     let immediate_result = execute_script_with_signers(
         &mock_chain,
         account_id,
@@ -2013,10 +2195,7 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
         None,
     )
     .await?;
-    match immediate_result {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
-        other => panic!("expected Unauthorized below the immediate threshold, got: {other:?}"),
-    }
+    assert_transaction_executor_error!(immediate_result, ERR_TX_NOT_PROPOSED);
 
     let tx_summary = mock_chain
         .build_transaction(account_id)
@@ -2079,7 +2258,7 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
 
 /// The single-signature propose gate must not weaken execution: it only makes starting the timelock
 /// cheap. The procedure's `delay_threshold` is still enforced when the proposed transaction runs,
-/// so a single approver can open a proposal but cannot execute one that requires three signatures.
+/// so a single approver can open a proposal but cannot execute one that requires two signatures.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
@@ -2094,7 +2273,7 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
         100,
         vec![(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
-            ProcedurePolicy::with_immediate_and_delay_thresholds(3, 3)?,
+            ProcedurePolicy::with_immediate_and_delay_thresholds(3, 2)?,
         )],
     )?;
     let account_id = multisig_account.id();
@@ -2147,7 +2326,7 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
 
     mock_chain.prove_until_block(bound_block + 40u32)?;
 
-    // The delayed threshold of 3 is still enforced, so the lone proposer cannot execute.
+    // The delayed threshold of 2 is still enforced, so the lone proposer cannot execute.
     let under_threshold = execute_script_with_signers(
         &mock_chain,
         account_id,
@@ -2165,13 +2344,13 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
         other => panic!("expected Unauthorized below the delayed threshold, got: {other:?}"),
     }
 
-    // With all three signatures the same proposal executes.
+    // With two signatures the same proposal executes through the delayed path.
     let executed_tx = execute_script_with_signers(
         &mock_chain,
         account_id,
         execute_script,
         exec_auth_args,
-        &[0, 1, 2],
+        &[0, 1],
         &public_keys,
         &authenticators,
         None,
@@ -2423,7 +2602,7 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
         account_id,
         execute_script,
         exec_auth_args,
-        &[0, 1],
+        &[0],
         &public_keys,
         &authenticators,
         None,

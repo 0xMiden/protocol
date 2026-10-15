@@ -218,6 +218,36 @@ proc remove_tx_proposal(tx_summary_commitment: word) -> (BlockNumber, BlockNumbe
     # => [unlock_block, proposal_block, min_cancel_sigs]
 end
 
+#! Removes the proposal entry for `TX_SUMMARY_COMMITMENT` if one exists.
+#!
+#! Called by the auth procedure when a transaction executes on the immediate path. A proposal for it,
+#! if any, can never be consumed afterwards (the executed-transactions set rejects re-execution), so
+#! it is dropped to keep the proposals map tidy. The entry is only written when it exists, so a
+#! transaction without a proposal leaves the map untouched.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#!
+#! Invocation: exec
+pub proc remove_tx_proposal_if_present(tx_summary_commitment: word)
+    dupw exec.is_tx_proposed
+    # => [is_proposed, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        exec.remove_tx_proposal
+        # => [unlock_block, proposal_block, min_cancel_sigs]
+
+        drop drop drop
+        # => []
+    else
+        dropw
+        # => []
+    end
+end
+
 #! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally and returns the entry it
 #! replaced.
 #!
@@ -542,7 +572,8 @@ end
 
 #! Consumes the proposal matching the current transaction, enforcing the timelock.
 #!
-#! Called by the auth procedure when the current transaction matches an existing proposal. Asserts
+#! Called by the auth procedure when the current transaction executes on the delayed path, i.e. its
+#! signatures reach the delayed threshold but not the immediate one. Asserts
 #! the approval carries an expiration, then deletes the proposal entry and asserts on the entry it
 #! held that a proposal existed and its unlock block has been reached. Replay protection
 #! against re-execution is provided by the multisig executed-transactions set.

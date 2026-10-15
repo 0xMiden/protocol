@@ -43,13 +43,18 @@ pub enum ProcedurePolicyNoteRestriction {
 /// Execution modes:
 /// - Immediate execution: the action is authorized and executed within the current transaction.
 /// - Delayed execution: the action is proposed first, and can only be executed after a required
-///   time delay has elapsed.
+///   number of blocks has elapsed.
 ///
 /// Thresholds:
 /// - Immediate threshold: the number of signatures required to authorize immediate execution.
 /// - Delayed threshold: the number of signatures required to authorize a delayed action.
 ///
-/// The thresholds for immediate and delayed execution may differ.
+/// The thresholds for immediate and delayed execution may differ. The auth procedure selects the
+/// path from the verified signatures: a transaction reaching its immediate threshold executes
+/// immediately, otherwise one reaching its delayed threshold executes through the timelock, which
+/// requires an unlocked proposal. A mode the policy omits closes that path for every transaction
+/// calling the procedure, so a proposal can only open the delayed path and never blocks immediate
+/// execution.
 ///
 /// The policy is encoded into the procedure-policy storage word as:
 /// `[immediate_threshold, delay_threshold, note_restrictions, 0]`.
