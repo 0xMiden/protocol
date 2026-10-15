@@ -18,26 +18,6 @@ name        = "miden::standards::auth::multisig"
 version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
-description = "Executed transactions"
-name        = "miden::standards::auth::multisig::executed_transactions"
-type        = { key = "word", value = "bool" }
-
-[[package.metadata.account-component.storage.slots]]
-description = "Approver public keys"
-name        = "miden::standards::auth::multisig::approver_public_keys"
-type        = { key = "u32", value = "miden::standards::auth::pub_key" }
-
-[[package.metadata.account-component.storage.slots]]
-description = "Procedure thresholds"
-name        = "miden::standards::auth::multisig::procedure_thresholds"
-type        = { key = "word", value = "u32" }
-
-[[package.metadata.account-component.storage.slots]]
-description = "Approver scheme IDs"
-name        = "miden::standards::auth::multisig::approver_schemes"
-type        = { key = "u32", value = "miden::standards::auth::scheme" }
-
-[[package.metadata.account-component.storage.slots]]
 description = "Threshold configuration"
 name        = "miden::standards::auth::multisig::threshold_config"
 # Word layout: [threshold, num_approvers, 0, 0]
@@ -47,3 +27,23 @@ type = [
   { type = "void" },
   { type = "void" },
 ]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Approver public keys"
+name        = "miden::standards::auth::multisig::approver_public_keys"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Approver scheme IDs"
+name        = "miden::standards::auth::multisig::approver_schemes"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Executed transactions"
+name        = "miden::standards::auth::multisig::executed_transactions"
+type        = { key = "word", value = "bool" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Procedure thresholds"
+name        = "miden::standards::auth::multisig::procedure_thresholds"
+type        = { key = "word", value = "u32" }

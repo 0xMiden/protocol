@@ -18,16 +18,6 @@ name        = "miden::standards::faucets::policies::policy_manager"
 version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
-description = "Active receive policy procedure root"
-name        = "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root"
-type        = "word"
-
-[[package.metadata.account-component.storage.slots]]
-description = "Active send policy procedure root"
-name        = "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root"
-type        = "word"
-
-[[package.metadata.account-component.storage.slots]]
 description = "Active mint policy procedure root"
 name        = "miden::standards::faucets::policies::policy_manager::active_mint_policy_proc_root"
 type        = "word"
@@ -38,8 +28,18 @@ name        = "miden::standards::faucets::policies::policy_manager::active_burn_
 type        = "word"
 
 [[package.metadata.account-component.storage.slots]]
-description = "Allowed send policy procedure roots"
-name        = "miden::standards::faucets::policies::policy_manager::allowed_send_policy_proc_roots"
+description = "Active send policy procedure root"
+name        = "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Active receive policy procedure root"
+name        = "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed mint policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots"
 type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
@@ -48,13 +48,13 @@ name        = "miden::standards::faucets::policies::policy_manager::allowed_burn
 type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
-description = "Allowed receive policy procedure roots"
-name        = "miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots"
+description = "Allowed send policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_send_policy_proc_roots"
 type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
-description = "Allowed mint policy procedure roots"
-name        = "miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots"
+description = "Allowed receive policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots"
 type        = { key = "word", value = "bool" }
 
 # Reserved asset-callback slots. They are installed only when at least one send or receive policy
