@@ -29,12 +29,12 @@ const TOKEN_SUPPLY: u64 = 0;
 // construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
 // policy code and the fee schedule keyed by note script roots.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([10798287880080071512, 12825261844891398725, 1188231218448788404, 7289295870458036717])";
+    "Word([4534348979270934076, 17230383663070444934, 1553267028069005390, 18266567295424494501])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([16469400144570920905, 8328138888207843294, 10919081742323940021, 9040172708879627155])";
+    "Word([5985247414370833437, 8669829549864745211, 10671821069579465352, 6686762991184928428])";
 const GOLDEN_STORAGE_DIGEST: &str =
     "Word([17271432023237151271, 683563277854396599, 15516754376063234744, 5577544190383212581])";
-const GOLDEN_ACCOUNT_ID: &str = "0x7609a08d2760df7156ceed60bb2aac";
+const GOLDEN_ACCOUNT_ID: &str = "0x3385e78c12696f712cf451b6163e09";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

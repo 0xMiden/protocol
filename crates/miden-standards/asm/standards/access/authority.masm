@@ -1,5 +1,6 @@
 use {AccountProcedureRoot, Bool} from miden::protocol::types
 use {RoleSymbol} from miden::standards::access::role_symbol
+use {ADMIN_ROLE} from miden::standards::access::rbac
 # miden::standards::access::authority
 #
 # Single source of truth for the account-wide authority. Components that gate state-mutating
@@ -92,6 +93,10 @@ end
 #! no members blocks the procedure for everyone, `ADMIN` included, until the role is granted to an
 #! account or the procedure is reassigned.
 #!
+#! Besides holding the role required by `set_procedure_role` itself, the sender must administer the
+#! procedure's current role (`ADMIN` when unmapped), the same rule `rbac::grant_role` applies. This
+#! keeps a role delegated to a dedicated admin role out of reach of `ADMIN`.
+#!
 #! Inputs:  [role_symbol, PROCEDURE_ROOT, pad(11)]
 #! Outputs: [pad(16)]
 #!
@@ -103,6 +108,7 @@ end
 #! - the authority is not RbacControlled.
 #! - the note sender is not the account's emergency authority.
 #! - role_symbol is neither 0 nor a valid role symbol encoding.
+#! - the note sender does not administer the procedure's current role.
 #!
 #! Invocation: call
 @account_procedure
@@ -119,6 +125,22 @@ pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProc
     # => [role_symbol, PROCEDURE_ROOT, pad(11)]
 
     push.0.0.0 movup.3 swapw
+    # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    dupw push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, PROCEDURE_ROOT, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    exec.active_account::get_map_item
+    # => [current_role, 0, 0, 0, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    movdn.3 drop drop drop
+    # => [current_role, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    # An unmapped procedure falls back to ADMIN, so ADMIN is its current role.
+    dup eq.0 push.ADMIN_ROLE swap cdrop
+    # => [current_role, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    exec.rbac::assert_sender_is_role_admin
     # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
 
     push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]

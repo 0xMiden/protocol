@@ -22,6 +22,7 @@ use miden_standards::errors::standards::{
     ERR_AUTHORITY_FROZEN,
     ERR_INVALID_ROLE_SYMBOL,
     ERR_SENDER_LACKS_ROLE,
+    ERR_SENDER_NOT_ROLE_ADMIN,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_testing::{
@@ -41,7 +42,13 @@ use super::pausable::{
     build_set_max_supply_note,
     execute_note_on_faucet,
 };
-use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
+use super::rbac::{
+    build_grant_role_note,
+    build_note,
+    role,
+    set_role_admin_script,
+    test_account_id,
+};
 
 // FAUCET BUILDERS
 // ================================================================================================
@@ -640,21 +647,19 @@ async fn memberless_role_takes_a_procedure_out_of_service() -> anyhow::Result<()
 }
 
 /// `set_procedure_role` can hand itself to a memberless role without locking the account: `ADMIN`
-/// can still grant that role, and its member can then return `set_procedure_role` to `ADMIN`.
+/// administers that role, so it can grant it to itself and return `set_procedure_role` to `ADMIN`.
 #[tokio::test]
 async fn memberless_set_procedure_role_is_recoverable() -> anyhow::Result<()> {
-    let role_mngr = test_account_id(32);
     let admin = *ADMIN_ID;
     let self_root = Authority::set_procedure_role_root();
 
     let mut builder = MockChain::builder();
     let faucet = add_rbac_faucet(&mut builder, admin, BTreeMap::new(), 84)?;
 
-    let grant_role_mngr = build_grant_role_note(admin, &role("ROLE_MNGR"), role_mngr)?;
+    let grant_role_mngr = build_grant_role_note(admin, &role("ROLE_MNGR"), admin)?;
     let reassign = build_set_procedure_role_note(admin, Felt::from(&role("ROLE_MNGR")), self_root)?;
-    let admin_restore = build_set_procedure_role_note(admin, Felt::ZERO, self_root)?;
-    let role_mngr_restore = build_set_procedure_role_note(role_mngr, Felt::ZERO, self_root)?;
-    for note in [&reassign, &admin_restore, &grant_role_mngr, &role_mngr_restore] {
+    let restore = build_set_procedure_role_note(admin, Felt::ZERO, self_root)?;
+    for note in [&reassign, &restore, &grant_role_mngr] {
         builder.add_output_note(RawOutputNote::Full(note.clone()));
     }
 
@@ -665,13 +670,59 @@ async fn memberless_set_procedure_role_is_recoverable() -> anyhow::Result<()> {
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &reassign).await?;
     assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, Some(role("ROLE_MNGR")));
 
-    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &admin_restore).await;
+    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &restore).await;
     assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
-    // ADMIN still administers ROLE_MNGR, so it can grant the role and restore access.
+    // ADMIN still administers ROLE_MNGR, so it can grant the role to itself and restore access.
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_role_mngr).await?;
-    execute_note_on_faucet(&mut mock_chain, faucet.id(), &role_mngr_restore).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &restore).await?;
     assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, None);
+
+    Ok(())
+}
+
+/// Changing a procedure's role requires administering its current role, so `ADMIN` cannot move a
+/// procedure whose role is delegated to a populated admin role. A memberless delegate falls back to
+/// `ADMIN`, as in `rbac::grant_role`.
+#[rstest]
+#[case::populated_delegate(true)]
+#[case::memberless_delegate(false)]
+#[tokio::test]
+async fn set_procedure_role_respects_role_delegation(
+    #[case] delegate_populated: bool,
+) -> anyhow::Result<()> {
+    let pauser_admin = test_account_id(33);
+    let admin = *ADMIN_ID;
+    let pause_root = PausableManager::pause_root();
+
+    let roles = BTreeMap::from([(pause_root, role("PAUSER"))]);
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, roles, 85)?;
+
+    let grant_pauser_admin = build_grant_role_note(admin, &role("PAUSER_ADMIN"), pauser_admin)?;
+    let delegate_pauser =
+        build_note(admin, set_role_admin_script(&role("PAUSER"), Some(&role("PAUSER_ADMIN"))))?;
+    let unmap = build_set_procedure_role_note(admin, Felt::ZERO, pause_root)?;
+    for note in [&grant_pauser_admin, &delegate_pauser, &unmap] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    if delegate_populated {
+        execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser_admin).await?;
+    }
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &delegate_pauser).await?;
+
+    if delegate_populated {
+        let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &unmap).await;
+        assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+        assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, Some(role("PAUSER")));
+    } else {
+        execute_note_on_faucet(&mut mock_chain, faucet.id(), &unmap).await?;
+        assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, None);
+    }
 
     Ok(())
 }
