@@ -6,6 +6,7 @@ pub mod assembler;
 pub mod asset;
 pub mod block;
 pub mod block_note_tree;
+pub mod code;
 pub mod component_metadata;
 pub mod constants;
 pub mod kernel_config;

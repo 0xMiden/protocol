@@ -11,6 +11,7 @@ pub mod address;
 pub mod asset;
 pub mod batch;
 pub mod block;
+pub mod code;
 mod domain_registry;
 pub mod errors;
 pub mod note;
