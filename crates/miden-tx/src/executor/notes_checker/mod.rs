@@ -365,7 +365,6 @@ where
                         .expect("every candidate note belongs to a bundle");
                     let blamed_idx = bundle
                         .notes()
-                        .iter()
                         .position(|note| note.id() == failed_note_id)
                         .expect("the bundle holds the failed note");
                     failed_notes.extend(bundle.failed_notes(
@@ -421,7 +420,7 @@ where
 
             for idx in 0..remaining_bundles.bundles().len() {
                 let bundle = remaining_bundles.bundles()[idx].clone();
-                let bundle_notes = bundle.notes().to_vec();
+                let bundle_notes: Vec<Note> = bundle.notes().cloned().collect();
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 

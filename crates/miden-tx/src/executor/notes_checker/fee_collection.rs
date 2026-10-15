@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::{NoteId, NoteScriptRoot};
-use miden_standards::note::FeeSponsorshipNote;
 
 use super::bundle::NoteBundle;
 use super::checker_utils::{FailedNote, NoteFailure};
@@ -52,25 +51,23 @@ impl FeeCollection {
         let mut rejected = Vec::new();
 
         for bundle in bundles {
-            let feature_note = bundle.head();
-            // A bundle headed by a sponsorship is a reclaim, which collects no fee.
-            if FeeSponsorshipNote::try_from(feature_note).is_ok() {
+            // A reclaim bundle collects no fee.
+            let NoteBundle::Feature { feature_note, sponsorships } = bundle else {
                 continue;
-            }
+            };
 
-            // Every note bound to the note heading the bundle is a sponsorship of it.
             let mut funding = Vec::new();
-            for note in bundle.bound_notes() {
-                let Ok(sponsorship) = FeeSponsorshipNote::try_from(note) else {
-                    continue;
-                };
-                let actual = sponsorship.asset().id();
-                if actual != self.fee_asset_id {
-                    let reason =
-                        SponsorshipRejection::WrongFeeAsset { expected: self.fee_asset_id, actual };
+            for sponsorship in sponsorships {
+                let note = sponsorship.note();
+                let asset = sponsorship.sponsorship().asset();
+                if asset.id() != self.fee_asset_id {
+                    let reason = SponsorshipRejection::WrongFeeAsset {
+                        expected: self.fee_asset_id,
+                        actual: asset.id(),
+                    };
                     rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
                 } else {
-                    funding.push((note, sponsorship.asset().amount()));
+                    funding.push((note, asset.amount()));
                 }
             }
 
@@ -154,8 +151,9 @@ impl From<FeeRejection> for NoteFailure {
 pub(super) fn feature_note_roots(bundles: &[NoteBundle]) -> BTreeSet<NoteScriptRoot> {
     bundles
         .iter()
-        .map(NoteBundle::head)
-        .filter(|head| FeeSponsorshipNote::try_from(*head).is_err())
-        .map(|head| head.script().root())
+        .filter_map(|bundle| match bundle {
+            NoteBundle::Feature { feature_note, .. } => Some(feature_note.script().root()),
+            NoteBundle::Reclaim(_) => None,
+        })
         .collect()
 }
