@@ -20,6 +20,7 @@ mod p2ide;
 mod pausable;
 mod pswap;
 pub(crate) mod rbac;
+mod scheduler;
 mod schema_commitment;
 mod send_note;
 mod swap;

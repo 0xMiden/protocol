@@ -9,6 +9,7 @@ pub mod authority;
 pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
+pub mod scheduler;
 
 /// Access control configuration for network-style accounts whose authority-gated setters are
 /// gated by an owner / role check rather than by the account's auth component.
@@ -94,6 +95,7 @@ pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
 pub use rbac::{RoleBasedAccessControl, RoleBasedAccessControlError, RoleConfig};
+pub use scheduler::{Scheduler, SchedulerError, SchedulerManager};
 
 // HELPERS
 // ================================================================================================

@@ -1,15 +1,21 @@
-use {Bool} from miden::protocol::types
+use {AccountProcedureRoot, Bool} from miden::protocol::types
+use {RoleSymbol} from miden::standards::access::role_symbol
 # miden::standards::access::authority
 #
 # Single source of truth for the account-wide authority. Components that gate state-mutating
 # procedures (TokenPolicyManager `set_*_policy`, fungible token metadata `set_*` procedures,
 # future NFT metadata setters, ...) all consult this slot via `assert_authorized`.
+#
+# When the optional `Scheduler` component is installed, `assert_authorized` additionally requires a
+# ready proposal for the note being consumed whenever the gated procedure is flagged as scheduled.
 
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
 use miden::standards::access::role_symbol
+use miden::standards::access::scheduler
 
 # TYPE ALIASES
 # =================================================================================================
@@ -44,6 +50,8 @@ const FROZEN = 1
 
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
+const ERR_PROCEDURE_ROLES_REQUIRE_RBAC = "procedure roles require an RBAC-controlled authority"
+const ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS = "set_procedure_role requires a role with members"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -84,6 +92,73 @@ pub proc unfreeze()
     # => [pad(16)]
 end
 
+#! Assigns the role required to invoke an authority-gated procedure, or clears it.
+#!
+#! Writing `0` unmaps the procedure so it falls back to the `ADMIN` role. Assigning a role that has
+#! no members blocks the procedure for everyone, `ADMIN` included, until the role is granted to an
+#! account or the procedure is reassigned. `set_procedure_role` itself can only be assigned a role
+#! that has at least one member.
+#!
+#! Inputs:  [role_symbol, PROCEDURE_ROOT, pad(11)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role to require, or 0 to unmap the procedure.
+#! - PROCEDURE_ROOT is the root of the authority-gated procedure to configure.
+#!
+#! Panics if:
+#! - the authority is not RbacControlled.
+#! - the note sender is not the account's emergency authority.
+#! - `set_procedure_role` is flagged as scheduled and the active note was not proposed or is not
+#!   ready yet.
+#! - role_symbol is neither 0 nor a valid role symbol encoding.
+#! - PROCEDURE_ROOT is the root of `set_procedure_role` itself and role_symbol is a non-zero role
+#!   with no members.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProcedureRoot)
+    exec.assert_rbac_controlled
+    exec.assert_sender_is_emergency_authority
+    # Reassigning roles bypasses the frozen flag but not the scheduler: when flagged, it waits.
+    exec.scheduler::assert_ready_if_scheduled
+    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
+
+    # 0 unmaps the procedure, anything else must be a canonical role symbol.
+    dup neq.0
+    if.true
+        dup exec.role_symbol::validate_encoding
+    end
+    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
+
+    push.0.0.0 movup.3 swapw
+    # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    dupw padw caller
+    # => [SELF_ROOT, PROCEDURE_ROOT, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    exec.word::eq dup.5 neq.0 and
+    # => [is_self_mapped, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    # A role for set_procedure_role itself must have a member, so it stays callable.
+    if.true
+        dup.4 exec.rbac::get_role_member_count
+        # => [member_count, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+        neq.0 assert.err=ERR_SET_PROCEDURE_ROLE_REQUIRES_MEMBERS
+        # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+    end
+
+    push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    exec.native_account::set_map_item
+    # => [OLD_ROLE_WORD, pad(11)]
+
+    dropw
+    # => [pad(16)]
+end
+
 # PUBLIC HELPERS
 # =================================================================================================
 
@@ -97,9 +172,13 @@ end
 #!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
 #!   installed on the account; otherwise linking the account fails.
 #!
-#! This procedure never panics under AuthControlled so the account's auth component is the sole
-#! gate and MUST authenticate every authority-gated procedure root, otherwise those procedures are
-#! permissionless.
+#! After the authority dispatch, if the `Scheduler` component is installed and the calling procedure
+#! is flagged as scheduled, the note being consumed must carry a ready proposal, which is consumed
+#! (see `scheduler::assert_ready_if_scheduled`). Unflagged procedures are unaffected.
+#!
+#! Apart from that check this procedure never panics under AuthControlled, so the account's auth
+#! component is the sole gate and MUST authenticate every authority-gated procedure root, otherwise
+#! those procedures are permissionless.
 #!
 #! Because the calling procedure is identified via `caller`, `assert_authorized` MUST be invoked
 #! with `exec` (inlined) from the gated procedure, and the gated procedure MUST be a `call`
@@ -115,6 +194,8 @@ end
 #! - the authority is RbacControlled, no role is configured for the procedure, and the sender does
 #!   not hold ADMIN.
 #! - the authority is an unknown value.
+#! - the calling procedure is flagged as scheduled and the active note was not proposed or is not
+#!   ready yet.
 #!
 #! Invocation: exec
 pub proc assert_authorized()
@@ -154,6 +235,11 @@ pub proc assert_authorized()
             end
         end
     end
+    # => []
+
+    # Timelock: a scheduled procedure additionally needs a ready proposal for the active note.
+    exec.scheduler::assert_ready_if_scheduled
+    # => []
 end
 
 # HELPER PROCEDURES
@@ -204,6 +290,26 @@ proc assert_sender_is_emergency_authority()
             push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
         end
     end
+end
+
+#! Asserts the authority is RbacControlled.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the authority is not RbacControlled.
+#!
+#! Invocation: exec
+proc assert_rbac_controlled()
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, is_frozen, 0, 0]
+
+    eq.RBAC_CONTROLLED assert.err=ERR_PROCEDURE_ROLES_REQUIRE_RBAC
+    # => [is_frozen, 0, 0]
+
+    drop drop drop
+    # => []
 end
 
 #! Writes the is_frozen flag into the authority slot, preserving the authority discriminator.

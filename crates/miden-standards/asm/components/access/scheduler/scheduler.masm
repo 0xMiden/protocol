@@ -1,0 +1,9 @@
+# Scheduler account component.
+#
+# Installs the scheduler storage: the waiting period, the set of procedures that require a proposal
+# and the proposals themselves. Administration (`schedule`, `cancel`, `set_min_delay`,
+# `set_procedure_scheduling`) is delegated to the `SchedulerManager` component; the readiness check
+# is the `assert_ready_if_scheduled` exec helper from `miden::standards::access::scheduler`, which
+# `authority::assert_authorized` calls for every gated procedure.
+
+pub use {get_min_delay} from miden::standards::access::scheduler

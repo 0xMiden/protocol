@@ -1,0 +1,197 @@
+use {AccountProcedureRoot, Bool, NoteId} from miden::protocol::types
+# miden::standards::access::scheduler::manager
+#
+# Scheduler administration. Exposes `schedule`, `cancel`, `set_min_delay` and
+# `set_procedure_scheduling` as `Invocation: call` procedures gated by the account-wide `Authority`
+# component, the same pattern as `pausable::manager`. Under RBAC each carries its own role via the
+# procedure-roles map: the intended shape is a cancel-only `CANCELLER` role that can stop other
+# people's proposals without being able to propose, execute or grant anything itself.
+#
+# Proposing grants no authority: the proposed note's own procedure still checks the sender's role
+# when the note is consumed. The scheduler only decides *when* an already-authorized action may
+# happen.
+#
+# Companion components required on the account:
+# - `Authority` — provides the auth dispatch the entrypoints call into.
+# - `Scheduler` — provides the storage slots.
+
+use miden::protocol::active_note
+use miden::protocol::tx
+use miden::standards::access::authority
+use miden::standards::access::scheduler
+use miden::standards::expiration
+use {MinDelay} from miden::standards::access::scheduler
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SCHEDULER_ALREADY_PROPOSED = "operation is already proposed"
+const ERR_SCHEDULER_NOT_PROPOSED = "operation was not proposed"
+const ERR_SCHEDULER_MIN_DELAY_NOT_U32 = "scheduler min_delay must be a u32"
+const ERR_SCHEDULER_READY_AT_OVERFLOW = "scheduler ready_at timestamp overflowed u32"
+const ERR_SCHEDULER_FLAG_NOT_BOOL = "scheduled flag must be 0 or 1"
+const ERR_SCHEDULER_CANNOT_SCHEDULE_OWN_PROCEDURES = "scheduler procedures cannot be scheduled"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Proposes that the admin note with id NOTE_ID may be consumed once `min_delay` has elapsed.
+#!
+#! Records the proposer so it can withdraw its own proposal. When the delay is non-zero, caps the
+#! transaction's expiration delta to the standards default so an executor cannot reference an old
+#! block and shorten the delay.
+#!
+#! Inputs:  [NOTE_ID, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#! - NOTE_ID already has a proposal.
+#! - the readiness timestamp overflows u32.
+#!
+#! Invocation: call
+@account_procedure
+pub proc schedule(note_id: NoteId)
+    exec.authority::assert_authorized
+    # => [NOTE_ID, pad(12)]
+
+    # One proposal per operation: a second one would move ready_at, and a later caller could move
+    # it earlier.
+    dupw exec.scheduler::get_ready_at eq.0 assert.err=ERR_SCHEDULER_ALREADY_PROPOSED
+    # => [NOTE_ID, pad(12)]
+
+    exec.scheduler::get_min_delay_internal
+    # => [min_delay, NOTE_ID, pad(12)]
+
+    dup neq.0
+    if.true
+        exec.expiration::apply_default
+    end
+    # => [min_delay, NOTE_ID, pad(12)]
+
+    exec.tx::get_block_timestamp add u32assert.err=ERR_SCHEDULER_READY_AT_OVERFLOW
+    # => [ready_at, NOTE_ID, pad(12)]
+
+    exec.active_note::get_sender
+    # => [proposer_suffix, proposer_prefix, ready_at, NOTE_ID, pad(12)]
+
+    movup.2
+    # => [ready_at, proposer_suffix, proposer_prefix, NOTE_ID, pad(12)]
+
+    exec.scheduler::write_proposal
+    # => [pad(16)]
+end
+
+#! Cancels a proposal. The proposed note can then no longer be consumed by a scheduled procedure
+#! unless it is proposed again.
+#!
+#! The proposer may always withdraw its own proposal; anyone else must be authorized per the
+#! installed `Authority`, which under RBAC is the role mapped to `cancel` (e.g. `CANCELLER`) or
+#! `ADMIN`.
+#!
+#! Inputs:  [NOTE_ID, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - NOTE_ID has no proposal.
+#! - the note sender is neither the proposer nor authorized per `Authority`.
+#!
+#! Invocation: call
+@account_procedure
+pub proc cancel(note_id: NoteId)
+    dupw exec.scheduler::get_proposal
+    # => [ready_at, proposer_suffix, proposer_prefix, NOTE_ID, pad(12)]
+
+    neq.0 assert.err=ERR_SCHEDULER_NOT_PROPOSED
+    # => [proposer_suffix, proposer_prefix, NOTE_ID, pad(12)]
+
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, proposer_suffix, proposer_prefix, NOTE_ID, pad(12)]
+
+    movup.2 eq
+    # => [suffix_matches, sender_prefix, proposer_prefix, NOTE_ID, pad(12)]
+
+    movdn.2 eq and
+    # => [is_proposer, NOTE_ID, pad(12)]
+
+    if.false
+        exec.authority::assert_authorized
+    end
+    # => [NOTE_ID, pad(12)]
+
+    exec.scheduler::clear_proposal
+    # => [pad(16)]
+end
+
+#! Sets the waiting period.
+#!
+#! This procedure is itself scheduled unconditionally: the note carrying it must have been proposed
+#! and be ready, so lowering the delay waits out the current delay first.
+#!
+#! Inputs:  [min_delay, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#! - the active note was not proposed or is not ready yet.
+#! - min_delay is not a u32.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_min_delay(min_delay: MinDelay)
+    exec.authority::assert_authorized
+    exec.active_note::get_note_id exec.scheduler::consume_scheduled
+    # => [min_delay, pad(15)]
+
+    dup u32assert.err=ERR_SCHEDULER_MIN_DELAY_NOT_U32 drop
+    # => [min_delay, pad(15)]
+
+    exec.scheduler::write_min_delay
+    # => [pad(16)]
+end
+
+#! Flags or unflags an authority-gated procedure as requiring a proposal.
+#!
+#! This procedure is itself scheduled unconditionally, so removing a procedure's delay waits out
+#! the current delay first. The scheduler's own entrypoints cannot be flagged: `set_min_delay` and
+#! this procedure are already scheduled unconditionally, and flagging `schedule` or `cancel` would
+#! make proposals unreachable.
+#!
+#! Inputs:  [is_scheduled, PROCEDURE_ROOT, pad(11)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - is_scheduled is 1 to require a proposal for PROCEDURE_ROOT, 0 to stop requiring one.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#! - the active note was not proposed or is not ready yet.
+#! - is_scheduled is neither 0 nor 1.
+#! - PROCEDURE_ROOT is one of the scheduler's own entrypoints.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_procedure_scheduling(is_scheduled: Bool, procedure_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    exec.active_note::get_note_id exec.scheduler::consume_scheduled
+    # => [is_scheduled, PROCEDURE_ROOT, pad(11)]
+
+    dup dup eq.0 swap eq.1 or assert.err=ERR_SCHEDULER_FLAG_NOT_BOOL
+    # => [is_scheduled, PROCEDURE_ROOT, pad(11)]
+
+    movdn.4
+    # => [PROCEDURE_ROOT, is_scheduled, pad(11)]
+
+    procref.schedule eqw assertz.err=ERR_SCHEDULER_CANNOT_SCHEDULE_OWN_PROCEDURES dropw
+    procref.cancel eqw assertz.err=ERR_SCHEDULER_CANNOT_SCHEDULE_OWN_PROCEDURES dropw
+    procref.set_min_delay eqw assertz.err=ERR_SCHEDULER_CANNOT_SCHEDULE_OWN_PROCEDURES dropw
+    # As a `call` entrypoint, `caller` resolves to our own root.
+    padw caller eqw assertz.err=ERR_SCHEDULER_CANNOT_SCHEDULE_OWN_PROCEDURES dropw
+    # => [PROCEDURE_ROOT, is_scheduled, pad(11)]
+
+    movup.4
+    # => [is_scheduled, PROCEDURE_ROOT, pad(11)]
+
+    exec.scheduler::write_scheduled_flag
+    # => [pad(16)]
+end
