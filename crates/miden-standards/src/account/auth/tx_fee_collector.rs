@@ -1,11 +1,5 @@
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -19,7 +13,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
 use super::Approver;
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 
 account_component_code!(AUTH_TX_FEE_COLLECTOR_CODE, "miden-standards-auth-tx-fee-collector.masp");
 
@@ -165,33 +159,9 @@ impl AuthTxFeeCollector {
         &SIGNATURE_SCHEME_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the public key slot.
-    pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", SchemaType::pub_key()),
-        )
-    }
-
-    /// Returns the storage slot schema for the signature scheme slot.
-    pub fn signature_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::signature_scheme_slot().clone(),
-            StorageSlotSchema::value("Signature scheme", SchemaType::auth_scheme()),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![
-            Self::public_key_slot_schema(),
-            Self::signature_scheme_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("TX_FEE collector authentication component")
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 
