@@ -26,8 +26,10 @@ pub use non_fungible::{
     NonFungibleFaucet,
     NonFungibleFaucetBuilder,
     TokenBaseUri,
+    create_guarded_user_non_fungible_faucet,
+    create_multisig_user_non_fungible_faucet,
     create_network_non_fungible_faucet,
-    create_user_non_fungible_faucet,
+    create_singlesig_user_non_fungible_faucet,
 };
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 
