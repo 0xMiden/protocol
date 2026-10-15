@@ -1156,11 +1156,10 @@ async fn test_multisig_smart_double_propose_fails(
     Ok(())
 }
 
-/// A successfully recorded proposal must not be executable before its `unlock_timestamp` has been
-/// reached. Propose a delayed action, then immediately try to execute it on the next block (only
-/// `TIMESTAMP_STEP_SECS` after the propose) — far short of the configured `min_delay` of 30
-/// seconds. The delayed execution path's `enforce_tx_timelock` should fail with
-/// `ERR_TX_STILL_TIMELOCKED`.
+/// A successfully recorded proposal must not be executable before its `unlock_block` has been
+/// reached. Propose a delayed action, then immediately try to execute it on the next block, far
+/// short of the configured `min_delay` of 30 blocks counted from the proposal's expiration block.
+/// `consume_tx_proposal` should fail with `ERR_TX_STILL_TIMELOCKED`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
@@ -1231,7 +1230,8 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Immediately try to execute — only one block step (~10s) has passed; min_delay is 30s.
+    // Immediately try to execute: the unlock block is 30 blocks past the proposal's expiration
+    // block.
     let result = execute_script_with_signers(
         &mock_chain,
         account_id,
@@ -1245,6 +1245,147 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
     )
     .await?;
     assert_transaction_executor_error!(result, ERR_TX_STILL_TIMELOCKED);
+
+    Ok(())
+}
+
+/// The unlock block counts from the latest block a proposal can be included in, not from the
+/// reference block the proposer picked. Otherwise a proposer could reference a stale block so that
+/// `min_delay` is already spent by the time the proposal lands, leaving the other approvers almost
+/// no time to cancel.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    // A wide propose window, so a proposal referencing a block well in the past is still
+    // includable.
+    let min_delay = 30u32;
+    let propose_expiration_delta = 20u16;
+    let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
+    let config = AuthMultisigSmartConfig::new(
+        ApproverSet::new(approvers, 2)?,
+        DelayedExecutionPolicy::new(min_delay, propose_expiration_delta)?,
+    )
+    .with_proc_policies(vec![(
+        AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+        ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
+    )])?;
+    let mut multisig_account = AccountBuilder::new([0; 32])
+        .with_component(AuthMultisigSmart::new(config)?)
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build_existing()?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+    mock_chain.prove_until_block(20u32)?;
+
+    let execute_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
+            drop
+        end
+        ",
+    )?;
+    let bound_block = mock_chain.latest_block_header().block_num();
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(1000))
+        .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
+    let tx_summary = mock_chain
+        .build_transaction(account_id)
+        .tx_script(execute_script.clone())
+        .multisig_auth_args(exec_auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let target_commitment = tx_summary.as_ref().to_commitment();
+
+    // Propose against a reference block ten blocks in the past, as a proposer trying to pre-spend
+    // the delay would.
+    let stale_block_num = bound_block.as_u32() - 10;
+    let propose_script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{target_commitment}
+            call.::miden::standards::components::auth::multisig_smart::propose_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let signing = SigningInputs::Blind(target_commitment);
+    let sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing)
+        .await?;
+    let propose_tx = mock_chain
+        .build_transaction(account_id)
+        .tx_script(propose_script)
+        .reference_block(stale_block_num)
+        .multisig_auth_args(MultisigAuthArgs::new(stale_block_num.into(), salt(1001)))
+        .add_signature(public_keys[0].to_commitment(), target_commitment, sig)
+        .build()?
+        .execute()
+        .await
+        .expect("a proposal referencing a stale block within the propose window should land");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // The unlock block is anchored on the proposal's expiration block, not on the stale reference.
+    let proposal_entry = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    let elements: &[Felt] = proposal_entry.as_ref();
+    let expected_unlock = stale_block_num + u32::from(propose_expiration_delta) + min_delay;
+    assert_eq!(elements[0].as_canonical_u64(), u64::from(expected_unlock));
+    assert_eq!(elements[1].as_canonical_u64(), u64::from(stale_block_num));
+
+    // Right after inclusion the delay has not elapsed, even though the stale reference block is
+    // more than `min_delay` blocks in the past...
+    let early = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        execute_script.clone(),
+        exec_auth_args,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?;
+    assert_transaction_executor_error!(early, ERR_TX_STILL_TIMELOCKED);
+
+    // ...and the proposal unlocks once the chain reaches the unlock block.
+    mock_chain.prove_until_block(expected_unlock)?;
+    execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        execute_script,
+        exec_auth_args,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("execution should succeed once the unlock block is reached");
 
     Ok(())
 }
@@ -1328,10 +1469,8 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         .expect("tx proposals slot should exist");
     assert_ne!(stored_before, Word::empty(), "proposal must be written to storage");
 
-    // Fast-forward past `min_delay` (30s). `prove_next_block_at` writes the next block with the
-    // given timestamp, so we move the chain to well past unlock time in a single step.
-    let target_timestamp = mock_chain.latest_block_header().timestamp() + 60;
-    mock_chain.prove_next_block_at(target_timestamp)?;
+    // Fast-forward past the unlock block (`bound_block + propose_expiration_delta + min_delay`).
+    mock_chain.prove_until_block(bound_block + 40u32)?;
 
     // Execute. Threshold = `max(default=2, delay=1) = 2`, so both keys sign.
     let executed_tx = execute_script_with_signers(
@@ -1603,8 +1742,8 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel(
     Ok(())
 }
 
-/// After `update_delayed_execution_policy` rotates `min_delay`, subsequent proposals must compute
-/// `unlock_timestamp` using the new `min_delay`, not the previous one.
+/// After `update_delayed_execution_policy` rotates the policy, subsequent proposals must compute
+/// `unlock_block` from the new `min_delay` and `propose_expiration_delta`, not the previous ones.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
@@ -1662,8 +1801,8 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
         "stored DelayedExecutionPolicy must reflect the rotated values"
     );
 
-    // A subsequent proposal uses the new `min_delay`. Propose a commitment and verify
-    // `unlock_timestamp - proposal_timestamp == new_min_delay`.
+    // A subsequent proposal uses the new policy. Propose a commitment and verify
+    // `unlock_block - proposal_block == new_expiration_delta + new_min_delay`.
     let target_commitment = Word::from([Felt::from(801u32); 4]);
     let propose_tx = execute_delay_action(
         &mock_chain,
@@ -1686,14 +1825,14 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
             StorageMapKey::from_raw(target_commitment),
         )
         .expect("tx proposals slot should exist");
-    // Entry layout: [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
+    // Entry layout: [unlock_block, proposal_block, min_cancel_sigs, 0]
     let elements: &[Felt] = proposal_entry.as_ref();
-    let unlock_ts = elements[0].as_canonical_u64();
-    let proposal_ts = elements[1].as_canonical_u64();
+    let unlock_block = elements[0].as_canonical_u64();
+    let proposal_block = elements[1].as_canonical_u64();
     assert_eq!(
-        unlock_ts - proposal_ts,
-        new_min_delay as u64,
-        "post-rotation propose must use the new min_delay"
+        unlock_block - proposal_block,
+        (new_expiration_delta + new_min_delay) as u64,
+        "post-rotation propose must use the new policy"
     );
 
     Ok(())
@@ -1907,8 +2046,7 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    let target_timestamp = mock_chain.latest_block_header().timestamp() + 60;
-    mock_chain.prove_next_block_at(target_timestamp)?;
+    mock_chain.prove_until_block(bound_block + 40u32)?;
 
     // ...and the same single approver can execute it once the delay elapsed, because the delayed
     // threshold is 1 and the propose floor no longer forces three signatures.
@@ -2007,8 +2145,7 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    let target_timestamp = mock_chain.latest_block_header().timestamp() + 60;
-    mock_chain.prove_next_block_at(target_timestamp)?;
+    mock_chain.prove_until_block(bound_block + 40u32)?;
 
     // The delayed threshold of 3 is still enforced, so the lone proposer cannot execute.
     let under_threshold = execute_script_with_signers(
@@ -2279,8 +2416,7 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    let target_timestamp = mock_chain.latest_block_header().timestamp() + 60;
-    mock_chain.prove_next_block_at(target_timestamp)?;
+    mock_chain.prove_until_block(bound_block + 40u32)?;
 
     let result = execute_script_with_signers(
         &mock_chain,

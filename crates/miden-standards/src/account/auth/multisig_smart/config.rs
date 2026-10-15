@@ -2,9 +2,11 @@ use miden_protocol::errors::AccountError;
 
 /// Configures the proposal delay rules used by smart multisig timelock flows.
 ///
-/// `min_delay` (in seconds) defines how long a proposal must wait before execution, while
-/// `propose_expiration_delta` (in blocks) controls the transaction expiration delta applied to
-/// proposal transactions.
+/// `propose_expiration_delta` bounds how many blocks after its reference block a proposal
+/// transaction stays includable, and `min_delay` is the number of blocks a proposal must then wait
+/// before execution. The wait counts from the latest block the proposal can be included in, so a
+/// proposer cannot shorten it by referencing a stale block: the proposal unlocks at
+/// `reference_block + propose_expiration_delta + min_delay`.
 ///
 /// Both fields must be non-zero.
 ///
