@@ -766,7 +766,7 @@ async fn nft_public_getters() -> anyhow::Result<()> {
             assert_eq.err=\"expected token symbol to be EC\"
 
             # the token base URI is immutable by default
-            call.::miden::standards::faucets::non_fungible::is_token_base_uri_mutable
+            call.::miden::standards::faucets::non_fungible::token_base_uri::is_token_base_uri_mutable
             eq.0 assert.err=\"expected token base URI to be immutable\"
         end
     "
@@ -858,7 +858,7 @@ fn build_set_token_base_uri_tx(
             dropw push.{commitment}
             # => [TOKEN_BASE_URI_HASH, pad(16)]
 
-            call.::miden::standards::faucets::non_fungible::set_token_base_uri
+            call.::miden::standards::faucets::non_fungible::token_base_uri::set_token_base_uri
             # => [pad(20)]
 
             dropw

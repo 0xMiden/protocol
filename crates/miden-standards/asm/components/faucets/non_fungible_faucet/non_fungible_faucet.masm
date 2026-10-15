@@ -21,7 +21,7 @@ pub use {
 pub use {
     is_token_base_uri_mutable,
     set_token_base_uri,
-} from miden::standards::faucets::non_fungible
+} from miden::standards::faucets::non_fungible::token_base_uri
 
 # Code inspection
 pub use {has_procedure} from miden::standards::inspection::code_inspection
