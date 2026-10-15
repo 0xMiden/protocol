@@ -124,15 +124,13 @@ const EXEC_AMT_OFFERED = 0
 const EXEC_AMT_MIN_REQUESTED = 1
 const EXEC_AMT_PAYOUT_TOTAL = 2
 const EXEC_AMT_PAYOUT_WALLET = 3
-const EXEC_AMT_PAYOUT_NOTES = 4
-const EXEC_OFFERED_FAUCET_SUFFIX = 5
-const EXEC_OFFERED_FAUCET_PREFIX = 6
-const EXEC_AMT_FROM_WALLET = 7
-const EXEC_AMT_FROM_NOTES = 8
-const EXEC_AMT_FILL = 9
-const EXEC_AMT_PAYBACK = 10
-const EXEC_AMT_SURPLUS = 11
-const EXEC_AMT_FILL_FROM_WALLET = 12
+const EXEC_OFFERED_FAUCET_SUFFIX = 4
+const EXEC_OFFERED_FAUCET_PREFIX = 5
+const EXEC_AMT_FROM_WALLET = 6
+const EXEC_AMT_FROM_NOTES = 7
+const EXEC_AMT_FILL = 8
+const EXEC_AMT_PAYBACK = 9
+const EXEC_AMT_SURPLUS = 10
 
 # Local memory for the parent's PswapAttachment word [amount, order_id, depth, surplus]:
 # write the word at PARENT_ATTACHMENT_PTR, read back only the depth at DEPTH_OFFSET.
@@ -186,9 +184,9 @@ end
 # =================================================================================================
 
 #! Computes `floor((offered * fill_amount) / fill_reference)`: the share of `offered` that
-#! `fill_amount` out of `fill_reference` stands for. `execute_pswap` uses it for a payout
-#! (`fill_reference = min_requested_amount`) and to split a fill between its payers
-#! (`offered = fill`, `fill_reference = payback`); in both, `fill_amount <= fill_reference`.
+#! `fill_amount` out of `fill_reference` stands for. `execute_pswap` uses it for the payout
+#! (`fill_reference = min_requested_amount`) and for the notes' share of it
+#! (`offered = payout`, `fill_reference = payback`); in both, `fill_amount <= fill_reference`.
 #!
 #! The intermediate product `offered * fill_amount` is computed as a full
 #! u128 via `u64::widening_mul`, then divided by `fill_reference` (extended to
@@ -853,9 +851,9 @@ end
 #! `surplus` is above the order's own price and the rest is the fill, which alone decides what the
 #! order gives up. A fill above `min_requested_amount` keeps the order's price as well: the excess
 #! also counts as surplus. So `fill = min(payback - surplus, min_requested_amount)`, and:
-#! - the order gives up `offered * fill / min_requested_amount`, split between the payers in
-#!   proportion to what each paid: the vault's share goes to the consumer, the notes' share stays in
-#!   the transaction for the notes that paid it;
+#! - the order gives up `payout = offered * fill / min_requested_amount`, rounded down. The notes'
+#!   share, `payout * from_notes / payback` rounded down, stays in the transaction for the notes
+#!   that paid it, and the consumer receives the rest;
 #! - a fill below `min_requested_amount` leaves a remainder note with the rest.
 #!
 #! A per-fill floor rejects any fill below `min(min_fill_step, min_requested_amount)`. Clamping to
@@ -865,12 +863,11 @@ end
 #! Inputs:  [from_wallet, from_notes, surplus]
 #! Outputs: []
 #!
-@locals(13)
+@locals(11)
 # EXEC_AMT_OFFERED                : amt_offered
 # EXEC_AMT_MIN_REQUESTED          : amt_min_requested
 # EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
 # EXEC_AMT_PAYOUT_WALLET          : the vault's share of the payout
-# EXEC_AMT_PAYOUT_NOTES           : the notes' share of the payout
 # EXEC_OFFERED_FAUCET_SUFFIX      : offered_faucet_suffix
 # EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
 # EXEC_AMT_FROM_WALLET            : amt_from_wallet
@@ -878,7 +875,6 @@ end
 # EXEC_AMT_FILL                   : amt_fill (at the order's own price)
 # EXEC_AMT_PAYBACK                : amt_payback = from_wallet + from_notes
 # EXEC_AMT_SURPLUS                : amt_surplus = payback - fill
-# EXEC_AMT_FILL_FROM_WALLET       : the vault's share of the fill
 proc execute_pswap(from_wallet: AssetAmount, from_notes: AssetAmount, surplus: felt)
     loc_store.EXEC_AMT_FROM_WALLET
     loc_store.EXEC_AMT_FROM_NOTES
@@ -965,57 +961,33 @@ proc execute_pswap(from_wallet: AssetAmount, from_notes: AssetAmount, surplus: f
     assertz.err=ERR_PSWAP_FILL_BELOW_MINIMUM
     # => []
 
-    # The vault's share of the fill: fill * from_wallet / payback, rounded down. That is the
-    # whole fill when the notes paid nothing, so the division is skipped.
-    loc_load.EXEC_AMT_FROM_NOTES eq.0
-    # => [notes_paid_nothing]
+    # The order gives up offered * fill / min_requested, rounded down.
+    loc_load.EXEC_AMT_FILL loc_load.EXEC_AMT_MIN_REQUESTED loc_load.EXEC_AMT_OFFERED
+    # => [offered, min_requested, fill]
+
+    exec.calculate_output_amount
+    # => [payout_total]
+
+    dup loc_store.EXEC_AMT_PAYOUT_TOTAL
+    # => [payout_total]
+
+    # The notes' share: payout_total * from_notes / payback, rounded down; none if they paid none.
+    loc_load.EXEC_AMT_FROM_NOTES dup eq.0
+    # => [notes_paid_nothing, from_notes, payout_total]
 
     if.true
-        loc_load.EXEC_AMT_FILL
-        # => [fill_from_wallet]
+        # from_notes is the zero share.
+        swap drop
     else
-        loc_load.EXEC_AMT_FROM_WALLET
-        loc_load.EXEC_AMT_PAYBACK
-        loc_load.EXEC_AMT_FILL
-        # => [fill, payback, from_wallet]
+        loc_load.EXEC_AMT_PAYBACK movup.2
+        # => [payout_total, payback, from_notes]
 
         exec.calculate_output_amount
-        # => [fill_from_wallet]
     end
-    # => [fill_from_wallet]
-
-    dup loc_store.EXEC_AMT_FILL_FROM_WALLET
-    # => [fill_from_wallet]
-
-    # The vault's share of the payout.
-    loc_load.EXEC_AMT_MIN_REQUESTED
-    loc_load.EXEC_AMT_OFFERED
-    # => [offered, min_requested, fill_from_wallet]
-
-    exec.calculate_output_amount
-    # => [payout_wallet]
-
-    loc_store.EXEC_AMT_PAYOUT_WALLET
-    # => []
-
-    # The notes' share of the payout. Cannot underflow: fill_from_wallet <= fill.
-    loc_load.EXEC_AMT_FILL loc_load.EXEC_AMT_FILL_FROM_WALLET sub
-    # => [fill_from_notes]
-
-    loc_load.EXEC_AMT_MIN_REQUESTED
-    loc_load.EXEC_AMT_OFFERED
-    # => [offered, min_requested, fill_from_notes]
-
-    exec.calculate_output_amount
     # => [payout_notes]
 
-    loc_store.EXEC_AMT_PAYOUT_NOTES
-    # => []
-
-    loc_load.EXEC_AMT_PAYOUT_WALLET loc_load.EXEC_AMT_PAYOUT_NOTES add
-    # => [total_payout]
-
-    loc_store.EXEC_AMT_PAYOUT_TOTAL
+    # The vault takes the rest. Cannot underflow: payout_notes <= payout_total.
+    loc_load.EXEC_AMT_PAYOUT_TOTAL swap sub loc_store.EXEC_AMT_PAYOUT_WALLET
     # => []
 
     # The payback P2ID carries the payback, not the payout, and records the surplus.

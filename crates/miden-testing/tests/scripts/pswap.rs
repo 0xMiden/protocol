@@ -1478,8 +1478,8 @@ async fn pswap_netting_pays_a_surplus_from_the_other_order() -> anyhow::Result<(
 
 /// One payback funded from both the filler's vault and another order, with a surplus. Charlie
 /// fills Alice's 100 USDC for 50 ETH with 13 ETH of his own and 38 of Bob's (payback 51, surplus
-/// 1), and Bob's 40 ETH for 80 USDC with 4 USDC of his own and 76 of Alice's. What each order
-/// gives up splits between its payers in proportion: 24 USDC and 2 ETH reach Charlie.
+/// 1), and Bob's 40 ETH for 77 USDC with 3 USDC of his own and 74 of Alice's. Each order's notes
+/// take `payout * from_notes / payback`, rounded down, and Charlie the rest: 26 USDC and 2 ETH.
 #[tokio::test]
 async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1504,7 +1504,7 @@ async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()>
         &mut builder,
         bob,
         eth(40)?,
-        usdc(80)?,
+        usdc(77)?,
         NoteType::Public,
         PswapPayback::Public { creator_account_id: bob },
     )?;
@@ -1513,7 +1513,7 @@ async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()>
     let (alice_payback, _) =
         alice_pswap.execute(charlie.id(), Some(eth(13)?), Some(eth(38)?), amount(1)?)?;
     let (bob_payback, _) =
-        bob_pswap.execute(charlie.id(), Some(usdc(4)?), Some(usdc(76)?), AssetAmount::ZERO)?;
+        bob_pswap.execute(charlie.id(), Some(usdc(3)?), Some(usdc(74)?), AssetAmount::ZERO)?;
     let executed = mock_chain
         .build_transaction(charlie.id())
         .authenticated_input_notes([alice_note.id(), bob_note.id()])
@@ -1522,7 +1522,7 @@ async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()>
                 alice_note.id(),
                 PswapNote::create_fill_args(amount(13)?, amount(38)?, amount(1)?),
             ),
-            (bob_note.id(), fill_args(4, 76)?),
+            (bob_note.id(), fill_args(3, 74)?),
         ]))
         .expected_output_notes(vec![alice_payback.clone(), bob_payback.clone()])
         .build()?
@@ -1532,9 +1532,9 @@ async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()>
     let output_notes = executed.output_notes();
     assert_output_note(output_notes, &alice_payback);
     assert_output_note(output_notes, &bob_payback);
-    // Charlie paid 13 ETH and 4 USDC, and received 24 USDC (12/50 of Alice's 100) and 2 ETH
-    // (4/80 of Bob's 40).
-    assert_vault_patch(executed.account_patch().vault(), [eth(9)?, usdc(30)?]);
+    // Charlie paid 13 ETH and 3 USDC, and received 26 USDC (100 less the notes' 100 * 38 / 51)
+    // and 2 ETH (40 less the notes' 40 * 74 / 77).
+    assert_vault_patch(executed.account_patch().vault(), [eth(9)?, usdc(33)?]);
 
     Ok(())
 }
@@ -1545,7 +1545,7 @@ async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()>
 /// inflight into Alice's note_fill leg, never touching Charlie's vault.
 #[rstest]
 #[case::full_fill(20, 30, 60, 40)]
-#[case::over_fill(20, 50, 72, 28)]
+#[case::over_fill(20, 50, 71, 29)]
 #[tokio::test]
 async fn pswap_note_combined_account_fill_and_note_fill_test(
     #[case] charlie_fill: u64,

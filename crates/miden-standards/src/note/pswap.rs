@@ -721,21 +721,11 @@ impl PswapNote {
             return Err(NoteError::other("PSWAP fill amount is below the minimum fill step"));
         }
 
-        // What the order gives up splits between the payers in proportion to what each paid.
+        // What the order gives up. The notes' share of it is `payout * from_notes / payback`,
+        // rounded down, and the consumer receives the rest.
         let total_offered_amount = self.offered_asset.amount().as_u64();
-        let from_wallet_amount = from_wallet.map_or(0, |asset| asset.amount().as_u64());
-        let fill_from_wallet = Self::calculate_output_amount(fill, payback, from_wallet_amount)?;
-        let payout_wallet = Self::calculate_output_amount(
-            total_offered_amount,
-            min_requested_amount,
-            fill_from_wallet,
-        )?;
-        let payout_notes = Self::calculate_output_amount(
-            total_offered_amount,
-            min_requested_amount,
-            fill - fill_from_wallet,
-        )?;
-        let offered_amount_for_fill = payout_wallet + payout_notes;
+        let offered_amount_for_fill =
+            Self::calculate_output_amount(total_offered_amount, min_requested_amount, fill)?;
 
         let payback_note = self.create_payback_note(consumer_account_id, payback_asset, surplus)?;
 
