@@ -88,8 +88,8 @@ mod tests {
     use super::*;
     use crate::vectors::{BnVector, load, selected};
 
-    /// The accept rows, with their count pinned so an artifact edit cannot thin the coverage
-    /// below what these tests expect.
+    /// The accept rows, with their count pinned so an artifact edit cannot change the rows these
+    /// tests cover without being noticed.
     fn accepts() -> Vec<&'static BnVector> {
         selected(load().families.bn.iter().filter(|x| x.kind == "accept"), 3, "bn accept rows")
     }

@@ -267,8 +267,8 @@ mod tests {
     use super::*;
     use crate::vectors::{MiVector, load, selected};
 
-    /// The accept rows, with their count pinned so an artifact edit cannot thin the coverage
-    /// below what these tests expect.
+    /// The accept rows, with their count pinned so an artifact edit cannot change the rows these
+    /// tests cover without being noticed.
     fn accepts() -> Vec<&'static MiVector> {
         selected(load().families.mi.iter().filter(|v| v.kind == "accept"), 2, "mi accept rows")
     }

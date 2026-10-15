@@ -232,9 +232,9 @@ static FILE: OnceLock<VectorFile> = OnceLock::new();
 /// Collects the rows a test selected from a family and checks that their number is the one the
 /// test expects.
 ///
-/// A filter that matches nothing, or fewer rows than the artifact is meant to carry, fails here
-/// instead of passing silently with an empty loop. Every test that narrows a family by `kind`,
-/// `id` or an optional field goes through this, so adding or dropping a vector has to be
+/// A filter that matches nothing, or a different number of rows than the test pins, fails here
+/// instead of passing silently with an empty or shortened loop. The tests that narrow a family by
+/// `kind`, `id` or an optional field go through this, so adding or dropping a vector has to be
 /// acknowledged in the test that covers it.
 pub fn selected<'a, T>(
     rows: impl IntoIterator<Item = &'a T>,
