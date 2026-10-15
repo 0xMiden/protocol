@@ -13,7 +13,7 @@ use crate::account::auth::{
     GuardianConfig,
 };
 
-/// Convenience constructor for a multisig user-account fungible faucet auth component: an
+/// Convenience constructor for a multisig user-account faucet auth component: an
 /// [`AuthMultisig`] over `approvers` with the given `default_threshold`. Every authority-gated
 /// setter is protected by that threshold automatically: [`AuthMultisig`] is fail-closed, so a
 /// called procedure with no per-procedure override contributes the default threshold and cannot
@@ -31,9 +31,9 @@ pub fn user_faucet_multisig(
     AuthMultisig::new(config)
 }
 
-/// Convenience constructor for a guardian-backed multisig user-account fungible faucet auth
-/// component: an [`AuthGuardedMultisig`] over `approvers` with the given `default_threshold` and
-/// `guardian`. Every authority-gated setter is protected by that threshold automatically:
+/// Convenience constructor for a guardian-backed multisig user-account faucet auth component: an
+/// [`AuthGuardedMultisig`] over `approvers` with the given `default_threshold` and `guardian`.
+/// Every authority-gated setter is protected by that threshold automatically:
 /// [`AuthGuardedMultisig`] is fail-closed, so a called procedure with no per-procedure override
 /// contributes the default threshold and cannot be authorized with fewer signatures. No
 /// per-procedure overrides are configured here.
