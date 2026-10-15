@@ -142,10 +142,6 @@ end
 
 #! Returns `propose_expiration_delta` from the initial `DELAY_CONFIG_SLOT`.
 #!
-#! Callers stage a proposal by piping the returned delta through
-#! `tx::update_expiration_block_delta` so that proposal-bearing transactions expire within the
-#! policy-defined window.
-#!
 #! Inputs:  []
 #! Outputs: [propose_expiration_delta]
 #!
