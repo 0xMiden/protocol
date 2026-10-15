@@ -77,8 +77,7 @@ pub proc update_delayed_execution_policy(min_delay: u32, propose_expiration_delt
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
     # => [min_delay, propose_expiration_delta]
 
-    # Validate propose_expiration_delta on a copy so the stored layout stays in place; the final
-    # range check consumes the copy.
+    # Assert propose_expiration_delta != 0.
     dup.1 u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
     # => [propose_expiration_delta, min_delay, propose_expiration_delta]
