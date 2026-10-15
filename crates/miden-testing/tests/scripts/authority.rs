@@ -22,8 +22,8 @@ use miden_standards::errors::standards::{
     ERR_AUTHORITY_FROZEN,
     ERR_INVALID_ROLE_SYMBOL,
     ERR_SENDER_LACKS_ROLE,
-    ERR_SENDER_NOT_ROLE_ADMIN,
     ERR_SENDER_NOT_OWNER,
+    ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_testing::{
     AccountState,
