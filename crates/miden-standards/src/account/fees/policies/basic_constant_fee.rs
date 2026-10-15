@@ -170,6 +170,25 @@ impl BasicConstantFeePolicy {
         &self.fee_schedule
     }
 
+    /// Returns the key under which the fee for notes with the given script root is stored in the
+    /// fee schedule map.
+    pub fn fee_schedule_key(script_root: NoteScriptRoot) -> StorageMapKey {
+        StorageMapKey::new(script_root.as_word())
+    }
+
+    /// Decodes an entry of the fee schedule map, returning `None` if no fee is scheduled under its
+    /// key.
+    ///
+    /// Mirrors the MASM `compute_note_fee`, which aborts fee estimation for an entry whose
+    /// set-marker is not 1, as it is for the zero word an unset key reads as.
+    pub fn fee_from_schedule_entry(entry: Word) -> Option<AssetAmount> {
+        if entry[3] != FEE_SCHEDULE_ENTRY_MARKER {
+            return None;
+        }
+
+        AssetAmount::new(entry[0].as_canonical_u64()).ok()
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new([(
@@ -192,10 +211,9 @@ impl BasicConstantFeePolicy {
 
 impl From<BasicConstantFeePolicy> for AccountComponent {
     fn from(policy: BasicConstantFeePolicy) -> Self {
-        let entries = policy
-            .fee_schedule
-            .into_iter()
-            .map(|(root, fee)| (StorageMapKey::new(root.as_word()), fee_schedule_entry(fee)));
+        let entries = policy.fee_schedule.into_iter().map(|(root, fee)| {
+            (BasicConstantFeePolicy::fee_schedule_key(root), fee_schedule_entry(fee))
+        });
         let fee_schedule_map = StorageMap::with_entries(entries)
             .expect("fee schedule entries should produce a valid storage map");
         let fee_schedule_slot = StorageSlot::with_map(
@@ -256,6 +274,35 @@ mod tests {
             Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]),
             "an explicit 0-fee entry should survive as a non-zero word"
         );
+
+        Ok(())
+    }
+
+    /// Check that the stored fee schedule entries decode back into the scheduled fees, and that an
+    /// unset key decodes as unscheduled.
+    #[test]
+    fn schedule_entries_decode_into_scheduled_fees() -> anyhow::Result<()> {
+        let script_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let free_script_root = NoteScriptRoot::from_array([5, 6, 7, 8]);
+        let unscheduled_script_root = NoteScriptRoot::from_array([9, 10, 11, 12]);
+        let fee = AssetAmount::new(500)?;
+
+        let policy = BasicConstantFeePolicy::new()
+            .with_fees([(script_root, fee), (free_script_root, AssetAmount::ZERO)]);
+
+        let component = AccountComponent::from(policy);
+        let StorageSlotContent::Map(map) = component.storage_slots()[0].content() else {
+            panic!("fee schedule slot must be a map");
+        };
+        let scheduled_fee = |root| {
+            BasicConstantFeePolicy::fee_from_schedule_entry(
+                map.get(&BasicConstantFeePolicy::fee_schedule_key(root)),
+            )
+        };
+
+        assert_eq!(scheduled_fee(script_root), Some(fee));
+        assert_eq!(scheduled_fee(free_script_root), Some(AssetAmount::ZERO));
+        assert_eq!(scheduled_fee(unscheduled_script_root), None);
 
         Ok(())
     }

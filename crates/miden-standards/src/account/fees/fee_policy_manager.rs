@@ -9,6 +9,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountProcedureRoot,
+    AccountStorageHeader,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -56,7 +57,7 @@ static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 #[derive(Debug, Clone)]
 pub struct FeePolicyManager {
     fee_asset_id: AssetId,
-    active_fee_policy_root: AccountProcedureRoot,
+    initial_fee_policy_root: AccountProcedureRoot,
     policies: BTreeMap<AccountProcedureRoot, Vec<AccountComponent>>,
 }
 
@@ -75,17 +76,17 @@ impl FeePolicyManager {
         active_fee_policy: FeePolicy,
     ) -> Self {
         let fee_asset_id = AssetId::new_fungible(fee_faucet_id);
-        let active_fee_policy_root = active_fee_policy.root();
+        let initial_fee_policy_root = active_fee_policy.root();
 
         let mut policies: BTreeMap<AccountProcedureRoot, Vec<AccountComponent>> = BTreeMap::new();
-        policies.insert(active_fee_policy_root, active_fee_policy.into_iter().collect());
+        policies.insert(initial_fee_policy_root, active_fee_policy.into_iter().collect());
         for (root, policy) in allowed_fee_policies {
             policies.entry(root).or_insert_with(|| policy.into_iter().collect());
         }
 
         Self {
             fee_asset_id,
-            active_fee_policy_root,
+            initial_fee_policy_root,
             policies,
         }
     }
@@ -110,12 +111,15 @@ impl FeePolicyManager {
         self.fee_asset_id
     }
 
-    /// Returns the active fee policy procedure root.
-    pub fn active_fee_policy(&self) -> AccountProcedureRoot {
-        self.active_fee_policy_root
+    /// Returns the procedure root of the fee policy that is active once the account is built.
+    ///
+    /// The account may switch to another allowed policy via `set_fee_policy` after deployment; use
+    /// [`Self::active_fee_policy`] to read the policy a deployed account uses now.
+    pub fn initial_fee_policy(&self) -> AccountProcedureRoot {
+        self.initial_fee_policy_root
     }
 
-    /// Returns all allowed fee policy procedure roots (active + reserved).
+    /// Returns all allowed fee policy procedure roots (initial + reserved).
     pub fn allowed_fee_policies(&self) -> Vec<AccountProcedureRoot> {
         self.policies.keys().copied().collect()
     }
@@ -141,6 +145,25 @@ impl FeePolicyManager {
     /// Returns the storage slot holding the ID of the asset fees are charged in.
     pub fn fee_asset_id_slot() -> &'static StorageSlotName {
         &FEE_ASSET_ID_SLOT_NAME
+    }
+
+    /// Reads the active fee policy procedure root from a deployed account's storage header, or
+    /// returns `None` if the account has no fee policy manager.
+    pub fn active_fee_policy(header: &AccountStorageHeader) -> Option<AccountProcedureRoot> {
+        header
+            .find_slot_header_by_name(Self::active_fee_policy_slot())
+            .map(|slot| AccountProcedureRoot::from_raw(slot.value()))
+    }
+
+    /// Reads the ID of the asset fees are charged in from a deployed account's storage header, or
+    /// returns `None` if the account has no fee policy manager.
+    ///
+    /// The fee asset cannot be changed after deployment, so this is always the
+    /// [`Self::fee_asset_id`] the account's manager was built with.
+    pub fn fee_asset_id_from_storage(header: &AccountStorageHeader) -> Option<AssetId> {
+        header
+            .find_slot_header_by_name(Self::fee_asset_id_slot())
+            .and_then(|slot| AssetId::try_from(slot.value()).ok())
     }
 
     /// Returns the schema entries for the three fee-policy storage slots.
@@ -195,7 +218,7 @@ impl FeePolicyManager {
         [
             StorageSlot::with_value(
                 ACTIVE_FEE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_fee_policy().as_word(),
+                self.initial_fee_policy().as_word(),
             ),
             StorageSlot::with_map(ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME.clone(), allowed_map),
             StorageSlot::with_value(FEE_ASSET_ID_SLOT_NAME.clone(), self.fee_asset_id().to_word()),
@@ -208,8 +231,8 @@ impl FeePolicyManager {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::AccountId;
     use miden_protocol::account::component::AccountComponentMetadata;
+    use miden_protocol::account::{AccountId, AccountStorage};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
@@ -271,5 +294,32 @@ mod tests {
                 .any(|component| component.has_procedure(AuthNetworkAccount::get_fee_policy_root())),
             "the fee-policy procedures are exported by the auth component, not by the manager"
         );
+    }
+
+    /// The configuration read back from the storage header is the one the manager was built with,
+    /// and reads from the storage of an account without a manager find nothing.
+    #[test]
+    fn configuration_reads_back_from_storage_header() -> anyhow::Result<()> {
+        let fee_policy_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id())
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
+            .build();
+
+        let header =
+            AccountStorage::new(fee_policy_manager.to_storage_slots().to_vec())?.to_header();
+        assert_eq!(
+            FeePolicyManager::active_fee_policy(&header),
+            Some(BasicConstantFeePolicy::root())
+        );
+        assert_eq!(
+            FeePolicyManager::fee_asset_id_from_storage(&header),
+            Some(fee_policy_manager.fee_asset_id())
+        );
+
+        let empty_header = AccountStorage::new(Vec::new())?.to_header();
+        assert_eq!(FeePolicyManager::active_fee_policy(&empty_header), None);
+        assert_eq!(FeePolicyManager::fee_asset_id_from_storage(&empty_header), None);
+
+        Ok(())
     }
 }
