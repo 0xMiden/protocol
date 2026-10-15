@@ -32,3 +32,9 @@ message Asset {
   AssetId asset_id = 1;
   primitives.Word value = 2;
 }
+
+// The complete set of assets held by an account. Its size is unbounded, so a consumer at a trust
+// boundary must cap the message size before it decodes one.
+message AssetVault {
+  repeated Asset assets = 1;
+}

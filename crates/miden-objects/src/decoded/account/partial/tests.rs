@@ -28,6 +28,19 @@ use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
 
 #[test]
+fn partial_account_rejects_unspecified_version() {
+    let message = proto::account::PartialAccount {
+        version: proto::account::AccountVersion::Unspecified as i32,
+        ..proto::account::PartialAccount::from(partial_account())
+    };
+
+    let decoded = message.decode_fields().unwrap();
+
+    assert_eq!(decoded.version, proto::account::AccountVersion::Unspecified);
+    assert_eq!(decoded.verify().unwrap_err().to_string(), "account version is unspecified");
+}
+
+#[test]
 fn partial_account_preserves_seed_validation_source() {
     let mut message = proto::account::PartialAccount::from(partial_account());
     message.seed = Some(Word::empty().into());

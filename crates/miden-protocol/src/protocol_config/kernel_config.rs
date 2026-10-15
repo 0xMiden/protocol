@@ -135,7 +135,7 @@ mod tests {
     use alloc::vec;
 
     use assert_matches::assert_matches;
-    use miden_crypto::rand::test_utils::rand_value;
+    use rand::random;
 
     use super::*;
 
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip() -> anyhow::Result<()> {
-        let config = KernelConfig::new(rand_value::<Word>(), vec![rand_value::<Word>(); 3])?;
+        let config = KernelConfig::new(random::<Word>(), vec![random::<Word>(); 3])?;
 
         let deserialized = KernelConfig::read_from_bytes(&config.to_bytes())?;
         assert_eq!(config, deserialized);

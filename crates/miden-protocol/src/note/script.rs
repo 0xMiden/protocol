@@ -1,8 +1,6 @@
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
-use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
 use miden_crypto_derive::WordWrapper;
@@ -12,6 +10,7 @@ use miden_processor::LoadedMastForest;
 use super::Felt;
 use crate::assembly::Path;
 use crate::assembly::mast::{MastForest, MastNodeId};
+use crate::crypto::utils::{bytes_to_elements_with_padding, padded_elements_to_bytes};
 use crate::errors::NoteError;
 use crate::script::MastForestScript;
 use crate::utils::serde::{
@@ -171,6 +170,29 @@ impl NoteScript {
     pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
         Self(self.0.with_advice_map(advice_map))
     }
+
+    // CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the encoding of this note script as field elements.
+    ///
+    /// The serialized script is packed into field elements, 7 bytes per element.
+    pub fn to_elements(&self) -> Vec<Felt> {
+        bytes_to_elements_with_padding(&self.to_bytes())
+    }
+
+    /// Decodes a [`NoteScript`] from the elements produced by [`NoteScript::to_elements`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `elements` do not encode a valid note script.
+    pub fn try_from_elements(elements: &[Felt]) -> Result<Self, DeserializationError> {
+        let bytes = padded_elements_to_bytes(elements).ok_or_else(|| {
+            DeserializationError::InvalidValue("encoded note script is not padded".into())
+        })?;
+
+        Self::read_from_bytes(&bytes)
+    }
 }
 
 impl PartialEq for NoteScript {
@@ -181,92 +203,9 @@ impl PartialEq for NoteScript {
 
 impl Eq for NoteScript {}
 
-// CONVERSIONS INTO NOTE SCRIPT
-// ================================================================================================
-
-impl From<&NoteScript> for Vec<Felt> {
-    fn from(script: &NoteScript) -> Self {
-        let mut bytes = script.0.mast().to_bytes();
-        let len = bytes.len();
-
-        // Pad the data so that it can be encoded with u32
-        let missing = if !len.is_multiple_of(4) { 4 - (len % 4) } else { 0 };
-        bytes.resize(bytes.len() + missing, 0);
-
-        let final_size = 2 + bytes.len();
-        let mut result = Vec::with_capacity(final_size);
-
-        // Push the length, this is used to remove the padding later
-        result.push(Felt::from(u32::from(script.0.entrypoint())));
-        result.push(Felt::new_unchecked(len as u64));
-
-        // A Felt can not represent all u64 values, so the data is encoded using u32.
-        let mut encoded: &[u8] = &bytes;
-        while encoded.len() >= 4 {
-            let (data, rest) =
-                encoded.split_first_chunk::<4>().expect("The length has been checked");
-            let number = u32::from_le_bytes(*data);
-            result.push(Felt::from(number));
-
-            encoded = rest;
-        }
-
-        result
-    }
-}
-
-impl From<NoteScript> for Vec<Felt> {
-    fn from(value: NoteScript) -> Self {
-        (&value).into()
-    }
-}
-
 impl AsRef<NoteScript> for NoteScript {
     fn as_ref(&self) -> &NoteScript {
         self
-    }
-}
-
-// CONVERSIONS FROM NOTE SCRIPT
-// ================================================================================================
-
-impl TryFrom<&[Felt]> for NoteScript {
-    type Error = DeserializationError;
-
-    fn try_from(elements: &[Felt]) -> Result<Self, Self::Error> {
-        if elements.len() < 2 {
-            return Err(DeserializationError::UnexpectedEOF);
-        }
-
-        let entrypoint: u32 = elements[0]
-            .as_canonical_u64()
-            .try_into()
-            .map_err(|err: TryFromIntError| DeserializationError::InvalidValue(err.to_string()))?;
-        let len = elements[1].as_canonical_u64();
-        let mut data = Vec::with_capacity(elements.len() * 4);
-
-        for &felt in &elements[2..] {
-            let element: u32 =
-                felt.as_canonical_u64().try_into().map_err(|err: TryFromIntError| {
-                    DeserializationError::InvalidValue(err.to_string())
-                })?;
-            data.extend(element.to_le_bytes())
-        }
-        data.truncate(len as usize);
-
-        // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
-        let mast = MastForest::read_from_bytes(&data)?;
-        let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)?;
-        NoteScript::from_parts(Arc::new(mast), entrypoint)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
-impl TryFrom<Vec<Felt>> for NoteScript {
-    type Error = DeserializationError;
-
-    fn try_from(value: Vec<Felt>) -> Result<Self, Self::Error> {
-        value.as_slice().try_into()
     }
 }
 
@@ -314,21 +253,24 @@ impl Display for NoteScript {
 #[cfg(test)]
 mod tests {
 
-    use super::{Felt, NoteScript, Vec};
+    use super::{Felt, NoteScript};
     use crate::testing::assembler::assemble_test_package;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
-    fn test_note_script_to_from_felt() {
-        let script_src = DEFAULT_NOTE_SCRIPT;
-        let package =
-            assemble_test_package("test-note-script-roundtrip", "test::note_roundtrip", script_src);
-        let note_script = NoteScript::from_package(&package).unwrap();
+    fn test_note_script_to_from_mast_elements() -> anyhow::Result<()> {
+        let package = assemble_test_package(
+            "test-note-script-roundtrip",
+            "test::note_roundtrip",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        let note_script = NoteScript::from_package(&package)?;
 
-        let encoded: Vec<Felt> = (&note_script).into();
-        let decoded: NoteScript = encoded.try_into().unwrap();
-
+        let encoded = note_script.to_elements();
+        let decoded = NoteScript::try_from_elements(&encoded)?;
         assert_eq!(note_script, decoded);
+
+        Ok(())
     }
 
     #[test]

@@ -1,12 +1,12 @@
 use alloc::collections::BTreeMap;
+use alloc::string::ToString;
 
-use miden_core::EMPTY_WORD;
 use miden_crypto::merkle::EmptySubtreeRoots;
 
 use super::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable, Word};
 use crate::account::StorageMapPatchEntries;
-use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::smt::{LeafIndex, SMT_DEPTH, Smt, SmtLeaf};
+use crate::crypto::merkle::{InnerNodeInfo, MerkleError};
 use crate::errors::{AccountError, StorageMapError};
 
 mod key;
@@ -77,10 +77,13 @@ impl StorageMap {
 
     /// Creates a new [`StorageMap`] from the provided key-value entries.
     ///
+    /// An entry whose value is [`Self::EMPTY_VALUE`] is dropped, matching [`Self::insert`].
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - the provided entries contain multiple values for the same key.
+    /// - a single tree leaf would hold more entries than the tree allows.
     pub fn with_entries<I: ExactSizeIterator<Item = (StorageMapKey, Word)>>(
         entries: impl IntoIterator<Item = (StorageMapKey, Word), IntoIter = I>,
     ) -> Result<Self, StorageMapError> {
@@ -96,16 +99,27 @@ impl StorageMap {
             }
         }
 
-        Ok(Self::from_btree_map(map))
+        Self::from_btree_map(map).map_err(StorageMapError::MaxLeafEntriesExceeded)
     }
 
-    /// Creates a new [`StorageMap`] from the given map. For internal use.
-    fn from_btree_map(entries: BTreeMap<StorageMapKey, Word>) -> Self {
-        let hashed_keys_iter = entries.iter().map(|(key, value)| (key.hash().as_word(), *value));
-        let smt = Smt::with_entries(hashed_keys_iter)
-            .expect("btree maps should not contain duplicate keys");
+    /// Creates a new [`StorageMap`] from the given map of unique keys. For internal use.
+    ///
+    /// Empty values are dropped because the SMT treats them as absent, and this type's entries
+    /// must stay consistent with it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a single tree leaf would hold more entries than the tree allows.
+    pub(crate) fn from_btree_map(
+        mut entries: BTreeMap<StorageMapKey, Word>,
+    ) -> Result<Self, MerkleError> {
+        entries.retain(|_, value| *value != Self::EMPTY_VALUE);
 
-        StorageMap { smt, entries }
+        let hashed_keys_iter = entries.iter().map(|(key, value)| (key.hash().as_word(), *value));
+        // The keys are unique, so the only remaining failure is an overfull leaf.
+        let smt = Smt::with_entries(hashed_keys_iter)?;
+
+        Ok(StorageMap { smt, entries })
     }
 
     // PUBLIC ACCESSORS
@@ -176,16 +190,19 @@ impl StorageMap {
     ///
     /// If the provided `value` is [`Self::EMPTY_VALUE`] the entry will be removed.
     pub fn insert(&mut self, key: StorageMapKey, value: Word) -> Result<Word, AccountError> {
-        if value == EMPTY_WORD {
+        // Update the tree first to not leave the map in an inconsistent state if it fails.
+        let previous = self
+            .smt
+            .insert(key.hash().into(), value)
+            .map_err(AccountError::MaxNumStorageMapLeavesExceeded)?;
+
+        if value == Self::EMPTY_VALUE {
             self.entries.remove(&key);
         } else {
             self.entries.insert(key, value);
         }
 
-        let hashed_key = key.hash();
-        self.smt
-            .insert(hashed_key.into(), value)
-            .map_err(AccountError::MaxNumStorageMapLeavesExceeded)
+        Ok(previous)
     }
 
     /// Applies the provided map patch entries to this storage map.
@@ -226,7 +243,8 @@ impl Serializable for StorageMap {
 impl Deserializable for StorageMap {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let map = BTreeMap::read_from(source)?;
-        Ok(Self::from_btree_map(map))
+        Self::from_btree_map(map)
+            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
 
@@ -284,5 +302,23 @@ mod tests {
 
         let error = StorageMap::with_entries(storage_map_leaves_2).unwrap_err();
         assert_matches!(error, StorageMapError::DuplicateKey { .. });
+    }
+
+    /// An empty value is absent from the tree, so the entries must not keep it either.
+    #[test]
+    fn storage_map_drops_entries_with_an_empty_value() -> anyhow::Result<()> {
+        let empty_key = StorageMapKey::from_array([101, 102, 103, 104]);
+        let present_key = StorageMapKey::from_array([105, 106, 107, 108]);
+        let value = Word::from([5, 6, 7, 8u32]);
+
+        let map =
+            StorageMap::with_entries([(empty_key, StorageMap::EMPTY_VALUE), (present_key, value)])?;
+
+        assert_eq!(map.num_entries(), 1);
+        assert_eq!(map.entries().count(), 1);
+        assert_eq!(map.get(&empty_key), StorageMap::EMPTY_VALUE);
+        assert_eq!(map, StorageMap::with_entries([(present_key, value)])?);
+
+        Ok(())
     }
 }

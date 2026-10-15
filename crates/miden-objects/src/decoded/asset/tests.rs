@@ -1,4 +1,5 @@
 use alloc::string::ToString;
+use alloc::vec;
 use core::error::Error;
 
 use assert_matches::assert_matches;
@@ -112,4 +113,37 @@ fn asset_id_protobuf_rejects_unspecified_version_after_decoding() {
     .unwrap_err();
 
     assert_eq!(error.to_string(), "asset id version is unspecified");
+}
+
+#[test]
+fn asset_vault_rejects_duplicate_assets() {
+    let asset = proto::asset::Asset::from(FungibleAsset::mock(42));
+    let error = proto::asset::AssetVault { assets: vec![asset.clone(), asset] }
+        .decode_fields()
+        .unwrap()
+        .verify()
+        .unwrap_err();
+
+    assert_matches!(
+        crate::test_utils::error_source::<miden_protocol::errors::AssetVaultError>(&error),
+        Some(miden_protocol::errors::AssetVaultError::DuplicateAsset(_))
+    );
+}
+
+#[test]
+fn asset_vault_rejects_an_asset_with_an_empty_value_word() {
+    let asset = proto::asset::Asset {
+        value: Some(Word::empty().into()),
+        ..proto::asset::Asset::from(miden_protocol::asset::NonFungibleAsset::mock(&[1, 2, 3]))
+    };
+    let error = proto::asset::AssetVault { assets: vec![asset] }
+        .decode_fields()
+        .unwrap()
+        .verify()
+        .unwrap_err();
+
+    assert_matches!(
+        crate::test_utils::error_source::<crate::decoded::asset::AssetVaultEntryError>(&error),
+        Some(crate::decoded::asset::AssetVaultEntryError::EmptyValue(_))
+    );
 }

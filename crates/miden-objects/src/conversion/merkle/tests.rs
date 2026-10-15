@@ -83,3 +83,28 @@ fn partial_smt_encoding_preserves_nodes_at_every_depth() {
     let decoded = encoded.decode_fields().unwrap().into_unique_nodes().unwrap();
     assert_eq!(decoded.nodes, expected_nodes);
 }
+
+#[test]
+fn partial_mmr_round_trip() {
+    use miden_protocol::crypto::merkle::mmr::PartialMmr;
+
+    for (leaf_count, track) in [(0u32, false), (7, false), (7, true)] {
+        let mut mmr = PartialMmr::default();
+        for index in 0..leaf_count {
+            mmr.add(Word::from([index, 0, 0, 0]), track).unwrap();
+        }
+
+        let borrowed: proto::primitives::PartialMmr = (&mmr).into();
+        let owned: proto::primitives::PartialMmr = mmr.clone().into();
+        assert_eq!(borrowed, owned);
+        assert!(borrowed.tracked_leaves.is_sorted_by_key(|leaf| leaf.position));
+        let bytes = borrowed.encode_to_vec();
+        let decoded = proto::primitives::PartialMmr::decode(bytes.as_slice())
+            .unwrap()
+            .decode_fields()
+            .unwrap()
+            .verify()
+            .unwrap();
+        assert_eq!(decoded, mmr);
+    }
+}

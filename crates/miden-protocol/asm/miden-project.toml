@@ -9,10 +9,10 @@ members = [
 ]
 
 [workspace.package]
-version = "0.17.0"
+version = "1.0.0-rc.1"
 
 [workspace.dependencies]
-miden-core           = { linkage = "dynamic", version = "0.33" }
-miden-protocol-utils = { linkage = "static", path = "protocol_utils" }
-miden-tx-kernel      = { linkage = "dynamic", path = "kernels/transaction" }
-miden-tx-kernel-core = { linkage = "static", path = "kernels/transaction-core" }
+miden-core           = { linkage = "dynamic", version = "0.36" }
+miden-protocol-utils = { linkage = "static", path = "protocol_utils", version = "1.0.0-rc.1" }
+miden-tx-kernel      = { linkage = "dynamic", path = "kernels/transaction", version = "1.0.0-rc.1" }
+miden-tx-kernel-core = { linkage = "static", path = "kernels/transaction-core", version = "1.0.0-rc.1" }

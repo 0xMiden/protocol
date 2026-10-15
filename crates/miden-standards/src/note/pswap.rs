@@ -321,8 +321,9 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the offered and requested assets have the same faucet ID, or if the
-    /// note carries a malformed [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment.
+    /// Returns an error if the offered and requested assets have the same faucet ID, if either of
+    /// them is zero, or if the note carries a malformed
+    /// [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment.
     pub fn build(self) -> Result<PswapNote, NoteError> {
         let note = self.build_internal();
 
@@ -330,6 +331,13 @@ where
             return Err(NoteError::other(
                 "offered and requested assets must have different faucets",
             ));
+        }
+
+        if note.offered_asset.amount() == AssetAmount::ZERO {
+            return Err(NoteError::other("offered asset must be non-zero"));
+        }
+        if note.storage.min_requested_asset().amount() == AssetAmount::ZERO {
+            return Err(NoteError::other("requested asset must be non-zero"));
         }
 
         if let Some(attachment) = note.attachment.as_ref()
@@ -348,6 +356,11 @@ impl PswapNote {
 
     /// Expected number of storage items for the PSWAP note.
     pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
+
+    /// Expected number of assets of the PSWAP note.
+    ///
+    /// Must match `NUM_ASSETS` in `asm/standards/notes/pswap.masm`.
+    pub const NUM_ASSETS: usize = 1;
 
     /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
     /// remainder PSWAP).
@@ -623,9 +636,13 @@ impl PswapNote {
     /// Reconstructs the depth-`d` payback P2ID [`Note`], so the creator can consume it as an
     /// unauthenticated input note.
     ///
+    /// The returned note includes only the supplied PSWAP attachment. If the output contains
+    /// additional attachments, use [`Note::with_attachments`] with the returned assets, partial
+    /// metadata, and recipient plus the output's complete public attachment list to reconstruct
+    /// its ID.
+    ///
     /// `consumer_account_id` must be the account that consumed the parent PSWAP in round
-    /// `depth`: the MASM stamps it as the payback's metadata sender, which feeds into
-    /// [`Note::details_commitment`].
+    /// `depth`: the MASM stamps it as the payback's metadata sender, which feeds into [`Note::id`].
     ///
     /// # Errors
     ///
@@ -668,8 +685,10 @@ impl PswapNote {
 
     /// Reconstructs the depth-`d` remainder PSWAP [`Note`] in this lineage.
     ///
-    /// Called on the original PSWAP, this returns the full Note for the remainder produced
-    /// in round `depth`. The returned Note matches the created note exactly.
+    /// Called on the original PSWAP, this returns the remainder produced in round `depth`, with
+    /// only the supplied PSWAP attachment. If the output contains additional attachments, use
+    /// [`Note::with_attachments`] with the returned assets, partial metadata, and recipient plus
+    /// the output's complete public attachment list to reconstruct its ID.
     ///
     /// - `consumer_account_id` — the account that consumed the parent PSWAP in round `depth`, used
     ///   as the remainder's sender.
@@ -929,6 +948,10 @@ impl From<PswapNote> for Note {
 }
 
 /// Parses a protocol [`Note`] back into a [`PswapNote`] by deserializing its storage.
+///
+/// This wrapper supports at most one attachment. Notes with additional attachments can
+/// still be consumed through the generic [`Note`] API, but cannot be represented as a
+/// [`PswapNote`].
 impl TryFrom<&Note> for PswapNote {
     type Error = NoteError;
 
@@ -939,7 +962,7 @@ impl TryFrom<&Note> for PswapNote {
 
         let storage = PswapNoteStorage::try_from(note.recipient().storage().items())?;
 
-        if note.assets().num_assets() != 1 {
+        if note.assets().num_assets() != Self::NUM_ASSETS {
             return Err(NoteError::other("PSWAP note must have exactly one asset"));
         }
         let offered_asset = note
@@ -989,6 +1012,7 @@ impl NoteConsumptionCost for PswapNote {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
@@ -1403,6 +1427,45 @@ mod tests {
         assert!(
             remainder.payback_note(consumer_id, &round_one_attachment).is_err(),
             "an attachment from the parent's own round is not a later round",
+        );
+    }
+
+    /// A PSWAP note holds the offered asset and its payback holds the requested one, so a zero
+    /// amount on either side leaves one of those two notes empty.
+    #[test]
+    fn pswap_note_builder_rejects_a_zero_asset() {
+        let mut rng = RandomCoin::new(Word::default());
+        let creator = dummy_creator_id();
+        let zero = FungibleAsset::new(dummy_faucet_id(3), 0).unwrap();
+        let some = FungibleAsset::new(dummy_faucet_id(4), 100).unwrap();
+
+        let mut build = |offered: FungibleAsset, requested: FungibleAsset| {
+            PswapNote::builder()
+                .sender(creator)
+                .storage(
+                    PswapNoteStorage::builder()
+                        .min_requested_asset(requested)
+                        .creator_account_id(creator)
+                        .build(),
+                )
+                .serial_number(rng.draw_word())
+                .note_type(NoteType::Public)
+                .offered_asset(offered)
+                .build()
+        };
+
+        let err = build(zero, some).expect_err("a zero offered asset must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "offered asset must be non-zero".into()
+        );
+
+        let err = build(some, zero).expect_err("a zero requested asset must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "requested asset must be non-zero".into()
         );
     }
 }

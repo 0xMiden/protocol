@@ -119,8 +119,10 @@ impl TryFrom<&proto::primitives::ExecutionProof> for ExecutionProof {
 // ================================================================================================
 
 impl From<&MastForest> for proto::primitives::MastForest {
-    fn from(value: &MastForest) -> Self {
-        Self { encoded: value.to_bytes() }
+    fn from(forest: &MastForest) -> Self {
+        let mut encoded = Vec::new();
+        forest.write_hashless(&mut encoded);
+        Self { encoded }
     }
 }
 

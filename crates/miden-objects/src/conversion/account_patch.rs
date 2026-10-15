@@ -3,6 +3,8 @@ use alloc::borrow::ToOwned;
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
+    AccountCodePatch,
+    AccountCodeUpgrade,
     AccountPatch,
     AccountStoragePatch,
     AccountUpdateDetails,
@@ -33,6 +35,12 @@ impl From<&AccountCode> for proto::account::AccountCode {
 impl From<AccountCode> for proto::account::AccountCode {
     fn from(code: AccountCode) -> Self {
         Self::from(&code)
+    }
+}
+
+impl From<&AccountCodeUpgrade> for proto::account::AccountCodeUpgrade {
+    fn from(upgrade: &AccountCodeUpgrade) -> Self {
+        Self { code: Some(upgrade.code().into()) }
     }
 }
 
@@ -119,6 +127,12 @@ impl From<&AccountVaultPatch> for proto::account::AccountVaultPatch {
     }
 }
 
+impl From<&AccountCodePatch> for proto::account::AccountCodePatch {
+    fn from(patch: &AccountCodePatch) -> Self {
+        Self { code: patch.as_code().map(Into::into) }
+    }
+}
+
 impl From<&AccountPatch> for proto::account::AccountPatch {
     fn from(patch: &AccountPatch) -> Self {
         Self {
@@ -126,7 +140,7 @@ impl From<&AccountPatch> for proto::account::AccountPatch {
             account_id: Some(patch.id().into()),
             storage: Some(patch.storage().into()),
             vault: Some(patch.vault().into()),
-            code: patch.code().map(Into::into),
+            code: Some(patch.code().into()),
             final_nonce: patch.final_nonce().map(Into::into),
         }
     }

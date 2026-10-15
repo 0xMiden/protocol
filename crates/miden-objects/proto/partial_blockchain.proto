@@ -4,15 +4,7 @@ package blockchain;
 import "block.proto";
 import "primitives.proto";
 
-message TrackedMmrLeaf {
-  fixed64 position = 1;
-  primitives.Word leaf = 2;
-  repeated primitives.Word path = 3;
-}
-
 message PartialBlockchain {
-  fixed64 forest = 1;
-  repeated primitives.Word peaks = 2;
-  repeated TrackedMmrLeaf tracked_leaves = 3;
-  repeated BlockHeader block_headers = 4;
+  primitives.PartialMmr mmr = 1;
+  repeated BlockHeader block_headers = 2;
 }

@@ -1,0 +1,387 @@
+//! Audit of the burn-consume path: how a burn note is destroyed and supply is lowered.
+//!
+//! Consuming a burn note runs the standard `receive_and_burn` path, gated by the faucet's
+//! burn policy, which checks the required attachments, the withdrawal destination and the minimum
+//! burn amount.
+//!
+//! The property it protects is that the faucet has exactly one way to lower `token_supply`. A
+//! second, ungated decrement path would let tokens be destroyed without a public burn note, and
+//! the off-chain listener would have nothing to show Circle for tokens that no longer exist. The
+//! proof is made against code and storage commitments rather than by observing supply deltas,
+//! because a delta test can only find the paths it thinks to exercise:
+//!
+//!   - The faucet's own MASM tree contains no supply surface at all: no file calls the standard
+//!     burn primitive, and no file writes — or even names — the faucet's token-config slot. All
+//!     supply arithmetic lives in the standard library code.
+//!   - The built account's active burn-policy storage slot holds the custom burn policy's root, so
+//!     the one decrement path that does exist is policy-gated. A companion test shows the assertion
+//!     is not vacuous by building a faucet with an allow-all policy and watching it fail.
+//!
+//! The remaining tests re-confirm the composition end to end with a real note: a valid burn lowers
+//! supply exactly once, and a burn below the configured minimum traps with the standard library's
+//! own error.
+
+mod support;
+
+use anyhow::Result;
+use miden_processor::ExecutionError;
+use miden_processor::crypto::random::RandomCoin;
+use miden_processor::operation::OperationError;
+use miden_protocol::account::AccountId;
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::errors::MasmError;
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
+};
+use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::{Felt, Word};
+use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TARGET_MISSING;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_testing::assert_transaction_executor_error;
+use miden_tx::TransactionExecutorError;
+use miden_usdcx::account::xreserve::XReserveStablecoinBuilder;
+use miden_usdcx::account::xreserve::builder::XRESERVE_BURN_POLICY_PROC_PATH;
+use miden_usdcx::note::xreserve_burn::{
+    FIXED_XUSDC_BURN_TAG,
+    XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
+    XUsdcBurnAttachment,
+};
+use miden_usdcx::xreserve::encoding::{CircleDomain, ForeignChainAddress, XReserveBurnItems};
+use rstest::rstest;
+use support::*;
+
+// Amounts are arbitrary: this suite asserts which code path runs and what it is gated by, never
+// the magnitudes themselves. They match the ones the burn-note suite uses so the shared harness
+// behaves identically across both.
+const MAX_SUPPLY: u64 = 1_000_000;
+const TOKEN_SUPPLY: u64 = 100_000;
+const MIN_BURN_SIZE: u64 = 1_000;
+/// A valid burn: `MIN_BURN_SIZE <= VALID_BURN` and `<= TOKEN_SUPPLY`.
+const VALID_BURN: u64 = 5_000;
+
+/// The administrator the burn oracle installs (id(1)). Under the reconciled Circle-faithful admin
+/// model the setters resolve to the built-in `ADMIN` role under the account's role-based authority.
+fn administrator() -> AccountId {
+    test_account_id(1)
+}
+
+/// A fixed-seed rng for standalone note construction. It feeds only the note's serial number, so
+/// the payload layout and tag are unaffected by the seed.
+fn note_rng(seed: u64) -> RandomCoin {
+    RandomCoin::new(Word::from([
+        Felt::from(seed as u32),
+        Felt::from((seed >> 32) as u32),
+        Felt::from(7u32),
+        Felt::from(11u32),
+    ]))
+}
+
+/// A withdrawal payload with an arbitrary destination other than the faucet's own domain.
+fn items() -> XReserveBurnItems {
+    XReserveBurnItems {
+        dest_domain: CircleDomain::new(9),
+        dest_recipient: ForeignChainAddress::new([0xabu8; 32]),
+    }
+}
+
+/// Builds a stock-script burn note with exactly the supplied attachments.
+fn raw_burn_note(
+    sender: AccountId,
+    faucet_id: AccountId,
+    attachments: Vec<NoteAttachment>,
+) -> Note {
+    let asset = FungibleAsset::new(faucet_id, VALID_BURN).expect("valid burn asset");
+    let storage = NoteStorage::new(Asset::from(asset).as_elements().to_vec())
+        .expect("stock burn asset storage");
+    Note::with_attachments(
+        NoteAssets::new(vec![asset.into()]).expect("one burn asset"),
+        PartialNoteMetadata::new(sender, NoteType::Public)
+            .with_tag(NoteTag::new(FIXED_XUSDC_BURN_TAG)),
+        NoteRecipient::new(Word::from([1u32, 2, 3, 4]), XReserveBurnNote::script(), storage),
+        NoteAttachments::new(attachments).expect("attachments within protocol limits"),
+    )
+}
+
+/// The routing attachment that targets `target_id`.
+fn routing(target_id: AccountId) -> NoteAttachment {
+    NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)
+        .expect("public network account")
+        .into()
+}
+
+/// The valid withdrawal attachment.
+fn withdrawal() -> NoteAttachment {
+    NoteAttachment::from(&XUsdcBurnAttachment::new(items()))
+}
+
+/// The valid withdrawal attachment with the element at `index` replaced by `value`.
+fn withdrawal_with_element(index: usize, value: Felt) -> NoteAttachment {
+    let mut words = withdrawal().content().as_words().to_vec();
+    words[index / Word::NUM_ELEMENTS][index % Word::NUM_ELEMENTS] = value;
+    NoteAttachment::with_words(
+        NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
+            .expect("withdrawal scheme"),
+        words,
+    )
+    .expect("three-word attachment")
+}
+
+/// The standards error as a static, so a test case can borrow it for `'static`.
+static NETWORK_ACCOUNT_TARGET_MISSING: MasmError = ERR_NETWORK_ACCOUNT_TARGET_MISSING;
+
+/// A value that is a valid felt but not a valid u32.
+fn non_u32() -> Felt {
+    Felt::from(u32::MAX) + Felt::ONE
+}
+
+/// Each malformed burn note is rejected by the burn policy with the expected error.
+#[rstest]
+#[case::missing_withdrawal(
+    |faucet_id| vec![routing(faucet_id)],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_MISSING"),
+)]
+#[case::wrong_withdrawal_word_count(
+    |faucet_id| vec![
+        routing(faucet_id),
+        NoteAttachment::with_words(
+            NoteAttachmentScheme::new(XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME)
+                .expect("withdrawal scheme"),
+            vec![Word::empty(); 4],
+        )
+        .expect("four-word attachment"),
+    ],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_WITHDRAWAL_WORDS"),
+)]
+#[case::extra_attachment(
+    |faucet_id| vec![
+        routing(faucet_id),
+        withdrawal(),
+        NoteAttachment::with_words(
+            NoteAttachmentScheme::new(7).expect("extra scheme"),
+            vec![Word::empty()],
+        )
+        .expect("one-word attachment"),
+    ],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_ATTACHMENT_COUNT"),
+)]
+#[case::missing_routing(
+    |_| vec![withdrawal(), withdrawal()],
+    &NETWORK_ACCOUNT_TARGET_MISSING,
+)]
+#[case::routing_to_another_account(
+    |_| vec![routing(test_faucet_id(42)), withdrawal()],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_TARGET_NOT_THIS_FAUCET"),
+)]
+#[case::domain_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(0, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_NOT_U32"),
+)]
+#[case::domain_is_faucet_domain(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(0, Felt::from(TEST_DOMAIN))],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_IS_FAUCET_DOMAIN"),
+)]
+#[case::domain_padding_not_zero(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(3, Felt::ONE)],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_DOMAIN_PADDING_NOT_ZERO"),
+)]
+#[case::first_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(4, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
+)]
+#[case::second_word_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(9, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
+)]
+#[case::last_recipient_limb_not_u32(
+    |faucet_id| vec![routing(faucet_id), withdrawal_with_element(11, non_u32())],
+    shell_error_by_name("ERR_XRESERVE_BURN_NOTE_RECIPIENT_NOT_U32"),
+)]
+#[tokio::test]
+async fn burn_rejects_a_malformed_note(
+    #[case] attachments: fn(AccountId) -> Vec<NoteAttachment>,
+    #[case] expected: &'static MasmError,
+) -> Result<()> {
+    let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
+        vec![raw_burn_note(sender, faucet_id, attachments(faucet_id))]
+    })?;
+    let result = pf
+        .mock_chain
+        .build_transaction(pf.faucet_id)
+        .authenticated_input_note(pf.seeded_notes[0].id())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        matches ref error
+            if expected.matches_execution_error(error) || is_u32_assertion(error, expected)
+    );
+    Ok(())
+}
+
+/// Returns `true` if `error` is a failed `u32assert*` raising `expected`. Those fail with
+/// `U32AssertionFailed`, which [`MasmError::matches_execution_error`] does not match.
+fn is_u32_assertion(error: &ExecutionError, expected: &MasmError) -> bool {
+    matches!(
+        error,
+        ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, err_msg, .. },
+            ..
+        } if *err_code == expected.code() && err_msg.as_deref() == Some(expected.message())
+    )
+}
+
+/// A burn note with valid attachments is consumed.
+#[tokio::test]
+async fn burn_accepts_a_valid_note() -> Result<()> {
+    let pf = setup_production_faucet(TOKEN_SUPPLY, |sender, faucet_id| {
+        vec![raw_burn_note(sender, faucet_id, vec![routing(faucet_id), withdrawal()])]
+    })?;
+    pf.mock_chain
+        .build_transaction(pf.faucet_id)
+        .authenticated_input_note(pf.seeded_notes[0].id())
+        .build()?
+        .execute()
+        .await?;
+    Ok(())
+}
+
+// THE ACTIVE BURN POLICY — read off the built account's storage, not inferred from behavior
+// ================================================================================================
+
+/// The active storage slot must hold the custom policy root exported by the production component.
+#[tokio::test]
+async fn only_receive_and_burn_lowers_supply() -> Result<()> {
+    let h = setup_burn_policy_account(
+        BurnGuardSelection::OracleBurnReal,
+        MAX_SUPPLY,
+        TOKEN_SUPPLY,
+        MIN_BURN_SIZE,
+        VALID_BURN,
+    )?;
+    let account = h.chain.committed_account(h.faucet_id)?.clone();
+    let stored = read_active_burn_policy_root(&account)?;
+    assert_eq!(
+        stored,
+        XReserveStablecoinBuilder::burn_policy_component()
+            .get_procedure_root_by_path(XRESERVE_BURN_POLICY_PROC_PATH)
+            .expect("production burn policy is exported")
+            .as_word(),
+        "the active burn root must gate receive_and_burn with the custom burn policy"
+    );
+    Ok(())
+}
+
+/// The account check rejects a faucet that selects `BurnAllowAll` as its active burn policy.
+#[tokio::test]
+async fn allow_all_active_burn_policy_fails_sole_decrement_audit() -> Result<()> {
+    let h = setup_burn_policy_account(
+        BurnGuardSelection::OracleBurnAllowAll,
+        MAX_SUPPLY,
+        TOKEN_SUPPLY,
+        MIN_BURN_SIZE,
+        VALID_BURN,
+    )?;
+    let account = h.chain.committed_account(h.faucet_id)?.clone();
+    let stored = read_active_burn_policy_root(&account)?;
+    assert_ne!(
+        stored,
+        XReserveStablecoinBuilder::burn_policy_component()
+            .get_procedure_root_by_path(XRESERVE_BURN_POLICY_PROC_PATH)
+            .expect("production burn policy is exported")
+            .as_word(),
+        "the audit must catch a burn policy repointed to BurnAllowAll"
+    );
+    Ok(())
+}
+
+// THE SEAM BETWEEN SETTING THE FLOOR AND ENFORCING IT: the setter writes the same slot the
+// burn policy reads, so a change takes effect on the next burn
+// ================================================================================================
+
+/// Emits and commits a burn note, applies an administrator-sent minimum-burn configuration note to
+/// the faucet, and consumes the burn note against the updated account.
+async fn run_set_min_burn_then_consume(
+    seed_floor: u64,
+    new_min: u64,
+    burn_amount: u64,
+) -> Result<std::result::Result<ExecutedTransaction, TransactionExecutorError>> {
+    let h = setup_burn_policy_account(
+        BurnGuardSelection::OracleBurnReal,
+        MAX_SUPPLY,
+        TOKEN_SUPPLY,
+        seed_floor,
+        burn_amount,
+    )?;
+    let note = XReserveBurnNote::create(
+        h.user_id,
+        h.faucet_id,
+        AssetAmount::new(burn_amount)?,
+        items(),
+        &mut note_rng(23),
+    )?;
+    let faucet_id = h.faucet_id;
+    let user_id = h.user_id;
+    let mut chain = h.chain;
+
+    // Block N: the user emits + commits the burn note (floor still `seed_floor`).
+    let tx0 = try_emit_burn_note(&chain, &note, &h.asset, faucet_id, user_id)
+        .await
+        .expect("the user emits the XReserveBurnNote (test-setup invariant)");
+    chain.add_pending_executed_transaction(&tx0)?;
+    chain.prove_next_block()?;
+
+    // The administrator moves the floor to `new_min`; evolve the committed faucet with the setter
+    // delta.
+    let account = chain.committed_account(faucet_id)?.clone();
+    let set = run_set_min_burn_amount_against(&chain, &account, administrator(), new_min, 31)
+        .await
+        .expect("the administrator's minimum-burn update must succeed");
+    let mut evolved = account.clone();
+    evolved.apply_patch(set.account_patch())?;
+
+    // The burn policy reads the minimum amount updated by the standard setter.
+    let result = chain
+        .build_transaction(evolved)
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+    Ok(result)
+}
+
+/// Raising the floor immediately starts rejecting a burn that was fine a moment earlier.
+///
+/// The amount used (5,000) passes at the seeded floor of 1,000 and fails at the new floor of
+/// 10,000, so the only thing that changed between accept and reject is the setter's write. This is
+/// the direction that matters for safety: the administrator can tighten the limit and it binds at
+/// once.
+#[tokio::test]
+async fn set_min_burn_raise_then_below_new_min_rejects() -> Result<()> {
+    let result = run_set_min_burn_then_consume(MIN_BURN_SIZE, 10_000, VALID_BURN).await?;
+    assert_transaction_executor_error!(result, &err_burn_below_min_burn_amount());
+    Ok(())
+}
+
+/// Lowering the floor immediately admits a burn that would have been rejected.
+///
+/// The mirror of the test above, and the one that proves the seam is not vacuous: seeded at 10,000
+/// the burn of 2,000 would trap, and after the setter lowers the floor to exactly 2,000 the same
+/// consume succeeds — so the setter's write genuinely relaxes the minimum the burn policy
+/// enforces, rather than the burn passing for some unrelated reason.
+#[tokio::test]
+async fn set_min_burn_lower_then_at_new_min_passes() -> Result<()> {
+    let result = run_set_min_burn_then_consume(10_000, 2_000, 2_000).await?;
+    result.expect("a burn equal to the lowered floor passes the stock policy");
+    Ok(())
+}

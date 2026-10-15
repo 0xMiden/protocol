@@ -243,7 +243,8 @@ impl MockTransaction {
             ref_block,
             block_commitments,
             self.source_manager(),
-        );
+        )
+        .expect("partial account from a full account should contain its complete storage");
 
         let advice_inputs = advice_inputs.into_advice_inputs();
 

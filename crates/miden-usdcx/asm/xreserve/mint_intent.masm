@@ -1,0 +1,146 @@
+# xreserve::mint_intent
+#
+# The mint intent: a stripped-down DepositIntent with only the fields the faucet
+# cannot derive, which the mint note has to carry.
+
+use miden::protocol::active_account
+use miden::standards::utils
+use miden::core::crypto::hashes::poseidon2
+
+# CONSTANTS — storage slots
+# =================================================================================================
+
+# The usedNonces StorageMap slot (the nonce replay registry).
+pub const USED_NONCES_SLOT = word("xusdc::xreserve::nonce_registry::used_nonces")
+
+# CONSTANTS — carried-value widths
+# =================================================================================================
+
+# How many u32-LE-packed limbs each carried value occupies. A DepositIntent field is sometimes wider
+# than the value inside it, which is what lets the mint intent carry the value alone; the pad
+# offsets that describe the difference belong with the field, in `xreserve::deposit_intent`.
+pub const BYTES32_PACKED_LIMBS = 8
+
+pub const ACCOUNT_ID_FELTS = 2
+
+# CONSTANTS — felt offsets within the carried mint intent
+# =================================================================================================
+
+# The nonce leads so the widest verbatim run starts word-aligned, and the two single-felt fields
+# trail so every wider field stays contiguous.
+
+pub const MINT_INTENT_NONCE_FELT_OFF = 0
+pub const MINT_INTENT_LOCAL_TOKEN_FELT_OFF = MINT_INTENT_NONCE_FELT_OFF + BYTES32_PACKED_LIMBS
+pub const MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF = MINT_INTENT_LOCAL_TOKEN_FELT_OFF + BYTES32_PACKED_LIMBS
+pub const MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF = MINT_INTENT_LOCAL_DEPOSITOR_FELT_OFF + BYTES32_PACKED_LIMBS
+
+# the recipient travels as [prefix, suffix], and the faucet reads the halves individually
+pub const MINT_INTENT_REMOTE_RECIPIENT_SUFFIX_FELT_OFF = MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF + 1
+
+pub const MINT_INTENT_MAX_FEE_FELT_OFF = MINT_INTENT_REMOTE_RECIPIENT_FELT_OFF + ACCOUNT_ID_FELTS
+
+# maxFee is a single AssetAmount felt
+pub const MINT_INTENT_HOOK_DATA_LEN_FELT_OFF = MINT_INTENT_MAX_FEE_FELT_OFF + 1
+
+# The content felts, which land on the word boundary exactly. hookData follows immediately, so this
+# is also the offset of the first packed hookData felt.
+pub const MINT_INTENT_FELTS = 28
+pub const MINT_INTENT_WORDS = 7
+
+# ERRORS
+# =================================================================================================
+
+const ERR_XRESERVE_AMOUNT_BELOW_FEE = "deposit intent amount is below the max fee"
+
+# Nonce replay: assert-zero only; marking the nonce used is the mint policy's accept-path
+# write, so a failed mint never consumes a nonce.
+const ERR_XRESERVE_NONCE_REPLAY = "deposit intent nonce has already been used"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Asserts a carried mint intent is admissible, and returns its hashed nonce.
+#!
+#! Both checks are about the carried fields rather than the message contents:
+#! - the fee ceiling relates the carried maxFee to the note's own asset value.
+#! - the replay guard relates the carried nonce to this faucet's own history.
+#!
+#! Inputs:  [mint_intent_ptr, amount]
+#! Outputs: [HASHED_NONCE]
+#!
+#! Where:
+#! - mint_intent_ptr is the base of the carried mint intent, INSIDE the caller's hash-verified
+#!   transport region.
+#! - amount is the deposited amount as an AssetAmount.
+#! - HASHED_NONCE is the usedNonces key, which is also the attested output note's serial number.
+#!
+#! Panics if:
+#! - the amount is below the carried fee ceiling.
+#! - the nonce has already been used.
+#!
+#! Invocation: exec
+pub proc validate
+    # both values are AssetAmount felts — the amount comes from the note's own asset value and the
+    # ceiling from the intent — so the ceiling is a single felt compare
+    dup add.MINT_INTENT_MAX_FEE_FELT_OFF mem_load
+    # => [max_fee, mint_intent_ptr, amount]
+
+    movup.2 lte
+    # => [is_maxfee_lte_amount, mint_intent_ptr]
+
+    assert.err=ERR_XRESERVE_AMOUNT_BELOW_FEE
+    # => [mint_intent_ptr]
+
+    add.MINT_INTENT_NONCE_FELT_OFF exec.utils::mem_load_double_word_unaligned
+    # => [NONCE_LOWER, NONCE_UPPER]
+
+    exec.hash_nonce
+    # => [HASHED_NONCE]
+
+    dupw exec.assert_nonce_unused
+    # => [HASHED_NONCE]
+end
+
+#! Hashes the carried nonce into its canonical Word.
+#!
+#! Computes the Poseidon2 hash over the nonce's 8 u32-LE-packed limbs. The output is the raw
+#! storage-map key the nonce registry is keyed by, and the serial of the note the mint emits.
+#!
+#! Inputs:  [NONCE_LOWER, NONCE_UPPER]
+#! Outputs: [HASHED_NONCE]
+#!
+#! Where:
+#! - NONCE_LOWER is the word holding the nonce's positionally lower four u32-LE-packed limbs
+#!   (wire bytes 0..16).
+#! - NONCE_UPPER is the word holding the nonce's positionally upper four u32-LE-packed limbs
+#!   (wire bytes 16..32).
+#!
+#! Invocation: exec
+pub proc hash_nonce
+    # poseidon2::merge absorbs the top word first, so NONCE_LOWER (wire bytes 0..16) becomes the
+    # first rate word: HASHED_NONCE = Poseidon2(NONCE_LOWER || NONCE_UPPER).
+    exec.poseidon2::merge
+    # => [HASHED_NONCE]
+end
+
+#! Asserts the deposit nonce has not been used (the mint replay guard).
+#!
+#! Reads `usedNonces[HASHED_NONCE]` and requires it to be `EMPTY_WORD`.
+#!
+#! Inputs:  [HASHED_NONCE]
+#! Outputs: []
+#!
+#! Panics if:
+#! - HASHED_NONCE has already been used.
+#!
+#! Invocation: exec
+pub proc assert_nonce_unused
+    push.USED_NONCES_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, HASHED_NONCE]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    padw assert_eqw.err=ERR_XRESERVE_NONCE_REPLAY
+    # => []
+end

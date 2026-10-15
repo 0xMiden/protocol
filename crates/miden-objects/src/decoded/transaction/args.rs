@@ -48,6 +48,7 @@ impl Verify for TransactionArgs {
             note_args,
             self.advice_inputs.verify()?,
             self.auth_args,
+            self.account_code_upgrade.verify()?,
         ))
     }
 }

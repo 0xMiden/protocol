@@ -2,6 +2,8 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{
+    AccountCode,
+    AccountCodePatch,
     AccountStoragePatch,
     StorageMapPatch,
     StorageSlotName,
@@ -37,6 +39,17 @@ fn storage_map_patch_oneof_roundtrips_all_operations() {
         let wire = proto::account::StorageMapPatch::decode(bytes.as_slice()).unwrap();
         assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), patch);
     }
+}
+
+#[rstest::rstest]
+#[case::empty(AccountCodePatch::default())]
+#[case::with_code(AccountCodePatch::new(Some(AccountCode::mock())))]
+fn account_code_patch_roundtrips(#[case] patch: AccountCodePatch) -> anyhow::Result<()> {
+    let bytes = proto::account::AccountCodePatch::from(&patch).encode_to_vec();
+    let wire = proto::account::AccountCodePatch::decode(bytes.as_slice())?;
+    assert_eq!(wire.decode_fields()?.verify()?, patch);
+
+    Ok(())
 }
 
 #[test]

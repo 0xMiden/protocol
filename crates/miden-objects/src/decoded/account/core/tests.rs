@@ -3,13 +3,11 @@ use alloc::vec;
 use core::error::Error;
 
 use assert_matches::assert_matches;
-use miden_protocol::assembly::mast::MastForestError;
-use miden_protocol::errors::AccountIdError;
+use miden_protocol::errors::{AccountError, AccountIdError};
 use miden_protocol::{Felt, Word};
 use prost::Message;
 
-use crate::decoded::account::test_utils::{account_header, private_account_id};
-use crate::decoded::primitives::test_utils::corrupt_node_hash;
+use crate::decoded::account::test_utils::{account_header, mock_account, private_account_id};
 use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
 
@@ -197,13 +195,43 @@ fn account_header_protobuf_preserves_invalid_nonce_source() {
 }
 
 #[test]
-fn account_code_validates_its_forest() {
+fn account_code_rejects_procedure_roots_missing_from_its_forest() {
     let code = miden_protocol::account::AccountCode::mock();
-    let mast = corrupt_node_hash(&code.mast(), code.procedure_roots().next().unwrap());
+    let other_forest = miden_protocol::note::NoteScript::mock().mast();
     let mut wire = proto::account::AccountCode::from(&code);
-    wire.mast = Some(mast);
-    assert!(matches!(
-        error_source::<MastForestError>(&wire.decode_fields().unwrap().verify().unwrap_err()),
-        Some(MastForestError::HashMismatch { .. })
-    ));
+    wire.mast = Some(other_forest.as_ref().into());
+    assert_matches!(
+        error_source::<AccountError>(&wire.decode_fields().unwrap().verify().unwrap_err()),
+        Some(AccountError::AccountCodeProcedureNotInMastForest(_))
+    );
+}
+
+#[test]
+fn account_rejects_a_seed_on_an_existing_account() {
+    let account = mock_account();
+    assert!(!account.is_new());
+    let wire = proto::account::Account {
+        seed: Some(Word::empty().into()),
+        ..proto::account::Account::from(&account)
+    };
+
+    let error = wire.decode_fields().unwrap().verify().unwrap_err();
+
+    assert_matches!(
+        error_source::<AccountError>(&error),
+        Some(AccountError::ExistingAccountWithSeed)
+    );
+}
+
+#[test]
+fn account_protobuf_rejects_unspecified_version_after_decoding() {
+    let wire = proto::account::Account {
+        version: proto::account::AccountVersion::Unspecified as i32,
+        ..proto::account::Account::from(&mock_account())
+    };
+
+    let decoded = wire.decode_fields().unwrap();
+
+    assert_eq!(decoded.version, proto::account::AccountVersion::Unspecified);
+    assert_eq!(decoded.verify().unwrap_err().to_string(), "account version is unspecified");
 }

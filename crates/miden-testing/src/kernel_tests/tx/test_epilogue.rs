@@ -3,10 +3,16 @@ use std::borrow::ToOwned;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, AccountVaultPatch};
+use miden_protocol::account::{
+    Account,
+    AccountCodePatch,
+    AccountPatch,
+    AccountStoragePatch,
+    AccountVaultPatch,
+};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
-    ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
+    ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
@@ -108,7 +114,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         mock_tx.account().id(),
         AccountStoragePatch::default(),
         AccountVaultPatch::default(),
-        None,
+        AccountCodePatch::default(),
         Some(final_account.nonce()),
     )?
     .to_commitment();
@@ -502,7 +508,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
     assert_transaction_executor_error!(
         result,
-        ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED
     );
 
     Ok(())

@@ -16,7 +16,7 @@ mod sponsorship;
 
 /// The verification base fee configured on the fee-charging mock chains used across the fee
 /// payment tests.
-const VERIFICATION_BASE_FEE: u32 = 500;
+pub(super) const VERIFICATION_BASE_FEE: u32 = 500;
 
 // The cycle-estimate constants used by the fee-paying auth flows. These are Rust mirrors used to
 // regression-test that the estimates remain upper bounds of the measured cycle counts. There is
@@ -38,10 +38,17 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// The cycle estimate the multisig auth components pass to `pay_fee` for the given number of
+/// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
+/// procedure cycles.
+pub(super) fn multisig_auth_estimate(num_signers: usize) -> usize {
+    num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
+}
+
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee
 /// asset for further assertions.
-fn assert_single_fee_note(
+pub(super) fn assert_single_fee_note(
     executed_transaction: &ExecutedTransaction,
 ) -> anyhow::Result<FungibleAsset> {
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);

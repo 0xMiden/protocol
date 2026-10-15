@@ -18,7 +18,10 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_FEE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+};
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
@@ -27,6 +30,7 @@ use miden_standards::account::auth::{
     ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
+    FeeConversionInfo,
     GuardianConfig,
     MultisigAuthArgs,
 };
@@ -38,13 +42,14 @@ use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
     ERR_PUBLIC_KEY_IS_APPROVER,
 };
-use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
+use super::fee_payment::{VERIFICATION_BASE_FEE, assert_single_fee_note, multisig_auth_estimate};
 use super::multisig::{
     MultisigAuthArgsExt,
     build_update_signers_config_vector,
@@ -571,8 +576,8 @@ async fn test_guarded_multisig_update_guardian_public_key(
     Ok(())
 }
 
-/// Tests that a `update_guardian_public_key` rotation must not touch notes, and that a valid
-/// guardian signature does not bypass that requirement.
+/// Tests that a `update_guardian_public_key` rotation must not touch notes or call another
+/// procedure. The check runs before any signature is verified, so no signature can bypass it.
 ///
 /// Three ways to violate the "called alone" requirement are exercised: an input note (which invokes
 /// `receive_asset`), an output note (created via `create_note`), and a note-free second procedure
@@ -587,7 +592,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
 async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let approvers = public_keys
         .iter()
@@ -595,10 +600,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
-    let old_guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
-    let old_guardian_public_key = old_guardian_secret_key.public_key();
-    let old_guardian_authenticator =
-        BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
+    let old_guardian_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
 
     let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
@@ -651,51 +653,8 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
             salt,
         ));
 
-    let tx_summary = mock_tx_builder
-        .clone()
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
-    let sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
-        .await?;
-    let sig_2 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
-        .await?;
-
-    let without_guardian_result = mock_tx_builder
-        .clone()
-        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
-        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(
-        without_guardian_result,
-        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
-    );
-
-    let old_guardian_signature = old_guardian_authenticator
-        .get_signature(old_guardian_public_key.to_commitment(), &tx_summary_signing)
-        .await?;
-
-    let with_guardian_result = mock_tx_builder
-        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
-        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .add_signature(old_guardian_public_key.to_commitment(), msg, old_guardian_signature)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(
-        with_guardian_result,
-        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
-    );
+    let result = mock_tx_builder.build()?.execute().await;
+    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES);
 
     // Also reject rotation transactions that touch notes even when no other account procedure is
     // called.
@@ -752,29 +711,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
             salt,
         ));
 
-    let tx_summary = mock_tx_builder
-        .clone()
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
-    let sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
-        .await?;
-    let sig_2 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
-        .await?;
-
-    let result = mock_tx_builder
-        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
-        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .build()?
-        .execute()
-        .await;
+    let result = mock_tx_builder.build()?.execute().await;
 
     // The rotation creates an output note (and no input notes), so the output-note guard - which
     // runs before `assert_only_one_non_auth_procedure_called` - rejects it.
@@ -825,29 +762,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
             salt,
         ));
 
-    let tx_summary = mock_tx_builder
-        .clone()
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
-    let sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
-        .await?;
-    let sig_2 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
-        .await?;
-
-    let result = mock_tx_builder
-        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
-        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .build()?
-        .execute()
-        .await;
+    let result = mock_tx_builder.build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
 
@@ -855,10 +770,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
 }
 
 /// `update_guardian_public_key` rejects every transaction that consumes input notes or creates
-/// output notes. Parametrized over the (input, output) tx layout. Since output notes can only be
-/// created by calling the account's `create_note` procedure, any output note trips the "called
-/// alone" guard before `assert_no_output_notes` is reached; a plain input note that invokes no
-/// account procedure reaches `assert_no_input_notes` directly.
+/// output notes. Parametrized over the (input, output) tx layout.
 #[rstest]
 #[case::no_notes(false, false)]
 #[case::input_only(true, false)]
@@ -878,10 +790,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
-    let old_guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
-    let old_guardian_public_key = old_guardian_secret_key.public_key();
-    let old_guardian_authenticator =
-        BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
+    let old_guardian_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
 
     let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
@@ -953,7 +862,6 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     let input_ids: Vec<_> = input_note.as_ref().map(|n| vec![n.id()]).unwrap_or_default();
     let salt = Word::from([Felt::new_unchecked(995); 4]);
 
-    // Dry-run to obtain the tx summary the signers must sign.
     let mut mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_notes(input_ids)
@@ -965,38 +873,27 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     if let Some(out) = output_note {
         mock_tx_builder = mock_tx_builder.expected_output_note(RawOutputNote::Full(out));
     }
-    let tx_summary = mock_tx_builder
-        .clone()
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
-
-    let msg = tx_summary.as_ref().to_commitment();
-    let signing = SigningInputs::TransactionSummary(tx_summary);
-    let sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &signing)
-        .await?;
-    let sig_2 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &signing)
-        .await?;
-    let guardian_sig = old_guardian_authenticator
-        .get_signature(old_guardian_public_key.to_commitment(), &signing)
-        .await?;
-
-    let result = mock_tx_builder
-        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
-        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .add_signature(old_guardian_public_key.to_commitment(), msg, guardian_sig)
-        .build()?
-        .execute()
-        .await;
+    let result = mock_tx_builder.clone().build()?.execute().await;
 
     // Input check fires first, output check fires only when no input notes are present.
     match (include_input_note, include_output_note) {
         (false, false) => {
-            result.expect("tx must succeed when neither input nor output notes are present");
+            let tx_summary = result.unwrap_err().unwrap_unauthorized_err();
+            let msg = tx_summary.as_ref().to_commitment();
+            let signing = SigningInputs::TransactionSummary(tx_summary);
+            let sig_1 = authenticators[0]
+                .get_signature(public_keys[0].to_commitment(), &signing)
+                .await?;
+            let sig_2 = authenticators[1]
+                .get_signature(public_keys[1].to_commitment(), &signing)
+                .await?;
+
+            mock_tx_builder
+                .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+                .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+                .build()?
+                .execute()
+                .await?;
         },
         (true, _) => assert_transaction_executor_error!(
             result,
@@ -1223,6 +1120,181 @@ async fn test_guarded_multisig_signer_update_enforces_the_guardian_invariant(
         StorageMapKey::from_index(0),
     )?;
     assert_eq!(stored_guardian, Word::from(guardian_public_key.to_commitment()));
+
+    Ok(())
+}
+
+/// Tests that guarded multisig pays the transaction fee with a TX_FEE note funded from the vault,
+/// and that the measured auth cycles stay within the estimate, which counts the guardian as a
+/// signer.
+#[tokio::test]
+async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
+        .collect();
+
+    let guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let guardian_public_key = guardian_secret_key.public_key();
+    let guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
+
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let initial_fee_asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?;
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let mut multisig_account = builder.add_existing_wallet_with_assets(
+        Auth::GuardedMultisig {
+            approver_set: ApproverSet::new(approvers, 2)?,
+            guardian_config: GuardianConfig::new(Approver::new(
+                guardian_public_key.to_commitment(),
+                auth_scheme,
+            )),
+            proc_threshold_map: vec![],
+        },
+        [initial_fee_asset.into()],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let auth_args = MultisigAuthArgs::new(
+        mock_chain.latest_block_header().block_num(),
+        Word::from([Felt::from(5u32); 4]),
+    )
+    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args);
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let mut signed_builder = mock_tx_builder;
+    for (public_key, authenticator) in public_keys.iter().zip(&authenticators) {
+        let signature =
+            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
+        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    }
+    let guardian_signature = guardian_authenticator
+        .get_signature(guardian_public_key.to_commitment(), &signing_inputs)
+        .await?;
+    let executed_transaction = signed_builder
+        .add_signature(guardian_public_key.to_commitment(), msg, guardian_signature)
+        .build()?
+        .execute()
+        .await?;
+
+    let paid_fee_asset = assert_single_fee_note(&executed_transaction)?;
+
+    multisig_account.apply_patch(executed_transaction.account_patch())?;
+    assert_eq!(
+        multisig_account.vault().get_balance(initial_fee_asset.id())?.as_u64(),
+        initial_fee_asset.amount().as_u64() - paid_fee_asset.amount().as_u64()
+    );
+
+    // two approver signatures and the guardian signature are verified
+    let auth_procedure_cycles = executed_transaction.measurements().auth_procedure;
+    let auth_estimate = multisig_auth_estimate(3);
+    assert!(
+        auth_procedure_cycles <= auth_estimate,
+        "guarded multisig auth procedure took {auth_procedure_cycles} cycles, exceeding the estimate of {auth_estimate}",
+    );
+
+    Ok(())
+}
+
+/// Tests that a guardian rotation, which skips the guardian signature, still pays the transaction
+/// fee on a fee-charging chain.
+#[tokio::test]
+async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
+        .collect();
+
+    let old_guardian_public_key = AuthSecretKey::new_falcon512_poseidon2().public_key();
+    let new_guardian_public_key = AuthSecretKey::new_falcon512_poseidon2().public_key();
+
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let initial_fee_asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?;
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let mut multisig_account = builder.add_existing_wallet_with_assets(
+        Auth::GuardedMultisig {
+            approver_set: ApproverSet::new(approvers, 2)?,
+            guardian_config: GuardianConfig::new(Approver::new(
+                old_guardian_public_key.to_commitment(),
+                auth_scheme,
+            )),
+            proc_threshold_map: vec![],
+        },
+        [initial_fee_asset.into()],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
+    let update_guardian_script = CodeBuilder::new()
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
+        .compile_tx_script(build_update_guardian_script_source(
+            new_guardian_key_word,
+            auth_scheme as u32,
+            None,
+        ))?;
+
+    let auth_args = MultisigAuthArgs::new(
+        mock_chain.latest_block_header().block_num(),
+        Word::from([Felt::from(6u32); 4]),
+    )
+    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(update_guardian_script)
+        .multisig_auth_args(auth_args);
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    // only the approvers sign, since the rotation skips the guardian signature
+    let mut signed_builder = mock_tx_builder;
+    for (public_key, authenticator) in public_keys.iter().zip(&authenticators) {
+        let signature =
+            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
+        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    }
+    let executed_transaction = signed_builder.build()?.execute().await?;
+
+    let paid_fee_asset = assert_single_fee_note(&executed_transaction)?;
+
+    multisig_account.apply_patch(executed_transaction.account_patch())?;
+    assert_eq!(
+        multisig_account.vault().get_balance(initial_fee_asset.id())?.as_u64(),
+        initial_fee_asset.amount().as_u64() - paid_fee_asset.amount().as_u64()
+    );
+    let stored_guardian_public_key = multisig_account
+        .storage()
+        .get_map_item(AuthGuardedMultisig::guardian_public_key_slot(), StorageMapKey::empty())?;
+    assert_eq!(stored_guardian_public_key, new_guardian_key_word);
 
     Ok(())
 }

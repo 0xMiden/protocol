@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-oracle-price-oracle"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::oracle::price_oracle"
+path      = "price_oracle.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

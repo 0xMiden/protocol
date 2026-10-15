@@ -371,14 +371,15 @@ impl AccountStorage {
     ///
     /// Returns an error if:
     /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
+    /// - A single tree leaf of the map would hold more entries than the tree allows.
     fn create_map_slot(
         &mut self,
         slot_name: StorageSlotName,
         entries: &StorageMapPatchEntries,
     ) -> Result<(), AccountError> {
-        let storage_map =
-            StorageMap::with_entries(entries.as_map().iter().map(|(key, value)| (*key, *value)))
-                .expect("map should contain only unique entries");
+        // The patch entries are already a map, so only an overfull tree leaf can fail here.
+        let storage_map = StorageMap::from_btree_map(entries.as_map().clone())
+            .map_err(AccountError::MaxNumStorageMapLeavesExceeded)?;
 
         self.create_slot(StorageSlot::with_map(slot_name, storage_map))
     }

@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
-use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ONE, ZERO};
 use miden_protocol::{EMPTY_WORD, Felt, Word};
 use miden_tx::{LinkMap, MemoryViewer};
+use rand::random;
 use rand::seq::IteratorRandom;
 
 use crate::TestTransactionBuilder;
@@ -588,8 +588,8 @@ fn generate_entries(count: u64) -> Vec<(Word, (Word, Word))> {
     (0..count)
         .map(|_| {
             let key = rand_link_map_key();
-            let value0 = rand_value::<Word>();
-            let value1 = rand_value::<Word>();
+            let value0 = random::<Word>();
+            let value1 = random::<Word>();
             (key, (value0, value1))
         })
         .collect()
@@ -605,10 +605,10 @@ fn generate_updates(
         .iter()
         .sample(&mut rng, num_updates)
         .into_iter()
-        .map(|(key, _)| (*key, (rand_value::<Word>(), rand_value::<Word>())))
+        .map(|(key, _)| (*key, (random::<Word>(), random::<Word>())))
         .collect()
 }
 
 fn rand_link_map_key() -> Word {
-    rand_value()
+    random()
 }

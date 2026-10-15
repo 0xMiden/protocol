@@ -4,7 +4,14 @@
 pub(crate) mod test_utils;
 
 mod merkle;
-pub use merkle::{MerklePath, MmrDelta, SparseMerklePath};
+pub use merkle::{
+    MerklePath,
+    MmrDelta,
+    PartialMmr,
+    PartialMmrError,
+    SparseMerklePath,
+    TrackedMmrLeaf,
+};
 
 mod smt;
 pub use smt::{

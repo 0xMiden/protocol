@@ -41,6 +41,16 @@ impl Verify for AccountCode {
     }
 }
 
+pub use proto::account::DecodedAccountCodeUpgrade as AccountCodeUpgrade;
+
+impl Verify for AccountCodeUpgrade {
+    type Verified = miden_protocol::account::AccountCodeUpgrade;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(self.code.verify()?))
+    }
+}
+
 pub use proto::account::DecodedAccountWitness as AccountWitness;
 
 impl Verify for AccountWitness {
@@ -83,4 +93,39 @@ pub enum AccountHeaderError {
     UnspecifiedVersion,
     #[error("invalid account nonce: {0}")]
     Nonce(#[source] <miden_protocol::Felt as TryFrom<u64>>::Error),
+}
+
+pub use proto::account::DecodedAccount as Account;
+
+impl Verify for Account {
+    type Verified = miden_protocol::account::Account;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        self.version.ensure_specified()?;
+        Ok(Self::Verified::new(
+            self.account_id.verify()?,
+            self.vault.verify()?,
+            self.storage.verify()?,
+            self.code.verify()?,
+            self.nonce,
+            self.seed.into_inner(),
+        )?)
+    }
+}
+
+impl proto::account::AccountVersion {
+    pub(super) fn ensure_specified(self) -> Result<(), AccountVersionError> {
+        match self {
+            Self::V1 => Ok(()),
+            Self::Unspecified => Err(AccountVersionError::Unspecified),
+        }
+    }
+}
+
+/// The message format version of an [`Account`] or [`PartialAccount`](super::PartialAccount),
+/// distinct from the domain's `AccountIdVersion`.
+#[derive(Debug, thiserror::Error)]
+pub enum AccountVersionError {
+    #[error("account version is unspecified")]
+    Unspecified,
 }

@@ -71,7 +71,7 @@ impl NoteRecipient {
         let (serial_commitment, serial_script_commitment, digest) =
             compute_recipient_chain(self.serial_num, &self.script, &self.storage);
         let script_root = Word::from(self.script.root());
-        let script_encoded = <Vec<Felt>>::from(&self.script);
+        let script_encoded = self.script.to_elements();
 
         [
             (serial_commitment, concat_words(self.serial_num, Word::empty())),

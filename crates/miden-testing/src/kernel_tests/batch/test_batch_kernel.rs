@@ -150,27 +150,25 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 
 /// The batch settles the outstanding precompile claims of its transactions: the executor collects
 /// one witness per ECDSA transaction in transaction order, and the prover proves them all at once.
-/// Falcon verifies in-circuit and therefore contributes no claim.
+/// A transaction without a signature check contributes no claim.
 ///
-/// The four transactions are proven once and reused across the batch shapes, because proving them
-/// dominates the runtime of this test.
+/// Proving dominates the runtime of this test, so the transactions are proven once and each shape
+/// is chosen to cover a distinct prover path: one precompile proof over several interleaved claims
+/// and one batch without any claim.
 #[tokio::test]
 async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
-    let schemes = vec![
-        Auth::basic_ecdsa(),
-        Auth::basic_ecdsa(),
-        Auth::basic_falcon(),
-        Auth::basic_falcon(),
-    ];
+    let schemes = vec![Auth::basic_ecdsa(), Auth::basic_ecdsa(), Auth::IncrNonce];
     let (chain, transactions) = proven_transactions(schemes).await?;
-    let (ecdsa, falcon) = (&transactions[..2], &transactions[2..]);
+    let (ecdsa, no_claim) = (&transactions[..2], &transactions[2]);
 
-    // Each shape pairs transactions of different accounts, so their order in the batch is free.
+    // All transactions belong to different accounts, so their order in a batch is free.
     let shapes = [
-        ("two ecdsa", vec![ecdsa[0].clone(), ecdsa[1].clone()], 2),
-        ("ecdsa then falcon", vec![ecdsa[0].clone(), falcon[0].clone()], 1),
-        ("falcon then ecdsa", vec![falcon[0].clone(), ecdsa[1].clone()], 1),
-        ("two falcon", vec![falcon[0].clone(), falcon[1].clone()], 0),
+        (
+            "ecdsa, no claim, ecdsa",
+            vec![ecdsa[0].clone(), no_claim.clone(), ecdsa[1].clone()],
+            2,
+        ),
+        ("no claim", vec![no_claim.clone()], 0),
     ];
 
     for (shape, transactions, expected_root_count) in shapes {
