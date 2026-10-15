@@ -457,7 +457,7 @@ end
 #!
 #! Verifies the cancellation signatures over the cancel message for `TX_SUMMARY_COMMITMENT` (see
 #! `cancel_signing_message`) and requires at least the proposal's `min_cancel_sigs` valid
-#! signatures, then deletes the proposal entry.
+#! signatures, capped by the current number of approvers, then deletes the proposal entry.
 #!
 #! Cancelling is a different intent from proposing, so it must not be satisfiable with the proposal
 #! signatures. Those are public once the propose transaction lands and are also valid for execution;
@@ -473,7 +473,7 @@ end
 #!
 #! Panics if:
 #! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
-#! - fewer than `min_cancel_sigs` signatures verify over the cancel message
+#! - fewer than `min(min_cancel_sigs, num_approvers)` signatures verify over the cancel message
 #!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
 #!
 #! Invocation: call
@@ -495,8 +495,17 @@ pub proc cancel_transaction_proposal(tx_summary_commitment: word)
     exec.multisig::get_initial_threshold_and_num_approvers drop
     # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
+    # `min_cancel_sigs` was stamped when the proposal was recorded; if the approver set shrank
+    # since, it may exceed the approvers that still exist, which would make the proposal
+    # uncancellable. Cap it by the current approver count.
+    dup movup.10 u32min
+    # => [required_cancel_sigs, num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT]
+
+    movdn.9
+    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, required_cancel_sigs]
+
     exec.multisig::verify_signatures
-    # => [num_verified_signatures, CANCEL_MSG, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+    # => [num_verified_signatures, CANCEL_MSG, TX_SUMMARY_COMMITMENT, required_cancel_sigs]
 
     movup.9 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
     # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT]

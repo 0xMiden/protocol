@@ -1363,6 +1363,99 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     Ok(())
 }
 
+/// `min_cancel_sigs` is stamped from the number of signatures that proposed, so once the approver
+/// set shrinks below it the proposal could demand more cancel signatures than approvers exist.
+/// Cancelling caps the requirement by the current approver count, so the remaining approvers can
+/// still veto: a proposal recorded by all four approvers is cancelled by the two that survive a
+/// rotation down to a 2-of-2 set.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_count(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let commitment = Word::from([Felt::from(721u32); 4]);
+
+    // All four approvers propose, stamping min_cancel_sigs = 4 onto the entry.
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(722)),
+        &[0, 1, 2, 3],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("propose tx with 4 sigs should succeed");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // Rotate the approver set down to the first two approvers (2-of-2).
+    let surviving_keys = &public_keys[..2];
+    let multisig_config_data =
+        build_update_signers_config_vector(2, 2, surviving_keys, auth_scheme);
+    let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, multisig_config_data)]);
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+    let rotate_tx = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        update_signers_script,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(723)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        Some(multisig_config_hash),
+        Some(advice_inputs),
+    )
+    .await?
+    .expect("rotating the approver set should succeed");
+    multisig_account.apply_patch(rotate_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&rotate_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // Only two approvers remain, so two cancel signatures must suffice despite min_cancel_sigs = 4.
+    let cancel_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(724)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("the surviving approvers should be able to cancel");
+    multisig_account.apply_patch(cancel_tx.account_patch())?;
+
+    let stored = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
+        .expect("tx proposals slot should exist");
+    assert_eq!(stored, Word::empty(), "proposal must be removed after the capped cancel");
+
+    Ok(())
+}
+
 /// Proposal signatures must not double as cancellation signatures. They are public once the propose
 /// transaction lands (and also authorize execution), so if `cancel_transaction_proposal` accepted
 /// them anyone could replay them to veto any proposal. Cancelling verifies signatures over the
