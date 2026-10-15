@@ -55,6 +55,11 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 
 #! Sets the delayed execution policy used by proposal lifecycle checks.
 #!
+#! Shortening the timelock weakens every policy that relies on it, so this procedure should carry a
+#! policy at least as strong as the strongest delayed policy in the account. Left unpolicied, the
+#! default threshold suffices to lower `min_delay` to one block and then run any delayed action
+#! almost immediately.
+#!
 #! Inputs:  [min_delay, propose_expiration_delta]
 #! Outputs: []
 #!

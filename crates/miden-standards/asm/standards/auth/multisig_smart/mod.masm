@@ -103,6 +103,10 @@ const AUTH_TX_APPROVAL_EXPIRATION_LOC = 3
 
 #! Sets or clears a smart per-procedure policy.
 #!
+#! Rewriting a policy weakens whatever it protects, so this procedure should carry a policy at
+#! least as strong as the strongest policy in the map. Left unpolicied, the default threshold
+#! suffices to replace any stricter policy and then call its procedure at the default threshold.
+#!
 #! Inputs:  [immediate_threshold, delayed_threshold, note_restrictions, PROC_ROOT]
 #! Outputs: []
 #!

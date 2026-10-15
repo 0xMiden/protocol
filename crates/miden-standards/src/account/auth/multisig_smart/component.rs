@@ -114,6 +114,9 @@ impl AuthMultisigSmartConfig {
     }
 
     /// Attaches a per-procedure smart policy map.
+    ///
+    /// The procedures that edit this configuration need policies of their own; see the `Security`
+    /// section on [`AuthMultisigSmart`].
     pub fn with_proc_policies(
         mut self,
         proc_policies: Vec<(Word, ProcedurePolicy)>,
@@ -219,6 +222,19 @@ fn validate_proc_policies(
 ///   [`AuthMultisigSmart::cancel_signing_message`], which is domain-separated from the proposed
 ///   commitment, so the public proposal signatures cannot be replayed to cancel a proposal; only
 ///   approvers who sign the cancel message can veto it.
+///
+/// A policy protects a procedure only while the procedures that can weaken it are protected at
+/// least as strongly. `update_delayed_execution_policy` shortens the timelock,
+/// `set_procedure_policy` rewrites any policy, and `update_signers_and_threshold` replaces the
+/// approvers and the default threshold; without a policy of their own, each costs only the default
+/// threshold. Say rotation is guarded by an immediate threshold of 4 or a delayed threshold of 2
+/// behind a seven-day timelock, while those three procedures are left unpolicied under a default
+/// threshold of 2. An attacker holding two keys lowers `min_delay` to one block immediately, then
+/// proposes and executes the rotation two blocks later with the same two keys; the seven days and
+/// the four-key threshold never apply. Give these procedures a policy at least as strong as the
+/// strongest policy they can weaken, so that lowering a protection with fewer keys has to go
+/// through a proposal and wait out the current timelock, during which the other approvers can
+/// cancel it.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
@@ -297,6 +313,10 @@ impl AuthMultisigSmart {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the `update_delayed_execution_policy` procedure.
+    ///
+    /// Use it to key a [`ProcedurePolicy`] that guards timelock changes. Shortening the timelock
+    /// weakens every delayed policy, so this policy should be at least as strong as the strongest
+    /// of them; see the `Security` section on [`AuthMultisigSmart`].
     pub fn update_delayed_execution_policy_root() -> AccountProcedureRoot {
         *MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY
     }
@@ -325,7 +345,9 @@ impl AuthMultisigSmart {
     /// Returns the [`AccountProcedureRoot`] of the `set_procedure_policy` procedure.
     ///
     /// It is the only procedure that writes the policy map, so callers guarding policy edits
-    /// commonly need its root.
+    /// commonly need its root. Rewriting a policy weakens whatever it protects, so this policy
+    /// should be at least as strong as the strongest policy in the map; see the `Security` section
+    /// on [`AuthMultisigSmart`].
     pub fn set_procedure_policy_root() -> AccountProcedureRoot {
         *MULTISIG_SMART_SET_PROCEDURE_POLICY
     }
