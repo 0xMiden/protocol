@@ -4,9 +4,7 @@
 //! The faucet keeps a list of blocked Miden accounts that only the `BLK_MANAGER` role holder can
 //! change, through the standard blocklist config note. Whenever USDCx leaves an account, the
 //! transaction kernel calls back into the faucet, which aborts the transaction if that account is
-//! listed. OpenZeppelin (finding N-07, issue 0xMiden/miden-usdcx#175) asked for a test that shows
-//! this for both kinds of outgoing note. Who may block is covered in `transfer_blocklist_e2e.rs`,
-//! the receive side in `mint_scale_conformance.rs`.
+//! listed.
 //!
 //! Each case funds a holder through the real attested mint path on the production faucet, shows
 //! the holder can create the note while unlisted, has the `BLK_MANAGER` holder block it, and shows
