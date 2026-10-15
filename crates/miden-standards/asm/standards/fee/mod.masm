@@ -72,6 +72,8 @@ const ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO = "fee conversion rate numerator mu
 
 const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit into a fungible asset amount"
 
+const ERR_FEE_INSUFFICIENT_BALANCE = "account vault does not hold enough of the fee asset to pay the transaction fee"
+
 # PROCEDURES
 # =================================================================================================
 
@@ -282,6 +284,22 @@ end
 #! Invocation: exec
 pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, asset: Asset)
     u32assert
+    # => [serial_number_block, ASSET_ID, ASSET_VALUE]
+
+    # first, check the account has sufficient balance to pay the fee
+    movdn.8 dupw.1 dupw.1
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, serial_number_block]
+
+    exec.fungible_asset::get_active_account_balance movdn.4
+    # => [ASSET_VALUE, balance, ASSET_ID, ASSET_VALUE, serial_number_block]
+
+    exec.fungible_asset::value_into_amount_unchecked
+    # => [fee_amount, balance, ASSET_ID, ASSET_VALUE, serial_number_block]
+
+    gte assert.err=ERR_FEE_INSUFFICIENT_BALANCE
+    # => [ASSET_ID, ASSET_VALUE, serial_number_block]
+
+    movup.8
     # => [serial_number_block, ASSET_ID, ASSET_VALUE]
 
     # derive the note's serial number
