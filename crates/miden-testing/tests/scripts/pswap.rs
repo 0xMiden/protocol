@@ -47,13 +47,13 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS,
     ERR_PSWAP_DEPTH_OVERFLOW,
     ERR_PSWAP_FILL_BELOW_MINIMUM,
+    ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_INVALID_ACTION,
     ERR_PSWAP_INVALID_PAYBACK_TYPE,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
     ERR_PSWAP_OUTPUT_ALTERED,
     ERR_PSWAP_PARENT_DEPTH_NOT_U32,
-    ERR_PSWAP_PAYBACK_OVERFLOW,
     ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK,
     ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS,
 };
@@ -97,12 +97,12 @@ enum OutputMutation {
 }
 
 /// Extracts the first attachment's word content from a `NoteAttachments`.
-/// Fill arguments at the order's own price: `from_wallet` from the consumer's vault and
-/// `from_notes` from other notes in the transaction.
-pub(super) fn fill_args(from_wallet: u64, from_notes: u64) -> anyhow::Result<Word> {
+/// Fill arguments at the order's own price: `account_fill` from the consumer's vault and
+/// `note_fill` from other notes in the transaction.
+pub(super) fn fill_args(account_fill: u64, note_fill: u64) -> anyhow::Result<Word> {
     Ok(PswapNote::create_fill_args(
-        AssetAmount::new(from_wallet)?,
-        AssetAmount::new(from_notes)?,
+        AssetAmount::new(account_fill)?,
+        AssetAmount::new(note_fill)?,
         AssetAmount::ZERO,
     ))
 }
@@ -1345,8 +1345,8 @@ async fn pswap_rejects_a_surplus_without_a_fill() -> anyhow::Result<()> {
 
 /// A cancellation carries no amounts, a surplus included.
 #[rstest]
-#[case::from_wallet([ONE, ONE, ZERO, ZERO])]
-#[case::from_notes([ONE, ZERO, ONE, ZERO])]
+#[case::account_fill([ONE, ONE, ZERO, ZERO])]
+#[case::note_fill([ONE, ZERO, ONE, ZERO])]
 #[case::surplus([ONE, ZERO, ZERO, ONE])]
 #[tokio::test]
 async fn pswap_cancel_rejects_amounts(#[case] args: [Felt; 4]) -> anyhow::Result<()> {
@@ -1479,7 +1479,7 @@ async fn pswap_netting_pays_a_surplus_from_the_other_order() -> anyhow::Result<(
 /// One payback funded from both the filler's vault and another order, with a surplus. Charlie
 /// fills Alice's 100 USDC for 50 ETH with 13 ETH of his own and 38 of Bob's (payback 51, surplus
 /// 1), and Bob's 40 ETH for 77 USDC with 3 USDC of his own and 74 of Alice's. Each order's notes
-/// take `payout * from_notes / payback`, rounded down, and Charlie the rest: 26 USDC and 2 ETH.
+/// take `payout * note_fill / payback`, rounded down, and Charlie the rest: 26 USDC and 2 ETH.
 #[tokio::test]
 async fn pswap_payback_from_vault_and_notes_with_surplus() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1975,16 +1975,16 @@ async fn pswap_rejects_oversized_private_payback_tag() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The payback overflow case uses `1u64 << 63` for each payer: both are valid
+/// The fill sum overflow case uses `1u64 << 63` for each fill: both are valid
 /// Felt values (< field modulus), but their sum `2^64` exceeds `u64::MAX`, so
 /// the `overflowing_add` check fires before `assert_valid_asset_amount`.
 ///
-/// The max-asset-amount case uses `FungibleAsset::MAX_AMOUNT` for each payer:
+/// The max-asset-amount case uses `FungibleAsset::MAX_AMOUNT` for each fill:
 /// the sum `2 * MAX_AMOUNT` fits in u64 but exceeds `MAX_AMOUNT`, so
 /// `assert_valid_asset_amount` fires instead.
 #[rstest]
-#[case::payback_u64_overflow(1u64 << 63, 1u64 << 63, ERR_PSWAP_PAYBACK_OVERFLOW)]
-#[case::payback_exceeds_max_asset_amount(
+#[case::fill_sum_u64_overflow(1u64 << 63, 1u64 << 63, ERR_PSWAP_FILL_SUM_OVERFLOW)]
+#[case::fill_sum_exceeds_max_asset_amount(
     FungibleAsset::MAX_AMOUNT.as_u64(),
     FungibleAsset::MAX_AMOUNT.as_u64(),
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT

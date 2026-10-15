@@ -100,12 +100,16 @@ struct Order {
     private_payback: bool,
 }
 
-/// The expected result of filling `order` with note arguments `[0, from_wallet, 0, surplus]`,
+/// The expected result of filling `order` with note arguments `[0, account_fill, 0, surplus]`,
 /// written from the specification, independently of the script and the Rust crate. The checks
 /// run in the script's order.
-fn model(order: Order, from_wallet: u64, surplus: u64) -> Result<Filled, Refusal> {
+fn model(order: Order, account_fill: u64, surplus: u64) -> Result<Filled, Refusal> {
     // No payers select a full fill from the consumer's vault.
-    let payback = if from_wallet == 0 { order.requested } else { from_wallet };
+    let payback = if account_fill == 0 {
+        order.requested
+    } else {
+        account_fill
+    };
     if payback > MAX {
         return Err(Refusal::NotAnAssetAmount);
     }
@@ -188,9 +192,9 @@ async fn pswap_fill_grid(#[case] offered: u64, #[case] requested: u64) -> anyhow
             };
             let space = payback_axis(requested)
                 .into_iter()
-                .flat_map(|from_wallet| {
-                    let payback = if from_wallet == 0 { requested } else { from_wallet };
-                    surplus_axis(payback).into_iter().map(move |surplus| (from_wallet, surplus))
+                .flat_map(|account_fill| {
+                    let payback = if account_fill == 0 { requested } else { account_fill };
+                    surplus_axis(payback).into_iter().map(move |surplus| (account_fill, surplus))
                 })
                 .collect();
             outcomes += check_order(order, space).await?;
@@ -223,18 +227,18 @@ async fn pswap_fill_random(#[case] seed: u64) -> anyhow::Result<()> {
         };
         let space = (0..8)
             .map(|_| {
-                let from_wallet = match rng.random_range(0..3) {
+                let account_fill = match rng.random_range(0..3) {
                     0 => 0,
                     1 => rng.random_range(1..=requested),
                     _ => amount(&mut rng),
                 };
-                let payback = if from_wallet == 0 { requested } else { from_wallet };
+                let payback = if account_fill == 0 { requested } else { account_fill };
                 let surplus = match rng.random_range(0..3) {
                     0 => 0,
                     1 => rng.random_range(0..=payback),
                     _ => amount(&mut rng),
                 };
-                (from_wallet, surplus)
+                (account_fill, surplus)
             })
             .collect();
         check_order(order, space).await?;
@@ -376,7 +380,7 @@ impl Outcomes {
     }
 }
 
-/// Builds `order` once and runs every `(from_wallet, surplus)` of `space` against it.
+/// Builds `order` once and runs every `(account_fill, surplus)` of `space` against it.
 async fn check_order(order: Order, space: Vec<(u64, u64)>) -> anyhow::Result<Outcomes> {
     let mut builder = MockChain::builder();
     let offered_faucet =
@@ -421,11 +425,10 @@ async fn check_order(order: Order, space: Vec<(u64, u64)>) -> anyhow::Result<Out
         recipient,
     };
     let mut outcomes = Outcomes::default();
-    for (from_wallet, surplus) in space {
-        let outcome = point
-            .check(from_wallet, surplus)
-            .await
-            .with_context(|| format!("{order:?}, from_wallet {from_wallet}, surplus {surplus}"))?;
+    for (account_fill, surplus) in space {
+        let outcome = point.check(account_fill, surplus).await.with_context(|| {
+            format!("{order:?}, account_fill {account_fill}, surplus {surplus}")
+        })?;
         match outcome {
             Ok(Filled { remainder: Some(_), .. }) => outcomes.filled_partly += 1,
             Ok(Filled { remainder: None, .. }) => outcomes.filled_fully += 1,
@@ -447,16 +450,17 @@ struct Point<'a> {
 }
 
 impl Point<'_> {
-    /// Fills the order with `[0, from_wallet, 0, surplus]` and checks the script against the
+    /// Fills the order with `[0, account_fill, 0, surplus]` and checks the script against the
     /// model, the Rust prediction and the owner's rebuild. Returns the model's outcome.
     async fn check(
         &self,
-        from_wallet: u64,
+        account_fill: u64,
         surplus: u64,
     ) -> anyhow::Result<Result<Filled, Refusal>> {
         let note: Note = self.pswap.clone().into();
         // Raw felts, so the invalid regions can be written down as well.
-        let args = Word::from([ZERO, Felt::try_from(from_wallet)?, ZERO, Felt::try_from(surplus)?]);
+        let args =
+            Word::from([ZERO, Felt::try_from(account_fill)?, ZERO, Felt::try_from(surplus)?]);
         let result = self
             .chain
             .build_transaction(self.filler)
@@ -466,10 +470,10 @@ impl Point<'_> {
             .execute()
             .await;
         // The Rust prediction takes typed amounts, so it is asked only where they are valid.
-        let payback = if from_wallet == 0 {
+        let payback = if account_fill == 0 {
             self.order.requested
         } else {
-            from_wallet
+            account_fill
         };
         let predicted =
             match (FungibleAsset::new(self.requested_faucet, payback), AssetAmount::new(surplus)) {
@@ -479,7 +483,7 @@ impl Point<'_> {
                 _ => None,
             };
 
-        let filled = match model(self.order, from_wallet, surplus) {
+        let filled = match model(self.order, account_fill, surplus) {
             Err(refusal) => {
                 let error = refusal.error();
                 assert_transaction_executor_error!(result, error);

@@ -507,24 +507,31 @@ impl PswapNote {
         PSWAP_SCRIPT.root()
     }
 
-    /// Builds the `NOTE_ARGS` word that fills the order: `[0, from_wallet, from_notes, surplus]`.
+    /// Builds the `NOTE_ARGS` word that the PSWAP script expects when a
+    /// consumer wants to fill part of the swap:
     ///
-    /// The creator receives `from_wallet + from_notes` of the requested asset: `from_wallet` out of
-    /// the consumer's vault, `from_notes` from other notes in the same transaction (cross-swap).
-    /// `surplus` of it is above the order's own price; the rest is the fill (see
-    /// [`Self::execute`]).
+    /// `[0, account_fill, note_fill, surplus]`
     ///
-    /// A network transaction's default `NOTE_ARGS`, `[0, 0, 0, 0]`, is a full fill at the order's
-    /// own price from the consumer's vault.
+    /// - `account_fill` is the portion of the requested asset the consumer pays out of their own
+    ///   vault.
+    /// - `note_fill` is the portion sourced from another note in the same transaction (cross-swap /
+    ///   net-zero flow).
+    /// - `surplus` is the part of `account_fill + note_fill` above the order's own price (see
+    ///   [`Self::execute`]).
+    ///
+    /// All values are in the requested asset's base units. In a network
+    /// transaction the kernel defaults `NOTE_ARGS` to `[0, 0, 0, 0]` and the
+    /// script falls back to a full fill, so this helper is only needed for
+    /// local transactions where the consumer is choosing the fill split.
     pub fn create_fill_args(
-        from_wallet: AssetAmount,
-        from_notes: AssetAmount,
+        account_fill: AssetAmount,
+        note_fill: AssetAmount,
         surplus: AssetAmount,
     ) -> Word {
         Word::from([
             Self::ACTION_FILL_ID,
-            Felt::from(from_wallet),
-            Felt::from(from_notes),
+            Felt::from(account_fill),
+            Felt::from(note_fill),
             Felt::from(surplus),
         ])
     }
@@ -644,9 +651,11 @@ impl PswapNote {
 
     /// Executes the swap as a full fill, producing only the payback note (no remainder).
     ///
-    /// Equivalent to [`Self::execute`] with `from_wallet` set to the full requested amount, no
-    /// `from_notes` and no surplus. It also matches a note consumed without explicit `note_args`
-    /// (e.g. in a network transaction, where the kernel defaults `note_args` to `[0, 0, 0, 0]`).
+    /// Equivalent to calling [`Self::execute`] with `account_fill_asset` set to the full
+    /// requested amount, `note_fill_asset = None` and no surplus. It also matches the on-chain
+    /// behavior when a note is consumed without explicit `note_args` (e.g. in a network
+    /// transaction, where the kernel defaults `note_args` to `[0, 0, 0, 0]` and the MASM
+    /// script falls back to a full fill).
     pub fn execute_full_fill(
         &self,
         consumer_account_id: AccountId,
@@ -658,80 +667,88 @@ impl PswapNote {
         )
     }
 
-    /// Executes the swap, producing the output notes for [`Self::create_fill_args`] with the same
-    /// amounts.
+    /// Executes the swap, producing the output notes for a given fill.
     ///
-    /// `from_wallet` is debited from the consumer's vault; `from_notes` arrives from other notes
-    /// in the same transaction (cross-swap). At least one must be provided. The creator's payback
-    /// carries both. Of it, `surplus` is above the order's own price and the rest is the fill,
-    /// capped at the requested amount (any excess is surplus too). The fill alone sets what the
-    /// order gives up and its remainder.
+    /// `account_fill_asset` is debited from the consumer's vault; `note_fill_asset` arrives
+    /// from another note in the same transaction (cross-swap). At least one must be
+    /// provided. Their sum is the creator's payback: `surplus` of it is above the order's own
+    /// price and the rest, capped at `min_requested_amount`, is the fill (an over-fill is surplus
+    /// too). The fill alone sets what the order gives up and the remainder.
     ///
-    /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is `None` when the
-    /// fill reaches `min_requested_amount`. The payback is [`RawOutputNote::Partial`] for private
-    /// outputs and [`RawOutputNote::Full`] for public outputs. The partial output contains the
-    /// recipient commitment, assets, metadata, and attachments needed to compute its ID and convert
-    /// it to a proven private output with [`RawOutputNote::into_output_note`]. The filler never
-    /// needs the recipient preimage; the owner supplies it later to [`Self::private_payback_note`]
-    /// to reconstruct a consumable note.
+    /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
+    /// `None` when the fill is at least `min_requested_amount` (full fill or over-fill).
+    /// The payback is [`RawOutputNote::Partial`] for private outputs and [`RawOutputNote::Full`]
+    /// for public outputs. The partial output contains the recipient commitment, assets, metadata,
+    /// and attachments needed to compute its ID and convert it to a proven private output with
+    /// [`RawOutputNote::into_output_note`]. The filler never needs the recipient preimage; the
+    /// owner supplies it later to [`Self::private_payback_note`] to reconstruct a consumable note.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Both assets are `None`, or one does not match the order's requested faucet.
-    /// - The payback overflows or exceeds the maximum fungible asset amount.
-    /// - `surplus` is not below the payback.
-    /// - The fill is below the order's minimum fill step.
+    /// - Both assets are `None`.
+    /// - A fill asset does not match the order's requested faucet.
+    /// - `surplus` is not below the combined fill amount.
+    /// - The combined fill amount overflows or exceeds the maximum fungible asset amount.
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
-        from_wallet: Option<FungibleAsset>,
-        from_notes: Option<FungibleAsset>,
+        account_fill_asset: Option<FungibleAsset>,
+        note_fill_asset: Option<FungibleAsset>,
         surplus: AssetAmount,
     ) -> Result<(RawOutputNote, Option<PswapNote>), NoteError> {
-        let requested_faucet_id = self.storage.requested_faucet_id();
-        let payback_asset = match (from_wallet, from_notes) {
-            (Some(wallet), Some(notes)) => wallet.add(notes).map_err(|e| {
-                NoteError::other_with_source("failed to combine the payback assets", e)
+        // Combine account fill and note fill into a single payback asset.
+        let payback_asset = match (account_fill_asset, note_fill_asset) {
+            (Some(account_fill), Some(note_fill)) => account_fill.add(note_fill).map_err(|e| {
+                NoteError::other_with_source(
+                    "failed to combine account fill and note fill assets",
+                    e,
+                )
             })?,
             (Some(asset), None) | (None, Some(asset)) => asset,
             (None, None) => {
                 return Err(NoteError::other(
-                    "at least one of from_wallet or from_notes must be provided",
+                    "at least one of account_fill_asset or note_fill_asset must be provided",
                 ));
             },
         };
-        if payback_asset.faucet_id() != requested_faucet_id {
-            return Err(NoteError::other("payback assets must match the order's requested faucet"));
+        if payback_asset.faucet_id() != self.storage.requested_faucet_id() {
+            return Err(NoteError::other("fill asset must match the order's requested faucet"));
         }
-        let payback = payback_asset.amount().as_u64();
-        if surplus.as_u64() >= payback {
+        let payback_amount = payback_asset.amount().as_u64();
+
+        let total_offered_amount = self.offered_asset.amount().as_u64();
+        let requested_faucet_id = self.storage.requested_faucet_id();
+        let min_requested_amount = self.storage.min_requested_amount();
+
+        // The surplus must leave a fill, and whatever exceeds the requested amount is surplus too.
+        if surplus.as_u64() >= payback_amount {
             return Err(NoteError::other("PSWAP surplus must be below the payback"));
         }
-
-        let min_requested_amount = self.storage.min_requested_amount();
-        let fill = (payback - surplus.as_u64()).min(min_requested_amount);
-        let surplus = AssetAmount::new(payback - fill)
+        let fill_amount = (payback_amount - surplus.as_u64()).min(min_requested_amount);
+        let surplus = AssetAmount::new(payback_amount - fill_amount)
             .map_err(|e| NoteError::other_with_source("invalid PSWAP surplus", e))?;
 
-        // The effective floor is `min(min_fill_step, min_requested_amount)`, so a remainder whose
-        // requested amount has shrunk below `min_fill_step` stays fillable in full.
+        // Enforce the per-fill floor, mirroring the MASM `execute_pswap` guard. The effective floor
+        // is clamped to `min(min_fill_step, min_requested_amount)` so a remainder whose requested
+        // amount has shrunk below `min_fill_step` stays fillable in full. `min_fill_step == 0`
+        // disables the floor.
         let effective_floor = self.storage.min_fill_step().as_u64().min(min_requested_amount);
-        if fill < effective_floor {
+        if fill_amount < effective_floor {
             return Err(NoteError::other("PSWAP fill amount is below the minimum fill step"));
         }
 
-        // What the order gives up. The notes' share of it is `payout * from_notes / payback`,
+        // What the order gives up. The notes' share of it is `payout * note_fill / payback`,
         // rounded down, and the consumer receives the rest.
-        let total_offered_amount = self.offered_asset.amount().as_u64();
         let offered_amount_for_fill =
-            Self::calculate_output_amount(total_offered_amount, min_requested_amount, fill)?;
+            Self::calculate_output_amount(total_offered_amount, min_requested_amount, fill_amount)?;
 
         let payback_note = self.create_payback_note(consumer_account_id, payback_asset, surplus)?;
 
-        let remainder = if fill < min_requested_amount {
+        // Create remainder note if partial fill
+        let remainder = if fill_amount < min_requested_amount {
             let remaining_offered = total_offered_amount - offered_amount_for_fill;
-            let remaining_requested = min_requested_amount - fill;
+            let remaining_requested = min_requested_amount - fill_amount;
 
             let remaining_offered_asset =
                 FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered).map_err(
@@ -886,8 +903,8 @@ impl PswapNote {
     ///
     /// - `consumer_account_id` — the account that consumed the parent PSWAP in round `depth`, used
     ///   as the remainder's sender.
-    /// - `attachment` — the on-chain `[amount, order_id, depth, 0]` remainder attachment for this
-    ///   round, where `amount` is the offered-asset units paid out.
+    /// - `attachment` — the on-chain `[amount, order_id, depth, 0]` attachment for this round,
+    ///   where `amount` is the offered-asset units paid out.
     /// - `remaining_offered` / `remaining_requested` — the leftover amounts that survive into this
     ///   remainder. Each round takes the remainder attachment's `amount` from the offered side and
     ///   the payback attachment's fill, `amount - surplus`, from the requested side. Both are
@@ -1010,11 +1027,28 @@ impl PswapNote {
         Ok(amount)
     }
 
-    /// The depth of this note's outputs: one round after its own.
-    fn output_depth(&self) -> Result<u32, NoteError> {
-        self.parent_depth()
-            .checked_add(1)
-            .ok_or_else(|| NoteError::other("PSWAP depth does not fit in u32"))
+    /// Builds the [`NoteAttachment`] carried by both PSWAP output notes (payback and
+    /// remainder).
+    ///
+    /// `amount` is the round's transferred amount on the relevant side of the trade —
+    /// requested-asset units for the payback, offered-asset units for the remainder. `surplus` is
+    /// the part of a payback above the order's own price, and zero for a remainder.
+    fn pswap_output_attachment(
+        amount: u64,
+        order_id: Felt,
+        depth: u64,
+        surplus: AssetAmount,
+    ) -> Result<NoteAttachment, NoteError> {
+        let amount = AssetAmount::new(amount)
+            .map_err(|e| NoteError::other_with_source("amount is not a valid asset amount", e))?;
+        let depth = u32::try_from(depth)
+            .map_err(|_| NoteError::other("PSWAP depth does not fit in u32"))?;
+        let attachment = if surplus == AssetAmount::ZERO {
+            PswapNoteAttachment::new(amount, order_id, depth)
+        } else {
+            PswapNoteAttachment::new_payback(amount, order_id, depth, surplus)?
+        };
+        Ok(attachment.into())
     }
 
     fn validate_private_payback_recipient(
@@ -1038,12 +1072,13 @@ impl PswapNote {
         payback_asset: FungibleAsset,
         surplus: AssetAmount,
     ) -> Result<RawOutputNote, NoteError> {
-        let attachment = NoteAttachment::from(PswapNoteAttachment::new_payback(
-            payback_asset.amount(),
+        let current_depth = u64::from(self.parent_depth()) + 1;
+        let attachment = Self::pswap_output_attachment(
+            payback_asset.amount().as_u64(),
             self.order_id(),
-            self.output_depth()?,
+            current_depth,
             surplus,
-        )?);
+        )?;
         let assets = NoteAssets::new(vec![payback_asset.into()])?;
         let metadata =
             PartialNoteMetadata::new(consumer_account_id, self.storage.payback_note_type())
@@ -1100,13 +1135,13 @@ impl PswapNote {
             self.serial_number[3] + ONE,
         ]);
 
-        let offered_amount_for_fill = AssetAmount::new(offered_amount_for_fill)
-            .map_err(|e| NoteError::other_with_source("invalid offered amount for fill", e))?;
-        let attachment = NoteAttachment::from(PswapNoteAttachment::new(
+        let current_depth = u64::from(self.parent_depth()) + 1;
+        let attachment = Self::pswap_output_attachment(
             offered_amount_for_fill,
             self.order_id(),
-            self.output_depth()?,
-        ));
+            current_depth,
+            AssetAmount::ZERO,
+        )?;
 
         PswapNote::builder()
             .sender(consumer_account_id)
@@ -1500,17 +1535,16 @@ mod tests {
             PswapPayback::private(private_recipient, NoteTag::default()),
         ] {
             pswap.storage.payback = payback;
-            for (from_wallet, from_notes) in [
+            for (account_fill, note_fill) in [
                 (Some(wrong_fill), None),
                 (None, Some(wrong_fill)),
                 (Some(wrong_fill), Some(wrong_fill)),
             ] {
                 let err = pswap
-                    .execute(dummy_consumer_id(), from_wallet, from_notes, AssetAmount::ZERO)
+                    .execute(dummy_consumer_id(), account_fill, note_fill, AssetAmount::ZERO)
                     .unwrap_err();
                 assert!(
-                    err.to_string()
-                        .contains("payback assets must match the order's requested faucet")
+                    err.to_string().contains("fill asset must match the order's requested faucet")
                 );
             }
         }
