@@ -229,6 +229,23 @@ pub struct BnVector {
 
 static FILE: OnceLock<VectorFile> = OnceLock::new();
 
+/// Collects the rows a test selected from a family and checks that their number is the one the
+/// test expects.
+///
+/// A filter that matches nothing, or fewer rows than the artifact is meant to carry, fails here
+/// instead of passing silently with an empty loop. Every test that narrows a family by `kind`,
+/// `id` or an optional field goes through this, so adding or dropping a vector has to be
+/// acknowledged in the test that covers it.
+pub fn selected<'a, T>(
+    rows: impl IntoIterator<Item = &'a T>,
+    expected: usize,
+    what: &str,
+) -> Vec<&'a T> {
+    let rows: Vec<&'a T> = rows.into_iter().collect();
+    assert_eq!(rows.len(), expected, "{what}: selected row count");
+    rows
+}
+
 /// Loads (once) the canonical artifact by reference.
 pub fn load() -> &'static VectorFile {
     FILE.get_or_init(|| {
@@ -440,9 +457,9 @@ impl BnVector {
 mod tests {
     use super::*;
 
-    /// The artifact parses, every family is non-empty, every entry carries provenance
-    /// (`cite` + `derivation`), and every entry carries non-empty `tv` tags unless it is on the
-    /// explicit guard-vector allowlist.
+    /// The artifact parses, every family has its pinned row count, every id is unique across the
+    /// whole artifact, every entry carries provenance (`cite` + `derivation`), and every entry
+    /// carries non-empty `tv` tags unless it is on the explicit guard-vector allowlist.
     #[test]
     fn artifact_guard() {
         // guard-only vectors that intentionally trace to no spec row; they pin harness and trap
@@ -459,6 +476,26 @@ mod tests {
         assert_eq!(v.families.att.len(), 4, "att family");
         assert_eq!(v.families.bn.len(), 8, "bn family");
         assert_eq!(v.families.mi.len(), 6, "mi family");
+
+        // Every id is unique across the whole artifact. Tests look rows up by id and narrow
+        // families by id, so a row copied without renaming it would be skipped by those lookups
+        // and matched by no test at all, while a raised family count would still admit it.
+        let ids = v
+            .families
+            .b32
+            .iter()
+            .map(|e| e.id.as_str())
+            .chain(v.families.amt.iter().map(|e| e.id.as_str()))
+            .chain(v.families.aid.iter().map(|e| e.id.as_str()))
+            .chain(v.families.di.iter().map(|e| e.id.as_str()))
+            .chain(v.families.att.iter().map(|e| e.id.as_str()))
+            .chain(v.families.bn.iter().map(|e| e.id.as_str()))
+            .chain(v.families.mi.iter().map(|e| e.id.as_str()));
+        let mut seen = std::collections::BTreeSet::new();
+        for id in ids {
+            assert!(seen.insert(id), "{id}: duplicate vector id");
+        }
+
         let no_provenance = |cite: &str, derivation: &str| cite.is_empty() || derivation.is_empty();
         let tv_ok = |id: &str, tv: &[String]| !tv.is_empty() || TV_TAG_ALLOWLIST.contains(&id);
         let kind_ok = |kind: &str| kind == "accept" || kind == "reject";

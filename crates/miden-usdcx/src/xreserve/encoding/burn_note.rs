@@ -86,16 +86,19 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::vectors::load;
+    use crate::vectors::{BnVector, load, selected};
+
+    /// The accept rows, with their count pinned so an artifact edit cannot thin the coverage
+    /// below what these tests expect.
+    fn accepts() -> Vec<&'static BnVector> {
+        selected(load().families.bn.iter().filter(|x| x.kind == "accept"), 3, "bn accept rows")
+    }
 
     /// TV-BN-1 (round-trip + golden layout): `encode` matches the golden words and
     /// `decode(encode(x)) == x` across the accept vectors (incl. boundary values).
     #[test]
     fn tv_bn_1_round_trip() {
-        let v = load();
-        let accept: Vec<_> = v.families.bn.iter().filter(|x| x.kind == "accept").collect();
-        assert!(!accept.is_empty(), "bn accept vectors present");
-        for vec in accept {
+        for vec in accepts() {
             let x = vec.expected_struct();
             let encoded = x.encode();
             assert_eq!(
@@ -149,8 +152,7 @@ mod tests {
     /// depositor.
     #[test]
     fn tv_bn_2_destination_in_items() {
-        let v = load();
-        for vec in v.families.bn.iter().filter(|x| x.kind == "accept") {
+        for vec in accepts() {
             let items = vec.expected_struct().encode();
             let golden = vec.items_words();
             assert_eq!(items[0], golden[0], "{}: destDomain in word 0", vec.id);

@@ -571,7 +571,13 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::vectors::load;
+    use crate::vectors::{DiVector, load, selected};
+
+    /// The accept rows, with their count pinned so an artifact edit cannot thin the coverage
+    /// below what these tests expect.
+    fn accepts() -> Vec<&'static DiVector> {
+        selected(load().families.di.iter().filter(|v| v.kind == "accept"), 2, "di accept rows")
+    }
 
     /// TV-DI-1 (happy path, written first): a full header + hookData decodes to the exact per-field
     /// values at the frozen wire offsets.
@@ -582,8 +588,7 @@ mod tests {
     /// decoder just applied.
     #[test]
     fn tv_di_1_positive_parse() {
-        let v = load();
-        for vec in v.families.di.iter().filter(|v| v.kind == "accept") {
+        for vec in accepts() {
             let bytes = vec.bytes();
             let intent = DepositIntent::try_from(bytes.as_slice())
                 .unwrap_or_else(|e| panic!("vector {}: must parse, got {e}", vec.id));
@@ -626,8 +631,7 @@ mod tests {
     /// verifies the signature over bytes it rebuilds rather than over bytes it was handed.
     #[test]
     fn round_trip_is_byte_exact() {
-        let v = load();
-        for vec in v.families.di.iter().filter(|v| v.kind == "accept") {
+        for vec in accepts() {
             let bytes = vec.bytes();
             let intent = DepositIntent::try_from(bytes.as_slice()).expect("accept vector decodes");
             assert_eq!(intent.to_bytes(), bytes, "vector {}: round trip", vec.id);
@@ -721,7 +725,7 @@ mod tests {
     #[test]
     fn tv_di_7_sixty_felts_and_1024_bound() {
         let v = load();
-        for vec in v.families.di.iter().filter(|v| v.kind == "accept") {
+        for vec in accepts() {
             let intent =
                 DepositIntent::try_from(vec.bytes().as_slice()).expect("accept vector decodes");
             let felts = intent.to_preimage_felts();

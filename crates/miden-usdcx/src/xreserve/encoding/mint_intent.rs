@@ -265,10 +265,12 @@ mod tests {
     use miden_protocol::utils::serde::Serializable;
 
     use super::*;
-    use crate::vectors::{MiVector, load};
+    use crate::vectors::{MiVector, load, selected};
 
-    fn accepts() -> impl Iterator<Item = &'static MiVector> {
-        load().families.mi.iter().filter(|v| v.kind == "accept")
+    /// The accept rows, with their count pinned so an artifact edit cannot thin the coverage
+    /// below what these tests expect.
+    fn accepts() -> Vec<&'static MiVector> {
+        selected(load().families.mi.iter().filter(|v| v.kind == "accept"), 2, "mi accept rows")
     }
 
     /// Decodes an accept vector's payload the way the relayer does.
@@ -347,7 +349,7 @@ mod tests {
     #[test]
     fn tv_dual_6_rejects_what_the_transport_cannot_carry() {
         let rejects = load().families.mi.iter().filter(|v| v.kind == "reject");
-        for vec in rejects {
+        for vec in selected(rejects, 4, "mi reject rows") {
             let id = &vec.id;
             let result = DepositIntent::try_from(vec.payload().as_slice()).and_then(|intent| {
                 MintIntent::from_deposit_intent(&intent, vec.faucet_id(), vec.remote_domain)
@@ -383,7 +385,7 @@ mod tests {
     /// still legible.
     #[test]
     fn compress_rejects_a_foreign_remote_domain() {
-        let vec = accepts().next().expect("an accept vector");
+        let vec = accepts()[0];
         assert_matches!(
             MintIntent::from_deposit_intent(
                 &intent(vec),
@@ -402,7 +404,7 @@ mod tests {
     /// pad would have covered.
     #[test]
     fn a_source_chain_address_wider_than_an_evm_address_round_trips() {
-        let vec = accepts().next().expect("an accept vector");
+        let vec = accepts()[0];
         let wide = ForeignChainAddress::new(core::array::from_fn(|i| 0xf0 ^ i as u8));
         assert_ne!(wide.as_bytes()[..12], [0u8; 12], "not an EVM address");
 
@@ -424,7 +426,10 @@ mod tests {
     /// refused rather than silently truncated: on-chain that length picks the keccak extent.
     #[test]
     fn from_felts_rejects_a_hook_data_length_lie() {
-        let vec = accepts().find(|v| v.id == "mi-pos-empty-hookdata").expect("vector present");
+        let vec = accepts()
+            .into_iter()
+            .find(|v| v.id == "mi-pos-empty-hookdata")
+            .expect("vector present");
         let mut felts = vec.carried_values();
         felts[MintIntent::HOOK_DATA_LEN_FELT_OFF] = Felt::from(4u32);
         assert_matches!(MintIntent::from_elements(&felts), Err(EncodingError::LengthMismatch));
