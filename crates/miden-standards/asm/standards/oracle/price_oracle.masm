@@ -42,8 +42,8 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 #! Where:
 #! - SOURCE_ASSET_ID is the asset being converted from.
 #! - TARGET_ASSET_ID is the asset being converted to.
-#! - last_updated is when the rate was observed, in the units of `tx::get_block_timestamp`, or 0
-#!   when the active rate provider cannot price the pair.
+#! - last_updated is a unix timestamp of when the rate was observed, or 0 when the active rate
+#!   provider cannot price the pair.
 #! - num and den express the rate, and are only valid when last_updated is non-zero.
 #!
 #! Panics if:
