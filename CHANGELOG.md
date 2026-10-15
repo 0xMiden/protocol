@@ -27,6 +27,11 @@
 ## v0.17.0-pre.1 (2026-09-05)
 ## v1.0.0-rc.1 (TBD)
 
+### Features
+
+- Added delayed execution to `AuthMultisigSmart` through `propose_transaction`, `cancel_transaction_proposal`, and a `DelayedExecutionPolicy` updatable via `update_delayed_execution_policy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `AuthMultisigSmart::update_signers_and_threshold_root` and `AuthMultisigSmart::update_delayed_execution_policy_root` so procedure policies can guard approver rotation and delay-policy updates ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+
 ### Changes
 
 - [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
@@ -37,6 +42,8 @@
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
+- [BREAKING] `AuthMultisigSmartConfig::new` and `Auth::MultisigSmart` now require a `DelayedExecutionPolicy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- [BREAKING] `multisig_smart` accepts delay-only procedure policies again (`ProcedurePolicyExecutionMode::DelayOnly`), and `ProcedurePolicy::immediate_threshold` now returns an `Option` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 
 ### Fixes
 
@@ -216,6 +223,7 @@
 - Role symbol validation now computes its upper bound with `exp.u4`, whose unique exponent decomposition stops a prover from widening the bound and slipping a non-canonical symbol through ([#3774](https://github.com/0xMiden/protocol/pull/3774)).
 - The PSWAP note script now bounds its lineage depth to a u32 and the `PswapNote` builder rejects a malformed `PswapAttachment` [#3777](https://github.com/0xMiden/protocol/pull/3777).
 - The standard config note scripts now reject a non-public note [#3779](https://github.com/0xMiden/protocol/pull/3779).
+- [BREAKING] `multisig_smart` now rejects delay-only procedure policies ([#3781](https://github.com/0xMiden/protocol/pull/3781)).
 - Fixed `AccountInterface` reporting an empty `Custom` component for accounts assembled purely from standard components ([#3824](https://github.com/0xMiden/protocol/pull/3824)).
 - [BREAKING] Fixed `AccountInterface::from_account` and `from_code` panicking on accounts that authenticate through a custom auth component ([#3825](https://github.com/0xMiden/protocol/pull/3825)).
 
@@ -565,7 +573,6 @@
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - Added foundations for `AuthMultisigSmart` ([#2806](https://github.com/0xMiden/protocol/pull/2806)).
-- Extended `AuthMultisigSmart` with a `DelayedExecutionPolicy` and a `delayed_execution` module that exposes a timelock-controlled propose/cancel/execute flow, surfaced through `update_delayed_execution_policy`, `propose_transaction`, `cancel_transaction_proposal`, `cancel_and_propose_new_transaction`, and `execute_proposed_transaction` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `AuthNetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed allowlist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
 - Added basic blocklist transfer policy with owner-managed admin (`block_account`/`unblock_account`) and runtime policy switching via the protocol-reserved asset callback slots ([#2820])(https://github.com/0xMiden/protocol/pull/2820).
