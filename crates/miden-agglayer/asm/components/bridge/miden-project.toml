@@ -17,3 +17,81 @@ miden-standards.workspace = true
 description = "AggLayer bridge"
 name        = "agglayer::bridge"
 version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Global exit roots (GERs)"
+name        = "agglayer::bridge::ger_map"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Local Exit Tree (LET) frontier"
+name        = "agglayer::bridge::let_frontier"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Lower 128 bits of the LET root"
+name          = "agglayer::bridge::let_root_lo"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Upper 128 bits of the LET root"
+name          = "agglayer::bridge::let_root_hi"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Number of leaves in the LET frontier"
+name          = "agglayer::bridge::let_num_leaves"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Faucet registry"
+name        = "agglayer::bridge::faucet_registry_map"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Token address to faucet ID map"
+name        = "agglayer::bridge::token_registry_map"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Conversion metadata of the registered faucets"
+name        = "agglayer::bridge::faucet_metadata_map"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Lower 128 bits of the removed-GER keccak256 hash chain"
+name          = "agglayer::bridge::removed_ger_hash_chain_lo"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Upper 128 bits of the removed-GER keccak256 hash chain"
+name          = "agglayer::bridge::removed_ger_hash_chain_hi"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Lower 128 bits of the CGI chain hash"
+name          = "agglayer::bridge::cgi_chain_hash_lo"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+default-value = "0x0"
+description   = "Upper 128 bits of the CGI chain hash"
+name          = "agglayer::bridge::cgi_chain_hash_hi"
+type          = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "CLAIM note nullifiers"
+name        = "agglayer::bridge::claim_nullifiers"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "AggLayer network ID of the bridge"
+name        = "agglayer::bridge::network_id"
+# Word layout: [network_id, 0, 0, 0]
+type = [{ name = "network_id", type = "u32" }, { type = "void" }, { type = "void" }, { type = "void" }]

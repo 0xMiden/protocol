@@ -870,3 +870,47 @@ fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     AccountComponent::new(package, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")
 }
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use miden_protocol::account::component::{InitStorageData, StorageValueName};
+
+    use super::*;
+    use crate::agglayer_bridge_component_package;
+
+    /// Checks that instantiating the bridge package from its storage schema yields the same storage
+    /// slots as the Rust [`AggLayerBridge`] component, so the manifest and the Rust code cannot
+    /// drift apart.
+    #[test]
+    fn bridge_package_schema_matches_rust_component() {
+        let network_id = 7u32;
+
+        let mut init_storage_data = InitStorageData::default();
+        let network_id_name = StorageValueName::from_slot_name_with_suffix(
+            AggLayerBridge::network_id_slot_name(),
+            "network_id",
+        )
+        .unwrap();
+        init_storage_data.insert_value(network_id_name, network_id.to_string()).unwrap();
+
+        let from_package =
+            AccountComponent::from_package(agglayer_bridge_component_package(), &init_storage_data)
+                .unwrap();
+        let from_rust = AccountComponent::from(AggLayerBridge::new(network_id));
+
+        // The schema yields slots in slot ID order, so compare them independent of order.
+        let by_name = |component: &AccountComponent| -> BTreeMap<StorageSlotName, StorageSlot> {
+            component
+                .storage_slots()
+                .iter()
+                .map(|slot| (slot.name().clone(), slot.clone()))
+                .collect()
+        };
+        assert_eq!(by_name(&from_package), by_name(&from_rust));
+    }
+}
