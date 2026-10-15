@@ -20,7 +20,14 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Per-role RBAC configuration (member count and delegated admin role)"
 name        = "miden::standards::access::rbac::role_config"
-type        = { key = "miden::standards::access::role_symbol", value = "word" }
+# Key layout: [0, 0, 0, role_symbol]
+type.key = [
+  { type = "void" },
+  { type = "void" },
+  { type = "void" },
+  { name = "role_symbol", type = "miden::standards::access::role_symbol" },
+]
+type.value = "word"
 
 [[package.metadata.account-component.storage.slots]]
 description = "Role membership flag indexed by role symbol and account ID"

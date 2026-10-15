@@ -471,6 +471,7 @@ pub enum RoleBasedAccessControlError {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::component::InitStorageData;
     use miden_protocol::account::{AccountType, StorageSlotContent};
 
     use super::*;
@@ -611,6 +612,44 @@ mod tests {
             config.get(&role_config_key(&pauser_role)),
             Word::from([Felt::ONE, manager_symbol, Felt::ZERO, Felt::ZERO]),
         );
+
+        Ok(())
+    }
+
+    /// Checks that the storage the Rust component installs conforms to the component's storage
+    /// schema, so the map key and value types in the manifest match the layout read by the MASM.
+    #[test]
+    fn installed_storage_conforms_to_the_storage_schema() -> anyhow::Result<()> {
+        let manager_role = RoleSymbol::new("DOM_MANAGER")?;
+        let component: AccountComponent = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(test_admin(1)))
+            .role(
+                RoleConfig::new(manager_role.clone())
+                    .with_member(test_admin(2))
+                    .with_admin(manager_role),
+            )
+            .build()?
+            .into();
+
+        // Feed the installed map entries back through the schema, which validates every key and
+        // value against its declared type.
+        let mut init_storage_data = InitStorageData::default();
+        for slot_name in [
+            RoleBasedAccessControl::role_config_slot(),
+            RoleBasedAccessControl::role_membership_slot(),
+        ] {
+            for (key, value) in find_map(&component, slot_name).entries() {
+                init_storage_data.insert_map_entry(slot_name.clone(), Word::from(*key), *value)?;
+            }
+        }
+        let schema_slots = RoleBasedAccessControl::component_metadata()
+            .storage_schema()
+            .build_storage_slots(&init_storage_data)?;
+
+        let by_name = |slots: &[StorageSlot]| -> BTreeMap<StorageSlotName, StorageSlot> {
+            slots.iter().map(|slot| (slot.name().clone(), slot.clone())).collect()
+        };
+        assert_eq!(by_name(&schema_slots), by_name(component.storage_slots()));
 
         Ok(())
     }
