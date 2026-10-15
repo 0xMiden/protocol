@@ -26,6 +26,10 @@ const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_propo
 
 const EMPTY_WORD = [0, 0, 0, 0]
 
+# Domain of the cancel signing message; `StandardsDomainRegistry::MultisigSmartCancelProposal` on
+# the Rust side.
+const CANCEL_PROPOSAL_DOMAIN = 0x028000
+
 # Maximum allowed `propose_expiration_delta`. The kernel's `tx::update_expiration_block_delta`
 # accepts a `u16` block delta (1..=65535), so any larger value would brick the propose flow.
 const MAX_PROPOSE_EXPIRATION_DELTA = 65535
@@ -339,9 +343,10 @@ end
 
 #! Computes the message the approvers sign to cancel the proposal for `TX_SUMMARY_COMMITMENT`.
 #!
-#! The cancel message is `poseidon2::hash(TX_SUMMARY_COMMITMENT)`. Hashing domain-separates it from
-#! the proposal (and execution) signatures, which are over `TX_SUMMARY_COMMITMENT` itself, so a
-#! proposal signature cannot be replayed to cancel. The proposal stays keyed by the raw commitment.
+#! The cancel message is `TX_SUMMARY_COMMITMENT` merged with the empty word under
+#! `CANCEL_PROPOSAL_DOMAIN`. Hashing under a dedicated domain separates it from the proposal (and
+#! execution) signatures, which are over `TX_SUMMARY_COMMITMENT` itself, so a proposal signature
+#! cannot be replayed to cancel. The proposal stays keyed by the raw commitment.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: [CANCEL_MSG]
@@ -352,7 +357,10 @@ end
 #!
 #! Invocation: exec
 proc cancel_signing_message(tx_summary_commitment: word) -> word
-    exec.poseidon2::hash
+    padw swapw
+    # => [TX_SUMMARY_COMMITMENT, EMPTY_WORD]
+
+    push.CANCEL_PROPOSAL_DOMAIN exec.poseidon2::merge_in_domain
     # => [CANCEL_MSG]
 end
 
