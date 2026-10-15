@@ -29,10 +29,11 @@ use super::{
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use crate::account::auth::{AuthSingleSig, NetworkAccount};
+use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::account::{account_component_code, package_metadata};
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -460,8 +461,9 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Creates a new **user-account** non-fungible faucet. The account's auth component is the sole
-/// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
+/// Creates a new **user-account** non-fungible faucet authenticated by a single signature.
+/// The account's auth component is the sole gate for authority-protected setters
+/// ([`Authority::AuthControlled`] is installed directly).
 ///
 /// The caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
@@ -472,7 +474,7 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
-pub fn create_user_non_fungible_faucet(
+pub fn create_singlesig_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
     auth_component: AuthSingleSig,
@@ -489,6 +491,73 @@ pub fn create_user_non_fungible_faucet(
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build()
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)
+}
+
+/// Creates a new **user-account** non-fungible faucet authenticated by a multisig approver set.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
+/// `Ownable2Step` component, so such a policy would abort on every dispatch.
+pub fn create_multisig_user_non_fungible_faucet(
+    init_seed: [u8; 32],
+    faucet: NonFungibleFaucet,
+    auth_component: AuthMultisig,
+    token_policy_manager: TokenPolicyManager,
+    account_type: AccountType,
+) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
+    AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .with_component(auth_component)
+        .with_component(faucet)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build()
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)
+}
+
+/// Creates a new **user-account** non-fungible faucet authenticated by a guardian-backed multisig.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
+/// `Ownable2Step` component, so such a policy would abort on every dispatch.
+pub fn create_guarded_user_non_fungible_faucet(
+    init_seed: [u8; 32],
+    faucet: NonFungibleFaucet,
+    auth_component: AuthGuardedMultisig,
+    token_policy_manager: TokenPolicyManager,
+    account_type: AccountType,
+) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
+    AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .with_component(auth_component)
+        .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
