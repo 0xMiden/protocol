@@ -106,15 +106,11 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(400);
     let account1 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset],
     )?;
     let account2 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset],
     )?;
     let output_note = create_public_p2any_note(account1.id(), [asset]);
@@ -950,7 +946,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
 /// Tests that a transaction consuming and creating one note with basic authentication correctly
 /// signs the transaction summary.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_auth_singlesig(
@@ -1005,7 +1001,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
     // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[*pub_key, summary_commitment]);
+    let signature_key = Hasher::hash_double_word(&[*pub_key, summary_commitment]);
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.
@@ -1360,9 +1356,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
 async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     // Use basic auth so the tx requires a signature for successful execution.
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),

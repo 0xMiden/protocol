@@ -55,9 +55,7 @@ use rstest::rstest;
 // CONSTANTS
 // ================================================================================================
 
-const BASIC_AUTH: Auth = Auth::BasicAuth {
-    auth_scheme: AuthScheme::Falcon512Poseidon2,
-};
+const BASIC_AUTH: Auth = Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos };
 
 // HELPERS
 // ================================================================================================

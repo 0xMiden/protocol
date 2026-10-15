@@ -43,7 +43,7 @@ fn sample_approvers(n: u32) -> vec::Vec<(PublicKeyCommitment, AuthScheme)> {
         .map(|i| {
             (
                 PublicKeyCommitment::from(Word::new([Felt::from(i + 1); 4])),
-                AuthScheme::Falcon512Poseidon2,
+                AuthScheme::Falcon512Eidos,
             )
         })
         .collect()
@@ -164,7 +164,7 @@ async fn guarded_factory_faucet_enforces_receive_allowlist() -> anyhow::Result<(
 
     let guardian = GuardianConfig::new(Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(99_u32); 4])),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     ));
     let faucet = create_guarded_user_fungible_faucet(
         [44u8; 32],

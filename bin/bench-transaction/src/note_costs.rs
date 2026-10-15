@@ -225,7 +225,7 @@ fn path_label(bench: ExecutionBenchmark) -> &'static str {
         ExecutionBenchmark::ConsumeP2idNetwork => "1 asset",
         ExecutionBenchmark::ConsumeP2idMaxAssetsNetwork => "16 assets",
         ExecutionBenchmark::ConsumeP2ideClaimNetwork => "claim",
-        ExecutionBenchmark::ConsumeP2ideMaxAssetsNetwork => "claim with 16 assets",
+        ExecutionBenchmark::ConsumeP2ideMaxAssetsNetwork => "16-asset claim",
         ExecutionBenchmark::ConsumeP2ideReclaimNetwork => "reclaim",
         ExecutionBenchmark::ConsumeSwapPublicPaybackNetwork => "public payback",
         ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork => "private payback",

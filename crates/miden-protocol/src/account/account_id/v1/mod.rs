@@ -496,8 +496,8 @@ impl fmt::Display for AccountIdV1 {
     }
 }
 
-/// Returns the digest of two hashing permutations over the seed, code commitment, storage
-/// commitment and padding.
+/// Returns the digest of two Eidos compressions over the seed, code commitment, storage commitment
+/// and padding.
 pub(crate) fn compute_digest(seed: Word, code_commitment: Word, storage_commitment: Word) -> Word {
     let mut elements = Vec::with_capacity(16);
     elements.extend(seed);

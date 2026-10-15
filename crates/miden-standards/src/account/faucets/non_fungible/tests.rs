@@ -55,7 +55,7 @@ fn non_fungible_faucet_factories_encode_transfer_policy_callback_flag(
 
     let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     );
 
     let user = create_user_non_fungible_faucet(
@@ -102,7 +102,7 @@ fn compute_asset_commitment_is_salt_sensitive() {
 fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(
         Word::new([Felt::ONE; 4]).into(),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     ));
 
     let err = create_user_non_fungible_faucet(

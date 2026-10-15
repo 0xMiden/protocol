@@ -15,7 +15,7 @@ impl From<&AuthSecretKey> for proto::account_file::AuthSecretKey {
         use proto::account_file::auth_secret_key::Key;
 
         let key = match secret_key {
-            AuthSecretKey::Falcon512Poseidon2(key) => Key::Falcon512Poseidon2(key.to_bytes()),
+            AuthSecretKey::Falcon512Eidos(key) => Key::Falcon512Eidos(key.to_bytes()),
             AuthSecretKey::EcdsaK256Keccak(key) => Key::EcdsaK256Keccak(key.to_bytes()),
             // `AuthSecretKey` is `non_exhaustive`, but it should evolve together with this crate.
             _ => unreachable!(

@@ -82,7 +82,7 @@ impl ProvenTransaction {
     ///   [`MAX_OUTPUT_NOTES_PER_TX`](crate::constants::MAX_OUTPUT_NOTES_PER_TX).
     /// - The vector of output notes contains duplicates.
     /// - The set of input and output notes contains the same note.
-    /// - The transaction is empty, which is the case if the account state is unchanged or the
+    /// - The transaction is empty, which is the case if the account state is unchanged and the
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
     ///   not match its declared account delta commitment.
@@ -216,7 +216,7 @@ impl ProvenTransaction {
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
         if account_update.initial_state_commitment() == account_update.final_state_commitment()
-            && input_notes.commitment().is_empty()
+            && input_notes.is_empty()
         {
             return Err(ProvenTransactionError::EmptyTransaction);
         }
@@ -709,7 +709,7 @@ mod tests {
             .build_existing()?;
         let patch = AccountPatch::try_from(account.clone())?;
         let actual_patch_commitment = patch.to_commitment();
-        // EMPTY_WORD is all-zeros and differs from a real Rescue hash.
+        // EMPTY_WORD is all-zeros and differs from a canonical Eidos commitment.
         let wrong_commitment = EMPTY_WORD;
         assert_ne!(wrong_commitment, actual_patch_commitment);
         let err = TxAccountUpdate::new(
@@ -730,6 +730,34 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn structurally_empty_transaction_is_rejected() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let unchanged_commitment = Word::from([1_u32, 2, 3, 4]);
+        let account_update = TxAccountUpdate::new(
+            account_id,
+            unchanged_commitment,
+            unchanged_commitment,
+            Word::from([5_u32, 6, 7, 8]),
+            AccountUpdateDetails::Private,
+        )?;
+
+        let err = ProvenTransaction::new(
+            account_update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
+            BlockNumber::from(1),
+            Word::from([9_u32, 10, 11, 12]),
+            BlockNumber::from(2),
+            crate::testing::dummy_execution_proof(),
+        )
+        .unwrap_err();
+
+        assert_matches!(err, ProvenTransactionError::EmptyTransaction);
+        Ok(())
+    }
+
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id =

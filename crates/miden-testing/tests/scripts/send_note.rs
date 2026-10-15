@@ -63,9 +63,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_basic_wallet_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [sent_asset0, total_asset],
     )?;
     let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
@@ -190,9 +188,8 @@ fn create_assetless_note(sender: miden_protocol::account::AccountId) -> anyhow::
 #[tokio::test]
 async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let sender_basic_wallet_account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let sender_basic_wallet_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let assetless_note = create_assetless_note(sender_basic_wallet_account.id())?;
@@ -224,9 +221,7 @@ async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<(
 async fn test_send_note_script_fungible_faucet_without_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "POL",
         200,
         None,
@@ -464,9 +459,7 @@ fn test_send_note_script_dual_faucet_dispatches_on_asset_composition() -> anyhow
 async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "POL",
         200,
         None,
@@ -521,9 +514,7 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
 
     let mut builder = MockChain::builder();
     let sender_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [total_asset, non_fungible_asset],
     )?;
     let mock_chain = builder.build()?;
@@ -614,9 +605,7 @@ async fn faucet_with_single_asset_payload()
 -> anyhow::Result<(MockChain, Account, SendNotesTransactionScript, Vec<Felt>)> {
     let mut builder = MockChain::builder();
     let faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "POL",
         200,
         None,

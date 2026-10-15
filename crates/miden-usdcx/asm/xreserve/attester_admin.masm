@@ -35,7 +35,7 @@ const ATTESTER_DISABLED_MARKER = ZERO_WORD
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - PK_COMMITMENT is the Poseidon2 pubkey commitment (the xReserveAttesters map key).
+#! - PK_COMMITMENT is the Eidos pubkey commitment (the xReserveAttesters map key).
 #! - enabled is 1 to allowlist or 0 to remove.
 #!
 #! Panics if:

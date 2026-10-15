@@ -111,17 +111,12 @@ where
 
     /// Computes a commitment to output notes.
     ///
-    /// - For an empty list, [`Word::empty`] is returned.
-    /// - For a non-empty list of notes, this is a sequential hash of `(note_details_commitment,
-    ///   metadata_commitment)` tuples for the notes created in a transaction, where
-    ///   `metadata_commitment` is the return value of [`NoteMetadata::to_commitment`].
+    /// This is a sequential hash of `(note_details_commitment, metadata_commitment)` tuples for
+    /// the notes created in a transaction, where `metadata_commitment` is the return value of
+    /// [`NoteMetadata::to_commitment`]. An empty list uses the canonical Eidos empty hash.
     pub(crate) fn compute_commitment<'header>(
         notes: impl ExactSizeIterator<Item = &'header NoteHeader>,
     ) -> Word {
-        if notes.len() == 0 {
-            return Word::empty();
-        }
-
         let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 8);
         for note_header in notes {
             elements.extend_from_slice(note_header.details_commitment().as_elements());

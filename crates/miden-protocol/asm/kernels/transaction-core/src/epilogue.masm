@@ -7,7 +7,7 @@ use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
 use {NOTE_MEM_SIZE} from miden::tx_kernel_core::constants
@@ -339,24 +339,19 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
     # => [ACCOUNT_PATCH_COMMITMENT]
 
     # store commitment in local
-    loc_storew_le.4
-    # => [ACCOUNT_PATCH_COMMITMENT]
+    loc_storew_le.4 dropw
+    # => []
 
     # ------ Assert that account was changed or notes were consumed ------
 
-    # check if the account patch commitment is the EMPTY_WORD, which is the case when the patch
-    # is empty, i.e. the account did not change in this transaction
-    exec.word::eqz
-    # => [is_patch_commitment_empty]
+    # When the nonce is unchanged, compute_patch_commitment has already proved that the storage,
+    # vault, and code patches are empty.
+    exec.account_update::was_nonce_incremented not
+    # => [is_patch_empty]
 
-    # assert that if the patch commitment is empty, the transaction had input notes,
-    # otherwise this transaction is considered empty, which is not allowed
-    exec.memory::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, is_patch_commitment_empty]
-
-    # if the input notes commitment is an empty word there were no input notes in this transaction
-    exec.word::eqz and
-    # => [is_patch_commitment_and_input_notes_commitment_empty]
+    # The input-note count is bound to the commitment checked by the prologue.
+    exec.memory::get_num_input_notes eq.0 and
+    # => [is_patch_and_input_notes_empty]
 
     # assert that either the account was changed or notes were consumed
     assertz.err=ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY
@@ -395,7 +390,7 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
     adv.insert_hdword
     # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [ACCOUNT_UPDATE_COMMITMENT]
 
     # ------ Build output stack ------

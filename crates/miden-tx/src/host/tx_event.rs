@@ -81,6 +81,10 @@ pub(crate) enum TransactionEvent {
         delta: AssetDelta,
     },
 
+    AccountPushPatchCommitmentBodyBlockCount,
+
+    AccountPushDeltaCommitmentBodyBlockCount,
+
     AccountStorageAfterSetItem {
         slot_name: StorageSlotName,
         new_value: Word,
@@ -298,6 +302,12 @@ impl TransactionEvent {
                     delta: AssetDelta::new(delta_op, asset),
                 }
             }),
+            TransactionEventId::AccountPushPatchCommitmentBodyBlockCount => {
+                Some(TransactionEvent::AccountPushPatchCommitmentBodyBlockCount)
+            },
+            TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount => {
+                Some(TransactionEvent::AccountPushDeltaCommitmentBodyBlockCount)
+            },
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
                 // [event, ASSET_ID, vault_root_ptr]
@@ -528,7 +538,7 @@ impl TransactionEvent {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
-                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+                let signature_key = Hasher::hash_double_word(&[pub_key_commitment.into(), message]);
 
                 let tx_summary_or_signature =
                     match process.advice_provider().get_mapped_values(&signature_key) {

@@ -32,6 +32,8 @@ pub enum TransactionEventId {
 
     AccountBeforeAssetDeltaComputation = ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID,
     AccountOnAssetDeltaComputation = ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID,
+    AccountPushPatchCommitmentBodyBlockCount = ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_ID,
+    AccountPushDeltaCommitmentBodyBlockCount = ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_ID,
 
     AccountVaultBeforeGetAsset = ACCOUNT_VAULT_BEFORE_GET_ASSET_ID,
 
@@ -118,6 +120,12 @@ impl TransactionEventId {
                 &ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_NAME
             },
             Self::AccountOnAssetDeltaComputation => &ACCOUNT_ON_ASSET_DELTA_COMPUTATION_NAME,
+            Self::AccountPushPatchCommitmentBodyBlockCount => {
+                &ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_NAME
+            },
+            Self::AccountPushDeltaCommitmentBodyBlockCount => {
+                &ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_NAME
+            },
             Self::AccountVaultBeforeGetAsset => &ACCOUNT_VAULT_BEFORE_GET_ASSET_NAME,
             Self::AccountStorageBeforeSetItem => &ACCOUNT_STORAGE_BEFORE_SET_ITEM_NAME,
             Self::AccountStorageAfterSetItem => &ACCOUNT_STORAGE_AFTER_SET_ITEM_NAME,
@@ -192,6 +200,12 @@ impl TryFrom<EventId> for TransactionEventId {
             },
             ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID => {
                 Ok(TransactionEventId::AccountBeforeAssetDeltaComputation)
+            },
+            ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_ID => {
+                Ok(TransactionEventId::AccountPushPatchCommitmentBodyBlockCount)
+            },
+            ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_ID => {
+                Ok(TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount)
             },
 
             ACCOUNT_VAULT_BEFORE_GET_ASSET_ID => Ok(TransactionEventId::AccountVaultBeforeGetAsset),

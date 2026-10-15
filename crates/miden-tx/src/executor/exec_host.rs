@@ -230,7 +230,7 @@ where
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
             .to_encoded_signature(message);
 
-        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+        let signature_key = Hasher::hash_double_word(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
         Ok(vec![AdviceMutation::extend_advice_stack_with(signature)])
@@ -507,6 +507,14 @@ where
 
                 TransactionEvent::AccountOnAssetDeltaComputation { delta: update } => {
                     self.base_host.on_account_on_asset_delta_computation(update)
+                },
+
+                TransactionEvent::AccountPushPatchCommitmentBodyBlockCount => {
+                    self.base_host.on_account_push_patch_commitment_body_block_count()
+                },
+
+                TransactionEvent::AccountPushDeltaCommitmentBodyBlockCount => {
+                    self.base_host.on_account_push_delta_commitment_body_block_count()
                 },
 
                 TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {

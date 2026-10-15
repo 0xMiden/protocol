@@ -83,9 +83,7 @@ fn add_tx_fee_collector_account_with(
 
 /// Adds the wallet the P2ID notes in these tests go to.
 fn add_target(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
-    builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })
+    builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })
 }
 
 /// Adds a TX_FEE note carrying the given assets.

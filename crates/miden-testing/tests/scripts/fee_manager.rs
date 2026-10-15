@@ -222,7 +222,7 @@ pub(super) fn estimate_note_fee_tx_script_code(
 ) -> String {
     format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
         use miden::standards::fees::fee_manager
 
         @transaction_script
@@ -236,9 +236,9 @@ pub(super) fn estimate_note_fee_tx_script_code(
 
             # compute the note's recipient, inserting the recipient preimages into the advice map
             # so the fee policy can recover the script root and storage commitment
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
             # => [RECIPIENT, pad(12)]
 
             # place the timeframe and priority in their parameter slots; the zeros in between
@@ -512,7 +512,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // recovers; the zeros below serve as the other note parameters.
     let tx_script_code = format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
         use miden::protocol::tx
 
         @transaction_script
@@ -524,9 +524,9 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
             # compute the note's recipient, inserting the recipient preimages into the advice map
             # so the custom policy can recover the script root and storage commitment
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
             # => [RECIPIENT, pad(16)]
 
             # place the timeframe and priority in their parameter slots; the zeros in between

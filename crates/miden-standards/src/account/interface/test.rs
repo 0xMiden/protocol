@@ -48,7 +48,7 @@ fn test_required_asset_same_as_offered() {
 fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2))
+    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Eidos))
 }
 
 // CUSTOM COMPONENT IDENTIFICATION TESTS
@@ -219,8 +219,8 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
 
     let approvers = vec![
-        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
-        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Eidos),
+        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Eidos),
         Approver::new(pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
     ];
 

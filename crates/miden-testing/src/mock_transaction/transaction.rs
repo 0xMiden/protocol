@@ -136,7 +136,7 @@ impl MockTransaction {
     ///
     /// - If the provided `code` is not a valid program.
     pub(crate) async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, None).await
+        self.execute_code_inner(code, true, None, None, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], except that the host does _not_ handle lazy
@@ -145,7 +145,7 @@ impl MockTransaction {
         &self,
         code: &str,
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, false, None).await
+        self.execute_code_inner(code, false, None, None, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], but overrides the host response to an input-note
@@ -155,7 +155,18 @@ impl MockTransaction {
         code: &str,
         response: [Felt; 2],
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, Some(response)).await
+        self.execute_code_inner(code, true, Some(response), None, None).await
+    }
+
+    /// Same as [`MockTransaction::execute_code`], but overrides the host-advised account
+    /// patch/delta commitment body block counts.
+    pub(crate) async fn execute_code_with_account_commitment_body_block_count_response(
+        &self,
+        code: &str,
+        patch_response: Option<Felt>,
+        delta_response: Option<Felt>,
+    ) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, true, None, patch_response, delta_response).await
     }
 
     async fn execute_code_inner(
@@ -163,6 +174,8 @@ impl MockTransaction {
         code: &str,
         is_lazy_loading_enabled: bool,
         input_note_index_response: Option<[Felt; 2]>,
+        patch_commitment_body_block_count_response: Option<Felt>,
+        delta_commitment_body_block_count_response: Option<Felt>,
     ) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
 
@@ -255,6 +268,10 @@ impl MockTransaction {
         if let Some(response) = input_note_index_response {
             mock_host.set_input_note_index_response(response);
         }
+        mock_host.set_account_commitment_body_block_count_response(
+            patch_commitment_body_block_count_response,
+            delta_commitment_body_block_count_response,
+        );
 
         CodeExecutor::new(mock_host)
             .stack_inputs(stack_inputs)

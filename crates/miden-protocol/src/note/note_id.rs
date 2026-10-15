@@ -26,7 +26,10 @@ pub struct NoteId(Word);
 impl NoteId {
     /// Returns a new [`NoteId`] from the provided details commitment and metadata.
     pub fn new(details_commitment: NoteDetailsCommitment, metadata: &NoteMetadata) -> Self {
-        Self(Hasher::merge(&[details_commitment.as_word(), metadata.to_commitment()]))
+        Self(Hasher::hash_double_word(&[
+            details_commitment.as_word(),
+            metadata.to_commitment(),
+        ]))
     }
 }
 

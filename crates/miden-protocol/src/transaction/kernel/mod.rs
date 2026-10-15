@@ -284,7 +284,7 @@ impl TransactionKernel {
         expiration_block_num: BlockNumber,
     ) -> StackOutputs {
         let account_update_commitment =
-            Hasher::merge(&[final_account_commitment, account_delta_commitment]);
+            Hasher::hash_double_word(&[final_account_commitment, account_delta_commitment]);
 
         let mut outputs: Vec<Felt> = Vec::with_capacity(9);
         outputs.extend(output_notes_commitment);
@@ -448,7 +448,7 @@ impl TransactionKernel {
         );
 
         let computed_account_update_commitment =
-            Hasher::merge(&[final_account_commitment, account_patch_commitment]);
+            Hasher::hash_double_word(&[final_account_commitment, account_patch_commitment]);
 
         if computed_account_update_commitment != account_update_commitment {
             let err_message = format!(
@@ -595,7 +595,7 @@ mod tests {
     /// Every kernel caller commits to this root through its `syscall` instructions, so this root
     /// must be stable.
     const EXEC_KERNEL_PROC_ROOT: Word =
-        word!("0x5234d0969f1a3e08bcd099fd71220f5c354eac99ab6a750368560722c5b8b113");
+        word!("0x36487e3bbe94e16c3354070026b6743f4bcda1633b3ab3289f02c691b94d1d10");
 
     #[test]
     fn exec_kernel_proc_root_is_stable() {

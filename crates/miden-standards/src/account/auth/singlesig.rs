@@ -13,7 +13,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
+use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_eidos};
 use miden_protocol::utils::sync::LazyLock;
 
 use super::Approver;
@@ -78,25 +78,20 @@ impl AuthSingleSig {
         Self { approver }
     }
 
-    /// Creates a new [`AuthSingleSig`] component using the Falcon512Poseidon2 signature scheme.
+    /// Creates a new [`AuthSingleSig`] component using the Falcon512Eidos signature scheme.
     ///
     /// The public key commitment is derived from the provided Falcon512 public key.
-    pub fn falcon512_poseidon2(pub_key: falcon512_poseidon2::PublicKey) -> Self {
+    pub fn falcon512_eidos(pub_key: falcon512_eidos::PublicKey) -> Self {
         Self {
-            approver: Approver::new(pub_key.into(), AuthScheme::Falcon512Poseidon2),
+            approver: Approver::new(pub_key.into(), AuthScheme::Falcon512Eidos),
         }
     }
 
     /// Creates a new [`AuthSingleSig`] component using the EcdsaK256Keccak signature scheme.
     ///
     /// The public key commitment is derived from the provided ECDSA K256 public key.
-    ///
-    /// Note: this scheme discloses the signer's public key and signature at proving time and
-    /// therefore does not provide public-key privacy. See
-    /// [`AuthScheme::EcdsaK256Keccak`][scheme] for details, and prefer
-    /// [`falcon512_poseidon2`](Self::falcon512_poseidon2) if signer-key privacy is required.
-    ///
-    /// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
+    /// The public key and signature are disclosed in the transaction proof's deferred witness;
+    /// see [`AuthScheme::EcdsaK256Keccak`].
     pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
         Self {
             approver: Approver::new(pub_key.into(), AuthScheme::EcdsaK256Keccak),
@@ -152,7 +147,7 @@ impl AuthSingleSig {
 
         AccountComponentMetadata::new(Self::NAME)
             .with_description(
-                "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
+                "Authentication component using ECDSA K256 Keccak or Falcon512 Eidos signature scheme",
             )
             .with_storage_schema(storage_schema)
     }

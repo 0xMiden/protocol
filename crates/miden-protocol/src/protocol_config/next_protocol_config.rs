@@ -69,7 +69,7 @@ impl NextProtocolConfig {
     /// can never collide with because `effective_from` is never zero.
     pub fn to_commitment(&self) -> Word {
         let effective_from = Word::new([self.effective_from.into(), ZERO, ZERO, ZERO]);
-        Hasher::merge(&[effective_from, self.protocol_config])
+        Hasher::hash_double_word(&[effective_from, self.protocol_config])
     }
 }
 

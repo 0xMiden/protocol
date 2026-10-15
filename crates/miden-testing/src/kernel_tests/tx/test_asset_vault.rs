@@ -78,7 +78,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
         use miden::tx_kernel_core::prologue
         use miden::tx_kernel_core::memory
         use miden::tx_kernel_core::asset_vault
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
 
         begin
             exec.prologue::prepare_transaction
@@ -93,7 +93,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
             # => [ASSET_ID, account_vault_root_ptr]
 
             # hash the asset ID into the SMT key that peek_asset expects
-            exec.poseidon2::hash
+            exec.eidos::hash
             # => [ASSET_ID_HASH, account_vault_root_ptr]
 
             exec.asset_vault::peek_asset

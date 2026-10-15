@@ -120,7 +120,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
+        Hasher::hash_double_word(&[final_account.to_commitment(), account_patch_commitment]);
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
