@@ -1,0 +1,742 @@
+use miden::core::crypto::hashes::poseidon2
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+use {BlockNumber, Bool} from miden::protocol::types
+use miden::standards::auth::multisig
+use {SignatureThreshold, THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
+
+# Delayed execution (timelocked transactions) for the multisig smart account.
+#
+# A proposal is keyed by the target transaction's TX_SUMMARY_COMMITMENT. Because the multisig binds a
+# caller-chosen block into the summary (via `MultisigAuthArgs`) rather than the transaction reference
+# block, that commitment is stable across the reference-block change between proposing and executing
+# (the timelock requires the reference block to advance past the unlock block), so the proposal
+# recorded at propose time matches the transaction executed later. Proposal and execution signatures are over that same
+# commitment; cancellation signatures are over a domain-separated message derived from it (see
+# `cancel_signing_message`), so proposing never doubles as consent to cancel.
+
+# CONSTANTS
+# =================================================================================================
+
+# [min_delay, propose_expiration_delta, cancel_threshold, 0]
+const DELAY_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_config")
+
+# Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_block, proposal_block, min_cancel_sigs, 0]. A
+# cancelled proposal keeps its record with unlock_block = CANCELLED_UNLOCK_BLOCK.
+const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
+
+const EMPTY_WORD = [0, 0, 0, 0]
+
+# The unlock block of a cancelled proposal record. No reference block can reach it, so the record
+# keeps the delayed path closed for its commitment for good; `AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK`
+# on the Rust side.
+const CANCELLED_UNLOCK_BLOCK = 0xFFFFFFFF
+
+# Domain of the cancel signing message; `StandardsDomainRegistry::MultisigSmartCancelProposal` on
+# the Rust side.
+const CANCEL_PROPOSAL_DOMAIN = 0x028000
+
+# Maximum allowed `propose_expiration_delta`. The kernel's `tx::update_expiration_block_delta`
+# accepts a `u16` block delta (1..=65535), so any larger value would brick the propose flow.
+const MAX_PROPOSE_EXPIRATION_DELTA = 65535
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
+const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
+const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+const ERR_CANCEL_THRESHOLD_NOT_U32 = "cancel_threshold must be u32"
+const ERR_CANCEL_THRESHOLD_ZERO = "cancel_threshold must be non-zero"
+const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS = "cancel_threshold exceeds the number of approvers"
+const ERR_BLOCK_NUMBERS_NOT_U32 = "reference and unlock block numbers must be u32"
+const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
+const ERR_TX_PROPOSAL_CANCELLED = "tx proposal was cancelled"
+const ERR_TX_NOT_PROPOSED = "tx not proposed"
+const ERR_UNLOCK_BLOCK_RESERVED = "unlock block collides with the cancelled proposal marker"
+const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
+const ERR_PROPOSE_INSUFFICIENT_SIGNATURES = "insufficient signatures for propose"
+const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
+const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an approval expiration"
+
+# CONFIGURATION
+# =================================================================================================
+
+#! Sets the delayed execution policy used by proposal lifecycle checks.
+#!
+#! Shortening the timelock weakens every policy that relies on it, so this procedure should carry a
+#! policy at least as strong as the strongest delayed policy in the account. Left unpolicied, the
+#! default threshold suffices to lower `min_delay` to one block and then run any delayed action
+#! almost immediately.
+#!
+#! Inputs:  [min_delay, propose_expiration_delta, cancel_threshold]
+#! Outputs: []
+#!
+#! Where:
+#! - min_delay is the minimum number of blocks between the latest block a proposal transaction can
+#!   be included in and the reference block of the matching execute transaction.
+#! - propose_expiration_delta bounds how many blocks after its reference block a proposal
+#!   transaction stays includable; the unlock block counts from that bound.
+#! - cancel_threshold is the number of approver signatures a cancellation needs. It is recorded on
+#!   each proposal at propose time, so changing it here affects only later proposals, and it is
+#!   capped by the current approver count when a proposal is cancelled, so shrinking the approver
+#!   set below it never makes a proposal uncancellable.
+#!
+#! Panics if:
+#! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
+#! - `propose_expiration_delta` is not a valid `u32` field element
+#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
+#! - `min_delay` is zero (`ERR_MIN_DELAY_ZERO`).
+#! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
+#! - `propose_expiration_delta` exceeds `MAX_PROPOSE_EXPIRATION_DELTA` (u16 max), since the kernel's
+#!   `tx::update_expiration_block_delta` only accepts a u16 delta
+#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
+#! - `cancel_threshold` is not a valid `u32` field element (`ERR_CANCEL_THRESHOLD_NOT_U32`).
+#! - `cancel_threshold` is zero (`ERR_CANCEL_THRESHOLD_ZERO`).
+#! - `cancel_threshold` exceeds the current number of approvers
+#!   (`ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_delayed_execution_policy(
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    cancel_threshold: SignatureThreshold
+)
+    u32assert.err=ERR_MIN_DELAY_NOT_U32
+    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    # Assert propose_expiration_delta != 0.
+    dup.1 u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta, min_delay, propose_expiration_delta, cancel_threshold]
+
+    # The kernel's `tx::update_expiration_block_delta` only accepts a u16 delta, so reject any
+    # value above `MAX_PROPOSE_EXPIRATION_DELTA` here rather than bricking the propose flow later.
+    u32lte.MAX_PROPOSE_EXPIRATION_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    # Assert 0 < cancel_threshold <= current number of approvers, so the quorum is reachable by
+    # the approvers that exist when it is set.
+    exec.get_current_num_approvers
+    # => [num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+
+    dup.3
+    # => [cancel_threshold, num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+
+    u32assert2.err=ERR_CANCEL_THRESHOLD_NOT_U32
+    dup eq.0 assertz.err=ERR_CANCEL_THRESHOLD_ZERO
+    # => [cancel_threshold, num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+
+    u32gte assert.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    push.0 movdn.3
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0]
+
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, cancel_threshold, 0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Loads the delayed execution policy configuration from the initial `DELAY_CONFIG_SLOT`.
+#!
+#! Reads the transaction's initial storage state, so a policy update earlier in the same
+#! transaction does not affect the proposal that transaction records or consumes.
+#!
+#! Inputs:  []
+#! Outputs: [min_delay, propose_expiration_delta, cancel_threshold]
+#!
+#! Where:
+#! - min_delay is the minimum number of blocks between the latest block a proposal transaction can
+#!   be included in and the reference block of the matching execute transaction.
+#! - propose_expiration_delta bounds how many blocks after its reference block a proposal
+#!   transaction stays includable; the unlock block counts from that bound.
+#! - cancel_threshold is the number of approver signatures recorded on new proposals as their
+#!   cancellation quorum.
+#!
+#! Invocation: exec
+proc get_initial_delay_config() -> (u32, u16, SignatureThreshold)
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.native_account::get_initial_item
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0]
+
+    movup.3 drop
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+end
+
+#! Returns `propose_expiration_delta` from the initial `DELAY_CONFIG_SLOT`.
+#!
+#! Inputs:  []
+#! Outputs: [propose_expiration_delta]
+#!
+#! Invocation: exec
+proc get_initial_propose_expiration_delta() -> u16
+    exec.get_initial_delay_config
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    drop swap drop
+    # => [propose_expiration_delta]
+end
+
+#! Returns `cancel_threshold` from the initial `DELAY_CONFIG_SLOT`.
+#!
+#! Inputs:  []
+#! Outputs: [cancel_threshold]
+#!
+#! Invocation: exec
+proc get_initial_cancel_threshold() -> SignatureThreshold
+    exec.get_initial_delay_config
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    drop drop
+    # => [cancel_threshold]
+end
+
+#! Returns the current number of approvers, after any signer update earlier in this transaction.
+#!
+#! Inputs:  []
+#! Outputs: [num_approvers]
+#!
+#! Invocation: exec
+proc get_current_num_approvers() -> u8
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [threshold, num_approvers, 0, 0]
+
+    drop movdn.2 drop drop
+    # => [num_approvers]
+end
+
+# TIMELOCK + PROPOSALS HELPERS
+# =================================================================================================
+
+#! Returns the proposal entry stored for `TX_SUMMARY_COMMITMENT`.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: [unlock_block, proposal_block, min_cancel_sigs]
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - unlock_block is the first reference block at which the proposal can be executed, 0 if no proposal
+#!   exists, or `CANCELLED_UNLOCK_BLOCK` if the proposal was cancelled.
+#! - proposal_block is the reference block of the transaction that recorded the proposal, or 0 if no proposal exists.
+#! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal, or 0 if no proposal exists.
+#!
+#! Invocation: exec
+proc get_tx_proposal(tx_summary_commitment: word) -> (BlockNumber, BlockNumber, SignatureThreshold)
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
+
+    # Read the proposal from the transaction's initial state, so proposal checks cannot be
+    # influenced by map mutations made earlier in the same transaction.
+    exec.native_account::get_initial_map_item
+    # => [unlock_block, proposal_block, min_cancel_sigs, 0]
+
+    movup.3 drop
+    # => [unlock_block, proposal_block, min_cancel_sigs]
+end
+
+#! Returns 1 if a proposal exists for `TX_SUMMARY_COMMITMENT`, 0 otherwise.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: [is_proposed]
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - is_proposed is 1 if `unlock_block` is non-zero (i.e. a proposal record exists for the
+#!   commitment, live or cancelled), otherwise 0. The unlock block is the existence marker because
+#!   it is never zero for a recorded proposal, whereas a proposal's reference block may be genesis.
+#!
+#! Invocation: exec
+pub proc is_tx_proposed(tx_summary_commitment: word) -> Bool
+    exec.get_tx_proposal
+    # => [unlock_block, proposal_block, min_cancel_sigs]
+
+    movdn.2 drop drop neq.0
+    # => [is_proposed]
+end
+
+#! Deletes the proposal entry for `TX_SUMMARY_COMMITMENT` by writing `EMPTY_WORD` and returns the
+#! entry it replaced.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: [unlock_block, proposal_block, min_cancel_sigs]
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - unlock_block, proposal_block and min_cancel_sigs are the removed entry's fields, all
+#!   zero when no proposal existed.
+#!
+#! Invocation: exec
+proc remove_tx_proposal(tx_summary_commitment: word) -> (BlockNumber, BlockNumber, SignatureThreshold)
+    push.0.0.0
+    # => [0, 0, 0, TX_SUMMARY_COMMITMENT]
+
+    # Writing zero unlock/proposal/cancel fields stores EMPTY_WORD, i.e. clears the entry.
+    exec.write_tx_proposal
+    # => [unlock_block, proposal_block, min_cancel_sigs]
+end
+
+#! Removes the proposal entry for `TX_SUMMARY_COMMITMENT` if one exists.
+#!
+#! Called by the auth procedure when a transaction executes on the immediate path. A proposal for it,
+#! if any, can never be consumed afterwards (the executed-transactions set rejects re-execution), so
+#! it is dropped to keep the proposals map tidy; a cancelled record is dropped for the same reason.
+#! The entry is only written when it exists, so a transaction without a record leaves the map
+#! untouched.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#!
+#! Invocation: exec
+pub proc remove_tx_proposal_if_present(tx_summary_commitment: word)
+    dupw exec.is_tx_proposed
+    # => [is_proposed, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        exec.remove_tx_proposal
+        # => [unlock_block, proposal_block, min_cancel_sigs]
+
+        drop drop drop
+        # => []
+    else
+        dropw
+        # => []
+    end
+end
+
+#! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally and returns the entry it
+#! replaced.
+#!
+#! Returning the previous entry lets callers learn whether a proposal already existed from the
+#! write itself, instead of reading the map first.
+#!
+#! Inputs:  [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+#! Outputs: [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
+#!
+#! Where:
+#! - unlock_block is the first reference block at which the proposal can be executed.
+#! - proposal_block is the reference block of the transaction recording the proposal.
+#! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - old_unlock_block, old_proposal_block and old_min_cancel_sigs are the replaced entry's
+#!   fields, all zero when no proposal existed.
+#!
+#! Invocation: exec
+proc write_tx_proposal(
+    unlock_block: BlockNumber,
+    proposal_block: BlockNumber,
+    min_cancel_sigs: SignatureThreshold,
+    tx_summary_commitment: word
+) -> (BlockNumber, BlockNumber, SignatureThreshold)
+    push.0
+    # => [0, unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    movdn.3
+    # => [unlock_block, proposal_block, min_cancel_sigs, 0, TX_SUMMARY_COMMITMENT]
+
+    swapw
+    # => [TX_SUMMARY_COMMITMENT, unlock_block, proposal_block, min_cancel_sigs, 0]
+
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT, unlock_block, proposal_block, min_cancel_sigs, 0]
+
+    exec.native_account::set_map_item
+    # => [OLD_PROPOSAL_WORD]
+
+    movup.3 drop
+    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
+end
+
+#! Computes the unlock block for the current proposal.
+#!
+#! The unlock block counts from the latest block the proposal transaction can be included in,
+#! `proposal_block + propose_expiration_delta`, not from the reference block itself. The proposer
+#! picks the reference block and could pick a stale one; anchoring on the worst-case inclusion
+#! block guarantees that execution comes at least `min_delay` blocks after the proposal is on
+#! chain, whatever reference block was chosen.
+#!
+#! Inputs:  []
+#! Outputs: [unlock_block, proposal_block]
+#!
+#! Where:
+#! - proposal_block is the current transaction's reference block number.
+#! - unlock_block is `proposal_block + propose_expiration_delta + min_delay`.
+#!
+#! Panics if:
+#! - the unlock block overflows the `u32` range (`ERR_BLOCK_NUMBERS_NOT_U32`).
+#! - the unlock block equals `CANCELLED_UNLOCK_BLOCK` (`ERR_UNLOCK_BLOCK_RESERVED`).
+#!
+#! Invocation: exec
+proc compute_unlock_block() -> (BlockNumber, BlockNumber)
+    exec.tx::get_reference_block_number
+    # => [proposal_block]
+
+    dup exec.get_initial_delay_config
+    # => [min_delay, propose_expiration_delta, cancel_threshold, proposal_block, proposal_block]
+
+    movup.2 drop
+    # => [min_delay, propose_expiration_delta, proposal_block, proposal_block]
+
+    # Otherwise the proposal would be recorded with an unlock block that can never satisfy the u32
+    # block comparison at execution time.
+    movup.2 u32overflowing_add assertz.err=ERR_BLOCK_NUMBERS_NOT_U32
+    # => [proposal_block + min_delay, propose_expiration_delta, proposal_block]
+
+    u32overflowing_add assertz.err=ERR_BLOCK_NUMBERS_NOT_U32
+    # => [unlock_block, proposal_block]
+
+    # The largest u32 marks a cancelled record, so a live proposal must never unlock there.
+    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_UNLOCK_BLOCK_RESERVED
+    # => [unlock_block, proposal_block]
+end
+
+#! Asserts that the proposal unlock block has been reached.
+#!
+#! Comparing against the reference block is sound because a transaction cannot reference a block
+#! after the one it is included in; a stale reference block only makes this check stricter.
+#!
+#! Inputs:  [unlock_block]
+#! Outputs: []
+#!
+#! Where:
+#! - unlock_block is the first reference block at which execution is allowed.
+#!
+#! Panics if:
+#! - unlock_block or the reference block number is not a valid `u32` field element
+#!   (`ERR_BLOCK_NUMBERS_NOT_U32`).
+#! - the reference block number is less than unlock_block (`ERR_TX_STILL_TIMELOCKED`).
+#!
+#! Invocation: exec
+proc assert_unlock_reached(unlock_block: BlockNumber)
+    exec.tx::get_reference_block_number
+    # => [reference_block, unlock_block]
+
+    u32assert2.err=ERR_BLOCK_NUMBERS_NOT_U32
+    # => [reference_block, unlock_block]
+
+    swap
+    # => [unlock_block, reference_block]
+
+    u32gte assert.err=ERR_TX_STILL_TIMELOCKED
+    # => []
+end
+
+#! Asserts that a proposal entry exists and that its unlock block has been reached.
+#!
+#! Inputs:  [unlock_block, proposal_block, min_cancel_sigs]
+#! Outputs: []
+#!
+#! Where:
+#! - unlock_block, proposal_block and min_cancel_sigs are a proposal entry's fields, as
+#!   returned by `remove_tx_proposal`; an all-zero entry means no proposal exists.
+#!
+#! Panics if:
+#! - the entry is empty, i.e. no proposal exists (`ERR_TX_NOT_PROPOSED`).
+#! - the proposal was cancelled (`ERR_TX_PROPOSAL_CANCELLED`).
+#! - `assert_unlock_reached` fails.
+#!
+#! Invocation: exec
+proc assert_tx_proposed_and_unlocked(
+    unlock_block: BlockNumber,
+    proposal_block: BlockNumber,
+    min_cancel_sigs: SignatureThreshold
+)
+    dup neq.0 assert.err=ERR_TX_NOT_PROPOSED
+    # => [unlock_block, proposal_block, min_cancel_sigs]
+
+    # A cancelled record could never pass the unlock check anyway; name the reason.
+    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
+    # => [unlock_block, proposal_block, min_cancel_sigs]
+
+    swap drop
+    # => [unlock_block, min_cancel_sigs]
+
+    exec.assert_unlock_reached
+    # => [min_cancel_sigs]
+
+    drop
+    # => []
+end
+
+#! Computes the message the approvers sign to cancel the proposal for `TX_SUMMARY_COMMITMENT`.
+#!
+#! The cancel message is `TX_SUMMARY_COMMITMENT` merged with the empty word under
+#! `CANCEL_PROPOSAL_DOMAIN`. Hashing under a dedicated domain separates it from the proposal (and
+#! execution) signatures, which are over `TX_SUMMARY_COMMITMENT` itself, so a proposal signature
+#! cannot be replayed to cancel. The proposal stays keyed by the raw commitment.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: [CANCEL_MSG]
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - CANCEL_MSG is the message the cancellation signatures must be over.
+#!
+#! Invocation: exec
+proc cancel_signing_message(tx_summary_commitment: word) -> word
+    padw swapw
+    # => [TX_SUMMARY_COMMITMENT, EMPTY_WORD]
+
+    push.CANCEL_PROPOSAL_DOMAIN exec.poseidon2::merge_in_domain
+    # => [CANCEL_MSG]
+end
+
+# DISPATCH
+# =================================================================================================
+
+#! Returns 1 if the current transaction called `propose_transaction` or `cancel_transaction_proposal`.
+#!
+#! Such a delay-action transaction verifies its own signatures inside the called procedure, so the
+#! auth procedure only asserts it was the sole non-auth procedure called (see `auth_tx`). Any other
+#! transaction is treated as an execution and runs the full signature/threshold/timelock checks.
+#!
+#! Inputs:  []
+#! Outputs: [was_propose_or_cancel_called]
+#!
+#! Where:
+#! - was_propose_or_cancel_called is 1 if `propose_transaction` or `cancel_transaction_proposal`
+#!   was called, otherwise 0.
+#!
+#! Invocation: exec
+pub proc was_propose_or_cancel_called() -> Bool
+    procref.propose_transaction
+    exec.native_account::was_procedure_called
+    # => [propose_called]
+
+    procref.cancel_transaction_proposal
+    exec.native_account::was_procedure_called
+    # => [cancel_called, propose_called]
+
+    or
+    # => [was_propose_or_cancel_called]
+end
+
+# TX ACTIONS API
+# =================================================================================================
+
+#! Records a new proposal for `TX_SUMMARY_COMMITMENT`.
+#!
+#! Requires a single valid approver signature over `TX_SUMMARY_COMMITMENT`. Proposing only starts
+#! the timelock; the proposed transaction is authorized when it executes, where the called
+#! procedures' `delay_threshold` (or `default_threshold` when they have no policy) is enforced.
+#! A higher bar here could not be made procedure- or amount-aware, since a proposal carries only
+#! the target's commitment, and it would set a floor on what a delayed action costs: the proposal
+#! signatures are over the same commitment that is verified again at execution, so they already
+#! count towards that threshold.
+#!
+#! The proposal is written with `min_cancel_sigs` set to the configured `cancel_threshold`, read
+#! from the initial state, so the proposer has no say in how many approvers it takes to cancel; the
+#! current (proposal) transaction is given the configured `propose_expiration_delta`.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment of the target transaction to
+#!   propose.
+#!
+#! Panics if:
+#! - no signature verifies over `TX_SUMMARY_COMMITMENT` (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
+#! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
+#! - a proposal for `TX_SUMMARY_COMMITMENT` was cancelled (`ERR_TX_PROPOSAL_CANCELLED`).
+#! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc propose_transaction(tx_summary_commitment: word)
+    # ---- Verify at least one approver signature over the target commitment. ----
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    exec.multisig::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ---- Bound the proposal transaction's validity window. ----
+    exec.get_initial_propose_expiration_delta exec.tx::update_expiration_block_delta
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ---- Write the proposal with min_cancel_sigs = cancel_threshold. ----
+    exec.get_initial_cancel_threshold
+    # => [cancel_threshold, TX_SUMMARY_COMMITMENT]
+
+    exec.compute_unlock_block
+    # => [unlock_block, proposal_block, cancel_threshold, TX_SUMMARY_COMMITMENT]
+
+    exec.write_tx_proposal
+    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
+
+    # The write returns the entry it replaced; the abort reverts the overwrite. A cancelled record
+    # stays cancelled, so the (replayable) proposal signatures cannot re-open the delayed path for a
+    # vetoed commitment; any other non-zero unlock block means a live proposal already exists. A
+    # transaction that was already executed can still be proposed here; it is not worth an extra
+    # `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing it
+    # later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
+    movdn.2 drop drop
+    # => [old_unlock_block]
+
+    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => []
+end
+
+#! Cancels an existing proposal for `TX_SUMMARY_COMMITMENT`.
+#!
+#! Verifies the cancellation signatures over the cancel message for `TX_SUMMARY_COMMITMENT` (see
+#! `cancel_signing_message`) and requires at least the proposal's `min_cancel_sigs` valid
+#! signatures (the `cancel_threshold` configured when it was proposed), capped by the current
+#! number of approvers, then marks the proposal cancelled by setting its unlock block to
+#! `CANCELLED_UNLOCK_BLOCK`.
+#!
+#! Cancelling is final. The record stays in the map: the commitment can neither be re-proposed nor
+#! executed through the timelock, and it cannot be cancelled again, so the proposal signatures over
+#! it, which are public and replayable, are spent for good. Deleting the record instead would let a
+#! single approver re-propose the same commitment right after every cancellation, and its execution
+#! signatures would stay usable until the approval expiration its own signers chose. Approvers who
+#! do want the action re-sign it with a new salt. Immediate execution is unaffected: a transaction
+#! with enough signatures for it runs whatever the record says, and clears the record.
+#!
+#! Cancelling is a different intent from proposing, so it must not be satisfiable with the proposal
+#! signatures. Those are public once the propose transaction lands and are also valid for execution;
+#! if they were accepted here, anyone holding them could cancel any proposal. Requiring signatures
+#! over a distinct message makes a cancellation an explicit act of the approvers.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment of the proposal to cancel.
+#!
+#! Panics if:
+#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - the proposal was already cancelled (`ERR_TX_PROPOSAL_CANCELLED`).
+#! - fewer than `min(min_cancel_sigs, num_approvers)` signatures verify over the cancel message
+#!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc cancel_transaction_proposal(tx_summary_commitment: word)
+    dupw exec.get_tx_proposal
+    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    dup neq.0 assert.err=ERR_TX_NOT_PROPOSED
+    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    # A cancelled record is final; cancelling it again would delete it and re-open proposing.
+    eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
+    # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    # Keep the recorded fields for the cancelled record written below.
+    movdn.5 movdn.5
+    # => [TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+
+    # ---- Verify cancellation signatures over the domain-separated cancel message. ----
+    dupw exec.cancel_signing_message
+    # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+
+    # `min_cancel_sigs` was stamped when the proposal was recorded; if the approver set shrank
+    # since, it may exceed the approvers that still exist, which would make the proposal
+    # uncancellable. Cap it by the current approver count.
+    dup dup.11 u32min
+    # => [required_cancel_sigs, num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+
+    movdn.11
+    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs, required_cancel_sigs]
+
+    exec.multisig::verify_signatures
+    # => [num_verified_signatures, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs, required_cancel_sigs]
+
+    movup.11 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+    # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+
+    dropw
+    # => [TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+
+    # ---- Mark the proposal cancelled, keeping its recorded fields. ----
+    movup.5 movup.5
+    # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    push.CANCELLED_UNLOCK_BLOCK
+    # => [CANCELLED_UNLOCK_BLOCK, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    exec.write_tx_proposal
+    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
+
+    drop drop drop
+    # => []
+end
+
+#! Consumes the proposal matching the current transaction, enforcing the timelock.
+#!
+#! Called by the auth procedure when the current transaction executes on the delayed path, i.e. its
+#! signatures reach the delayed threshold but not the immediate one. Asserts
+#! the approval carries an expiration, then deletes the proposal entry and asserts on the entry it
+#! held that a live proposal existed and its unlock block has been reached. Replay protection
+#! against re-execution is provided by the multisig executed-transactions set.
+#!
+#! A proposal is a standing authorization: the approver signatures are over this commitment, and the
+#! same commitment is what the execute transaction reproduces, so those signatures stay usable until
+#! the approval expires. Requiring an approval expiration bounds that window for a proposal nobody
+#! cancels; cancelling closes it for good (see `cancel_transaction_proposal`). The deadline is
+#! bound by the signed summary, so changing it changes the commitment, and
+#! `multisig::assert_approval_not_expired` enforces it on every transaction; this procedure only
+#! requires that one was set.
+#!
+#! The requirement is checked here rather than in `propose_transaction` because a proposal carries
+#! only the target's commitment; asserting it at proposal time would require the summary preimage.
+#! Checking at execution is equivalent for security, since the deadline is committed to: a target
+#! proposed without one is recorded but can never execute.
+#!
+#! Inputs:  [approval_expiration_block_num, TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - approval_expiration_block_num is the first reference block at which the approvals are no
+#!   longer valid, or 0 when the approval does not expire.
+#! - TX_SUMMARY_COMMITMENT is the current transaction's block-independent tx-summary commitment.
+#!
+#! Panics if:
+#! - the approval does not expire (`ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION`).
+#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - the proposal was cancelled (`ERR_TX_PROPOSAL_CANCELLED`).
+#! - the proposal unlock block has not been reached (`ERR_TX_STILL_TIMELOCKED`).
+#!
+#! Invocation: exec
+pub proc consume_tx_proposal(
+    approval_expiration_block_num: BlockNumber,
+    tx_summary_commitment: word
+)
+    neq.0 assert.err=ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # Remove first and assert on the entry the removal returns, so the proposal is read once. On the
+    # execution path no procedure of this transaction can have touched the entry (the delay actions
+    # take the other dispatch branch), so the removed entry is the initial one; a failed assertion
+    # aborts the transaction and with it the removal.
+    exec.remove_tx_proposal
+    # => [unlock_block, proposal_block, min_cancel_sigs]
+
+    exec.assert_tx_proposed_and_unlocked
+    # => []
+end
