@@ -11,7 +11,8 @@ rust-version.workspace = true
 version.workspace      = true
 
 [lib]
-bench = false
+bench   = false
+doctest = false
 
 # The test vector generator.
 [[bin]]
