@@ -1,9 +1,10 @@
 use miden::core::crypto::hashes::poseidon2
+use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 use {BlockNumber, Bool} from miden::protocol::types
 use miden::standards::auth::multisig
-use {SignatureThreshold} from miden::standards::auth::multisig
+use {SignatureThreshold, THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 
 # Delayed execution (timelocked transactions) for the multisig smart account.
 #
@@ -18,7 +19,7 @@ use {SignatureThreshold} from miden::standards::auth::multisig
 # CONSTANTS
 # =================================================================================================
 
-# [min_delay, propose_expiration_delta, 0, 0]
+# [min_delay, propose_expiration_delta, cancel_threshold, 0]
 const DELAY_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_config")
 
 # Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_block, proposal_block, min_cancel_sigs, 0]
@@ -42,6 +43,9 @@ const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+const ERR_CANCEL_THRESHOLD_NOT_U32 = "cancel_threshold must be u32"
+const ERR_CANCEL_THRESHOLD_ZERO = "cancel_threshold must be non-zero"
+const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS = "cancel_threshold exceeds the number of approvers"
 const ERR_BLOCK_NUMBERS_NOT_U32 = "reference and unlock block numbers must be u32"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
 const ERR_TX_NOT_PROPOSED = "tx not proposed"
@@ -60,7 +64,7 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #! default threshold suffices to lower `min_delay` to one block and then run any delayed action
 #! almost immediately.
 #!
-#! Inputs:  [min_delay, propose_expiration_delta]
+#! Inputs:  [min_delay, propose_expiration_delta, cancel_threshold]
 #! Outputs: []
 #!
 #! Where:
@@ -68,6 +72,10 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #!   be included in and the reference block of the matching execute transaction.
 #! - propose_expiration_delta bounds how many blocks after its reference block a proposal
 #!   transaction stays includable; the unlock block counts from that bound.
+#! - cancel_threshold is the number of approver signatures a cancellation needs. It is recorded on
+#!   each proposal at propose time, so changing it here affects only later proposals, and it is
+#!   capped by the current approver count when a proposal is cancelled, so shrinking the approver
+#!   set below it never makes a proposal uncancellable.
 #!
 #! Panics if:
 #! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
@@ -78,29 +86,52 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #! - `propose_expiration_delta` exceeds `MAX_PROPOSE_EXPIRATION_DELTA` (u16 max), since the kernel's
 #!   `tx::update_expiration_block_delta` only accepts a u16 delta
 #!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
+#! - `cancel_threshold` is not a valid `u32` field element (`ERR_CANCEL_THRESHOLD_NOT_U32`).
+#! - `cancel_threshold` is zero (`ERR_CANCEL_THRESHOLD_ZERO`).
+#! - `cancel_threshold` exceeds the current number of approvers
+#!   (`ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS`).
 #!
 #! Invocation: call
 @account_procedure
-pub proc update_delayed_execution_policy(min_delay: u32, propose_expiration_delta: u16)
+pub proc update_delayed_execution_policy(
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    cancel_threshold: SignatureThreshold
+)
     u32assert.err=ERR_MIN_DELAY_NOT_U32
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
-    # => [min_delay, propose_expiration_delta]
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
 
     # Assert propose_expiration_delta != 0.
     dup.1 u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
-    # => [propose_expiration_delta, min_delay, propose_expiration_delta]
+    # => [propose_expiration_delta, min_delay, propose_expiration_delta, cancel_threshold]
 
     # The kernel's `tx::update_expiration_block_delta` only accepts a u16 delta, so reject any
     # value above `MAX_PROPOSE_EXPIRATION_DELTA` here rather than bricking the propose flow later.
     u32lte.MAX_PROPOSE_EXPIRATION_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
-    # => [min_delay, propose_expiration_delta]
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
 
-    push.0.0 movdn.3 movdn.3
-    # => [min_delay, propose_expiration_delta, 0, 0]
+    # Assert 0 < cancel_threshold <= current number of approvers, so the quorum is reachable by
+    # the approvers that exist when it is set.
+    exec.get_current_num_approvers
+    # => [num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+
+    dup.3
+    # => [cancel_threshold, num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+
+    u32assert2.err=ERR_CANCEL_THRESHOLD_NOT_U32
+    dup eq.0 assertz.err=ERR_CANCEL_THRESHOLD_ZERO
+    # => [cancel_threshold, num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+
+    u32gte assert.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    push.0 movdn.3
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0]
 
     push.DELAY_CONFIG_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, 0, 0]
+    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, cancel_threshold, 0]
 
     exec.native_account::set_item
     # => [OLD_WORD]
@@ -115,24 +146,26 @@ end
 #! transaction does not affect the proposal that transaction records or consumes.
 #!
 #! Inputs:  []
-#! Outputs: [min_delay, propose_expiration_delta]
+#! Outputs: [min_delay, propose_expiration_delta, cancel_threshold]
 #!
 #! Where:
 #! - min_delay is the minimum number of blocks between the latest block a proposal transaction can
 #!   be included in and the reference block of the matching execute transaction.
 #! - propose_expiration_delta bounds how many blocks after its reference block a proposal
 #!   transaction stays includable; the unlock block counts from that bound.
+#! - cancel_threshold is the number of approver signatures recorded on new proposals as their
+#!   cancellation quorum.
 #!
 #! Invocation: exec
-proc get_initial_delay_config() -> (u32, u16)
+proc get_initial_delay_config() -> (u32, u16, SignatureThreshold)
     push.DELAY_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
     exec.native_account::get_initial_item
-    # => [min_delay, propose_expiration_delta, 0, 0]
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0]
 
-    movup.3 drop movup.2 drop
-    # => [min_delay, propose_expiration_delta]
+    movup.3 drop
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
 end
 
 #! Returns `propose_expiration_delta` from the initial `DELAY_CONFIG_SLOT`.
@@ -143,10 +176,39 @@ end
 #! Invocation: exec
 proc get_initial_propose_expiration_delta() -> u16
     exec.get_initial_delay_config
-    # => [min_delay, propose_expiration_delta]
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
 
-    drop
+    drop swap drop
     # => [propose_expiration_delta]
+end
+
+#! Returns `cancel_threshold` from the initial `DELAY_CONFIG_SLOT`.
+#!
+#! Inputs:  []
+#! Outputs: [cancel_threshold]
+#!
+#! Invocation: exec
+proc get_initial_cancel_threshold() -> SignatureThreshold
+    exec.get_initial_delay_config
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    drop drop
+    # => [cancel_threshold]
+end
+
+#! Returns the current number of approvers, after any signer update earlier in this transaction.
+#!
+#! Inputs:  []
+#! Outputs: [num_approvers]
+#!
+#! Invocation: exec
+proc get_current_num_approvers() -> u8
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [threshold, num_approvers, 0, 0]
+
+    drop movdn.2 drop drop
+    # => [num_approvers]
 end
 
 # TIMELOCK + PROPOSALS HELPERS
@@ -315,6 +377,9 @@ proc compute_unlock_block() -> (BlockNumber, BlockNumber)
     # => [proposal_block]
 
     dup exec.get_initial_delay_config
+    # => [min_delay, propose_expiration_delta, cancel_threshold, proposal_block, proposal_block]
+
+    movup.2 drop
     # => [min_delay, propose_expiration_delta, proposal_block, proposal_block]
 
     # Otherwise the proposal would be recorded with an unlock block that can never satisfy the u32
@@ -455,7 +520,8 @@ end
 #! signatures are over the same commitment that is verified again at execution, so they already
 #! count towards that threshold.
 #!
-#! The proposal is written with `min_cancel_sigs` set to the number of verified signatures, and the
+#! The proposal is written with `min_cancel_sigs` set to the configured `cancel_threshold`, read
+#! from the initial state, so the proposer has no say in how many approvers it takes to cancel; the
 #! current (proposal) transaction is given the configured `propose_expiration_delta`.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
@@ -480,16 +546,19 @@ pub proc propose_transaction(tx_summary_commitment: word)
     exec.multisig::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    dup neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
+    # => [TX_SUMMARY_COMMITMENT]
 
     # ---- Bound the proposal transaction's validity window. ----
     exec.get_initial_propose_expiration_delta exec.tx::update_expiration_block_delta
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT]
 
-    # ---- Write the proposal with min_cancel_sigs = num_verified_signatures. ----
+    # ---- Write the proposal with min_cancel_sigs = cancel_threshold. ----
+    exec.get_initial_cancel_threshold
+    # => [cancel_threshold, TX_SUMMARY_COMMITMENT]
+
     exec.compute_unlock_block
-    # => [unlock_block, proposal_block, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [unlock_block, proposal_block, cancel_threshold, TX_SUMMARY_COMMITMENT]
 
     exec.write_tx_proposal
     # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
@@ -507,7 +576,8 @@ end
 #!
 #! Verifies the cancellation signatures over the cancel message for `TX_SUMMARY_COMMITMENT` (see
 #! `cancel_signing_message`) and requires at least the proposal's `min_cancel_sigs` valid
-#! signatures, capped by the current number of approvers, then deletes the proposal entry.
+#! signatures (the `cancel_threshold` configured when it was proposed), capped by the current
+#! number of approvers, then deletes the proposal entry.
 #!
 #! Cancelling is a different intent from proposing, so it must not be satisfiable with the proposal
 #! signatures. Those are public once the propose transaction lands and are also valid for execution;

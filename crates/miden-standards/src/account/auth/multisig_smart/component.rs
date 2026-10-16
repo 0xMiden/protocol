@@ -224,7 +224,9 @@ fn validate_proc_policies(
 /// - Cancelling requires its own signatures. They are verified over
 ///   [`AuthMultisigSmart::cancel_signing_message`], which is domain-separated from the proposed
 ///   commitment, so the public proposal signatures cannot be replayed to cancel a proposal; only
-///   approvers who sign the cancel message can veto it.
+///   approvers who sign the cancel message can veto it. How many must sign is the
+///   [`DelayedExecutionPolicy`] `cancel_threshold` in force when the proposal was recorded, capped
+///   by the current approver count; the proposer can neither raise nor lower it.
 ///
 /// - A proposal cannot block execution. The path is chosen from the verified signatures, so a
 ///   transaction carrying enough signatures for immediate execution runs whether or not someone
@@ -270,7 +272,13 @@ impl AuthMultisigSmart {
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
     pub fn new(config: AuthMultisigSmartConfig) -> Result<Self, AccountError> {
-        validate_proc_policies(config.approvers().len() as u32, config.procedure_policies())?;
+        let num_approvers = config.approvers().len() as u32;
+        validate_proc_policies(num_approvers, config.procedure_policies())?;
+        if config.delayed_execution_policy().cancel_threshold() > num_approvers {
+            return Err(AccountError::other(
+                "delayed execution cancel_threshold cannot exceed number of approvers",
+            ));
+        }
         Ok(Self { config })
     }
 
@@ -393,7 +401,7 @@ impl AuthMultisigSmart {
         (
             Self::delay_config_slot().clone(),
             StorageSlotSchema::value(
-                "Delay config: [min_delay, propose_expiration_delta, 0, 0]",
+                "Delay config: [min_delay, propose_expiration_delta, cancel_threshold, 0]",
                 SchemaType::native_word(),
             ),
         )
@@ -461,14 +469,14 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
-        // Delay config slot (value: [min_delay, propose_expiration_delta, 0, 0]).
+        // Delay config slot (value: [min_delay, propose_expiration_delta, cancel_threshold, 0]).
         let delayed_execution_policy = multisig.config.delayed_execution_policy();
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::delay_config_slot().clone(),
             Word::from([
                 delayed_execution_policy.min_delay(),
                 delayed_execution_policy.propose_expiration_delta() as u32,
-                0u32,
+                delayed_execution_policy.cancel_threshold(),
                 0u32,
             ]),
         ));
@@ -512,7 +520,7 @@ mod tests {
     use crate::account::wallets::BasicWallet;
 
     fn default_delayed_execution_policy() -> DelayedExecutionPolicy {
-        DelayedExecutionPolicy::new(30, 2).expect("default test policy must be valid")
+        DelayedExecutionPolicy::new(30, 2, 1).expect("default test policy must be valid")
     }
 
     #[test]
@@ -593,5 +601,21 @@ mod tests {
                 .to_string()
                 .contains("duplicate procedure roots are not allowed in the procedure policy map")
         );
+    }
+
+    #[test]
+    fn test_multisig_smart_component_rejects_cancel_threshold_above_num_approvers() {
+        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let approvers = vec![
+            Approver::new(sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            Approver::new(sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+        let approver_set = ApproverSet::new(approvers, 2).expect("invalid approver set");
+        let policy = DelayedExecutionPolicy::new(30, 2, 3).expect("policy fields are non-zero");
+
+        let err = AuthMultisigSmart::new(AuthMultisigSmartConfig::new(approver_set, policy))
+            .expect_err("a cancel threshold above the approver count must be rejected");
+        assert!(err.to_string().contains("cancel_threshold cannot exceed number of approvers"));
     }
 }

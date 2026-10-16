@@ -57,9 +57,26 @@ fn create_multisig_smart_account(
     starting_balance: u64,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
+    create_multisig_smart_account_with_delay_policy(
+        threshold,
+        public_keys,
+        starting_balance,
+        proc_policy_map,
+        DelayedExecutionPolicy::new(30, 2, 1)?,
+    )
+}
+
+/// Like [`create_multisig_smart_account`], with an explicit delayed-execution policy.
+fn create_multisig_smart_account_with_delay_policy(
+    threshold: u32,
+    public_keys: &[PublicKey],
+    starting_balance: u64,
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    delayed_execution_policy: DelayedExecutionPolicy,
+) -> anyhow::Result<Account> {
     let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
     let approver_set = ApproverSet::new(approvers, threshold)?;
-    let config = AuthMultisigSmartConfig::new(approver_set, DelayedExecutionPolicy::new(30, 2)?)
+    let config = AuthMultisigSmartConfig::new(approver_set, delayed_execution_policy)
         .with_proc_policies(proc_policy_map)?;
 
     let asset = FungibleAsset::new(
@@ -886,6 +903,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
+    ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS,
     ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION,
     ERR_PROC_POLICY_INVALID_MODE,
     ERR_TX_ALREADY_PROPOSED,
@@ -1023,9 +1041,11 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1096,10 +1116,11 @@ async fn test_multisig_smart_conflicting_policies_leave_no_execution_path(
             call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
             drop drop drop dropw
 
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
-            drop drop
+            drop drop drop
         end
         ",
         root = AuthMultisigSmart::update_signers_and_threshold_root().as_word(),
@@ -1152,9 +1173,11 @@ async fn test_multisig_smart_proposal_cannot_block_immediate_execution(
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1252,9 +1275,11 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled(
             push.{bundled_commitment}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
             dropw dropw dropw dropw
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1366,9 +1391,11 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1449,7 +1476,7 @@ async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
     let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
     let config = AuthMultisigSmartConfig::new(
         ApproverSet::new(approvers, 2)?,
-        DelayedExecutionPolicy::new(min_delay, propose_expiration_delta)?,
+        DelayedExecutionPolicy::new(min_delay, propose_expiration_delta, 1)?,
     )
     .with_proc_policies(vec![(
         AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
@@ -1469,9 +1496,11 @@ async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1598,9 +1627,11 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1687,43 +1718,49 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     Ok(())
 }
 
-/// `min_cancel_sigs` is recorded as the number of signatures verified at propose time. Cancelling
-/// later requires at least as many signatures. A propose tx signed by 4 keys must not be
-/// cancellable by a tx signed by only 2 keys, even though 2 sigs meets the account's default
-/// threshold. The cancel finalizer should panic with `ERR_CANCEL_INSUFFICIENT_SIGNATURES`.
+/// The cancel quorum is the `cancel_threshold` configured when the proposal is recorded; the
+/// proposer's signature count plays no part in it. On a 4-of-4 account with a cancel threshold of
+/// 3, a proposal recorded by a single approver is not cancelled by two approvers, even though two
+/// signatures meet the account default (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`), and is cancelled by
+/// three.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
+async fn test_multisig_smart_cancel_requires_configured_threshold(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
-    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+        2,
+        &public_keys,
+        100,
+        vec![],
+        DelayedExecutionPolicy::new(30, 2, 3)?,
+    )?;
     let account_id = multisig_account.id();
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let commitment = Word::from([Felt::from(701u32); 4]);
 
-    // Propose the commitment with 4 sigs — this stamps min_cancel_sigs = 4 onto the entry.
     let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
         commitment,
         MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(702)),
-        &[0, 1, 2, 3],
+        &[0],
         &public_keys,
         &authenticators,
     )
     .await?
-    .expect("propose tx with 4 sigs should succeed");
+    .expect("propose tx should succeed");
     multisig_account.apply_patch(propose_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Cancel with only 2 sigs — meets default_threshold but below min_cancel_sigs (4).
+    // Two cancel signatures meet the account default but not the cancel threshold of 3.
     let result = execute_delay_action(
         &mock_chain,
         account_id,
@@ -1737,14 +1774,74 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     .await?;
     assert_transaction_executor_error!(result, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
 
+    // Three signatures over the cancel message do cancel it; the proposer need not be among them.
+    let cancel_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(704)),
+        &[1, 2, 3],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("cancel with the configured threshold should succeed");
+    multisig_account.apply_patch(cancel_tx.account_patch())?;
+
+    let stored = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
+        .expect("tx proposals slot should exist");
+    assert_eq!(stored, Word::empty(), "proposal must be removed after a valid cancel");
+
     Ok(())
 }
 
-/// `min_cancel_sigs` is stamped from the number of signatures that proposed, so once the approver
-/// set shrinks below it the proposal could demand more cancel signatures than approvers exist.
+/// `update_delayed_execution_policy` rejects a cancel threshold the current approvers cannot reach.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_update_policy_rejects_cancel_threshold_above_approvers(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    // A cancel threshold of 3 on a two-approver account.
+    let script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            push.3
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop drop drop
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_transaction(account_id)
+        .tx_script(script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt(705),
+        ))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
+
 /// Cancelling caps the requirement by the current approver count, so the remaining approvers can
-/// still veto: a proposal recorded by all four approvers is cancelled by the two that survive a
-/// rotation down to a 2-of-2 set.
+/// still veto: a proposal recorded under a cancel threshold of 4 is cancelled by the two approvers
+/// that survive a rotation down to a 2-of-2 set.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
@@ -1753,26 +1850,32 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
-    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+        2,
+        &public_keys,
+        100,
+        vec![],
+        DelayedExecutionPolicy::new(30, 2, 4)?,
+    )?;
     let account_id = multisig_account.id();
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let commitment = Word::from([Felt::from(721u32); 4]);
 
-    // All four approvers propose, stamping min_cancel_sigs = 4 onto the entry.
+    // A single approver proposes; the entry records the configured cancel threshold of 4.
     let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
         "propose_transaction",
         commitment,
         MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(722)),
-        &[0, 1, 2, 3],
+        &[0],
         &public_keys,
         &authenticators,
     )
     .await?
-    .expect("propose tx with 4 sigs should succeed");
+    .expect("propose tx should succeed");
     multisig_account.apply_patch(propose_tx.account_patch())?;
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
@@ -1809,7 +1912,8 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
     mock_chain.add_pending_executed_transaction(&rotate_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Only two approvers remain, so two cancel signatures must suffice despite min_cancel_sigs = 4.
+    // Only two approvers remain, so two cancel signatures must suffice despite a recorded
+    // cancel threshold of 4.
     let cancel_tx = execute_delay_action(
         &mock_chain,
         account_id,
@@ -1925,7 +2029,8 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel(
 }
 
 /// After `update_delayed_execution_policy` rotates the policy, subsequent proposals must compute
-/// `unlock_block` from the new `min_delay` and `propose_expiration_delta`, not the previous ones.
+/// `unlock_block` from the new `min_delay` and `propose_expiration_delta`, not the previous ones,
+/// and record the new `cancel_threshold` as their cancellation quorum.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
@@ -1943,13 +2048,16 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
 
     let new_min_delay = 90u32;
     let new_expiration_delta = 5u32;
+    let new_cancel_threshold = 2u32;
     let rotate_script = compile_multisig_smart_tx_script(format!(
         "
         @transaction_script
         pub proc main
+            push.{new_cancel_threshold}
             push.{new_expiration_delta}
             push.{new_min_delay}
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -1979,12 +2087,13 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
         .expect("delayed-execution slot should exist");
     assert_eq!(
         stored_policy,
-        Word::from([new_min_delay, new_expiration_delta, 0, 0]),
+        Word::from([new_min_delay, new_expiration_delta, new_cancel_threshold, 0]),
         "stored DelayedExecutionPolicy must reflect the rotated values"
     );
 
-    // A subsequent proposal uses the new policy. Propose a commitment and verify
-    // `unlock_block - proposal_block == new_expiration_delta + new_min_delay`.
+    // A subsequent proposal uses the new policy. Propose a commitment with a single signature and
+    // verify `unlock_block - proposal_block == new_expiration_delta + new_min_delay` and that the
+    // recorded cancel quorum is the configured threshold, not the proposer's signature count.
     let target_commitment = Word::from([Felt::from(801u32); 4]);
     let propose_tx = execute_delay_action(
         &mock_chain,
@@ -1992,7 +2101,7 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
         "propose_transaction",
         target_commitment,
         MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(802)),
-        &[0, 1],
+        &[0],
         &public_keys,
         &authenticators,
     )
@@ -2015,6 +2124,11 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
         unlock_block - proposal_block,
         (new_expiration_delta + new_min_delay) as u64,
         "post-rotation propose must use the new policy"
+    );
+    assert_eq!(
+        elements[2].as_canonical_u64(),
+        u64::from(new_cancel_threshold),
+        "the cancel quorum is the configured threshold, not the proposer's signature count"
     );
 
     Ok(())
@@ -2168,9 +2282,11 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -2284,9 +2400,11 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
@@ -2555,9 +2673,11 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
         "
         @transaction_script
         pub proc main
+            push.1
             push.2
             push.40
             call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
             drop
             drop
         end
