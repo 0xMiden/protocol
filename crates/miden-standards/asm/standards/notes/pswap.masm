@@ -31,7 +31,8 @@ const ACTION_FILL = 0
 const ACTION_CANCEL = 1
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
-# Carries the word [amount, order_id, depth, 0]. Mirrors
+# Carries the word [amount, order_id, depth, surplus]: the payback's surplus is what the creator
+# received above the note's own price (payback - fill); the remainder's is zero. Mirrors
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
@@ -109,6 +110,7 @@ const P2ID_REQUESTED_FAUCET_SUFFIX = 1
 const P2ID_REQUESTED_FAUCET_PREFIX = 2
 const P2ID_AMT_ACCOUNT_FILL = 3
 const P2ID_AMT_NOTE_FILL = 4
+const P2ID_AMT_SURPLUS = 5
 
 # create_remainder_note locals
 const REMAINDER_NOTE_IDX = 0
@@ -122,14 +124,15 @@ const EXEC_AMT_OFFERED = 0
 const EXEC_AMT_MIN_REQUESTED = 1
 const EXEC_AMT_PAYOUT_TOTAL = 2
 const EXEC_AMT_PAYOUT_ACCOUNT_FILL = 3
-const EXEC_AMT_PAYOUT_NOTE_FILL = 4
+const EXEC_AMT_FILL = 4
 const EXEC_OFFERED_FAUCET_SUFFIX = 5
 const EXEC_OFFERED_FAUCET_PREFIX = 6
 const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 7
 const EXEC_AMT_REQUESTED_NOTE_FILL = 8
-const EXEC_AMT_FILL_REFERENCE = 9
+const EXEC_AMT_PAYBACK = 9
+const EXEC_AMT_SURPLUS = 10
 
-# Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
+# Local memory for the parent's PswapAttachment word [amount, order_id, depth, surplus]:
 # write the word at PARENT_ATTACHMENT_PTR, read back only the depth at DEPTH_OFFSET.
 const PARENT_ATTACHMENT_PTR = 0
 const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
@@ -139,7 +142,7 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP storage length does not match payback visibility"
 const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or private"
-const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
+const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or a cancellation with amounts"
 const ERR_PSWAP_INVALID_PAYBACK_PREIMAGE="PSWAP cancellation preimage does not match the payback recipient"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
@@ -148,6 +151,7 @@ const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
 const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below the minimum fill step"
+const ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK="PSWAP surplus must be below the payback"
 const ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS="PSWAP attachment must consist of exactly one word"
 const ERR_PSWAP_PARENT_DEPTH_NOT_U32="PSWAP parent depth carried in the consumed note attachment is not a u32"
 const ERR_PSWAP_DEPTH_OVERFLOW="PSWAP lineage depth exceeds u32"
@@ -181,9 +185,9 @@ end
 
 #! Computes the proportional amount of offered tokens for a given fill amount.
 #!
-#! Formula: `payout = floor((offered * fill_amount) / fill_reference)`, where the caller passes
-#! `fill_reference = max(total_fill, min_requested_amount)` so an over-fill divides by the fill
-#! itself (whole offered side) rather than `min_requested_amount` (see `execute_pswap`).
+#! Formula: `payout = floor((offered * fill_amount) / fill_reference)`. `execute_pswap` passes
+#! `fill_reference = min_requested_amount` for the payout, and `offered = payout` with
+#! `fill_reference = payback` for the notes' share of it; in both, `fill_amount <= fill_reference`.
 #!
 #! The intermediate product `offered * fill_amount` is computed as a full
 #! u128 via `u64::widening_mul`, then divided by `fill_reference` (extended to
@@ -198,7 +202,7 @@ end
 #!
 @locals(2)
 # CALC_FILL_AMOUNT:      this leg's fill amount
-# CALC_FILL_REFERENCE: max(total_fill, min_requested_amount) — the fill that maps to the whole offered side
+# CALC_FILL_REFERENCE: the amount that maps to the whole offered side
 proc calculate_output_amount(
     offered: AssetAmount,
     fill_reference: AssetAmount,
@@ -241,18 +245,6 @@ proc calculate_output_amount(
     # Reconstruct the u64 quotient as a single felt: `q0 + q1 * 2^32`.
     swap mul.MAX_U32 add
     # => [payout_amount]
-end
-
-#! Returns the larger of two field elements, compared as unsigned integers. Callers must pass
-#! values below the field modulus; asset amounts (<= FUNGIBLE_ASSET_MAX_AMOUNT) always satisfy this.
-#!
-#! Inputs:  [a, b]
-#! Outputs: [max(a, b)]
-proc max(a: felt, b: felt) -> felt
-    dup.1 dup.1 lt
-    # => [b_lt_a, a, b]
-    cdrop
-    # => [max(a, b)]
 end
 
 #! Returns the smaller of two field elements, compared as unsigned integers.
@@ -403,24 +395,28 @@ end
 # P2ID NOTE CREATION PROCEDURE
 # =================================================================================================
 
-#! Prepares and creates the public or private payback.
-#! Inputs:  [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+#! Prepares and creates the public or private payback. Its attachment records the surplus, so
+#! the owner can recover the fill (amount - surplus) and rebuild the remainder.
+#! Inputs:  [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill, amt_surplus]
 #! Outputs: []
-@locals(5)
+@locals(6)
 # P2ID_NOTE_IDX                : note_idx
 # P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
 # P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
 # P2ID_AMT_ACCOUNT_FILL        : amt_account_fill
 # P2ID_AMT_NOTE_FILL           : amt_note_fill
+# P2ID_AMT_SURPLUS             : amt_surplus
 proc create_p2id_note(
     faucet: AccountId,
     amt_account_fill: AssetAmount,
-    amt_note_fill: AssetAmount
+    amt_note_fill: AssetAmount,
+    amt_surplus: AssetAmount
 )
     loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
     loc_store.P2ID_REQUESTED_FAUCET_PREFIX
     loc_store.P2ID_AMT_ACCOUNT_FILL
     loc_store.P2ID_AMT_NOTE_FILL
+    loc_store.P2ID_AMT_SURPLUS
     # => []
 
     exec.prepare_payback
@@ -442,25 +438,25 @@ proc create_p2id_note(
     loc_load.P2ID_NOTE_IDX
     # => [note_idx]
 
-    push.0
-    # => [0, note_idx]
+    loc_load.P2ID_AMT_SURPLUS
+    # => [surplus, note_idx]
 
     exec.get_current_depth
-    # => [depth, 0, note_idx]
+    # => [depth, surplus, note_idx]
 
     exec.get_order_id
-    # => [order_id, depth, 0, note_idx]
+    # => [order_id, depth, surplus, note_idx]
 
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
-    # => [total_fill, order_id, depth, 0, note_idx]
+    # => [payback, order_id, depth, surplus, note_idx]
 
     push.PSWAP_ATTACHMENT_SCHEME
-    # => [PSWAP_ATTACHMENT_SCHEME, total_fill, order_id, depth, 0, note_idx]
+    # => [PSWAP_ATTACHMENT_SCHEME, payback, order_id, depth, surplus, note_idx]
 
     exec.output_note::add_word_attachment
     # => []
 
-    # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
+    # Move account_fill from the consumer's vault to the P2ID note (if > 0)
     loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
 
@@ -512,10 +508,10 @@ proc create_p2id_note(
     # => [note_idx]
 
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
-    # => [total_fill, note_idx]
+    # => [payback, note_idx]
 
     loc_load.P2ID_REQUESTED_FAUCET_PREFIX loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
-    # => [requested_faucet_suffix, requested_faucet_prefix, total_fill, note_idx]
+    # => [requested_faucet_suffix, requested_faucet_prefix, payback, note_idx]
 
     exec.fungible_asset::create
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
@@ -839,43 +835,39 @@ end
 
 #! Executes the partially-fillable swap.
 #!
-#! Sends offered tokens to consumer, requested tokens to the configured P2ID recipient,
-#! and creates a remainder note if partially filled.
-#!
-#! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
-#! note_fill`:
-#! - `total_fill <= min_requested_amount`: the consumer takes a proportional share of the offered
-#!   side, and a remainder note carries the unfilled balance.
-#! - `total_fill > min_requested_amount` (over-fill): the whole offered side is paid out and no
-#!   remainder is created. The consumer takes the `account_fill` share; any `note_fill` share
-#!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
-#!   surplus requested tokens.
+#! The creator's payback is `account_fill + note_fill`: `account_fill` leaves the consumer's vault
+#! and `note_fill` comes from other notes in the same transaction (cross-swap). Of the payback,
+#! `surplus` is above the order's own price and the rest is the fill, which alone decides what the
+#! order gives up. A fill above `min_requested_amount` keeps the order's price as well: the excess
+#! also counts as surplus. So `fill = min(payback - surplus, min_requested_amount)`, and:
+#! - the order gives up `payout = offered * fill / min_requested_amount`, rounded down. The notes'
+#!   share, `payout * note_fill / payback` rounded down, stays in the transaction for the notes
+#!   that paid it, and the consumer receives the rest;
+#! - a fill below `min_requested_amount` leaves a remainder note with the rest.
 #!
 #! A per-fill floor rejects any fill below `min(min_fill_step, min_requested_amount)`. Clamping to
 #! `min_requested_amount` keeps a shrinking remainder completable, and `min_fill_step == 0` disables
 #! the floor.
 #!
-#! Account fill and note fill payouts are computed separately (rather than summing
-#! first) because the account fill portion must be credited to the consumer's vault
-#! on its own, while the combined total is needed to size the remainder note.
-#!
-#! Inputs:  [account_fill_amount, note_fill_amount]
+#! Inputs:  [account_fill_amount, note_fill_amount, surplus]
 #! Outputs: []
 #!
-@locals(10)
+@locals(11)
 # EXEC_AMT_OFFERED                : amt_offered
 # EXEC_AMT_MIN_REQUESTED          : amt_min_requested
 # EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
 # EXEC_AMT_PAYOUT_ACCOUNT_FILL    : amt_payout_account_fill
-# EXEC_AMT_PAYOUT_NOTE_FILL       : amt_payout_note_fill
+# EXEC_AMT_FILL                   : min(payback - surplus, min_requested_amount)
 # EXEC_OFFERED_FAUCET_SUFFIX      : offered_faucet_suffix
 # EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
-# EXEC_AMT_FILL_REFERENCE         : max(total_fill, min_requested_amount)
-proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmount)
+# EXEC_AMT_PAYBACK                : account_fill + note_fill
+# EXEC_AMT_SURPLUS                : payback - fill
+proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmount, surplus: felt)
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_store.EXEC_AMT_SURPLUS
     # => []
 
     exec.load_offered_asset
@@ -903,7 +895,7 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     loc_store.EXEC_AMT_MIN_REQUESTED
     # => []
 
-    # Total fill = account_fill + note_fill; user-provided, so overflow-check and validate it.
+    # payback = account_fill + note_fill; user-provided, so overflow-check and validate it.
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL u32split
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL u32split
     # => [nf_lo, nf_hi, af_lo, af_hi]
@@ -918,71 +910,85 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     # => [sum_lo, sum_hi]
 
     swap mul.MAX_U32 add
-    # => [fill_amount]
+    # => [payback]
 
-    # Reject fills below the effective per-fill floor (see the proc doc comment).
-    dup
-    # => [fill_amount, fill_amount]
+    dup loc_store.EXEC_AMT_PAYBACK
+    # => [payback]
 
-    mem_load.MIN_FILL_STEP_ITEM loc_load.EXEC_AMT_MIN_REQUESTED exec.min
-    # => [effective_floor, fill_amount, fill_amount]
+    # The surplus must leave a fill. Comparing the raw surplus with the payback also bounds it.
+    loc_load.EXEC_AMT_SURPLUS dup.1 dup.1 swap
+    # => [payback, surplus, surplus, payback]
 
     lt
-    # => [fill_below_floor, fill_amount]
+    # => [surplus_below_payback, surplus, payback]
+
+    assert.err=ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK
+    # => [surplus, payback]
+
+    # Cannot underflow: surplus < payback.
+    sub
+    # => [payback - surplus]
+
+    # Whatever exceeds the requested amount is surplus too.
+    loc_load.EXEC_AMT_MIN_REQUESTED exec.min
+    # => [fill]
+
+    dup loc_store.EXEC_AMT_FILL
+    # => [fill]
+
+    # Cannot underflow: fill <= payback - surplus <= payback.
+    loc_load.EXEC_AMT_PAYBACK dup.1 sub loc_store.EXEC_AMT_SURPLUS
+    # => [fill]
+
+    # Reject fills below the effective per-fill floor (see the proc doc comment).
+    mem_load.MIN_FILL_STEP_ITEM loc_load.EXEC_AMT_MIN_REQUESTED exec.min
+    # => [effective_floor, fill]
+
+    lt
+    # => [fill_below_floor]
 
     assertz.err=ERR_PSWAP_FILL_BELOW_MINIMUM
-    # => [fill_amount]
-
-    # fill_reference = max(fill, min_requested_amount).
-    loc_load.EXEC_AMT_MIN_REQUESTED
-    # => [min_requested, fill_amount]
-
-    exec.max
-    # => [fill_reference]
-
-    loc_store.EXEC_AMT_FILL_REFERENCE
     # => []
 
-    # Payout for account_fill_amount
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
-    loc_load.EXEC_AMT_FILL_REFERENCE
-    loc_load.EXEC_AMT_OFFERED
-    # => [offered, fill_reference, account_fill_amount]
+    # The order gives up offered * fill / min_requested, rounded down.
+    loc_load.EXEC_AMT_FILL loc_load.EXEC_AMT_MIN_REQUESTED loc_load.EXEC_AMT_OFFERED
+    # => [offered, min_requested, fill]
 
     exec.calculate_output_amount
-    # => [account_fill_payout]
+    # => [payout_total]
 
-    loc_store.EXEC_AMT_PAYOUT_ACCOUNT_FILL
-    # => []
+    dup loc_store.EXEC_AMT_PAYOUT_TOTAL
+    # => [payout_total]
 
-    # Payout for note_fill_amount
-    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
-    loc_load.EXEC_AMT_FILL_REFERENCE
-    loc_load.EXEC_AMT_OFFERED
-    # => [offered, fill_reference, note_fill_amount]
+    # The notes' share: payout_total * note_fill / payback, rounded down; none if they paid none.
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL dup eq.0
+    # => [notes_paid_nothing, note_fill, payout_total]
 
-    exec.calculate_output_amount
-    # => [note_fill_payout]
+    if.true
+        # note_fill is the zero share.
+        swap drop
+    else
+        loc_load.EXEC_AMT_PAYBACK movup.2
+        # => [payout_total, payback, note_fill]
 
-    loc_store.EXEC_AMT_PAYOUT_NOTE_FILL
-    # => []
+        exec.calculate_output_amount
+    end
+    # => [payout_notes]
 
-    # total_payout = account_fill_payout + note_fill_payout
-    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL loc_load.EXEC_AMT_PAYOUT_NOTE_FILL add
-    # => [total_payout]
-
-    loc_store.EXEC_AMT_PAYOUT_TOTAL
+    # The vault takes the rest. Cannot underflow: payout_notes <= payout_total.
+    loc_load.EXEC_AMT_PAYOUT_TOTAL swap sub loc_store.EXEC_AMT_PAYOUT_ACCOUNT_FILL
     # => []
 
     # Create P2ID note carrying the requested asset to the configured recipient. The note's
     # assets are derived from the requested fill amounts (`account_fill +
     # note_fill`), not from `total_payout` (which is the offered asset owed to
-    # the consumer). All-zero fill arguments select the requested amount in `fill`.
+    # the consumer), and its attachment records the surplus.
+    loc_load.EXEC_AMT_SURPLUS
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
     mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
-    # => [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+    # => [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill, amt_surplus]
 
     exec.create_p2id_note
     # => []
@@ -1012,15 +1018,15 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     # => []
 
     # Check if partial fill.
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
+    loc_load.EXEC_AMT_FILL
     loc_load.EXEC_AMT_MIN_REQUESTED
-    # => [min_requested, total_in]
+    # => [min_requested, fill]
 
     dup.1 dup.1 lt
-    # => [is_partial, min_requested, total_in]
+    # => [is_partial, min_requested, fill]
 
     if.true
-        # remaining_requested = min_requested - total_in
+        # remaining_requested = min_requested - fill
         swap sub
         # => [remaining_requested]
 
@@ -1071,38 +1077,32 @@ proc is_consumer_creator(creator_id: AccountId) -> Bool
     # => [is_creator]
 end
 
-#! Validates the note arguments and returns the action followed by the two fill amounts.
-#! The reserved element must be zero, and the action must be ACTION_FILL or ACTION_CANCEL.
+#! Validates the note arguments and returns the action followed by the two fill amounts and the
+#! surplus. The action must be ACTION_FILL or ACTION_CANCEL.
 #!
-#! Inputs:  [action, account_fill, note_fill, reserved]
-#! Outputs: [action, account_fill, note_fill]
-proc parse_note_args(note_args: NoteArgs) -> (u32, AssetAmount, AssetAmount)
-    movup.3
-    # => [reserved, action, account_fill, note_fill]
-
-    eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
-    # => [action, account_fill, note_fill]
-
+#! Inputs:  [action, account_fill, note_fill, surplus]
+#! Outputs: [action, account_fill, note_fill, surplus]
+proc parse_note_args(note_args: NoteArgs) -> (u32, AssetAmount, AssetAmount, felt)
     dup eq.ACTION_FILL dup.1 eq.ACTION_CANCEL or
-    # => [is_valid_action, action, account_fill, note_fill]
+    # => [is_valid_action, action, account_fill, note_fill, surplus]
 
     assert.err=ERR_PSWAP_INVALID_ACTION
-    # => [action, account_fill, note_fill]
+    # => [action, account_fill, note_fill, surplus]
 end
 
 #! Fills an order using the supplied amounts, with all-zero amounts selecting a full fill.
 #!
-#! Inputs:  [account_fill, note_fill]
+#! Inputs:  [account_fill, note_fill, surplus]
 #! Outputs: []
-proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
+proc fill(account_fill: AssetAmount, note_fill: AssetAmount, surplus: felt)
     dup.1 eq.0 dup.1 eq.0 and
-    # => [both_zero, account_fill, note_fill]
+    # => [both_zero, account_fill, note_fill, surplus]
 
     if.true
         drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
-        # => [account_fill, note_fill]
+        # => [account_fill, note_fill, surplus]
     end
-    # => [account_fill, note_fill]
+    # => [account_fill, note_fill, surplus]
 
     exec.execute_pswap
     # => []
@@ -1110,11 +1110,12 @@ end
 
 #! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
 #!
-#! NOTE_ARGS are [action, account_fill, note_fill, reserved].
+#! NOTE_ARGS are [action, account_fill, note_fill, surplus].
 #! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.
 #! All-zero amounts select a full fill for other callers. Action 1 cancels orders with private
 #! paybacks using a secret P2ID preimage and refunds the full remaining balance to that recipient.
-#! The reserved element is zero. Private cancellation requires zero fill amounts.
+#! The surplus is the part of the payback above the order's price (see `execute_pswap`). Private
+#! cancellation requires zero fill amounts and surplus.
 #!
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Private cancellation requires create_note; public reclaim requires receive_asset.
@@ -1122,28 +1123,28 @@ end
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
-    # => [action, account_fill, note_fill]
+    # => [action, account_fill, note_fill, surplus]
 
     exec.load_storage
-    # => [action, account_fill, note_fill]
+    # => [action, account_fill, note_fill, surplus]
 
     mem_load.PAYBACK_NOTE_TYPE_ITEM
-    # => [payback_note_type, action, account_fill, note_fill]
+    # => [payback_note_type, action, account_fill, note_fill, surplus]
 
     if.true
         # Public paybacks only accept the fill action. The original creator reclaims the
         # order; other accounts fill it.
         eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
-        # => [account_fill, note_fill]
+        # => [account_fill, note_fill, surplus]
 
         mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
-        # => [creator_suffix, creator_prefix, account_fill, note_fill]
+        # => [creator_suffix, creator_prefix, account_fill, note_fill, surplus]
 
         exec.is_consumer_creator
-        # => [is_creator, account_fill, note_fill]
+        # => [is_creator, account_fill, note_fill, surplus]
 
         if.true
-            drop drop
+            drop drop drop
             # => []
 
             exec.handle_reclaim
@@ -1155,10 +1156,11 @@ pub proc main(note_args: NoteArgs)
         # => []
     else
         eq.ACTION_CANCEL
-        # => [is_cancel, account_fill, note_fill]
+        # => [is_cancel, account_fill, note_fill, surplus]
 
         if.true
-            # Cancellation refunds the entire remainder and requires both fill amounts to be zero.
+            # Cancellation refunds the entire remainder and requires all three amounts to be zero.
+            eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             # => []
