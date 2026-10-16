@@ -25,10 +25,14 @@
 - The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
 
 ## v0.17.0-pre.1 (2026-09-05)
-## v1.0.0-rc.1 (TBD)
+
+### Features
+
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
 
 ### Changes
 
+- [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
 - [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification ([#4053](https://github.com/0xMiden/protocol/pull/4053)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
@@ -39,6 +43,7 @@
 - [BREAKING] `NoteConsumptionChecker` now reports a feature note whose fee the account could not collect as `NoteFailure::Fee`, with the new public `FeeError` telling an unscheduled fee from one its `FEE_SPONSORSHIP` notes do not cover, along with the fee they provide and the fee the account charges, and `can_consume` reports such a note as never consumable ([#3962](https://github.com/0xMiden/protocol/pull/3962)).
 - `MasmError` and the `miden_standards::errors::standards` error constants are now available without the `testing` feature, so code can recognize why a standards procedure failed ([#3962](https://github.com/0xMiden/protocol/pull/3962)).
 - [BREAKING] Renamed `FeePolicyManager::active_fee_policy` to `initial_fee_policy`, since the account may switch policies after deployment, and added `FeePolicyManager::active_fee_policy` and `fee_asset_id_from_storage` to read a deployed account's fee configuration ([#3962](https://github.com/0xMiden/protocol/pull/3962)).
+- [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
 
 ### Fixes
