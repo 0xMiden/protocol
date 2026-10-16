@@ -908,6 +908,7 @@ use miden_standards::errors::standards::{
     ERR_PROC_POLICY_INVALID_MODE,
     ERR_TX_ALREADY_PROPOSED,
     ERR_TX_NOT_PROPOSED,
+    ERR_TX_PROPOSAL_CANCELLED,
     ERR_TX_STILL_TIMELOCKED,
 };
 use miden_testing::MockChain;
@@ -1862,6 +1863,7 @@ async fn test_multisig_smart_cancel_requires_configured_threshold(
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let commitment = Word::from([Felt::from(701u32); 4]);
+    let propose_block = mock_chain.latest_block_header().block_num();
 
     let propose_tx = execute_delay_action(
         &mock_chain,
@@ -1912,7 +1914,11 @@ async fn test_multisig_smart_cancel_requires_configured_threshold(
         .storage()
         .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
         .expect("tx proposals slot should exist");
-    assert_eq!(stored, Word::empty(), "proposal must be removed after a valid cancel");
+    assert_eq!(
+        stored,
+        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 3, 0]),
+        "a valid cancel must leave a cancelled record"
+    );
 
     Ok(())
 }
@@ -1981,6 +1987,7 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let commitment = Word::from([Felt::from(721u32); 4]);
+    let propose_block = mock_chain.latest_block_header().block_num();
 
     // A single approver proposes; the entry records the configured cancel threshold of 4.
     let propose_tx = execute_delay_action(
@@ -2051,7 +2058,11 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
         .storage()
         .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
         .expect("tx proposals slot should exist");
-    assert_eq!(stored, Word::empty(), "proposal must be removed after the capped cancel");
+    assert_eq!(
+        stored,
+        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 4, 0]),
+        "the capped cancel must leave a cancelled record"
+    );
 
     Ok(())
 }
@@ -2075,6 +2086,7 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel(
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let commitment = Word::from([Felt::from(711u32); 4]);
+    let propose_block = mock_chain.latest_block_header().block_num();
 
     let propose_tx = execute_delay_action(
         &mock_chain,
@@ -2142,7 +2154,261 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel(
         .storage()
         .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
         .expect("tx proposals slot should exist");
-    assert_eq!(stored, Word::empty(), "proposal must be removed after a valid cancel");
+    assert_eq!(
+        stored,
+        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 1, 0]),
+        "a valid cancel must leave a cancelled record"
+    );
+
+    Ok(())
+}
+
+/// Cancelling is final: the cancelled record blocks re-proposing the same commitment, and it
+/// cannot be cancelled again (which would delete it and re-open proposing).
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_cancelled_proposal_cannot_be_reproposed_or_recancelled(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let commitment = Word::from([Felt::from(731u32); 4]);
+    for (action, salt_seed) in
+        [("propose_transaction", 732u32), ("cancel_transaction_proposal", 733)]
+    {
+        let tx = execute_delay_action(
+            &mock_chain,
+            account_id,
+            action,
+            commitment,
+            MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(salt_seed)),
+            &[0],
+            &public_keys,
+            &authenticators,
+        )
+        .await?
+        .unwrap_or_else(|err| panic!("{action} should succeed: {err:?}"));
+        multisig_account.apply_patch(tx.account_patch())?;
+        mock_chain.add_pending_executed_transaction(&tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    // Replaying the proposal signature cannot re-open the cancelled commitment...
+    let reproposed = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(734)),
+        &[0],
+        &public_keys,
+        &authenticators,
+    )
+    .await?;
+    assert_transaction_executor_error!(reproposed, ERR_TX_PROPOSAL_CANCELLED);
+
+    // ...and neither can cancelling it again.
+    let recancelled = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(735)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?;
+    assert_transaction_executor_error!(recancelled, ERR_TX_PROPOSAL_CANCELLED);
+
+    Ok(())
+}
+
+/// A cancelled proposal never executes through the timelock, however long the chain waits and
+/// however far in the future its signers set the approval expiration.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_cancelled_proposal_cannot_execute_through_timelock(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account(
+        2,
+        &public_keys,
+        100,
+        vec![(
+            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
+        )],
+    )?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let execute_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            push.1
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
+            drop
+            drop
+        end
+        ",
+    )?;
+    let bound_block = mock_chain.latest_block_header().block_num();
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(740))
+        .with_approval_expiration_delta(NonZeroU32::new(100_000).unwrap())?;
+    let tx_summary = mock_chain
+        .build_transaction(account_id)
+        .tx_script(execute_script.clone())
+        .multisig_auth_args(exec_auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let target_commitment = tx_summary.as_ref().to_commitment();
+
+    // Approver 0 proposes, approver 1 cancels.
+    for (action, signer, salt_seed) in
+        [("propose_transaction", 0usize, 741u32), ("cancel_transaction_proposal", 1, 742)]
+    {
+        let tx = execute_delay_action(
+            &mock_chain,
+            account_id,
+            action,
+            target_commitment,
+            MultisigAuthArgs::new(bound_block, salt(salt_seed)),
+            &[signer],
+            &public_keys,
+            &authenticators,
+        )
+        .await?
+        .unwrap_or_else(|err| panic!("{action} should succeed: {err:?}"));
+        multisig_account.apply_patch(tx.account_patch())?;
+        mock_chain.add_pending_executed_transaction(&tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    // Well past where the proposal would have unlocked, the proposer's signature still only
+    // reaches the delayed path, which the cancelled record keeps closed.
+    mock_chain.prove_until_block(bound_block + 40u32)?;
+    let result = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        execute_script,
+        exec_auth_args,
+        &[0],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?;
+    assert_transaction_executor_error!(result, ERR_TX_PROPOSAL_CANCELLED);
+
+    Ok(())
+}
+
+/// A cancelled record only closes the delayed path. A transaction with enough signatures for
+/// immediate execution runs regardless, so proposing and cancelling a pending transaction's
+/// commitment cannot be used to block it, and the record is cleared when it executes.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_cancelled_proposal_does_not_block_immediate_execution(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let execute_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            push.1
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
+            drop
+            drop
+        end
+        ",
+    )?;
+    let bound_block = mock_chain.latest_block_header().block_num();
+    let exec_auth_args = MultisigAuthArgs::new(bound_block, salt(750));
+    let tx_summary = mock_chain
+        .build_transaction(account_id)
+        .tx_script(execute_script.clone())
+        .multisig_auth_args(exec_auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let target_commitment = tx_summary.as_ref().to_commitment();
+
+    // A single approver proposes the pending commitment and cancels it right away.
+    for (action, salt_seed) in
+        [("propose_transaction", 751u32), ("cancel_transaction_proposal", 752)]
+    {
+        let tx = execute_delay_action(
+            &mock_chain,
+            account_id,
+            action,
+            target_commitment,
+            MultisigAuthArgs::new(bound_block, salt(salt_seed)),
+            &[0],
+            &public_keys,
+            &authenticators,
+        )
+        .await?
+        .unwrap_or_else(|err| panic!("{action} should succeed: {err:?}"));
+        multisig_account.apply_patch(tx.account_patch())?;
+        mock_chain.add_pending_executed_transaction(&tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    let executed_tx = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        execute_script,
+        exec_auth_args,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("a fully signed transaction should execute despite the cancelled record");
+    multisig_account.apply_patch(executed_tx.account_patch())?;
+
+    let stored = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    assert_eq!(stored, Word::empty(), "immediate execution must clear the cancelled record");
 
     Ok(())
 }

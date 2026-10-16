@@ -207,13 +207,14 @@ fn validate_proc_policies(
 /// three properties follow from that which callers and operators must account for:
 ///
 /// - A proposal signature is bound to the proposed transaction's commitment, which is a stable,
-///   replayable message. After a proposal is cancelled (its entry removed), the original proposal
-///   signatures can be replayed to re-create the same proposal. There is intentionally no
-///   in-contract protection against this; instead, the cancellation must be re-applied before the
-///   timelock elapses. Re-cancelling is cheap (the cancel signatures are likewise replayable), but
-///   it requires off-chain monitoring of the proposals map. Monitoring is required regardless,
-///   because a semantically-equivalent proposal built with a different salt has a different
-///   commitment and cannot be blocked on-chain either.
+///   replayable message, so cancelling is final: the cancelled proposal keeps its record with
+///   `unlock_block` set to [`AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK`], and that commitment can
+///   neither be re-proposed nor executed through the timelock again. Otherwise one approver could
+///   re-propose it right after every cancellation, and its execution signatures would stay usable
+///   until the approval expiration its own signers chose. Approvers who do want a cancelled action
+///   re-sign it with a new salt. Cancelling cannot stop a semantically-equivalent proposal built
+///   with a different salt, which has a different commitment, so off-chain monitoring of the
+///   proposals map is still required.
 ///
 /// - Proposing pre-authorizes execution. Because both proposing and executing verify signatures
 ///   over the same (proposed) commitment, an approver's proposal signature also counts toward the
@@ -255,6 +256,12 @@ pub struct AuthMultisigSmart {
 impl AuthMultisigSmart {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::multisig_smart";
+
+    /// The `unlock_block` of a cancelled proposal record in the tx-proposals map.
+    ///
+    /// Cancelling keeps the record and sets its unlock block to this value, which no reference
+    /// block can reach, so the commitment stays closed to proposing and delayed execution.
+    pub const CANCELLED_UNLOCK_BLOCK: u32 = u32::MAX;
 
     pub const UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME: &'static str =
         "update_delayed_execution_policy";
@@ -411,7 +418,7 @@ impl AuthMultisigSmart {
         (
             Self::tx_proposals_slot().clone(),
             StorageSlotSchema::map(
-                "Active tx proposals: tx_summary_commitment => [unlock_block, proposal_block, min_cancel_sigs, 0]",
+                "Tx proposals: tx_summary_commitment => [unlock_block, proposal_block, min_cancel_sigs, 0]; a cancelled proposal keeps its record with unlock_block = u32::MAX",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
