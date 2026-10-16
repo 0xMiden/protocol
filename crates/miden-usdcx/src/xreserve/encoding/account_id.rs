@@ -52,13 +52,14 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::vectors::{load, parse_hex32};
+    use crate::vectors::{load, parse_hex32, selected};
 
     /// TV-AID-1 (happy path, written first): round-trip is lossless for valid ids.
     #[test]
     fn tv_aid_1_roundtrip_lossless() {
         let v = load();
-        for vec in v.families.aid.iter().filter(|v| v.expected_variant.is_none()) {
+        let accepts = v.families.aid.iter().filter(|v| v.expected_variant.is_none());
+        for vec in selected(accepts, 3, "aid accept rows") {
             let b = parse_hex32(&vec.bytes32);
             let embedded = EthEmbeddedAccountId::try_from_bytes32(b)
                 .unwrap_or_else(|e| panic!("vector {}: must decode, got {e}", vec.id));

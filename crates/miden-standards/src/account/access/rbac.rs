@@ -157,7 +157,7 @@ impl RoleConfig {
 /// only safe once `X` has members), (3) delegate the managed role to it, and (4) revoke or
 /// renounce all bootstrap `ADMIN` members, waiting for each step to commit before issuing
 /// the next. Emptying `ADMIN` is permanent and forfeits every `ADMIN`-defaulted capability
-/// (the `Authority` procedure→role map is fixed at account creation), so an account whose
+/// (only `ADMIN` can remap a procedure that falls back to `ADMIN`), so an account whose
 /// gated procedures are not all mapped to live roles must never empty `ADMIN`. A
 /// self-administering role has no quorum — any single member can evict the rest — so its
 /// members should themselves be strongly authenticated (e.g. multisig) accounts.
