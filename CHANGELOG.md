@@ -32,6 +32,10 @@
 - Added delayed execution to `AuthMultisigSmart` through `propose_transaction`, `cancel_transaction_proposal`, and a `DelayedExecutionPolicy` updatable via `update_delayed_execution_policy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 - Added `AuthMultisigSmart::update_signers_and_threshold_root` and `AuthMultisigSmart::update_delayed_execution_policy_root` so procedure policies can guard approver rotation and delay-policy updates ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 
+### Features
+
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+
 ### Changes
 
 - [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
