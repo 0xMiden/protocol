@@ -41,6 +41,7 @@
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
+- [BREAKING] Added an on-chain `token_base_uri` to `NonFungibleFaucet` that marks its token metadata as public, with the `set_token_base_uri` setter and a `token_uri` helper ([#4011](https://github.com/0xMiden/protocol/issues/4011)).
 
 ### Fixes
 
