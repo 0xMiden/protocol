@@ -48,6 +48,10 @@
 
 - `SwapNote` and `PswapNote` builders now reject zero-amount offered or requested assets ([#4044](https://github.com/0xMiden/protocol/pull/4044)).
 - [BREAKING] `NoteConsumptionChecker::check_notes_consumability` now rejects input notes with duplicate nullifiers via the new `NoteCheckerError::TransactionInputs` variant. Removed `From<Vec<Note>> for InputNotes<InputNote>` and changed `TransactionInputs::set_input_notes` to take `InputNotes<InputNote>` ([#4005](https://github.com/0xMiden/protocol/pull/4005)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
+- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
 
 ## v0.17.0 (2026-10-01)
 

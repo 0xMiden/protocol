@@ -8,9 +8,10 @@ use miden_protocol::transaction::{
     InputNote,
     InputNotes,
     ProvenTransaction,
-    TransactionInputs,
+    RawOutputNotes,
     TransactionKernel,
     TransactionOutputs,
+    TransactionWitness,
     TxAccountUpdate,
 };
 use miden_prover::HashFunction::Poseidon2;
@@ -126,11 +127,21 @@ impl LocalTransactionProver {
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 
+    /// Proves the transaction described by the provided witness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The execution of the transaction fails.
+    /// - The output notes of the execution are invalid.
+    /// - The stack outputs of the execution do not match the outputs built from the witness and the
+    ///   execution.
+    /// - Proof generation fails.
     pub fn prove(
         &self,
-        tx_inputs: impl Into<TransactionInputs>,
+        tx_witness: impl Into<TransactionWitness>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let tx_inputs = tx_inputs.into();
+        let (tx_inputs, final_account, expiration_block_num) = tx_witness.into().into_parts();
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
         // Create a per-call MAST store to avoid accumulating forests across prove
@@ -167,11 +178,9 @@ impl LocalTransactionProver {
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 
-        let advice_inputs = advice_inputs.into_advice_inputs();
-
         let processor = FastProcessor::new_with_options(
             stack_inputs,
-            advice_inputs.clone(),
+            advice_inputs.into_advice_inputs(),
             self.execution_options,
         )
         .map_err(ExecutionError::advice_error_no_context)
@@ -180,18 +189,28 @@ impl LocalTransactionProver {
         let witness = processor
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
-        let stack_outputs = *witness.claim().stack_outputs();
+
+        let (account_patch, input_notes, output_notes) = host.into_parts();
+        let output_notes = RawOutputNotes::new(output_notes)
+            .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
+        let tx_outputs = TransactionOutputs::new(
+            final_account,
+            account_patch.to_commitment(),
+            output_notes,
+            expiration_block_num,
+        );
+
+        // The proof commits to the stack outputs, so checking them against the outputs binds the
+        // witness data and the host-tracked patch and notes to the proof. Check before proving to
+        // fail early.
+        if *witness.claim().stack_outputs() != tx_outputs.to_stack_outputs() {
+            return Err(TransactionProverError::StackOutputsMismatch);
+        }
 
         let proof = self
             .prover
             .prove(witness)
             .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
-
-        // Extract transaction outputs and process transaction data.
-        let (account_patch, input_notes, output_notes) = host.into_parts();
-        let tx_outputs =
-            TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-                .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
 
         self.build_proven_transaction(
             &input_notes,

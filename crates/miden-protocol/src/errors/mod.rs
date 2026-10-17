@@ -183,6 +183,8 @@ pub enum AccountError {
     SeedConvertsToInvalidAccountId(#[source] AccountIdError),
     #[error("storage map root {0} not found in the account storage")]
     StorageMapRootNotFound(Word),
+    #[error("failed to add storage map witness")]
+    FailedToAddStorageMapWitness(#[source] MerkleError),
     #[error("storage slot {0} is not of type map")]
     StorageSlotNotMap(StorageSlotName),
     #[error("storage slot {0} is not of type value")]
