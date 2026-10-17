@@ -30,10 +30,10 @@ async fn run_scenario(
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    let update_costs = match std::env::args().nth(1).as_deref() {
+    let update_cost_tables = match std::env::args().nth(1).as_deref() {
         None => false,
-        Some("update-note-costs") => true,
-        Some(other) => anyhow::bail!("unknown argument `{other}`; expected `update-note-costs`"),
+        Some("update-generated") => true,
+        Some(other) => anyhow::bail!("unknown argument `{other}`; expected `update-generated`"),
     };
 
     // create a template file for benchmark results
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     // store benchmark results in the JSON file
     write_bench_results_to_json(path, benchmark_results)?;
 
-    if update_costs {
+    if update_cost_tables {
         bench_transaction::note_costs::update_cost_tables(&measured_cycles)?;
     }
 

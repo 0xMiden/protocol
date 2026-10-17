@@ -37,10 +37,10 @@ The network-account scenarios feed two checked-in, generated cost tables: `crate
 Regenerate the tables (and `bench-tx.json`) with:
 
 ```bash
-make update-note-costs
+make update-generated
 ```
 
-Freshness is enforced in CI: the `checked_in_note_costs_match_executed_scenarios` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant, or when a note's declared `created_notes` do not match what its scenarios actually create. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
+Freshness is enforced in CI: the `checked_in_note_costs_match_executed_scenarios` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant, or when a note's declared `created_notes` do not match what its scenarios actually create. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. Regenerate only when this test fails, committing both artifacts together; between refreshes `bench-tx.json` may lag the current tree.
 
 ### Benchmark Groups
 
