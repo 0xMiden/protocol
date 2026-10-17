@@ -14,7 +14,7 @@
 use assert_matches::assert_matches;
 use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
 use miden_standards::interop::eth::EthEmbeddedAccountId;
-use miden_usdcx::vectors::{load, parse_hex32};
+use miden_usdcx::vectors::{load, parse_hex32, selected};
 use miden_usdcx::xreserve::encoding::{
     DepositIntent,
     EncodingError,
@@ -56,7 +56,8 @@ fn signature_type_matches_golden() {
 /// and the packed preimage is the golden one.
 #[test]
 fn deposit_intent_type_matches_golden() {
-    for vec in load().families.di.iter().filter(|v| v.kind == "accept") {
+    let accepts = load().families.di.iter().filter(|v| v.kind == "accept");
+    for vec in selected(accepts, 2, "di accept rows") {
         let bytes = vec.bytes();
         let intent = DepositIntent::try_from(bytes.as_slice()).expect("accept vector decodes");
 
@@ -99,7 +100,8 @@ fn deposit_intent_type_propagates_rejects() {
 /// round-trip.
 #[test]
 fn burn_items_methods_match_golden() {
-    for vec in load().families.bn.iter().filter(|v| v.kind == "accept") {
+    let accepts = load().families.bn.iter().filter(|v| v.kind == "accept");
+    for vec in selected(accepts, 3, "bn accept rows") {
         let items = vec.expected_struct();
         let encoded = items.encode();
         assert_eq!(
@@ -132,7 +134,8 @@ fn burn_items_decode_fail_closes() {
 /// ordering.
 #[test]
 fn account_id_two_felt_form_matches_golden() {
-    for vec in load().families.aid.iter().filter(|v| v.expected_variant.is_none()) {
+    let accepts = load().families.aid.iter().filter(|v| v.expected_variant.is_none());
+    for vec in selected(accepts, 3, "aid accept rows") {
         let b = parse_hex32(&vec.bytes32);
         let id = EthEmbeddedAccountId::try_from_bytes32(b)
             .expect("accept vector decodes")
@@ -154,7 +157,8 @@ fn account_id_two_felt_form_matches_golden() {
 /// byte-identical to the golden bytes32 — the adoption is not lossy.
 #[test]
 fn account_id_bytes32_form_is_stock_and_byte_identical() {
-    for vec in load().families.aid.iter().filter(|v| v.expected_variant.is_none()) {
+    let accepts = load().families.aid.iter().filter(|v| v.expected_variant.is_none());
+    for vec in selected(accepts, 3, "aid accept rows") {
         let b = parse_hex32(&vec.bytes32);
         let embedded = EthEmbeddedAccountId::try_from_bytes32(b).expect("accept vector decodes");
         assert_eq!(

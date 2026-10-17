@@ -27,6 +27,10 @@
 ## v0.17.0-pre.1 (2026-09-05)
 ## v1.0.0-rc.1 (TBD)
 
+### Features
+
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+
 ### Changes
 
 - Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
@@ -39,6 +43,8 @@
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
+- Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).
+- Keyed `bench-tx.json`'s per-note cycle counts by note label instead of note commitment, and added `total_cycles` to each scenario ([#3726](https://github.com/0xMiden/protocol/pull/3726)).
 
 ### Fixes
 
