@@ -5,7 +5,7 @@ use core::fmt::Debug;
 
 use super::PartialBlockchain;
 use crate::Word;
-use crate::account::auth::{Signature, SignatureKey};
+use crate::account::auth::BoundSignature;
 use crate::account::{AccountId, PartialAccount, StorageMapWitness};
 use crate::asset::AssetWitness;
 use crate::block::{BlockHeader, BlockNumber};
@@ -45,7 +45,7 @@ pub struct TransactionInputs {
     /// Scripts of the output notes the host resolved during execution.
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     /// Signatures the authenticator generated during execution.
-    signatures: BTreeMap<SignatureKey, Signature>,
+    signatures: Vec<BoundSignature>,
 }
 
 #[bon::bon]
@@ -76,7 +76,7 @@ impl TransactionInputs {
         #[builder(default)] tx_args: TransactionArgs,
         #[builder(default)] foreign_accounts: Vec<AccountInputs>,
         #[builder(default)] note_scripts: Vec<NoteScript>,
-        #[builder(default)] signatures: BTreeMap<SignatureKey, Signature>,
+        #[builder(default)] signatures: Vec<BoundSignature>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
 
@@ -91,10 +91,13 @@ impl TransactionInputs {
             tx_args,
             foreign_accounts: BTreeMap::new(),
             note_scripts,
-            signatures,
+            signatures: Vec::new(),
         };
         for foreign_account in foreign_accounts {
             tx_inputs.add_foreign_account(foreign_account)?;
+        }
+        for signature in signatures {
+            tx_inputs.add_signature(signature)?;
         }
 
         Ok(tx_inputs)
@@ -267,8 +270,21 @@ impl TransactionInputs {
     }
 
     /// Adds a signature, so that re-executing the transaction does not need the authenticator.
-    pub fn add_signature(&mut self, key: SignatureKey, signature: Signature) {
-        self.signatures.insert(key, signature);
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the inputs already contain a signature with the same key.
+    pub fn add_signature(
+        &mut self,
+        signature: BoundSignature,
+    ) -> Result<(), TransactionInputError> {
+        let key = signature.key();
+        if self.signatures.iter().any(|existing| existing.key() == key) {
+            return Err(TransactionInputError::DuplicateSignature(key));
+        }
+        self.signatures.push(signature);
+
+        Ok(())
     }
 
     /// Updates the transaction arguments of the inputs.
@@ -342,7 +358,7 @@ impl TransactionInputs {
     }
 
     /// Returns the signatures generated during execution.
-    pub fn signatures(&self) -> &BTreeMap<SignatureKey, Signature> {
+    pub fn signatures(&self) -> &[BoundSignature] {
         &self.signatures
     }
 

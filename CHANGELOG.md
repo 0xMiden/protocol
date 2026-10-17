@@ -61,6 +61,10 @@
 - [BREAKING] The executor now adds lazy-loaded asset and storage map witnesses to the partial accounts in `TransactionInputs`, and `TransactionInputs::with_asset_witnesses` is replaced by `add_asset_witnesses` ([#4033](https://github.com/0xMiden/protocol/pull/4033)).
 - [BREAKING] `TransactionInputs` no longer stores the recorded advice inputs, since its typed lazy-loaded data is enough to re-execute and prove the transaction ([#4034](https://github.com/0xMiden/protocol/pull/4034)).
 
+### Fixes
+
+- [BREAKING] Added `BoundSignature`, which binds a signature to its `SignatureKey` and replaces `Signature::to_encoded_signature` with an infallible encoding, so unrecoverable ECDSA signatures are rejected instead of causing a panic ([#4045](https://github.com/0xMiden/protocol/pull/4045)).
+
 ## v0.17.0 (2026-10-01)
 
 ### Features

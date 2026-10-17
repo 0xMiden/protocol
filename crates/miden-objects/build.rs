@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".note.NoteInclusionProof",
             ".transaction.AccountInputs",
             ".transaction.AuthSignature",
-            ".transaction.SignatureEntry",
+            ".transaction.BoundSignature",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",

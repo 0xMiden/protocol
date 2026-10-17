@@ -9,7 +9,7 @@ use anyhow::Context;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
-use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
+use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::{Account, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
@@ -342,7 +342,10 @@ impl<'chain> MockTransactionBuilder<'chain> {
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(&self.expected_output_notes);
         for (public_key_commitment, message, signature) in self.signatures {
-            tx_args.add_signature(public_key_commitment, message, signature);
+            let signature =
+                BoundSignature::new(SignatureKey::new(public_key_commitment, message), signature)
+                    .context("failed to bind signature to its key")?;
+            tx_args.add_signature(signature);
         }
         tx_inputs.set_tx_args(tx_args);
 

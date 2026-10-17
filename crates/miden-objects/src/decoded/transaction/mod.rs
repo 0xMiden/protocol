@@ -36,9 +36,8 @@ mod inputs;
 pub use inputs::{
     AccountInputs,
     AuthSignature,
-    SignatureEntry,
+    BoundSignature,
     TransactionInputs,
-    TransactionInputsError,
     TransactionInputsV1,
 };
 

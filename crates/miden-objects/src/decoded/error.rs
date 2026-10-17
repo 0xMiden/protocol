@@ -52,6 +52,7 @@ impl_verification_error_from!(
     miden_protocol::errors::BatchAccountUpdateError,
     miden_protocol::errors::BlockAccountUpdateError,
     miden_protocol::errors::BlockBodyError,
+    miden_protocol::errors::BoundSignatureError,
     miden_protocol::errors::NoteError,
     miden_protocol::errors::OutputNoteError,
     miden_protocol::errors::PartialAssetVaultError,
@@ -88,5 +89,4 @@ impl_verification_error_from!(
     super::transaction::ProvenBatchError,
     super::transaction::TransactionArgsError,
     super::transaction::TransactionHeaderBuildError,
-    super::transaction::TransactionInputsError,
 );

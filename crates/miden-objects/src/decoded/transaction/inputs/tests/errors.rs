@@ -122,10 +122,7 @@ fn signatures_reject_duplicate_keys() {
         .map_err(ConversionError::new)
         .unwrap_err();
 
-    assert_matches!(
-        error_source::<crate::decoded::transaction::TransactionInputsError>(&error),
-        Some(crate::decoded::transaction::TransactionInputsError::DuplicateSignature(_))
-    );
+    assert_matches!(transaction_input_error(&error), TransactionInputError::DuplicateSignature(_));
 }
 
 #[test]

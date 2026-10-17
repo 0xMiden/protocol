@@ -1008,9 +1008,10 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
     let signature = tx
         .tx_inputs()
         .signatures()
-        .get(&signature_key)
+        .iter()
+        .find(|signature| signature.key() == signature_key)
         .context("signature should be in the transaction inputs")?;
-    assert_eq!(signature.auth_scheme(), auth_scheme);
+    assert_eq!(signature.signature().auth_scheme(), auth_scheme);
 
     Ok(())
 }

@@ -14,6 +14,7 @@ use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
     AssetError,
+    BoundSignatureError,
     NoteError,
     OutputNoteError,
     ProvenTransactionError,
@@ -250,6 +251,8 @@ pub enum TransactionKernelError {
     PrivilegedEventFromOutsideTransactionKernelContext(TransactionEventId),
     #[error("failed to generate signature")]
     SignatureGenerationFailed(#[source] AuthenticationError),
+    #[error("signature returned by the authenticator does not belong to the requested key")]
+    InvalidAuthenticatorSignature(#[source] BoundSignatureError),
     #[error("transaction returned unauthorized event but a commitment did not match: {0}")]
     TransactionSummaryCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(

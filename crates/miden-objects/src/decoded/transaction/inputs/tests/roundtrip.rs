@@ -39,7 +39,6 @@ fn transaction_inputs_roundtrip_preserves_all_nested_fields_and_ordered_collecti
     );
 
     v1.foreign_accounts.reverse();
-    v1.signatures.reverse();
     let encoded = message.encode_to_vec();
     let decoded_message =
         proto::transaction::TransactionInputs::decode(encoded.as_slice()).unwrap();

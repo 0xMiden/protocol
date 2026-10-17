@@ -39,7 +39,7 @@ message AuthSignature {
   }
 }
 
-message SignatureEntry {
+message BoundSignature {
   primitives.Word pub_key_commitment = 1;
   primitives.Word message = 2;
   AuthSignature signature = 3;
@@ -60,5 +60,5 @@ message TransactionInputsV1 {
   TransactionArgs tx_args = 6;
   repeated AccountInputs foreign_accounts = 7;
   repeated note.NoteScript note_scripts = 8;
-  repeated SignatureEntry signatures = 9;
+  repeated BoundSignature signatures = 9;
 }
