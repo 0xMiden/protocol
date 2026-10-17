@@ -321,8 +321,9 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the offered and requested assets have the same faucet ID, or if the
-    /// note carries a malformed [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment.
+    /// Returns an error if the offered and requested assets have the same faucet ID, if either of
+    /// them is zero, or if the note carries a malformed
+    /// [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment.
     pub fn build(self) -> Result<PswapNote, NoteError> {
         let note = self.build_internal();
 
@@ -330,6 +331,13 @@ where
             return Err(NoteError::other(
                 "offered and requested assets must have different faucets",
             ));
+        }
+
+        if note.offered_asset.amount() == AssetAmount::ZERO {
+            return Err(NoteError::other("offered asset must be non-zero"));
+        }
+        if note.storage.min_requested_asset().amount() == AssetAmount::ZERO {
+            return Err(NoteError::other("requested asset must be non-zero"));
         }
 
         if let Some(attachment) = note.attachment.as_ref()
@@ -1004,6 +1012,7 @@ impl NoteConsumptionCost for PswapNote {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
@@ -1418,6 +1427,45 @@ mod tests {
         assert!(
             remainder.payback_note(consumer_id, &round_one_attachment).is_err(),
             "an attachment from the parent's own round is not a later round",
+        );
+    }
+
+    /// A PSWAP note holds the offered asset and its payback holds the requested one, so a zero
+    /// amount on either side leaves one of those two notes empty.
+    #[test]
+    fn pswap_note_builder_rejects_a_zero_asset() {
+        let mut rng = RandomCoin::new(Word::default());
+        let creator = dummy_creator_id();
+        let zero = FungibleAsset::new(dummy_faucet_id(3), 0).unwrap();
+        let some = FungibleAsset::new(dummy_faucet_id(4), 100).unwrap();
+
+        let mut build = |offered: FungibleAsset, requested: FungibleAsset| {
+            PswapNote::builder()
+                .sender(creator)
+                .storage(
+                    PswapNoteStorage::builder()
+                        .min_requested_asset(requested)
+                        .creator_account_id(creator)
+                        .build(),
+                )
+                .serial_number(rng.draw_word())
+                .note_type(NoteType::Public)
+                .offered_asset(offered)
+                .build()
+        };
+
+        let err = build(zero, some).expect_err("a zero offered asset must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "offered asset must be non-zero".into()
+        );
+
+        let err = build(some, zero).expect_err("a zero requested asset must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "requested asset must be non-zero".into()
         );
     }
 }

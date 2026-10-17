@@ -171,6 +171,11 @@ The procedure takes a `LogTopic` (a suffix and prefix) and a content commitment.
 contain the content field elements under that commitment. Named topics use the first two felts of
 `word(name)`.
 
+Content must consist of complete words of four field elements. Hashing a shorter sequence does not
+pad the advice map value. To log an arbitrary number of elements, encode the original length in the
+application's content format and pad to complete words before computing the commitment and adding the
+same padded elements to the advice map.
+
 The kernel checks the content and uses the active account as emitter. Note and transaction scripts
 must call an account procedure to emit logs.
 

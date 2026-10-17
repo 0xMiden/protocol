@@ -144,7 +144,7 @@ async fn execute_note_and_apply(
 // SCRIPTS
 // ================================================================================================
 
-fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> String {
+pub(super) fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> String {
     let admin_role = admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
     format!(
         r#"

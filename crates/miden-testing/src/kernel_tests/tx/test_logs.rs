@@ -91,20 +91,33 @@ async fn kernel_enforces_log_limits(
     Ok(())
 }
 
-#[rstest]
-#[case::forged_content(WORD_SIZE, tx_kernel::ERR_TX_LOG_PREIMAGE_MISMATCH)]
-#[case::partial_word(WORD_SIZE - 1, tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE)]
 #[tokio::test]
-async fn kernel_logs_reject_invalid_contents(
-    #[case] num_elements: usize,
-    #[case] error: MasmError,
-) -> anyhow::Result<()> {
+async fn kernel_logs_reject_forged_content() -> anyhow::Result<()> {
     let commitment = Word::from([19u32; WORD_SIZE]);
     let tx = TestTransactionBuilder::with_existing_mock_account()
-        .add_advice_map_entry(commitment, vec![71u32.into(); num_elements])
+        .add_advice_map_entry(commitment, vec![71u32.into(); WORD_SIZE])
         .build()?;
     let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx::add_log"));
-    assert_execution_error!(tx.execute_code(&code).await, error);
+    assert_execution_error!(tx.execute_code(&code).await, tx_kernel::ERR_TX_LOG_PREIMAGE_MISMATCH);
+    Ok(())
+}
+
+#[rstest]
+#[case::partial_first_word(WORD_SIZE - 1)]
+#[case::partial_second_word(WORD_SIZE + 1)]
+#[tokio::test]
+async fn kernel_logs_reject_partial_words(#[case] num_elements: usize) -> anyhow::Result<()> {
+    let elements = vec![71u32.into(); num_elements];
+    // Even a valid content hash must not bypass the full-word requirement.
+    let commitment = Hasher::hash_elements(&elements);
+    let tx = TestTransactionBuilder::with_existing_mock_account()
+        .add_advice_map_entry(commitment, elements)
+        .build()?;
+    let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx::add_log"));
+    assert_execution_error!(
+        tx.execute_code(&code).await,
+        tx_kernel::ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED
+    );
     Ok(())
 }
 

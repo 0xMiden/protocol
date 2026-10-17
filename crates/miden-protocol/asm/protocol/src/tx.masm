@@ -450,7 +450,9 @@ pub proc get_fee_asset_id() -> AssetId
 end
 
 #! Emits a transaction log from the active authenticated account.
-#! The advice map must contain the content elements under CONTENT_COMMITMENT.
+#! The advice map must contain the content elements under CONTENT_COMMITMENT. Content must consist
+#! of complete words (multiples of four field elements); hashing does not pad the advice map value.
+#! Applications must encode any partial-word length and pad the content before hashing it.
 #! Visibility follows the native transaction account, including during FPI.
 #!
 #! Inputs:  [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
