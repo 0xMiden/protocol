@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::Asset;
+use miden_protocol::asset::{Asset, AssetAmount};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -75,6 +75,7 @@ impl SwapNote {
     ///
     /// Returns an error if:
     /// - The requested asset is the same as the offered asset.
+    /// - Either the offered or the requested asset is a zero-amount fungible asset.
     /// - The attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
@@ -100,6 +101,15 @@ impl SwapNote {
     ) -> Result<Self, NoteError> {
         if requested_asset == offered_asset {
             return Err(NoteError::other("requested asset same as offered asset"));
+        }
+
+        let is_zero =
+            |asset: &Asset| asset.as_fungible().is_some_and(|a| a.amount() == AssetAmount::ZERO);
+        if is_zero(&offered_asset) {
+            return Err(NoteError::other("offered asset must be non-zero"));
+        }
+        if is_zero(&requested_asset) {
+            return Err(NoteError::other("requested asset must be non-zero"));
         }
 
         let attachments = NoteAttachments::new(attachments)?;
@@ -812,6 +822,41 @@ mod tests {
             ((actual_tag.as_u32() & 0b00000000_01111111_00000000_00000000) >> 16) as u8,
             SwapNote::script_root().as_bytes()[1] >> 1,
             "swap script root byte 1 should match with the highest bit set to zero"
+        );
+    }
+
+    /// A SWAP note holds the offered asset and its payback holds the requested one, so a zero
+    /// amount on either side leaves one of those two notes empty.
+    #[test]
+    fn swap_note_builder_rejects_a_zero_asset() {
+        let zero = Asset::from(FungibleAsset::new(fungible_faucet(), 0).unwrap());
+
+        let err = SwapNote::builder()
+            .sender(dummy_target_id())
+            .offered_asset(zero)
+            .requested_asset(non_fungible_asset())
+            .note_type(NoteType::Public)
+            .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .build()
+            .expect_err("a zero offered asset must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "offered asset must be non-zero".into()
+        );
+
+        let err = SwapNote::builder()
+            .sender(dummy_target_id())
+            .offered_asset(non_fungible_asset())
+            .requested_asset(zero)
+            .note_type(NoteType::Public)
+            .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .build()
+            .expect_err("a zero requested asset must be rejected");
+        assert_matches!(
+            err,
+            NoteError::Other { error_msg, .. }
+                if error_msg == "requested asset must be non-zero".into()
         );
     }
 }
