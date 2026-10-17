@@ -21,7 +21,7 @@ use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 # =================================================================================================
 
 # Hash domains shared with TransactionLog and TransactionLogs in Rust.
-const LOG_DOMAIN = 0x020005
+const LOG_DOMAIN = 0x020004
 const LOGS_DOMAIN = 0x020003
 
 # add_log locals: two topic elements, two padding elements, then at most 256 content words.
