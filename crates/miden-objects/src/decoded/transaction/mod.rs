@@ -51,4 +51,10 @@ pub use batch::{
 };
 
 mod logs;
-pub use logs::{LogTopic, TransactionLog, TransactionLogDetails, TransactionLogs};
+pub use logs::{
+    LogTopic,
+    TransactionLog,
+    TransactionLogDetails,
+    TransactionLogDetailsCollection,
+    TransactionLogs,
+};

@@ -2,13 +2,6 @@ use miden_core::Word;
 
 use crate::block::header::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // SIGNED BLOCK ERROR
 // ================================================================================================
@@ -204,29 +197,6 @@ impl SignedBlock {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for SignedBlock {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.header.write_into(target);
-        self.body.write_into(target);
-        self.signatures.write_into(target);
-    }
-}
-
-impl Deserializable for SignedBlock {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block = Self {
-            header: BlockHeader::read_from(source)?,
-            body: BlockBody::read_from(source)?,
-            signatures: BlockSignatures::read_from(source)?,
-        };
-
-        Ok(block)
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -239,13 +209,14 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::OrderedTransactionHeaders;
+    use crate::transaction::{OrderedTransactionHeaders, TransactionLogDetailsCollection};
 
     fn empty_body() -> BlockBody {
         BlockBody::new_unchecked(
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            TransactionLogDetailsCollection::default(),
             OrderedTransactionHeaders::new_unchecked(Vec::new()),
         )
     }

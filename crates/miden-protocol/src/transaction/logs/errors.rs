@@ -28,4 +28,13 @@ pub enum TransactionLogError {
     /// Submitted transaction log visibility differs from the native account.
     #[error("log data visibility does not match the native account")]
     VisibilityMismatch,
+    /// There must be exactly one transaction log data entry for each transaction header.
+    #[error("transaction log data and transaction header counts differ")]
+    AssociationCount,
+    /// The transaction log commitment differs from the commitment in its transaction header.
+    #[error("transaction log commitment mismatch at transaction index {0}")]
+    CommitmentMismatch(usize),
+    /// Aggregate transaction log data exceeds the batch or block resource budget.
+    #[error("aggregate transaction log data exceeds its resource budget")]
+    AggregateBudget,
 }

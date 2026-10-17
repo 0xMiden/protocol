@@ -113,3 +113,7 @@ message TransactionLogDetails {
     TransactionLogs public = 2;
   }
 }
+
+message TransactionLogDetailsCollection {
+  repeated TransactionLogDetails entries = 1;
+}

@@ -2,13 +2,10 @@ use alloc::vec::Vec;
 
 use crate::batch::ProvenBatch;
 use crate::crypto::SequentialCommit;
-use crate::transaction::OrderedTransactionHeaders;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+use crate::transaction::{
+    OrderedTransactionHeaders,
+    TransactionLogDetailsCollection,
+    TransactionLogError,
 };
 use crate::{Felt, Word};
 
@@ -17,9 +14,8 @@ use crate::{Felt, Word};
 
 /// The ordered set of batches in a [`ProposedBlock`](crate::block::ProposedBlock).
 ///
-/// This is a newtype wrapper representing the set of batches in a proposed block. It can only be
-/// retrieved from a proposed block. This type exists only to encapsulate the conversion to
-/// [`OrderedTransactionHeaders`].
+/// This wrapper preserves batch order when converting to transaction headers and transaction log
+/// data. Construction does not validate block constraints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderedBatches(Vec<ProvenBatch>);
 
@@ -55,6 +51,28 @@ impl OrderedBatches {
         )
     }
 
+    /// Consumes headers and transaction log data together, preserving batch and transaction order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the combined transaction log data exceeds the block resource limits.
+    pub fn into_transaction_data(
+        self,
+    ) -> Result<(OrderedTransactionHeaders, TransactionLogDetailsCollection), TransactionLogError>
+    {
+        let mut headers = Vec::new();
+        let mut data = Vec::new();
+        for batch in self.0 {
+            let (batch_headers, batch_data) = batch.into_transaction_data();
+            headers.extend(batch_headers.into_vec());
+            data.extend(batch_data.into_vec());
+        }
+        Ok((
+            OrderedTransactionHeaders::new_unchecked(headers),
+            TransactionLogDetailsCollection::new(data)?,
+        ))
+    }
+
     /// Returns the sum of created notes across all batches.
     pub fn num_created_notes(&self) -> usize {
         self.0.as_slice().iter().fold(0, |acc, batch| acc + batch.output_notes().len())
@@ -80,17 +98,5 @@ impl SequentialCommit for OrderedBatches {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for OrderedBatches {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target)
-    }
-}
-
-impl Deserializable for OrderedBatches {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        source.read().map(OrderedBatches::new)
-    }
-}
+#[cfg(test)]
+mod tests;

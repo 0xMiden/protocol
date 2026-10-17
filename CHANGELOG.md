@@ -33,6 +33,9 @@
 
 ### Changes
 
+- [BREAKING] Removed Winterfell serialization for batch and block containers that carry transaction logs; use protobuf for transport ([#3905](https://github.com/0xMiden/protocol/pull/3905)).
+
+- Added ordered public transaction logs and private transaction log commitments in batches and blocks, with bounded encodings and aggregate limits ([#3905](https://github.com/0xMiden/protocol/pull/3905)).
 - Added canonical protobuf transport for transaction logs and their commitments, with private log contents retained in local execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
 - [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
 - [BREAKING] Made logs required when constructing transaction outputs, effects, summaries, and proven transactions; added `TransactionEffects::builder()`. Renamed reference-block summary helpers to `create_default_tx_summary` and `get_default_tx_summary_commitment`, and explicit-block helpers to `create_tx_summary` and `get_tx_summary_commitment` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).

@@ -9,6 +9,9 @@ use alloc::vec::Vec;
 use crate::account::AccountId;
 use crate::crypto::SequentialCommit;
 
+mod collection;
+pub use collection::TransactionLogDetailsCollection;
+
 mod topic;
 pub use topic::LogTopic;
 

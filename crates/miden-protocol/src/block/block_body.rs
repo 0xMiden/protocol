@@ -1,5 +1,4 @@
 use alloc::collections::BTreeSet;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_core::Word;
@@ -13,14 +12,7 @@ use crate::block::{
 };
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::transaction::{OrderedTransactionHeaders, OutputNote, TransactionLogDetailsCollection};
 use crate::{
     MAX_ACCOUNTS_PER_BLOCK,
     MAX_BATCHES_PER_BLOCK,
@@ -42,6 +34,9 @@ pub struct BlockBody {
 
     /// Nullifiers created by the transactions in this block through the consumption of notes.
     created_nullifiers: Vec<Nullifier>,
+
+    /// Transaction log data in transaction header order.
+    log_details: TransactionLogDetailsCollection,
 
     /// The aggregated and flattened transaction headers of all batches in the order in which they
     /// appeared in the proposed block.
@@ -69,6 +64,7 @@ impl BlockBody {
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
+        log_details: TransactionLogDetailsCollection,
         transactions: OrderedTransactionHeaders,
     ) -> Result<Self, BlockBodyError> {
         if output_note_batches.len() > MAX_BATCHES_PER_BLOCK {
@@ -140,10 +136,13 @@ impl BlockBody {
             }
         }
 
+        log_details.validate_for_block(&transactions)?;
+
         Ok(Self::new_unchecked(
             updated_accounts,
             output_note_batches,
             created_nullifiers,
+            log_details,
             transactions,
         ))
     }
@@ -158,18 +157,25 @@ impl BlockBody {
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
+        log_details: TransactionLogDetailsCollection,
         transactions: OrderedTransactionHeaders,
     ) -> Self {
         Self {
             updated_accounts,
             output_note_batches,
             created_nullifiers,
+            log_details,
             transactions,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns submitted transaction log data in the same order as the transaction headers.
+    pub fn log_details(&self) -> &TransactionLogDetailsCollection {
+        &self.log_details
+    }
 
     /// Returns the slice of [`BlockAccountUpdate`]s for all accounts updated in the block.
     pub fn updated_accounts(&self) -> &[BlockAccountUpdate] {
@@ -237,12 +243,14 @@ impl BlockBody {
         Vec<BlockAccountUpdate>,
         Vec<OutputNoteBatch>,
         Vec<Nullifier>,
+        TransactionLogDetailsCollection,
         OrderedTransactionHeaders,
     ) {
         (
             self.updated_accounts,
             self.output_note_batches,
             self.created_nullifiers,
+            self.log_details,
             self.transactions,
         )
     }
@@ -272,37 +280,16 @@ impl From<ProposedBlock> for BlockBody {
             .collect();
         let created_nullifiers = created_nullifiers.keys().copied().collect::<Vec<_>>();
         // Aggregate the verified transactions of all batches.
-        let transactions = batches.into_transactions();
+        let (transactions, log_details) = batches.into_transaction_data().expect(
+            "ProposedBlock validates the transaction log budget during construction and deserialization",
+        );
         Self {
             updated_accounts,
             output_note_batches,
             created_nullifiers,
+            log_details,
             transactions,
         }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BlockBody {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.updated_accounts.write_into(target);
-        self.output_note_batches.write_into(target);
-        self.created_nullifiers.write_into(target);
-        self.transactions.write_into(target);
-    }
-}
-
-impl Deserializable for BlockBody {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Self::new(
-            Vec::read_from(source)?,
-            Vec::read_from(source)?,
-            Vec::read_from(source)?,
-            OrderedTransactionHeaders::read_from(source)?,
-        )
-        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
 
@@ -332,8 +319,8 @@ mod tests {
         OutputNote,
         RawOutputNote,
         TransactionHeader,
+        TransactionLogDetailsCollection,
     };
-    use crate::utils::serde::{Deserializable, Serializable};
 
     fn account_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
@@ -413,7 +400,8 @@ mod tests {
         let (updated_accounts, transactions) =
             public_account_body_parts(&account, initial_state_commitment, final_state_commitment)?;
 
-        BlockBody::new(updated_accounts, vec![], vec![], transactions)?;
+        let log_details = TransactionLogDetailsCollection::empty_for_headers(&transactions);
+        BlockBody::new(updated_accounts, vec![], vec![], log_details, transactions)?;
 
         Ok(())
     }
@@ -426,7 +414,8 @@ mod tests {
             public_account_body_parts(&account, Word::empty(), final_state_commitment)?;
         let account_commitment = account.to_commitment();
 
-        let result = BlockBody::new(updated_accounts, vec![], vec![], transactions);
+        let log_details = TransactionLogDetailsCollection::empty_for_headers(&transactions);
+        let result = BlockBody::new(updated_accounts, vec![], vec![], log_details, transactions);
 
         assert_matches!(
             result,
@@ -471,7 +460,14 @@ mod tests {
             .unwrap(),
         ]);
 
-        BlockBody::new(vec![], vec![], created_nullifiers, transactions).unwrap();
+        BlockBody::new(
+            vec![],
+            vec![],
+            created_nullifiers,
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
+        )
+        .unwrap();
     }
 
     #[rstest]
@@ -499,7 +495,14 @@ mod tests {
             .unwrap(),
         ]);
 
-        BlockBody::new(vec![], output_notes, vec![], transactions).unwrap();
+        BlockBody::new(
+            vec![],
+            output_notes,
+            vec![],
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -524,6 +527,7 @@ mod tests {
             vec![],
             vec![vec![(0, into_output_note(output_note))]],
             vec![input_note.nullifier()],
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
         )
         .unwrap();
@@ -535,7 +539,13 @@ mod tests {
         let nullifier = note.nullifier();
         let transactions = OrderedTransactionHeaders::new_unchecked(vec![]);
 
-        let result = BlockBody::new(vec![], vec![], vec![nullifier, nullifier], transactions);
+        let result = BlockBody::new(
+            vec![],
+            vec![],
+            vec![nullifier, nullifier],
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
+        );
 
         assert_matches!(
             result,
@@ -553,6 +563,7 @@ mod tests {
             vec![],
             vec![vec![(0, output_note.clone()), (1, output_note)]],
             vec![],
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
         );
 
@@ -588,44 +599,9 @@ mod tests {
             vec![],
             vec![vec![(0, into_output_note(note.clone()))]],
             vec![note.nullifier()],
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
         )
         .unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_output_notes_mismatch() {
-        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
-            transaction_header(
-                Word::from([1_u32, 2, 3, 4]),
-                Word::from([5_u32, 6, 7, 8]),
-                InputNotes::default(),
-                vec![*note.header()],
-            )
-            .unwrap(),
-        ]);
-        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
-
-        BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_created_nullifiers_mismatch() {
-        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
-        let input =
-            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
-            transaction_header(
-                Word::from([1_u32, 2, 3, 4]),
-                Word::from([5_u32, 6, 7, 8]),
-                InputNotes::new(vec![input]).unwrap(),
-                vec![],
-            )
-            .unwrap(),
-        ]);
-        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
-
-        BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
     }
 }

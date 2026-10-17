@@ -44,3 +44,13 @@ impl From<&TransactionLogDetails> for proto::transaction::TransactionLogDetails 
         Self { visibility: Some(visibility) }
     }
 }
+
+impl From<&miden_protocol::transaction::TransactionLogDetailsCollection>
+    for proto::transaction::TransactionLogDetailsCollection
+{
+    fn from(value: &miden_protocol::transaction::TransactionLogDetailsCollection) -> Self {
+        Self {
+            entries: value.as_slice().iter().map(Into::into).collect(),
+        }
+    }
+}

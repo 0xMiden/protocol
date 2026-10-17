@@ -647,6 +647,8 @@ pub enum BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum BlockBodyError {
+    #[error("invalid transaction log data: {0}")]
+    LogData(#[from] TransactionLogError),
     #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
     TooManyAccountUpdates(usize),
     #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
@@ -1062,7 +1064,7 @@ pub enum TransactionInputsExtractionError {
 
 #[derive(Debug, Error)]
 pub enum TransactionOutputError {
-    #[error("transaction log records do not match the kernel output")]
+    #[error("transaction logs do not match the kernel output")]
     LogsCommitmentInconsistent,
     #[error("transaction output note with id {0} is a duplicate")]
     DuplicateOutputNote(NoteId),
@@ -1339,6 +1341,8 @@ impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    #[error("invalid transaction log data: {0}")]
+    LogData(#[from] TransactionLogError),
     #[error("failed to verify transaction {transaction_id} in transaction batch")]
     TransactionVerificationFailed {
         transaction_id: TransactionId,
@@ -1460,6 +1464,8 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
+    #[error("invalid transaction log data: {0}")]
+    LogData(#[from] TransactionLogError),
     #[error("transaction batch must contain at least one transaction")]
     EmptyTransactionBatch,
     #[error("transaction {0} appears twice in the proven batch")]
@@ -1559,6 +1565,8 @@ pub enum BlockOutputError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBlockError {
+    #[error("invalid transaction log data: {0}")]
+    LogData(#[from] TransactionLogError),
     #[error("block must contain at least one transaction batch")]
     EmptyBlock,
 

@@ -102,6 +102,7 @@ impl MockChain {
                 block.body.updated_accounts.verify()?,
                 block.body.output_note_batches.verify()?,
                 block.body.created_nullifiers.map(Nullifier::from_raw),
+                block.body.log_details.verify()?,
                 OrderedTransactionHeaders::new_unchecked(
                     block.body.transactions.build_unchecked()?,
                 ),

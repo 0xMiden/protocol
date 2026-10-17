@@ -1,7 +1,9 @@
+use miden_protocol::transaction::TransactionLogError;
 pub use proto::transaction::{
     DecodedLogTopic as LogTopic,
     DecodedTransactionLog as TransactionLog,
     DecodedTransactionLogDetails as TransactionLogDetails,
+    DecodedTransactionLogDetailsCollection as TransactionLogDetailsCollection,
     DecodedTransactionLogs as TransactionLogs,
 };
 
@@ -52,5 +54,69 @@ impl Verify for TransactionLogDetails {
             DecodedVisibility::Private(commitment) => Ok(Self::Verified::Private(commitment)),
             DecodedVisibility::Public(logs) => Ok(Self::Verified::Public(logs.verify()?)),
         }
+    }
+}
+
+impl TransactionLogDetailsCollection {
+    pub(crate) fn verify_for_batch(
+        self,
+    ) -> Result<miden_protocol::transaction::TransactionLogDetailsCollection, VerificationError>
+    {
+        self.verify_with_limits(
+            miden_protocol::MAX_LOG_DATA_TRANSACTIONS_PER_BATCH,
+            miden_protocol::MAX_PUBLIC_LOGS_PER_BATCH,
+            miden_protocol::MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH,
+            miden_protocol::MAX_LOG_DATA_BYTES_PER_BATCH,
+        )
+    }
+
+    fn verify_with_limits(
+        self,
+        max_entries: usize,
+        mut remaining_logs: usize,
+        mut remaining_words: usize,
+        mut remaining_bytes: usize,
+    ) -> Result<miden_protocol::transaction::TransactionLogDetailsCollection, VerificationError>
+    {
+        use prost::Message;
+        if self.entries.as_slice().len() > max_entries {
+            return Err(TransactionLogError::AggregateBudget.into());
+        }
+        // Stop constructing and hashing entries as soon as an aggregate budget is exhausted.
+        let entries = self.entries.try_map(|entry| -> Result<_, VerificationError> {
+            let entry = entry.verify()?;
+            if let miden_protocol::transaction::TransactionLogDetails::Public(logs) = &entry {
+                remaining_logs = remaining_logs
+                    .checked_sub(logs.num_logs())
+                    .ok_or(TransactionLogError::AggregateBudget)?;
+                remaining_words = remaining_words
+                    .checked_sub(logs.num_content_words())
+                    .ok_or(TransactionLogError::AggregateBudget)?;
+            }
+            // A repeated protobuf field is the concatenation of its individually framed entries.
+            let encoded_len = proto::transaction::TransactionLogDetailsCollection {
+                entries: alloc::vec![(&entry).into()],
+            }
+            .encoded_len();
+            remaining_bytes = remaining_bytes
+                .checked_sub(encoded_len)
+                .ok_or(TransactionLogError::AggregateBudget)?;
+            Ok(entry)
+        })?;
+        Ok(miden_protocol::transaction::TransactionLogDetailsCollection::new(entries)?)
+    }
+}
+
+impl Verify for TransactionLogDetailsCollection {
+    type Verified = miden_protocol::transaction::TransactionLogDetailsCollection;
+    type Error = VerificationError;
+
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        self.verify_with_limits(
+            miden_protocol::MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK,
+            miden_protocol::MAX_PUBLIC_LOGS_PER_BLOCK,
+            miden_protocol::MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK,
+            miden_protocol::MAX_LOG_DATA_BYTES_PER_BLOCK,
+        )
     }
 }

@@ -3,6 +3,7 @@ use alloc::string::ToString;
 use miden_processor::ExecutionError;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::transaction::TransactionLogDetailsCollection;
 use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
@@ -132,6 +133,13 @@ impl LocalBatchProver {
         proof: ExecutionProof,
     ) -> Result<ProvenBatch, ProvenBatchError> {
         let tx_headers = proposed_batch.transaction_headers();
+        let log_details = TransactionLogDetailsCollection::new(
+            proposed_batch
+                .transactions()
+                .iter()
+                .map(|tx| tx.log_details().clone())
+                .collect(),
+        )?;
         let (
             _transactions,
             block_header,
@@ -152,6 +160,7 @@ impl LocalBatchProver {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_details,
             tx_headers,
             proof,
         )

@@ -1,6 +1,5 @@
 use alloc::collections::btree_map::Entry;
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
@@ -14,13 +13,7 @@ use crate::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
     TransactionHeader,
-};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    TransactionLogDetailsCollection,
 };
 use crate::vm::ExecutionProof;
 use crate::{
@@ -48,6 +41,7 @@ pub struct ProvenBatch {
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<OutputNote>,
     batch_expiration_block_num: BlockNumber,
+    log_details: TransactionLogDetailsCollection,
     transactions: OrderedTransactionHeaders,
     proof: ExecutionProof,
 }
@@ -81,6 +75,7 @@ impl ProvenBatch {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
+        log_details: TransactionLogDetailsCollection,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
@@ -134,13 +129,14 @@ impl ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_details,
             transactions,
             proof,
         )
     }
 
     /// Creates a new [`ProvenBatch`] from the provided parts without checking any constraints
-    /// except the expiration constraint listed below.
+    /// except the expiration and transaction log data constraints listed below.
     ///
     /// Callers must ensure that the batch satisfies the structural constraints checked by
     /// [`ProvenBatch::new`].
@@ -148,7 +144,8 @@ impl ProvenBatch {
     /// # Errors
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
-    /// block number.
+    /// block number, or transaction log data violates its limits, visibility, or header
+    /// association.
     #[allow(clippy::too_many_arguments)]
     pub fn new_unchecked(
         id: BatchId,
@@ -158,9 +155,12 @@ impl ProvenBatch {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
+        log_details: TransactionLogDetailsCollection,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
+        log_details.validate_for_batch(&transactions)?;
+
         // Check that the batch expiration block number is greater than the reference block number.
         if batch_expiration_block_num <= reference_block_num {
             return Err(ProvenBatchError::InvalidBatchExpirationBlockNum {
@@ -177,6 +177,7 @@ impl ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_details,
             transactions,
             proof,
         })
@@ -184,6 +185,18 @@ impl ProvenBatch {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns submitted transaction log data in the same order as the transaction headers.
+    pub fn log_details(&self) -> &TransactionLogDetailsCollection {
+        &self.log_details
+    }
+
+    /// Consumes the ordered headers and their submitted transaction log data together.
+    pub fn into_transaction_data(
+        self,
+    ) -> (OrderedTransactionHeaders, TransactionLogDetailsCollection) {
+        (self.transactions, self.log_details)
+    }
 
     /// The ID of this batch. See [`BatchId`] for details on how it is computed.
     pub fn id(&self) -> BatchId {
@@ -354,53 +367,11 @@ fn validate_notes(
     Ok(())
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for ProvenBatch {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.reference_block_commitment.write_into(target);
-        self.reference_block_num.write_into(target);
-        self.account_updates.write_into(target);
-        self.input_notes.write_into(target);
-        self.output_notes.write_into(target);
-        self.batch_expiration_block_num.write_into(target);
-        self.transactions.write_into(target);
-        self.proof.write_into(target);
-    }
-}
-
-impl Deserializable for ProvenBatch {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let reference_block_commitment = Word::read_from(source)?;
-        let reference_block_num = BlockNumber::read_from(source)?;
-        let account_updates = BTreeMap::<AccountId, BatchAccountUpdate>::read_from(source)?;
-        let input_notes = InputNotes::<InputNoteCommitment>::read_from(source)?;
-        let output_notes = Vec::<OutputNote>::read_from(source)?;
-        let batch_expiration_block_num = BlockNumber::read_from(source)?;
-        let transactions = OrderedTransactionHeaders::read_from(source)?;
-        let proof = ExecutionProof::read_from(source)?;
-
-        Self::new(
-            reference_block_commitment,
-            reference_block_num,
-            account_updates.into_values(),
-            input_notes,
-            output_notes,
-            batch_expiration_block_num,
-            transactions,
-            proof,
-        )
-        .map_err(|e| DeserializationError::UnknownError(e.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::BTreeMap;
     use alloc::string::ToString;
     use alloc::vec::Vec;
 
@@ -409,7 +380,7 @@ mod tests {
 
     use super::ProvenBatch;
     use crate::account::{AccountId, AccountType, AccountUpdateDetails};
-    use crate::batch::{BatchAccountUpdate, BatchId};
+    use crate::batch::BatchAccountUpdate;
     use crate::block::BlockNumber;
     use crate::errors::ProvenBatchError;
     use crate::note::{Note, NoteHeader, NoteId};
@@ -430,8 +401,9 @@ mod tests {
         OutputNote,
         RawOutputNote,
         TransactionHeader,
+        TransactionLogDetails,
+        TransactionLogDetailsCollection,
     };
-    use crate::utils::serde::{Deserializable, Serializable};
     use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
 
     fn account_id() -> AccountId {
@@ -534,6 +506,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -542,6 +515,7 @@ mod tests {
 
     #[test]
     fn derives_account_update_keys_from_updates() {
+        let transactions = transaction_headers();
         let update = private_account_update();
         let account_id = update.account_id();
 
@@ -552,7 +526,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap();
@@ -562,6 +537,7 @@ mod tests {
 
     #[test]
     fn rejects_proofs_with_precompiles() {
+        let transactions = transaction_headers();
         for proof in [dummy_deferred_execution_proof(), dummy_precompile_execution_proof()] {
             let error = ProvenBatch::new(
                 Word::empty(),
@@ -570,7 +546,8 @@ mod tests {
                 InputNotes::default(),
                 Vec::new(),
                 BlockNumber::from(2),
-                transaction_headers(),
+                TransactionLogDetailsCollection::empty_for_headers(&transactions),
+                transactions.clone(),
                 proof,
             )
             .unwrap_err();
@@ -581,6 +558,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_account_updates() {
+        let transactions = transaction_headers();
         let update = private_account_update();
         let account_id = update.account_id();
 
@@ -591,7 +569,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -601,6 +580,7 @@ mod tests {
 
     #[test]
     fn rejects_too_many_account_updates_without_consuming_the_tail() {
+        let transactions = transaction_headers();
         let mut next_index = 0_u64;
         let account_updates = core::iter::from_fn(move || {
             assert!(
@@ -624,7 +604,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -645,6 +626,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_account_update() {
+        let transactions = transaction_headers();
         let error = ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
@@ -652,7 +634,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -662,6 +645,7 @@ mod tests {
 
     #[test]
     fn rejects_unexpected_account_update() {
+        let transactions = transaction_headers();
         let unexpected_account_id =
             AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
 
@@ -672,7 +656,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -687,6 +672,7 @@ mod tests {
     #[case::initial(true)]
     #[case::final_state(false)]
     fn rejects_account_update_commitment_mismatch(#[case] mismatch_initial: bool) {
+        let transactions = transaction_headers();
         let expected_initial = Word::from([1_u32, 2, 3, 4]);
         let expected_final = Word::from([5_u32, 6, 7, 8]);
         let actual_initial = if mismatch_initial {
@@ -714,7 +700,8 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -759,6 +746,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -790,66 +778,16 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
         .unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_note_consumed_before_created_in_transaction_headers() {
-        let (_note_id, input_notes, output_notes) = conflicting_notes();
-        let (transactions, update) =
-            transactions_with_conflicting_notes(&input_notes, &output_notes);
-        let id =
-            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
-        let invalid_batch = ProvenBatch::new_unchecked(
-            id,
-            Word::empty(),
-            BlockNumber::from(1),
-            BTreeMap::from([(account_id(), update)]),
-            InputNotes::default(),
-            Vec::new(),
-            BlockNumber::from(2),
-            transactions,
-            dummy_execution_proof(),
-        )
-        .unwrap();
-
-        ProvenBatch::read_from_bytes(&invalid_batch.to_bytes()).unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_input_notes_missing_from_batch() {
-        let note = Note::mock_noop(Word::empty());
-        let input =
-            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction_header(
-            Word::from([1_u32, 2, 3, 4]),
-            Word::from([5_u32, 6, 7, 8]),
-            InputNotes::new(vec![input]).unwrap(),
-            vec![],
-        )]);
-        let id =
-            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
-        let invalid_batch = ProvenBatch::new_unchecked(
-            id,
-            Word::empty(),
-            BlockNumber::from(1),
-            BTreeMap::from([(account_id(), private_account_update())]),
-            InputNotes::default(),
-            Vec::new(),
-            BlockNumber::from(2),
-            transactions,
-            dummy_execution_proof(),
-        )
-        .unwrap();
-
-        ProvenBatch::read_from_bytes(&invalid_batch.to_bytes()).unwrap();
     }
 
     #[test]
     fn accepts_output_note_missing_from_transaction_headers() {
+        let transactions = transaction_headers();
         let (_, _, output_notes) = conflicting_notes();
 
         ProvenBatch::new(
@@ -859,7 +797,8 @@ mod tests {
             InputNotes::default(),
             output_notes,
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap();
@@ -882,6 +821,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
             transactions,
             dummy_execution_proof(),
         )
@@ -890,6 +830,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_supplied_input_note() {
+        let transactions = transaction_headers();
         let note = Note::mock_noop(Word::empty());
         let input =
             InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
@@ -902,7 +843,8 @@ mod tests {
             input_notes,
             Vec::new(),
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -915,6 +857,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_supplied_output_note() {
+        let transactions = transaction_headers();
         let note = Note::mock_noop(Word::empty());
         let output_note = RawOutputNote::Full(note.clone()).into_output_note().unwrap();
 
@@ -925,7 +868,8 @@ mod tests {
             InputNotes::default(),
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -938,6 +882,7 @@ mod tests {
 
     #[test]
     fn rejects_supplied_input_output_overlap() {
+        let transactions = transaction_headers();
         let (note_id, input_notes, output_notes) = conflicting_notes();
 
         let error = ProvenBatch::new(
@@ -947,11 +892,49 @@ mod tests {
             input_notes,
             output_notes,
             BlockNumber::from(2),
-            transaction_headers(),
+            TransactionLogDetailsCollection::empty_for_headers(&transactions),
+            transactions,
             dummy_execution_proof(),
         )
         .unwrap_err();
 
         assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
+    }
+
+    #[test]
+    fn private_transaction_log_details_rejects_missing_entries() {
+        let data = TransactionLogDetails::Private(Word::from([23u32; 4]));
+        let header = TransactionHeader::new(
+            account_id(),
+            Word::from([1u32, 2, 3, 4]),
+            Word::from([5u32, 6, 7, 8]),
+            InputNotes::default(),
+            vec![],
+            data.commitment(),
+        )
+        .unwrap();
+        let headers = OrderedTransactionHeaders::new_unchecked(vec![header]);
+        let logs = TransactionLogDetailsCollection::new(vec![data]).unwrap();
+        let build = |logs| {
+            ProvenBatch::new(
+                Word::empty(),
+                1u32.into(),
+                vec![private_account_update()],
+                InputNotes::default(),
+                vec![],
+                2u32.into(),
+                logs,
+                headers.clone(),
+                dummy_execution_proof(),
+            )
+        };
+        let batch = build(logs.clone()).unwrap();
+        assert!(build(TransactionLogDetailsCollection::default()).is_err());
+        let changed = TransactionLogDetailsCollection::new(vec![TransactionLogDetails::Private(
+            Word::empty(),
+        )])
+        .unwrap();
+        assert!(build(changed).is_err());
+        assert_eq!(batch.log_details(), &logs);
     }
 }
