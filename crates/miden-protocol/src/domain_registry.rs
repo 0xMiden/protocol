@@ -30,9 +30,8 @@ pub enum ProtocolDomainRegistry {
     /// Domain of the ordered [`TransactionLogs`](crate::transaction::TransactionLogs) commitment.
     TransactionLogs = 0x02_0003,
 
-    // 0x02_0004 was used by the removed salted private transaction log commitment.
     /// Domain of an individual [`TransactionLog`](crate::transaction::TransactionLog) commitment.
-    TransactionLog = 0x02_0005,
+    TransactionLog = 0x02_0004,
 }
 
 impl ProtocolDomainRegistry {
