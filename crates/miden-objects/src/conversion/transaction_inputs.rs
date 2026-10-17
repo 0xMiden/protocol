@@ -51,6 +51,7 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
                     slot_name: String::from(slot_name.as_str()),
                 })
                 .collect(),
+            note_scripts: value.note_scripts().values().map(Into::into).collect(),
         }
     }
 }

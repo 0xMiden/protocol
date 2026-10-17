@@ -54,6 +54,8 @@
 - Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
 - [BREAKING] Replaced `TransactionInputs::new` and `TransactionInputs::try_from_parts` with `TransactionInputs::builder` ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
 - [BREAKING] Removed `TransactionInputs` and `ExecutedTransaction` serialization implementations ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- [BREAKING] `TransactionInputs` now stores the note scripts the executor resolved during execution ([#4030](https://github.com/0xMiden/protocol/pull/4030)).
 
 ## v0.17.0 (2026-10-01)
 

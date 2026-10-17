@@ -379,6 +379,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         generated_signatures,
         tx_progress,
         foreign_account_slot_names,
+        lazy_loaded_data,
     ) = host.into_parts();
 
     let tx_outputs =
@@ -408,10 +409,11 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 
     // Overwrite advice inputs from after the execution on the transaction inputs. This is
     // guaranteed to be a superset of the original advice inputs.
-    let tx_inputs = tx_inputs
+    let mut tx_inputs = tx_inputs
         .with_foreign_account_code(accessed_foreign_account_code)
         .with_foreign_account_slot_names(foreign_account_slot_names)
         .with_advice_inputs(advice_inputs);
+    lazy_loaded_data.add_to(&mut tx_inputs);
 
     Ok(ExecutedTransaction::new(
         tx_inputs,

@@ -33,6 +33,7 @@ use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
     TransactionAdviceInputs,
+    TransactionInputs,
     TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
@@ -97,6 +98,9 @@ where
     /// authenticator that produced it.
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
+    /// The data that was lazy loaded during transaction execution.
+    lazy_loaded_data: LazyLoadedData,
+
     /// Whether execution is currently inside the authentication procedure.
     ///
     /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
@@ -155,6 +159,7 @@ where
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
+            lazy_loaded_data: LazyLoadedData::default(),
             in_auth_procedure: false,
             source_manager,
         })
@@ -368,6 +373,7 @@ where
         match note_script {
             Some(note_script) => {
                 let script_felts = note_script.to_elements();
+                self.lazy_loaded_data.note_scripts.push(note_script.clone());
                 let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
@@ -400,10 +406,10 @@ where
         }
     }
 
-    /// Consumes `self` and returns the account delta, output notes, generated signatures and
-    /// transaction progress.
+    /// Consumes `self` and returns the account delta, output notes, generated signatures,
+    /// transaction progress and lazy loaded data.
     #[allow(clippy::type_complexity)]
-    pub fn into_parts(
+    pub(crate) fn into_parts(
         self,
     ) -> (
         AccountPatch,
@@ -413,6 +419,7 @@ where
         BTreeMap<Word, Vec<Felt>>,
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
+        LazyLoadedData,
     ) {
         let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
@@ -424,7 +431,39 @@ where
             self.generated_signatures,
             self.tx_progress,
             self.foreign_account_slot_names,
+            self.lazy_loaded_data,
         )
+    }
+
+    /// Consumes `self` and returns the transaction progress and lazy loaded data for the notes
+    /// checker.
+    ///
+    /// The checker cannot call `into_parts` as it would panic when constructing the patch on an
+    /// erroneous transaction.
+    pub(crate) fn into_notes_checker_parts(self) -> (TransactionProgress, LazyLoadedData) {
+        (self.tx_progress, self.lazy_loaded_data)
+    }
+}
+
+// LAZY LOADED DATA
+// ================================================================================================
+
+/// The data the host loaded lazily during transaction execution.
+///
+/// Adding it to the [`TransactionInputs`] lets the transaction be re-executed (e.g. to prove it)
+/// without fetching the data again.
+#[derive(Debug, Default)]
+pub(crate) struct LazyLoadedData {
+    /// The scripts of output notes whose script was not in the advice provider.
+    note_scripts: Vec<NoteScript>,
+}
+
+impl LazyLoadedData {
+    /// Adds the lazy loaded data to the provided transaction inputs.
+    pub(crate) fn add_to(self, tx_inputs: &mut TransactionInputs) {
+        for note_script in self.note_scripts {
+            tx_inputs.add_note_script(note_script);
+        }
     }
 }
 

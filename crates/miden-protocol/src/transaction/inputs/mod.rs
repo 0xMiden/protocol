@@ -24,7 +24,7 @@ use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
-use crate::note::{Note, NoteInclusionProof};
+use crate::note::{Note, NoteInclusionProof, NoteScript, NoteScriptRoot};
 use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
 
@@ -56,6 +56,8 @@ pub struct TransactionInputs {
     foreign_account_code: Vec<AccountCode>,
     /// Storage slot names for foreign accounts.
     foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+    /// Scripts of the output notes the host resolved during execution.
+    note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
 }
 
 #[bon::bon]
@@ -85,8 +87,11 @@ impl TransactionInputs {
         #[builder(default)] advice_inputs: AdviceInputs,
         #[builder(default)] foreign_account_code: Vec<AccountCode>,
         #[builder(default)] foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+        #[builder(default)] note_scripts: Vec<NoteScript>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
+
+        let note_scripts = note_scripts.into_iter().map(|script| (script.root(), script)).collect();
 
         Ok(Self {
             account,
@@ -98,6 +103,7 @@ impl TransactionInputs {
             advice_inputs,
             foreign_account_code,
             foreign_account_slot_names,
+            note_scripts,
         })
     }
 
@@ -211,6 +217,11 @@ impl TransactionInputs {
         self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 
+    /// Adds a note script, so that re-executing the transaction does not need to fetch it again.
+    pub fn add_note_script(&mut self, script: NoteScript) {
+        self.note_scripts.insert(script.root(), script);
+    }
+
     /// Updates the transaction arguments of the inputs.
     #[cfg(feature = "testing")]
     pub fn set_tx_args(&mut self, tx_args: TransactionArgs) {
@@ -279,6 +290,11 @@ impl TransactionInputs {
     /// Returns the foreign account storage slot names.
     pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
         &self.foreign_account_slot_names
+    }
+
+    /// Returns the output note scripts resolved during execution, keyed by their root.
+    pub fn note_scripts(&self) -> &BTreeMap<NoteScriptRoot, NoteScript> {
+        &self.note_scripts
     }
 
     /// Returns the advice inputs to be consumed in the transaction.

@@ -20,6 +20,7 @@ use crate::asset::PartialVault;
 use crate::block::BlockHeader;
 use crate::block::account_tree::AccountIdKey;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
+use crate::note::NoteScript;
 use crate::protocol_config::ProtocolConfig;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -61,6 +62,7 @@ fn test_read_foreign_account_inputs_missing_data() {
         advice_inputs: AdviceInputs::default(),
         foreign_account_code: Vec::new(),
         foreign_account_slot_names: BTreeMap::new(),
+        note_scripts: BTreeMap::new(),
     };
 
     // Try to read foreign account that doesn't exist in advice map.
@@ -143,6 +145,7 @@ fn test_read_foreign_account_inputs_with_storage_data() {
         advice_inputs,
         foreign_account_code: vec![code],
         foreign_account_slot_names,
+        note_scripts: BTreeMap::new(),
     };
 
     // Try to read foreign account with storage data.
@@ -253,6 +256,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
         advice_inputs,
         foreign_account_code: vec![code],
         foreign_account_slot_names: BTreeMap::new(),
+        note_scripts: BTreeMap::new(),
     };
 
     // Test reading foreign account inputs.
@@ -311,6 +315,7 @@ fn builder_preserves_all_transaction_input_components() {
     let foreign_account_code = vec![code];
     let slot_name = StorageSlotName::new("test::slot::value".to_string()).unwrap();
     let foreign_account_slot_names = BTreeMap::from([(slot_name.id(), slot_name)]);
+    let note_script = NoteScript::mock();
 
     let tx_inputs = TransactionInputs::builder()
         .account(account.clone())
@@ -322,6 +327,7 @@ fn builder_preserves_all_transaction_input_components() {
         .advice_inputs(advice_inputs.clone())
         .foreign_account_code(foreign_account_code.clone())
         .foreign_account_slot_names(foreign_account_slot_names.clone())
+        .note_scripts(vec![note_script.clone()])
         .build()
         .unwrap();
 
@@ -334,6 +340,10 @@ fn builder_preserves_all_transaction_input_components() {
     assert_eq!(tx_inputs.advice_inputs(), &advice_inputs);
     assert_eq!(tx_inputs.foreign_account_code(), foreign_account_code);
     assert_eq!(tx_inputs.foreign_account_slot_names(), &foreign_account_slot_names);
+    assert_eq!(
+        tx_inputs.note_scripts(),
+        &BTreeMap::from([(note_script.root(), note_script.clone())])
+    );
 }
 
 #[test]
