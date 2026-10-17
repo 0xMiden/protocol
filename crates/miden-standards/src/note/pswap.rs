@@ -671,9 +671,10 @@ impl PswapNote {
     ///
     /// `account_fill_asset` is debited from the consumer's vault; `note_fill_asset` arrives
     /// from another note in the same transaction (cross-swap). At least one must be
-    /// provided. Their sum is the creator's payback: `surplus` of it is above the order's own
-    /// price and the rest, capped at `min_requested_amount`, is the fill (an over-fill is surplus
-    /// too). The fill alone sets what the order gives up and the remainder.
+    /// provided. Their sum is the total fill the creator receives: `surplus` of it is above the
+    /// order's own price and the rest, capped at `min_requested_amount`, is the fill (an
+    /// over-fill is surplus too). The fill alone sets what the order gives up and the
+    /// remainder.
     ///
     /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
     /// `None` when the fill is at least `min_requested_amount` (full fill or over-fill).
@@ -715,18 +716,18 @@ impl PswapNote {
         if payback_asset.faucet_id() != self.storage.requested_faucet_id() {
             return Err(NoteError::other("fill asset must match the order's requested faucet"));
         }
-        let payback_amount = payback_asset.amount().as_u64();
+        let total_fill = payback_asset.amount().as_u64();
 
         let total_offered_amount = self.offered_asset.amount().as_u64();
         let requested_faucet_id = self.storage.requested_faucet_id();
         let min_requested_amount = self.storage.min_requested_amount();
 
         // The surplus must leave a fill, and whatever exceeds the requested amount is surplus too.
-        if surplus.as_u64() >= payback_amount {
-            return Err(NoteError::other("PSWAP surplus must be below the payback"));
+        if surplus.as_u64() >= total_fill {
+            return Err(NoteError::other("PSWAP surplus must be below the total fill"));
         }
-        let fill_amount = (payback_amount - surplus.as_u64()).min(min_requested_amount);
-        let surplus = AssetAmount::new(payback_amount - fill_amount)
+        let fill_amount = (total_fill - surplus.as_u64()).min(min_requested_amount);
+        let surplus = AssetAmount::new(total_fill - fill_amount)
             .map_err(|e| NoteError::other_with_source("invalid PSWAP surplus", e))?;
 
         // Enforce the per-fill floor, mirroring the MASM `execute_pswap` guard. The effective floor
@@ -738,10 +739,9 @@ impl PswapNote {
             return Err(NoteError::other("PSWAP fill amount is below the minimum fill step"));
         }
 
-        // What the order gives up. The notes' share of it is `payout * note_fill / payback`,
+        // What the order gives up. The notes' share of it is `payout * note_fill / total_fill`,
         // rounded down, and the consumer receives the rest.
-        let offered_amount_for_fill =
-            Self::calculate_output_amount(total_offered_amount, min_requested_amount, fill_amount)?;
+        let offered_amount_for_fill = self.calculate_offered_for_requested(fill_amount)?;
 
         let payback_note = self.create_payback_note(consumer_account_id, payback_asset, surplus)?;
 
@@ -777,19 +777,19 @@ impl PswapNote {
     /// requested asset, based on this note's current offered/requested ratio.
     ///
     /// `min_requested_amount` is a floor, not an exact price: a `fill_amount` at or above it
-    /// returns the entire offered amount. (The divisor is `max(fill_amount, min_requested)`, so
-    /// the payout ratio never exceeds 1 — see [`Self::execute`].)
+    /// returns the entire offered amount. (The fill is capped at `min_requested`, so the payout
+    /// ratio never exceeds 1 — see [`Self::execute`], which pays exactly this.)
     ///
     /// # Errors
     ///
-    /// Returns an error if the calculated payout is not a valid asset amount, or if both
-    /// `fill_amount` and the minimum requested amount are zero.
+    /// Returns an error if the calculated payout is not a valid asset amount, or if the minimum
+    /// requested amount is zero.
     pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> Result<u64, NoteError> {
         let min_requested = self.storage.min_requested_amount();
         let total_offered = self.offered_asset.amount().as_u64();
 
-        let fill_reference = fill_amount.max(min_requested);
-        Self::calculate_output_amount(total_offered, fill_reference, fill_amount)
+        let fill_amount = fill_amount.min(min_requested);
+        Self::calculate_output_amount(total_offered, min_requested, fill_amount)
     }
 
     // LINEAGE DISCOVERY
@@ -1001,9 +1001,8 @@ impl PswapNote {
     /// Computes a fill's proportional share of the offered tokens:
     /// `floor((offered_total * fill_amount) / fill_reference)`, computed via a u128 intermediate.
     ///
-    /// The caller passes `fill_reference = max(total_fill, min_requested_amount)`, so for an
-    /// over-fill the shares scale by the actual fill rather than `min_requested_amount` (see
-    /// [`Self::execute`]).
+    /// The caller passes `fill_reference = min_requested_amount` with the fill capped at it, so
+    /// the payout never exceeds the offered amount (see [`Self::execute`]).
     ///
     /// # Errors
     ///
@@ -1285,7 +1284,10 @@ mod tests {
             dummy_creator_id(),
         );
         assert!(pswap.calculate_offered_for_requested(0).is_err());
-        assert_eq!(pswap.calculate_offered_for_requested(1).unwrap(), 100);
+        // The quote refuses what execution refuses: an order requesting nothing cannot be filled.
+        assert!(pswap.calculate_offered_for_requested(1).is_err());
+        let one = FungibleAsset::new(dummy_faucet_id(0xbb), 1).unwrap();
+        assert!(pswap.execute(dummy_consumer_id(), Some(one), None, AssetAmount::ZERO).is_err());
     }
 
     #[test]

@@ -20,7 +20,7 @@ use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::errors::standards::{
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
-    ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK,
+    ERR_PSWAP_SURPLUS_NOT_BELOW_TOTAL_FILL,
 };
 use miden_standards::note::{
     P2idNoteRecipient,
@@ -52,7 +52,7 @@ enum Refusal {
     /// The payback is not a valid asset amount.
     NotAnAssetAmount,
     /// The surplus leaves no fill.
-    SurplusNotBelowPayback,
+    SurplusNotBelowTotalFill,
     /// The fill is below `min(min_fill_step, requested)`.
     FillBelowMinimum,
 }
@@ -61,7 +61,7 @@ impl Refusal {
     fn error(self) -> MasmError {
         match self {
             Refusal::NotAnAssetAmount => ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
-            Refusal::SurplusNotBelowPayback => ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK,
+            Refusal::SurplusNotBelowTotalFill => ERR_PSWAP_SURPLUS_NOT_BELOW_TOTAL_FILL,
             Refusal::FillBelowMinimum => ERR_PSWAP_FILL_BELOW_MINIMUM,
         }
     }
@@ -70,7 +70,7 @@ impl Refusal {
     fn rust_message(self) -> &'static str {
         match self {
             Refusal::NotAnAssetAmount => "not a valid asset amount",
-            Refusal::SurplusNotBelowPayback => "PSWAP surplus must be below the payback",
+            Refusal::SurplusNotBelowTotalFill => "PSWAP surplus must be below the total fill",
             Refusal::FillBelowMinimum => "PSWAP fill amount is below the minimum fill step",
         }
     }
@@ -114,7 +114,7 @@ fn model(order: Order, account_fill: u64, surplus: u64) -> Result<Filled, Refusa
         return Err(Refusal::NotAnAssetAmount);
     }
     if surplus >= payback {
-        return Err(Refusal::SurplusNotBelowPayback);
+        return Err(Refusal::SurplusNotBelowTotalFill);
     }
     // Whatever exceeds the requested amount is surplus too.
     let fill = (payback - surplus).min(order.requested);
@@ -374,7 +374,7 @@ impl Outcomes {
         );
         assert_eq!(self.filled_partly > 0, partial_possible, "{summary}");
         assert!(self.filled_fully > 0, "{summary}");
-        for refusal in [Refusal::NotAnAssetAmount, Refusal::SurplusNotBelowPayback] {
+        for refusal in [Refusal::NotAnAssetAmount, Refusal::SurplusNotBelowTotalFill] {
             assert!(self.refused.contains_key(&refusal), "{refusal:?}: {summary}");
         }
     }

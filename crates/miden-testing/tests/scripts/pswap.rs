@@ -54,7 +54,7 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
     ERR_PSWAP_OUTPUT_ALTERED,
     ERR_PSWAP_PARENT_DEPTH_NOT_U32,
-    ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK,
+    ERR_PSWAP_SURPLUS_NOT_BELOW_TOTAL_FILL,
     ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS,
 };
 use miden_standards::note::{
@@ -1328,7 +1328,7 @@ async fn pswap_rejects_a_surplus_without_a_fill() -> anyhow::Result<()> {
     for surplus in [20, 21, 1u64 << 63] {
         if let Ok(surplus) = AssetAmount::new(surplus) {
             let error = pswap.execute(bob.id(), Some(payback), None, surplus).unwrap_err();
-            assert!(error.to_string().contains("PSWAP surplus must be below the payback"));
+            assert!(error.to_string().contains("PSWAP surplus must be below the total fill"));
         }
         let result = mock_chain
             .build_transaction(bob.id())
@@ -1337,7 +1337,7 @@ async fn pswap_rejects_a_surplus_without_a_fill() -> anyhow::Result<()> {
             .build()?
             .execute()
             .await;
-        assert_transaction_executor_error!(result, ERR_PSWAP_SURPLUS_NOT_BELOW_PAYBACK);
+        assert_transaction_executor_error!(result, ERR_PSWAP_SURPLUS_NOT_BELOW_TOTAL_FILL);
     }
 
     Ok(())
