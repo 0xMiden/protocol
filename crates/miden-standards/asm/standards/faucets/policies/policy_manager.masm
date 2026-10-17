@@ -161,7 +161,8 @@ end
 #!
 #! Binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`], which
 #! limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
-#! after the reference block, applies the pause check and invokes the active send policy.
+#! after the reference block and applies the pause check before invoking the active send policy,
+#! so both apply even when no send policy is active.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
@@ -227,7 +228,8 @@ end
 #!
 #! Binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`],
 #! which limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`]
-#! blocks after the reference block, applies the pause check and invokes the active receive policy.
+#! blocks after the reference block and applies the pause check before invoking the active receive
+#! policy, so both apply even when no receive policy is active.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -612,16 +614,17 @@ proc assert_allowed_receive_policy_root(receive_policy_root: AccountProcedureRoo
     # => [RECEIVE_POLICY_ROOT]
 end
 
-#! Reads the active transfer policy root from the provided slot, limits the transaction's
-#! expiration, applies the pause check, and invokes the policy via `dyncall`. Shared by
+#! Limits the transaction's expiration, applies the pause check, reads the active transfer policy
+#! root from the provided slot and invokes the policy via `dyncall`. Shared by
 #! `invoke_send_policy` / `invoke_receive_policy`, which differ only in which slot they bind.
 #!
-#! If the active root is the empty word (no policy configured for this kind), the transfer is
-#! accepted and both the expiration limit and the pause check are skipped — mirroring the
-#! kernel's behavior when a callback slot holds the empty word. Otherwise the transaction's
-#! expiration is limited to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
-#! reference block, the account-wide pause flag is asserted (a no-op when the [`Pausable`]
-#! component is not installed) and the policy is invoked via `dyncall`.
+#! The expiration limit and the pause check run before the active root is read, so they apply
+#! whether or not a policy is configured: the transaction's expiration is limited to
+#! [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the reference block and the
+#! account-wide pause flag is asserted (a no-op when the [`Pausable`] component is not installed).
+#! This keeps a later policy activation or a pause binding against transfers anchored to an
+#! earlier reference block. If the active root is the empty word (no policy configured for this
+#! kind), the transfer is then accepted; otherwise the policy is invoked via `dyncall`.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
 #! Outputs: []
@@ -637,6 +640,12 @@ end
 #! Invocation: exec
 @locals(4)
 proc invoke_transfer_policy(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
+    exec.expiration::apply_default
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
+
+    exec.pausable::assert_not_paused
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
+
     exec.active_account::get_item
     # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
@@ -644,16 +653,10 @@ proc invoke_transfer_policy(slot_id: StorageSlotId, asset: Asset, custom_data: f
     # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
     if.true
-        # No policy configured: consume the callback inputs.
+        # No policy configured: accept the transfer and consume the callback inputs.
         dropw dropw dropw drop
         # => []
     else
-        exec.expiration::apply_default
-        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
-
-        exec.pausable::assert_not_paused
-        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
-
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
         # => [ASSET_ID, ASSET_VALUE, custom_data]
 

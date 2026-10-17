@@ -124,7 +124,7 @@ const MAX_ACCOUNT_STACK_PTR = 1284
 # TRANSACTION LOG STATE
 # -------------------------------------------------------------------------------------------------
 
-# The transaction log state occupies 8 elements starting at address 1300.
+# The transaction log state occupies 8 elements.
 # The counters, dirty flag, and cached commitment start at zero.
 
 # The memory address at which the number of transaction logs is stored.
@@ -137,7 +137,7 @@ pub const LOG_TOTAL_NUM_CONTENT_WORDS_PTR = NUM_LOGS_PTR + 1
 # A value of 1 means a transaction log was added after the cached commitment was computed.
 pub const TX_LOGS_DIRTY_FLAG_PTR = LOG_TOTAL_NUM_CONTENT_WORDS_PTR + 1
 
-# Address 1303 is padding to align the cached transaction logs commitment to a word boundary.
+# Address NUM_LOGS_PTR + 3 is unused padding before the word-aligned LOGS_COMMITMENT_PTR starts.
 pub const LOGS_COMMITMENT_PTR = NUM_LOGS_PTR + WORD_NUM_ELEMENTS
 
 # GLOBAL INPUTS
@@ -265,7 +265,7 @@ const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 2404
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the ordered individual transaction log commitments begin.
-# This section holds 64 words (256 elements), starting at address 3000.
+# This section holds MAX_LOGS_PER_TX words.
 pub const LOG_COMMITMENTS_PTR = 3000
 
 # ACCOUNT DATA

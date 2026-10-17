@@ -712,6 +712,8 @@ fn extract_transaction_log(
         .advice_provider()
         .get_mapped_values(&content_commitment)
         .ok_or_else(|| TransactionKernelError::other("missing transaction log content"))?;
+    // The kernel checks word alignment before emitting this event. Hash padding does not change
+    // the advice map value; retain this check when decoding the host-side record as well.
     let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
     if !remainder.is_empty() || words.len() > TransactionLog::MAX_NUM_WORDS {
         return Err(TransactionKernelError::other("invalid transaction log content length"));

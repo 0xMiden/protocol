@@ -39,7 +39,8 @@ const MAX_CYCLES = 0x20000000
 # =================================================================================================
 
 const ERR_TX_LOG_COUNT_EXCEEDED = "transaction exceeds 64 logs"
-const ERR_TX_LOG_CONTENT_TOO_LARGE = "log content must contain at most 256 complete words"
+const ERR_TX_LOG_CONTENT_TOO_LARGE = "log content must contain at most 256 words"
+const ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED = "log content must consist of complete words"
 const ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE = "transaction log contents exceed 512 words"
 const ERR_TX_LOG_PREIMAGE_MISMATCH = "log content does not match its commitment"
 
@@ -389,7 +390,7 @@ pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: wor
     # => [remainder, num_words, CONTENT_COMMITMENT]
 
     # Check alignment and both content limits before reading any content elements.
-    assertz.err=ERR_TX_LOG_CONTENT_TOO_LARGE
+    assertz.err=ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED
     dup u32lte.MAX_LOG_CONTENT_WORDS assert.err=ERR_TX_LOG_CONTENT_TOO_LARGE
     # => [num_words, CONTENT_COMMITMENT]
 
@@ -398,11 +399,13 @@ pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: wor
     exec.memory::set_total_num_log_content_words
     # => [num_words, CONTENT_COMMITMENT]
 
-    # Copy and hash in one pass. The checked word count fits in the 1024 content locals.
-    locaddr.CONTENT_LOC swap exec.core_mem::pipe_words_to_memory
-    # => [RATE0, RATE1, CAPACITY, end_ptr, CONTENT_COMMITMENT]
+    # Copy and hash in one pass. Domain zero matches the plain content hash. Use the
+    # digest-returning helper so the commitment check retains the log-specific error below.
+    # The checked word count fits in the content locals.
+    locaddr.CONTENT_LOC swap push.0 exec.core_mem::pipe_words_to_memory_in_domain
+    # => [COMPUTED_CONTENT_COMMITMENT, end_ptr, CONTENT_COMMITMENT]
 
-    exec.poseidon2::squeeze_digest movup.4 drop
+    movup.4 drop
     # => [COMPUTED_CONTENT_COMMITMENT, CONTENT_COMMITMENT]
 
     dupw.1 assert_eqw.err=ERR_TX_LOG_PREIMAGE_MISMATCH
@@ -628,6 +631,8 @@ end
 #! Outputs: [LOGS_COMMITMENT]
 proc compute_logs_commitment() -> word
     push.LOGS_DOMAIN exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
+    # => [LOG_COMMITMENTS_PTR, num_log_commitment_elements, LOGS_DOMAIN]
+
     exec.poseidon2::hash_elements_in_domain
     # => [LOGS_COMMITMENT]
 end
