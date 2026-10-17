@@ -3,6 +3,7 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
+use crate::transaction::{TransactionLogDetails, TransactionLogs};
 
 mod notes;
 pub use notes::{
@@ -22,6 +23,11 @@ mod tests;
 // ================================================================================================
 
 /// Describes the result of executing a transaction.
+///
+/// # Privacy
+///
+/// Contains complete local transaction logs, including in debug output. Use
+/// [`Self::into_parts`] to obtain the log details submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
@@ -33,6 +39,7 @@ pub struct TransactionOutputs {
     output_notes: RawOutputNotes,
     /// Defines up to which block the transaction is considered valid.
     expiration_block_num: BlockNumber,
+    logs: TransactionLogs,
 }
 
 impl TransactionOutputs {
@@ -59,17 +66,29 @@ impl TransactionOutputs {
         account_patch_commitment: Word,
         output_notes: RawOutputNotes,
         expiration_block_num: BlockNumber,
+        logs: TransactionLogs,
     ) -> Self {
         Self {
             account,
             account_patch_commitment,
             output_notes,
             expiration_block_num,
+            logs,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns all transaction logs, including private transaction logs retained locally.
+    pub fn logs(&self) -> &TransactionLogs {
+        &self.logs
+    }
+
+    /// Returns the commitment to the local transaction logs.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs.commitment()
+    }
 
     /// Returns the header of the account's final state.
     pub fn account(&self) -> &AccountHeader {
@@ -94,8 +113,16 @@ impl TransactionOutputs {
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes self and returns the individual parts (that are non-Copy).
-    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {
-        (self.account, self.output_notes)
+    /// Consumes self and returns the final account header, output notes, and submitted log details.
+    ///
+    /// The log details contain complete logs for a public native account and only their
+    /// commitment for a private native account.
+    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes, TransactionLogDetails) {
+        let log_details = if self.account.id().is_public() {
+            TransactionLogDetails::Public(self.logs)
+        } else {
+            TransactionLogDetails::Private(self.logs.commitment())
+        };
+        (self.account, self.output_notes, log_details)
     }
 }
