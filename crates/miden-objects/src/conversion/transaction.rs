@@ -84,6 +84,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
             reference_block_commitment: Some(value.ref_block_commitment().into()),
             expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
+            log_details: Some(value.log_details().into()),
         }
     }
 }
@@ -137,6 +138,7 @@ impl From<&TransactionHeader> for proto::transaction::TransactionHeader {
     fn from(header: &TransactionHeader) -> Self {
         Self {
             transaction_id: Some(header.id().into()),
+            logs_commitment: Some(header.logs_commitment().into()),
             account_id: Some(header.account_id().into()),
             initial_state_commitment: Some(header.initial_state_commitment().into()),
             final_state_commitment: Some(header.final_state_commitment().into()),
