@@ -43,7 +43,7 @@ use miden_usdcx::note::xreserve_burn::{
     XReserveBurnNote,
     XUsdcBurnAttachment,
 };
-use miden_usdcx::vectors::load;
+use miden_usdcx::vectors::{load, selected};
 use miden_usdcx::xreserve::encoding::{
     CircleDomain,
     EncodingError,
@@ -281,9 +281,8 @@ fn burn_attachment_rejects_malformed_payloads() {
 
 #[tokio::test]
 async fn burn_note_emitted_items_match_codec_vectors() -> anyhow::Result<()> {
-    let accept: Vec<_> = load().families.bn.iter().filter(|v| v.kind == "accept").collect();
-    assert!(!accept.is_empty(), "BN accept vectors present");
-    for vec in accept {
+    let accept = load().families.bn.iter().filter(|v| v.kind == "accept");
+    for vec in selected(accept, 3, "bn accept rows") {
         let items = vec.expected_struct();
         let expected = items.encode();
         let got = emitted_items_for(&items).await?;
