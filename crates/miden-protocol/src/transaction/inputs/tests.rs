@@ -26,7 +26,6 @@ use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use crate::transaction::{InputNotes, PartialBlockchain, TransactionArgs, TransactionInputs};
-use crate::utils::serde::{Deserializable, Serializable};
 use crate::vm::AdviceInputs;
 use crate::{Felt, Word};
 
@@ -283,90 +282,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
 }
 
 #[test]
-fn test_transaction_inputs_serialization_with_foreign_slot_names() {
-    use miden_core::Felt;
-
-    use crate::account::{
-        AccountCode,
-        AccountId,
-        AccountStorageHeader,
-        PartialAccount,
-        PartialStorage,
-        StorageSlotName,
-    };
-    use crate::asset::PartialVault;
-    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-
-    // Create test account IDs
-    let native_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-
-    // Create some slot names and IDs.
-    let slot_name_1 = StorageSlotName::new("test::slot1::value".to_string()).unwrap();
-    let slot_name_2 = StorageSlotName::new("test::slot2::map".to_string()).unwrap();
-    let slot_name_3 = StorageSlotName::new("another::slot::value".to_string()).unwrap();
-
-    let slot_id_1 = slot_name_1.id();
-    let slot_id_2 = slot_name_2.id();
-    let slot_id_3 = slot_name_3.id();
-
-    // Create foreign account slot names map.
-    let mut foreign_account_slot_names = BTreeMap::new();
-    foreign_account_slot_names.insert(slot_id_1, slot_name_1.clone());
-    foreign_account_slot_names.insert(slot_id_2, slot_name_2.clone());
-    foreign_account_slot_names.insert(slot_id_3, slot_name_3.clone());
-
-    // Create a basic TransactionInputs with foreign slot names.
-    let code = AccountCode::mock();
-    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
-    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
-    let partial_vault = PartialVault::new(Word::default());
-    let partial_account = PartialAccount::new(
-        native_account_id,
-        Felt::new_unchecked(10),
-        code,
-        partial_storage,
-        partial_vault,
-        None,
-    )
-    .unwrap();
-
-    let original_tx_inputs = TransactionInputs {
-        account: partial_account,
-        block_header: BlockHeader::mock(0, None, None, &[]),
-        blockchain: PartialBlockchain::default(),
-        input_notes: InputNotes::new(vec![]).unwrap(),
-        protocol_config: ProtocolConfig::mock(),
-        tx_args: TransactionArgs::default(),
-        advice_inputs: AdviceInputs::default(),
-        foreign_account_code: Vec::new(),
-        foreign_account_slot_names,
-    };
-
-    // Test serialization roundtrip.
-    let serialized = original_tx_inputs.to_bytes();
-    let deserialized = TransactionInputs::read_from_bytes(&serialized).unwrap();
-
-    // Verify that foreign account slot names are preserved.
-    assert_eq!(
-        original_tx_inputs.foreign_account_slot_names(),
-        deserialized.foreign_account_slot_names()
-    );
-
-    // Verify specific slot names.
-    let deserialized_slots = deserialized.foreign_account_slot_names();
-
-    // Check slots.
-    assert_eq!(deserialized_slots.get(&slot_id_1).unwrap(), &slot_name_1);
-    assert_eq!(deserialized_slots.get(&slot_id_2).unwrap(), &slot_name_2);
-    assert_eq!(deserialized_slots.get(&slot_id_3).unwrap(), &slot_name_3);
-
-    // Verify the entire structure is identical.
-    assert_eq!(original_tx_inputs, deserialized);
-}
-
-#[test]
-fn try_from_parts_preserves_all_transaction_input_components() {
+fn builder_preserves_all_transaction_input_components() {
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let code = AccountCode::mock();
     let account = PartialAccount::new(
@@ -396,18 +312,18 @@ fn try_from_parts_preserves_all_transaction_input_components() {
     let slot_name = StorageSlotName::new("test::slot::value".to_string()).unwrap();
     let foreign_account_slot_names = BTreeMap::from([(slot_name.id(), slot_name)]);
 
-    let tx_inputs = TransactionInputs::try_from_parts(
-        account.clone(),
-        block_header.clone(),
-        protocol_config.clone(),
-        blockchain.clone(),
-        input_notes.clone(),
-        tx_args.clone(),
-        advice_inputs.clone(),
-        foreign_account_code.clone(),
-        foreign_account_slot_names.clone(),
-    )
-    .unwrap();
+    let tx_inputs = TransactionInputs::builder()
+        .account(account.clone())
+        .block_header(block_header.clone())
+        .protocol_config(protocol_config.clone())
+        .blockchain(blockchain.clone())
+        .input_notes(input_notes.clone())
+        .tx_args(tx_args.clone())
+        .advice_inputs(advice_inputs.clone())
+        .foreign_account_code(foreign_account_code.clone())
+        .foreign_account_slot_names(foreign_account_slot_names.clone())
+        .build()
+        .unwrap();
 
     assert_eq!(tx_inputs.account(), &account);
     assert_eq!(tx_inputs.block_header(), &block_header);
@@ -421,7 +337,7 @@ fn try_from_parts_preserves_all_transaction_input_components() {
 }
 
 #[test]
-fn try_from_parts_rejects_an_inconsistent_protocol_config() {
+fn builder_rejects_an_inconsistent_protocol_config() {
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let account = PartialAccount::new(
         account_id,
@@ -439,17 +355,13 @@ fn try_from_parts_rejects_an_inconsistent_protocol_config() {
     let protocol_config =
         ProtocolConfig::current(crate::asset::AssetId::new_fungible(different_fee_faucet)).unwrap();
 
-    let result = TransactionInputs::try_from_parts(
-        account,
-        block_header,
-        protocol_config,
-        blockchain,
-        InputNotes::new(vec![]).unwrap(),
-        TransactionArgs::default(),
-        AdviceInputs::default(),
-        Vec::new(),
-        BTreeMap::new(),
-    );
+    let result = TransactionInputs::builder()
+        .account(account)
+        .block_header(block_header)
+        .protocol_config(protocol_config)
+        .blockchain(blockchain)
+        .input_notes(InputNotes::new(vec![]).unwrap())
+        .build();
 
     assert_matches!(result, Err(TransactionInputError::InconsistentProtocolConfig { .. }));
 }

@@ -182,18 +182,18 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
     let foreign_account_slot_names =
         BTreeMap::from([(second_slot.id(), second_slot), (first_slot.id(), first_slot)]);
 
-    TransactionInputs::try_from_parts(
-        account,
-        block_header,
-        protocol_config,
-        blockchain,
-        input_notes,
-        tx_args,
-        advice_inputs,
-        foreign_account_code,
-        foreign_account_slot_names,
-    )
-    .unwrap()
+    TransactionInputs::builder()
+        .account(account)
+        .block_header(block_header)
+        .protocol_config(protocol_config)
+        .blockchain(blockchain)
+        .input_notes(input_notes)
+        .tx_args(tx_args)
+        .advice_inputs(advice_inputs)
+        .foreign_account_code(foreign_account_code)
+        .foreign_account_slot_names(foreign_account_slot_names)
+        .build()
+        .unwrap()
 }
 
 #[allow(dead_code)]

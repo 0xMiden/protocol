@@ -289,10 +289,15 @@ where
 
         let native_account_vault_root = account.vault().root();
 
-        let mut tx_inputs =
-            TransactionInputs::new(account, block_header, protocol_config, blockchain, input_notes)
-                .map_err(TransactionExecutorError::InvalidTransactionInputs)?
-                .with_tx_args(tx_args);
+        let mut tx_inputs = TransactionInputs::builder()
+            .account(account)
+            .block_header(block_header)
+            .protocol_config(protocol_config)
+            .blockchain(blockchain)
+            .input_notes(input_notes)
+            .build()
+            .map_err(TransactionExecutorError::InvalidTransactionInputs)?
+            .with_tx_args(tx_args);
 
         // filter out any asset IDs for which we already have witnesses in the advice inputs
         asset_ids.retain(|asset_id| {

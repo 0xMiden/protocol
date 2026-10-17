@@ -27,13 +27,6 @@ use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
 use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 #[cfg(test)]
 mod tests;
@@ -65,11 +58,15 @@ pub struct TransactionInputs {
     foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
 }
 
+#[bon::bon]
 impl TransactionInputs {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns new [`TransactionInputs`] instantiated with the specified parameters.
+    /// Returns a builder for [`TransactionInputs`].
+    ///
+    /// Required setters: `account`, `block_header`, `protocol_config`, `blockchain` and
+    /// `input_notes`. The other fields default to empty values.
     ///
     /// # Errors
     ///
@@ -77,42 +74,17 @@ impl TransactionInputs {
     /// - The protocol config does not match the one committed to by the block header.
     /// - The partial blockchain does not track the block headers required to prove inclusion of any
     ///   authenticated input note.
+    #[builder]
     pub fn new(
         account: PartialAccount,
         block_header: BlockHeader,
         protocol_config: ProtocolConfig,
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
-    ) -> Result<Self, TransactionInputError> {
-        Self::try_from_parts(
-            account,
-            block_header,
-            protocol_config,
-            blockchain,
-            input_notes,
-            TransactionArgs::default(),
-            AdviceInputs::default(),
-            Vec::new(),
-            BTreeMap::new(),
-        )
-    }
-
-    /// Creates [`TransactionInputs`] from all transaction-input components.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error under the same conditions as [`Self::new`].
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_from_parts(
-        account: PartialAccount,
-        block_header: BlockHeader,
-        protocol_config: ProtocolConfig,
-        blockchain: PartialBlockchain,
-        input_notes: InputNotes<InputNote>,
-        tx_args: TransactionArgs,
-        advice_inputs: AdviceInputs,
-        foreign_account_code: Vec<AccountCode>,
-        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+        #[builder(default)] tx_args: TransactionArgs,
+        #[builder(default)] advice_inputs: AdviceInputs,
+        #[builder(default)] foreign_account_code: Vec<AccountCode>,
+        #[builder(default)] foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
 
@@ -554,50 +526,6 @@ impl TransactionInputs {
     fn set_tx_args_inner(&mut self, tx_args: TransactionArgs) {
         self.tx_args = tx_args;
         self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
-    }
-}
-
-// SERIALIZATION / DESERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionInputs {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account.write_into(target);
-        self.block_header.write_into(target);
-        self.protocol_config.write_into(target);
-        self.blockchain.write_into(target);
-        self.input_notes.write_into(target);
-        self.tx_args.write_into(target);
-        self.advice_inputs.write_into(target);
-        self.foreign_account_code.write_into(target);
-        self.foreign_account_slot_names.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionInputs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account = PartialAccount::read_from(source)?;
-        let block_header = BlockHeader::read_from(source)?;
-        let protocol_config = ProtocolConfig::read_from(source)?;
-        let blockchain = PartialBlockchain::read_from(source)?;
-        let input_notes = InputNotes::read_from(source)?;
-        let tx_args = TransactionArgs::read_from(source)?;
-        let advice_inputs = AdviceInputs::read_from(source)?;
-        let foreign_account_code = Vec::<AccountCode>::read_from(source)?;
-        let foreign_account_slot_names =
-            BTreeMap::<StorageSlotId, StorageSlotName>::read_from(source)?;
-
-        Ok(TransactionInputs {
-            account,
-            block_header,
-            protocol_config,
-            blockchain,
-            input_notes,
-            tx_args,
-            advice_inputs,
-            foreign_account_code,
-            foreign_account_slot_names,
-        })
     }
 }
 

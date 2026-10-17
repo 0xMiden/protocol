@@ -770,13 +770,13 @@ impl MockChain {
 
         let input_notes = InputNotes::new(input_notes)?;
 
-        Ok(TransactionInputs::new(
-            account.into(),
-            ref_block.clone(),
-            self.protocol_config.clone(),
-            partial_blockchain,
-            input_notes,
-        )?)
+        Ok(TransactionInputs::builder()
+            .account(account.into())
+            .block_header(ref_block.clone())
+            .protocol_config(self.protocol_config.clone())
+            .blockchain(partial_blockchain)
+            .input_notes(input_notes)
+            .build()?)
     }
 
     /// Returns a valid [`TransactionInputs`] for the specified entities.
