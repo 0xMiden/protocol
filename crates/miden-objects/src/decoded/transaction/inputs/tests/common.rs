@@ -214,7 +214,6 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         dummy_word(56),
         None,
     );
-    let advice_inputs = dummy_advice_inputs([60, 61], 62, 63);
     let foreign_accounts = vec![
         dummy_foreign_account(dummy_account_id(20), account_code),
         dummy_foreign_account(dummy_account_id(21), dummy_secondary_account_code()),
@@ -227,7 +226,6 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .blockchain(blockchain)
         .input_notes(input_notes)
         .tx_args(tx_args)
-        .advice_inputs(advice_inputs)
         .foreign_accounts(foreign_accounts)
         .note_scripts(vec![NoteScript::mock()])
         .signatures(dummy_signatures())

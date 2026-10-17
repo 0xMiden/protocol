@@ -212,11 +212,11 @@ where
         let stack_outputs = output.stack;
         let advice_provider = output.advice;
 
-        // The stack is not necessary since it is being reconstructed when re-executing.
+        // The final advice is only needed to parse the transaction outputs.
         let (_stack, advice_map, merkle_store) = advice_provider.into_parts();
-        let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
+        let final_advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
 
-        build_executed_transaction(advice_inputs, tx_inputs, stack_outputs, host)
+        build_executed_transaction(final_advice_inputs, tx_inputs, stack_outputs, host)
     }
 
     // SCRIPT EXECUTION
@@ -298,9 +298,9 @@ where
             .protocol_config(protocol_config)
             .blockchain(blockchain)
             .input_notes(input_notes)
+            .tx_args(tx_args)
             .build()
-            .map_err(TransactionExecutorError::InvalidTransactionInputs)?
-            .with_tx_args(tx_args);
+            .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
 
         // If any of the witnesses are missing, fetch them from the data store and add them to the
         // native partial account.
@@ -372,17 +372,20 @@ where
 
 /// Creates a new [ExecutedTransaction] from the provided data.
 fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenticator + Sync>(
-    advice_inputs: AdviceInputs,
-    tx_inputs: TransactionInputs,
+    final_advice_inputs: AdviceInputs,
+    mut tx_inputs: TransactionInputs,
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
     let (account_patch, _input_notes, output_notes, tx_progress, lazy_loaded_data) =
         host.into_parts();
 
-    let tx_outputs =
-        TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-            .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
+    let tx_outputs = TransactionKernel::from_transaction_parts(
+        &stack_outputs,
+        &final_advice_inputs,
+        output_notes,
+    )
+    .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
     let patch_commitment = account_patch.to_commitment();
     if tx_outputs.account_patch_commitment() != patch_commitment {
@@ -402,9 +405,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         });
     }
 
-    // Overwrite advice inputs from after the execution on the transaction inputs. This is
-    // guaranteed to be a superset of the original advice inputs.
-    let mut tx_inputs = tx_inputs.with_advice_inputs(advice_inputs);
+    // Add the lazy loaded data, so the transaction can be re-executed from its inputs alone.
     lazy_loaded_data
         .add_to(&mut tx_inputs)
         .map_err(TransactionExecutorError::InvalidTransactionInputs)?;

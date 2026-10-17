@@ -77,7 +77,6 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
             partial_blockchain: Some(value.blockchain().into()),
             input_notes: Some(value.input_notes().into()),
             tx_args: Some(value.tx_args().into()),
-            advice_inputs: Some(value.advice_inputs().into()),
             foreign_accounts: value.foreign_accounts().values().map(Into::into).collect(),
             note_scripts: value.note_scripts().values().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),

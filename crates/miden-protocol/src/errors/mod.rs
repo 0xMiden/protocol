@@ -7,7 +7,6 @@ use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
-use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
 use miden_processor::ExecutionError;
 use miden_verifier::VerificationError;
@@ -1040,29 +1039,6 @@ pub enum TransactionInputError {
         "total number of input notes is {0} which exceeds the maximum of {MAX_INPUT_NOTES_PER_TX}"
     )]
     TooManyInputNotes(usize),
-}
-
-// TRANSACTION INPUTS EXTRACTION ERROR
-// ===============================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionInputsExtractionError {
-    #[error("failed to handle merkle data")]
-    MerkleError(#[from] MerkleError),
-    #[error("missing vault root from Merkle store")]
-    MissingVaultRoot,
-    #[error("missing storage map root from Merkle store")]
-    MissingMapRoot,
-    #[error("failed to construct SMT proof")]
-    SmtProofError(#[from] SmtProofError),
-    #[error("failed to construct an asset")]
-    AssetError(#[from] AssetError),
-    #[error("failed to handle storage map data")]
-    StorageMapError(#[from] StorageMapError),
-    #[error("failed to convert elements to leaf index: {0}")]
-    LeafConversionError(String),
-    #[error("failed to construct SMT leaf")]
-    SmtLeafError(#[from] SmtLeafError),
 }
 
 // TRANSACTION OUTPUT ERROR

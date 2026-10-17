@@ -68,7 +68,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let chain = self.partial_blockchain.build_unchecked()?;
         let notes = self.input_notes.verify()?;
         let args = self.tx_args.verify()?;
-        let advice = self.advice_inputs.verify()?;
         let foreign_accounts = self.foreign_accounts.verify()?;
         let note_scripts = self.note_scripts.verify()?;
         let mut signatures = BTreeMap::new();
@@ -85,7 +84,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .blockchain(chain)
             .input_notes(notes)
             .tx_args(args)
-            .advice_inputs(advice)
             .foreign_accounts(foreign_accounts)
             .note_scripts(note_scripts)
             .signatures(signatures)

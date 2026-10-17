@@ -1,18 +1,15 @@
 use alloc::boxed::Box;
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt::Debug;
-
-use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
 use super::PartialBlockchain;
 use crate::Word;
 use crate::account::auth::{Signature, SignatureKey};
-use crate::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
-use crate::asset::{Asset, AssetId, AssetWitness};
+use crate::account::{AccountId, PartialAccount, StorageMapWitness};
+use crate::asset::AssetWitness;
 use crate::block::{BlockHeader, BlockNumber};
-use crate::crypto::merkle::SparseMerklePath;
-use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
+use crate::errors::TransactionInputError;
 use crate::note::{Note, NoteInclusionProof, NoteScript, NoteScriptRoot};
 use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
@@ -26,12 +23,14 @@ pub use account::AccountInputs;
 mod notes;
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
 
-use crate::vm::AdviceInputs;
-
 // TRANSACTION INPUTS
 // ================================================================================================
 
-/// Contains the data required to execute a transaction.
+/// Contains all data required to execute a transaction.
+///
+/// Data that the executor loads lazily, such as foreign accounts or signatures, can be added to the
+/// inputs, so that the inputs contain all necessary data for re-executing the transaction without
+/// access to a data store.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionInputs {
     account: PartialAccount,
@@ -41,7 +40,6 @@ pub struct TransactionInputs {
     blockchain: PartialBlockchain,
     input_notes: InputNotes<InputNote>,
     tx_args: TransactionArgs,
-    advice_inputs: AdviceInputs,
     /// Foreign accounts the transaction accessed during execution.
     foreign_accounts: BTreeMap<AccountId, AccountInputs>,
     /// Scripts of the output notes the host resolved during execution.
@@ -76,7 +74,6 @@ impl TransactionInputs {
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
         #[builder(default)] tx_args: TransactionArgs,
-        #[builder(default)] advice_inputs: AdviceInputs,
         #[builder(default)] foreign_accounts: Vec<AccountInputs>,
         #[builder(default)] note_scripts: Vec<NoteScript>,
         #[builder(default)] signatures: BTreeMap<SignatureKey, Signature>,
@@ -92,7 +89,6 @@ impl TransactionInputs {
             blockchain,
             input_notes,
             tx_args,
-            advice_inputs,
             foreign_accounts: BTreeMap::new(),
             note_scripts,
             signatures,
@@ -152,18 +148,6 @@ impl TransactionInputs {
         Ok(())
     }
 
-    /// Replaces the transaction inputs and assigns the given transaction arguments.
-    pub fn with_tx_args(mut self, tx_args: TransactionArgs) -> Self {
-        self.set_tx_args_inner(tx_args);
-        self
-    }
-
-    /// Replaces the transaction inputs and assigns the given advice inputs.
-    pub fn with_advice_inputs(mut self, advice_inputs: AdviceInputs) -> Self {
-        self.set_advice_inputs(advice_inputs);
-        self
-    }
-
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -175,15 +159,6 @@ impl TransactionInputs {
     /// consistent with the rest of the transaction inputs.
     pub fn set_input_notes(&mut self, new_notes: InputNotes<InputNote>) {
         self.input_notes = new_notes;
-    }
-
-    /// Replaces the advice inputs for the transaction.
-    ///
-    /// Note: the advice stack from the provided advice inputs is discarded.
-    pub fn set_advice_inputs(&mut self, new_advice_inputs: AdviceInputs) {
-        let (_stack, map, store) = new_advice_inputs.into_parts();
-        self.advice_inputs = AdviceInputs::from(map).with_merkle_store(store);
-        self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 
     /// Adds a foreign account, so that re-executing the transaction does not need to fetch it
@@ -299,7 +274,7 @@ impl TransactionInputs {
     /// Updates the transaction arguments of the inputs.
     #[cfg(feature = "testing")]
     pub fn set_tx_args(&mut self, tx_args: TransactionArgs) {
-        self.set_tx_args_inner(tx_args);
+        self.tx_args = tx_args;
     }
 
     // PUBLIC ACCESSORS
@@ -371,105 +346,9 @@ impl TransactionInputs {
         &self.signatures
     }
 
-    /// Returns the advice inputs to be consumed in the transaction.
-    pub fn advice_inputs(&self) -> &AdviceInputs {
-        &self.advice_inputs
-    }
-
     /// Returns the transaction arguments to be consumed in the transaction.
     pub fn tx_args(&self) -> &TransactionArgs {
         &self.tx_args
-    }
-
-    // DATA EXTRACTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Reads the storage map witness for the given account and map key.
-    pub fn read_storage_map_witness(
-        &self,
-        map_root: Word,
-        map_key: StorageMapKey,
-    ) -> Result<StorageMapWitness, TransactionInputsExtractionError> {
-        // Convert map key into the index at which the key-value pair for this key is stored
-        let leaf_index = map_key.hash().to_leaf_index();
-
-        // Construct sparse Merkle path.
-        let merkle_path = self.advice_inputs.store().get_path(map_root, leaf_index.into())?;
-        let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
-
-        // Construct SMT leaf.
-        let merkle_node = self.advice_inputs.store().get_node(map_root, leaf_index.into())?;
-        let smt_leaf_elements = self
-            .advice_inputs
-            .map()
-            .get(&merkle_node)
-            .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, leaf_index)?;
-
-        // Construct SMT proof and witness.
-        let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
-        let storage_witness = StorageMapWitness::new(smt_proof, [map_key])?;
-
-        Ok(storage_witness)
-    }
-
-    /// Reads the vault asset witnesses for the given account and asset IDs.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - A Merkle tree with the specified root is not present in the advice data of these inputs.
-    /// - Witnesses for any of the requested assets are not in the specified Merkle tree.
-    /// - Construction of the Merkle path or the leaf node for the witness fails.
-    pub fn read_vault_asset_witnesses(
-        &self,
-        vault_root: Word,
-        asset_ids: BTreeSet<AssetId>,
-    ) -> Result<Vec<AssetWitness>, TransactionInputsExtractionError> {
-        let mut asset_witnesses = Vec::new();
-        for asset_id in asset_ids {
-            let smt_index = asset_id.hash().to_leaf_index();
-            // Construct sparse Merkle path.
-            let merkle_path = self.advice_inputs.store().get_path(vault_root, smt_index.into())?;
-            let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
-
-            // Construct SMT leaf.
-            let merkle_node = self.advice_inputs.store().get_node(vault_root, smt_index.into())?;
-            let smt_leaf_elements = self
-                .advice_inputs
-                .map()
-                .get(&merkle_node)
-                .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-            let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
-
-            // Construct SMT proof and witness.
-            let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
-            let asset_witness = AssetWitness::new(smt_proof, [asset_id])?;
-            asset_witnesses.push(asset_witness);
-        }
-        Ok(asset_witnesses)
-    }
-
-    /// Reads the asset stored under `asset_id` in the vault with the specified root.
-    ///
-    /// Returns `Ok(None)` when the key's leaf is tracked but holds no asset.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - A Merkle tree with the specified root, or the key's Merkle path, is not present in the
-    ///   advice data of these inputs.
-    /// - Construction of the leaf node or the asset fails.
-    pub fn read_vault_asset(
-        &self,
-        vault_root: Word,
-        asset_id: AssetId,
-    ) -> Result<Option<Asset>, TransactionInputsExtractionError> {
-        let witnesses =
-            self.read_vault_asset_witnesses(vault_root, BTreeSet::from_iter([asset_id]))?;
-        let witness = witnesses
-            .into_iter()
-            .next()
-            .expect("one key requested should yield exactly one witness");
-        Ok(witness.find(asset_id))
     }
 
     // CONVERSIONS
@@ -486,18 +365,6 @@ impl TransactionInputs {
         TransactionArgs,
     ) {
         (self.account, self.block_header, self.blockchain, self.input_notes, self.tx_args)
-    }
-
-    // HELPER METHODS
-    // --------------------------------------------------------------------------------------------
-
-    /// Replaces the current tx_args with the provided value.
-    ///
-    /// This also appends advice inputs from these transaction inputs to the advice inputs of the
-    /// tx args.
-    fn set_tx_args_inner(&mut self, tx_args: TransactionArgs) {
-        self.tx_args = tx_args;
-        self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 }
 

@@ -58,8 +58,7 @@ message TransactionInputsV1 {
   blockchain.PartialBlockchain partial_blockchain = 4;
   InputNotes input_notes = 5;
   TransactionArgs tx_args = 6;
-  primitives.AdviceInputs advice_inputs = 7;
-  repeated AccountInputs foreign_accounts = 8;
-  repeated note.NoteScript note_scripts = 9;
-  repeated SignatureEntry signatures = 10;
+  repeated AccountInputs foreign_accounts = 7;
+  repeated note.NoteScript note_scripts = 8;
+  repeated SignatureEntry signatures = 9;
 }

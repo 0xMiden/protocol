@@ -59,6 +59,7 @@
 - [BREAKING] `TransactionInputs` now stores the signatures generated during execution, keyed by the new `SignatureKey` ([#4031](https://github.com/0xMiden/protocol/pull/4031)).
 - [BREAKING] `TransactionInputs` now stores the foreign accounts as `AccountInputs` instead of their code and slot names, and the executor no longer fetches foreign accounts the inputs already contain ([#4032](https://github.com/0xMiden/protocol/pull/4032)).
 - [BREAKING] The executor now adds lazy-loaded asset and storage map witnesses to the partial accounts in `TransactionInputs`, and `TransactionInputs::with_asset_witnesses` is replaced by `add_asset_witnesses` ([#4033](https://github.com/0xMiden/protocol/pull/4033)).
+- [BREAKING] `TransactionInputs` no longer stores the recorded advice inputs, since its typed lazy-loaded data is enough to re-execute and prove the transaction ([#4034](https://github.com/0xMiden/protocol/pull/4034)).
 
 ## v0.17.0 (2026-10-01)
 

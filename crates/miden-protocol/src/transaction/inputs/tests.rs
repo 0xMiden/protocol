@@ -119,8 +119,6 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         Word::new([Felt::from(2_u32); 4]),
         None,
     );
-    let advice_inputs = AdviceInputs::default()
-        .with_map([(Word::new([Felt::from(3_u32); 4]), vec![Felt::from(4_u32)])]);
     let foreign_account = account_inputs(&mock_account(foreign_account_id()?)?)?;
     let note_script = NoteScript::mock();
 
@@ -131,7 +129,6 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         .blockchain(blockchain.clone())
         .input_notes(input_notes.clone())
         .tx_args(tx_args.clone())
-        .advice_inputs(advice_inputs.clone())
         .foreign_accounts(vec![foreign_account.clone()])
         .note_scripts(vec![note_script.clone()])
         .build()?;
@@ -142,7 +139,6 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
     assert_eq!(tx_inputs.blockchain(), &blockchain);
     assert_eq!(tx_inputs.input_notes(), &input_notes);
     assert_eq!(tx_inputs.tx_args(), &tx_args);
-    assert_eq!(tx_inputs.advice_inputs(), &advice_inputs);
     assert_eq!(
         tx_inputs.foreign_accounts(),
         &BTreeMap::from([(foreign_account.id(), foreign_account)])
