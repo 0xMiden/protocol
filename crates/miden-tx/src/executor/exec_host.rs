@@ -8,20 +8,13 @@ use miden_processor::event::EventError;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
-use miden_protocol::account::{
-    AccountCode,
-    AccountId,
-    AccountPatch,
-    PartialAccount,
-    StorageMapKey,
-    StorageSlotId,
-    StorageSlotName,
-};
+use miden_protocol::account::{AccountId, AccountPatch, PartialAccount, StorageMapKey};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
+use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
     NoteRecipient,
     NoteScript,
@@ -30,6 +23,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::{
+    AccountInputs,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -82,14 +76,6 @@ where
 
     /// The reference block of the transaction.
     ref_block: BlockNumber,
-
-    /// The foreign account code that was lazy loaded during transaction execution.
-    ///
-    /// This is required for re-executing the transaction, e.g. as part of transaction proving.
-    accessed_foreign_account_code: Vec<AccountCode>,
-
-    /// Storage slot names for foreign accounts accessed during transaction execution.
-    foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
 
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
@@ -149,8 +135,6 @@ where
             tx_progress: TransactionProgress::default(),
             authenticator,
             ref_block,
-            accessed_foreign_account_code: Vec::new(),
-            foreign_account_slot_names: BTreeMap::new(),
             lazy_loaded_data: LazyLoadedData::default(),
             in_auth_procedure: false,
             source_manager,
@@ -163,11 +147,6 @@ where
     /// Returns a reference to the `tx_progress` field of this transaction host.
     pub fn tx_progress(&self) -> &TransactionProgress {
         &self.tx_progress
-    }
-
-    /// Returns a reference to the foreign account slot names collected during execution.
-    pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
-        &self.foreign_account_slot_names
     }
 
     // EVENT HANDLERS
@@ -192,15 +171,8 @@ where
         let mut tx_advice_inputs = TransactionAdviceInputs::default();
         tx_advice_inputs.add_foreign_accounts([&foreign_account_inputs]);
 
-        // Extract and store slot names for this foreign account and store.
-        foreign_account_inputs.storage().header().slots().for_each(|slot| {
-            self.foreign_account_slot_names.insert(slot.id(), slot.name().clone());
-        });
-
         self.base_host.load_foreign_account_code(foreign_account_inputs.code());
-
-        // Add the foreign account's code to the list of accessed code.
-        self.accessed_foreign_account_code.push(foreign_account_inputs.code().clone());
+        self.lazy_loaded_data.foreign_accounts.push(foreign_account_inputs);
 
         Ok(tx_advice_inputs.into_advice_mutations().collect())
     }
@@ -408,9 +380,7 @@ where
         AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
-        Vec<AccountCode>,
         TransactionProgress,
-        BTreeMap<StorageSlotId, StorageSlotName>,
         LazyLoadedData,
     ) {
         let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
@@ -419,9 +389,7 @@ where
             account_patch,
             input_notes,
             output_notes,
-            self.accessed_foreign_account_code,
             self.tx_progress,
-            self.foreign_account_slot_names,
             self.lazy_loaded_data,
         )
     }
@@ -445,6 +413,9 @@ where
 /// without fetching the data again.
 #[derive(Debug, Default)]
 pub(crate) struct LazyLoadedData {
+    /// The foreign accounts the transaction accessed.
+    foreign_accounts: Vec<AccountInputs>,
+
     /// The scripts of output notes whose script was not in the advice provider.
     note_scripts: Vec<NoteScript>,
 
@@ -454,13 +425,25 @@ pub(crate) struct LazyLoadedData {
 
 impl LazyLoadedData {
     /// Adds the lazy loaded data to the provided transaction inputs.
-    pub(crate) fn add_to(self, tx_inputs: &mut TransactionInputs) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the inputs reject any of the data.
+    pub(crate) fn add_to(
+        self,
+        tx_inputs: &mut TransactionInputs,
+    ) -> Result<(), TransactionInputError> {
+        for foreign_account in self.foreign_accounts {
+            tx_inputs.add_foreign_account(foreign_account)?;
+        }
         for note_script in self.note_scripts {
             tx_inputs.add_note_script(note_script);
         }
         for (key, signature) in self.signatures {
             tx_inputs.add_signature(key, signature);
         }
+
+        Ok(())
     }
 }
 

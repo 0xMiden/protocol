@@ -1,8 +1,6 @@
-use alloc::string::String;
-
 use miden_protocol::Word;
 use miden_protocol::account::auth::{Signature, SignatureKey};
-use miden_protocol::transaction::{InputNote, InputNotes, TransactionInputs};
+use miden_protocol::transaction::{AccountInputs, InputNote, InputNotes, TransactionInputs};
 use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
@@ -61,6 +59,15 @@ impl From<(&SignatureKey, &Signature)> for proto::transaction::SignatureEntry {
     }
 }
 
+impl From<&AccountInputs> for proto::transaction::AccountInputs {
+    fn from(value: &AccountInputs) -> Self {
+        Self {
+            account: Some(value.account().into()),
+            witness: Some(value.witness().into()),
+        }
+    }
+}
+
 impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
     fn from(value: &TransactionInputs) -> Self {
         Self {
@@ -71,15 +78,7 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
             input_notes: Some(value.input_notes().into()),
             tx_args: Some(value.tx_args().into()),
             advice_inputs: Some(value.advice_inputs().into()),
-            foreign_account_code: value.foreign_account_code().iter().map(Into::into).collect(),
-            foreign_account_slot_names: value
-                .foreign_account_slot_names()
-                .iter()
-                .map(|(slot_id, slot_name)| proto::transaction::ForeignAccountSlotName {
-                    slot_id: Some(slot_id.into()),
-                    slot_name: String::from(slot_name.as_str()),
-                })
-                .collect(),
+            foreign_accounts: value.foreign_accounts().values().map(Into::into).collect(),
             note_scripts: value.note_scripts().values().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
         }

@@ -83,7 +83,6 @@ impl_verification_error_from!(
     super::primitives::AdviceError,
     super::primitives::PartialMmrError,
     super::primitives::PartialSmtError,
-    super::transaction::ForeignAccountSlotNameError,
     super::transaction::InputNoteError,
     super::transaction::ProposedBatchError,
     super::transaction::ProvenBatchError,

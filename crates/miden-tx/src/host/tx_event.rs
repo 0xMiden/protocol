@@ -16,6 +16,7 @@ use miden_protocol::account::{
     StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -217,7 +218,17 @@ impl TransactionEvent {
                         )
                     })?;
 
-                Some(TransactionEvent::AccountBeforeForeignLoad { foreign_account_id: account_id })
+                // The advice provider already has the account if the transaction inputs contain
+                // it or if it was loaded before, so it is only requested from the host if it's
+                // missing.
+                let account_id_key = AccountIdKey::from(account_id).as_word();
+                if process.advice_provider().get_mapped_values(&account_id_key).is_some() {
+                    None
+                } else {
+                    Some(TransactionEvent::AccountBeforeForeignLoad {
+                        foreign_account_id: account_id,
+                    })
+                }
             },
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset
