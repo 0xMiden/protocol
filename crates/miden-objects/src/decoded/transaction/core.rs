@@ -35,6 +35,7 @@ impl BuildUnchecked for TransactionHeader {
             self.final_state_commitment,
             input_notes,
             output_notes,
+            miden_protocol::Word::empty(),
         )?;
         if header.id() != transmitted {
             return Err(TransactionHeaderBuildError::IdMismatch {
@@ -81,14 +82,23 @@ impl crate::BuildUnchecked for ProvenTransaction {
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         let inputs = self.input_notes.build_unchecked()?;
         let outputs = self.output_notes.verify()?;
+        let account_update = self.account_update.verify()?;
+        let log_details = if account_update.account_id().is_public() {
+            miden_protocol::transaction::TransactionLogDetails::Public(Default::default())
+        } else {
+            miden_protocol::transaction::TransactionLogDetails::Private(
+                miden_protocol::Word::empty(),
+            )
+        };
         Ok(Self::Output::new(
-            self.account_update.verify()?,
+            account_update,
             inputs,
             outputs,
             unwrap_infallible(self.reference_block_num.verify()),
             self.reference_block_commitment,
             unwrap_infallible(self.expiration_block_num.verify()),
             self.proof,
+            log_details,
         )?)
     }
 }

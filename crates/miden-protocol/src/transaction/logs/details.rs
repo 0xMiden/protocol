@@ -10,7 +10,7 @@ use crate::{Felt, Word};
 /// only their commitment. This applies to all transaction logs, including those emitted by
 /// foreign accounts during FPI.
 ///
-/// Validating a private transaction log commitment requires the transaction proof.
+/// Validating a private transaction logs commitment requires the transaction proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionLogDetails {
     /// A commitment to the private transaction logs.
@@ -41,8 +41,6 @@ impl TransactionLogDetails {
     ///
     /// `native_account` is the account against which the transaction executes. A public foreign
     /// account emitting transaction logs during FPI does not make a private transaction public.
-    // Used by ProvenTransaction in the kernel integration PR.
-    #[allow(dead_code)]
     pub(crate) fn validate_visibility(
         &self,
         native_account: AccountId,

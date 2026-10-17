@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_core::deferred::PrecompileWitness;
 
-use super::{InputNote, ToInputNoteCommitments};
+use super::{InputNote, ToInputNoteCommitments, TransactionLogDetails};
 use crate::Word;
 use crate::account::{AccountUpdateDetails, validate_new_public_account};
 use crate::block::BlockNumber;
@@ -64,6 +64,7 @@ pub struct ProvenTransaction {
 
     /// A STARK proof that attests to the correct execution of the transaction.
     proof: ExecutionProof,
+    log_details: TransactionLogDetails,
 }
 
 impl ProvenTransaction {
@@ -82,6 +83,7 @@ impl ProvenTransaction {
     ///   [`MAX_OUTPUT_NOTES_PER_TX`](crate::constants::MAX_OUTPUT_NOTES_PER_TX).
     /// - The vector of output notes contains duplicates.
     /// - The set of input and output notes contains the same note.
+    /// - Log visibility does not match the native account.
     /// - The transaction is empty, which is the case if the account state is unchanged or the
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
@@ -94,6 +96,7 @@ impl ProvenTransaction {
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
+        log_details: TransactionLogDetails,
     ) -> Result<Self, ProvenTransactionError> {
         let input_notes: Vec<InputNoteCommitment> =
             input_notes.into_iter().map(Into::into).collect();
@@ -112,11 +115,18 @@ impl ProvenTransaction {
             ref_block_commitment,
             expiration_block_num,
             proof,
+            log_details,
         )
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns complete public transaction logs or the private transaction logs commitment
+    /// included in the transaction proof.
+    pub fn log_details(&self) -> &TransactionLogDetails {
+        &self.log_details
+    }
 
     /// Returns unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {
@@ -199,6 +209,7 @@ impl ProvenTransaction {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - Log visibility does not match the native account.
     /// - The transaction is empty (account state unchanged and no input notes).
     /// - The same note ID appears as both an unauthenticated input and an output (circular
     ///   dependency, see <https://github.com/0xMiden/protocol/issues/2796>).
@@ -212,7 +223,12 @@ impl ProvenTransaction {
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
+        log_details: TransactionLogDetails,
     ) -> Result<Self, ProvenTransactionError> {
+        log_details
+            .validate_visibility(account_update.account_id())
+            .map_err(ProvenTransactionError::LogVisibilityMismatch)?;
+
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
         if account_update.initial_state_commitment() == account_update.final_state_commitment()
@@ -236,9 +252,10 @@ impl ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
+            log_details.commitment(),
         );
-
         Ok(Self {
+            log_details,
             id,
             account_update,
             input_notes,

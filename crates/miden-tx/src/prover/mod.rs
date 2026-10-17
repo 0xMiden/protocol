@@ -86,7 +86,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (account_header, output_notes, _) = tx_outputs.into_parts();
+        let (account_header, output_notes, log_details) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
         let output_notes: Vec<_> = output_notes
@@ -122,6 +122,7 @@ impl LocalTransactionProver {
             ref_block_commitment,
             expiration_block_num,
             proof,
+            log_details,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
@@ -188,10 +189,14 @@ impl LocalTransactionProver {
             .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
 
         // Extract transaction outputs and process transaction data.
-        let (account_patch, input_notes, output_notes) = host.into_parts();
-        let tx_outputs =
-            TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-                .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
+        let (account_patch, input_notes, output_notes, logs) = host.into_parts();
+        let tx_outputs = TransactionKernel::from_transaction_parts(
+            &stack_outputs,
+            &advice_inputs,
+            output_notes,
+            logs,
+        )
+        .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
 
         self.build_proven_transaction(
             &input_notes,

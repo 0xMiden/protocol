@@ -370,15 +370,20 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         account_patch,
         _input_notes,
         output_notes,
+        logs,
         accessed_foreign_account_code,
         generated_signatures,
         tx_progress,
         foreign_account_slot_names,
     ) = host.into_parts();
 
-    let tx_outputs =
-        TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-            .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
+    let tx_outputs = TransactionKernel::from_transaction_parts(
+        &stack_outputs,
+        &advice_inputs,
+        output_notes,
+        logs,
+    )
+    .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
     let patch_commitment = account_patch.to_commitment();
     if tx_outputs.account_patch_commitment() != patch_commitment {

@@ -1,6 +1,6 @@
-use alloc::format;
 use alloc::vec::Vec;
 
+use super::TransactionLogs;
 use crate::account::AccountDelta;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
@@ -22,11 +22,17 @@ use crate::{Felt, WORD_SIZE, Word};
 ///
 /// These are the account delta, the consumed and created notes, the block the summary binds (see
 /// [`TransactionSummaryMetadata`]) together with that block's commitment, the transaction's
-/// expiration block delta and the user-defined parameters (see [`TransactionSummaryUserParams`]).
+/// expiration block delta, transaction logs, and user-defined parameters (see
+/// [`TransactionSummaryUserParams`]).
 ///
 /// Because this data is intended to be signed, the user-defined parameters give an account's
 /// authentication procedure a way to bind arbitrary additional data to that signature, for example
 /// a salt providing replay protection or a maximum fee.
+///
+/// # Privacy
+///
+/// Contains complete transaction logs for the signer, including private logs. Derived [`Debug`]
+/// output includes this data as well.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
     account_delta: AccountDelta,
@@ -36,6 +42,7 @@ pub struct TransactionSummary {
     block_commitment: Word,
     expiration_delta: u16,
     user_params: TransactionSummaryUserParams,
+    logs: TransactionLogs,
 }
 
 impl TransactionSummary {
@@ -54,9 +61,9 @@ impl TransactionSummary {
 
     /// The number of elements in the preimage of a [`TransactionSummary`] commitment, i.e. the
     /// length of the vector returned by [`TransactionSummary::to_elements`]: the version, the
-    /// metadata element, the user parameters and the four commitment words.
+    /// metadata element, the user parameters and the five commitment words.
     pub const NUM_ELEMENTS: usize =
-        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 4 * WORD_SIZE;
+        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 5 * WORD_SIZE;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -73,6 +80,7 @@ impl TransactionSummary {
         block_commitment: Word,
         expiration_delta: u16,
         user_params: TransactionSummaryUserParams,
+        logs: TransactionLogs,
     ) -> Self {
         Self {
             account_delta,
@@ -82,11 +90,22 @@ impl TransactionSummary {
             block_commitment,
             expiration_delta,
             user_params,
+            logs,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the complete transaction logs available to the signer.
+    pub fn logs(&self) -> &TransactionLogs {
+        &self.logs
+    }
+
+    /// Returns the commitment to the transaction logs authorized by this signing summary.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs.commitment()
+    }
 
     /// Returns the account delta of this transaction summary.
     pub fn account_delta(&self) -> &AccountDelta {
@@ -138,7 +157,7 @@ impl TransactionSummary {
     ///     [version, metadata, user_param0, user_param1],
     ///     [user_param2, user_param3, user_param4, user_param5],
     ///     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-    ///     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT,
+    ///     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT,
     /// ]
     /// ```
     ///
@@ -162,10 +181,10 @@ impl TransactionSummary {
     /// preimage of a transaction summary commitment.
     ///
     /// `elements` must be a full preimage as returned by [`TransactionSummary::to_elements`]. The
-    /// four commitments are not decoded because they cannot be inverted: a caller reconstructing a
-    /// summary from a preimage must rebuild the committed data from its own state, pass it to
-    /// [`TransactionSummary::new`] alongside the decoded values and check the result against
-    /// [`TransactionSummary::to_commitment`].
+    /// five commitments are not decoded because they cannot be inverted. A caller reconstructing a
+    /// summary must rebuild the committed data, including transaction logs, from its own state,
+    /// pass it to [`Self::new`], and check the resulting [`Self::to_commitment`] against the
+    /// expected commitment.
     ///
     /// # Errors
     ///
@@ -218,50 +237,8 @@ impl SequentialCommit for TransactionSummary {
         elements.extend_from_slice(self.input_notes.commitment().as_elements());
         elements.extend_from_slice(self.output_notes.commitment().as_elements());
         elements.extend_from_slice(self.block_commitment.as_elements());
+        elements.extend_from_slice(self.logs_commitment().as_elements());
         elements
-    }
-}
-
-impl Serializable for TransactionSummary {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        Self::VERSION.write_into(target);
-        self.account_delta.write_into(target);
-        self.input_notes.write_into(target);
-        self.output_notes.write_into(target);
-        self.block_number.write_into(target);
-        self.block_commitment.write_into(target);
-        self.expiration_delta.write_into(target);
-        self.user_params.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionSummary {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let version: u8 = source.read()?;
-        if version != Self::VERSION {
-            return Err(DeserializationError::InvalidValue(format!(
-                "transaction summary version is {version} but only version {} is supported",
-                Self::VERSION
-            )));
-        }
-
-        let account_delta = source.read()?;
-        let input_notes = source.read()?;
-        let output_notes = source.read()?;
-        let block_number = source.read()?;
-        let block_commitment = source.read()?;
-        let expiration_delta = source.read()?;
-        let user_params = source.read()?;
-
-        Ok(Self::new(
-            account_delta,
-            input_notes,
-            output_notes,
-            block_number,
-            block_commitment,
-            expiration_delta,
-            user_params,
-        ))
     }
 }
 
@@ -431,6 +408,7 @@ mod tests {
             Word::from([9u32, 10, 11, 12].map(Felt::from)),
             EXPIRATION_DELTA,
             TransactionSummaryUserParams::new(USER_PARAMS.map(Felt::from)),
+            Default::default(),
         )
     }
 
@@ -457,16 +435,6 @@ mod tests {
         let (metadata, user_params) = TransactionSummary::try_params_from_elements(&elements)?;
         assert_eq!(metadata, summary.metadata());
         assert_eq!(user_params, summary.user_params());
-
-        Ok(())
-    }
-
-    #[test]
-    fn tx_summary_serde_roundtrip() -> anyhow::Result<()> {
-        let summary = mock_summary();
-
-        let deserialized = TransactionSummary::read_from_bytes(&summary.to_bytes())?;
-        assert_eq!(deserialized, summary);
 
         Ok(())
     }

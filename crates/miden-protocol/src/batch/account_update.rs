@@ -248,7 +248,14 @@ mod tests {
     use crate::testing::dummy_execution_proof;
     use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::testing::storage::AccountStoragePatchBuilder;
-    use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
+    use crate::transaction::{
+        InputNoteCommitment,
+        OutputNote,
+        ProvenTransaction,
+        TransactionLogDetails,
+        TransactionLogs,
+        TxAccountUpdate,
+    };
     use crate::utils::serde::Serializable;
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, Felt, Word};
 
@@ -297,6 +304,7 @@ mod tests {
             Word::empty(),
             BlockNumber::from(2),
             dummy_execution_proof(),
+            TransactionLogDetails::Public(TransactionLogs::default()),
         )
         .unwrap()
     }

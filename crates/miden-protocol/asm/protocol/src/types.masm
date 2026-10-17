@@ -2,6 +2,7 @@
 pub use {
     AccountId,
     StorageSlotId,
+    LogTopic,
     AssetId,
     NoteArgs,
     NoteSerialNumber,
