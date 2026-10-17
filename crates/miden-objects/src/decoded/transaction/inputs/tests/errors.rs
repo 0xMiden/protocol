@@ -129,6 +129,26 @@ fn foreign_slot_names_reject_duplicate_ids() {
 }
 
 #[test]
+fn signatures_reject_duplicate_keys() {
+    let mut message = common::dummy_transaction_inputs_message();
+    let v1 = common::transaction_inputs_v1_mut(&mut message);
+    let duplicate = v1.signatures[0].clone();
+    v1.signatures.push(duplicate);
+
+    let error = message
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .map_err(ConversionError::new)
+        .unwrap_err();
+
+    assert_matches!(
+        error_source::<crate::decoded::transaction::TransactionInputsError>(&error),
+        Some(crate::decoded::transaction::TransactionInputsError::DuplicateSignature(_))
+    );
+}
+
+#[test]
 fn transaction_inputs_reject_an_inconsistent_protocol_config() {
     let mut message = common::dummy_transaction_inputs_message();
     common::transaction_inputs_v1_mut(&mut message).protocol_config =

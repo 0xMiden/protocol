@@ -56,6 +56,7 @@
 - [BREAKING] Removed `TransactionInputs` and `ExecutedTransaction` serialization implementations ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
 - [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
 - [BREAKING] `TransactionInputs` now stores the note scripts the executor resolved during execution ([#4030](https://github.com/0xMiden/protocol/pull/4030)).
+- [BREAKING] `TransactionInputs` now stores the signatures generated during execution, keyed by the new `SignatureKey` ([#4031](https://github.com/0xMiden/protocol/pull/4031)).
 
 ## v0.17.0 (2026-10-01)
 

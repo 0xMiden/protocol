@@ -63,6 +63,7 @@ fn test_read_foreign_account_inputs_missing_data() {
         foreign_account_code: Vec::new(),
         foreign_account_slot_names: BTreeMap::new(),
         note_scripts: BTreeMap::new(),
+        signatures: BTreeMap::new(),
     };
 
     // Try to read foreign account that doesn't exist in advice map.
@@ -146,6 +147,7 @@ fn test_read_foreign_account_inputs_with_storage_data() {
         foreign_account_code: vec![code],
         foreign_account_slot_names,
         note_scripts: BTreeMap::new(),
+        signatures: BTreeMap::new(),
     };
 
     // Try to read foreign account with storage data.
@@ -257,6 +259,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
         foreign_account_code: vec![code],
         foreign_account_slot_names: BTreeMap::new(),
         note_scripts: BTreeMap::new(),
+        signatures: BTreeMap::new(),
     };
 
     // Test reading foreign account inputs.

@@ -1,8 +1,12 @@
 use alloc::string::String;
 
+use miden_protocol::Word;
+use miden_protocol::account::auth::{Signature, SignatureKey};
 use miden_protocol::transaction::{InputNote, InputNotes, TransactionInputs};
+use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
+use crate::proto::transaction::auth_signature::Signature as ProtoSignature;
 
 impl From<&InputNote> for proto::transaction::InputNote {
     fn from(value: &InputNote) -> Self {
@@ -32,6 +36,31 @@ impl From<&InputNotes<InputNote>> for proto::transaction::InputNotes {
     }
 }
 
+impl From<&Signature> for proto::transaction::AuthSignature {
+    fn from(signature: &Signature) -> Self {
+        let signature = match signature {
+            Signature::Falcon512Poseidon2(signature) => {
+                ProtoSignature::Falcon512Poseidon2(signature.to_bytes())
+            },
+            Signature::EcdsaK256Keccak(signature) => {
+                ProtoSignature::EcdsaK256Keccak(signature.to_bytes())
+            },
+        };
+
+        Self { signature: Some(signature) }
+    }
+}
+
+impl From<(&SignatureKey, &Signature)> for proto::transaction::SignatureEntry {
+    fn from((key, signature): (&SignatureKey, &Signature)) -> Self {
+        Self {
+            pub_key_commitment: Some(Word::from(key.pub_key_commitment()).into()),
+            message: Some(key.message().into()),
+            signature: Some(signature.into()),
+        }
+    }
+}
+
 impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
     fn from(value: &TransactionInputs) -> Self {
         Self {
@@ -52,6 +81,7 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
                 })
                 .collect(),
             note_scripts: value.note_scripts().values().map(Into::into).collect(),
+            signatures: value.signatures().iter().map(Into::into).collect(),
         }
     }
 }

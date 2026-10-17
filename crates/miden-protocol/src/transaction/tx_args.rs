@@ -4,10 +4,10 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::script::TransactionScript;
-use super::{Felt, Hasher, Word};
+use super::{Felt, Word};
 use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
-use crate::account::auth::{PublicKeyCommitment, Signature};
+use crate::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
     ByteReader,
@@ -206,16 +206,16 @@ impl TransactionArgs {
     ///
     /// The advice inputs' map is extended with the following key:
     ///
-    /// - hash(pub_key, message) |-> signature (encoded for VM execution).
+    /// - [`SignatureKey::to_advice_map_key`] |-> signature (encoded for VM execution).
     pub fn add_signature(
         &mut self,
         pub_key: PublicKeyCommitment,
         message: Word,
         signature: Signature,
     ) {
-        let pk_word: Word = pub_key.into();
+        let signature_key = SignatureKey::new(pub_key, message);
         self.advice_inputs.extend(AdviceInputs::default().with_map([(
-            Hasher::merge(&[pk_word, message]),
+            signature_key.to_advice_map_key(),
             signature.to_encoded_signature(message),
         )]));
     }

@@ -1,6 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
 
+use miden_protocol::account::auth::{Signature, SignatureKey};
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
@@ -37,6 +38,7 @@ use miden_protocol::transaction::{
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
 
+use crate::decoded::account::test_utils::auth_secret_keys;
 use crate::proto;
 
 pub fn dummy_word(value: u32) -> Word {
@@ -100,6 +102,18 @@ fn dummy_advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) ->
         .with_stack(stack)
         .with_map([(dummy_word(map_key), vec![Felt::from(map_key + 1)])])
         .with_merkle_store(store)
+}
+
+/// Returns one valid signature per authentication scheme.
+pub fn dummy_signatures() -> BTreeMap<SignatureKey, Signature> {
+    auth_secret_keys()
+        .into_iter()
+        .map(|secret_key| {
+            let message = dummy_word(70);
+            let key = SignatureKey::new(secret_key.public_key().to_commitment(), message);
+            (key, secret_key.sign(message))
+        })
+        .collect()
 }
 
 fn dummy_block_header(
@@ -193,6 +207,7 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .foreign_account_code(foreign_account_code)
         .foreign_account_slot_names(foreign_account_slot_names)
         .note_scripts(vec![NoteScript::mock()])
+        .signatures(dummy_signatures())
         .build()
         .unwrap()
 }
