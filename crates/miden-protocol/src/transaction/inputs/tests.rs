@@ -1,4 +1,5 @@
 use alloc::vec;
+use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
@@ -118,6 +119,8 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         None,
         Word::new([Felt::from(1_u32); 4]),
         BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
         AdviceInputs::default(),
         Word::new([Felt::from(2_u32); 4]),
         None,
