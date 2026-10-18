@@ -46,9 +46,11 @@ const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
 const TX_EVENTS_RS_FILE: &str = "transaction_events.rs";
 const TX_KERNEL_ERRORS_RS_FILE: &str = "tx_kernel_errors.rs";
 const PROTOCOL_LIB_ERRORS_RS_FILE: &str = "protocol_errors.rs";
+const BATCH_KERNEL_ERRORS_RS_FILE: &str = "batch_kernel_errors.rs";
 
 const TX_KERNEL_ERRORS_ARRAY_NAME: &str = "TX_KERNEL_ERRORS";
 const PROTOCOL_LIB_ERRORS_ARRAY_NAME: &str = "PROTOCOL_LIB_ERRORS";
+const BATCH_KERNEL_ERRORS_ARRAY_NAME: &str = "BATCH_KERNEL_ERRORS";
 
 const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
     "KERNEL",
@@ -372,6 +374,22 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
             is_crate_local: true,
         },
         errors,
+    )?;
+
+    // Batch kernel errors
+    // ------------------------------------------
+
+    let batch_kernel_dir = asm_source_dir.join(ASM_BATCH_KERNEL_DIR);
+    let batch_kernel_errors =
+        extract_all_masm_errors(&batch_kernel_dir).context("failed to extract all masm errors")?;
+
+    generate_error_file(
+        ErrorModule {
+            file_path: Path::new(build_dir).join(BATCH_KERNEL_ERRORS_RS_FILE),
+            array_name: BATCH_KERNEL_ERRORS_ARRAY_NAME,
+            is_crate_local: true,
+        },
+        batch_kernel_errors,
     )?;
 
     Ok(())

@@ -12,6 +12,7 @@ use crate::transaction::{
     InputNotes,
     ProvenTransaction,
     RawOutputNotes,
+    TransactionCommitments,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -90,12 +91,12 @@ impl TransactionHeader {
         let input_notes_commitment = input_notes.commitment();
         let output_notes_commitment = RawOutputNotes::compute_commitment(output_notes.iter());
 
-        let id = TransactionId::new(
+        let id = TransactionId::new(TransactionCommitments::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes_commitment,
             output_notes_commitment,
-        );
+        ));
 
         Ok(Self {
             id,
@@ -263,7 +264,12 @@ mod tests {
     use crate::errors::TransactionHeaderError;
     use crate::note::Note;
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
-    use crate::transaction::{InputNoteCommitment, InputNotes, TransactionId};
+    use crate::transaction::{
+        InputNoteCommitment,
+        InputNotes,
+        TransactionCommitments,
+        TransactionId,
+    };
     use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 
     fn account_id() -> AccountId {
@@ -337,7 +343,12 @@ mod tests {
     fn deserialization_rejects_duplicate_output_notes() {
         let note = Note::mock_noop(Word::empty());
         let invalid_header = TransactionHeader::new_unchecked(
-            TransactionId::new(Word::empty(), Word::empty(), Word::empty(), Word::empty()),
+            TransactionId::new(TransactionCommitments::new(
+                Word::empty(),
+                Word::empty(),
+                Word::empty(),
+                Word::empty(),
+            )),
             account_id(),
             Word::from([1_u32, 2, 3, 4]),
             Word::from([5_u32, 6, 7, 8]),

@@ -1,4 +1,11 @@
-use super::{ExecutedTransaction, InputNote, InputNotes, RawOutputNotes, TransactionId};
+use super::{
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    RawOutputNotes,
+    TransactionCommitments,
+    TransactionId,
+};
 use crate::Word;
 use crate::account::AccountPatch;
 use crate::block::BlockNumber;
@@ -38,12 +45,12 @@ impl TransactionEffects {
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
     ) -> Self {
-        let transaction_id = TransactionId::new(
+        let transaction_id = TransactionId::new(TransactionCommitments::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
-        );
+        ));
 
         Self {
             transaction_id,
