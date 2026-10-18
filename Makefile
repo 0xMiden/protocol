@@ -41,6 +41,10 @@ format-check: ## Runs Format using nightly toolchain but only in check mode
 shear: ## Runs cargo-shear to find unused or misplaced dependencies
 	cargo shear
 
+.PHONY: deny
+deny: ## Checks dependency advisories, licenses, bans, and sources
+	cargo deny check
+
 .PHONY: typos-check
 typos-check: ## Runs spellchecker
 	typos
@@ -54,7 +58,7 @@ toml-check: ## Runs Format for all TOML files but only in check mode
 	taplo fmt --check
 
 .PHONY: lint
-lint: ## Runs all linting tasks at once (Clippy, fixing, formatting, typos)
+lint: ## Runs Clippy, formatting, spelling, and dependency checks
 	@$(MAKE) format
 	@$(MAKE) fix
 	@$(MAKE) clippy
@@ -62,6 +66,7 @@ lint: ## Runs all linting tasks at once (Clippy, fixing, formatting, typos)
 	@$(MAKE) typos-check
 	@$(MAKE) toml
 	@$(MAKE) shear
+	@$(MAKE) deny
 
 .PHONY: hooks-test
 hooks-test: ## Runs the pytest suite for the python hooks under .claude/hooks/
@@ -190,9 +195,10 @@ check-tools: ## Checks if development tools are installed
 	@command -v cargo nextest >/dev/null 2>&1 && echo "[OK] cargo-nextest is installed" || echo "[MISSING] cargo-nextest is not installed (run: make install-tools)"
 	@command -v taplo >/dev/null 2>&1 && echo "[OK] taplo is installed" || echo "[MISSING] taplo is not installed (run: make install-tools)"
 	@command -v cargo-shear >/dev/null 2>&1 && echo "[OK] cargo-shear is installed" || echo "[MISSING] cargo-shear is not installed (run: make install-tools)"
+	@command -v cargo-deny >/dev/null 2>&1 && echo "[OK] cargo-deny is installed" || echo "[MISSING] cargo-deny is not installed (run: make install-tools)"
 
 .PHONY: install-tools
-install-tools: ## Installs development tools required by the Makefile (mdbook, typos, nextest, taplo, shear)
+install-tools: ## Installs development tools required by the Makefile (mdbook, typos, nextest, taplo, shear, deny)
 	@echo "Installing development tools..."
 	@if ! command -v node >/dev/null 2>&1; then \
 		echo "Node.js not found. Please install Node.js from https://nodejs.org/ or using your package manager"; \
@@ -205,6 +211,7 @@ install-tools: ## Installs development tools required by the Makefile (mdbook, t
 	cargo install cargo-nextest --locked
 	cargo install taplo-cli --locked
 	cargo install cargo-shear --locked
+	cargo install cargo-deny --locked
 	@echo "Development tools installation complete!"
 
 # -- documentation ---------------------------------------------------------------------------------
