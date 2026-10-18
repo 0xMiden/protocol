@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
 use miden_protocol::account::AccountId;
+use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::{
@@ -20,8 +21,11 @@ use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
 use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
+mod bundle;
 mod checker_utils;
+mod sponsorship;
 
+use bundle::{NoteBundler, NoteBundles};
 pub use checker_utils::{
     FailedNote,
     MAX_NUM_CHECKER_NOTES,
@@ -29,7 +33,7 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
-use checker_utils::{NoteBundle, handle_epilogue_error};
+pub use sponsorship::SponsorshipRejection;
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -39,9 +43,12 @@ use checker_utils::{NoteBundle, handle_epilogue_error};
 /// The check is performed using the [NoteConsumptionChecker::check_notes_consumability] procedure.
 /// Essentially runs the transaction to make sure that provided input notes could be consumed by the
 /// account.
-pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor>(
-    &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
-);
+pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor> {
+    tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
+    /// The asset the target account collects fees in, which every FEE_SPONSORSHIP note it consumes
+    /// has to carry.
+    collected_fee_asset_id: Option<AssetId>,
+}
 
 impl<'a, STORE, AUTH, EXEC> NoteConsumptionChecker<'a, STORE, AUTH, EXEC>
 where
@@ -50,8 +57,23 @@ where
     EXEC: ProgramExecutor,
 {
     /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
+    ///
+    /// The checker assumes the checked account collects no fees, such as a regular wallet, and so
+    /// leaves the assets of FEE_SPONSORSHIP notes unchecked. Use [`Self::with_fee_asset_id`] for an
+    /// account that collects fees.
     pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>) -> Self {
-        NoteConsumptionChecker(tx_executor)
+        NoteConsumptionChecker {
+            tx_executor,
+            collected_fee_asset_id: None,
+        }
+    }
+
+    /// Sets the asset the checked account collects fees in, which every FEE_SPONSORSHIP note it
+    /// consumes has to carry.
+    #[must_use]
+    pub fn with_fee_asset_id(mut self, fee_asset_id: AssetId) -> Self {
+        self.collected_fee_asset_id = Some(fee_asset_id);
+        self
     }
 
     /// Checks whether some set of the provided input notes could be consumed by the provided
@@ -63,10 +85,10 @@ where
     /// Because of the runtime complexity involved in this function, a limited range of
     /// [`MAX_NUM_CHECKER_NOTES`] input notes is allowed.
     ///
-    /// If some notes succeed and others fail, the failed notes are removed from the candidate set
-    /// and the remaining notes (successful + unattempted) are retried in the next iteration. This
-    /// process continues until either all remaining notes succeed or no notes can be successfully
-    /// executed
+    /// If some notes succeed and others fail, the failed notes are removed from the candidate set,
+    /// together with the notes bound to them, and the remaining notes (successful + unattempted)
+    /// are retried in the next iteration. This process continues until either all remaining notes
+    /// succeed or no notes can be successfully executed.
     ///
     /// For example, given notes A, B, C, D, E, the execution flow would be as follows:
     /// - Try [A, B, C, D, E] → A, B succeed, C fails → Remove C, try again.
@@ -79,6 +101,10 @@ where
     /// together, such as a feature note and the FEE_SPONSORSHIP notes bound to it, are grouped and
     /// retried as a unit.
     ///
+    /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
+    /// anything is executed: one carrying an asset other than the account's fee asset, and one
+    /// whose feature note is absent and which the account may not reclaim.
+    ///
     /// Returns a list of successfully consumed notes and a list of failed notes.
     ///
     /// # Errors
@@ -88,28 +114,34 @@ where
         &self,
         target_account_id: AccountId,
         block_ref: BlockNumber,
-        mut notes: Vec<Note>,
+        notes: Vec<Note>,
         tx_args: TransactionArgs,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let num_notes = notes.len();
         if num_notes == 0 || num_notes > MAX_NUM_CHECKER_NOTES {
             return Err(NoteCheckerError::InputNoteCountOutOfRange(num_notes));
         }
-        // Ensure standard notes are ordered first.
-        notes.sort_unstable_by_key(|note| {
-            StandardNote::from_script_root(note.script().root()).is_none()
-        });
 
-        let notes = InputNotes::from_unauthenticated_notes(notes)
+        // Group the notes into bundles, dropping the ones that can be ruled out without executing
+        // anything.
+        let (bundles, rejected) =
+            NoteBundler::new(target_account_id, block_ref, self.collected_fee_asset_id)
+                .bundle(&notes);
+        if bundles.is_empty() {
+            return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
+        }
+
+        let input_notes = InputNotes::from_unauthenticated_notes(bundles.to_notes())
             .map_err(NoteCheckerError::TransactionInputs)?;
+
         let tx_inputs = self
-            .0
-            .prepare_tx_inputs(target_account_id, block_ref, notes, tx_args)
+            .tx_executor
+            .prepare_tx_inputs(target_account_id, block_ref, input_notes, tx_args)
             .await
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // Attempt to find an executable set of notes.
-        self.find_executable_notes_by_elimination(tx_inputs).await
+        self.find_executable_notes_by_elimination(tx_inputs, bundles, rejected).await
     }
 
     /// Checks whether the provided input note could be consumed by the provided account by
@@ -119,7 +151,11 @@ where
     /// the transaction context and returns the [`NoteConsumptionStatus`] result accordingly.
     ///
     /// This function first applies the static analysis of the provided note, and if it doesn't
-    /// reveal any errors next it tries to execute the transaction. Based on the execution result,
+    /// reveal any errors next it tries to execute the transaction. A FEE_SPONSORSHIP note is
+    /// analysed as a note whose feature note is absent, since it is the only input note, and so
+    /// against the rules of its reclaim path.
+    ///
+    /// Based on the execution result,
     /// it either returns a [`NoteCheckerError`] or the [`NoteConsumptionStatus`]: depending on
     /// whether the execution succeeded, failed in the prologue, during the note execution process
     /// or in the epilogue.
@@ -140,7 +176,7 @@ where
 
         // Prepare transaction inputs.
         let mut tx_inputs = self
-            .0
+            .tx_executor
             .prepare_tx_inputs(
                 target_account_id,
                 block_ref,
@@ -182,35 +218,37 @@ where
 
     /// Finds a set of executable notes and eliminates failed notes from the list in the process.
     ///
+    /// When a note fails, the whole bundle it belongs to is eliminated: the failed note is blamed,
+    /// and the rest of its bundle is reported as its collateral.
+    ///
     /// The result contains some combination of the input notes partitioned by whether they
-    /// succeeded or failed to execute.
+    /// succeeded or failed to execute. `failed_notes` seeds the failures reported, so that notes
+    /// already ruled out before any execution are accounted for in the result.
     async fn find_executable_notes_by_elimination(
         &self,
         mut tx_inputs: TransactionInputs,
+        mut bundles: NoteBundles,
+        mut failed_notes: Vec<FailedNote>,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
-        let mut candidate_notes = tx_inputs
-            .input_notes()
-            .iter()
-            .map(|note| note.clone().into_note())
-            .collect::<Vec<_>>();
-        let mut failed_notes = Vec::new();
-
-        // Attempt to execute notes in a loop. Reduce the set of notes based on failures until
-        // either a set of notes executes without failure or the set of notes cannot be
-        // further reduced.
+        // Attempt to execute notes in a loop. Reduce the set of bundles based on failures until
+        // either a set of notes executes without failure or the set of bundles cannot be further
+        // reduced.
         loop {
-            // Execute the candidate notes.
+            // Execute the notes of the candidate bundles.
             //
             // We can safely use unchecked builder for the candidate notes here since the provided
             // notes were already validated previously in the `check_notes_consumability` via the
             // `from_unauthenticated_notes` constructor.
             tx_inputs.set_input_notes(InputNotes::new_unchecked(
-                candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
+                bundles.to_notes().into_iter().map(InputNote::unauthenticated).collect(),
             ));
+
             match self.try_execute_notes(&mut tx_inputs).await {
                 Ok(cycle_counts) => {
-                    // A full set of successful notes has been found.
-                    let successful = candidate_notes
+                    // A full set of successful notes has been found. The bundles hold the notes in
+                    // the order they were executed in, so they line up with the cycle counts.
+                    let successful = bundles
+                        .into_notes()
                         .into_iter()
                         .zip(cycle_counts)
                         .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
@@ -223,10 +261,20 @@ where
                     failed_note_cycle_count,
                     ..
                 }) => {
-                    // SAFETY: Failed note index is in bounds of the candidate notes.
-                    let failed_note = candidate_notes.remove(failed_note_index);
-                    failed_notes.push(FailedNote::new(
-                        failed_note,
+                    // The rest of the failed note's bundle cannot be consumed without it, so the
+                    // whole bundle is eliminated.
+                    let failed_note_id =
+                        tx_inputs.input_notes().get_note(failed_note_index).note().id();
+                    let bundle = bundles
+                        .remove_containing(failed_note_id)
+                        .expect("every candidate note belongs to a bundle");
+                    let blamed_idx = bundle
+                        .notes()
+                        .iter()
+                        .position(|note| note.id() == failed_note_id)
+                        .expect("the bundle holds the failed note");
+                    failed_notes.extend(bundle.failed_notes(
+                        blamed_idx,
                         NoteFailure::Blamed {
                             error,
                             num_cycles: failed_note_cycle_count,
@@ -234,18 +282,14 @@ where
                     ));
 
                     // All possible candidate combinations have been attempted.
-                    if candidate_notes.is_empty() {
+                    if bundles.is_empty() {
                         return Ok(NoteConsumptionInfo::new(Vec::new(), failed_notes));
                     }
                     // Continue and process the next set of candidates.
                 },
                 Err(TransactionCheckerError::EpilogueExecution { .. }) => {
                     let consumption_info = self
-                        .find_largest_executable_combination(
-                            candidate_notes,
-                            failed_notes,
-                            tx_inputs,
-                        )
+                        .find_largest_executable_combination(bundles, failed_notes, tx_inputs)
                         .await;
                     return Ok(consumption_info);
                 },
@@ -262,16 +306,15 @@ where
     /// Attempts to find the largest possible combination of notes that can execute successfully
     /// together.
     ///
-    /// The notes are first grouped into [`NoteBundle`]s, and the search grows a known-good set one
-    /// bundle at a time: each round appends every remaining bundle to the accepted set in turn and
-    /// keeps the first bundle that lets the whole set pass, until a round adds nothing.
+    /// The search grows a known-good set one bundle at a time: each round appends every remaining
+    /// bundle to the accepted set in turn and keeps the first bundle that lets the whole set pass,
+    /// until a round adds nothing.
     async fn find_largest_executable_combination(
         &self,
-        remaining_notes: Vec<Note>,
+        mut remaining_bundles: NoteBundles,
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        let mut remaining_bundles = NoteBundle::group(remaining_notes);
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();
@@ -281,8 +324,9 @@ where
         loop {
             let mut extended = false;
 
-            for idx in 0..remaining_bundles.len() {
-                let bundle_notes = remaining_bundles[idx].notes().to_vec();
+            for idx in 0..remaining_bundles.bundles().len() {
+                let bundle = remaining_bundles.bundles()[idx].clone();
+                let bundle_notes = bundle.notes().to_vec();
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 
@@ -292,6 +336,7 @@ where
                 tx_inputs.set_input_notes(InputNotes::new_unchecked(
                     candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
                 ));
+
                 match self.try_execute_notes(&mut tx_inputs).await {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or
@@ -299,13 +344,16 @@ where
                         for note in bundle_notes {
                             failed_note_index.remove(&note.id());
                         }
+
                         // Store the cycle counts from the latest successful execution.
                         successful_cycle_counts = cycle_counts;
+
                         // This combination succeeded; commit it and drop the bundle from the
                         // remaining set.
                         successful_notes = candidate_notes;
                         remaining_bundles.remove(idx);
                         extended = true;
+
                         break;
                     },
                     Err(error) => {
@@ -328,29 +376,16 @@ where
                             _ => (0, None),
                         };
 
-                        let blamed_note = bundle_notes[blamed_idx].clone();
-                        let blamed_id = blamed_note.id();
-
                         // Record every note of the bundle (overwriting previous failures for the
                         // relevant notes), so the reported notes always account for all inputs.
                         // Only the blamed note owns the error; the rest failed with its bundle.
-                        failed_note_index.insert(
-                            blamed_id,
-                            FailedNote::new(
-                                blamed_note,
-                                NoteFailure::Blamed { error: error.into(), num_cycles },
-                            ),
+                        let failed_bundle = bundle.failed_notes(
+                            blamed_idx,
+                            NoteFailure::Blamed { error: error.into(), num_cycles },
                         );
-                        for (note_idx, note) in bundle_notes.iter().enumerate() {
-                            if note_idx != blamed_idx {
-                                failed_note_index.insert(
-                                    note.id(),
-                                    FailedNote::new(
-                                        note.clone(),
-                                        NoteFailure::Collateral { blamed_by: blamed_id },
-                                    ),
-                                );
-                            }
+
+                        for failed_note in failed_bundle {
+                            failed_note_index.insert(failed_note.note().id(), failed_note);
                         }
                     },
                 }
@@ -388,15 +423,15 @@ where
             return Ok(Vec::new());
         }
 
-        let (mut host, stack_inputs, advice_inputs) =
-            self.0
-                .prepare_transaction(tx_inputs)
-                .await
-                .map_err(TransactionCheckerError::TransactionPreparation)?;
+        let (mut host, stack_inputs, advice_inputs) = self
+            .tx_executor
+            .prepare_transaction(tx_inputs)
+            .await
+            .map_err(TransactionCheckerError::TransactionPreparation)?;
 
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let executor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options)
+        let executor = EXEC::new(stack_inputs, advice_inputs, self.tx_executor.exec_options)
             .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error)
             .map_err(TransactionCheckerError::PrologueExecution)?;
@@ -476,5 +511,31 @@ where
                 }
             },
         }
+    }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Handle the epilogue error during the note consumption check in the `can_consume` method.
+///
+/// The goal of this helper function is to handle the cases where the account couldn't consume the
+/// note because of some epilogue check failure, e.g. absence of the authenticator.
+pub(super) fn handle_epilogue_error(
+    epilogue_error: TransactionExecutorError,
+) -> NoteConsumptionStatus {
+    match epilogue_error {
+        // `Unauthorized` is returned for the multisig accounts if the transaction doesn't have
+        // enough signatures.
+        TransactionExecutorError::Unauthorized(_)
+        // `MissingAuthenticator` is returned for the account with the basic auth if the
+        // authenticator was not provided to the executor (UnreachableAuth).
+        | TransactionExecutorError::MissingAuthenticator => {
+            // Both these cases signal that there is a probability that the provided note could be
+            // consumed if the authentication is provided.
+            NoteConsumptionStatus::ConsumableWithAuthorization
+        },
+        // TODO: apply additional checks to get the verbose error reason
+        _ => NoteConsumptionStatus::UnconsumableConditions,
     }
 }

@@ -42,6 +42,7 @@ pub use notes_checker::{
     NoteConsumptionChecker,
     NoteConsumptionInfo,
     NoteFailure,
+    SponsorshipRejection,
     SuccessfulNote,
 };
 
