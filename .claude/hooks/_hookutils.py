@@ -21,12 +21,12 @@ from typing import Any
 _SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 
 
-def repo_root() -> Path | None:
-    """Return the absolute path of the current git worktree's top
-    level, or None if we're not inside a git worktree.
+def repo_root(global_args: list[str] | None = None) -> Path | None:
+    """Return the selected git worktree's absolute top level, or None
+    if it cannot be resolved. Without global args, use the current worktree.
     """
     result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
+        ["git", *(global_args or []), "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
     )
