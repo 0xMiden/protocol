@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // PAUSABLE MANAGER COMPONENT
@@ -71,15 +71,16 @@ impl PausableManager {
     pub fn unpause_root() -> AccountProcedureRoot {
         *PAUSABLE_MANAGER_UNPAUSE
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
+    }
 }
 
 impl From<PausableManager> for AccountComponent {
     fn from(_: PausableManager) -> Self {
-        let metadata = AccountComponentMetadata::new(PausableManager::NAME).with_description(
-            "PausableManager: pause / unpause admin procedures gated by the account-wide \
-             Authority component. Requires the Pausable companion component for storage and the \
-             Authority component for auth dispatch.",
-        );
+        let metadata = PausableManager::component_metadata();
 
         AccountComponent::new(PausableManager::code().clone(), vec![], metadata).expect(
             "pausable manager component should satisfy the requirements of a valid account component",

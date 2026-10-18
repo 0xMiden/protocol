@@ -1,10 +1,4 @@
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
@@ -15,7 +9,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::BasicConstantFeePolicy;
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // CONSTANT FEE MANAGER
@@ -140,22 +134,7 @@ impl ConstantFeeManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([(
-            FEE_SCHEDULE_SLOT_ID_SLOT_NAME.clone(),
-            StorageSlotSchema::value(
-                "ID of the fee schedule slot this manager updates",
-                SchemaType::native_word(),
-            ),
-        )])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Authority-gated constant-fee schedule admin: exposes `set_note_fee` to update the \
-                 fee schedule slot recorded in its storage, gated by the account-wide Authority \
-                 component.",
-            )
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 
