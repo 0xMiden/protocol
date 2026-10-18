@@ -105,15 +105,11 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(400);
     let account1 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Eidos,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset],
     )?;
     let account2 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Eidos,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset],
     )?;
     let output_note = create_public_p2any_note(account1.id(), [asset]);
