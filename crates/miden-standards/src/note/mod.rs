@@ -23,11 +23,11 @@ use self::config::{
 pub mod config;
 pub mod costs;
 
-mod create_note;
-pub use create_note::CreateNote;
-
 mod burn;
 pub use burn::BurnNote;
+
+mod create_note;
+pub use create_note::CreateNote;
 
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};

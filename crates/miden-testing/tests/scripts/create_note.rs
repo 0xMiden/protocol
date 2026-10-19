@@ -1,11 +1,21 @@
 use std::collections::BTreeMap;
 
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::Word;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountType};
+use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{Note, NoteAssets, NoteRecipient, NoteType};
+use miden_protocol::errors::MasmError;
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteRecipient,
+    NoteType,
+};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -14,9 +24,12 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_CREATE_NOTE_ASSETS,
-    ERR_CREATE_NOTE_FEE_ASSET,
-    ERR_CREATE_NOTE_TARGET,
+    ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE,
+    ERR_CREATE_NOTE_FUNDING_MISMATCH,
+    ERR_CREATE_NOTE_OUTPUT_ALTERED,
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT,
+    ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER,
+    ERR_RECLAIM_HEIGHT_NOT_REACHED,
 };
 use miden_standards::note::{CreateNote, P2idNote, TxFeeNote};
 use miden_testing::{
@@ -71,11 +84,15 @@ fn setup(
 }
 
 #[rstest]
+#[case::combined_funding(NoteType::Public, true, Some(50))]
+#[case::separate_funding(NoteType::Public, false, Some(50))]
+#[case::private_output(NoteType::Private, false, Some(50))]
+#[case::without_fee(NoteType::Public, false, None)]
 #[tokio::test]
 async fn create_note_preserves_output_and_pays_fee(
-    #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
-    #[values(false, true)] native_principal: bool,
-    #[values(None, Some(50))] fee_amount: Option<u64>,
+    #[case] note_type: NoteType,
+    #[case] native_principal: bool,
+    #[case] fee_amount: Option<u64>,
 ) -> anyhow::Result<()> {
     let (builder, _, passthrough, request) = setup(note_type, native_principal, fee_amount)?;
     let chain = builder.build()?;
@@ -158,7 +175,7 @@ async fn create_note_rejects_other_consumers() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_TARGET);
+    assert_transaction_executor_error!(result, ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT);
     Ok(())
 }
 
@@ -178,7 +195,7 @@ async fn create_note_rejects_changed_input_assets() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_ASSETS);
+    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FUNDING_MISMATCH);
     Ok(())
 }
 
@@ -201,25 +218,41 @@ async fn create_note_rejects_fee_in_another_asset() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FEE_ASSET);
+    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE);
     Ok(())
 }
 
+#[rstest]
+#[case::at_height(true, true, None)]
+#[case::before_height(false, true, Some(ERR_RECLAIM_HEIGHT_NOT_REACHED))]
+#[case::other_account(true, false, Some(ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER))]
 #[tokio::test]
-async fn create_note_reclaim_returns_all_funding_to_sender() -> anyhow::Result<()> {
-    let (builder, sender, _, request) = setup(NoteType::Public, true, Some(50))?;
+async fn create_note_reclaim(
+    #[case] height_reached: bool,
+    #[case] original_sender: bool,
+    #[case] expected_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let (builder, sender, passthrough, request) = setup(NoteType::Public, true, Some(50))?;
     let mut chain = builder.build()?;
-    chain.prove_next_block()?;
-    let tx = chain
-        .build_transaction(sender.id())
+    if height_reached {
+        chain.prove_next_block()?;
+    }
+    let consumer = if original_sender { sender.id() } else { passthrough.id() };
+    let result = chain
+        .build_transaction(consumer)
         .authenticated_input_notes([request.note().clone()])
         .extend_note_args(BTreeMap::from([(request.note().id(), CreateNote::reclaim_args())]))
         .build()?
         .execute()
-        .await?;
-    assert_eq!(tx.output_notes().num_notes(), 0);
-    let assets: Vec<Asset> = tx.account_patch().vault().updated_assets().collect();
-    assert_eq!(assets, request.note().assets().as_slice());
+        .await;
+    if let Some(error) = expected_error {
+        assert_transaction_executor_error!(result, error);
+    } else {
+        let tx = result?;
+        assert_eq!(tx.output_notes().num_notes(), 0);
+        let assets: Vec<Asset> = tx.account_patch().vault().updated_assets().collect();
+        assert_eq!(assets, request.note().assets().as_slice());
+    }
     Ok(())
 }
 
@@ -256,11 +289,6 @@ async fn create_note_seals_outputs(#[values(0, 1)] index: u32) -> anyhow::Result
 /// A native issuer callback cannot append an attachment before CREATE_NOTE seals its output.
 #[tokio::test]
 async fn create_note_checks_output_after_asset_callbacks() -> anyhow::Result<()> {
-    use miden_protocol::account::AccountComponent;
-    use miden_protocol::account::component::AccountComponentMetadata;
-    use miden_protocol::asset::AssetCallbacks;
-    use miden_standards::errors::standards::ERR_CREATE_NOTE_OUTPUT;
-
     let mut builder = MockChain::builder();
     let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
     let code = CodeBuilder::default().compile_component_code(
@@ -316,14 +344,12 @@ async fn create_note_checks_output_after_asset_callbacks() -> anyhow::Result<()>
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_OUTPUT);
+    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_OUTPUT_ALTERED);
     Ok(())
 }
 
 #[test]
 fn create_note_validates_request_shape() -> anyhow::Result<()> {
-    use miden_protocol::Word;
-    use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme};
     let (_, sender, passthrough, request) = setup(NoteType::Public, true, Some(50))?;
     let make =
         |output, fee, height| CreateNote::new(sender.id(), Word::empty(), output, fee, height);

@@ -32,16 +32,13 @@ static CREATE_NOTE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// A private request to create a committed output through a public account.
 ///
-/// The request carries one output asset plus an optional native fee payment. The entire fee
-/// payment becomes a public TX_FEE note; quote it before funding the request. It is never deducted
-/// from the output's asset. The output is created exactly as specified, without attachments, and
-/// both outputs are sealed. A compatible account must expose BasicWallet's create_note procedure.
+/// Carries one fungible output asset and an optional native fee payment, paid in full through a
+/// public TX_FEE note. Both outputs are sealed. The executing account must expose BasicWallet's
+/// `create_note` procedure and check that the fee covers the transaction.
 ///
-/// Consume the request as an authenticated input and prove locally to avoid publishing its sender
-/// or giving a remote prover its private contents. The output sender is the executing account.
-/// Use independent random serials for this request and its output. Amount and timing correlations
-/// remain possible. After the reclaim height, the sender can recover an unconsumed request through
-/// its own account using [`Self::reclaim_args`]; that account must expose receive_asset.
+/// Use independent random serials for the request and output. Authenticated consumption hides the
+/// request header from the proven transaction; the executor and prover still see its contents.
+/// The sender can recover an unconsumed request using [`Self::reclaim_args`].
 #[derive(Debug, Clone)]
 pub struct CreateNote {
     note: Note,
@@ -56,13 +53,14 @@ impl CreateNote {
 
     /// Creates a request for `output`, whose sender identifies the public executing account.
     ///
-    /// This first version supports one fungible output asset and no output attachments. `fee`
-    /// must use the chain's native fee asset, which the script checks at execution. A nonzero fee
-    /// is paid in full. If it is insufficient, the transaction must be retried with a separately
-    /// funded fee note or the request reclaimed. Reclaim does not disable the creation path.
+    /// `fee` must use the chain's native fee asset, checked at execution. Quote it before funding
+    /// the request; there is no change output. Reclaim becomes available at `reclaim_height`
+    /// without disabling creation. The sender's account must expose `receive_asset` to reclaim.
     ///
-    /// Returns an error for an invalid output shape, a private executing account, a zero asset or
-    /// fee, a zero reclaim height, or an overflowing combined asset amount.
+    /// # Errors
+    ///
+    /// Returns an error unless the output has one positive fungible asset, no attachments, and a
+    /// separate public sender. Also rejects a zero fee, zero reclaim height, or asset overflow.
     pub fn new(
         sender: AccountId,
         serial_number: Word,
@@ -94,12 +92,8 @@ impl CreateNote {
         let mut input_assets = vec![*asset];
         if let Some(fee) = fee {
             if fee.faucet_id() == principal.faucet_id() {
-                let amount = principal
-                    .amount()
-                    .as_u64()
-                    .checked_add(fee.amount().as_u64())
-                    .ok_or_else(|| NoteError::other("CREATE_NOTE asset amount overflow"))?;
-                input_assets[0] = FungibleAsset::new(principal.faucet_id(), amount)
+                input_assets[0] = principal
+                    .add(fee)
                     .map_err(|e| {
                         NoteError::other_with_source("CREATE_NOTE asset amount overflow", e)
                     })?
@@ -162,8 +156,7 @@ impl CreateNote {
         self.reclaim_height
     }
 
-    /// The public output's recipient preimages needed by the transaction executor.
-    /// Private output preimages need not be shared with the executor.
+    /// Returns recipient advice for a public output, or an empty list for a private output.
     pub fn output_advice(&self) -> Vec<(Word, Vec<Felt>)> {
         if self.output.metadata().note_type() == NoteType::Public {
             self.output.recipient().to_advice_map_entries().into()

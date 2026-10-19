@@ -327,22 +327,21 @@ Use a fresh P2ID serial for each order, independent of its PSWAP serial, and kee
 
 Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
+### CREATE_NOTE
+
+A private `CREATE_NOTE` request creates a committed output through a separate public account. The output may be public or private and must contain one fungible asset with no attachments. The script checks the output after asset callbacks and seals it.
+
+An optional native fee payment creates a sealed public `TX_FEE` note, separate from the output principal. The payment is paid in full without change; the executing account must verify that it covers the transaction fee. Fee serials distinguish concurrent requests against the same account.
+
+The sender can reclaim an unconsumed request at or after its chosen block height. Creation remains possible until the request is consumed. Use independent random serials for the request and output, consume the request as an authenticated input, and prove locally to keep its contents private.
+
 ### Choosing the Right Note Type
 
 - **Use P2ID** for simple, direct payments to known accounts
 - **Use P2IDE** when you need time-locks, escrow functionality, or reclaim capabilities
 - **Use SWAP** for atomic asset exchanges between parties
 - **Use PSWAP** for orders that can be filled partially
+- **Use CREATE_NOTE** to create a committed output through another account
 - **Create custom scripts** for specialized use cases not covered by standard types
 
 These standard note types provide a foundation for common operations while maintaining the flexibility to create custom note scripts for specialized requirements.
-
-### CREATE_NOTE
-
-A `CREATE_NOTE` is a private request to create a committed output through a separate public account. The request commits to the executing account, output recipient, assets, metadata, and a block height for recovery. Its first version creates one output containing one fungible asset and no attachments. Both public and private output types are supported.
-
-The request can also carry an explicit payment in the native fee asset. It creates a public `TX_FEE` output with the entire payment. The payment is separate from the output principal, including when both use the same asset. The executing account must check that the payment covers the transaction fee. Quote the payment before funding the request. There is no automatic change output in this version.
-
-The script checks the completed output after asset callbacks and seals both outputs. A later script cannot add assets or attachments. The fee serial is derived from the transaction input commitment, the executing account, a domain separator, and the output position. It does not use the private request's note ID or depend on an account nonce increment.
-
-The original sender can recover an unconsumed request through its own account after the committed block height. Until consumption, creation and recovery may race. Use independent random serial numbers for the request and its intended output. Consume the private request as an authenticated input and prove locally. A public observer then sees the public executing account as the output sender, although timing and asset amounts can still reveal correlations.
