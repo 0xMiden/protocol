@@ -599,7 +599,7 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
     // fee.
     mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_policy_note.id())
+        .authenticated_input_note(set_policy_note.clone())
         .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
@@ -671,7 +671,7 @@ async fn set_fee_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_policy_note.id())
+        .authenticated_input_note(set_policy_note.clone())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -753,7 +753,7 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_policy_note.id())
+        .authenticated_input_note(set_policy_note.clone())
         .with_source_manager(source_manager)
         .build()?
         .execute()

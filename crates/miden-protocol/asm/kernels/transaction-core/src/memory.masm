@@ -121,6 +121,25 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
+# TRANSACTION LOG STATE
+# -------------------------------------------------------------------------------------------------
+
+# The transaction log state occupies 8 elements.
+# The counters, dirty flag, and cached commitment start at zero.
+
+# The memory address at which the number of transaction logs is stored.
+pub const NUM_LOGS_PTR = 1300
+
+# The memory address at which the total number of transaction log content words is stored.
+pub const LOG_TOTAL_NUM_CONTENT_WORDS_PTR = NUM_LOGS_PTR + 1
+
+# The memory address at which the transaction logs commitment's dirty flag is stored.
+# A value of 1 means a transaction log was added after the cached commitment was computed.
+pub const TX_LOGS_DIRTY_FLAG_PTR = LOG_TOTAL_NUM_CONTENT_WORDS_PTR + 1
+
+# Address NUM_LOGS_PTR + 3 is unused padding before the word-aligned LOGS_COMMITMENT_PTR starts.
+pub const LOGS_COMMITMENT_PTR = NUM_LOGS_PTR + WORD_NUM_ELEMENTS
+
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
 
@@ -241,6 +260,13 @@ const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR = 2400
 
 # The memory address at which the partial blockchain peaks are stored
 const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 2404
+
+# TRANSACTION LOG COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+# The memory address at which the ordered individual transaction log commitments begin.
+# This section holds MAX_LOGS_PER_TX words.
+pub const LOG_COMMITMENTS_PTR = 3000
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
@@ -942,6 +968,88 @@ end
 #! - num_leaves is the number of leaves in the partial blockchain.
 pub proc set_partial_blockchain_num_leaves(num_leaves: u32)
     mem_store.PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR
+end
+
+# TRANSACTION LOGS
+# -------------------------------------------------------------------------------------------------
+
+#! Returns the number of transaction logs.
+#!
+#! Inputs:  []
+#! Outputs: [num_logs]
+pub proc get_num_tx_logs() -> u32
+    mem_load.NUM_LOGS_PTR
+    # => [num_logs]
+end
+
+#! Returns the total number of content words across the transaction logs.
+#!
+#! Inputs:  []
+#! Outputs: [num_content_words]
+pub proc get_total_num_log_content_words() -> u32
+    mem_load.LOG_TOTAL_NUM_CONTENT_WORDS_PTR
+    # => [num_content_words]
+end
+
+#! Sets the total number of transaction log content words.
+#!
+#! Inputs:  [num_content_words]
+#! Outputs: []
+pub proc set_total_num_log_content_words(num_content_words: u32)
+    mem_store.LOG_TOTAL_NUM_CONTENT_WORDS_PTR
+    # => []
+end
+
+#! Appends an individual log commitment, increments the count, and invalidates the cached commitment.
+#! The caller must check the transaction log limit before appending.
+#!
+#! Inputs:  [LOG_COMMITMENT]
+#! Outputs: []
+pub proc push_tx_log_commitment(log_commitment: Commitment)
+    exec.get_num_tx_logs mul.WORD_NUM_ELEMENTS add.LOG_COMMITMENTS_PTR mem_storew_le dropw
+    # => []
+
+    exec.get_num_tx_logs add.1 mem_store.NUM_LOGS_PTR
+    # => []
+
+    push.1 exec.set_tx_logs_dirty_flag
+    # => []
+end
+
+#! Returns whether a log has been appended since the cached logs commitment was computed.
+#!
+#! Inputs:  []
+#! Outputs: [is_dirty]
+pub proc get_tx_logs_dirty_flag() -> Bool
+    mem_load.TX_LOGS_DIRTY_FLAG_PTR
+    # => [is_dirty]
+end
+
+#! Sets the dirty flag for the cached transaction logs commitment.
+#!
+#! Inputs:  [is_dirty]
+#! Outputs: []
+pub proc set_tx_logs_dirty_flag(is_dirty: Bool)
+    mem_store.TX_LOGS_DIRTY_FLAG_PTR
+    # => []
+end
+
+#! Returns the cached transaction logs commitment.
+#!
+#! Inputs:  []
+#! Outputs: [LOGS_COMMITMENT]
+pub proc get_tx_logs_commitment() -> Commitment
+    padw mem_loadw_le.LOGS_COMMITMENT_PTR
+    # => [LOGS_COMMITMENT]
+end
+
+#! Stores the cached transaction logs commitment and leaves it on the stack.
+#!
+#! Inputs:  [LOGS_COMMITMENT]
+#! Outputs: [LOGS_COMMITMENT]
+pub proc set_tx_logs_commitment(logs_commitment: Commitment) -> Commitment
+    mem_storew_le.LOGS_COMMITMENT_PTR
+    # => [LOGS_COMMITMENT]
 end
 
 # ACCOUNT DATA

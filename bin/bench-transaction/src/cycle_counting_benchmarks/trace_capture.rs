@@ -5,7 +5,12 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use miden_processor::FastProcessor;
 use miden_processor::trace::{TraceLenSummary, build_trace};
-use miden_protocol::transaction::{TransactionInputs, TransactionKernel, TransactionMeasurements};
+use miden_protocol::transaction::{
+    AccountInputs,
+    TransactionInputs,
+    TransactionKernel,
+    TransactionMeasurements,
+};
 use miden_testing::MockTransaction;
 use miden_tx::{
     AccountProcedureIndexMap,
@@ -15,8 +20,11 @@ use miden_tx::{
     TransactionProverHost,
 };
 
+use crate::note_labels::NoteLabels;
+
 /// Executes the transaction, then replays its inputs through the trace-build path to capture a
-/// `TraceLenSummary`.
+/// `TraceLenSummary`. Also resolves the stable labels of the transaction's input notes, which the
+/// measurements are reported under.
 ///
 /// Two passes: `TransactionExecutor` first so the authenticator resolves any required signatures
 /// into the `ExecutedTransaction`'s inputs, then `LocalTransactionProver::prove`'s trace-build
@@ -24,16 +32,18 @@ use miden_tx::{
 /// per-iteration.
 pub async fn capture_measurements_and_trace_summary(
     mock_tx: MockTransaction,
-) -> Result<(TransactionMeasurements, TraceLenSummary)> {
+) -> Result<(TransactionMeasurements, TraceLenSummary, NoteLabels)> {
     let executed = mock_tx
         .execute()
         .await
         .context("pre-execution (to resolve signatures) failed")?;
     let (tx_inputs, _tx_outputs, _account_patch, measurements) = executed.into_parts();
 
+    // resolved before `tx_inputs` is consumed by the trace-build pass
+    let note_labels = NoteLabels::from_inputs(&tx_inputs);
     let trace_summary = build_trace_summary(tx_inputs).await?;
 
-    Ok((measurements, trace_summary))
+    Ok((measurements, trace_summary, note_labels))
 }
 
 // TODO(#2841): integrate `TraceLenSummary` into `TransactionMeasurements` so we can drop this
@@ -43,8 +53,8 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
 
     let mast_store = Arc::new(TransactionMastStore::new());
     mast_store.load_account_code(tx_inputs.account().code());
-    for account_code in tx_inputs.foreign_account_code() {
-        mast_store.load_account_code(account_code);
+    for foreign_account in tx_inputs.foreign_accounts().values() {
+        mast_store.load_account_code(foreign_account.code());
     }
 
     let script_mast_store = ScriptMastForestStore::new(
@@ -52,7 +62,11 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         tx_inputs.input_notes().iter().map(|n| n.note().script()),
     );
     let account_procedure_index_map = AccountProcedureIndexMap::new(
-        tx_inputs.foreign_account_code().iter().chain([tx_inputs.account().code()]),
+        tx_inputs
+            .foreign_accounts()
+            .values()
+            .map(AccountInputs::code)
+            .chain([tx_inputs.account().code()]),
     );
 
     let block_commitments = tx_inputs.collect_block_commitments();
