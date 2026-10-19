@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::{AuthScheme, SignatureKey};
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -14,6 +13,7 @@ use miden_protocol::account::{
     AccountDelta,
     AccountType,
 };
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::{MasmError, TransactionVerifierError, tx_kernel};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
@@ -246,7 +246,7 @@ async fn unauthenticated_note_logs(
         end
         "
     ))?;
-    let note = NoteBuilder::new(account.id(), &mut RandomCoin::new(Word::from([1u32; 4])))
+    let note = NoteBuilder::new(account.id(), &mut EidosRandomCoin::new(Word::from([1u32; 4])))
         .note_type(NoteType::Private)
         .script(script)
         .build()?;

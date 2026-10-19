@@ -22,7 +22,6 @@ use miden_agglayer::{
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
@@ -442,7 +441,7 @@ fn setup_bridge_fixture(
     // CREATE BRIDGE ACCOUNT
     // the dummy admin only matters for ADMIN-gated operations, which the benches do not exercise
     let mut bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -504,7 +503,7 @@ pub async fn tx_consume_claim_note(
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -709,7 +708,7 @@ pub async fn tx_consume_b2agg_note(
     let bridge_amount: u64 = vectors.amounts[0].parse().expect("valid amount decimal string");
 
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         8,
@@ -799,7 +798,7 @@ fn setup_faucet_registration(
     let (_proof_data, leaf_data, _ger, _cgi_chain_hash) = ClaimDataSource::L1ToMiden.get_data();
 
     let agglayer_faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         8,

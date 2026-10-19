@@ -1,5 +1,4 @@
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -9,6 +8,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
@@ -504,7 +504,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(output_note_asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::empty()))
         .build()?
         .into();
 

@@ -11,12 +11,12 @@ use miden_core_lib::CoreLibrary;
 use miden_crypto::Felt;
 use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
+use rand::RngExt;
 use serde::Deserialize;
 
 use super::test_utils::{
@@ -70,7 +70,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -300,7 +300,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -366,7 +366,7 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),

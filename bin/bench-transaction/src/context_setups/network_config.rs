@@ -24,7 +24,6 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -65,6 +64,7 @@ use miden_standards::note::config::{
     RbacConfigNote,
 };
 use miden_testing::{AccountState, Auth, MockTransaction};
+use rand::Rng;
 
 // FAUCET POLICY ACTION NOTE SETUP
 // ================================================================================================
@@ -308,7 +308,7 @@ impl ListKind {
         sender: AccountId,
         target: AccountId,
         listed: AccountId,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> Result<Note> {
         let note = match self {
             ListKind::Allowlist => AllowlistConfigNote::builder()

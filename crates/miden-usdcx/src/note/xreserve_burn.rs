@@ -19,7 +19,6 @@
 
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -36,6 +35,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_standards::note::{BurnNote, StandardNoteAttachment};
+use rand::{Rng, RngExt};
 
 use crate::xreserve::encoding::{EncodingError, XReserveBurnItems};
 
@@ -139,7 +139,7 @@ impl XReserveBurnNote {
     /// Convenience constructor over the [`XReserveBurnItems`] payload (a thin delegator to the
     /// [`builder`](Self::builder)); retained because the frozen conformance suites pin this
     /// signature.
-    pub fn create<R: FeltRng>(
+    pub fn create<R: Rng>(
         sender: AccountId,
         faucet_id: AccountId,
         amount: AssetAmount,
@@ -167,14 +167,14 @@ impl XReserveBurnNote {
     /// scheme-tagged [`XUsdcBurnAttachment`]. The amount is supplied separately for the burned
     /// asset.
     #[builder]
-    pub fn new<R: FeltRng>(
+    pub fn new<R: Rng>(
         sender: AccountId,
         faucet_id: AccountId,
         amount: AssetAmount,
         items: XReserveBurnItems,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        let serial_num = rng.draw_word();
+        let serial_num = rng.random();
 
         let asset = FungibleAsset::new(faucet_id, u64::from(amount))
             .map_err(|err| NoteError::other_with_source("invalid burned xUSDC asset", err))?;

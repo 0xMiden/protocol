@@ -3,7 +3,7 @@ use miden_protocol::Word;
 use miden_protocol::account::auth::{self, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountComponent};
 use miden_protocol::asset::{AssetAmount, NonFungibleAsset, TokenSymbol};
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
@@ -37,7 +37,7 @@ fn test_required_asset_same_as_offered() {
         .requested_asset(requested_asset)
         .note_type(NoteType::Public)
         .payback_note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .build();
 
     assert_matches!(result, Err(NoteError::Other { error_msg, .. }) if error_msg == "requested asset same as offered asset".into());

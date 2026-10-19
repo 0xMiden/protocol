@@ -38,7 +38,6 @@ use miden_crypto::SequentialCommit;
 use miden_crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_crypto::utils::Deserializable;
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
@@ -56,7 +55,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::Package;
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::FeeParameters;
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteScript, NoteType};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
@@ -154,7 +153,7 @@ pub fn mint_note_from_payload(
     faucet_id: AccountId,
     payload: &[u8],
     attestation: DepositAttestation,
-    rng: &mut impl FeltRng,
+    rng: &mut impl Rng,
 ) -> Result<Note> {
     mint_note_from_payload_at_domain(sender, faucet_id, TEST_DOMAIN, payload, attestation, rng)
 }
@@ -167,7 +166,7 @@ pub fn mint_note_from_payload_at_domain(
     remote_domain: CircleDomain,
     payload: &[u8],
     attestation: DepositAttestation,
-    rng: &mut impl FeltRng,
+    rng: &mut impl Rng,
 ) -> Result<Note> {
     let deposit_intent = DepositIntent::try_from(payload)
         .map_err(|e| anyhow::anyhow!("decoding the deposit intent payload: {e}"))?;
@@ -1326,9 +1325,8 @@ pub fn set_attester_note(
         .context("linking xreserve into the set_attester note script")?
         .compile_note_script(src.clone())
         .map_err(|e| anyhow::anyhow!("set_attester note script failed to compile: {e}\n{src}"))?;
-    // Deterministic note rng (RandomCoin satisfies NoteBuilder's `Rng` bound; StdRng's `rand`
-    // version does not). The seed only affects the note serial, never the gate.
-    let mut rng = RandomCoin::new(Word::from([
+    // Use a seeded coin so note serials are reproducible. The seed never affects the gate.
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(1u32),
@@ -1387,7 +1385,7 @@ pub fn manager_pause_call_note(sender: AccountId, seed: u64) -> Result<Note> {
     let script = CodeBuilder::new()
         .compile_note_script(src)
         .map_err(|e| anyhow::anyhow!("pause note script failed to compile: {e}"))?;
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(3u32),
@@ -2145,7 +2143,7 @@ pub fn manager_unpause_call_note(sender: AccountId, seed: u64) -> Result<Note> {
     let script = CodeBuilder::new()
         .compile_note_script(src)
         .map_err(|e| anyhow::anyhow!("stock unpause note script failed to compile: {e}"))?;
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(25u32),
@@ -2230,7 +2228,7 @@ fn dom_pauser_manager_note(
     // Deterministic note rng (serial only; never affects the gate). Distinct tails ([21,22] pause /
     // [23,24] unpause) keep serials disjoint from set_attester [1,2] / pause [3,4] / set_max_supply
     // [5,6] / set_min_burn [7,8] / domain_init [9,10].
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(tail0),
@@ -2346,7 +2344,7 @@ fn rbac_member_note(
     // [13,14] revoke / [15,16] set_role_admin) keep serials disjoint from set_attester [1,2] /
     // pause [3,4] / set_max_supply [5,6] / set_min_burn [7,8] / domain_init [9,10] / dom pause
     // [21,22] / dom unpause [23,24].
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(tail0),
@@ -2410,7 +2408,7 @@ pub fn set_role_admin_note(
     let script = CodeBuilder::new()
         .compile_note_script(src.clone())
         .map_err(|e| anyhow::anyhow!("set_role_admin note script failed to compile: {e}\n{src}"))?;
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(15u32),
@@ -2501,7 +2499,7 @@ pub fn renounce_role_note(sender: AccountId, role: &RoleSymbol, seed: u64) -> Re
         .compile_note_script(src.clone())
         .map_err(|e| anyhow::anyhow!("renounce_role note script failed to compile: {e}\n{src}"))?;
     // Fresh serial tail [31,32] — disjoint from every other admin-note family.
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(31u32),

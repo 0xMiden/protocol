@@ -284,7 +284,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
 async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
     #[case] restriction: ProcedurePolicyNoteRestriction,
 ) -> anyhow::Result<()> {
-    use miden_processor::crypto::random::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
     use miden_protocol::transaction::RawOutputNote;
     use miden_standards::note::P2idNote;
@@ -308,7 +308,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(FungibleAsset::mock(5))
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([Felt::new_unchecked(7); 4])))
         .build()?
         .into();
 

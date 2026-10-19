@@ -3,13 +3,13 @@ use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use anyhow::Context;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteAssets, NoteId, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -169,7 +169,7 @@ impl Test {
         #[builder(default = 1)]
         num_feature_notes: usize,
     ) -> anyhow::Result<Self> {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let mut builder = MockChain::builder();
         let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
@@ -456,7 +456,7 @@ async fn set_fee_policy_switches_to_custom_policy() -> anyhow::Result<()> {
 
     let set_policy_note_script =
         create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
-    let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(600u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
@@ -554,7 +554,7 @@ async fn set_fee_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
     let invalid_policy_root = AuthNetworkAccount::get_fee_policy_root().as_word();
     let set_policy_note_script =
         create_fee_manager_note_script("set_fee_policy", invalid_policy_root);
-    let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(601u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
@@ -636,7 +636,7 @@ async fn non_owner_cannot_set_fee_policy() -> anyhow::Result<()> {
 
     let set_policy_note_script =
         create_fee_manager_note_script("set_fee_policy", custom_fee_policy()?.root().as_word());
-    let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(602u32); 4].into());
     let set_policy_note = NoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
@@ -726,7 +726,7 @@ async fn sponsorship_with_wrong_asset_is_rejected() -> anyhow::Result<()> {
 /// cannot happen in the same transaction.
 #[tokio::test]
 async fn sponsorship_for_absent_feature_note_is_rejected() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::empty());
+    let mut rng = EidosRandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
     let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
@@ -831,7 +831,7 @@ fn asset_commitment_fee_policy(
 /// consistency check before the second note's own sponsor is sought.
 #[tokio::test]
 async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::empty());
+    let mut rng = EidosRandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
     let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
@@ -1055,7 +1055,7 @@ impl SponsorshipTest {
 
         let tx_script = create_network_notes_tx_script(target.id(), num_network_notes)?;
 
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let mut builder = MockChain::builder();
         builder.add_account(target.clone())?;
 

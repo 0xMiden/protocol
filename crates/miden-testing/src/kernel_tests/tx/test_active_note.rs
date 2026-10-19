@@ -4,7 +4,7 @@ use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED,
@@ -32,6 +32,7 @@ use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
+use rand::RngExt;
 use rstest::rstest;
 
 use super::StackInputs;
@@ -209,7 +210,7 @@ async fn test_active_note_is_public_and_is_private(
     let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let mut rng = RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let input_note = create_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             note_type,
@@ -297,7 +298,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
     let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let input_note = crate::utils::create_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             note_type,
@@ -724,7 +725,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     )?;
 
     // prepare note data
-    let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
+    let serial_num = EidosRandomCoin::new(Word::from([4u32; 4])).random();
     let tag = NoteTag::with_account_target(target_id);
     let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
@@ -892,7 +893,7 @@ async fn test_note_find_attachment(
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
-        let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+        let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
         // Add a random first note so we test with note_index != 0.
         let input_note0 = NoteBuilder::new(account.id(), &mut rng).build()?;
         let input_note1 = NoteBuilder::new(account.id(), &mut rng)

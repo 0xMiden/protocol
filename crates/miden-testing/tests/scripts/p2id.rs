@@ -2,7 +2,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountComponent, AccountType};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -226,7 +226,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into()?)
         .asset(asset_1)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .build()?
         .into();
 
@@ -235,7 +235,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?)
         .asset(asset_2)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([4, 3, 2, 1u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([4, 3, 2, 1u32])))
         .build()?
         .into();
 

@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -28,6 +27,7 @@ use miden_protocol::note::{
 use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
+use rand::{Rng, RngExt};
 
 use crate::costs::DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES;
 use crate::note_script;
@@ -93,7 +93,7 @@ impl DeregisterAggFaucetNote {
     ///
     /// # Errors
     /// Returns an error if note creation fails.
-    pub fn create<R: FeltRng>(
+    pub fn create<R: Rng>(
         faucet_account_id: AccountId,
         sender_account_id: AccountId,
         target_account_id: AccountId,
@@ -106,7 +106,7 @@ impl DeregisterAggFaucetNote {
         let note_storage = NoteStorage::new(storage_values)?;
 
         // Generate a serial number for the note
-        let serial_num = rng.draw_word();
+        let serial_num = rng.random();
 
         let recipient = NoteRecipient::new(serial_num, Self::script(), note_storage);
 

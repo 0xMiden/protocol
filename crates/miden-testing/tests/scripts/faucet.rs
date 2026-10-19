@@ -3,7 +3,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use std::collections::BTreeSet;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
@@ -14,6 +13,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -174,7 +174,7 @@ async fn execute_faucet_note_script(
 ) -> anyhow::Result<Result<ExecutedTransaction, miden_tx::TransactionExecutorError>> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender_account_id, &mut rng)
         .note_type(NoteType::Private)
         .script(note_script)
@@ -385,7 +385,7 @@ fn create_set_min_burn_amount_note(
     sender: AccountId,
     faucet: AccountId,
     new_min_burn_amount: u64,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = MinBurnAmountConfigNote::builder()
         .sender(sender)
@@ -879,7 +879,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     );
 
     // Create the trigger note that will call mint
-    let mut rng = RandomCoin::new([Felt::from(1u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(1u32); 4].into());
     let trigger_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1010,7 +1010,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Create the MINT note using the helper function
     let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(faucet_owner_account_id)
         .mint_storage(mint_storage)
@@ -1108,7 +1108,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
 
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(owner_account_id)
         .mint_storage(mint_inputs)
@@ -1294,7 +1294,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
     // Create mint note from NON-OWNER
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(non_owner_account_id)
         .mint_storage(mint_inputs)
@@ -1423,7 +1423,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Sanity Check: Prove that the initial owner can mint assets
     let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(initial_owner_account_id)
         .mint_storage(mint_inputs.clone())
@@ -1434,7 +1434,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     // Create the transfer note and add it to the builder so it exists on-chain
-    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let transfer_note = NoteBuilder::new(initial_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1472,7 +1472,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let mut updated_faucet = faucet.clone();
     updated_faucet.apply_patch(executed_transaction.account_patch())?;
 
-    let mut rng = RandomCoin::new([Felt::from(400u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(400u32); 4].into());
     let accept_note = NoteBuilder::new(new_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1551,7 +1551,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     // Create a note from NON-OWNER that tries to transfer ownership
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let transfer_note = NoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1631,7 +1631,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let renounce_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1639,7 +1639,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         .script(renounce_script)
         .build()?;
 
-    let mut rng = RandomCoin::new([Felt::from(300u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(300u32); 4].into());
     let transfer_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1738,7 +1738,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(99u32); 4].into());
     let note: Note = BurnNote::builder()
         .sender(faucet_owner_account_id)
         .asset(fungible_asset)
@@ -1799,7 +1799,7 @@ async fn network_faucet_burn_rejects_asset_mismatch() -> anyhow::Result<()> {
 
     let carried_asset = FungibleAsset::new(faucet.id(), 100)?;
     let stored_asset = Asset::from(FungibleAsset::new(faucet.id(), 99)?);
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .add_assets([Asset::from(carried_asset)])
         .note_storage(stored_asset.as_elements().iter().copied())?
@@ -1845,7 +1845,7 @@ async fn network_faucet_burn_rejects_faucet_id_mismatch() -> anyhow::Result<()> 
 
     let carried_asset = FungibleAsset::new(faucet.id(), 100)?;
     let stored_asset = Asset::from(FungibleAsset::new(other_faucet.id(), 100)?);
-    let mut rng = RandomCoin::new([Felt::from(101u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(101u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .add_assets([Asset::from(carried_asset)])
         .note_storage(stored_asset.as_elements().iter().copied())?
@@ -1888,14 +1888,14 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     )?;
     let set_policy_note_script =
         create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
-    let mut rng = RandomCoin::new([Felt::from(500u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(500u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
         .build()?;
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
-    let mut rng = RandomCoin::new([Felt::from(501u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(501u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(non_owner_account_id)
         .asset(fungible_asset)
@@ -1946,14 +1946,14 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     )?;
     let set_policy_note_script =
         create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
-    let mut rng = RandomCoin::new([Felt::from(510u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(510u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
         .build()?;
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
-    let mut rng = RandomCoin::new([Felt::from(511u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(511u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .asset(fungible_asset)
@@ -2040,7 +2040,7 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     // Burn amount of 10 is below the configured minimum of 50.
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
-    let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(600u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .asset(fungible_asset)
@@ -2082,7 +2082,7 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     // Burn amount equal to the configured minimum of 50 meets the threshold.
     let burn_amount = 50u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
-    let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(601u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .asset(fungible_asset)
@@ -2130,13 +2130,13 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     )?;
 
     // Owner lowers the minimum burn amount from 50 to 5.
-    let mut rng = RandomCoin::new([Felt::from(610u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(610u32); 4].into());
     let set_note = create_set_min_burn_amount_note(owner_account_id, faucet.id(), 5, &mut rng)?;
 
     // A burn of 10 is below the original threshold (50) but at/above the new one (5).
     let burn_amount = 10u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
-    let mut rng = RandomCoin::new([Felt::from(611u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(611u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(owner_account_id)
         .asset(fungible_asset)
@@ -2200,19 +2200,19 @@ async fn test_network_faucet_get_min_burn_amount() -> anyhow::Result<()> {
 
     // Reads the initially configured threshold of 50.
     let initial_get_note_script = create_get_min_burn_amount_note_script(50);
-    let mut rng = RandomCoin::new([Felt::from(630u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(630u32); 4].into());
     let initial_get_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(initial_get_note_script.as_str())
         .build()?;
 
     // Owner lowers the minimum burn amount from 50 to 5.
-    let mut rng = RandomCoin::new([Felt::from(631u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(631u32); 4].into());
     let set_note = create_set_min_burn_amount_note(owner_account_id, faucet.id(), 5, &mut rng)?;
 
     // Reads the updated threshold of 5.
     let updated_get_note_script = create_get_min_burn_amount_note_script(5);
-    let mut rng = RandomCoin::new([Felt::from(632u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(632u32); 4].into());
     let updated_get_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(updated_get_note_script.as_str())
@@ -2271,7 +2271,7 @@ async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::R
         50,
     )?;
 
-    let mut rng = RandomCoin::new([Felt::from(620u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(620u32); 4].into());
     let set_note = create_set_min_burn_amount_note(non_owner_account_id, faucet.id(), 5, &mut rng)?;
     builder.add_output_note(RawOutputNote::Full(set_note.clone()));
     let mut mock_chain = builder.build()?;
@@ -2357,7 +2357,7 @@ async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> an
     // One above the maximum representable fungible asset amount.
     let new_max_supply = FungibleAsset::MAX_AMOUNT.as_u64() + 1;
     let set_note_script = create_set_max_supply_note_script(new_max_supply);
-    let mut rng = RandomCoin::new([Felt::from(630u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(630u32); 4].into());
     let set_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .script(set_note_script)
@@ -2436,7 +2436,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         },
     };
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(faucet_owner_account_id)
         .mint_storage(mint_storage.clone())
@@ -2718,7 +2718,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
 
     let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(faucet_owner_account_id)
         .mint_storage(mint_storage)
