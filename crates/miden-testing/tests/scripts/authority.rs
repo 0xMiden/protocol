@@ -213,7 +213,7 @@ async fn owner_freezes_then_gated_procedure_is_blocked() -> anyhow::Result<()> {
     // The owner's own pause call is now blocked because the surface is frozen.
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(pause_note.id())
+        .authenticated_input_note(pause_note.clone())
         .build()?
         .execute()
         .await;
@@ -240,7 +240,7 @@ async fn frozen_blocks_authority_gated_metadata_setter() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(set_max_supply_note.id())
+        .authenticated_input_note(set_max_supply_note.clone())
         .build()?
         .execute()
         .await;
@@ -263,7 +263,7 @@ async fn non_owner_cannot_freeze() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(attacker_freeze_note.id())
+        .authenticated_input_note(attacker_freeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -341,7 +341,7 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
     // A PAUSER does not hold ADMIN, so cannot operate the emergency switch.
     let pauser_freeze_result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(pauser_freeze_note.id())
+        .authenticated_input_note(pauser_freeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -354,7 +354,7 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
     // Now even the PAUSER's role-authorized pause is blocked by the frozen flag.
     let pause_after_result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(pause_note_after.id())
+        .authenticated_input_note(pause_note_after.clone())
         .build()?
         .execute()
         .await;
@@ -403,7 +403,7 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
     // only ADMIN, cannot freeze.
     let admin_freeze_result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(admin_freeze_note.id())
+        .authenticated_input_note(admin_freeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -467,7 +467,7 @@ async fn freezer_can_freeze_but_cannot_unfreeze_or_authorize() -> anyhow::Result
     // The freezer holds no other role, so ordinary gated procedures stay out of reach.
     let freezer_pause_result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(freezer_pause_note.id())
+        .authenticated_input_note(freezer_pause_note.clone())
         .build()?
         .execute()
         .await;
@@ -480,7 +480,7 @@ async fn freezer_can_freeze_but_cannot_unfreeze_or_authorize() -> anyhow::Result
     // But it cannot re-open the account: `unfreeze` requires UNFREEZER.
     let freezer_unfreeze_result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(freezer_unfreeze_note.id())
+        .authenticated_input_note(freezer_unfreeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -490,7 +490,7 @@ async fn freezer_can_freeze_but_cannot_unfreeze_or_authorize() -> anyhow::Result
     // Neither can the ADMIN, since `unfreeze` is explicitly mapped and so never falls back to it.
     let admin_unfreeze_result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(admin_unfreeze_note.id())
+        .authenticated_input_note(admin_unfreeze_note.clone())
         .build()?
         .execute()
         .await;

@@ -1,6 +1,5 @@
 use super::account::{AccountHeader, AccountId};
 use super::note::{NoteId, Nullifier};
-use super::vm::AdviceInputs;
 use super::{Felt, Hasher, WORD_SIZE, Word, ZERO};
 
 mod effects;
@@ -8,6 +7,7 @@ mod executed_tx;
 mod fee;
 mod inputs;
 mod kernel;
+mod logs;
 mod ordered_transactions;
 mod outputs;
 mod partial_blockchain;
@@ -17,6 +17,7 @@ mod transaction_id;
 mod tx_args;
 mod tx_header;
 mod tx_summary;
+mod tx_witness;
 mod verifier;
 
 pub use effects::TransactionEffects;
@@ -24,6 +25,13 @@ pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
+pub use logs::{
+    LogTopic,
+    TransactionLog,
+    TransactionLogDetails,
+    TransactionLogError,
+    TransactionLogs,
+};
 pub use ordered_transactions::OrderedTransactionHeaders;
 pub use outputs::{
     OutputNote,
@@ -46,4 +54,5 @@ pub use tx_summary::{
     TransactionSummaryMetadata,
     TransactionSummaryUserParams,
 };
+pub use tx_witness::TransactionWitness;
 pub use verifier::TransactionVerifier;

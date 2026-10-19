@@ -2,9 +2,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
+use rstest::rstest;
 
 use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
-use crate::account::AccountId;
+use crate::account::{AccountHeader, AccountId};
 use crate::assembly::mast::{DenseMastForestBuilder, ExternalNodeBuilder, JoinNodeBuilder};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
@@ -27,11 +28,56 @@ use crate::note::{
 };
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_SENDER,
+};
+use crate::transaction::{
+    LogTopic,
+    TransactionLog,
+    TransactionLogDetails,
+    TransactionLogs,
+    TransactionOutputs,
 };
 use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 use crate::{Felt, Word};
+
+#[rstest]
+#[case::private(ACCOUNT_ID_PRIVATE_SENDER)]
+#[case::public(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)]
+fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] account_id: u128) {
+    let account_id = account_id.try_into().unwrap();
+    let account =
+        AccountHeader::new(account_id, Felt::ONE, Word::empty(), Word::empty(), Word::empty());
+    let log = TransactionLog::new(
+        account_id,
+        LogTopic::from_name("test::updated"),
+        vec![Word::from([1u32, 2, 3, 4])],
+    )
+    .unwrap();
+    for entries in [vec![], vec![log]] {
+        let logs = TransactionLogs::new(entries).unwrap();
+        let outputs = TransactionOutputs::new(
+            account.clone(),
+            Word::empty(),
+            RawOutputNotes::new(vec![]).unwrap(),
+            1u32.into(),
+            logs.clone(),
+        );
+        assert_eq!(outputs.logs(), &logs);
+        assert_eq!(outputs.logs_commitment(), logs.commitment());
+        let expected = if account_id.is_public() {
+            TransactionLogDetails::Public(logs)
+        } else {
+            TransactionLogDetails::Private(logs.commitment())
+        };
+        let (final_account, output_notes, log_details) = outputs.into_parts();
+        assert_eq!(final_account, account);
+        assert!(output_notes.is_empty());
+        assert_eq!(log_details, expected);
+    }
+}
 
 #[test]
 fn test_duplicate_output_notes() -> anyhow::Result<()> {

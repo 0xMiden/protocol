@@ -137,12 +137,18 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         u64::from(u32::MAX)
     );
 
-    // Everything after the expiration block number (index 8) must be zero.
     assert_eq!(
-        exec_output.get_stack_word(8).as_elements()[1..],
+        exec_output.get_stack_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX),
+        Word::empty(),
+    );
+
+    // Everything after the expiration block number must be zero.
+    assert_eq!(
+        exec_output
+            .get_stack_word(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
+            .as_elements()[1..],
         Word::empty().as_elements()[1..],
     );
-    assert_eq!(exec_output.get_stack_word(12), Word::empty());
 
     assert_eq!(
         exec_output.stack.len(),
