@@ -2,6 +2,7 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
+use anyhow::Context;
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
@@ -152,6 +153,11 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
 
     assert_eq!(tx.final_account().vault_root(), account_vault.root());
 
+    // The lazy loaded witnesses must be in the native partial vault of the executed inputs.
+    let partial_vault = tx.tx_inputs().account().vault();
+    assert_eq!(partial_vault.get(fungible_asset1.id())?, Some(fungible_asset1.into()));
+    assert_eq!(partial_vault.get(fungible_asset2.id())?, Some(fungible_asset2.into()));
+
     Ok(())
 }
 
@@ -273,12 +279,23 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    TestTransactionBuilder::with_existing_mock_account()
+    let tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
         .execute()
         .await?;
+
+    // The lazy loaded witnesses must be in the native partial storage of the executed inputs.
+    let partial_map = tx
+        .tx_inputs()
+        .account()
+        .storage()
+        .maps()
+        .find(|map| map.root() == mock_map.root())
+        .context("partial storage should contain the mock map")?;
+    assert_eq!(partial_map.get(existing_key), Some(*existing_value));
+    assert_eq!(partial_map.get(&non_existent_key), Some(Word::empty()));
 
     Ok(())
 }

@@ -65,6 +65,21 @@ impl WordSchema {
         }
     }
 
+    /// Returns `word` as a string according to this schema's type(s).
+    pub fn display_word(&self, word: Word) -> String {
+        match self {
+            WordSchema::Simple { r#type, .. } => {
+                SCHEMA_TYPE_REGISTRY.display_word(r#type, word).value().to_string()
+            },
+            WordSchema::Composite { value } => {
+                let felts: [String; 4] = core::array::from_fn(|i| {
+                    SCHEMA_TYPE_REGISTRY.display_felt(&value[i].felt_type(), word[i])
+                });
+                alloc::format!("[{}]", felts.join(", "))
+            },
+        }
+    }
+
     pub(super) fn collect_init_value_requirements(
         &self,
         value_name: StorageValueName,

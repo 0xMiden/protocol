@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use super::{
     AccountHeader,
     AccountId,
-    AdviceInputs,
     InputNote,
     InputNotes,
     NoteId,
@@ -35,9 +34,8 @@ use crate::utils::serde::{
 ///   contains all output notes created as the result of the transaction and describes all the
 ///   changes made to the involved account (i.e., the account delta).
 /// - It contains all the information required to re-execute and prove the transaction in a
-///   stateless manner. This includes all public transaction inputs, but also all nondeterministic
-///   inputs that the host provided to Miden VM while executing the transaction (i.e., advice
-///   witness).
+///   stateless manner. This includes all public transaction inputs and the data the host loaded
+///   lazily while executing the transaction (see [`TransactionInputs`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutedTransaction {
     id: TransactionId,
@@ -150,12 +148,6 @@ impl ExecutedTransaction {
     /// Returns a reference to the inputs for this transaction.
     pub fn tx_inputs(&self) -> &TransactionInputs {
         &self.tx_inputs
-    }
-
-    /// Returns all the data requested by the VM from the advice provider while executing the
-    /// transaction program.
-    pub fn advice_witness(&self) -> &AdviceInputs {
-        self.tx_inputs.advice_inputs()
     }
 
     /// Returns a reference to the transaction measurements which are the cycle counts for
