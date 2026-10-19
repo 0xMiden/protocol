@@ -1,8 +1,9 @@
 use crate::Word;
-use crate::account::{AccountCode, AccountId, PartialAccount, PartialStorage};
-use crate::asset::PartialVault;
+use crate::account::{AccountCode, AccountId, PartialAccount, PartialStorage, StorageMapWitness};
+use crate::asset::{AssetWitness, PartialVault};
 use crate::block::account_tree::AccountWitness;
 use crate::crypto::merkle::smt::{SmtProof, SmtProofError};
+use crate::errors::{AccountError, PartialAssetVaultError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -61,6 +62,30 @@ impl AccountInputs {
     /// Returns a reference to the account's witness.
     pub fn witness(&self) -> &AccountWitness {
         &self.witness
+    }
+
+    /// Adds an asset witness to the partial account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the conditions of [`PartialAccount::add_asset_witness`].
+    pub fn add_asset_witness(
+        &mut self,
+        witness: AssetWitness,
+    ) -> Result<(), PartialAssetVaultError> {
+        self.partial_account.add_asset_witness(witness)
+    }
+
+    /// Adds a storage map witness to the partial account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the conditions of [`PartialAccount::add_storage_map_witness`].
+    pub fn add_storage_map_witness(
+        &mut self,
+        witness: StorageMapWitness,
+    ) -> Result<(), AccountError> {
+        self.partial_account.add_storage_map_witness(witness)
     }
 
     /// Decomposes the `AccountInputs` into its constituent parts.

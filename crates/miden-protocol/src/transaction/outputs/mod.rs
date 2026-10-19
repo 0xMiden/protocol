@@ -3,6 +3,8 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
+use crate::transaction::TransactionKernel;
+use crate::vm::StackOutputs;
 
 mod notes;
 pub use notes::{
@@ -93,6 +95,16 @@ impl TransactionOutputs {
 
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the stack outputs the transaction kernel produces for these outputs.
+    pub fn to_stack_outputs(&self) -> StackOutputs {
+        TransactionKernel::build_output_stack(
+            self.account.to_commitment(),
+            self.account_patch_commitment,
+            self.output_notes.commitment(),
+            self.expiration_block_num,
+        )
+    }
 
     /// Consumes self and returns the individual parts (that are non-Copy).
     pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {

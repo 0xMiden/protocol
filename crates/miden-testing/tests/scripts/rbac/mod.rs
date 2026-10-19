@@ -110,7 +110,7 @@ pub(super) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::
     let seed: [u32; 4] = rand::random();
     let mut rng = RandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Private)
+        .note_type(NoteType::Public)
         .code(code.into())
         .build()?)
 }

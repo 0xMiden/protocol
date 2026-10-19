@@ -674,7 +674,7 @@ async fn rbac_block_fails_when_sender_lacks_role() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(block.id())
+        .authenticated_input_note(block.clone())
         .build()?
         .execute()
         .await;

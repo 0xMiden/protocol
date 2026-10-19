@@ -6,21 +6,21 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::Word;
+use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, SignatureKey};
 use miden_protocol::account::{
-    AccountCode,
     AccountId,
     AccountPatch,
     PartialAccount,
     StorageMapKey,
-    StorageSlotId,
-    StorageSlotName,
+    StorageMapWitness,
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
+use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
     NoteRecipient,
     NoteScript,
@@ -29,14 +29,15 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::{
+    AccountInputs,
     InputNote,
     InputNotes,
     RawOutputNote,
     TransactionAdviceInputs,
+    TransactionInputs,
     TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
-use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
@@ -76,26 +77,14 @@ where
     tx_progress: TransactionProgress,
 
     /// Serves signature generation requests from the transaction runtime for signatures which are
-    /// not present in the `generated_signatures` field.
+    /// not present in the advice provider.
     authenticator: Option<&'auth AUTH>,
 
     /// The reference block of the transaction.
     ref_block: BlockNumber,
 
-    /// The foreign account code that was lazy loaded during transaction execution.
-    ///
-    /// This is required for re-executing the transaction, e.g. as part of transaction proving.
-    accessed_foreign_account_code: Vec<AccountCode>,
-
-    /// Storage slot names for foreign accounts accessed during transaction execution.
-    foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
-
-    /// Contains generated signatures (as a message |-> signature map) required for transaction
-    /// execution. Once a signature was created for a given message, it is inserted into this map.
-    /// After transaction execution, these can be inserted into the advice inputs to re-execute the
-    /// transaction without having to regenerate the signature or requiring access to the
-    /// authenticator that produced it.
-    generated_signatures: BTreeMap<Word, Vec<Felt>>,
+    /// The data that was lazy loaded during transaction execution.
+    lazy_loaded_data: LazyLoadedData,
 
     /// Whether execution is currently inside the authentication procedure.
     ///
@@ -152,9 +141,7 @@ where
             tx_progress: TransactionProgress::default(),
             authenticator,
             ref_block,
-            accessed_foreign_account_code: Vec::new(),
-            foreign_account_slot_names: BTreeMap::new(),
-            generated_signatures: BTreeMap::new(),
+            lazy_loaded_data: LazyLoadedData::default(),
             in_auth_procedure: false,
             source_manager,
         })
@@ -166,11 +153,6 @@ where
     /// Returns a reference to the `tx_progress` field of this transaction host.
     pub fn tx_progress(&self) -> &TransactionProgress {
         &self.tx_progress
-    }
-
-    /// Returns a reference to the foreign account slot names collected during execution.
-    pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
-        &self.foreign_account_slot_names
     }
 
     // EVENT HANDLERS
@@ -195,22 +177,16 @@ where
         let mut tx_advice_inputs = TransactionAdviceInputs::default();
         tx_advice_inputs.add_foreign_accounts([&foreign_account_inputs]);
 
-        // Extract and store slot names for this foreign account and store.
-        foreign_account_inputs.storage().header().slots().for_each(|slot| {
-            self.foreign_account_slot_names.insert(slot.id(), slot.name().clone());
-        });
-
         self.base_host.load_foreign_account_code(foreign_account_inputs.code());
-
-        // Add the foreign account's code to the list of accessed code.
-        self.accessed_foreign_account_code.push(foreign_account_inputs.code().clone());
+        self.lazy_loaded_data.foreign_accounts.push(foreign_account_inputs);
 
         Ok(tx_advice_inputs.into_advice_mutations().collect())
     }
 
     /// Pushes a signature to the advice stack as a response to the `AuthRequest` event.
     ///
-    /// The signature is requested from the host's authenticator.
+    /// The signature is requested from the host's authenticator, unless it was already generated
+    /// for an earlier request, so that the lazy loaded data holds at most one signature per key.
     pub async fn on_auth_requested(
         &mut self,
         pub_key_commitment: PublicKeyCommitment,
@@ -218,22 +194,35 @@ where
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let signing_inputs = SigningInputs::TransactionSummary(Box::new(tx_summary));
 
+        // get the message that will be signed by the authenticator
+        let message = signing_inputs.to_commitment();
+        let signature_key = SignatureKey::new(pub_key_commitment, message);
+
+        if let Some(signature) = self
+            .lazy_loaded_data
+            .signatures
+            .iter()
+            .find(|signature| signature.key() == signature_key)
+        {
+            return Ok(vec![AdviceMutation::extend_advice_stack_with(
+                signature.to_encoded_signature(),
+            )]);
+        }
+
         let authenticator =
             self.authenticator.ok_or(TransactionKernelError::MissingAuthenticator)?;
 
-        // get the message that will be signed by the authenticator
-        let message = signing_inputs.to_commitment();
-
-        let signature: Vec<Felt> = authenticator
+        let signature = authenticator
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
-            .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_encoded_signature(message);
+            .map_err(TransactionKernelError::SignatureGenerationFailed)?;
+        let signature = BoundSignature::new(signature_key, signature)
+            .map_err(TransactionKernelError::InvalidAuthenticatorSignature)?;
+        let encoded_signature = signature.to_encoded_signature();
 
-        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
-        self.generated_signatures.insert(signature_key, signature.clone());
+        self.lazy_loaded_data.signatures.push(signature);
 
-        Ok(vec![AdviceMutation::extend_advice_stack_with(signature)])
+        Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -241,7 +230,7 @@ where
     /// Note that we request witnesses against the _initial_ map root of the accounts. See also
     /// [`Self::on_account_vault_asset_witness_requested`] for more on this topic.
     async fn on_account_storage_map_witness_requested(
-        &self,
+        &mut self,
         active_account_id: AccountId,
         map_root: Word,
         map_key: StorageMapKey,
@@ -256,6 +245,10 @@ where
                 map_key,
                 source: err,
             })?;
+
+        self.lazy_loaded_data
+            .storage_map_witnesses
+            .push((active_account_id, storage_map_witness.clone()));
 
         // Get the nodes in the proof and insert them into the merkle store.
         let merkle_store_ext =
@@ -303,7 +296,7 @@ where
     /// So, for foreign accounts, just like for the native account, we also always request
     /// witnesses for the initial vault root.
     async fn on_account_vault_asset_witness_requested(
-        &self,
+        &mut self,
         active_account_id: AccountId,
         vault_root: Word,
         asset_id: AssetId,
@@ -322,6 +315,10 @@ where
                 asset_id,
                 source: err,
             })?;
+
+        self.lazy_loaded_data
+            .asset_witnesses
+            .extend(asset_witnesses.iter().cloned().map(|witness| (active_account_id, witness)));
 
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
@@ -368,6 +365,7 @@ where
         match note_script {
             Some(note_script) => {
                 let script_felts = note_script.to_elements();
+                self.lazy_loaded_data.note_scripts.push(note_script.clone());
                 let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
@@ -400,19 +398,17 @@ where
         }
     }
 
-    /// Consumes `self` and returns the account delta, output notes, generated signatures and
-    /// transaction progress.
+    /// Consumes `self` and returns the account delta, output notes, transaction progress and lazy
+    /// loaded data.
     #[allow(clippy::type_complexity)]
-    pub fn into_parts(
+    pub(crate) fn into_parts(
         self,
     ) -> (
         AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
-        Vec<AccountCode>,
-        BTreeMap<Word, Vec<Felt>>,
         TransactionProgress,
-        BTreeMap<StorageSlotId, StorageSlotName>,
+        LazyLoadedData,
     ) {
         let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
@@ -420,11 +416,78 @@ where
             account_patch,
             input_notes,
             output_notes,
-            self.accessed_foreign_account_code,
-            self.generated_signatures,
             self.tx_progress,
-            self.foreign_account_slot_names,
+            self.lazy_loaded_data,
         )
+    }
+
+    /// Consumes `self` and returns the transaction progress and lazy loaded data for the notes
+    /// checker.
+    ///
+    /// The checker cannot call `into_parts` as it would panic when constructing the patch on an
+    /// erroneous transaction.
+    pub(crate) fn into_notes_checker_parts(self) -> (TransactionProgress, LazyLoadedData) {
+        (self.tx_progress, self.lazy_loaded_data)
+    }
+}
+
+// LAZY LOADED DATA
+// ================================================================================================
+
+/// The data the host loaded lazily during transaction execution.
+///
+/// Adding it to the [`TransactionInputs`] lets the transaction be re-executed (e.g. to prove it)
+/// without fetching the data again.
+#[derive(Debug, Default)]
+pub(crate) struct LazyLoadedData {
+    /// The foreign accounts the transaction accessed.
+    foreign_accounts: Vec<AccountInputs>,
+
+    /// The scripts of output notes whose script was not in the advice provider.
+    note_scripts: Vec<NoteScript>,
+
+    /// The signatures the authenticator generated.
+    signatures: Vec<BoundSignature>,
+
+    /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
+    ///
+    /// They are fetched against the initial vault roots, so they fit the initial partial accounts.
+    asset_witnesses: Vec<(AccountId, AssetWitness)>,
+
+    /// The storage map witnesses, tagged with the ID of the account whose storage they belong to.
+    ///
+    /// They are fetched against the initial map roots, so they fit the initial partial accounts.
+    storage_map_witnesses: Vec<(AccountId, StorageMapWitness)>,
+}
+
+impl LazyLoadedData {
+    /// Adds the lazy loaded data to the provided transaction inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the inputs reject any of the data.
+    pub(crate) fn add_to(
+        self,
+        tx_inputs: &mut TransactionInputs,
+    ) -> Result<(), TransactionInputError> {
+        for foreign_account in self.foreign_accounts {
+            tx_inputs.add_foreign_account(foreign_account)?;
+        }
+        for note_script in self.note_scripts {
+            tx_inputs.add_note_script(note_script);
+        }
+        for signature in self.signatures {
+            tx_inputs.add_signature(signature)?;
+        }
+        // Witnesses can belong to foreign accounts, so add witnesses after foreign accounts.
+        for (account_id, witness) in self.asset_witnesses {
+            tx_inputs.add_asset_witnesses(account_id, [witness])?;
+        }
+        for (account_id, witness) in self.storage_map_witnesses {
+            tx_inputs.add_storage_map_witnesses(account_id, [witness])?;
+        }
+
+        Ok(())
     }
 }
 
