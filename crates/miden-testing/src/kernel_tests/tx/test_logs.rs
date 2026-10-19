@@ -189,18 +189,19 @@ async fn add_log_from_memory(
 
 #[tokio::test]
 async fn transaction_scripts_cannot_log_directly() -> anyhow::Result<()> {
-    let script = CodeBuilder::default().compile_tx_script(
+    let empty_commitment = Hasher::hash_elements::<Felt>(&[]);
+    let script = CodeBuilder::default().compile_tx_script(format!(
         r"
             use miden::protocol::tx
             @transaction_script
             pub proc main
-                padw push.29.17 exec.tx::add_log
+                push.{empty_commitment} push.29.17 exec.tx::add_log
             end
             ",
-    )?;
+    ))?;
     let tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(script)
-        .add_advice_map_entry(Word::empty(), vec![])
+        .add_advice_map_entry(empty_commitment, vec![])
         .build()?;
     assert_transaction_executor_error!(
         tx.execute().await,
@@ -408,7 +409,8 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     #[case] native_type: AccountType,
     #[case] foreign_type: AccountType,
 ) -> anyhow::Result<()> {
-    let component = log_emitter_component(Word::empty())?;
+    let empty_commitment = Hasher::hash_elements::<Felt>(&[]);
+    let component = log_emitter_component(empty_commitment)?;
     let proc_root = component
         .get_procedure_root_by_path(EMIT_LOG_PROC)
         .context("foreign transaction log procedure")?;
@@ -425,7 +427,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
             use miden::core::sys
             @account_procedure
             pub proc emit_log
-                padw push.31.17 exec.tx::add_log
+                push.{empty_commitment} push.31.17 exec.tx::add_log
                 padw padw push.0.0 push.{proc_root} push.{prefix}.{suffix}
                 exec.tx::execute_foreign_procedure exec.sys::truncate_stack
             end
@@ -476,7 +478,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
         .build_transaction(native.clone())
         .foreign_accounts([inputs, intermediate_inputs])
         .tx_script(script)
-        .add_advice_map_entry(Word::empty(), vec![])
+        .add_advice_map_entry(empty_commitment, vec![])
         .build()?;
     let executed = tx.execute().await?;
     let entries = executed.logs().iter().collect::<Vec<_>>();
@@ -490,14 +492,15 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
 }
 
 #[rstest]
-#[case::public_falcon(AccountType::Public, AuthScheme::Falcon512Poseidon2)]
+#[case::public_falcon(AccountType::Public, AuthScheme::Falcon512Eidos)]
 #[case::private_ecdsa(AccountType::Private, AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn standard_auth_rejects_replayed_transaction_log_signatures(
     #[case] account_type: AccountType,
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let component = log_emitter_component(Word::empty())?;
+    let empty_commitment = Hasher::hash_elements::<Felt>(&[]);
+    let component = log_emitter_component(empty_commitment)?;
     let root = component.get_procedure_root_by_path(EMIT_LOG_PROC).unwrap();
     let mut builder = MockChain::builder();
     let account = builder.add_account_from_builder(
@@ -519,7 +522,7 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
             end
             "
         ))?)
-        .add_advice_map_entry(Word::empty(), vec![])
+        .add_advice_map_entry(empty_commitment, vec![])
         .build()?;
     let executed = tx.execute().await?;
     let effects = TransactionEffects::from(&executed);
@@ -616,10 +619,12 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
 
 #[tokio::test]
 async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
+    let empty_commitment = Hasher::hash_elements::<Felt>(&[]);
     let component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "test::omitted_transaction_logs",
-            r#"
+            format!(
+                r#"
             use miden::protocol::native_account
             use miden::protocol::tx
             use miden::standards::auth
@@ -633,12 +638,13 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
                 padw push.0.0 exec.auth::get_default_tx_summary_commitment
                 # => [MESSAGE_WITHOUT_LOGS]
 
-                padw push.29.17 exec.tx::add_log
+                push.{empty_commitment} push.29.17 exec.tx::add_log
                 # => [MESSAGE_WITHOUT_LOGS]
 
                 emit.UNAUTHORIZED
             end
-            "#,
+            "#
+            ),
         )?,
         vec![],
         AccountComponentMetadata::mock("test::omitted_transaction_logs"),
@@ -649,7 +655,7 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
         .with_component(BasicWallet)
         .build_existing()?;
     let tx = TestTransactionBuilder::new(account)
-        .add_advice_map_entry(Word::empty(), vec![])
+        .add_advice_map_entry(empty_commitment, vec![])
         .build()?;
     assert_transaction_executor_error!(
         tx.execute().await,

@@ -63,11 +63,6 @@ const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT =
 # CONSTANTS
 # =================================================================================================
 
-# Account commitment selectors from the Rust ProtocolDomainRegistry. Versioning is delegated to
-# the payload; DELTA_VERSION_1 and PATCH_VERSION_1 identify non-empty commitment layouts.
-const ACCOUNT_DELTA_COMMITMENT_SELECTOR = 0x02000100
-const ACCOUNT_PATCH_COMMITMENT_SELECTOR = 0x02000000
-
 # Eidos chaining-word bases for the registered account commitment selectors. The runtime message
 # length is added to the second element.
 const ACCOUNT_DELTA_INIT_CV_BASE = [
@@ -113,34 +108,14 @@ const DELTA_VERSION_1 = 1
 #! The version of the patch commitment layout.
 const PATCH_VERSION_1 = 1
 
-#! The default delta operation indicating no change.
-const DELTA_OP_NONE = 0
-
 #! The delta operation indicating that an asset was added.
 const DELTA_OP_ADD = 1
 
 #! The delta operation indicating that an asset was removed.
 const DELTA_OP_REMOVE = 2
 
-#! The patch operation indicating the creation of a slot.
-const PATCH_OP_CREATE = 0
-
 #! The patch operation indicating an update to a slot.
 const PATCH_OP_UPDATE = 1
-
-#! The patch operation indicating the removal of a slot.
-const PATCH_OP_REMOVE = 2
-
-# The maximum value a felt can represent.
-const FELT_MAX = 0xffffffff00000000
-
-#! Local in track_asset_delta that stores the delta operation.
-const TRACK_ASSET_DELTA_OP_LOC = 0
-
-#! Locals in combine_asset_delta that store the incoming and current delta operations so that the
-#! new delta operation can be selected after the magnitude comparison.
-const COMBINE_INCOMING_DELTA_OP_LOC = 0
-const COMBINE_CURRENT_DELTA_OP_LOC = 1
 
 #! Locals in commit_asset_delta. The last region is a buffer of removed assets that is hashed after
 #! the added-assets section.

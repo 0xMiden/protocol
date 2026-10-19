@@ -9,9 +9,6 @@ use miden::standards::note::note_target
 # CONSTANTS
 # =================================================================================================
 
-# Number of felts encoding a metadata string: 7 Words.
-const STRING_NUM_ELEMENTS = 28
-
 # Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
