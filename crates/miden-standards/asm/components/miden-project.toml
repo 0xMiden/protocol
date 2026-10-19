@@ -10,6 +10,7 @@ members = [
   "auth/multisig_smart",
   "auth/network_account",
   "auth/no_auth",
+  "auth/passthrough",
   "auth/singlesig",
   "auth/tx_fee_collector",
   "faucets/fungible_faucet",

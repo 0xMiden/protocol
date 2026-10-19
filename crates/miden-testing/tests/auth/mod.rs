@@ -34,3 +34,5 @@ fn foreign_signature_advice_entry(
 
     Ok((key.to_advice_map_key(), foreign_signature.to_encoded_signature()))
 }
+
+mod passthrough;
