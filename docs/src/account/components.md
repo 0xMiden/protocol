@@ -9,6 +9,20 @@ Account components are reusable units of functionality that define a part of an 
 
 As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with a `Falcon512Poseidon2` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
 
+## Passthrough account
+
+Combine `AuthPassthrough` with `BasicWallet` in a public account for permissionless transactions. The vault must stay empty and account state must remain unchanged, including pending upgrades. Deployment increments the nonce once. Input scripts must constrain their outputs; a plain P2ID transfer does not protect funds sent to this account.
+
+`AuthPassthrough::auth_args` selects a sealed public `TX_FEE` output containing enough native fee assets for the entire transaction. The component verifies that output without creating another fee note. No fee output is required on chains with zero fees.
+
+To create a public PSWAP with private paybacks:
+
+1. Fund a private [CREATE_NOTE](../note.md#create_note) with the offered asset and creation fee. Commit to a public PSWAP whose payback recipient remains private.
+2. Consume the authenticated request through the passthrough account, producing the PSWAP and fee note. The passthrough account appears as the PSWAP sender.
+3. Fillers create private paybacks, which the owner reconstructs and consumes with inclusion proofs. The owner can cancel through the passthrough account using the secret recipient preimage; a separate CREATE_NOTE can fund cancellation by creating a fee note.
+
+Execute and prove locally to keep private inputs confidential. The proven creation transaction omits the request header, removing the direct ledger link to its owner. Amounts, timing, and information shared outside the protocol can still correlate them.
+
 ## Account Component schemas
 
 An account component schema describes a reusable piece of account functionality and captures
@@ -219,20 +233,3 @@ decimals = "10"
 All init values must be provided as TOML strings (including numeric values), and are parsed/validated against the schema at instantiation time.
 
 Each element in the array is a fully specified key/value pair. Note that slot names include `::`, so they must be quoted in TOML. This syntax complements the existing `default-values = [...]` form used for static maps, and mirrors how map entries are provided in component metadata. If an init-populated map slot is omitted from `InitStorageData`, it defaults to an empty map.
-
-## Passthrough account
-
-Combine `AuthPassthrough` with `BasicWallet` in a public account to execute permissionless transactions without retaining state. The auth component rejects changes to the vault, storage, code, nonce, or pending upgrade. The vault must remain empty. Deployment increments the nonce once after checking these invariants; later transactions leave the account commitment unchanged.
-
-Input note scripts must constrain their outputs. For example, `CREATE_NOTE` commits to its intended output and fee payment. A plain P2ID transfer to a permissionless account does not constrain who may spend its assets afterward.
-
-The transaction supplies a sealed public `TX_FEE` note containing the native fee asset. `AuthPassthrough::auth_args` selects that output, and auth verifies its script, storage, visibility, assets, and payment amount against the estimated transaction fee. It creates no additional fee note. The selected note must cover the entire fee; payments in several notes are not summed. On a chain with zero fees, no fee output is required.
-
-A private PSWAP creation flow is:
-
-1. The owner creates a private `CREATE_NOTE` carrying the offered asset and a quoted native fee payment. Its committed output is a public PSWAP with a fixed private payback recipient.
-2. A local transaction consumes the request as an authenticated input through the passthrough account. It creates the public PSWAP and a public `TX_FEE` note. The PSWAP names the passthrough account as its sender.
-3. Fillers consume the public PSWAP and create private paybacks to the committed recipient. Fill attachments distinguish equal payments to the same recipient.
-4. The owner reconstructs and consumes the paybacks as authenticated inputs. Cancellation uses the secret recipient preimage through the passthrough account and returns the full remaining asset in a private refund. Its fee can be supplied by another private `CREATE_NOTE` whose committed output is a `TX_FEE` note.
-
-Keep the request and payback preimages private and prove locally. The proven creation transaction exposes authenticated input nullifiers without the request headers. This removes the direct ledger link from the owner to the public order; amounts, timing, and information shared outside the protocol can still correlate them.

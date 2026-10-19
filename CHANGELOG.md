@@ -5,10 +5,7 @@
 ### Features
 
 - Added private `CREATE_NOTE` requests with committed outputs, native fee funding, and sender recovery.
-- Added `AuthPassthrough` for permissionless transactions that preserve an empty account state and verify an explicitly supplied native fee note.
-
-- Added `CREATE_NOTE` requests to create a committed output and native fee note through a public account, with sealed outputs and sender recovery after a chosen block height.
-
+- Added `AuthPassthrough` for stateless permissionless transactions with a supplied native fee note.
 - Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
