@@ -1,6 +1,10 @@
 //! Tests for the account component metadata embedded in the standard component packages.
 
+use std::collections::BTreeSet;
+
 use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::vm::Package;
 use miden_standards::account::access::{
     Authority,
     Ownable2Step,
@@ -14,12 +18,14 @@ use miden_standards::account::auth::{
     AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
+    AuthTxFeeCollector,
     NoAuth,
 };
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet};
 use miden_standards::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
 use miden_standards::account::inspection::{AccountSchemaCommitment, CodeInspection};
 use miden_standards::account::note_creator::NoteCreator;
+use miden_standards::account::oracle::PriceOracle;
 use miden_standards::account::policies::{
     AllowlistManager,
     BasicAllowlist,
@@ -52,6 +58,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (AuthNetworkAccount::NAME, AuthNetworkAccount::component_metadata()),
         (NoAuth::NAME, NoAuth::component_metadata()),
         (AuthSingleSig::NAME, AuthSingleSig::component_metadata()),
+        (AuthTxFeeCollector::NAME, AuthTxFeeCollector::component_metadata()),
         (FungibleFaucet::NAME, FungibleFaucet::component_metadata()),
         (NonFungibleFaucet::NAME, NonFungibleFaucet::component_metadata()),
         (BurnAllowAll::NAME, BurnAllowAll::component_metadata()),
@@ -77,6 +84,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (CodeInspection::NAME, CodeInspection::component_metadata()),
         (AccountSchemaCommitment::NAME, AccountSchemaCommitment::component_metadata()),
         (NoteCreator::NAME, NoteCreator::component_metadata()),
+        (PriceOracle::NAME, PriceOracle::component_metadata()),
         (UpgradeManager::NAME, UpgradeManager::component_metadata()),
         (BasicWallet::NAME, BasicWallet::component_metadata()),
     ]
@@ -95,5 +103,28 @@ fn manifest_name_matches_component_name() {
 fn every_component_is_described() {
     for (name, metadata) in components() {
         assert!(!metadata.description().is_empty(), "{name} declares no description");
+    }
+}
+
+/// Every component package produced by the build script must be listed in [`components`], so the
+/// tests above cover newly added components.
+#[test]
+fn every_component_package_is_listed() {
+    let listed: BTreeSet<&str> = components().into_iter().map(|(name, _)| name).collect();
+
+    let packages_dir = concat!(env!("OUT_DIR"), "/assets/components");
+    for entry in std::fs::read_dir(packages_dir).expect("component packages directory exists") {
+        let path = entry.expect("directory entry is readable").path();
+        let bytes = std::fs::read(&path).expect("component package is readable");
+        let package = Package::read_from_bytes(&bytes).expect("component package deserializes");
+        let metadata = AccountComponentMetadata::try_from(&package)
+            .expect("component package declares account component metadata");
+
+        assert!(
+            listed.contains(metadata.name()),
+            "{} ({}) is missing from `components()`",
+            metadata.name(),
+            path.display()
+        );
     }
 }
