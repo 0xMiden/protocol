@@ -64,12 +64,6 @@ const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS = "number of attachments per note can
 const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
     "total number of attachment words per note cannot exceed 512"
 
-const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED =
-    "adding a fungible asset to a note cannot exceed FUNGIBLE_ASSET_MAX_AMOUNT"
-
-const ERR_OUTPUT_NOTE_ATTACHMENT_COMMITMENT_MISMATCH =
-    "the computed hash of fetched attachment elements does not match the provided commitment"
-
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS =
     "non-fungible asset that already exists in the note cannot be added again"
 

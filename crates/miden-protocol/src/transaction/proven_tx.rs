@@ -245,7 +245,7 @@ impl ProvenTransaction {
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
         if account_update.initial_state_commitment() == account_update.final_state_commitment()
-            && input_notes.commitment().is_empty()
+            && input_notes.is_empty()
         {
             return Err(ProvenTransactionError::EmptyTransaction);
         }
@@ -540,11 +540,12 @@ impl Deserializable for InputNoteCommitment {
 #[cfg(test)]
 mod tests {
     use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
     use rand::random;
 
-    use super::ProvenTransaction;
+    use super::{InputNoteCommitment, OutputNote, ProvenTransaction, TransactionLogDetails};
     use crate::account::{
         Account,
         AccountCodePatch,
@@ -559,6 +560,7 @@ mod tests {
         StorageMapPatchEntries,
         StorageSlotName,
     };
+    use crate::block::BlockNumber;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,

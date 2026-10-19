@@ -2,20 +2,20 @@
 // Values are maxima across the benchmarked paths; see `miden_standards::note::costs` for the
 // caveats on what they do and do not cover.
 
-/// Cycles of consuming a CLAIM note: L1 origin 55707, L2 origin 65261 (maximum).
-pub const CLAIM_CONSUMPTION_CYCLES: u32 = 65261;
+/// Cycles of consuming a CLAIM note: L1 origin 55778, L2 origin 65332 (maximum).
+pub const CLAIM_CONSUMPTION_CYCLES: u32 = 65332;
 
-/// Cycles of consuming a B2AGG note: empty frontier 154460 (maximum), 2^31-1 leaves 90125.
-pub const B2AGG_CONSUMPTION_CYCLES: u32 = 154460;
+/// Cycles of consuming a B2AGG note: empty frontier 154531 (maximum), 2^31-1 leaves 90196.
+pub const B2AGG_CONSUMPTION_CYCLES: u32 = 154531;
 
 /// Cycles of consuming a CONFIG_AGG_BRIDGE note (single benchmarked path).
-pub const CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES: u32 = 35785;
+pub const CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES: u32 = 35856;
 
 /// Cycles of consuming a DEREGISTER_AGG_FAUCET note (single benchmarked path).
-pub const DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES: u32 = 34604;
+pub const DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES: u32 = 34675;
 
 /// Cycles of consuming an UPDATE_GER note (single benchmarked path).
-pub const UPDATE_GER_CONSUMPTION_CYCLES: u32 = 25783;
+pub const UPDATE_GER_CONSUMPTION_CYCLES: u32 = 25854;
 
 /// Cycles of consuming a REMOVE_GER note (single benchmarked path).
-pub const REMOVE_GER_CONSUMPTION_CYCLES: u32 = 26881;
+pub const REMOVE_GER_CONSUMPTION_CYCLES: u32 = 26952;
