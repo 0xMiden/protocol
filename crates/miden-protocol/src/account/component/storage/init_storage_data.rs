@@ -113,6 +113,7 @@ pub struct InitStorageData {
     value_entries: BTreeMap<StorageValueName, WordValue>,
     /// A mapping of storage map slot names to their init key/value entries.
     map_entries: BTreeMap<StorageSlotName, Vec<(WordValue, WordValue)>>,
+    array_values: BTreeMap<StorageSlotName, Vec<WordValue>>,
 }
 
 impl InitStorageData {
@@ -150,7 +151,11 @@ impl InitStorageData {
             }
         }
 
-        Ok(InitStorageData { value_entries, map_entries })
+        Ok(InitStorageData {
+            value_entries,
+            map_entries,
+            array_values: BTreeMap::new(),
+        })
     }
 
     /// Returns a reference to the underlying init values map.
@@ -222,7 +227,9 @@ impl InitStorageData {
         if self.value_entries.contains_key(&name) {
             return Err(InitStorageDataError::DuplicateKey(name.to_string()));
         }
-        if self.map_entries.contains_key(name.slot_name()) {
+        if self.map_entries.contains_key(name.slot_name())
+            || self.array_values.contains_key(name.slot_name())
+        {
             return Err(InitStorageDataError::ConflictingEntries(name.slot_name().as_str().into()));
         }
         self.value_entries.insert(name, value.into());
@@ -231,7 +238,7 @@ impl InitStorageData {
 
     /// Sets a value entry, overriding any existing entry for the name.
     ///
-    /// Returns an error if the [`StorageValueName`] has been used for a map slot.
+    /// Returns an error if the slot has map or array entries.
     ///
     /// See [`Self::insert_value`] for accepted types for `name` and `value`.
     pub fn set_value<N, E>(
@@ -244,7 +251,9 @@ impl InitStorageData {
         InitStorageDataError: From<E>,
     {
         let name = name.try_into().map_err(InitStorageDataError::from)?;
-        if self.map_entries.contains_key(name.slot_name()) {
+        if self.map_entries.contains_key(name.slot_name())
+            || self.array_values.contains_key(name.slot_name())
+        {
             return Err(InitStorageDataError::ConflictingEntries(name.slot_name().as_str().into()));
         }
         self.value_entries.insert(name, value.into());
@@ -270,7 +279,8 @@ impl InitStorageData {
         InitStorageDataError: From<E>,
     {
         let slot_name = slot_name.try_into().map_err(InitStorageDataError::from)?;
-        if self.has_value_entries_for_slot(&slot_name) {
+        if self.has_value_entries_for_slot(&slot_name) || self.array_values.contains_key(&slot_name)
+        {
             return Err(InitStorageDataError::ConflictingEntries(slot_name.as_str().into()));
         }
 
@@ -290,7 +300,7 @@ impl InitStorageData {
 
     /// Sets map entries for the slot, replacing any existing entries.
     ///
-    /// Returns an error if there are conflicting value entries.
+    /// Returns an error if the slot has value or array entries.
     ///
     /// See [`Self::insert_map_entry`] for accepted types for `slot_name`.
     pub fn set_map_values<S, E>(
@@ -303,24 +313,43 @@ impl InitStorageData {
         InitStorageDataError: From<E>,
     {
         let slot_name = slot_name.try_into().map_err(InitStorageDataError::from)?;
-        if self.has_value_entries_for_slot(&slot_name) {
+        if self.has_value_entries_for_slot(&slot_name) || self.array_values.contains_key(&slot_name)
+        {
             return Err(InitStorageDataError::ConflictingEntries(slot_name.as_str().into()));
         }
         self.map_entries.insert(slot_name, entries);
         Ok(())
     }
 
-    /// Merges another [`InitStorageData`] into this one, overwriting value entries and appending
-    /// map entries.
+    /// Returns the initialization values for an array slot.
+    pub fn array_values(&self, slot_name: &StorageSlotName) -> Option<&[WordValue]> {
+        self.array_values.get(slot_name).map(Vec::as_slice)
+    }
+
+    /// Sets an array's initialization values. Rejects slots with value or map entries.
+    pub fn set_array_values(
+        &mut self,
+        slot_name: StorageSlotName,
+        values: Vec<WordValue>,
+    ) -> Result<(), InitStorageDataError> {
+        if self.has_value_entries_for_slot(&slot_name) || self.map_entries.contains_key(&slot_name)
+        {
+            return Err(InitStorageDataError::ConflictingEntries(slot_name.as_str().into()));
+        }
+        self.array_values.insert(slot_name, values);
+        Ok(())
+    }
+
+    /// Merges initialization data, replacing values and arrays and appending map entries.
     pub fn merge_with(&mut self, other: InitStorageData) {
         self.value_entries.extend(other.value_entries);
+        self.array_values.extend(other.array_values);
         for (slot_name, entries) in other.map_entries {
             self.map_entries.entry(slot_name).or_default().extend(entries);
         }
     }
 
-    /// Merges another [`InitStorageData`] into this one, overwriting value entries and appending
-    /// map entries.
+    /// Alias for [`Self::merge_with`].
     pub fn merge_from(&mut self, other: InitStorageData) {
         self.merge_with(other);
     }

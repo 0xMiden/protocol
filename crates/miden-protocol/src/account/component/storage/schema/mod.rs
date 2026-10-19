@@ -16,6 +16,9 @@ use crate::utils::serde::{
 };
 use crate::{Hasher, Word};
 
+mod array_slot;
+pub use array_slot::ArraySlotSchema;
+
 mod felt;
 pub use felt::FeltSchema;
 
@@ -102,7 +105,7 @@ impl StorageSchema {
     /// Returns init-value requirements for the entire schema.
     ///
     /// The returned map includes both required values (no `default_value`) and optional values
-    /// (with `default_value`), and excludes map entries.
+    /// (with `default_value`), and excludes map and array entries.
     pub fn schema_requirements(
         &self,
     ) -> Result<BTreeMap<StorageValueName, SchemaRequirement>, ComponentMetadataError> {

@@ -96,3 +96,31 @@ reads require the native account.
 
 Update patches contain `(index, new_word)` pairs in ascending index order, omitting words whose
 final value equals their transaction-start value. Creation patches include all words, including zeros.
+
+### Array component schemas
+
+An array schema specifies a word type and fixed length. For example:
+
+```toml
+[[storage.slots]]
+name = "example::portfolio::positions"
+type = { element = "word", length = 3 }
+default-elements = [
+  ["0", "0", "0", "0"],
+  ["0", "0", "0", "0"],
+  ["0", "0", "0", "0"],
+]
+```
+
+Initialization data replaces the whole array:
+
+```toml
+"example::portfolio::positions" = { array = [
+  ["1", "2", "3", "4"],
+  ["0", "0", "0", "0"],
+  ["5", "6", "7", "8"],
+] }
+```
+
+The schema commitment includes the element schema and length, excluding defaults. Defaults
+must specify the whole array; element defaults are not supported.

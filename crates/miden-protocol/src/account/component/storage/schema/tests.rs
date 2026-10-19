@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use super::super::{InitStorageData, SchemaType};
 use super::{FeltSchema, MapSlotSchema, ValueSlotSchema, WordSchema};
@@ -184,4 +185,122 @@ fn word_schema_displays_hex_for_unregistered_type() {
     let word = Word::from([1_u32, 2, 3, 4]);
 
     assert_eq!(schema.display_word(word), word.to_hex());
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn array_schema_binds_length_and_type_but_not_defaults() -> anyhow::Result<()> {
+    use super::{StorageSchema, StorageSlotSchema};
+    use crate::account::component::{AccountComponentMetadata, ArraySlotSchema};
+    use crate::account::{StorageArrayLength, StorageSlotContent};
+    use crate::utils::serde::{Deserializable, Serializable};
+    let name = StorageSlotName::new("test::array")?;
+    let make_schema = |length: usize,
+                       word: WordSchema,
+                       defaults: Option<Vec<Word>>|
+     -> anyhow::Result<StorageSchema> {
+        Ok(StorageSchema::new([(
+            name.clone(),
+            StorageSlotSchema::Array(ArraySlotSchema::new(
+                None,
+                StorageArrayLength::try_from(length)?,
+                word,
+                defaults,
+            )?),
+        )])?)
+    };
+    let schema = make_schema(
+        3,
+        WordSchema::new_simple(SchemaType::native_word()),
+        Some(vec![Word::empty(); 3]),
+    )?;
+    let different_defaults = make_schema(
+        3,
+        WordSchema::new_simple(SchemaType::native_word()),
+        Some(vec![Word::from([1u32; 4]); 3]),
+    )?;
+    assert_eq!(schema.commitment(), different_defaults.commitment());
+    assert_ne!(
+        schema.commitment(),
+        make_schema(2, WordSchema::new_simple(SchemaType::native_word()), None)?.commitment()
+    );
+    assert_ne!(
+        schema.commitment(),
+        make_schema(3, WordSchema::new_simple(SchemaType::pub_key()), None)?.commitment()
+    );
+    assert_eq!(StorageSchema::read_from_bytes(&schema.to_bytes())?, schema);
+    let metadata =
+        AccountComponentMetadata::new("test::arrays").with_storage_schema(schema.clone());
+    let decoded = AccountComponentMetadata::from_toml(&metadata.to_toml()?)?;
+    assert_eq!(decoded.storage_schema(), &schema);
+    let init = InitStorageData::from_toml(
+        r#""test::array" = { array = [["1", "2", "3", "4"], ["0", "0", "0", "0"], ["5", "6", "7", "8"]] }"#,
+    )?;
+    let slots = schema.build_storage_slots(&init)?;
+    let StorageSlotContent::Array(array) = slots[0].content() else {
+        panic!("expected array");
+    };
+    assert_eq!(array.values()[1], Word::empty());
+    let invalid_init =
+        InitStorageData::from_toml(r#""test::array" = { array = [["0", "0", "0", "0"]] }"#)?;
+    assert!(schema.build_storage_slots(&invalid_init).is_err());
+    Ok(())
+}
+
+#[test]
+fn array_schema_validates_complete_typed_defaults() -> anyhow::Result<()> {
+    use super::ArraySlotSchema;
+    use crate::account::StorageArrayLength;
+    let length = StorageArrayLength::try_from(2)?;
+    let element = WordSchema::new_value([
+        FeltSchema::bool("enabled"),
+        FeltSchema::u8("count"),
+        FeltSchema::new_void(),
+        FeltSchema::new_void(),
+    ]);
+    let valid = Word::from([1u32, 255, 0, 0]);
+    let schema = ArraySlotSchema::new(None, length, element.clone(), Some(vec![valid; 2]))?;
+    let name = StorageSlotName::new("test::array")?;
+    assert_eq!(
+        schema.try_build_array(&InitStorageData::default(), &name)?.values(),
+        &[valid; 2]
+    );
+    assert!(ArraySlotSchema::new(None, length, element.clone(), Some(vec![valid])).is_err());
+    for invalid in [Word::from([2u32, 0, 0, 0]), Word::from([1u32, 256, 0, 0])] {
+        assert!(
+            ArraySlotSchema::new(None, length, element.clone(), Some(vec![invalid; 2])).is_err()
+        );
+    }
+    assert!(
+        ArraySlotSchema::new(
+            None,
+            length,
+            WordSchema::new_simple_with_default(SchemaType::native_word(), Word::empty()),
+            None
+        )
+        .is_err()
+    );
+    let mut init = InitStorageData::default();
+    init.set_array_values(name.clone(), vec![valid.into(); 2])?;
+    assert!(init.insert_value(&name, valid).is_err());
+    assert!(init.insert_map_entry(name.clone(), valid, valid).is_err());
+    let mut value_init = InitStorageData::default();
+    value_init.insert_value(&name, valid)?;
+    assert!(schema.try_build_array(&value_init, &name).is_err());
+    assert!(value_init.set_array_values(name, vec![valid.into(); 2]).is_err());
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn array_init_syntax_preserves_a_field_named_array() -> anyhow::Result<()> {
+    use crate::account::component::StorageValueName;
+    let init = InitStorageData::from_toml(r#""test::value" = { array = "7" }"#)?;
+    let name = StorageSlotName::new("test::value")?;
+    assert!(init.array_values(&name).is_none());
+    assert!(
+        init.value_entry(&StorageValueName::from_slot_name_with_suffix(&name, "array")?)
+            .is_some()
+    );
+    Ok(())
 }
