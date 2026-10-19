@@ -18,7 +18,6 @@ const ACCOUNT: &str =
     include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/account.masm");
 const ACCOUNT_UPDATE: &str =
     include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/account_update.masm");
-const AUTH: &str = include_str!("../../../miden-standards/asm/standards/auth/mod.masm");
 const BRIDGE_CONFIG: &str =
     include_str!("../../../miden-agglayer/asm/agglayer/bridge/bridge_config.masm");
 const BRIDGE_IN: &str = include_str!("../../../miden-agglayer/asm/agglayer/bridge/bridge_in.masm");
@@ -38,7 +37,6 @@ fn fixed_eidos_initial_chaining_words_match_rust() {
         (PROLOGUE, "EIDOS_INIT_CV_24", generic, 24),
         (PROLOGUE, "EIDOS_INIT_CV_40", generic, 40),
         (ACCOUNT, "EIDOS_INIT_CV_16", generic, 16),
-        (AUTH, "TX_SUMMARY_INIT_CV", generic, 24),
         (BRIDGE_CONFIG, "TOKEN_ADDRESS_INIT_CV", generic, 6),
         (BRIDGE_IN, "CLAIM_NULLIFIER_INIT_CV", generic, 2),
         (CLAIM, "PROOF_DATA_INIT_CV", generic, 536),

@@ -3,7 +3,7 @@ use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::memory
 use miden::core::collections::mmr
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::mem as core_mem
 use miden::core::word
 use miden::protocol_utils::mem
@@ -20,9 +20,9 @@ use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 # CONSTANTS
 # =================================================================================================
 
-# Hash domains shared with TransactionLog and TransactionLogs in Rust.
-const LOG_DOMAIN = 0x020004
-const LOGS_DOMAIN = 0x020003
+# Eidos domain tags shared with TransactionLog and TransactionLogs in Rust.
+const LOG_DOMAIN = 0x02000401
+const LOGS_DOMAIN = 0x02000301
 
 # add_log locals: two topic elements, two padding elements, then the content words.
 const TOPIC_SUFFIX_LOC = 0
@@ -417,7 +417,7 @@ pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: wor
     emit.TX_LOG_ADDED_EVENT
     # => [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix, CONTENT_COMMITMENT]
 
-    push.LOG_DOMAIN exec.poseidon2::merge_in_domain
+    push.LOG_DOMAIN exec.eidos::hash_double_word_in_domain
     # => [LOG_COMMITMENT]
 
     exec.memory::push_tx_log_commitment
@@ -631,9 +631,9 @@ end
 #! Inputs:  []
 #! Outputs: [LOGS_COMMITMENT]
 proc compute_logs_commitment() -> word
-    push.LOGS_DOMAIN exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
-    # => [LOG_COMMITMENTS_PTR, num_log_commitment_elements, LOGS_DOMAIN]
+    exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR push.LOGS_DOMAIN
+    # => [LOGS_DOMAIN, LOG_COMMITMENTS_PTR, num_log_commitment_elements]
 
-    exec.poseidon2::hash_elements_in_domain
+    exec.eidos::hash_elements_in_domain
     # => [LOGS_COMMITMENT]
 end
