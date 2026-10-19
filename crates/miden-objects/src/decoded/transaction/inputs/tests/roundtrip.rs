@@ -38,32 +38,22 @@ fn transaction_inputs_roundtrip_preserves_all_nested_fields_and_ordered_collecti
         expected.input_notes().iter().map(|note| note.id()).collect::<Vec<_>>()
     );
 
-    v1.foreign_account_slot_names.reverse();
+    v1.foreign_accounts.reverse();
     let encoded = message.encode_to_vec();
     let decoded_message =
         proto::transaction::TransactionInputs::decode(encoded.as_slice()).unwrap();
     let actual = decoded_message.decode_fields().unwrap().build_unchecked().unwrap();
 
     assert_eq!(actual, expected);
-    assert_eq!(actual.foreign_account_code(), expected.foreign_account_code());
     assert_eq!(
         actual.input_notes().iter().map(|note| note.id()).collect::<Vec<_>>(),
         expected.input_notes().iter().map(|note| note.id()).collect::<Vec<_>>()
     );
 
-    let normalized = proto::transaction::TransactionInputs::from(&actual);
-    let proto::transaction::transaction_inputs::Version::V1(normalized) =
-        normalized.version.unwrap();
-    let normalized_slot_ids = normalized
-        .foreign_account_slot_names
-        .iter()
-        .map(|entry| entry.slot_id.unwrap())
+    let decoded_codes = actual
+        .foreign_accounts()
+        .values()
+        .map(|foreign_account| foreign_account.code().commitment())
         .collect::<Vec<_>>();
-    assert!(normalized_slot_ids.windows(2).all(|ids| {
-        ids[0].decode_fields().unwrap().verify().unwrap()
-            < ids[1].decode_fields().unwrap().verify().unwrap()
-    }));
-
-    let decoded_code = actual.foreign_account_code();
-    assert_ne!(decoded_code[0].commitment(), decoded_code[1].commitment());
+    assert_ne!(decoded_codes[0], decoded_codes[1]);
 }
