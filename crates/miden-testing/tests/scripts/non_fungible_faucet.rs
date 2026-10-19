@@ -792,6 +792,10 @@ async fn nft_public_getters() -> anyhow::Result<()> {
 /// The token base URI the faucets built by [`public_faucet_component`] are created with.
 const INITIAL_TOKEN_BASE_URI: &str = "ipfs://bafy-initial/";
 
+/// The token base URI the setter tests try to set, distinct from [`INITIAL_TOKEN_BASE_URI`] so a
+/// successful update is observable.
+const NEW_TOKEN_BASE_URI: &str = "ipfs://bafy-moved/";
+
 /// Builds the component of a faucet with public token metadata.
 fn public_faucet_component(is_token_base_uri_mutable: bool) -> AccountComponent {
     NonFungibleFaucet::builder()
@@ -895,8 +899,7 @@ async fn nft_set_token_base_uri_succeeds() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let new_token_base_uri = "ipfs://bafy-moved/";
-    let executed = build_set_token_base_uri_tx(&mock_chain, &faucet, owner, new_token_base_uri)?
+    let executed = build_set_token_base_uri_tx(&mock_chain, &faucet, owner, NEW_TOKEN_BASE_URI)?
         .execute()
         .await?;
 
@@ -905,7 +908,7 @@ async fn nft_set_token_base_uri_succeeds() -> anyhow::Result<()> {
 
     assert_eq!(
         NonFungibleFaucet::try_from(&updated_faucet)?.token_base_uri(),
-        Some(&TokenBaseUri::new(new_token_base_uri)?)
+        Some(&TokenBaseUri::new(NEW_TOKEN_BASE_URI)?)
     );
 
     Ok(())
@@ -917,19 +920,19 @@ async fn nft_set_token_base_uri_succeeds() -> anyhow::Result<()> {
 #[case::immutable(
     public_faucet_component(false),
     true,
-    "ipfs://bafy-moved/",
+    NEW_TOKEN_BASE_URI,
     ERR_TOKEN_BASE_URI_NOT_MUTABLE
 )]
 #[case::sender_not_owner(
     public_faucet_component(true),
     false,
-    "ipfs://bafy-moved/",
+    NEW_TOKEN_BASE_URI,
     ERR_SENDER_NOT_OWNER
 )]
 #[case::private_token_metadata(
     private_faucet_component_flagged_mutable(),
     true,
-    "ipfs://bafy-moved/",
+    NEW_TOKEN_BASE_URI,
     ERR_TOKEN_METADATA_IS_PRIVATE
 )]
 #[case::clearing(public_faucet_component(true), true, "", ERR_TOKEN_BASE_URI_CANNOT_BE_CLEARED)]
