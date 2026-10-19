@@ -69,7 +69,7 @@ impl From<ExecutedTransaction> for TransactionWitness {
     fn from(tx: ExecutedTransaction) -> Self {
         let (tx_inputs, tx_outputs, ..) = tx.into_parts();
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (final_account, _) = tx_outputs.into_parts();
+        let (final_account, ..) = tx_outputs.into_parts();
         Self::new_unchecked(tx_inputs, final_account, expiration_block_num)
     }
 }

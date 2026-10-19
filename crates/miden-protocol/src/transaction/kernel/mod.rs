@@ -413,6 +413,7 @@ impl TransactionKernel {
             account_patch_commitment,
             output_notes,
             expiration_block_num,
+            super::TransactionLogs::default(),
         ))
     }
 

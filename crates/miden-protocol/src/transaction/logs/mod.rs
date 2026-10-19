@@ -158,7 +158,9 @@ impl SequentialCommit for TransactionLog {
 /// An empty collection has commitment [`Word::empty`]. The collection hash binds transaction log
 /// order and duplicate occurrences. The content hash binds content and length.
 ///
-/// These commitments do not hide predictable private transaction logs.
+/// These commitments do not hide predictable private transaction logs. Applications that need
+/// protection against guessing should include fresh, secret randomness in the log contents,
+/// for example by appending a random log before constructing the signing summary.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TransactionLogs {
     logs: Vec<TransactionLog>,

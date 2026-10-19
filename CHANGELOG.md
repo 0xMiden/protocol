@@ -34,6 +34,7 @@
 
 ### Changes
 
+- Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
 - Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
 - [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.
 - [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
