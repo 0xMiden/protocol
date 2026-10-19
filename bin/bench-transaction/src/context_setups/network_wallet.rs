@@ -245,8 +245,8 @@ pub fn tx_consume_pswap_note_network(
             P2idNoteRecipient::new(payback_storage, payback_serial),
             NoteTag::default(),
         ),
-        NoteType::Public => PswapPayback::Public {
-            creator_account_id: payback_storage.target(),
+        NoteType::Public => {
+            PswapPayback::public(P2idNoteRecipient::new(payback_storage, payback_serial))
         },
     };
     let storage = PswapNoteStorage::builder()

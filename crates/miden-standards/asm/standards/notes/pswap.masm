@@ -21,7 +21,7 @@ use miden::standards::wallets::basic as wallet
 # =================================================================================================
 
 const PRIVATE_NUM_STORAGE_ITEMS=10
-const PUBLIC_NUM_STORAGE_ITEMS=7
+const PUBLIC_NUM_STORAGE_ITEMS=11
 const NUM_ASSETS = 1
 const MAX_U32=0x0000000100000000
 
@@ -48,9 +48,10 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # - min_fill_step             [3]  : 1 felt
 # - payback_note_type         [4]  : 1 felt
 #
-# Public payback fields (7 felts total):
+# Public payback fields (11 felts total):
 # - creator_id_suffix         [5]  : 1 felt
 # - creator_id_prefix         [6]  : 1 felt
+# - fixed_payback_serial   [7..11)  : 4 felts
 #
 # Private payback fields (10 felts total):
 # - payback_recipient      [5..9)  : 4 felts
@@ -84,6 +85,10 @@ const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
 const PAYBACK_TAG_ITEM = STORAGE_PTR + 9
 const PUBLIC_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
 const PUBLIC_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
+const PUBLIC_SERIAL_0_ITEM = STORAGE_PTR + 7
+const PUBLIC_SERIAL_1_ITEM = STORAGE_PTR + 8
+const PUBLIC_SERIAL_2_ITEM = STORAGE_PTR + 9
+const PUBLIC_SERIAL_3_ITEM = STORAGE_PTR + 10
 const PRIVATE_RECIPIENT_0_ITEM = STORAGE_PTR + 5
 const PRIVATE_RECIPIENT_1_ITEM = PRIVATE_RECIPIENT_0_ITEM + 1
 const PRIVATE_RECIPIENT_2_ITEM = PRIVATE_RECIPIENT_0_ITEM + 2
@@ -274,10 +279,10 @@ end
 #! Inputs:  []
 #! Outputs: []
 proc load_storage()
-    push.PRIVATE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    push.PUBLIC_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    dup u32assert u32gte.PUBLIC_NUM_STORAGE_ITEMS
+    dup u32assert u32gte.PRIVATE_NUM_STORAGE_ITEMS
     assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
     dup mem_store.STORAGE_LENGTH_PTR
     # => [num_storage_items]
@@ -339,8 +344,9 @@ proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     # => [payback_note_type]
 
     if.true
-        # Preserve public paybacks: canonical P2ID, with PSWAP serial[0] + 1.
-        exec.active_note::get_serial_number add.1
+        # Register the fixed public recipient; fill attachments distinguish its outputs.
+        mem_load.PUBLIC_SERIAL_3_ITEM mem_load.PUBLIC_SERIAL_2_ITEM
+        mem_load.PUBLIC_SERIAL_1_ITEM mem_load.PUBLIC_SERIAL_0_ITEM
         # => [P2ID_SERIAL_NUM]
 
         mem_load.PAYBACK_NOTE_TYPE_ITEM

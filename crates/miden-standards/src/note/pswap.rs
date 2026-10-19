@@ -48,22 +48,21 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// P2ID payback configuration for a PSWAP order.
 ///
-/// Public paybacks target the original creator and derive their serial from the consumed PSWAP.
-/// Private paybacks use a fixed recipient whose preimage is retained by the owner. Use a fresh
-/// secret serial for each order with private paybacks, unrelated to the PSWAP serial, and keep
-/// the recipient preimage private.
+/// Both modes use a fixed P2ID recipient for every fill. Use a fresh serial for each order,
+/// independent of the PSWAP serial. Private paybacks store only the commitment; the owner must
+/// keep the recipient preimage secret. Fill attachments distinguish successive paybacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PswapPayback {
     /// Public P2ID paybacks to the original creator, who can also reclaim the order.
-    Public { creator_account_id: AccountId },
+    Public { recipient: P2idNoteRecipient },
     /// Private P2ID paybacks to a fixed recipient commitment, with an explicit discovery tag.
     Private { recipient: Word, tag: NoteTag },
 }
 
 impl PswapPayback {
     /// Builds a public payback configuration for the original order creator.
-    pub fn public(creator_account_id: AccountId) -> Self {
-        Self::Public { creator_account_id }
+    pub fn public(recipient: P2idNoteRecipient) -> Self {
+        Self::Public { recipient }
     }
 
     /// Builds a private payback configuration from a canonical P2ID recipient preimage.
@@ -93,12 +92,13 @@ impl PswapPayback {
 /// | 3      | Minimum fill step             |
 /// | 4      | Payback note type             |
 ///
-/// Public paybacks append these fields (7 elements total):
+/// Public paybacks append these fields (11 elements total):
 ///
 /// | Offset | Field                         |
 /// |--------|-------------------------------|
 /// | 5      | Original creator suffix       |
 /// | 6      | Original creator prefix       |
+/// | 7..11  | Fixed P2ID serial number       |
 ///
 /// Private paybacks append these fields (10 elements total):
 ///
@@ -124,7 +124,7 @@ impl PswapNoteStorage {
     /// Exact storage length for orders producing private paybacks.
     pub const PRIVATE_NUM_STORAGE_ITEMS: usize = 10;
     /// Exact storage length for orders producing public paybacks.
-    pub const PUBLIC_NUM_STORAGE_ITEMS: usize = 7;
+    pub const PUBLIC_NUM_STORAGE_ITEMS: usize = 11;
 
     const REQUESTED_FAUCET_SUFFIX_IDX: usize = 0;
     const REQUESTED_FAUCET_PREFIX_IDX: usize = 1;
@@ -133,6 +133,7 @@ impl PswapNoteStorage {
     const PAYBACK_NOTE_TYPE_IDX: usize = 4;
     const PUBLIC_CREATOR_SUFFIX_IDX: usize = 5;
     const PUBLIC_CREATOR_PREFIX_IDX: usize = 6;
+    const PUBLIC_SERIAL_RANGE: Range<usize> = 7..11;
     const PRIVATE_RECIPIENT_RANGE: Range<usize> = 5..9;
     const PRIVATE_TAG_IDX: usize = 9;
 
@@ -154,8 +155,8 @@ impl PswapNoteStorage {
     /// Returns the public creator's account tag or the explicitly supplied private tag.
     pub fn payback_note_tag(&self) -> NoteTag {
         match self.payback {
-            PswapPayback::Public { creator_account_id } => {
-                NoteTag::with_account_target(creator_account_id)
+            PswapPayback::Public { recipient } => {
+                NoteTag::with_account_target(recipient.storage().target())
             },
             PswapPayback::Private { tag, .. } => tag,
         }
@@ -192,11 +193,10 @@ impl From<PswapNoteStorage> for NoteStorage {
             Felt::from(storage.payback_note_type().as_u8()),
         ];
         match storage.payback {
-            PswapPayback::Public { creator_account_id } => {
-                items.extend_from_slice(&[
-                    creator_account_id.suffix(),
-                    creator_account_id.prefix().as_felt(),
-                ]);
+            PswapPayback::Public { recipient } => {
+                let target = recipient.storage().target();
+                items.extend_from_slice(&[target.suffix(), target.prefix().as_felt()]);
+                items.extend_from_slice(recipient.serial_number().as_elements());
             },
             PswapPayback::Private { recipient, tag } => {
                 items.extend_from_slice(recipient.as_elements());
@@ -252,11 +252,22 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
                 ),
             },
             NoteType::Public => PswapPayback::Public {
-                creator_account_id: AccountId::try_from_elements(
-                    items[Self::PUBLIC_CREATOR_SUFFIX_IDX],
-                    items[Self::PUBLIC_CREATOR_PREFIX_IDX],
-                )
-                .map_err(|e| NoteError::other_with_source("invalid creator account ID", e))?,
+                recipient: P2idNoteRecipient::new(
+                    P2idNoteStorage::new(
+                        AccountId::try_from_elements(
+                            items[Self::PUBLIC_CREATOR_SUFFIX_IDX],
+                            items[Self::PUBLIC_CREATOR_PREFIX_IDX],
+                        )
+                        .map_err(|e| {
+                            NoteError::other_with_source("invalid creator account ID", e)
+                        })?,
+                    ),
+                    Word::new(
+                        items[Self::PUBLIC_SERIAL_RANGE]
+                            .try_into()
+                            .expect("length already checked"),
+                    ),
+                ),
             },
         };
         Ok(Self::builder()
@@ -792,7 +803,7 @@ impl PswapNote {
             })
     }
 
-    /// Reconstructs a public payback from a fill attachment, deriving its recipient from the order.
+    /// Reconstructs a public payback from a fill attachment and the order's fixed recipient.
     ///
     /// The sender is the account that filled the order. The returned note includes only the
     /// supplied PSWAP attachment. If callbacks added attachments, reconstruct the note with
@@ -807,21 +818,11 @@ impl PswapNote {
         consumer_account_id: AccountId,
         attachment: &PswapNoteAttachment,
     ) -> Result<Note, NoteError> {
-        let PswapPayback::Public { creator_account_id } = self.storage.payback else {
+        let PswapPayback::Public { recipient } = self.storage.payback else {
             return Err(NoteError::other("public payback reconstruction requires public paybacks"));
         };
-        let rounds = self.rounds_since(attachment)?;
-        let serial = Word::new([
-            self.serial_number[0] + ONE,
-            self.serial_number[1],
-            self.serial_number[2],
-            self.serial_number[3] + Felt::from(rounds - 1),
-        ]);
-        self.payback_note_with_recipient(
-            consumer_account_id,
-            attachment,
-            P2idNoteStorage::new(creator_account_id).into_recipient(serial),
-        )
+        self.rounds_since(attachment)?;
+        self.payback_note_with_recipient(consumer_account_id, attachment, recipient.into())
     }
 
     /// Reconstructs a private payback from a fill attachment and its retained P2ID preimage.
@@ -1054,20 +1055,12 @@ impl PswapNote {
             PswapPayback::Private { recipient, .. } => {
                 RawOutputNote::Partial(PartialNote::new(metadata, recipient, assets, attachments))
             },
-            PswapPayback::Public { creator_account_id } => {
-                let serial_number = Word::new([
-                    self.serial_number[0] + ONE,
-                    self.serial_number[1],
-                    self.serial_number[2],
-                    self.serial_number[3],
-                ]);
-                RawOutputNote::Full(Note::with_attachments(
-                    assets,
-                    metadata,
-                    P2idNoteStorage::new(creator_account_id).into_recipient(serial_number),
-                    attachments,
-                ))
-            },
+            PswapPayback::Public { recipient } => RawOutputNote::Full(Note::with_attachments(
+                assets,
+                metadata,
+                recipient.into(),
+                attachments,
+            )),
         })
     }
 
@@ -1201,6 +1194,13 @@ mod tests {
     // TEST HELPERS
     // --------------------------------------------------------------------------------------------
 
+    fn public_payback(target: AccountId) -> PswapPayback {
+        PswapPayback::public(P2idNoteRecipient::new(
+            P2idNoteStorage::new(target),
+            Word::from([91u32, 92, 93, 94]),
+        ))
+    }
+
     fn dummy_faucet_id(byte: u8) -> AccountId {
         AccountId::builder()
             .account_type(AccountType::Public)
@@ -1223,7 +1223,7 @@ mod tests {
         let mut rng = RandomCoin::new(Word::default());
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
-            .payback(PswapPayback::public(creator_id))
+            .payback(public_payback(creator_id))
             .build();
         let pswap = PswapNote::builder()
             .sender(creator_id)
@@ -1389,7 +1389,7 @@ mod tests {
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
-            .payback(PswapPayback::public(creator_id))
+            .payback(public_payback(creator_id))
             .min_fill_step(AssetAmount::new(42).unwrap())
             .build();
 
@@ -1398,7 +1398,7 @@ mod tests {
 
         let parsed = PswapNoteStorage::try_from(note_storage.items()).unwrap();
 
-        assert_eq!(parsed.payback(), &PswapPayback::public(creator_id));
+        assert_eq!(parsed.payback(), &public_payback(creator_id));
         assert_eq!(parsed.min_requested_amount(), 500);
         assert_eq!(parsed.min_fill_step().as_u64(), 42);
     }
@@ -1410,7 +1410,7 @@ mod tests {
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
-            .payback(PswapPayback::public(creator_id))
+            .payback(public_payback(creator_id))
             .build();
 
         assert_eq!(
@@ -1452,7 +1452,7 @@ mod tests {
         let min_requested_asset = FungibleAsset::new(requested_faucet, min_requested).unwrap();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
-            .payback(PswapPayback::public(creator_id))
+            .payback(public_payback(creator_id))
             .min_fill_step(AssetAmount::new(min_fill_step).unwrap())
             .build();
         let mut rng = RandomCoin::new(Word::default());
@@ -1495,7 +1495,7 @@ mod tests {
         let private_recipient =
             P2idNoteRecipient::new(P2idNoteStorage::new(dummy_creator_id()), Word::empty());
         for payback in [
-            PswapPayback::public(dummy_creator_id()),
+            public_payback(dummy_creator_id()),
             PswapPayback::private(private_recipient, NoteTag::default()),
         ] {
             pswap.storage.payback = payback;
@@ -1537,7 +1537,7 @@ mod tests {
         assert!(pswap.private_payback_note(consumer, &attachment, wrong_serial).is_err());
         // The filler can publish the partial output without receiving the preimage.
         assert_eq!(expected.clone().into_output_note().unwrap().id(), reconstructed.id());
-        pswap.storage.payback = PswapPayback::public(dummy_creator_id());
+        pswap.storage.payback = public_payback(dummy_creator_id());
         assert!(pswap.private_payback_note(consumer, &attachment, recipient).is_err());
     }
 
@@ -1624,7 +1624,7 @@ mod tests {
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
-            .payback(PswapPayback::public(creator_id))
+            .payback(public_payback(creator_id))
             .build();
         let attachment = NoteAttachment::with_word(
             PswapNote::PSWAP_ATTACHMENT_SCHEME,
@@ -1705,7 +1705,7 @@ mod tests {
                 .storage(
                     PswapNoteStorage::builder()
                         .min_requested_asset(requested)
-                        .payback(PswapPayback::public(creator))
+                        .payback(public_payback(creator))
                         .build(),
                 )
                 .serial_number(rng.draw_word())

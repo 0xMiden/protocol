@@ -99,11 +99,18 @@ fn first_attachment_word(attachments: &NoteAttachments) -> Word {
     content.as_words()[0]
 }
 
+fn public_payback(target: AccountId) -> PswapPayback {
+    PswapPayback::public(P2idNoteRecipient::new(
+        P2idNoteStorage::new(target),
+        Word::from([91u32, 92, 93, 94]),
+    ))
+}
+
 fn public_target(storage: &PswapNoteStorage) -> AccountId {
-    let PswapPayback::Public { creator_account_id } = storage.payback() else {
+    let PswapPayback::Public { recipient } = storage.payback() else {
         panic!("expected a public payback")
     };
-    *creator_account_id
+    recipient.storage().target()
 }
 
 /// Builds a PSWAP with the supplied payback configuration and registers it on the chain.
@@ -143,7 +150,7 @@ fn setup_storage_test(payback_type: NoteType) -> anyhow::Result<(MockChain, Acco
         [FungibleAsset::new(requested.id(), 25)?.into()],
     )?;
     let payback = match payback_type {
-        NoteType::Public => PswapPayback::public(creator),
+        NoteType::Public => public_payback(creator),
         NoteType::Private => PswapPayback::private(
             P2idNoteRecipient::new(P2idNoteStorage::new(creator), builder.rng_mut().draw_word()),
             NoteTag::default(),
@@ -290,7 +297,7 @@ async fn pswap_rejects_later_output_mutation(
         ],
     )?;
     let payback = match payback_type {
-        NoteType::Public => PswapPayback::Public { creator_account_id: alice.id() },
+        NoteType::Public => public_payback(alice.id()),
         NoteType::Private => {
             let recipient = P2idNoteRecipient::new(
                 P2idNoteStorage::new(alice.id()),
@@ -479,7 +486,7 @@ async fn pswap_checks_output_before_sealing(
     let payback_recipient =
         P2idNoteRecipient::new(P2idNoteStorage::new(alice.id()), builder.rng_mut().draw_word());
     let payback = match payback_type {
-        NoteType::Public => PswapPayback::Public { creator_account_id: alice.id() },
+        NoteType::Public => public_payback(alice.id()),
         NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
     };
     let (pswap, note) =
@@ -619,9 +626,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_note_type {
         NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-        NoteType::Public => PswapPayback::Public {
-            creator_account_id: payback_storage.target(),
-        },
+        NoteType::Public => PswapPayback::public(payback_recipient),
     };
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
@@ -821,7 +826,7 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
         usdc_50,
         eth_25,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     let mock_chain = builder.build()?;
@@ -983,7 +988,7 @@ async fn pswap_fill_test(
         offered_asset,
         min_requested_asset,
         note_type,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     let mut mock_chain = builder.build()?;
@@ -1091,7 +1096,7 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
         usdc_50,
         eth_25,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     // Bob's note: offers 25 ETH, requests 50 USDC
@@ -1101,7 +1106,7 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
         eth_25,
         usdc_50,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: bob },
+        public_payback(bob),
     )?;
 
     let mock_chain = builder.build()?;
@@ -1184,7 +1189,7 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         alice_offered,
         alice_requested,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
     let (bob_pswap, bob_pswap_note) = build_pswap_note(
         &mut builder,
@@ -1192,7 +1197,7 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         bob_offered,
         bob_requested,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: bob },
+        public_payback(bob),
     )?;
 
     let mock_chain = builder.build()?;
@@ -1265,7 +1270,7 @@ async fn pswap_note_creator_reclaim_test(
         FungibleAsset::new(offered.id(), 50)?,
         FungibleAsset::new(requested.id(), 25)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice.id() },
+        public_payback(alice.id()),
     )?;
     let mut chain = builder.build()?;
     if cancel_remainder {
@@ -1439,7 +1444,7 @@ async fn pswap_private_target_can_fill_without_cancelling(
 #[tokio::test]
 async fn pswap_rejects_wrong_storage_length(
     #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
-    #[values(0, 4, 6, 8, 11)] length: usize,
+    #[values(0, 4, 6, 7, 8, 9, 12)] length: usize,
 ) -> anyhow::Result<()> {
     let (chain, consumer, note) = setup_storage_test(payback_type)?;
     let mut items = note.recipient().storage().items().to_vec();
@@ -1456,7 +1461,7 @@ async fn pswap_rejects_wrong_storage_length(
         .build()?
         .execute()
         .await;
-    let expected_error = if length > PswapNoteStorage::PRIVATE_NUM_STORAGE_ITEMS {
+    let expected_error = if length > PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS {
         ERR_NOTE_TOO_MANY_STORAGE_ITEMS
     } else {
         ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
@@ -1613,7 +1618,7 @@ async fn pswap_note_invalid_input_test(
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
     let mock_chain = builder.build()?;
 
@@ -1680,7 +1685,7 @@ async fn pswap_note_min_fill_step_test(
     let serial_number = builder.rng_mut().draw_word();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
-        .payback(PswapPayback::Public { creator_account_id: alice })
+        .payback(public_payback(alice))
         .min_fill_step(AssetAmount::new(min_fill_step)?)
         .build();
     let pswap = PswapNote::builder()
@@ -1794,7 +1799,7 @@ async fn pswap_account_fill_payback_not_first_output_note_test() -> anyhow::Resu
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     // Dummy output note to be emitted by the SPAWN note. Sender must equal
@@ -1885,7 +1890,7 @@ async fn pswap_note_fill_payback_not_first_output_note_test() -> anyhow::Result<
         usdc_50,
         eth_25,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
     let (bob_pswap, bob_pswap_note) = build_pswap_note(
         &mut builder,
@@ -1893,7 +1898,7 @@ async fn pswap_note_fill_payback_not_first_output_note_test() -> anyhow::Result<
         eth_25,
         usdc_50,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: bob },
+        public_payback(bob),
     )?;
 
     // Dummy output note emitted by the SPAWN note, so the paybacks land at idx 1 and 2. Sender must
@@ -1985,7 +1990,7 @@ async fn pswap_note_fill_payback_after_remainder_note_test() -> anyhow::Result<(
         alice_offered,
         alice_requested,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
     let (bob_pswap, bob_pswap_note) = build_pswap_note(
         &mut builder,
@@ -1993,7 +1998,7 @@ async fn pswap_note_fill_payback_after_remainder_note_test() -> anyhow::Result<(
         bob_offered,
         bob_requested,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: bob },
+        public_payback(bob),
     )?;
 
     let mock_chain = builder.build()?;
@@ -2070,7 +2075,7 @@ async fn pswap_multiple_partial_fills_test(#[case] fill_amount: u64) -> anyhow::
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     let mock_chain = builder.build()?;
@@ -2149,7 +2154,7 @@ async fn run_partial_fill_ratio_case(
         FungibleAsset::new(usdc_faucet.id(), offered_usdc)?,
         FungibleAsset::new(eth_faucet.id(), requested_eth)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     let mock_chain = builder.build()?;
@@ -2324,7 +2329,7 @@ async fn pswap_chained_partial_fills_test(
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(requested_fungible)
-            .payback(PswapPayback::Public { creator_account_id: alice })
+            .payback(public_payback(alice))
             .build();
         let pswap = PswapNote::builder()
             .sender(alice)
@@ -2431,7 +2436,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), 25).unwrap();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
-        .payback(PswapPayback::Public { creator_account_id: alice })
+        .payback(public_payback(alice))
         .build();
     let pswap_note: Note = PswapNote::builder()
         .sender(alice)
@@ -2508,7 +2513,7 @@ fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     for att in pswap.attachments().iter() {
@@ -2540,7 +2545,7 @@ fn pswap_note_with_raw_attachment(
     let tag = PswapNote::create_tag(NoteType::Public, &offered_asset, &min_requested_asset);
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
-        .payback(PswapPayback::Public { creator_account_id: creator })
+        .payback(public_payback(creator))
         .build();
 
     let note = Note::with_attachments(
@@ -2648,7 +2653,7 @@ fn pswap_remainder_carries_pswap_scheme() -> anyhow::Result<()> {
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     let account_fill = FungibleAsset::new(eth_faucet.id(), 10)?;
@@ -2711,9 +2716,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_type {
         NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-        NoteType::Public => PswapPayback::Public {
-            creator_account_id: payback_storage.target(),
-        },
+        NoteType::Public => PswapPayback::public(payback_recipient),
     };
     let original_pswap = PswapNote::builder()
         .sender(alice.id())
@@ -2811,23 +2814,15 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
             on_chain_payback.details_commitment(),
             "round {depth}: reconstructed payback commitment must match on-chain leaf",
         );
-        if payback_type == NoteType::Private {
-            assert_eq!(reconstructed_payback.recipient(), &NoteRecipient::from(payback_recipient));
-        } else {
-            let parent_serial = current_pswap.serial_number();
-            let expected = P2idNoteStorage::new(alice.id()).into_recipient(Word::new([
-                parent_serial[0] + ONE,
-                parent_serial[1],
-                parent_serial[2],
-                parent_serial[3],
-            ]));
-            assert_eq!(reconstructed_payback.recipient(), &expected);
+        assert_eq!(reconstructed_payback.recipient(), &NoteRecipient::from(payback_recipient));
+        if payback_type == NoteType::Public {
             assert_eq!(
                 reconstructed_payback.metadata().tag(),
                 NoteTag::with_account_target(alice.id())
             );
         }
         for previous in &paybacks {
+            assert_eq!(previous.recipient(), reconstructed_payback.recipient());
             assert_eq!(previous.assets(), reconstructed_payback.assets());
             assert_eq!(previous.metadata().sender(), reconstructed_payback.metadata().sender());
             assert_ne!(previous.id(), reconstructed_payback.id());
@@ -2835,8 +2830,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
         }
         paybacks.push(reconstructed_payback.clone());
 
-        // The helpers offset the serial by the distance to the note they are called on rather
-        // than by the absolute depth, so the round's own parent reconstructs the same note.
+        // Every remainder retains the same recipient, so it reconstructs the same payback.
         assert_eq!(
             match payback_type {
                 NoteType::Private => current_pswap.private_payback_note(
@@ -2947,7 +2941,7 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
         let serial = rng.draw_word();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 20)?)
-            .payback(PswapPayback::Public { creator_account_id: alice })
+            .payback(public_payback(alice))
             .build();
 
         PswapNote::builder()
@@ -2964,7 +2958,7 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
         let serial = rng.draw_word();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 30)?)
-            .payback(PswapPayback::Public { creator_account_id: alice })
+            .payback(public_payback(alice))
             .build();
 
         PswapNote::builder()
@@ -3067,7 +3061,7 @@ fn pswap_parse_inputs_roundtrip() {
         FungibleAsset::new(usdc_faucet.id(), 50).unwrap(),
         FungibleAsset::new(eth_faucet.id(), 25).unwrap(),
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )
     .unwrap();
 
@@ -3115,7 +3109,7 @@ async fn pswap_multi_word_attachment_is_rejected() -> anyhow::Result<()> {
             .storage(
                 PswapNoteStorage::builder()
                     .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 25)?)
-                    .payback(PswapPayback::Public { creator_account_id: alice })
+                    .payback(public_payback(alice))
                     .build(),
             )
             .serial_number(serial_number)
@@ -3225,7 +3219,7 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
         offered_asset,
         min_requested_asset,
         NoteType::Public,
-        PswapPayback::Public { creator_account_id: alice },
+        public_payback(alice),
     )?;
 
     // Helper note (input note index 0) that drains 900 of the 1000 offered USDC out of the PSWAP
