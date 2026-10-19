@@ -541,3 +541,57 @@ async fn passthrough_rejects_an_existing_balance() -> anyhow::Result<()> {
     assert_transaction_executor_error!(result, ERR_PASSTHROUGH_VAULT_NOT_EMPTY);
     Ok(())
 }
+
+/// Independent requests can use the same account state and reference block without fee ID clashes.
+#[tokio::test]
+async fn passthrough_concurrent_creations_share_account_state() -> anyhow::Result<()> {
+    use miden_standards::note::P2idNote;
+    let mut builder = MockChain::builder().verification_base_fee(500);
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let account = passthrough()?;
+    builder.add_account(account.clone())?;
+    let mut requests = Vec::new();
+    for _ in 0..2 {
+        let output: Note = P2idNote::builder()
+            .sender(account.id())
+            .target(owner.id())
+            .serial_number(builder.rng_mut().draw_word())
+            .note_type(NoteType::Public)
+            .asset(native(100))
+            .build()?
+            .into();
+        let request = CreateNote::new(
+            owner.id(),
+            builder.rng_mut().draw_word(),
+            output,
+            Some(native(50_000)),
+            BlockNumber::from(100),
+        )?;
+        builder.add_output_note(RawOutputNote::Full(request.note().clone()));
+        requests.push(request);
+    }
+    let mut chain = builder.build()?;
+    let mut transactions = Vec::new();
+    for request in &requests {
+        let tx = chain
+            .build_transaction(account.id())
+            .authenticated_input_notes([request.note().clone()])
+            .extend_advice_inputs(AdviceInputs::default().with_map(request.output_advice()))
+            .auth_args(AuthPassthrough::auth_args(1))
+            .build()?
+            .execute()
+            .await?;
+        assert_eq!(tx.final_account().to_commitment(), account.to_commitment());
+        assert_eq!(tx.output_notes().get_note(0).id(), request.output().id());
+        transactions.push(tx);
+    }
+    assert_ne!(
+        transactions[0].output_notes().get_note(1).id(),
+        transactions[1].output_notes().get_note(1).id()
+    );
+    for tx in &transactions {
+        chain.add_pending_executed_transaction(tx)?;
+    }
+    chain.prove_next_block()?;
+    Ok(())
+}
