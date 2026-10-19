@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- [BREAKING] Upgraded the Miden VM and crypto crates from v0.35 to v0.36, with v0.36.1 in the lockfile. Updated MASM core library dependencies to v0.36. Generated packages use debug information format v4, and block header inclusion checks inherit stricter MMR proof verification.
+
 ## v0.17.1 (2026-10-06)
 
 ### Features
