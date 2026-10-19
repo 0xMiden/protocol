@@ -29,6 +29,7 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
+use super::spending_limits::SpendingLimitsPolicy;
 use crate::account::account_component_code;
 use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
 use crate::procedure_root;
@@ -51,6 +52,36 @@ procedure_root!(
     AuthMultisigSmart::code()
 );
 
+// Procedure roots of the spending-limit configuration procedures. Callers need them to attach a
+// per-procedure policy, since each of them can weaken the spending limits.
+procedure_root!(
+    MULTISIG_SMART_UPDATE_SPENDING_LIMITS_POLICY,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::UPDATE_SPENDING_LIMITS_POLICY_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
+procedure_root!(
+    MULTISIG_SMART_UPDATE_SPENDING_ORACLE,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::UPDATE_SPENDING_ORACLE_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
+procedure_root!(
+    MULTISIG_SMART_SET_FAUCET_SPENDING_LIMIT,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::SET_FAUCET_SPENDING_LIMIT_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
+procedure_root!(
+    MULTISIG_SMART_SET_COMBINED_SPENDING_LIMIT,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::SET_COMBINED_SPENDING_LIMIT_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
 // CONSTANTS
 // ================================================================================================
 
@@ -62,6 +93,31 @@ static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
         .expect("storage slot name should be valid")
 });
 
+static SPENDING_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::spending_config")
+        .expect("storage slot name should be valid")
+});
+
+static SPENDING_ORACLE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::spending_oracle")
+        .expect("storage slot name should be valid")
+});
+
+static SPENDING_BASE_ASSET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::spending_base_asset")
+        .expect("storage slot name should be valid")
+});
+
+static SPENDING_LIMITS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::spending_limits")
+        .expect("storage slot name should be valid")
+});
+
+static SPENDING_TRACKERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::spending_trackers")
+        .expect("storage slot name should be valid")
+});
+
 // MULTISIG SMART AUTHENTICATION COMPONENT
 // ================================================================================================
 
@@ -70,6 +126,7 @@ static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 pub struct AuthMultisigSmartConfig {
     approver_set: ApproverSet,
     procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    spending_limits_policy: Option<SpendingLimitsPolicy>,
 }
 
 impl AuthMultisigSmartConfig {
@@ -78,7 +135,18 @@ impl AuthMultisigSmartConfig {
         Self {
             approver_set,
             procedure_policies: Vec::new(),
+            spending_limits_policy: None,
         }
+    }
+
+    /// Attaches a spending-limit policy.
+    ///
+    /// Without one the spending-limit slots still exist, with a zero window length that disables
+    /// the policy. The procedures that edit this configuration need policies of their own; see the
+    /// `Security` section on [`AuthMultisigSmart`].
+    pub fn with_spending_limits_policy(mut self, policy: SpendingLimitsPolicy) -> Self {
+        self.spending_limits_policy = Some(policy);
+        self
     }
 
     /// Attaches a per-procedure smart policy map.
@@ -105,6 +173,10 @@ impl AuthMultisigSmartConfig {
 
     pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
         &self.procedure_policies
+    }
+
+    pub fn spending_limits_policy(&self) -> Option<&SpendingLimitsPolicy> {
+        self.spending_limits_policy.as_ref()
     }
 }
 
@@ -153,6 +225,13 @@ fn validate_proc_policies(
 /// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
 /// [`AuthMultisig`], so a procedure with such a policy should seal the notes it creates for the
 /// reasons described there.
+///
+/// The spending limits configured through [`SpendingLimitsPolicy`] are only as strong as the
+/// policies on the procedures that can weaken them. `update_spending_limits_policy` lengthens the
+/// window or resets every budget, `update_spending_oracle` changes what every converted amount
+/// means, and `set_faucet_spending_limit` / `set_combined_spending_limit` lift a limit; without a
+/// policy of their own, each costs only the default threshold. Give them a [`ProcedurePolicy`] at
+/// least as strong as the protection the limits are meant to provide.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
@@ -165,6 +244,12 @@ impl AuthMultisigSmart {
     /// The name of the procedure that edits per-procedure policies.
     const SET_PROCEDURE_POLICY_PROC_NAME: &'static str = "set_procedure_policy";
 
+    /// The names of the spending-limit configuration procedures.
+    const UPDATE_SPENDING_LIMITS_POLICY_PROC_NAME: &'static str = "update_spending_limits_policy";
+    const UPDATE_SPENDING_ORACLE_PROC_NAME: &'static str = "update_spending_oracle";
+    const SET_FAUCET_SPENDING_LIMIT_PROC_NAME: &'static str = "set_faucet_spending_limit";
+    const SET_COMBINED_SPENDING_LIMIT_PROC_NAME: &'static str = "set_combined_spending_limit";
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &MULTISIG_SMART_CODE
@@ -173,6 +258,26 @@ impl AuthMultisigSmart {
     /// Returns the procedure root of the `set_procedure_policy` account procedure.
     pub fn set_procedure_policy_root() -> AccountProcedureRoot {
         *MULTISIG_SMART_SET_PROCEDURE_POLICY
+    }
+
+    /// Returns the procedure root of the `update_spending_limits_policy` account procedure.
+    pub fn update_spending_limits_policy_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_UPDATE_SPENDING_LIMITS_POLICY
+    }
+
+    /// Returns the procedure root of the `update_spending_oracle` account procedure.
+    pub fn update_spending_oracle_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_UPDATE_SPENDING_ORACLE
+    }
+
+    /// Returns the procedure root of the `set_faucet_spending_limit` account procedure.
+    pub fn set_faucet_spending_limit_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_SET_FAUCET_SPENDING_LIMIT
+    }
+
+    /// Returns the procedure root of the `set_combined_spending_limit` account procedure.
+    pub fn set_combined_spending_limit_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_SET_COMBINED_SPENDING_LIMIT
     }
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
@@ -201,6 +306,26 @@ impl AuthMultisigSmart {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
 
+    pub fn spending_config_slot() -> &'static StorageSlotName {
+        &SPENDING_CONFIG_SLOT_NAME
+    }
+
+    pub fn spending_oracle_slot() -> &'static StorageSlotName {
+        &SPENDING_ORACLE_SLOT_NAME
+    }
+
+    pub fn spending_base_asset_slot() -> &'static StorageSlotName {
+        &SPENDING_BASE_ASSET_SLOT_NAME
+    }
+
+    pub fn spending_limits_slot() -> &'static StorageSlotName {
+        &SPENDING_LIMITS_SLOT_NAME
+    }
+
+    pub fn spending_trackers_slot() -> &'static StorageSlotName {
+        &SPENDING_TRACKERS_SLOT_NAME
+    }
+
     pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         AuthMultisig::threshold_config_slot_schema()
     }
@@ -227,11 +352,54 @@ impl AuthMultisigSmart {
             ),
         )
     }
+
+    pub fn spending_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::spending_config_slot().clone(),
+            StorageSlotSchema::value("Spending limits configuration", SchemaType::native_word()),
+        )
+    }
+
+    pub fn spending_oracle_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::spending_oracle_slot().clone(),
+            StorageSlotSchema::value("Spending limits price oracle", SchemaType::native_word()),
+        )
+    }
+
+    pub fn spending_base_asset_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::spending_base_asset_slot().clone(),
+            StorageSlotSchema::value("Spending limits base asset", SchemaType::native_word()),
+        )
+    }
+
+    pub fn spending_limits_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::spending_limits_slot().clone(),
+            StorageSlotSchema::map(
+                "Spending limits",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        )
+    }
+
+    pub fn spending_trackers_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::spending_trackers_slot().clone(),
+            StorageSlotSchema::map(
+                "Spending limit trackers",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        )
+    }
 }
 
 impl From<AuthMultisigSmart> for AccountComponent {
     fn from(multisig: AuthMultisigSmart) -> Self {
-        let mut storage_slots = Vec::with_capacity(5);
+        let mut storage_slots = Vec::with_capacity(10);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -279,12 +447,41 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
+        // Spending-limit slots. They always exist so the auth procedure can read the configuration
+        // unconditionally; a zero window length disables the policy.
+        let spending = multisig.config.spending_limits_policy();
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::spending_config_slot().clone(),
+            spending.map_or_else(Word::empty, SpendingLimitsPolicy::config_word),
+        ));
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::spending_oracle_slot().clone(),
+            spending.map_or_else(Word::empty, SpendingLimitsPolicy::oracle_word),
+        ));
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::spending_base_asset_slot().clone(),
+            spending.map_or_else(Word::empty, SpendingLimitsPolicy::base_asset_word),
+        ));
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigSmart::spending_limits_slot().clone(),
+            spending.map_or_else(StorageMap::default, SpendingLimitsPolicy::limits_map),
+        ));
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigSmart::spending_trackers_slot().clone(),
+            StorageMap::default(),
+        ));
+
         let storage_schema = StorageSchema::new(vec![
             AuthMultisigSmart::threshold_config_slot_schema(),
             AuthMultisigSmart::approver_public_keys_slot_schema(),
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
             AuthMultisigSmart::procedure_policies_slot_schema(),
+            AuthMultisigSmart::spending_config_slot_schema(),
+            AuthMultisigSmart::spending_oracle_slot_schema(),
+            AuthMultisigSmart::spending_base_asset_slot_schema(),
+            AuthMultisigSmart::spending_limits_slot_schema(),
+            AuthMultisigSmart::spending_trackers_slot_schema(),
         ])
         .expect("storage schema should be valid");
 

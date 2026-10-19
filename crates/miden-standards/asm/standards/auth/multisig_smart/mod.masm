@@ -11,6 +11,8 @@ use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
+pub mod spending_limits
+
 pub type ProcedurePolicy = struct {
     immediate: SignatureThreshold,
     delayed: SignatureThreshold,
@@ -417,12 +419,11 @@ end
 #!
 #! Invocation: exec
 #!
-#! NOTE: This procedure is a temporary form covering signer verification and
-#! per-procedure policy enforcement. The following sections will be added:
-#! - Spending Limits + Amount-Based Thresholds: a prologue that calls
-#!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
-#!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
-#!   the final `compute_tx_threshold` fallback.
+#! NOTE: This procedure is a temporary form covering signer verification, per-procedure policy
+#! enforcement and spending limits. The following sections will be added:
+#! - Amount-Based Thresholds: `spending_limits::enforce_spending_limits` will additionally return a
+#!   spending-derived threshold, combined via `u32max` with `policy_threshold` before the final
+#!   `compute_tx_threshold` fallback, and a `spending_requires_delay` flag for the delayed path.
 #! - TimelockedAccount: after signature verification, assert the execute-path vs.
 #!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
 #!   `ERR_EXECUTE_PATH_MISMATCH`), then call
@@ -489,6 +490,17 @@ pub proc auth_tx(
         emit.AUTH_UNAUTHORIZED_EVENT
         push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
     end
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Enforcing spending limits ------
+    # A hard gate on the fungible assets this transaction sends out. It runs after the signature
+    # check for the same reason `multisig::record_and_assert_new_tx` and `apply_approval_expiration`
+    # do: the host verifies, when the unauthorized event fires, that the summary's account delta and
+    # expiration delta still match the kernel's, so the budget writes and the oracle's expiration
+    # tightening must stay out of the signed summary and past that check. An approval therefore
+    # survives a window rollover, and a spend over a budget fails here with the spending-limit error.
+    exec.spending_limits::enforce_spending_limits
+    # => [TX_SUMMARY_COMMITMENT]
 end
 
 # HELPER PROCEDURES
