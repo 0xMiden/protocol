@@ -232,8 +232,7 @@ impl SpendingLimitsPolicy {
             .map(|combined| (Self::combined_budget_key(), limit_word(combined.limit)));
 
         let entries: Vec<_> = faucet_entries.chain(combined_entry).collect();
-        StorageMap::with_entries(entries)
-            .expect("spending limit keys are distinct by construction")
+        StorageMap::with_entries(entries).expect("spending limit keys are distinct by construction")
     }
 }
 
