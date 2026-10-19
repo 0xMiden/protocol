@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::batch::ProvenBatch;
+use crate::batch::{BatchId, ProvenBatch};
 use crate::crypto::SequentialCommit;
 use crate::transaction::OrderedTransactionHeaders;
 use crate::utils::serde::{
@@ -34,25 +34,15 @@ impl OrderedBatches {
         &self.0
     }
 
-    /// Converts the transactions in batches into ordered transaction headers.
-    pub fn to_transactions(&self) -> OrderedTransactionHeaders {
-        OrderedTransactionHeaders::new_unchecked(
-            self.0
-                .iter()
-                .flat_map(|batch| batch.transactions().as_slice().iter())
-                .cloned()
-                .collect(),
-        )
+    /// Returns the ordered transaction headers of each batch, in the order of the batches.
+    pub fn to_transactions(&self) -> Vec<OrderedTransactionHeaders> {
+        self.0.iter().map(|batch| batch.transactions().clone()).collect()
     }
 
-    /// Consumes self and converts the transactions in batches into ordered transaction headers.
-    pub fn into_transactions(self) -> OrderedTransactionHeaders {
-        OrderedTransactionHeaders::new_unchecked(
-            self.0
-                .into_iter()
-                .flat_map(|batch| batch.into_transactions().into_vec().into_iter())
-                .collect(),
-        )
+    /// Consumes self and returns the ordered transaction headers of each batch, in the order of
+    /// the batches.
+    pub fn into_transactions(self) -> Vec<OrderedTransactionHeaders> {
+        self.0.into_iter().map(ProvenBatch::into_transactions).collect()
     }
 
     /// Returns the sum of created notes across all batches.
@@ -71,12 +61,7 @@ impl SequentialCommit for OrderedBatches {
 
     /// Returns batch IDs represented as a vector of field elements, in order.
     fn to_elements(&self) -> Vec<Felt> {
-        let mut elements = Vec::with_capacity(self.0.len() * Word::NUM_ELEMENTS);
-        for batch in self.0.iter() {
-            elements.extend_from_slice(batch.id().as_word().as_elements());
-        }
-
-        elements
+        BatchId::batch_ids_to_elements(self.0.iter().map(ProvenBatch::id))
     }
 }
 

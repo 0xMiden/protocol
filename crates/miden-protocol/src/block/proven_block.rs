@@ -4,7 +4,7 @@ use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
-use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
+use crate::block::{BlockBody, BlockHeader, BlockKernel, BlockNumber, BlockSignatures};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -12,7 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::ExecutionProof;
+use crate::vm::{ExecutionProof, StackInputs};
 
 // PROVEN BLOCK ERROR
 // ================================================================================================
@@ -96,12 +96,9 @@ pub struct ProvenBlock {
     signatures: BlockSignatures,
 
     /// The execution proof of the block kernel over this block.
-    // TODO: The block kernel takes BATCHES_COMMITMENT as a public input, but this struct carries
-    // neither that commitment nor the `BatchId`s it is built from, so the claim the proof attests
-    // to cannot be reconstructed here. Recomputing the batch IDs additionally needs the per-batch
-    // grouping of `body.transactions()`, which is flattened away. Add the batch IDs and that
-    // grouping to this struct or to `BlockBody` so the proof can be tied back to the block's data:
-    // https://github.com/0xMiden/protocol/issues/1706
+    ///
+    /// The public inputs the proof attests to are derived from the block's own data, see
+    /// [`ProvenBlock::kernel_stack_inputs`].
     proof: ExecutionProof,
 }
 
@@ -234,6 +231,18 @@ impl ProvenBlock {
         &self.proof
     }
 
+    /// Returns the block kernel's public stack inputs for this block, which its execution proof
+    /// attests to.
+    ///
+    /// These are derived from the block's data: the previous block commitment from the header and
+    /// the commitment to the batch IDs from the body. See [`BlockKernel::build_input_stack`].
+    pub fn kernel_stack_inputs(&self) -> StackInputs {
+        BlockKernel::build_input_stack(
+            self.header.prev_block_commitment(),
+            self.body.batches_commitment(),
+        )
+    }
+
     /// Destructures this proven block into individual parts.
     pub fn into_parts(self) -> (BlockHeader, BlockBody, BlockSignatures, ExecutionProof) {
         (self.header, self.body, self.signatures, self.proof)
@@ -257,7 +266,7 @@ impl ProvenBlock {
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), ProvenBlockError> {
         let header_tx_commitment = self.header.tx_commitment();
-        let body_tx_commitment = self.body.transactions().commitment();
+        let body_tx_commitment = self.body.transaction_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(ProvenBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
         } else {
@@ -320,15 +329,9 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::OrderedTransactionHeaders;
 
     fn empty_body() -> BlockBody {
-        BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        )
+        BlockBody::new_unchecked(Vec::new(), Vec::new(), Vec::new(), Vec::new())
     }
 
     /// Builds block 1 linked to `parent` and signed by `signers` over the validator set
