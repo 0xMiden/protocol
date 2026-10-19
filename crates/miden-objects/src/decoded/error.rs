@@ -68,6 +68,7 @@ impl_verification_error_from!(
     miden_protocol::errors::TransactionOutputError,
     miden_protocol::errors::ValidatorConfigError,
     miden_protocol::utils::serde::DeserializationError,
+    miden_protocol::transaction::TransactionLogError,
     super::account::AccountHeaderError,
     super::account::AccountPatchError,
     super::account::AccountVersionError,
