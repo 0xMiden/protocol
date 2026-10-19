@@ -236,7 +236,7 @@ pub async fn consume_note(
 ) -> anyhow::Result<()> {
     let executed = mock_chain
         .build_transaction(account_id)
-        .authenticated_input_note(note.id())
+        .authenticated_input_note(note.clone())
         .build()?
         .execute()
         .await?;

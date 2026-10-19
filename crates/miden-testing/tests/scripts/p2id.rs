@@ -179,7 +179,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_notes([note_1.id(), note_2.id()])
+        .authenticated_input_notes([note_1.clone(), note_2.clone()])
         .build()?;
 
     let executed_transaction = mock_tx.execute().await?;
@@ -291,7 +291,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     let mock_tx = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_notes([input_note_1.id(), input_note_2.id()])
+        .authenticated_input_notes([input_note_1.clone(), input_note_2.clone()])
         .expected_output_notes(vec![
             RawOutputNote::Full(output_note_1),
             RawOutputNote::Full(output_note_2),

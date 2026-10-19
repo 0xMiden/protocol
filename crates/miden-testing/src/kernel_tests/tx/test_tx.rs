@@ -254,7 +254,7 @@ async fn tx_get_block_commitment_returns_tracked_block() -> anyhow::Result<()> {
     // Authenticating the note makes the partial blockchain track the block that created it.
     let mock_tx = chain
         .build_transaction(account.id())
-        .authenticated_input_note(note.id())
+        .authenticated_input_note(note.clone())
         .build()?;
 
     let ref_block_header = mock_tx.tx_inputs().block_header().clone();
