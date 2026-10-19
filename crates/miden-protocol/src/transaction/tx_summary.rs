@@ -29,10 +29,7 @@ use crate::{Felt, WORD_SIZE, Word};
 /// authentication procedure a way to bind arbitrary additional data to that signature, for example
 /// a salt providing replay protection or a maximum fee.
 ///
-/// # Privacy
-///
-/// Contains complete transaction logs for the signer, including private logs. Derived [`Debug`]
-/// output includes this data as well.
+/// Contains complete transaction logs for the signer, including private logs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionSummary {
     account_delta: AccountDelta,
