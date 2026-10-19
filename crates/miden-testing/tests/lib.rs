@@ -10,12 +10,13 @@ mod wallet;
 use std::iter;
 use std::sync::Arc;
 
+use miden_objects::prost::Message;
+use miden_objects::{BuildUnchecked, DecodeMessage, proto};
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProposedBatch;
-use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::note::{
     Note,
@@ -27,7 +28,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::vm::VerificationOutcome;
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -73,9 +73,14 @@ pub async fn prove_and_verify_transaction(
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     assert_eq!(proven_tx_header, executed_tx_header);
 
-    // Serialize & deserialize the ProvenTransaction
-    let serialised_transaction = proven_transaction.to_bytes();
-    let proven_transaction = ProvenTransaction::read_from_bytes(&serialised_transaction).unwrap();
+    // Round-trip the transaction through its transport encoding.
+    let encoded = proto::transaction::ProvenTransaction::from(&proven_transaction).encode_to_vec();
+    let proven_transaction = proto::transaction::ProvenTransaction::decode(encoded.as_slice())
+        .unwrap()
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .unwrap();
 
     // Verify that the generated proof is valid
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
