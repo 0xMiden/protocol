@@ -5,7 +5,9 @@ use miden_protocol::account::{
     AccountStorageHeader,
     AccountStoragePatch,
     PartialAccount,
+    StorageArray,
     StorageArrayPatch,
+    StorageArrayPatchEntries,
     StorageMapKey,
     StorageMapPatch,
     StorageMapPatchEntries,
@@ -17,41 +19,30 @@ use miden_protocol::account::{
 
 use crate::TransactionKernelError;
 
-/// Keeps track of the initial storage of an account during transaction execution.
+/// Tracks storage changes during transaction execution.
 ///
-/// For storage value slots this can be simply inspected by looking in to the
-/// [`AccountStorageHeader`].
+/// Initial values and arrays come from the [`AccountStorageHeader`]. Initial map values are
+/// recorded on their first write, so the full maps need not be loaded.
 ///
-/// For map slots, to avoid making a copy of the entire storage map or even requiring that it is
-/// fully accessible in the first place, the initial values are tracked lazily. That is, whenever
-/// `set_map_item` is called, the previous value is extracted from the stack and if that is the
-/// first time the key is written to, then the previous value is the initial value of that key in
-/// that slot.
-///
-/// For a new account, every slot is recorded as a [`StorageValuePatch::Create`] /
-/// [`StorageMapPatch::Create`], which represents the account's full storage state. For an existing
-/// account, changes are recorded as `Update` patches and no-op updates are normalized away.
+/// New accounts produce full `Create` patches. Existing accounts retain only changes from their
+/// initial state.
 #[derive(Debug, Clone)]
 pub struct StoragePatchTracker {
-    /// The _initial_ storage header of the native account against which the transaction is
-    /// executed. This is only used to look up the initial values of storage _value_ slots when
-    /// normalizing `Update` patches, while the map slots are unused.
+    /// Initial storage of the native account.
     storage_header: AccountStorageHeader,
-    /// A map from slot name to a map of key-value pairs where the key is a storage map key and
-    /// the value represents the value of that key at the beginning of transaction execution.
+    /// Initial map values, indexed by slot name and map key.
     init_maps: BTreeMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>,
     /// The account storage patch.
     patch: AccountStoragePatch,
+    /// Latest array contents, compared with the initial header during normalization.
+    current_arrays: BTreeMap<StorageSlotName, StorageArray>,
 }
 
 impl StoragePatchTracker {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Constructs a new initial storage patch from the provided account.
-    ///
-    /// If the account is new, inserts the storage entries into the patch analogously to the
-    /// transaction kernel patch.
+    /// Initializes the tracker, recording every slot of a new account as created.
     ///
     /// # Errors
     ///
@@ -127,6 +118,7 @@ impl StoragePatchTracker {
         Ok(Self {
             storage_header: account.storage().header().clone(),
             init_maps,
+            current_arrays: BTreeMap::new(),
             // The patches are derived from the account's storage slots, which are bounded by
             // `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so this cannot exceed the limit.
             patch: AccountStoragePatch::from_raw(patches)
@@ -136,6 +128,26 @@ impl StoragePatchTracker {
 
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
+
+    /// Records the latest array contents.
+    pub fn set_array(
+        &mut self,
+        slot_name: StorageSlotName,
+        array: StorageArray,
+    ) -> Result<(), TransactionKernelError> {
+        let initial = self
+            .storage_header
+            .find_slot_header_by_name(&slot_name)
+            .and_then(|slot| slot.array())
+            .ok_or_else(|| {
+                TransactionKernelError::other("array slot missing from initial storage")
+            })?;
+        if initial.length() != array.length() {
+            return Err(TransactionKernelError::other("array write changed the slot length"));
+        }
+        self.current_arrays.insert(slot_name, array);
+        Ok(())
+    }
 
     /// Records a change to a value slot.
     ///
@@ -198,16 +210,14 @@ impl StoragePatchTracker {
     // HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Normalizes the storage patch.
-    ///
-    /// `Create` patches are always retained, since they represent the full storage state of a new
-    /// account. `Update` patches are retained only if they actually change the initial state:
-    ///
-    /// - value slot updates whose new value equals the initial value are removed.
-    /// - map slot updates drop the entries whose new value equals the initial value, and the map
-    ///   update itself is dropped if it has no entries left afterwards.
+    /// Builds sparse updates relative to initial storage, preserving `Create` and `Remove` patches.
     fn normalize(self) -> AccountStoragePatch {
-        let Self { storage_header, init_maps, patch, .. } = self;
+        let Self {
+            storage_header,
+            init_maps,
+            patch,
+            current_arrays,
+        } = self;
         let mut patches = patch.into_map();
 
         patches.retain(|slot_name, slot_patch| match slot_patch {
@@ -259,10 +269,28 @@ impl StoragePatchTracker {
             },
         });
 
-        // Normalization only removes patches, so the count cannot exceed the limit that the
-        // input patch already satisfied.
+        for (slot_name, array) in current_arrays {
+            let patch = if patches.get(&slot_name).is_some_and(|patch| patch.patch_op().is_create())
+            {
+                StorageArrayPatch::Create { array }
+            } else {
+                let initial = storage_header
+                    .find_slot_header_by_name(&slot_name)
+                    .and_then(|slot| slot.array())
+                    .expect("validated array slot");
+                let entries = StorageArrayPatchEntries::between(initial, &array)
+                    .expect("validated array length");
+                if entries.is_empty() {
+                    continue;
+                }
+                StorageArrayPatch::Update { entries }
+            };
+            patches.insert(slot_name, StorageSlotPatch::Array(patch));
+        }
+
+        // Every patch names a slot in the initial account, so the count stays within its bound.
         AccountStoragePatch::from_raw(patches)
-            .expect("normalization does not increase the number of slot patches")
+            .expect("slot patches are bounded by the initial account storage")
     }
 }
 

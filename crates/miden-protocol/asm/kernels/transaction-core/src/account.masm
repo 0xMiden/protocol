@@ -19,7 +19,7 @@ use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
-use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE}
+use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE, STORAGE_SLOT_TYPE_ARRAY, MAX_STORAGE_ARRAY_WORDS, MAX_ACCOUNT_STORAGE_WORDS}
     from miden::tx_kernel_core::constants
 use {
     ACCOUNT_DATA_LENGTH,
@@ -36,6 +36,11 @@ pub use {validate as validate_id} from miden::protocol_utils::account_id
 
 # ERRORS
 # =================================================================================================
+
+const ERR_ACCOUNT_STORAGE_SLOT_NOT_ARRAY = "storage slot is not an array"
+const ERR_ACCOUNT_STORAGE_ARRAY_LENGTH_INVALID = "storage array length must be between 1 and 256 words"
+const ERR_ACCOUNT_STORAGE_ARRAY_PREIMAGE_LENGTH = "storage array preimage does not match its declared length"
+const ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE = "account storage payload exceeds 256 words"
 
 const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE = "account nonce can only be incremented once"
 
@@ -193,6 +198,8 @@ const ACCOUNT_STORAGE_AFTER_SET_ITEM_EVENT =
     event(
         "miden::protocol::account::storage_after_set_item"
     )
+
+const ACCOUNT_STORAGE_AFTER_SET_ARRAY_EVENT = event("miden::protocol::account::storage_after_set_array")
 
 # Event emitted before an account storage map item is accessed.
 const ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT =
@@ -477,7 +484,7 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-pub proc get_typed_item(slot_id: StorageSlotId) -> (word, u8)
+pub proc get_typed_item(slot_id: StorageSlotId) -> (word, felt)
     # get the active account storage slots section offset and its slot count
     exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
@@ -666,7 +673,7 @@ end
 #! Where:
 #! - index is the location in memory of the storage slot.
 #! - slot_type is the type of the storage slot.
-pub proc get_native_storage_slot_type(index: u8) -> u8
+pub proc get_native_storage_slot_type(index: u8) -> felt
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -679,6 +686,94 @@ pub proc get_native_storage_slot_type(index: u8) -> u8
     # load the slot type
     add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
     # => [slot_type]
+end
+
+# ARRAY STORAGE
+# =================================================================================================
+
+#! Validates an encoded array slot type and returns its word count.
+#! Inputs:  [slot_type]
+#! Outputs: [num_words]
+pub proc array_length_from_type(slot_type: felt) -> u16
+    u32split eq.STORAGE_SLOT_TYPE_ARRAY assert.err=ERR_ACCOUNT_STORAGE_SLOT_NOT_ARRAY
+    dup neq.0 assert.err=ERR_ACCOUNT_STORAGE_ARRAY_LENGTH_INVALID
+    dup u32lte.MAX_STORAGE_ARRAY_WORDS assert.err=ERR_ACCOUNT_STORAGE_ARRAY_LENGTH_INVALID
+end
+
+#! Returns the active account's array commitment and length.
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [ROOT, num_words]
+pub proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
+    exec.get_typed_item
+    movup.4 exec.array_length_from_type movdn.4
+end
+
+#! Returns the native account's initial array commitment and length.
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [ROOT, num_words]
+pub proc get_initial_array_info(slot_id: StorageSlotId) -> (word, u16)
+    exec.memory::get_native_num_storage_slots
+    exec.memory::get_native_account_initial_storage_slots_ptr
+    exec.get_storage_slot_ptr
+    dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load exec.array_length_from_type
+    swap exec.get_item_raw
+end
+
+#! Verifies and copies an array preimage into kernel memory.
+#! Inputs:  [ROOT, num_words, dst_ptr]
+#! Outputs: []
+pub proc read_array(root: word, num_words: u16, dst_ptr: ptr<word>)
+    adv.push_mapvaln adv_push
+    # => [num_elements, ROOT, num_words, dst_ptr]
+
+    dup.5 mul.4 assert_eq.err=ERR_ACCOUNT_STORAGE_ARRAY_PREIMAGE_LENGTH
+    movup.5 movup.5
+    # => [num_words, dst_ptr, ROOT]
+
+    exec.mem::pipe_preimage_to_memory drop
+end
+
+#! Validates a new account's initial array before execution.
+#! Inputs:  [slot_idx, num_words]
+#! Outputs: []
+@locals(1024)
+proc validate_initial_array(slot_idx: u8, num_words: u16)
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    exec.memory::get_native_account_active_storage_slots_ptr add exec.get_item_raw
+    locaddr.0 movdn.5
+    # => [ROOT, num_words, dst_ptr]
+
+    exec.read_array
+end
+
+#! Verifies an array preimage and stores its commitment.
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ROOT]
+#! Outputs: [num_words]
+#! Locals:
+#! - 0: slot pointer
+#! - 1: array length
+#! - 4..8: new commitment
+#! - 8..1032: verified array contents
+@locals(1032)
+pub proc set_array(slot_id: StorageSlotId, root: word) -> u16
+    exec.memory::get_native_num_storage_slots
+    exec.memory::get_native_account_active_storage_slots_ptr
+    exec.get_storage_slot_ptr
+    dup loc_store.0
+    add.ACCOUNT_SLOT_TYPE_OFFSET mem_load exec.array_length_from_type loc_store.1
+    loc_storew_le.4 dropw
+    # => []
+
+    locaddr.8 loc_load.1 padw loc_loadw_le.4
+    exec.read_array
+    # => []
+
+    padw loc_loadw_le.4 loc_load.0
+    emit.ACCOUNT_STORAGE_AFTER_SET_ARRAY_EVENT
+    # => [slot_ptr, ROOT]
+
+    exec.set_item_raw
+    loc_load.1
 end
 
 # VAULT
@@ -1089,7 +1184,9 @@ end
 #!    - this ensures sorting and uniqueness among slot IDs.
 #! - any slot has a type that is not a supported storage slot type.
 #! - any slot's reserved element is not zero.
+@locals(1)
 pub proc validate_storage()
+    push.0 loc_store.0
     exec.memory::get_native_num_storage_slots
     # => [num_slots]
 
@@ -1108,9 +1205,17 @@ pub proc validate_storage()
         dup exec.get_native_storage_slot_type
         # => [slot_type, curr_slot_idx]
 
-        # assert the slot type is value or map
-        dup eq.STORAGE_SLOT_TYPE_VALUE swap eq.STORAGE_SLOT_TYPE_MAP or
-        assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
+        # Each value/map contributes one word; arrays contribute their authenticated length.
+        dup eq.STORAGE_SLOT_TYPE_VALUE dup.1 eq.STORAGE_SLOT_TYPE_MAP or
+        if.true
+            drop push.1
+        else
+            dup u32split swap drop eq.STORAGE_SLOT_TYPE_ARRAY
+            assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
+            exec.array_length_from_type
+        end
+        loc_load.0 add dup u32lte.MAX_ACCOUNT_STORAGE_WORDS assert.err=ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE
+        loc_store.0
         # => [curr_slot_idx]
 
         # assert the reserved element of the slot record is zero
@@ -1546,13 +1651,19 @@ pub proc insert_new_storage()
         dup exec.get_native_storage_slot_type
         # => [slot_type, slot_idx]
 
-        push.STORAGE_SLOT_TYPE_MAP eq
-        # => [is_map_slot_type, slot_idx]
+        dup eq.STORAGE_SLOT_TYPE_MAP
+        # => [is_map, slot_type, slot_idx]
 
         if.true
-            # add map entries to account storage
-            dup exec.insert_and_validate_storage_map
-            # => [slot_idx]
+            drop dup exec.insert_and_validate_storage_map
+        else
+            dup eq.STORAGE_SLOT_TYPE_VALUE
+            if.true
+                drop
+            else
+                exec.array_length_from_type
+                dup.1 exec.validate_initial_array
+            end
         end
         # => [slot_idx]
 

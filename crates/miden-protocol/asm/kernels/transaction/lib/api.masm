@@ -2243,3 +2243,39 @@ pub proc tx_get_logs_commitment(padding: [felt; 16]) -> (word, [felt; 12])
     swapw dropw
     # => [LOGS_COMMITMENT, pad(12)]
 end
+
+#! Returns the active array commitment and word count.
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
+#! Outputs: [ROOT, num_words, pad(11)]
+#! Invocation: dynexec
+pub proc account_get_array_info(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, u16, [felt; 11])
+    exec.authenticate_account_origin
+    exec.account::get_array_info
+    repeat.4
+        movup.5 drop
+    end
+end
+
+#! Returns the native account's initial array commitment and word count.
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
+#! Outputs: [ROOT, num_words, pad(11)]
+#! Invocation: dynexec
+pub proc account_get_initial_array_info(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, u16, [felt; 11])
+    exec.memory::assert_native_account
+    exec.authenticate_account_origin
+    exec.account::get_initial_array_info
+    repeat.4
+        movup.5 drop
+    end
+end
+
+#! Replaces a native account array with the verified preimage of ROOT.
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ROOT, pad(10)]
+#! Outputs: [num_words, pad(15)]
+#! Invocation: dynexec
+pub proc account_set_array(slot_id: StorageSlotId, root: word, padding: [felt; 10]) -> (u16, [felt; 15])
+    exec.memory::assert_native_account
+    exec.authenticate_account_origin
+    exec.account::set_array
+    swap drop
+end

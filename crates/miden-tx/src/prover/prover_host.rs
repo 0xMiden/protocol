@@ -148,6 +148,10 @@ where
                 self.base_host.on_account_on_asset_delta_computation(delta)
             },
 
+            TransactionEvent::AccountStorageAfterSetArray { slot_name, array } => {
+                self.base_host.on_account_storage_after_set_array(slot_name, array)
+            },
+
             TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {
                 self.base_host.on_account_storage_after_set_item(slot_name, new_value)
             },

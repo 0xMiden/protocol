@@ -10,6 +10,10 @@ use {
 } from miden::protocol::types
 use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_CODE_UPGRADE_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
     from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_GET_INITIAL_ARRAY_INFO_OFFSET, ACCOUNT_SET_ARRAY_OFFSET} from miden::protocol::kernel_proc_offsets
+use miden::protocol::active_account
+use miden::core::mem
+use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
 # NATIVE ACCOUNT PROCEDURES
@@ -497,6 +501,60 @@ pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> wor
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [INIT_VALUE]
+end
+
+#! Replaces the native account array from caller memory.
+#! src_ptr must be word-aligned and contain the full array. Its length stays fixed.
+#! Inputs:  [slot_id_suffix, slot_id_prefix, src_ptr]
+#! Outputs: [num_words]
+#! Panics on a missing/non-array slot, a foreign account write, or an invalid source range.
+#! Invocation: exec
+@locals(4)
+pub proc set_array(slot_id: StorageSlotId, src_ptr: ptr<word>) -> u16
+    loc_store.0 loc_store.1 loc_store.2
+    loc_load.1 loc_load.0 exec.active_account::get_array_length loc_store.3
+    # => []
+
+    loc_load.2 u32assert
+    loc_load.3 mul.4 add u32assert loc_load.2
+    dup.1 dup.1 exec.poseidon2::hash_words
+    # => [ROOT, src_ptr, end_ptr]
+
+    adv.insert_mem movup.4 drop movup.4 drop
+    loc_load.1 loc_load.0 push.ACCOUNT_SET_ARRAY_OFFSET
+    push.0 movdn.7 padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, ROOT, pad(9)]
+
+    syscall.exec_kernel_proc
+    repeat.15
+        swap drop
+    end
+end
+
+#! Copies the native account's initial array into caller memory.
+#! dst_ptr must be word-aligned with room for the full array.
+#! Inputs:  [slot_id_suffix, slot_id_prefix, dst_ptr]
+#! Outputs: [num_words]
+#! Invocation: exec
+@locals(2)
+pub proc get_initial_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
+    movup.2 loc_store.0
+    push.0 movdn.2 push.ACCOUNT_GET_INITIAL_ARRAY_INFO_OFFSET
+    padw swapw padw padw swapdw
+    syscall.exec_kernel_proc
+    repeat.11
+        movup.5 drop
+    end
+    # => [ROOT, num_words]
+
+    dup.4 loc_store.1
+    adv.push_mapvaln adv_push loc_load.1 mul.4 assert_eq
+    loc_load.0 dup u32assert drop
+    dup.5 mul.4 dup.1 add u32assert drop
+    # => [dst_ptr, ROOT, num_words]
+
+    movup.5 exec.mem::pipe_preimage_to_memory drop
+    loc_load.1
 end
 
 # VAULT

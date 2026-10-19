@@ -81,6 +81,18 @@ A `StorageArray` holds 1–256 words in one named slot. Its length is fixed. The
 sequential hash of the words and encodes the length as `2 + (num_words << 32)` in its type.
 
 Headers include all array words, including zeros, for full, partial, and foreign accounts.
+Reads and writes transfer the whole array through caller memory.
+
+| API | Inputs | Output |
+| --- | --- | --- |
+| `active_account::get_array_length` | slot ID | number of words |
+| `active_account::get_array` | slot ID, destination pointer | number of words |
+| `native_account::get_initial_array` | slot ID, destination pointer | number of words |
+| `native_account::set_array` | slot ID, source pointer | number of words |
+
+Pass the slot ID suffix on top of the stack, followed by the prefix. Buffers must be word-aligned
+and hold the whole array. Active account reads support foreign arrays; writes and initial-state
+reads require the native account.
 
 Update patches contain `(index, new_word)` pairs in ascending index order, omitting words whose
 final value equals their transaction-start value. Creation patches include all words, including zeros.

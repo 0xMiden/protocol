@@ -17,10 +17,10 @@ pub type AccountMetadata = struct {
     id: AccountId,
 }
 
-#! A storage slot's metadata followed by its value or map root.
+#! A storage slot's metadata followed by its value, map root, or array commitment.
 pub type StorageSlot = struct {
     reserved: felt,
-    slot_type: u8,
+    slot_type: felt,
     id: StorageSlotId,
     value: word,
 }

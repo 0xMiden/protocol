@@ -25,9 +25,6 @@ const ERR_ACCOUNT_DELTA_TOO_MANY_ADDED_ASSETS =
 const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS =
     "number of removed assets in the transaction exceeds the maximum limit of 1024"
 
-const ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID =
-    "account storage slot has an unsupported type"
-
 # EVENTS
 # =================================================================================================
 
@@ -57,6 +54,8 @@ const DOMAIN_VALUE = 2
 const DOMAIN_MAP = 3
 #! The domain of the account code in a delta or patch commitment.
 const DOMAIN_CODE = 4
+#! The domain of an array storage slot in a delta or patch commitment.
+const DOMAIN_ARRAY = 5
 
 #! The version of the delta commitment layout.
 const DELTA_VERSION_1 = 1
@@ -319,11 +318,15 @@ proc commit_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
 
         exec.commit_value_slot_patch
     else
-        # reject any type that is neither value nor map instead of defaulting to map
-        push.STORAGE_SLOT_TYPE_MAP eq assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
-        # => [slot_idx, RATE0, RATE1, CAPACITY]
+        dup eq.STORAGE_SLOT_TYPE_MAP
+        if.true
+            drop exec.commit_map_slot_patch
+        else
+            exec.account::array_length_from_type
+            # => [num_words, slot_idx, RATE0, RATE1, CAPACITY]
 
-        exec.commit_map_slot_patch
+            exec.commit_array_slot_patch
+        end
     end
     # => [RATE0, RATE1, CAPACITY]
 end
@@ -544,6 +547,75 @@ proc commit_map_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
         # => [RATE0, RATE1, CAPACITY]
     end
     # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Commits array entries in index order, followed by slot metadata.
+#! Creates include all words, including zeros; empty updates are omitted.
+#! Inputs:  [num_words, slot_idx, RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#! Locals:
+#! - 0: array length
+#! - 1..3: slot ID suffix and prefix
+#! - 3: changed word count
+#! - 4..8: initial commitment
+#! - 8..12: current commitment
+#! - 12: current index
+#! - 13: create flag
+#! - 16..1040: initial words
+#! - 1040..2064: current words
+@locals(2064)
+proc commit_array_slot_patch(num_words: u16, slot_idx: u8, state: HasherState) -> HasherState
+    loc_store.0
+    exec.account::get_item_patch
+    loc_storew_le.4 dropw loc_storew_le.8 dropw
+    loc_store.1 loc_store.2
+    # => [RATE0, RATE1, CAPACITY]
+
+    padw loc_loadw_le.4 padw loc_loadw_le.8 exec.word::eq not
+    exec.memory::is_new_account dup loc_store.13 or
+    # => [should_commit, RATE0, RATE1, CAPACITY]
+
+    if.true
+        loc_load.13 not
+        if.true
+            locaddr.16 loc_load.0 padw loc_loadw_le.4 exec.account::read_array
+        end
+        locaddr.1040 loc_load.0 padw loc_loadw_le.8 exec.account::read_array
+        # => [RATE0, RATE1, CAPACITY]
+
+        # Reset counters: authentication may compute the commitment more than once.
+        push.0 loc_store.3 push.0 loc_store.12
+        push.1
+        while.true
+            loc_load.13
+            if.true
+                push.1
+            else
+                padw loc_load.12 mul.4 locaddr.16 add mem_loadw_le
+                padw loc_load.12 mul.4 locaddr.1040 add mem_loadw_le
+                exec.word::eq not
+            end
+            # => [include_word, RATE0, RATE1, CAPACITY]
+
+            if.true
+                padw loc_load.12 mul.4 locaddr.1040 add mem_loadw_le
+                push.0.0.0 loc_load.12
+                # => [[index, 0, 0, 0], VALUE, RATE0, RATE1, CAPACITY]
+
+                swapdw dropw dropw exec.poseidon2::permute
+                loc_load.3 add.1 loc_store.3
+            end
+
+            loc_load.12 add.1 dup loc_store.12 loc_load.0 neq
+        end
+        # => [RATE0, RATE1, CAPACITY]
+
+        push.0.0 loc_load.3 loc_load.0
+        loc_load.2 loc_load.1 exec.get_storage_slot_patch_op push.DOMAIN_ARRAY
+        # => [[domain_array, patch_op, suffix, prefix], [num_words, num_entries, 0, 0], RATE0, RATE1, CAPACITY]
+
+        swapdw dropw dropw exec.poseidon2::permute
+    end
 end
 
 #! Updates the given delta hasher with the asset vault delta.

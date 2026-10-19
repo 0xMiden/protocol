@@ -36,6 +36,7 @@ pub enum TransactionEventId {
     AccountVaultBeforeGetAsset = ACCOUNT_VAULT_BEFORE_GET_ASSET_ID,
 
     AccountStorageBeforeSetItem = ACCOUNT_STORAGE_BEFORE_SET_ITEM_ID,
+    AccountStorageAfterSetArray = ACCOUNT_STORAGE_AFTER_SET_ARRAY_ID,
     AccountStorageAfterSetItem = ACCOUNT_STORAGE_AFTER_SET_ITEM_ID,
 
     AccountStorageBeforeGetMapItem = ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_ID,
@@ -122,6 +123,7 @@ impl TransactionEventId {
             Self::AccountOnAssetDeltaComputation => &ACCOUNT_ON_ASSET_DELTA_COMPUTATION_NAME,
             Self::AccountVaultBeforeGetAsset => &ACCOUNT_VAULT_BEFORE_GET_ASSET_NAME,
             Self::AccountStorageBeforeSetItem => &ACCOUNT_STORAGE_BEFORE_SET_ITEM_NAME,
+            Self::AccountStorageAfterSetArray => &ACCOUNT_STORAGE_AFTER_SET_ARRAY_NAME,
             Self::AccountStorageAfterSetItem => &ACCOUNT_STORAGE_AFTER_SET_ITEM_NAME,
             Self::AccountStorageBeforeGetMapItem => &ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_NAME,
             Self::AccountStorageBeforeSetMapItem => &ACCOUNT_STORAGE_BEFORE_SET_MAP_ITEM_NAME,
@@ -201,6 +203,9 @@ impl TryFrom<EventId> for TransactionEventId {
 
             ACCOUNT_STORAGE_BEFORE_SET_ITEM_ID => {
                 Ok(TransactionEventId::AccountStorageBeforeSetItem)
+            },
+            ACCOUNT_STORAGE_AFTER_SET_ARRAY_ID => {
+                Ok(TransactionEventId::AccountStorageAfterSetArray)
             },
             ACCOUNT_STORAGE_AFTER_SET_ITEM_ID => Ok(TransactionEventId::AccountStorageAfterSetItem),
 
