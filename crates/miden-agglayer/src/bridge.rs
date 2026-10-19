@@ -17,7 +17,6 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_standards::account::access::{PausableManager, PausableStorage, RoleConfig};
@@ -32,6 +31,7 @@ use miden_standards::note::config::{
 use miden_standards::note::{NetworkAccountTarget, NetworkAccountTargetError, NoteExecutionHint};
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
+use rand::Rng;
 use thiserror::Error;
 
 use super::agglayer_bridge_component_package;
@@ -527,7 +527,7 @@ impl AggLayerBridge {
     ///
     /// # Errors
     /// Returns an error if `bridge_id` is not a public account, or if note creation fails.
-    pub fn pause_note<R: FeltRng>(
+    pub fn pause_note<R: Rng>(
         config: PauseConfig,
         sender: AccountId,
         bridge_id: AccountId,

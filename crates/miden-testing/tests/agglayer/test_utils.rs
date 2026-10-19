@@ -28,7 +28,6 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId};
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::FeeParameters;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionKernel};
@@ -40,6 +39,7 @@ use miden_standards::account::faucets::TokenName;
 use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder};
 use miden_tx::NetworkNotePricer;
+use rand::RngExt;
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -259,7 +259,7 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
 
     let bridge_admin = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin,
         faucet_manager.id(),
         ger_injector.id(),

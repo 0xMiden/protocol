@@ -22,9 +22,9 @@
 
 mod support;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentScheme,
@@ -57,8 +57,8 @@ use support::*;
 
 /// A fixed-seed rng for standalone note construction, so runs are reproducible. It feeds only the
 /// note's serial number — the payload layout and the tag are constants and never depend on it.
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(7u32),

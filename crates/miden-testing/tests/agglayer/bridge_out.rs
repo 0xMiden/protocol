@@ -16,7 +16,6 @@ use miden_agglayer::{
     MetadataHash,
 };
 use miden_crypto::hash::keccak::Keccak256Digest;
-use miden_crypto::rand::FeltRng;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
@@ -113,7 +112,7 @@ async fn bridge_out_consecutive(
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let mut bridge_account = create_existing_priced_bridge(
         bridge_seed,
         bridge_admin_account_id(),
@@ -138,7 +137,7 @@ async fn bridge_out_consecutive(
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
-    let faucet_seed = builder.rng_mut().draw_word();
+    let faucet_seed = builder.rng_mut().random();
     let faucet = priced_faucet_builder(
         faucet_seed,
         &vectors.token_name,
@@ -438,7 +437,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
@@ -461,7 +460,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     let origin_network = 64u32;
     let scale = 0u8;
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
@@ -579,7 +578,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -594,7 +593,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // --------------------------------------------------------------------------------------------
     let vectors = &*SOLIDITY_MTF_VECTORS;
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
@@ -677,7 +676,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
@@ -700,7 +699,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         EthAddress::from_hex(&vectors.origin_token_address).expect("valid origin token address");
     let origin_network = 64u32;
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
@@ -845,7 +844,7 @@ async fn b2agg_note_reclaim_scenario(#[case] native_token: bool) -> anyhow::Resu
 
     // Create a bridge account (includes a `bridge` component)
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -869,7 +868,7 @@ async fn b2agg_note_reclaim_scenario(#[case] native_token: bool) -> anyhow::Resu
         )?
     } else {
         let faucet = create_existing_agglayer_faucet(
-            builder.rng_mut().draw_word(),
+            builder.rng_mut().random(),
             "AggLayer Token",
             "AGG",
             6,
@@ -1001,7 +1000,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     // Create a bridge account as the designated TARGET for the B2AGG note
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -1018,7 +1017,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     // Create a "malicious" account with a bridge interface
     let malicious_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -1088,7 +1087,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(

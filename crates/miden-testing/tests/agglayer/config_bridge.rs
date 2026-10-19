@@ -25,7 +25,6 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
@@ -34,6 +33,7 @@ use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::interop::eth::EthAddress;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::RngExt;
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
@@ -128,7 +128,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -217,7 +217,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT (starts with empty token registry)
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_account = create_existing_bridge_account_with_roles(
@@ -339,7 +339,7 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -548,7 +548,7 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -691,7 +691,7 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -821,7 +821,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
