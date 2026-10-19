@@ -3,14 +3,7 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
-use crate::transaction::TransactionKernel;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::transaction::{TransactionKernel, TransactionLogDetails, TransactionLogs};
 use crate::vm::StackOutputs;
 
 mod notes;
@@ -31,6 +24,11 @@ mod tests;
 // ================================================================================================
 
 /// Describes the result of executing a transaction.
+///
+/// # Privacy
+///
+/// Contains complete local transaction logs, including in debug output. Use
+/// [`Self::into_parts`] to obtain the log details submitted with a proven transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
@@ -42,6 +40,7 @@ pub struct TransactionOutputs {
     output_notes: RawOutputNotes,
     /// Defines up to which block the transaction is considered valid.
     expiration_block_num: BlockNumber,
+    logs: TransactionLogs,
 }
 
 impl TransactionOutputs {
@@ -57,7 +56,10 @@ impl TransactionOutputs {
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
     /// The index of the item at which the expiration block height is stored on the output stack.
-    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 8;
+    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 12;
+
+    /// The first stack element of the transaction logs commitment.
+    pub const LOGS_COMMITMENT_WORD_IDX: usize = 8;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -68,17 +70,29 @@ impl TransactionOutputs {
         account_patch_commitment: Word,
         output_notes: RawOutputNotes,
         expiration_block_num: BlockNumber,
+        logs: TransactionLogs,
     ) -> Self {
         Self {
             account,
             account_patch_commitment,
             output_notes,
             expiration_block_num,
+            logs,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns all transaction logs, including private transaction logs retained locally.
+    pub fn logs(&self) -> &TransactionLogs {
+        &self.logs
+    }
+
+    /// Returns the commitment to the local transaction logs.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs.commitment()
+    }
 
     /// Returns the header of the account's final state.
     pub fn account(&self) -> &AccountHeader {
@@ -110,36 +124,20 @@ impl TransactionOutputs {
             self.account_patch_commitment,
             self.output_notes.commitment(),
             self.expiration_block_num,
+            self.logs.commitment(),
         )
     }
 
-    /// Consumes self and returns the individual parts (that are non-Copy).
-    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {
-        (self.account, self.output_notes)
-    }
-}
-
-impl Serializable for TransactionOutputs {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account.write_into(target);
-        self.account_patch_commitment.write_into(target);
-        self.output_notes.write_into(target);
-        self.expiration_block_num.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionOutputs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account = AccountHeader::read_from(source)?;
-        let account_patch_commitment = Word::read_from(source)?;
-        let output_notes = RawOutputNotes::read_from(source)?;
-        let expiration_block_num = BlockNumber::read_from(source)?;
-
-        Ok(Self {
-            account,
-            account_patch_commitment,
-            output_notes,
-            expiration_block_num,
-        })
+    /// Consumes self and returns the final account header, output notes, and submitted log details.
+    ///
+    /// The log details contain complete logs for a public native account and only their
+    /// commitment for a private native account.
+    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes, TransactionLogDetails) {
+        let log_details = if self.account.id().is_public() {
+            TransactionLogDetails::Public(self.logs)
+        } else {
+            TransactionLogDetails::Private(self.logs.commitment())
+        };
+        (self.account, self.output_notes, log_details)
     }
 }

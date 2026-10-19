@@ -9,8 +9,10 @@ use super::{
     RawOutputNotes,
     TransactionArgs,
     TransactionId,
+    TransactionLogs,
     TransactionOutputs,
 };
+use crate::Word;
 use crate::account::{AccountPatch, PartialAccount};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
@@ -67,6 +69,7 @@ impl ExecutedTransaction {
             tx_outputs.account().to_commitment(),
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes().commitment(),
+            tx_outputs.logs_commitment(),
         );
 
         Self {
@@ -80,6 +83,16 @@ impl ExecutedTransaction {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns complete local transaction logs.
+    pub fn logs(&self) -> &TransactionLogs {
+        self.tx_outputs.logs()
+    }
+
+    /// Returns the transaction logs commitment included in the transaction proof.
+    pub fn logs_commitment(&self) -> Word {
+        self.tx_outputs.logs_commitment()
+    }
 
     /// Returns a unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {

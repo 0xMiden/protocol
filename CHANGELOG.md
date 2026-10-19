@@ -34,6 +34,14 @@
 
 ### Changes
 
+- Added canonical protobuf transport for transaction logs and their commitments, with private log contents retained in local execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
+- [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- [BREAKING] Made logs required when constructing transaction outputs, effects, summaries, and proven transactions; added `TransactionEffects::builder()`. Renamed reference-block summary helpers to `create_default_tx_summary` and `get_default_tx_summary_commitment`, and explicit-block helpers to `create_tx_summary` and `get_tx_summary_commitment` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+
+- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
+- Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+- [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.
 - [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
 - [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification ([#4053](https://github.com/0xMiden/protocol/pull/4053)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.

@@ -377,13 +377,14 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    let (account_patch, _input_notes, output_notes, tx_progress, lazy_loaded_data) =
+    let (account_patch, _input_notes, output_notes, logs, tx_progress, lazy_loaded_data) =
         host.into_parts();
 
     let tx_outputs = TransactionKernel::from_transaction_parts(
         &stack_outputs,
         &final_advice_inputs,
         output_notes,
+        logs,
     )
     .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 

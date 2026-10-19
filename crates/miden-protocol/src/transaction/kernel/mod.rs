@@ -10,7 +10,13 @@ use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
-use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
+use crate::transaction::{
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionInputs,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use crate::utils::sync::LazyLock;
 use crate::vm::{
     AdviceInputs,
@@ -268,11 +274,13 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     expiration_block_num
+    ///     LOGS_COMMITMENT,
+    ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
@@ -282,13 +290,15 @@ impl TransactionKernel {
         account_delta_commitment: Word,
         output_notes_commitment: Word,
         expiration_block_num: BlockNumber,
+        logs_commitment: Word,
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
 
-        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
+        let mut outputs: Vec<Felt> = Vec::with_capacity(13);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
+        outputs.extend(logs_commitment);
         outputs.push(Felt::from(expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
@@ -302,11 +312,13 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
+    ///     LOGS_COMMITMENT,
     ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
@@ -317,11 +329,11 @@ impl TransactionKernel {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Indices 9..16 on the stack are not zeroes.
+    /// - Indices 13..16 on the stack are not zeroes.
     /// - Overflow addresses are not empty.
     pub fn parse_output_stack(
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> Result<(Word, Word, BlockNumber), TransactionOutputError> {
+    ) -> Result<(Word, Word, BlockNumber, Word), TransactionOutputError> {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -329,6 +341,10 @@ impl TransactionKernel {
         let account_update_commitment = stack
             .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
+
+        let logs_commitment = stack
+            .get_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX)
+            .expect("logs_commitment (third word) missing");
 
         let expiration_block_num = stack
             .get_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
@@ -342,14 +358,19 @@ impl TransactionKernel {
             })?
             .into();
 
-        // Make sure that indices 9..16 are zeros.
-        if stack.as_slice()[9..].iter().any(|element| *element != Felt::ZERO) {
+        // Make sure that indices 13..16 are zeros.
+        if stack.as_slice()[13..].iter().any(|element| *element != Felt::ZERO) {
             return Err(TransactionOutputError::OutputStackInvalid(
-                "indices 9..16 on the output stack should be ZERO".into(),
+                "indices 13..16 on the output stack should be ZERO".into(),
             ));
         }
 
-        Ok((output_notes_commitment, account_update_commitment, expiration_block_num))
+        Ok((
+            output_notes_commitment,
+            account_update_commitment,
+            expiration_block_num,
+            logs_commitment,
+        ))
     }
 
     // TRANSACTION OUTPUT PARSER
@@ -363,11 +384,13 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
+    ///     LOGS_COMMITMENT,
     ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and the account
     ///   delta commitment of the account that the transaction is being executed against.
@@ -383,9 +406,18 @@ impl TransactionKernel {
         stack: &StackOutputs,
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
+        logs: TransactionLogs,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
-        let (output_notes_commitment, account_update_commitment, expiration_block_num) =
-            Self::parse_output_stack(stack)?;
+        let (
+            output_notes_commitment,
+            account_update_commitment,
+            expiration_block_num,
+            logs_commitment,
+        ) = Self::parse_output_stack(stack)?;
+
+        if logs.commitment() != logs_commitment {
+            return Err(TransactionOutputError::LogsCommitmentInconsistent);
+        }
 
         let (final_account_commitment, account_patch_commitment) =
             Self::parse_account_update_commitment(account_update_commitment, advice_inputs)?;
@@ -413,6 +445,7 @@ impl TransactionKernel {
             account_patch_commitment,
             output_notes,
             expiration_block_num,
+            logs,
         ))
     }
 
