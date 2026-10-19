@@ -8,7 +8,7 @@ use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, Transa
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::LocalTransactionProver;
 
-use crate::{MockChain, MockTransactionInput};
+use crate::{MockChain, MockTransactionInput, MockTransactionNoteInput};
 
 // MOCK CHAIN BUILDER EXTENSION
 // ================================================================================================
@@ -18,7 +18,7 @@ pub trait MockChainBlockExt {
     async fn create_authenticated_notes_tx(
         &self,
         input: impl Into<MockTransactionInput> + Send,
-        notes: impl IntoIterator<Item = NoteId> + Send,
+        notes: impl IntoIterator<Item = impl Into<MockTransactionNoteInput>> + Send,
     ) -> anyhow::Result<ExecutedTransaction>;
 
     async fn create_authenticated_notes_proven_tx(
@@ -46,7 +46,7 @@ impl MockChainBlockExt for MockChain {
     async fn create_authenticated_notes_tx(
         &self,
         input: impl Into<MockTransactionInput> + Send,
-        notes: impl IntoIterator<Item = NoteId> + Send,
+        notes: impl IntoIterator<Item = impl Into<MockTransactionNoteInput>> + Send,
     ) -> anyhow::Result<ExecutedTransaction> {
         let mock_tx = self.build_transaction(input).authenticated_input_notes(notes).build()?;
         mock_tx.execute().await.map_err(From::from)

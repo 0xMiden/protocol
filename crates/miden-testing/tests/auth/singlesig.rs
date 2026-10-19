@@ -1,7 +1,8 @@
+use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, BoundSignature};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -119,8 +120,8 @@ async fn test_singlesig_auth_uses_initial_public_key(
     Ok(())
 }
 
-/// Rotated-key negative: tx rotates the pub-key slot to key B and the authenticator is set
-/// up to sign with sec_b under key A's commitment. Auth reads the initial key (A) via
+/// Rotated-key negative: tx rotates the pub-key slot to key B and the advice map holds a
+/// signature by sec_b under key A's commitment. Auth reads the initial key (A) via
 /// `get_initial_item`, so MASM verify must reject the bogus signature.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
@@ -129,7 +130,8 @@ async fn test_singlesig_auth_uses_initial_public_key(
 async fn test_singlesig_auth_rejects_rotated_key_signature(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note, _) = setup_singlesig_with_mock_component(auth_scheme)?;
+    let (account, mock_chain, note, authenticator) =
+        setup_singlesig_with_mock_component(auth_scheme)?;
 
     // Re-derive key A from the seed Auth::BasicAuth uses.
     let mut rng_a = ChaCha20Rng::from_seed(Default::default());
@@ -141,10 +143,6 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
     let sec_key_b = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_b)
         .expect("failed to create second secret key");
     let pub_key_b_commitment: Word = sec_key_b.public_key().to_commitment().into();
-
-    // Bind sec_b to key A's commitment so MASM actually receives a signature and runs
-    // verify against pub A, which must reject it.
-    let authenticator = BasicAuthenticator::from_key_pairs(&[(sec_key_b, pub_key_a)]);
 
     let pub_key_slot = AuthSingleSig::public_key_slot();
     let tx_script_src = format!(
@@ -166,14 +164,31 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
-    let mock_tx = mock_chain
+    let tx_builder = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)
-        .authenticator(Some(authenticator))
-        .tx_script(tx_script)
-        .build()?;
+        .tx_script(tx_script);
 
-    let result = mock_tx.execute().await;
+    // Sign with key A to learn the message that the auth procedure requests a signature for.
+    let executed_tx = tx_builder.clone().authenticator(authenticator).build()?.execute().await?;
+    let signature_key = executed_tx
+        .tx_inputs()
+        .signatures()
+        .iter()
+        .map(BoundSignature::key)
+        .find(|key| key.pub_key_commitment() == pub_key_a.to_commitment())
+        .context("transaction should have been signed with key A")?;
+
+    // Present sec_b's signature under key A's commitment so MASM actually receives a signature
+    // and runs verify against pub A, which must reject it.
+    let (advice_key, foreign_signature) =
+        super::foreign_signature_advice_entry(&sec_key_b, signature_key)?;
+    let result = tx_builder
+        .authenticator(None)
+        .add_advice_map_entry(advice_key, foreign_signature)
+        .build()?
+        .execute()
+        .await;
 
     match auth_scheme {
         AuthScheme::EcdsaK256Keccak => {

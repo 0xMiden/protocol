@@ -1001,7 +1001,7 @@ async fn pswap_fill_test(
 
     let mut tx_builder = mock_chain
         .build_transaction(consumer_id)
-        .authenticated_input_note(pswap_note.id())
+        .authenticated_input_note(pswap_note.clone())
         .expected_output_notes(expected_notes);
 
     if !use_network_account {

@@ -404,7 +404,7 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<MockTr
     // construct the mock transaction
     mock_chain
         .build_transaction(account.id())
-        .authenticated_input_notes([note_1.id(), note_2.id()])
+        .authenticated_input_notes([note_1, note_2])
         .build()
 }
 

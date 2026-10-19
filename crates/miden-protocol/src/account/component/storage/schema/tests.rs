@@ -3,6 +3,7 @@ use alloc::collections::BTreeMap;
 use super::super::{InitStorageData, SchemaType};
 use super::{FeltSchema, MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageMap, StorageMapKey, StorageSlotName};
+use crate::asset::TokenSymbol;
 use crate::{Felt, Word};
 
 #[test]
@@ -149,4 +150,38 @@ fn map_slot_schema_missing_init_value_defaults_to_empty_map() {
         .try_build_map(&InitStorageData::default(), &"demo::map".parse().unwrap())
         .unwrap();
     assert_eq!(built, StorageMap::new());
+}
+
+#[test]
+fn word_schema_displays_simple_felt_type() {
+    let schema = WordSchema::new_simple(SchemaType::u8());
+    let word = Word::from([Felt::new_unchecked(6), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+
+    assert_eq!(schema.display_word(word), "6");
+}
+
+#[test]
+fn word_schema_displays_composite_felt_types() {
+    let schema = WordSchema::new_value([
+        FeltSchema::u8("a"),
+        FeltSchema::bool("b"),
+        FeltSchema::new_typed(SchemaType::token_symbol(), "c"),
+        FeltSchema::felt("d"),
+    ]);
+    let word = Word::from([
+        Felt::new_unchecked(6),
+        Felt::ONE,
+        Felt::from(TokenSymbol::new("TST").unwrap()),
+        Felt::new_unchecked(9),
+    ]);
+
+    assert_eq!(schema.display_word(word), "[6, true, TST, 0x9]");
+}
+
+#[test]
+fn word_schema_displays_hex_for_unregistered_type() {
+    let schema = WordSchema::new_simple(SchemaType::new("custom::unknown").unwrap());
+    let word = Word::from([1_u32, 2, 3, 4]);
+
+    assert_eq!(schema.display_word(word), word.to_hex());
 }

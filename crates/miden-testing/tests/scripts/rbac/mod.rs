@@ -110,7 +110,7 @@ pub(super) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::
     let seed: [u32; 4] = rand::random();
     let mut rng = RandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Private)
+        .note_type(NoteType::Public)
         .code(code.into())
         .build()?)
 }
@@ -144,7 +144,7 @@ async fn execute_note_and_apply(
 // SCRIPTS
 // ================================================================================================
 
-fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> String {
+pub(super) fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> String {
     let admin_role = admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
     format!(
         r#"

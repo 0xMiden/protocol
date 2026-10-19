@@ -4,7 +4,13 @@ use miden_core::deferred::PrecompileError;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
+use miden_protocol::account::auth::{
+    AuthScheme,
+    AuthSecretKey,
+    BoundSignature,
+    PublicKey,
+    SignatureKey,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -431,7 +437,11 @@ async fn test_multisig_rejects_invalid_eip712_witness(
         .unwrap_unauthorized_err();
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
     let raw_key = Hasher::merge(&[public_keys[0].to_commitment().into(), tx_summary_hash]);
-    let raw_witness = secret_keys[0].sign(tx_summary_hash).to_encoded_signature(tx_summary_hash);
+    let raw_witness = BoundSignature::new(
+        SignatureKey::new(public_keys[0].to_commitment(), tx_summary_hash),
+        secret_keys[0].sign(tx_summary_hash),
+    )?
+    .to_encoded_signature();
     let (eip712_key, eip712_witness) =
         eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
 
@@ -454,6 +464,7 @@ async fn test_multisig_rejects_invalid_eip712_witness(
                 TransactionSummaryUserParams::new(
                     [Felt::new_unchecked(42); TransactionSummaryUserParams::NUM_ELEMENTS],
                 ),
+                tx_summary.logs().clone(),
             );
             let (_, other_summary_witness) =
                 eip712_signature_witness(&secret_keys[0], &public_keys[0], &other_summary)?;

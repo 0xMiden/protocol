@@ -193,13 +193,16 @@ impl MockTransaction {
             .await
             .expect("failed to fetch transaction inputs");
 
-        // Fetch the witnesses for all asset IDs.
         let asset_witnesses = self
             .get_vault_asset_witnesses(account.id(), account.vault().root(), asset_ids)
             .await
             .expect("failed to fetch asset witnesses");
 
-        let tx_inputs = self.tx_inputs.clone().with_asset_witnesses(asset_witnesses);
+        // Add the witnesses to the tx inputs.
+        let mut tx_inputs = self.tx_inputs.clone();
+        tx_inputs
+            .add_asset_witnesses(account.id(), asset_witnesses)
+            .expect("asset witnesses should fit the native account's vault");
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
         // Virtual file name should be unique.
