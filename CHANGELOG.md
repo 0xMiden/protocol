@@ -34,6 +34,10 @@
 
 ### Changes
 
+- [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- [BREAKING] Made logs required when constructing transaction outputs, effects, summaries, and proven transactions; added `TransactionEffects::builder()`. Renamed reference-block summary helpers to `create_default_tx_summary` and `get_default_tx_summary_commitment`, and explicit-block helpers to `create_tx_summary` and `get_tx_summary_commitment` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+
+- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
 - Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
 - Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
 - [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.

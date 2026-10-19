@@ -11,7 +11,6 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     RawOutputNotes,
     TransactionKernel,
-    TransactionLogs,
     TransactionOutputs,
     TransactionWitness,
     TxAccountUpdate,
@@ -89,7 +88,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (account_header, output_notes, _) = tx_outputs.into_parts();
+        let (account_header, output_notes, log_details) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
         let output_notes: Vec<_> = output_notes
@@ -125,6 +124,7 @@ impl LocalTransactionProver {
             ref_block_commitment,
             expiration_block_num,
             proof,
+            log_details,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
@@ -196,7 +196,7 @@ impl LocalTransactionProver {
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
-        let (account_patch, input_notes, output_notes) = host.into_parts();
+        let (account_patch, input_notes, output_notes, logs) = host.into_parts();
         let output_notes = RawOutputNotes::new(output_notes)
             .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
         let tx_outputs = TransactionOutputs::new(
@@ -204,7 +204,7 @@ impl LocalTransactionProver {
             account_patch.to_commitment(),
             output_notes,
             expiration_block_num,
-            TransactionLogs::default(),
+            logs,
         );
 
         // The proof commits to the stack outputs, so checking them against the outputs binds the

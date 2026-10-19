@@ -56,7 +56,10 @@ impl TransactionOutputs {
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
     /// The index of the item at which the expiration block height is stored on the output stack.
-    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 8;
+    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 12;
+
+    /// The first stack element of the transaction logs commitment.
+    pub const LOGS_COMMITMENT_WORD_IDX: usize = 8;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -121,6 +124,7 @@ impl TransactionOutputs {
             self.account_patch_commitment,
             self.output_notes.commitment(),
             self.expiration_block_num,
+            self.logs.commitment(),
         )
     }
 
