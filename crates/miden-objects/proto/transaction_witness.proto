@@ -1,0 +1,19 @@
+syntax = "proto3";
+package transaction;
+
+import "account.proto";
+import "block_number.proto";
+import "transaction_inputs.proto";
+
+message TransactionWitness {
+  oneof version {
+    TransactionWitnessV1 v1 = 1;
+  }
+}
+
+// The data required to prove a transaction.
+message TransactionWitnessV1 {
+  TransactionInputsV1 tx_inputs = 1;
+  account.AccountHeader final_account = 2;
+  blockchain.BlockNumber expiration_block_num = 3;
+}
