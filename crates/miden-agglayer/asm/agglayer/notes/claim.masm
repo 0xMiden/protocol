@@ -10,7 +10,6 @@ use miden::standards::note::note_target
 
 const PROOF_DATA_SIZE = 536
 const LEAF_DATA_SIZE = 32
-const OUTPUT_NOTE_SIZE = 8
 
 # The number of storage items of a CLAIM note, see the layout in the script's doc comment.
 const CLAIM_NOTE_NUM_STORAGE_ITEMS = 569

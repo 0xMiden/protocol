@@ -49,9 +49,6 @@ const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE = "account nonce can only b
 
 const ERR_ACCOUNT_NONCE_AT_MAX = "account nonce is already at its maximum possible value"
 
-const ERR_ACCOUNT_CODE_IS_NOT_UPDATABLE =
-    "account code must be updatable for it to be possible to set new code"
-
 const ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH =
     "ID of the new account does not match the ID computed from the seed and commitments"
 
@@ -137,9 +134,6 @@ const MAX_NUM_PROCEDURES = 256
 
 # The local memory offset at which account::upgrade loads the new code section.
 const UPGRADE_CODE_SECTION_LOC = 0
-
-# Depth of the account database tree.
-const ACCOUNT_TREE_DEPTH = 64
 
 # The number of field elements it takes to store one account storage slot.
 const ACCOUNT_STORAGE_SLOT_DATA_LENGTH = 8
