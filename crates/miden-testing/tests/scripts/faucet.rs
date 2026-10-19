@@ -911,7 +911,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     // transaction host is forced to request the script from the data store during execution.
     let executed_transaction = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(trigger_note.id())
+        .authenticated_input_note(trigger_note.clone())
         .add_note_script(output_note_script)
         .with_source_manager(source_manager)
         .build()?
@@ -1476,7 +1476,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Execute transfer_ownership via note script (nominates new owner)
     let mock_tx = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(transfer_note.id())
+        .authenticated_input_note(transfer_note.clone())
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = mock_tx.execute().await?;
@@ -1671,7 +1671,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     // Execute renounce_ownership
     let mock_tx = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(renounce_note.id())
+        .authenticated_input_note(renounce_note.clone())
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = mock_tx.execute().await?;
@@ -1694,7 +1694,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     let mock_tx = mock_chain
         .build_transaction(updated_faucet.id())
-        .authenticated_input_note(transfer_note.id())
+        .authenticated_input_note(transfer_note.clone())
         .with_source_manager(source_manager.clone())
         .build()?;
     let result = mock_tx.execute().await;
@@ -1926,7 +1926,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mock_tx = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(set_policy_note.id())
+        .authenticated_input_note(set_policy_note.clone())
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = mock_tx.execute().await?;
@@ -1984,7 +1984,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mock_tx = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(set_policy_note.id())
+        .authenticated_input_note(set_policy_note.clone())
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = mock_tx.execute().await?;
@@ -2242,7 +2242,7 @@ async fn test_network_faucet_get_min_burn_amount() -> anyhow::Result<()> {
 
     let initial_get_transaction = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(initial_get_note.id())
+        .authenticated_input_note(initial_get_note.clone())
         .build()?
         .execute()
         .await?;
@@ -2260,7 +2260,7 @@ async fn test_network_faucet_get_min_burn_amount() -> anyhow::Result<()> {
 
     mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(updated_get_note.id())
+        .authenticated_input_note(updated_get_note.clone())
         .build()?
         .execute()
         .await?;
@@ -2384,7 +2384,7 @@ async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> an
 
     let mock_tx = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(set_note.clone())
         .build()?;
     let result = mock_tx.execute().await;
 

@@ -83,6 +83,21 @@ message NoteArgument {
   primitives.Word args = 2;
 }
 
+message AuthSignature {
+  oneof signature {
+    // Canonically serialized ECDSA secp256k1 signature.
+    bytes ecdsa_k256_keccak = 1;
+    // Canonically serialized Falcon512-Poseidon2 signature.
+    bytes falcon512_poseidon2 = 2;
+  }
+}
+
+message BoundSignature {
+  primitives.Word pub_key_commitment = 1;
+  primitives.Word message = 2;
+  AuthSignature signature = 3;
+}
+
 message TransactionArgs {
   optional TransactionScript tx_script = 1;
   primitives.Word tx_script_args = 2;
@@ -90,6 +105,8 @@ message TransactionArgs {
   primitives.AdviceInputs advice_inputs = 4;
   primitives.Word auth_args = 5;
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
+  repeated note.NoteRecipient output_note_recipients = 7;
+  repeated BoundSignature signatures = 8;
 }
 
 message LogTopic {

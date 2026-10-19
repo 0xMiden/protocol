@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountCodeUpgrade,
@@ -16,6 +16,7 @@ use miden_protocol::account::{
     StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -37,7 +38,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -227,7 +228,17 @@ impl TransactionEvent {
                         )
                     })?;
 
-                Some(TransactionEvent::AccountBeforeForeignLoad { foreign_account_id: account_id })
+                // The advice provider already has the account if the transaction inputs contain
+                // it or if it was loaded before, so it is only requested from the host if it's
+                // missing.
+                let account_id_key = AccountIdKey::from(account_id).as_word();
+                if process.advice_provider().get_mapped_values(&account_id_key).is_some() {
+                    None
+                } else {
+                    Some(TransactionEvent::AccountBeforeForeignLoad {
+                        foreign_account_id: account_id,
+                    })
+                }
             },
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset
@@ -538,7 +549,8 @@ impl TransactionEvent {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
-                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+                let signature_key =
+                    SignatureKey::new(pub_key_commitment, message).to_advice_map_key();
 
                 let tx_summary_or_signature =
                     match process.advice_provider().get_mapped_values(&signature_key) {
