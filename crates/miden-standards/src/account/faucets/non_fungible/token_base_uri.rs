@@ -2,10 +2,6 @@
 //!
 //! A non-empty token base URI makes the faucet's token metadata public: a token's metadata lives
 //! at the base URI followed by its token ID. A faucet without one has private token metadata.
-//!
-//! Layout sync: the same layout is defined in MASM at
-//! `asm/standards/faucets/non_fungible/token_base_uri.masm`. Any change to slot names must be
-//! applied in both Rust and MASM.
 
 use alloc::vec::Vec;
 
@@ -110,8 +106,7 @@ impl TokenBaseUri {
 // ================================================================================================
 
 /// The token base URI of a [`NonFungibleFaucet`](super::NonFungibleFaucet) together with its
-/// mutability flag, embedded in the faucet the same way as its
-/// [`TokenMetadata`](crate::account::faucets::TokenMetadata).
+/// mutability flag.
 #[derive(Debug, Clone)]
 pub(super) struct TokenBaseUriConfig {
     /// The base URI of the public token metadata, or `None` if the token metadata is private.

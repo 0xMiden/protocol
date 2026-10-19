@@ -204,6 +204,9 @@ procedure_root!(
 /// `set_token_base_uri` if it is mutable, but it can never be cleared, and a faucet created without
 /// one can never set it.
 ///
+/// A faucet without a [`TokenBaseUri`] has private token metadata, and [`token_uri`] returns
+/// `None` for its assets.
+///
 /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
 /// [`token_uri`]: NonFungibleFaucet::token_uri
 #[derive(Debug, Clone)]
