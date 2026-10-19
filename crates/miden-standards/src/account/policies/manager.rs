@@ -215,7 +215,9 @@ struct PolicyConfig {
 /// the flag is an immutable property of the account ID, it applies for the faucet's entire
 /// lifetime, so promoting a reserved policy later via `set_send_policy` / `set_receive_policy`
 /// enforces it against the whole circulating supply rather than only assets minted after the
-/// switch. A faucet created as
+/// switch. The callbacks also limit every transfer's expiration and apply the pause check before
+/// reading the active root, so transfers anchored to a block before the activation are bounded
+/// too. A faucet created as
 /// [`AccountType::Private`][miden_protocol::account::AccountType::Private] publishes only its
 /// commitment, so its holders have to obtain the state each of their transactions needs out of
 /// band. The account type is immutable, so that is settled at creation.
@@ -666,8 +668,9 @@ impl TokenPolicyManager {
         // Register the protocol-reserved asset-callback slots only when at least one transfer
         // policy is configured, leaving them free for a separate callback component otherwise. The
         // slots hold the fixed `invoke_*_policy` procedure roots, which the kernel calls
-        // dynamically: the wrapper applies the pause check and then invokes the active policy from
-        // the `active_*_policy` slot above. This indirection lets `set_send_policy` /
+        // dynamically: the wrapper limits the expiration, applies the pause check and then invokes
+        // the active policy from the `active_*_policy` slot above, accepting the transfer when that
+        // slot is empty. This indirection lets `set_send_policy` /
         // `set_receive_policy` switch the active policy for the entire circulating supply without
         // touching the callback slots.
         //

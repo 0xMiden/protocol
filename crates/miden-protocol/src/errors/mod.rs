@@ -7,7 +7,6 @@ use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
-use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
 use miden_processor::ExecutionError;
 use miden_verifier::VerificationError;
@@ -15,6 +14,7 @@ use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
 use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
+use super::crypto::dsa::ecdsa_k256_keccak;
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{
@@ -24,6 +24,7 @@ use super::{
     MAX_OUTPUT_NOTES_PER_BATCH,
     Word,
 };
+use crate::account::auth::{PublicKeyCommitment, SignatureKey};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
@@ -52,7 +53,7 @@ use crate::note::{
 };
 use crate::protocol_config::KernelConfig;
 use crate::script::MastForestScriptError;
-use crate::transaction::TransactionId;
+use crate::transaction::{TransactionId, TransactionLogError};
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
@@ -183,6 +184,8 @@ pub enum AccountError {
     SeedConvertsToInvalidAccountId(#[source] AccountIdError),
     #[error("storage map root {0} not found in the account storage")]
     StorageMapRootNotFound(Word),
+    #[error("failed to add storage map witness")]
+    FailedToAddStorageMapWitness(#[source] MerkleError),
     #[error("storage slot {0} is not of type map")]
     StorageSlotNotMap(StorageSlotName),
     #[error("storage slot {0} is not of type value")]
@@ -999,6 +1002,30 @@ impl PartialBlockchainError {
 pub enum TransactionInputError {
     #[error("transaction input note with nullifier {0} is a duplicate")]
     DuplicateInputNote(Nullifier),
+    #[error("foreign account {0} is a duplicate")]
+    DuplicateForeignAccount(AccountId),
+    #[error("foreign account {0} is the native account of the transaction")]
+    ForeignAccountIsNativeAccount(AccountId),
+    #[error(
+        "signature for public key commitment {} and message {} is a duplicate",
+        .0.pub_key_commitment(),
+        .0.message()
+    )]
+    DuplicateSignature(SignatureKey),
+    #[error("asset witness does not fit the vault of account {account_id}")]
+    InvalidAssetWitness {
+        account_id: AccountId,
+        #[source]
+        source: Box<PartialAssetVaultError>,
+    },
+    #[error("storage map witness does not fit the storage of account {account_id}")]
+    InvalidStorageMapWitness {
+        account_id: AccountId,
+        #[source]
+        source: Box<AccountError>,
+    },
+    #[error("transaction inputs contain no account {0} to add a witness to")]
+    WitnessForUnknownAccount(AccountId),
     #[error("partial blockchain has length {actual} which does not match block number {expected}")]
     InconsistentChainLength {
         expected: BlockNumber,
@@ -1022,46 +1049,13 @@ pub enum TransactionInputError {
     TooManyInputNotes(usize),
 }
 
-// TRANSACTION INPUTS EXTRACTION ERROR
-// ===============================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionInputsExtractionError {
-    #[error("specified foreign account id matches the transaction input's account id")]
-    AccountNotForeign,
-    #[error("foreign account data not found in advice map for account {0}")]
-    ForeignAccountNotFound(AccountId),
-    #[error("foreign account code not found for account {0}")]
-    ForeignAccountCodeNotFound(AccountId),
-    #[error("storage header data not found in advice map for account {0}")]
-    StorageHeaderNotFound(AccountId),
-    #[error("failed to handle account data")]
-    AccountError(#[from] AccountError),
-    #[error("failed to handle merkle data")]
-    MerkleError(#[from] MerkleError),
-    #[error("failed to handle account tree data")]
-    AccountTreeError(#[from] AccountTreeError),
-    #[error("missing vault root from Merkle store")]
-    MissingVaultRoot,
-    #[error("missing storage map root from Merkle store")]
-    MissingMapRoot,
-    #[error("failed to construct SMT proof")]
-    SmtProofError(#[from] SmtProofError),
-    #[error("failed to construct an asset")]
-    AssetError(#[from] AssetError),
-    #[error("failed to handle storage map data")]
-    StorageMapError(#[from] StorageMapError),
-    #[error("failed to convert elements to leaf index: {0}")]
-    LeafConversionError(String),
-    #[error("failed to construct SMT leaf")]
-    SmtLeafError(#[from] SmtLeafError),
-}
-
 // TRANSACTION OUTPUT ERROR
 // ===============================================================================================
 
 #[derive(Debug, Error)]
 pub enum TransactionOutputError {
+    #[error("transaction log records do not match the kernel output")]
+    LogsCommitmentInconsistent,
     #[error("transaction output note with id {0} is a duplicate")]
     DuplicateOutputNote(NoteId),
     #[error("final account commitment is not in the advice map")]
@@ -1144,6 +1138,8 @@ pub enum TransactionTraceParsingError {
 
 #[derive(Debug, Error)]
 pub enum ProvenTransactionError {
+    #[error("transaction log visibility does not match the native account")]
+    LogVisibilityMismatch(#[source] TransactionLogError),
     #[error(
         "proven transaction's final account commitment {tx_final_commitment} and account details commitment {details_commitment} must match"
     )]
@@ -1795,6 +1791,26 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// BOUND SIGNATURE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BoundSignatureError {
+    #[error("failed to recover the ECDSA public key from the signature and message {message}")]
+    EcdsaPublicKeyRecoveryFailed {
+        message: Word,
+        #[source]
+        source: ecdsa_k256_keccak::PublicKeyError,
+    },
+    #[error(
+        "signer's public key commitment {actual} does not match the expected public key commitment {expected}"
+    )]
+    PublicKeyCommitmentMismatch {
+        expected: PublicKeyCommitment,
+        actual: PublicKeyCommitment,
+    },
 }
 
 // TRANSACTION VERIFIER ERROR
