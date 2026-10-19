@@ -4,6 +4,7 @@ mod blocklist;
 mod code_inspection;
 mod constant_fee_manager;
 mod constant_fee_policy_config;
+mod create_note;
 mod expiration;
 mod faucet;
 mod faucet_factory;

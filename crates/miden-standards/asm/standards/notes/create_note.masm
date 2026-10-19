@@ -1,0 +1,119 @@
+use {Asset, NoteArgs} from miden::protocol::types
+use miden::core::crypto::hashes::poseidon2
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::output_note
+use miden::protocol::tx
+use miden::standards::note::note_reclaim
+use miden::standards::notes::tx_fee
+use miden::standards::wallets::basic as wallet
+
+# Storage: output recipient [0..4), output ID [4..8), output asset [8..16),
+# initial assets commitment [16..20), native fee asset [20..28), executing account [28..30),
+# output tag [30], output type [31], reclaim height [32]. A zero fee asset disables fee creation.
+const NUM_STORAGE_ITEMS = 33
+const STORAGE_PTR = 0
+const OUTPUT_RECIPIENT_PTR = 0
+const OUTPUT_ID_PTR = 4
+const OUTPUT_ASSET_PTR = 8
+const INPUT_ASSETS_PTR = 16
+const FEE_ASSET_PTR = 20
+const FEE_AMOUNT_PTR = 24
+const TARGET_SUFFIX_PTR = 28
+const TARGET_PREFIX_PTR = 29
+const TAG_PTR = 30
+const TYPE_PTR = 31
+const RECLAIM_HEIGHT_PTR = 32
+const PRIMARY_IDX_PTR = 36
+const FEE_IDX_PTR = 37
+const REMAINING_ASSETS_PTR = 40
+const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
+
+const ERR_CREATE_NOTE_STORAGE = "CREATE_NOTE storage must contain exactly 33 items"
+const ERR_CREATE_NOTE_ACTION = "CREATE_NOTE expects create or reclaim with zero reserved arguments"
+const ERR_CREATE_NOTE_TARGET = "CREATE_NOTE must execute on its committed public account"
+const ERR_CREATE_NOTE_ASSETS = "CREATE_NOTE assets do not match the committed funding"
+const ERR_CREATE_NOTE_OUTPUT = "CREATE_NOTE output differs from the committed note"
+const ERR_CREATE_NOTE_FEE_ASSET = "CREATE_NOTE fee must use the native fee asset"
+
+#! Moves a committed asset from the active input to an output.
+#! Inputs: [asset_ptr, note_idx]
+#! Outputs: []
+proc fund_output(asset_ptr: ptr<Asset>, note_idx: u16)
+    exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    dupw.1 dupw.1 exec.active_note::remove_asset dropw
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    exec.output_note::add_asset
+end
+
+#! Creates one committed output and, when funded, a public TX_FEE output. Both are sealed.
+#! The fee serial uses the transaction input commitment and output index, so transactions against
+#! a shared account cannot collide through an unchanged nonce. No private input note ID is exposed.
+#! Consumers: the committed public account; the original sender may reclaim after its deadline.
+#! Inputs: [NOTE_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+@note_script
+pub proc main(note_args: NoteArgs)
+    movup.3 assertz.err=ERR_CREATE_NOTE_ACTION
+    movup.2 assertz.err=ERR_CREATE_NOTE_ACTION
+    swap assertz.err=ERR_CREATE_NOTE_ACTION
+    dup u32lte.1 assert.err=ERR_CREATE_NOTE_ACTION
+    # => [action, pad(12)]
+
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    eq.NUM_STORAGE_ITEMS assert.err=ERR_CREATE_NOTE_STORAGE
+
+    if.true
+        exec.active_note::get_sender mem_load.RECLAIM_HEIGHT_PTR
+        exec.note_reclaim::assert_reclaimable
+        exec.wallet::move_note_assets_to_account
+    else
+        mem_load.TARGET_PREFIX_PTR mem_load.TARGET_SUFFIX_PTR
+        exec.active_account::get_id exec.account_id::eq assert.err=ERR_CREATE_NOTE_TARGET
+
+        exec.active_note::get_initial_assets_info movup.4 drop
+        padw mem_loadw_le.INPUT_ASSETS_PTR assert_eqw.err=ERR_CREATE_NOTE_ASSETS
+
+        padw mem_loadw_le.OUTPUT_RECIPIENT_PTR
+        mem_load.TYPE_PTR mem_load.TAG_PTR
+        push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+        call.wallet::create_note
+        movdn.15 dropw dropw dropw drop drop drop
+        dup mem_store.PRIMARY_IDX_PTR push.OUTPUT_ASSET_PTR exec.fund_output
+
+        mem_load.FEE_AMOUNT_PTR neq.0
+        if.true
+            padw mem_loadw_le.FEE_ASSET_PTR exec.tx::get_fee_asset_id
+            assert_eqw.err=ERR_CREATE_NOTE_FEE_ASSET
+
+            # Domain separation includes the executing account and the next output index.
+            exec.active_account::get_id exec.tx::get_num_output_notes push.CREATE_NOTE_FEE_DOMAIN
+            exec.tx::get_input_notes_commitment exec.poseidon2::merge
+            exec.tx_fee::create_output_note
+            dup mem_store.FEE_IDX_PTR push.FEE_ASSET_PTR exec.fund_output
+        end
+
+        # No funded input asset may remain or have been diverted before this script ran.
+        push.REMAINING_ASSETS_PTR exec.active_note::remove_all_assets
+        assertz.err=ERR_CREATE_NOTE_ASSETS
+
+        # Validate after all asset callbacks, then seal both outputs against later changes.
+        mem_load.PRIMARY_IDX_PTR exec.output_note::compute_note_id
+        padw mem_loadw_le.OUTPUT_ID_PTR assert_eqw.err=ERR_CREATE_NOTE_OUTPUT
+        mem_load.PRIMARY_IDX_PTR exec.output_note::seal
+
+        mem_load.FEE_AMOUNT_PTR neq.0
+        if.true
+            mem_load.FEE_IDX_PTR exec.output_note::get_assets_info
+            movup.4 eq.1 assert.err=ERR_CREATE_NOTE_OUTPUT
+            push.FEE_ASSET_PTR exec.asset::load exec.poseidon2::merge
+            assert_eqw.err=ERR_CREATE_NOTE_OUTPUT
+            mem_load.FEE_IDX_PTR exec.output_note::get_attachments_commitment
+            padw assert_eqw.err=ERR_CREATE_NOTE_OUTPUT
+            mem_load.FEE_IDX_PTR exec.output_note::seal
+        end
+    end
+end

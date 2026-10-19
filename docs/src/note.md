@@ -336,3 +336,13 @@ Consume reconstructed private paybacks and refunds with inclusion proofs; unauth
 - **Create custom scripts** for specialized use cases not covered by standard types
 
 These standard note types provide a foundation for common operations while maintaining the flexibility to create custom note scripts for specialized requirements.
+
+### CREATE_NOTE
+
+A `CREATE_NOTE` is a private request to create a committed output through a separate public account. The request commits to the executing account, output recipient, assets, metadata, and a block height for recovery. Its first version creates one output containing one fungible asset and no attachments. Both public and private output types are supported.
+
+The request can also carry an explicit payment in the native fee asset. It creates a public `TX_FEE` output with the entire payment. The payment is separate from the output principal, including when both use the same asset. The executing account must check that the payment covers the transaction fee. Quote the payment before funding the request. There is no automatic change output in this version.
+
+The script checks the completed output after asset callbacks and seals both outputs. A later script cannot add assets or attachments. The fee serial is derived from the transaction input commitment, the executing account, a domain separator, and the output position. It does not use the private request's note ID or depend on an account nonce increment.
+
+The original sender can recover an unconsumed request through its own account after the committed block height. Until consumption, creation and recovery may race. Use independent random serial numbers for the request and its intended output. Consume the private request as an authenticated input and prove locally. A public observer then sees the public executing account as the output sender, although timing and asset amounts can still reveal correlations.
