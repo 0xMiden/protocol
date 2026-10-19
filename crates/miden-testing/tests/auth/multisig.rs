@@ -3,7 +3,6 @@ use core::num::{NonZeroU16, NonZeroU32};
 use miden_core::deferred::PrecompileError;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{
     AuthScheme,
     AuthSecretKey,
@@ -21,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
@@ -1503,7 +1503,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(output_note_asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::empty()))
         .build()?
         .into();
 
@@ -2193,7 +2193,7 @@ async fn test_multisig_proc_threshold_overrides(
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
         .build()?
         .into();
     let send_note_transaction_script = SendNotesTransactionScript::new(

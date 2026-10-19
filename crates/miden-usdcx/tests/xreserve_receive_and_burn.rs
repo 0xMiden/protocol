@@ -25,10 +25,10 @@ mod support;
 
 use anyhow::Result;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -77,8 +77,8 @@ fn administrator() -> AccountId {
 
 /// A fixed-seed rng for standalone note construction. It feeds only the note's serial number, so
 /// the payload layout and tag are unaffected by the seed.
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(7u32),

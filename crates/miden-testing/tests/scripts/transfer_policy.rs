@@ -9,9 +9,9 @@ extern crate alloc;
 
 use alloc::vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
@@ -162,7 +162,7 @@ pub(crate) fn build_mint_note(
     );
     let recipient_digest = output_note.recipient().digest();
 
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note: Note = MintNote::builder()
         .sender(sender)
         .mint_storage(MintNoteStorage::new_private(recipient_digest, asset, tag))

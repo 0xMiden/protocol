@@ -14,10 +14,9 @@
 
 use anyhow::{Context, Result};
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -47,6 +46,7 @@ use miden_tx::TransactionExecutorError;
 use miden_usdcx::note::xreserve_admin::XReserveSetAttesterNote;
 use miden_usdcx::vectors::{MiVector, load};
 use miden_usdcx::xreserve::encoding::{DepositIntent, MintIntent, bytes32_to_storage_map_key};
+use rand::RngExt;
 
 use super::*;
 
@@ -140,8 +140,8 @@ pub fn nonce_key_of_payload(payload: &[u8]) -> Word {
 }
 
 /// Deterministic note rng (serial only; never affects a gate).
-pub fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+pub fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(3u32),
@@ -358,7 +358,7 @@ pub fn tampered_mint_note(
     let metadata = PartialNoteMetadata::new(pf.producer_id, NoteType::Public)
         .with_tag(NoteTag::with_account_target(pf.faucet_id));
     let recipient = NoteRecipient::new(
-        note_rng(rng_seed).draw_word(),
+        note_rng(rng_seed).random(),
         MintNote::script(),
         NoteStorage::from(mint_storage),
     );

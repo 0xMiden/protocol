@@ -3,11 +3,10 @@ use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
@@ -49,7 +48,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(FungibleAsset::mock(10))
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([2u32; 4])))
         .build()?
         .into();
 
@@ -58,7 +57,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(FungibleAsset::mock(10))
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([2u32; 4])))
         .build()?
         .into();
 
@@ -814,7 +813,7 @@ fn create_p2ide_note_with_storage(
     storage: impl IntoIterator<Item = u64>,
     sender: AccountId,
 ) -> Note {
-    let serial_num = RandomCoin::new(Default::default()).draw_word();
+    let serial_num = EidosRandomCoin::new(Default::default()).random();
     let note_script = StandardNote::P2IDE.script();
     let recipient = NoteRecipient::new(
         serial_num,

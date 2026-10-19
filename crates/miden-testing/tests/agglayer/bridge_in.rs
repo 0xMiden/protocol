@@ -28,7 +28,6 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::policies::MintPolicy;
@@ -161,7 +160,7 @@ async fn test_bridge_in_claim_to_p2id(
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_priced_bridge(
         bridge_seed,
         bridge_admin_account_id(),
@@ -184,7 +183,7 @@ async fn test_bridge_in_claim_to_p2id(
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -499,7 +498,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -523,7 +522,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let scale = 10u8;
 
     // faucet_A is the bridge's registered faucet for the claim's origin token address.
-    let faucet_a_seed = builder.rng_mut().draw_word();
+    let faucet_a_seed = builder.rng_mut().random();
     let faucet_a = create_existing_agglayer_faucet(
         faucet_a_seed,
         token_name_a,
@@ -538,7 +537,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // faucet_B is owned by the same bridge but tied to a different origin token. It is the
     // attacker's target: the claimant tries to direct faucet_A's MINT note here.
-    let faucet_b_seed = builder.rng_mut().draw_word();
+    let faucet_b_seed = builder.rng_mut().random();
     // Flip one byte of the address so the new EthAddress is distinct from faucet_A's.
     let mut other_bytes = leaf_data.origin_token_address.into_bytes();
     other_bytes[0] ^= 0x01;
@@ -708,7 +707,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -737,7 +736,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
@@ -861,7 +860,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -882,7 +881,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -1030,7 +1029,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1051,7 +1050,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -1188,7 +1187,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
@@ -1479,7 +1478,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
@@ -1728,7 +1727,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_account = create_existing_bridge_account_with_roles(
@@ -1749,7 +1748,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let leaf_origin_network = leaf_data.origin_network;
@@ -1877,7 +1876,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1896,7 +1895,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let leaf_origin_network = leaf_data.origin_network;

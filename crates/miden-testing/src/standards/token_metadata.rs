@@ -5,7 +5,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -16,6 +15,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Hasher, Word};
@@ -689,7 +689,7 @@ async fn test_field_setter_owner_succeeds(
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -753,7 +753,7 @@ async fn test_field_setter_non_owner_fails(
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -926,7 +926,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -978,7 +978,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())

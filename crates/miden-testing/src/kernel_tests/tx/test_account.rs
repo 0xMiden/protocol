@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_crypto::rand::{FeltRng, RandomCoin};
+use miden_crypto::rand::EidosRandomCoin;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::Hasher;
 use miden_protocol::account::auth::AuthScheme;
@@ -78,7 +78,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::{LocalTransactionProver, TransactionKernelError};
-use rand::random;
+use rand::{RngExt, random};
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -868,9 +868,9 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
 
 /// Returns the requested number of distinct procedure roots sorted in ascending order.
 fn sorted_procedure_roots(num_procedures: usize) -> Vec<AccountProcedureRoot> {
-    let mut rng = RandomCoin::new([num_procedures as u32, 0, 0, 0].into());
+    let mut rng = EidosRandomCoin::new([num_procedures as u32, 0, 0, 0].into());
     let mut roots = (0..num_procedures as u32)
-        .map(|_| AccountProcedureRoot::from_raw(rng.draw_word()))
+        .map(|_| AccountProcedureRoot::from_raw(rng.random()))
         .collect::<Vec<_>>();
     roots.sort_unstable();
 

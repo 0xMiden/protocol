@@ -22,7 +22,6 @@ use miden_agglayer::{
     RemoveGerNote,
     UpdateGerNote,
 };
-use miden_crypto::rand::FeltRng;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::note::Note;
@@ -42,6 +41,7 @@ use miden_standards::note::config::{
 use miden_standards::note::{FeeSponsorshipNote, P2idNote};
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::{Rng, RngExt};
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
@@ -68,7 +68,7 @@ fn rbac_config_note(
     sender: AccountId,
     account_id: AccountId,
     config: RbacConfig,
-    rng: &mut impl FeltRng,
+    rng: &mut impl Rng,
 ) -> anyhow::Result<Note> {
     let note = RbacConfigNote::builder()
         .sender(sender)
@@ -91,7 +91,7 @@ async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
     let new_admin =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         6,

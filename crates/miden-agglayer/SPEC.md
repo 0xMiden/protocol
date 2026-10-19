@@ -606,7 +606,7 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `b2agg.masm` |
 | `storage` | 6 felts -- see layout below |
 
@@ -665,7 +665,7 @@ token registry, and creates a MINT note targeting the faucet.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `claim.masm` |
 | `storage` | 569 felts -- see layout below |
 
@@ -734,7 +734,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `config_agg_bridge.masm` |
 | `storage` | 18 felts -- see layout below |
 
@@ -788,7 +788,7 @@ the 16-element MASM stack cannot hold all 18 registration felts at once.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `deregister_agg_faucet.masm` |
 | `storage` | 2 felts -- the faucet id |
 
@@ -843,7 +843,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `update_ger.masm` |
 | `storage` | 8 felts -- see layout below |
 
@@ -891,7 +891,7 @@ removed-GER keccak256 hash chain.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `remove_ger.masm` |
 | `storage` | 8 felts -- see layout below |
 
@@ -943,7 +943,7 @@ note (`RbacConfigNote` in Rust), not a bridge-specific script.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `rbac_config.masm` (miden-standards) |
 | `storage` | 2-4 felts, selector-dispatched -- see layout below |
 

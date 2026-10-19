@@ -25,9 +25,9 @@ mod config;
 
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{TransactionLog, TransactionLogs};
@@ -128,7 +128,7 @@ fn config_note(
     config: FaucetMetadataConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = FaucetMetadataConfigNote::builder()
         .sender(sender)
         .target(faucet_id)
@@ -194,7 +194,7 @@ fn build_caller_committed_description_note(
     );
 
     let script = CodeBuilder::default().compile_note_script(&script_code)?;
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .script(script)

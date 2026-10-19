@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -15,6 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::{TransactionLog, TransactionLogs};
@@ -377,7 +377,7 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     // 2. consume a BURN note carrying the minted NFT against the faucet
     let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([6; 32]);
-    let mut rng = RandomCoin::new([Felt::from(11u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(11u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(sender)
         .asset(asset)
@@ -439,7 +439,7 @@ async fn nft_burn_succeeds_for_a_private_faucet() -> anyhow::Result<()> {
     let sender = AccountId::builder()
         .account_type(AccountType::Private)
         .build_with_seed([17; 32]);
-    let mut rng = RandomCoin::new([Felt::from(12u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(12u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(sender)
         .asset(asset)
@@ -488,7 +488,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
     );
-    let mut rng = RandomCoin::new([Felt::from(33u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(33u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(sender)
         .mint_storage(storage)
@@ -547,7 +547,7 @@ async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow
         NonFungibleAsset::from_parts(target.id(), commitment),
         NoteTag::default(),
     );
-    let mut rng = RandomCoin::new([Felt::from(55u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(55u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(sender)
         .mint_storage(storage)
@@ -601,7 +601,7 @@ async fn nft_mint_via_note_succeeds_for_a_private_faucet() -> anyhow::Result<()>
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
     );
-    let mut rng = RandomCoin::new([Felt::from(66u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(66u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(sender)
         .mint_storage(storage)
@@ -651,7 +651,7 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
     );
-    let mut rng = RandomCoin::new([Felt::from(44u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(44u32); 4].into());
     let mint_note: Note = MintNote::builder()
         .sender(non_owner)
         .mint_storage(storage)
@@ -871,7 +871,7 @@ fn build_set_token_base_uri_tx(
         "
     ))?;
 
-    let mut rng = RandomCoin::new([Felt::from(17u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(17u32); 4].into());
     let note = NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .script(note_script)

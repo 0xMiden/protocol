@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::{Asset, AssetAmount};
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -21,6 +20,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word};
+use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
 use crate::note::costs::{NoteConsumptionCost, SWAP_CONSUMPTION_CYCLES};
@@ -283,9 +283,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> SwapNoteBuilder<swap_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -572,7 +572,7 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::note::{NoteStorage, NoteType};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -632,7 +632,7 @@ mod tests {
             .note_type(swap_note_type)
             .payback_note_type(payback_note_type)
             .attachment(attachment.clone())
-            .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
             .build()?;
 
         let serial_number = swap_note.serial_number();
@@ -836,7 +836,7 @@ mod tests {
             .offered_asset(zero)
             .requested_asset(non_fungible_asset())
             .note_type(NoteType::Public)
-            .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
             .build()
             .expect_err("a zero offered asset must be rejected");
         assert_matches!(
@@ -850,7 +850,7 @@ mod tests {
             .offered_asset(non_fungible_asset())
             .requested_asset(zero)
             .note_type(NoteType::Public)
-            .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
             .build()
             .expect_err("a zero requested asset must be rejected");
         assert_matches!(

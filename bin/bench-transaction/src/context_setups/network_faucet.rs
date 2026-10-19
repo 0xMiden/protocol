@@ -8,7 +8,6 @@ use anyhow::Result;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
@@ -149,7 +148,7 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
             .target(target_account.id())
             .asset(mint_asset)
             .note_type(NoteType::Public)
-            .serial_number(builder.rng_mut().draw_word())
+            .serial_number(builder.rng_mut().random())
             .build()?,
     );
 
@@ -187,10 +186,8 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     // The P2ID output note the faucet mints the NFT into.
-    let commitment = NonFungibleFaucet::compute_asset_commitment(
-        b"benchmark NFT",
-        builder.rng_mut().draw_word(),
-    );
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"benchmark NFT", builder.rng_mut().random());
     let mint_asset = NonFungibleAsset::from_parts(faucet.id(), commitment);
     let p2id_output_note = Note::from(
         P2idNote::builder()
@@ -198,7 +195,7 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
             .target(target_account.id())
             .asset(mint_asset)
             .note_type(NoteType::Public)
-            .serial_number(builder.rng_mut().draw_word())
+            .serial_number(builder.rng_mut().random())
             .build()?,
     );
 
