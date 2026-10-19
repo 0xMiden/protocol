@@ -11,7 +11,6 @@
 
 use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_agglayer::{ExitRoot, UpdateGerNote};
-use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::transaction::RawOutputNote;
@@ -22,6 +21,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::RngExt;
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
@@ -50,7 +50,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_account = create_existing_bridge_account_with_roles(
@@ -105,7 +105,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let ger_injector =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let ger_remover =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_account = create_existing_bridge_account_with_roles(
@@ -157,7 +157,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "Test Token",
         "TEST",
         8,
@@ -199,7 +199,7 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "Test Token",
         "TEST",
         8,

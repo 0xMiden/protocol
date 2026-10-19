@@ -8,7 +8,7 @@ use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_eidos::SecretKey;
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::{
     ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT,
@@ -39,7 +39,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
-use rand::SeedableRng;
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::executor::CodeExecutor;
@@ -572,7 +572,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         AccountState::Exists,
     )?;
 
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let serial_num = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])).random();
     let tag = NoteTag::with_account_target(target_account.id());
     let metadata = PartialNoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;

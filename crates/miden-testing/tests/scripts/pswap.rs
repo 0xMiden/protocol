@@ -12,7 +12,7 @@ use miden_protocol::account::{
     AccountVaultPatch,
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetId, FungibleAsset};
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
 use miden_protocol::note::{
@@ -48,8 +48,8 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 use miden_tx::TransactionExecutorError;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
 // CONSTANTS
@@ -86,7 +86,7 @@ fn build_pswap_note(
     min_requested_asset: FungibleAsset,
     note_type: NoteType,
 ) -> anyhow::Result<(PswapNote, Note)> {
-    let serial_number = builder.rng_mut().draw_word();
+    let serial_number = builder.rng_mut().random();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .creator_account_id(sender)
@@ -441,8 +441,8 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), 25)?;
     let is_partial = fill_amount < u64::from(min_requested_asset.amount());
 
-    let mut rng = RandomCoin::new(Word::default());
-    let serial_number = rng.draw_word();
+    let mut rng = EidosRandomCoin::new(Word::default());
+    let serial_number = rng.random();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .creator_account_id(alice.id())
@@ -767,7 +767,7 @@ async fn pswap_fill_test(
     let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let consumer_id = if use_network_account {
-        let seed: [u8; 32] = builder.rng_mut().draw_word().into();
+        let seed: [u8; 32] = builder.rng_mut().random::<Word>().into();
         let network_consumer = builder.add_account_from_builder(
             BASIC_AUTH,
             Account::builder(seed)
@@ -1169,7 +1169,7 @@ async fn pswap_note_min_fill_step_test(
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), requested_total)?;
 
     // Build the PSWAP note via the builder, setting the per-fill floor.
-    let serial_number = builder.rng_mut().draw_word();
+    let serial_number = builder.rng_mut().random();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .creator_account_id(alice)
@@ -1760,8 +1760,8 @@ async fn pswap_chained_partial_fills_test(
     let mut total_usdc_to_bob = 0u64;
     let mut total_eth_from_bob = 0u64;
     // Track serial for remainder chain
-    let mut rng = RandomCoin::new(Word::default());
-    let mut current_serial = rng.draw_word();
+    let mut rng = EidosRandomCoin::new(Word::default());
+    let mut current_serial = rng.random();
 
     for (fill_index, fill_amount) in fills.iter().enumerate() {
         let remaining_requested = current_requested - fill_amount;
@@ -1895,7 +1895,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
         .unwrap();
 
     // Create swap note using PswapNote builder
-    let mut rng = RandomCoin::new(Word::default());
+    let mut rng = EidosRandomCoin::new(Word::default());
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), 25).unwrap();
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
@@ -1905,7 +1905,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     let pswap_note: Note = PswapNote::builder()
         .sender(alice)
         .storage(storage)
-        .serial_number(rng.draw_word())
+        .serial_number(rng.random())
         .note_type(NoteType::Public)
         .offered_asset(FungibleAsset::new(usdc_faucet.id(), 50).unwrap())
         .build()
@@ -2036,7 +2036,7 @@ async fn fill_pswap_with_planted_depth(
         [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
     )?;
 
-    let serial_number = builder.rng_mut().draw_word();
+    let serial_number: Word = builder.rng_mut().random();
     let attachment = NoteAttachment::with_word(
         PswapNote::PSWAP_ATTACHMENT_SCHEME,
         Word::from([ONE, serial_number[1], planted_depth, ZERO]),
@@ -2175,7 +2175,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
                 .creator_account_id(alice.id())
                 .build(),
         )
-        .serial_number(RandomCoin::new(Word::default()).draw_word())
+        .serial_number(EidosRandomCoin::new(Word::default()).random())
         .note_type(NoteType::Public)
         .offered_asset(FungibleAsset::new(usdc_faucet.id(), initial_offered)?)
         .build()?;
@@ -2350,8 +2350,8 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
 
     // Two PSWAPs from Alice, both USDC → ETH, but distinct serials → distinct order_ids.
     let pswap_a = {
-        let mut rng = RandomCoin::new(Word::default());
-        let serial = rng.draw_word();
+        let mut rng = EidosRandomCoin::new(Word::default());
+        let serial = rng.random();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 20)?)
             .creator_account_id(alice)
@@ -2367,8 +2367,8 @@ async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Res
     };
     let pswap_b = {
         // Distinct seed → distinct serial → distinct order_id.
-        let mut rng = RandomCoin::new(Word::from([Felt::from(7u32); 4]));
-        let serial = rng.draw_word();
+        let mut rng = EidosRandomCoin::new(Word::from([Felt::from(7u32); 4]));
+        let serial = rng.random();
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 30)?)
             .creator_account_id(alice)
@@ -2500,7 +2500,7 @@ async fn pswap_multi_word_attachment_is_rejected() -> anyhow::Result<()> {
         [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
     )?;
 
-    let serial_number = builder.rng_mut().draw_word();
+    let serial_number: Word = builder.rng_mut().random();
 
     // A two-word attachment under the PSWAP scheme: the first word is a well-formed
     // [amount, order_id, depth, 0], the second is the payload that would be written past the
@@ -2659,7 +2659,7 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
     let helper_script = CodeBuilder::with_mock_packages()
         .with_dynamically_linked_package(drain_component.component_code())?
         .compile_note_script(helper_code)?;
-    let helper_note = NoteBuilder::new(alice, RandomCoin::new(Word::from([7, 7, 7, 7u32])))
+    let helper_note = NoteBuilder::new(alice, EidosRandomCoin::new(Word::from([7, 7, 7, 7u32])))
         .note_type(NoteType::Public)
         .script(helper_script)
         .build()?;

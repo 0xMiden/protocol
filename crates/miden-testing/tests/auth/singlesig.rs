@@ -1,7 +1,6 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, BoundSignature};
 use miden_protocol::account::{
     Account,
@@ -12,6 +11,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
@@ -268,7 +268,7 @@ fn setup_singlesig_user_faucet_with_burn_note(
 
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
     let asset = FungibleAsset::new(faucet_account.id(), 10)?;
-    let mut note_rng = RandomCoin::new([Felt::from(7u32); 4].into());
+    let mut note_rng = EidosRandomCoin::new([Felt::from(7u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(sender)
         .asset(asset)

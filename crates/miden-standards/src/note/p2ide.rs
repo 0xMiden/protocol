@@ -4,7 +4,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -21,6 +20,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use rand::{Rng, RngExt};
 
 use super::decode_optional_block_height;
 use crate::StandardsLib;
@@ -214,9 +214,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> P2ideNoteBuilder<p2ide_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -385,7 +385,7 @@ mod tests {
     use miden_protocol::account::{AccountId, AccountType};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::block::BlockNumber;
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::errors::NoteError;
     use miden_protocol::{Felt, Word};
 
@@ -647,7 +647,7 @@ mod tests {
     /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.
     #[test]
     fn builder_accumulates_assets() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let note = P2ideNote::builder()
             .sender(sender())
             .target(target())
