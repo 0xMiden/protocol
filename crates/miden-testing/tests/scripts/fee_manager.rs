@@ -610,7 +610,7 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
 
     mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(get_policy_note.id())
+        .authenticated_input_note(get_policy_note.clone())
         .build()?
         .execute()
         .await?;
@@ -817,7 +817,7 @@ async fn owner_can_mutate_allowed_fee_policy_roots(
     // note aborts with `ERR_FEE_POLICY_ROOT_NOT_ALLOWED`.
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(set_note.clone())
         .authenticated_input_note(sponsorship_note.id())
         .build()?
         .execute()
@@ -866,7 +866,7 @@ async fn non_owner_cannot_add_allowed_fee_policy_root() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(add_note.id())
+        .authenticated_input_note(add_note.clone())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -912,7 +912,7 @@ async fn removing_active_policy_root_is_rejected() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(remove_note.id())
+        .authenticated_input_note(remove_note.clone())
         .with_source_manager(source_manager)
         .build()?
         .execute()

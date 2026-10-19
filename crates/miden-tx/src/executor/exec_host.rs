@@ -35,6 +35,7 @@ use miden_protocol::transaction::{
     RawOutputNote,
     TransactionAdviceInputs,
     TransactionInputs,
+    TransactionLogs,
     TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
@@ -398,8 +399,8 @@ where
         }
     }
 
-    /// Consumes `self` and returns the account delta, output notes, transaction progress and lazy
-    /// loaded data.
+    /// Consumes `self` and returns the account delta, input and output notes, logs, transaction
+    /// progress, and lazy loaded data.
     #[allow(clippy::type_complexity)]
     pub(crate) fn into_parts(
         self,
@@ -407,15 +408,17 @@ where
         AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
+        TransactionLogs,
         TransactionProgress,
         LazyLoadedData,
     ) {
-        let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
 
         (
             account_patch,
             input_notes,
             output_notes,
+            logs,
             self.tx_progress,
             self.lazy_loaded_data,
         )
@@ -662,6 +665,10 @@ where
 
                 TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {
                     self.base_host.on_note_before_add_asset(note_idx, asset)
+                },
+
+                TransactionEvent::TxLogAdded(log) => {
+                    self.base_host.on_log_added(log).map(|_| Vec::new())
                 },
 
                 TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment } => self

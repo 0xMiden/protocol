@@ -254,7 +254,7 @@ async fn tx_get_block_commitment_returns_tracked_block() -> anyhow::Result<()> {
     // Authenticating the note makes the partial blockchain track the block that created it.
     let mock_tx = chain
         .build_transaction(account.id())
-        .authenticated_input_note(note.id())
+        .authenticated_input_note(note.clone())
         .build()?;
 
     let ref_block_header = mock_tx.tx_inputs().block_header().clone();
@@ -564,10 +564,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           push.0.0.0.0.0
           # => [user_params(6), pad(16)]
 
-          exec.auth::create_tx_summary
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
-
-          exec.auth::hash_and_insert_tx_summary
+          exec.auth::get_default_tx_summary_commitment
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -631,7 +628,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 }
 
 /// Tests that the transaction summary binds the expiration block delta set during the transaction
-/// and the user-defined parameters passed to `create_tx_summary`.
+/// and the user-defined parameters passed to `create_default_tx_summary`.
 ///
 /// The host verifies that the reconstructed summary commits to the message hashed in the kernel,
 /// so the assertions on the extracted summary prove that these values are part of the signed
@@ -659,10 +656,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           push.0.0.9.8.7
           # => [user_params(6), pad(16)]
 
-          exec.auth::create_tx_summary
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
-
-          exec.auth::hash_and_insert_tx_summary
+          exec.auth::get_default_tx_summary_commitment
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -723,8 +717,8 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
           exec.::miden::protocol::native_account::incr_nonce drop
           # => [pad(16)]
 
-          # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT. The commitment is
-          # the deepest word of the preimage, so it cannot be patched in after create_tx_summary.
+          # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT.
+          exec.tx::get_logs_commitment
           push.1.2.3.4
           # => [FAKE_BLOCK_COMMITMENT, pad(16)]
 
@@ -805,6 +799,7 @@ async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<(
 
           # The bound block is not tracked by the transaction, so its commitment cannot be read
           # from the partial blockchain and any word will do here.
+          exec.tx::get_logs_commitment
           push.1.2.3.4
           # => [BLOCK_COMMITMENT, pad(16)]
 
@@ -886,6 +881,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
 
           # Assemble the summary preimage manually with a forged metadata felt claiming an
           # expiration delta of 777 while the transaction never set one.
+          exec.tx::get_logs_commitment
           exec.tx::get_reference_block_commitment
           exec.tx::get_output_notes_commitment
           exec.tx::get_input_notes_commitment
@@ -990,6 +986,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         TransactionSummaryUserParams::new(
             [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0].map(Felt::from),
         ),
+        Default::default(),
     );
 
     let summary_commitment = expected_summary.to_commitment();

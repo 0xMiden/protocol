@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
@@ -34,12 +35,21 @@
 
 ### Changes
 
+- Added canonical protobuf transport for transaction logs and their commitments, with private log contents retained in local execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
+- [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- [BREAKING] Made logs required when constructing transaction outputs, effects, summaries, and proven transactions; added `TransactionEffects::builder()`. Renamed reference-block summary helpers to `create_default_tx_summary` and `get_default_tx_summary_commitment`, and explicit-block helpers to `create_tx_summary` and `get_tx_summary_commitment` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+
+- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
+- Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+- [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.
 - [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
 - [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification ([#4053](https://github.com/0xMiden/protocol/pull/4053)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+- [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
 - Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).

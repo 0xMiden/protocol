@@ -52,3 +52,6 @@ pub use batch::{
     ProvenBatch,
     ProvenBatchError,
 };
+
+mod logs;
+pub use logs::{LogTopic, TransactionLog, TransactionLogDetails, TransactionLogs};

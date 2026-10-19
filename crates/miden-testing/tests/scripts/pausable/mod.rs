@@ -125,7 +125,7 @@ pub(crate) async fn execute_note_on_faucet(
 ) -> anyhow::Result<()> {
     let executed = mock_chain
         .build_transaction(faucet_id)
-        .authenticated_input_note(note.id())
+        .authenticated_input_note(note.clone())
         .build()?
         .execute()
         .await?;
@@ -168,7 +168,7 @@ async fn pausable_manager_pause_fails_when_sender_not_owner() -> anyhow::Result<
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(attacker_note.id())
+        .authenticated_input_note(attacker_note.clone())
         .build()?
         .execute()
         .await;
@@ -196,7 +196,7 @@ async fn pausable_manager_unpause_fails_when_sender_not_owner() -> anyhow::Resul
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(attacker_unpause_note.id())
+        .authenticated_input_note(attacker_unpause_note.clone())
         .build()?
         .execute()
         .await;
@@ -386,7 +386,7 @@ async fn rbac_pause_fails_when_sender_lacks_pauser_role() -> anyhow::Result<()> 
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(pause_note.id())
+        .authenticated_input_note(pause_note.clone())
         .build()?
         .execute()
         .await;
@@ -417,7 +417,7 @@ async fn rbac_unmapped_procedure_falls_back_to_admin() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(attacker_note.id())
+        .authenticated_input_note(attacker_note.clone())
         .build()?
         .execute()
         .await;
@@ -659,7 +659,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(burn_note.id())
+        .authenticated_input_note(burn_note.clone())
         .build()?
         .execute()
         .await;
@@ -733,7 +733,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
     // `exec.pausable::assert_not_paused` after the authority check.
     let result = mock_chain
         .build_transaction(faucet.id())
-        .authenticated_input_note(set_max_supply_note.id())
+        .authenticated_input_note(set_max_supply_note.clone())
         .build()?
         .execute()
         .await;

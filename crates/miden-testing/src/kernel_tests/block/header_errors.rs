@@ -21,6 +21,7 @@ use miden_protocol::transaction::{
     InputNoteCommitment,
     OutputNote,
     ProvenTransaction,
+    TransactionLogDetails,
     TxAccountUpdate,
 };
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
@@ -403,6 +404,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 genesis_block.commitment(),
                 BlockNumber::from(u32::MAX),
                 miden_protocol::testing::dummy_execution_proof(),
+                TransactionLogDetails::Private(Word::empty()),
             )
             .context("failed to build proven transaction")
             .unwrap()
