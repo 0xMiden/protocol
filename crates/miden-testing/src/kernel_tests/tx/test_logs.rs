@@ -5,7 +5,7 @@ use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
-use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::auth::{AuthScheme, SignatureKey};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -98,7 +98,13 @@ async fn kernel_logs_reject_forged_content() -> anyhow::Result<()> {
         .add_advice_map_entry(commitment, vec![71u32.into(); WORD_SIZE])
         .build()?;
     let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx::add_log"));
-    assert_execution_error!(tx.execute_code(&code).await, tx_kernel::ERR_TX_LOG_PREIMAGE_MISMATCH);
+    assert_execution_error!(
+        tx.execute_code(&code).await,
+        matches ExecutionError::OperationError {
+            err: OperationError::FailedAssertion { err_code, .. },
+            ..
+        } if err_code == Felt::ZERO
+    );
     Ok(())
 }
 
@@ -441,8 +447,13 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
     let summary = build_summary(executed.logs().clone());
     assert_eq!(summary.logs_commitment(), executed.logs_commitment());
     let keys = get_public_keys_from_account(&account);
-    let key = Hasher::merge(&[keys[0], summary.to_commitment()]);
-    let signature = executed.advice_witness().map().get(&key).unwrap().to_vec();
+    let key = SignatureKey::new(keys[0].into(), summary.to_commitment());
+    let signature = executed
+        .tx_inputs()
+        .signatures()
+        .iter()
+        .find(|signature| signature.key() == key)
+        .context("transaction should have signed the log summary")?;
 
     // Replay a real signature with no authenticator available to replace it. First establish
     // that the same transaction succeeds, then change only its transaction logs.
@@ -457,7 +468,7 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
         )
     };
     let mut args = executed.tx_args().clone();
-    args.extend_advice_map([(key, signature.clone())]);
+    args.add_signature(signature.clone());
     assert_eq!(execute(args).await?.id(), executed.id());
 
     let twice = CodeBuilder::default().compile_tx_script(format!(
@@ -475,9 +486,9 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
     let doubled = TransactionLogs::new(vec![executed.logs().iter().next().unwrap().clone(); 2])?;
     let changed_summary = build_summary(doubled);
     let mut args = executed.tx_args().clone().with_tx_script(twice);
-    let changed_key = Hasher::merge(&[keys[0], changed_summary.to_commitment()]);
+    let changed_key = SignatureKey::new(keys[0].into(), changed_summary.to_commitment());
     assert_ne!(key, changed_key);
-    args.extend_advice_map([(changed_key, signature.clone())]);
+    args.extend_advice_map([(changed_key.to_advice_map_key(), signature.to_encoded_signature())]);
     // The supplied signature reaches verification and fails there, rather than failing
     // because no signature or authenticator was available.
     let error = execute(args).await.unwrap_err();

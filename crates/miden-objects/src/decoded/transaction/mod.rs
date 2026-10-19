@@ -34,12 +34,15 @@ pub use notes::{
 
 mod inputs;
 pub use inputs::{
-    ForeignAccountSlotName,
-    ForeignAccountSlotNameError,
+    AccountInputs,
+    AuthSignature,
+    BoundSignature,
     TransactionInputs,
-    TransactionInputsError,
     TransactionInputsV1,
 };
+
+mod witness;
+pub use witness::{TransactionWitness, TransactionWitnessV1};
 
 mod batch;
 pub use batch::{
