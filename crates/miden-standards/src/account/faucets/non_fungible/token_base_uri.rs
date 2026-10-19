@@ -219,13 +219,9 @@ impl TokenBaseUriConfig {
             })?;
 
         let mutability_flag = get_item(mutability_config_slot())?[0].as_canonical_u64();
-        let is_mutable = match mutability_flag {
-            0 => false,
-            1 => true,
-            value => {
-                return Err(NonFungibleFaucetError::InvalidTokenBaseUriMutabilityFlag { value });
-            },
-        };
+        let is_mutable = bool::try_from(mutability_flag).map_err(|_| {
+            NonFungibleFaucetError::InvalidTokenBaseUriMutabilityFlag { value: mutability_flag }
+        })?;
 
         Self::new(token_base_uri, is_mutable)
     }
