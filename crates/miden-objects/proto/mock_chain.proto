@@ -53,8 +53,7 @@ message SpentNullifier {
 message MockChainNote {
   note.NoteInclusionProof proof = 1;
   oneof note {
-    // Includes private genesis notes with full details.
-    note.Note public = 2;
+    transaction.PublicOutputNote public = 2;
     transaction.PrivateOutputNote private = 3;
   }
 }

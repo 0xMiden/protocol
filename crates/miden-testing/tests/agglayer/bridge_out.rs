@@ -814,7 +814,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
 
     let result = mock_chain
         .build_transaction(bridge_account.id())
-        .authenticated_input_note(b2agg_note.id())
+        .authenticated_input_note(b2agg_note.clone())
         .foreign_accounts(vec![foreign_account_inputs])
         .build()?
         .execute()

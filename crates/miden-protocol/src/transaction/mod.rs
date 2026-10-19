@@ -1,6 +1,5 @@
 use super::account::{AccountHeader, AccountId};
 use super::note::{NoteId, Nullifier};
-use super::vm::AdviceInputs;
 use super::{Felt, Hasher, WORD_SIZE, Word, ZERO};
 
 mod effects;
@@ -17,6 +16,7 @@ mod transaction_id;
 mod tx_args;
 mod tx_header;
 mod tx_summary;
+mod tx_witness;
 mod verifier;
 
 pub use effects::TransactionEffects;
@@ -46,4 +46,5 @@ pub use tx_summary::{
     TransactionSummaryMetadata,
     TransactionSummaryUserParams,
 };
+pub use tx_witness::TransactionWitness;
 pub use verifier::TransactionVerifier;

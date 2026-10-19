@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
@@ -27,6 +28,10 @@
 ## v0.17.0-pre.1 (2026-09-05)
 ## v1.0.0-rc.1 (TBD)
 
+### Features
+
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+
 ### Changes
 
 - [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
@@ -35,14 +40,34 @@
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+- [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
 - [BREAKING] Added an on-chain `token_base_uri` to `NonFungibleFaucet` that marks its token metadata as public, with the `set_token_base_uri` setter and a `token_uri` helper ([#4011](https://github.com/0xMiden/protocol/issues/4011)).
+- Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).
+- Keyed `bench-tx.json`'s per-note cycle counts by note label instead of note commitment, and added `total_cycles` to each scenario ([#3726](https://github.com/0xMiden/protocol/pull/3726)).
 
 ### Fixes
 
 - `SwapNote` and `PswapNote` builders now reject zero-amount offered or requested assets ([#4044](https://github.com/0xMiden/protocol/pull/4044)).
 - [BREAKING] `NoteConsumptionChecker::check_notes_consumability` now rejects input notes with duplicate nullifiers via the new `NoteCheckerError::TransactionInputs` variant. Removed `From<Vec<Note>> for InputNotes<InputNote>` and changed `TransactionInputs::set_input_notes` to take `InputNotes<InputNote>` ([#4005](https://github.com/0xMiden/protocol/pull/4005)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
+- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
+- [BREAKING] Replaced `TransactionInputs::new` and `TransactionInputs::try_from_parts` with `TransactionInputs::builder` ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
+- [BREAKING] Removed `TransactionInputs` and `ExecutedTransaction` serialization implementations ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- [BREAKING] `TransactionInputs` now stores the note scripts the executor resolved during execution ([#4030](https://github.com/0xMiden/protocol/pull/4030)).
+- [BREAKING] `TransactionInputs` now stores the signatures generated during execution, keyed by the new `SignatureKey` ([#4031](https://github.com/0xMiden/protocol/pull/4031)).
+- [BREAKING] `TransactionInputs` now stores the foreign accounts as `AccountInputs` instead of their code and slot names, and the executor no longer fetches foreign accounts the inputs already contain ([#4032](https://github.com/0xMiden/protocol/pull/4032)).
+- [BREAKING] The executor now adds lazy-loaded asset and storage map witnesses to the partial accounts in `TransactionInputs`, and `TransactionInputs::with_asset_witnesses` is replaced by `add_asset_witnesses` ([#4033](https://github.com/0xMiden/protocol/pull/4033)).
+- [BREAKING] `TransactionInputs` no longer stores the recorded advice inputs, since its typed lazy-loaded data is enough to re-execute and prove the transaction ([#4034](https://github.com/0xMiden/protocol/pull/4034)).
+- [BREAKING] `TransactionArgs` now stores output note recipients and signatures as typed data instead of in its advice inputs, and `TransactionArgs::from_parts` takes them as parameters ([#4048](https://github.com/0xMiden/protocol/pull/4048)).
+
+### Fixes
+
+- [BREAKING] Added `BoundSignature`, which binds a signature to its `SignatureKey` and replaces `Signature::to_encoded_signature` with an infallible encoding, so unrecoverable ECDSA signatures are rejected instead of causing a panic ([#4045](https://github.com/0xMiden/protocol/pull/4045)).
 
 ## v0.17.0 (2026-10-01)
 
