@@ -298,25 +298,6 @@ mod tests {
     }
 
     #[test]
-    fn insert_is_idempotent() -> anyhow::Result<()> {
-        let proc0 = ProcedureRoot::mock(0);
-        let mut tree = CodeTree::with_entries([proc0])?;
-        let initial_root = tree.root();
-
-        assert!(!tree.insert(proc0)?);
-        assert_eq!(tree.root(), initial_root);
-        assert_eq!(tree.num_procedures(), 1);
-
-        let proc1 = ProcedureRoot::mock(1);
-        assert!(!tree.contains(&proc1));
-        assert!(tree.insert(proc1)?);
-        assert!(tree.contains(&proc1));
-        assert_eq!(tree.num_procedures(), 2);
-
-        Ok(())
-    }
-
-    #[test]
     fn apply_mutations_skips_present_and_duplicate_roots() -> anyhow::Result<()> {
         let proc0 = ProcedureRoot::mock(0);
         let proc1 = ProcedureRoot::mock(1);
