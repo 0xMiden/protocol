@@ -1,3 +1,6 @@
+mod array_patch;
+pub use array_patch::{StorageArrayPatch, StorageArrayPatchEntries};
+
 mod patch_operation;
 pub use patch_operation::StoragePatchOperation;
 

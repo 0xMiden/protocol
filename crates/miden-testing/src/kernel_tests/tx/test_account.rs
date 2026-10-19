@@ -698,7 +698,7 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
 }
 
 /// Tests that `validate_storage` rejects a storage slot whose type is outside the supported set
-/// (value or map) instead of silently committing it as a map (audit finding L-11).
+/// (value, map, or array) instead of silently committing it as a map (audit finding L-11).
 #[tokio::test]
 async fn validate_storage_rejects_unsupported_slot_type() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
@@ -713,7 +713,7 @@ async fn validate_storage_rejects_unsupported_slot_type() -> anyhow::Result<()> 
         begin
             exec.prologue::prepare_transaction
 
-            push.2
+            push.3
             exec.memory::get_native_account_active_storage_slots_ptr add.1
             mem_store
 

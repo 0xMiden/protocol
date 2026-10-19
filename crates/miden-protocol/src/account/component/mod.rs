@@ -13,7 +13,7 @@ mod code;
 pub use code::AccountComponentCode;
 
 use crate::MastForest;
-use crate::account::{AccountProcedureRoot, StorageSlot};
+use crate::account::{AccountProcedureRoot, AccountStorage, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 
@@ -69,6 +69,7 @@ impl AccountComponent {
         // Check that we have less than 256 storage slots.
         u8::try_from(storage_slots.len())
             .map_err(|_| AccountError::StorageTooManySlots(storage_slots.len() as u64))?;
+        AccountStorage::validate_payload_size(storage_slots.iter().map(StorageSlot::slot_type))?;
 
         Ok(Self {
             code: code.into(),

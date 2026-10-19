@@ -14,6 +14,7 @@ use super::{
 };
 use crate::account::{
     AccountComponent,
+    StorageArrayPatch,
     StorageMapPatch,
     StorageMapPatchEntries,
     StorageSlotPatch,
@@ -25,11 +26,14 @@ use crate::crypto::SequentialCommit;
 pub(crate) mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
 
+mod array;
+pub use array::{StorageArray, StorageArrayError, StorageArrayLength};
+
 mod map;
 pub use map::{PartialStorageMap, StorageMap, StorageMapKey, StorageMapKeyHash, StorageMapWitness};
 
 mod header;
-pub use header::{AccountStorageHeader, StorageSlotHeader};
+pub use header::{AccountStorageHeader, StorageSlotHeader, StorageSlotHeaderContent};
 
 mod partial;
 pub use partial::PartialStorage;
@@ -37,23 +41,11 @@ pub use partial::PartialStorage;
 // ACCOUNT STORAGE
 // ================================================================================================
 
-/// Account storage is composed of a variable number of name-addressable [`StorageSlot`]s up to
-/// 255 slots in total.
+/// Up to 255 named [`StorageSlot`]s, sorted by [`StorageSlotId`].
 ///
-/// Each slot consists of a [`StorageSlotName`] and [`StorageSlotContent`] which defines its size
-/// and structure. Currently, the following content types are supported:
-/// - [`StorageSlotContent::Value`]: contains a single [`Word`] of data (i.e., 32 bytes).
-/// - [`StorageSlotContent::Map`]: contains a [`StorageMap`] which is a key-value map where both
-///   keys and values are [Word]s. The value of a storage slot containing a map is the commitment to
-///   the underlying map.
-///
-/// Slots are sorted by [`StorageSlotName`] (or [`StorageSlotId`] equivalently). This order is
-/// necessary to:
-/// - Simplify lookups of slots in the transaction kernel (using `std::collections::sorted_array`
-///   from the miden core library)
-/// - Allow the [`AccountStoragePatch`] to work only with slot names instead of slot indices.
-/// - Make it simple to check for duplicates by iterating the slots and checking that no two
-///   adjacent items have the same slot name.
+/// Slots contain a [`Word`], [`StorageArray`], or [`StorageMap`]. Payload is limited to
+/// [`Self::MAX_NUM_STORAGE_WORDS`] words: values and map roots count as one word each, and arrays
+/// count as their full length.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AccountStorage {
     slots: Vec<StorageSlot>,
@@ -62,6 +54,19 @@ pub struct AccountStorage {
 impl AccountStorage {
     /// The maximum number of storage slots allowed in an account storage.
     pub const MAX_NUM_STORAGE_SLOTS: usize = 255;
+
+    /// Maximum payload in words, counting values, map roots, and array contents.
+    pub const MAX_NUM_STORAGE_WORDS: usize = 256;
+
+    pub(crate) fn validate_payload_size(
+        types: impl Iterator<Item = StorageSlotType>,
+    ) -> Result<(), AccountError> {
+        let num_words: usize = types.map(|slot_type| slot_type.num_words()).sum();
+        if num_words > Self::MAX_NUM_STORAGE_WORDS {
+            return Err(AccountError::StoragePayloadTooLarge(num_words));
+        }
+        Ok(())
+    }
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -74,6 +79,7 @@ impl AccountStorage {
     ///
     /// Returns an error if:
     /// - The number of [`StorageSlot`]s exceeds 255.
+    /// - The total logical payload exceeds [`Self::MAX_NUM_STORAGE_WORDS`].
     /// - There are multiple storage slots with the same [`StorageSlotName`].
     pub fn new(mut slots: Vec<StorageSlot>) -> Result<AccountStorage, AccountError> {
         let num_slots = slots.len();
@@ -93,6 +99,7 @@ impl AccountStorage {
             }
         }
 
+        Self::validate_payload_size(slots.iter().map(StorageSlot::slot_type))?;
         Ok(Self { slots })
     }
 
@@ -217,6 +224,17 @@ impl AccountStorage {
             })
     }
 
+    /// Returns the full array in the named slot.
+    pub fn get_array(&self, slot_name: &StorageSlotName) -> Result<&StorageArray, AccountError> {
+        let slot = self.get(slot_name).ok_or_else(|| AccountError::StorageSlotNameNotFound {
+            slot_name: slot_name.clone(),
+        })?;
+        match slot.content() {
+            StorageSlotContent::Array(array) => Ok(array),
+            _ => Err(AccountError::StorageSlotNotArray(slot_name.clone())),
+        }
+    }
+
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -227,15 +245,93 @@ impl AccountStorage {
     /// Returns an error if:
     /// - The updates violate storage constraints.
     pub(super) fn apply_patch(&mut self, patch: &AccountStoragePatch) -> Result<(), AccountError> {
+        if patch.is_empty() {
+            return Ok(());
+        }
+        // Stage affected slots only, avoiding copies of unchanged maps.
+        let mut updated = Self {
+            slots: self
+                .slots
+                .iter()
+                .filter(|slot| patch.get(slot.name()).is_some())
+                .cloned()
+                .collect(),
+        };
         for (slot_name, slot_patch) in patch.slots() {
             match slot_patch {
-                StorageSlotPatch::Value(value_patch) => {
-                    self.apply_value_patch(slot_name, value_patch)?
+                StorageSlotPatch::Array(array_patch) => {
+                    updated.apply_array_patch(slot_name, array_patch)?
                 },
-                StorageSlotPatch::Map(map_patch) => self.apply_map_patch(slot_name, map_patch)?,
+                StorageSlotPatch::Value(value_patch) => {
+                    updated.apply_value_patch(slot_name, value_patch)?
+                },
+                StorageSlotPatch::Map(map_patch) => {
+                    updated.apply_map_patch(slot_name, map_patch)?
+                },
             }
         }
 
+        let retained = self.slots.iter().filter(|slot| patch.get(slot.name()).is_none());
+        let num_slots = retained.clone().count() + updated.slots.len();
+        if num_slots > Self::MAX_NUM_STORAGE_SLOTS {
+            return Err(AccountError::StorageTooManySlots(num_slots as u64));
+        }
+        Self::validate_payload_size(
+            retained.chain(updated.slots.iter()).map(StorageSlot::slot_type),
+        )?;
+        self.slots.retain(|slot| patch.get(slot.name()).is_none());
+        self.slots.extend(updated.slots);
+        self.slots.sort_unstable_by(|a, b| a.name().cmp(b.name()));
+        Ok(())
+    }
+
+    /// Replaces an array's words, preserving its fixed length.
+    pub fn set_array(
+        &mut self,
+        slot_name: &StorageSlotName,
+        array: StorageArray,
+    ) -> Result<StorageArray, AccountError> {
+        let slot = self.get_mut(slot_name).ok_or_else(|| {
+            AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() }
+        })?;
+        let StorageSlotContent::Array(current) = slot.content_mut() else {
+            return Err(AccountError::StorageSlotNotArray(slot_name.clone()));
+        };
+        if current.length() != array.length() {
+            return Err(StorageArrayError::LengthMismatch {
+                expected: current.length().as_u16(),
+                actual: array.length().as_u16(),
+            }
+            .into());
+        }
+        Ok(core::mem::replace(current, array))
+    }
+
+    fn apply_array_patch(
+        &mut self,
+        slot_name: &StorageSlotName,
+        patch: &StorageArrayPatch,
+    ) -> Result<(), AccountError> {
+        match patch {
+            StorageArrayPatch::Create { array } => {
+                self.create_slot(StorageSlot::with_array(slot_name.clone(), array.clone()))
+            },
+            StorageArrayPatch::Update { entries } => {
+                let array = entries.apply(self.get_array(slot_name)?)?;
+                self.set_array(slot_name, array)?;
+            },
+            StorageArrayPatch::Remove { length } => {
+                let current = self.get_array(slot_name)?.length();
+                if current != *length {
+                    return Err(StorageArrayError::LengthMismatch {
+                        expected: current.as_u16(),
+                        actual: length.as_u16(),
+                    }
+                    .into());
+                }
+                self.remove_slot(slot_name)?;
+            },
+        }
         Ok(())
     }
 
@@ -247,7 +343,7 @@ impl AccountStorage {
     ) -> Result<(), AccountError> {
         match value_patch {
             StorageValuePatch::Create { value } => {
-                self.create_value_slot(slot_name.clone(), *value)?;
+                self.create_value_slot(slot_name.clone(), *value);
             },
             StorageValuePatch::Update { value } => {
                 self.set_item(slot_name, *value)?;
@@ -351,18 +447,9 @@ impl AccountStorage {
         Ok((old_root, old_value))
     }
 
-    /// Creates a new value slot with the given name and value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
-    fn create_value_slot(
-        &mut self,
-        slot_name: StorageSlotName,
-        value: Word,
-    ) -> Result<(), AccountError> {
-        self.create_slot(StorageSlot::with_value(slot_name, value))
+    /// Creates or replaces a value slot in a staged patch.
+    fn create_value_slot(&mut self, slot_name: StorageSlotName, value: Word) {
+        self.create_slot(StorageSlot::with_value(slot_name, value));
     }
 
     /// Creates a new map slot with the given name and the provided patch entries as its contents.
@@ -370,7 +457,6 @@ impl AccountStorage {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
     /// - A single tree leaf of the map would hold more entries than the tree allows.
     fn create_map_slot(
         &mut self,
@@ -381,7 +467,8 @@ impl AccountStorage {
         let storage_map = StorageMap::from_btree_map(entries.as_map().clone())
             .map_err(AccountError::MaxNumStorageMapLeavesExceeded)?;
 
-        self.create_slot(StorageSlot::with_map(slot_name, storage_map))
+        self.create_slot(StorageSlot::with_map(slot_name, storage_map));
+        Ok(())
     }
 
     /// Removes the storage slot with the given name.
@@ -399,30 +486,11 @@ impl AccountStorage {
         }
     }
 
-    /// Creates the provided slot, maintaining the slots' sort order by [`StorageSlotName`].
-    ///
-    /// If a slot with the same name already exists, it is replaced in place. This re-creation is
-    /// equivalent to removing the existing slot and creating the new one. See also
-    /// [`AccountStoragePatch::merge`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if adding a new slot would exceed
-    /// [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
-    fn create_slot(&mut self, slot: StorageSlot) -> Result<(), AccountError> {
+    /// Stages a slot in ID order. `apply_patch` checks limits on the resulting storage.
+    fn create_slot(&mut self, slot: StorageSlot) {
         match self.slots.binary_search_by(|existing| existing.name().cmp(slot.name())) {
-            Ok(index) => {
-                self.slots[index] = slot;
-                Ok(())
-            },
-            Err(index) => {
-                if self.slots.len() >= Self::MAX_NUM_STORAGE_SLOTS {
-                    return Err(AccountError::StorageTooManySlots(self.slots.len() as u64 + 1));
-                }
-
-                self.slots.insert(index, slot);
-                Ok(())
-            },
+            Ok(index) => self.slots[index] = slot,
+            Err(index) => self.slots.insert(index, slot),
         }
     }
 }
@@ -449,12 +517,18 @@ impl SequentialCommit for AccountStorage {
         self.slots()
             .iter()
             .flat_map(|slot| {
-                StorageSlotHeader::new(
-                    slot.name().clone(),
-                    slot.content().slot_type(),
-                    slot.content().value(),
-                )
-                .to_elements()
+                let id = slot.id();
+                let value = slot.value();
+                [
+                    Felt::ZERO,
+                    slot.slot_type().as_felt(),
+                    id.suffix(),
+                    id.prefix(),
+                    value[0],
+                    value[1],
+                    value[2],
+                    value[3],
+                ]
             })
             .collect()
     }
@@ -591,7 +665,7 @@ mod tests {
 
         // Creating a slot that already exists re-creates it, replacing the previous value.
         let new_value = Word::from([5u32, 6, 7, 8]);
-        storage.create_value_slot(slot_name.clone(), new_value)?;
+        storage.create_value_slot(slot_name.clone(), new_value);
 
         assert_eq!(storage.num_slots(), 1);
         assert_eq!(storage.get_item(&slot_name)?, new_value);
@@ -628,7 +702,7 @@ mod tests {
             StorageSlot::with_value(existing1.clone(), value),
         ])?;
 
-        storage.create_value_slot(created.clone(), value)?;
+        storage.create_value_slot(created.clone(), value);
         assert_eq!(storage.num_slots(), 3);
         assert_eq!(storage.get_item(&created)?, value);
         assert!(

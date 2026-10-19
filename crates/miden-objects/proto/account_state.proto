@@ -21,6 +21,7 @@ message StorageSlot {
   oneof storage_slot_content {
     primitives.Word value = 2;
     StorageMap map = 3;
+    StorageArray array = 4;
   }
 }
 

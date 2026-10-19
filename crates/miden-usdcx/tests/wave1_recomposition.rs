@@ -81,7 +81,9 @@ fn map_slot<'a>(
         .with_context(|| format!("the policy manager must register the '{name}' slot"))?;
     match slot.content() {
         StorageSlotContent::Map(map) => Ok(map),
-        StorageSlotContent::Value(_) => anyhow::bail!("'{name}' must be a MAP slot"),
+        StorageSlotContent::Value(_) | StorageSlotContent::Array(_) => {
+            anyhow::bail!("'{name}' must be a MAP slot")
+        },
     }
 }
 
@@ -90,7 +92,9 @@ fn value_slot(components: &[AccountComponent], name: &StorageSlotName) -> Result
         .with_context(|| format!("the composition must register the '{name}' slot"))?;
     match slot.content() {
         StorageSlotContent::Value(v) => Ok(*v),
-        StorageSlotContent::Map(_) => anyhow::bail!("'{name}' must be a VALUE slot"),
+        StorageSlotContent::Map(_) | StorageSlotContent::Array(_) => {
+            anyhow::bail!("'{name}' must be a VALUE slot")
+        },
     }
 }
 

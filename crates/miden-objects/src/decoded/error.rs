@@ -37,6 +37,7 @@ macro_rules! impl_verification_error_from {
 impl_verification_error_from!(
     core::num::TryFromIntError,
     miden_protobuf::ConversionError,
+    miden_protocol::account::StorageArrayError,
     miden_protocol::assembly::mast::MastForestError,
     miden_protocol::block::SignedBlockError,
     miden_protocol::crypto::merkle::MerkleError,

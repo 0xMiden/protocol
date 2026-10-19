@@ -1,8 +1,8 @@
 use miden_core::EMPTY_WORD;
 
-use crate::account::StorageSlotType;
 use crate::account::storage::map::EMPTY_STORAGE_MAP_ROOT;
 use crate::account::storage::{StorageMap, Word};
+use crate::account::{StorageArray, StorageSlotType};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -14,16 +14,12 @@ use crate::utils::serde::{
 // STORAGE SLOT CONTENT
 // ================================================================================================
 
-/// Represents the contents of a [`StorageSlot`](super::StorageSlot).
-///
-/// The content of a storage slot can be of two types:
-/// - A simple value which contains a single word (4 field elements or ~32 bytes).
-/// - A key value map where both keys and values are words. The capacity of such storage slot is
-///   theoretically unlimited.
+/// The value, array, or map stored in a [`StorageSlot`](super::StorageSlot).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageSlotContent {
     Value(Word),
     Map(StorageMap),
+    Array(StorageArray),
 }
 
 impl StorageSlotContent {
@@ -31,6 +27,7 @@ impl StorageSlotContent {
     pub fn is_default(&self) -> bool {
         match self {
             StorageSlotContent::Value(value) => *value == EMPTY_WORD,
+            Self::Array(array) => array.values().iter().all(Word::is_empty),
             StorageSlotContent::Map(map) => map.root() == EMPTY_STORAGE_MAP_ROOT,
         }
     }
@@ -39,6 +36,7 @@ impl StorageSlotContent {
     pub fn default_word(&self) -> Word {
         match self {
             StorageSlotContent::Value(_) => EMPTY_WORD,
+            Self::Array(array) => StorageArray::empty(array.length()).commitment(),
             StorageSlotContent::Map(_) => EMPTY_STORAGE_MAP_ROOT,
         }
     }
@@ -58,9 +56,11 @@ impl StorageSlotContent {
     /// Returns:
     /// - For [`StorageSlotContent::Value`] the value.
     /// - For [`StorageSlotContent::Map`] the root of the [StorageMap].
+    /// - For [`StorageSlotContent::Array`] the commitment to the ordered words.
     pub fn value(&self) -> Word {
         match self {
             Self::Value(value) => *value,
+            Self::Array(array) => array.commitment(),
             Self::Map(map) => map.root(),
         }
     }
@@ -69,6 +69,7 @@ impl StorageSlotContent {
     pub fn slot_type(&self) -> StorageSlotType {
         match self {
             StorageSlotContent::Value(_) => StorageSlotType::Value,
+            Self::Array(array) => StorageSlotType::Array(array.length()),
             StorageSlotContent::Map(_) => StorageSlotType::Map,
         }
     }
@@ -83,6 +84,7 @@ impl Serializable for StorageSlotContent {
 
         match self {
             Self::Value(value) => target.write(value),
+            Self::Array(array) => target.write_many(array.values()),
             Self::Map(map) => target.write(map),
         }
     }
@@ -92,6 +94,7 @@ impl Serializable for StorageSlotContent {
 
         size += match self {
             StorageSlotContent::Value(word) => word.get_size_hint(),
+            Self::Array(array) => array.values().len() * Word::SERIALIZED_SIZE,
             StorageSlotContent::Map(storage_map) => storage_map.get_size_hint(),
         };
 
@@ -104,6 +107,10 @@ impl Deserializable for StorageSlotContent {
         let storage_slot_type = source.read::<StorageSlotType>()?;
 
         match storage_slot_type {
+            StorageSlotType::Array(length) => {
+                let values = source.read_many_iter(length.as_usize())?.collect::<Result<_, _>>()?;
+                Ok(Self::Array(StorageArray::new(values).expect("validated array length")))
+            },
             StorageSlotType::Value => {
                 let word = source.read::<Word>()?;
                 Ok(StorageSlotContent::Value(word))

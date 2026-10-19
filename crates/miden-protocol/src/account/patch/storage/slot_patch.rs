@@ -1,4 +1,5 @@
 use crate::account::{
+    StorageArrayPatch,
     StorageMapPatch,
     StorageMapPatchEntries,
     StoragePatchOperation,
@@ -23,10 +24,12 @@ use crate::utils::serde::{
 ///
 /// - [`StorageSlotPatch::Value`] carries the [`StorageValuePatch`] for a value slot.
 /// - [`StorageSlotPatch::Map`] carries the [`StorageMapPatch`] for a map slot.
+/// - [`StorageSlotPatch::Array`] carries the [`StorageArrayPatch`] for an array slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageSlotPatch {
     Value(StorageValuePatch),
     Map(StorageMapPatch),
+    Array(StorageArrayPatch),
 }
 
 impl StorageSlotPatch {
@@ -39,6 +42,9 @@ impl StorageSlotPatch {
     /// The type byte for map slot patches.
     const MAP: u8 = 1;
 
+    /// The type byte for array slot patches.
+    const ARRAY: u8 = 2;
+
     // ACCESSORS
     // ----------------------------------------------------------------------------------------
 
@@ -46,6 +52,7 @@ impl StorageSlotPatch {
     pub fn slot_type(&self) -> StorageSlotType {
         match self {
             StorageSlotPatch::Value(_) => StorageSlotType::Value,
+            Self::Array(patch) => StorageSlotType::Array(patch.length()),
             StorageSlotPatch::Map(_) => StorageSlotType::Map,
         }
     }
@@ -54,6 +61,7 @@ impl StorageSlotPatch {
     pub fn patch_op(&self) -> StoragePatchOperation {
         match self {
             StorageSlotPatch::Value(value_patch) => value_patch.patch_op(),
+            Self::Array(patch) => patch.patch_op(),
             StorageSlotPatch::Map(map_patch) => map_patch.patch_op(),
         }
     }
@@ -85,6 +93,7 @@ impl StorageSlotPatch {
         other: Self,
     ) -> Result<MergeOutcome, AccountPatchError> {
         match (self, other) {
+            (Self::Array(current), Self::Array(new)) => current.merge(slot_name, new),
             (StorageSlotPatch::Value(current), StorageSlotPatch::Value(new)) => {
                 current.merge(slot_name, new)
             },
@@ -101,6 +110,7 @@ impl From<StorageSlotContent> for StorageSlotPatch {
     /// building a creation patch from an existing account.
     fn from(content: StorageSlotContent) -> Self {
         match content {
+            StorageSlotContent::Array(array) => Self::Array(StorageArrayPatch::Create { array }),
             StorageSlotContent::Value(value) => {
                 StorageSlotPatch::Value(StorageValuePatch::Create { value })
             },
@@ -116,6 +126,10 @@ impl From<StorageSlotContent> for StorageSlotPatch {
 impl Serializable for StorageSlotPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
+            Self::Array(patch) => {
+                target.write_u8(Self::ARRAY);
+                target.write(patch);
+            },
             StorageSlotPatch::Value(value_patch) => {
                 target.write_u8(Self::VALUE);
                 target.write(value_patch);
@@ -131,6 +145,7 @@ impl Serializable for StorageSlotPatch {
         let tag_size = 0u8.get_size_hint();
         match self {
             StorageSlotPatch::Value(value_patch) => tag_size + value_patch.get_size_hint(),
+            Self::Array(patch) => tag_size + patch.get_size_hint(),
             StorageSlotPatch::Map(map_patch) => tag_size + map_patch.get_size_hint(),
         }
     }
@@ -141,6 +156,7 @@ impl Deserializable for StorageSlotPatch {
         match source.read_u8()? {
             Self::VALUE => Ok(Self::Value(source.read()?)),
             Self::MAP => Ok(Self::Map(source.read()?)),
+            Self::ARRAY => Ok(Self::Array(source.read()?)),
             other => Err(DeserializationError::InvalidValue(format!(
                 "unknown storage slot patch variant {other}"
             ))),

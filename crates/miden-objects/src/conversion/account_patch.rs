@@ -9,6 +9,7 @@ use miden_protocol::account::{
     AccountStoragePatch,
     AccountUpdateDetails,
     AccountVaultPatch,
+    StorageArrayPatch,
     StorageMapPatch,
     StorageMapPatchEntries,
     StorageSlotPatch,
@@ -60,6 +61,31 @@ impl From<&StorageValuePatch> for proto::account::StorageValuePatch {
     }
 }
 
+impl From<&StorageArrayPatch> for proto::account::StorageArrayPatch {
+    fn from(patch: &StorageArrayPatch) -> Self {
+        use proto::account::storage_array_patch::Operation;
+
+        let operation = match patch {
+            StorageArrayPatch::Create { array } => Operation::Create(array.into()),
+            StorageArrayPatch::Update { entries } => {
+                Operation::Update(proto::account::StorageArrayPatchEntries {
+                    length: u32::from(entries.length().as_u16()),
+                    entries: entries
+                        .as_map()
+                        .iter()
+                        .map(|(index, value)| proto::account::StorageArrayPatchEntry {
+                            index: u32::from(*index),
+                            value: Some(value.into()),
+                        })
+                        .collect(),
+                })
+            },
+            StorageArrayPatch::Remove { length } => Operation::Remove(u32::from(length.as_u16())),
+        };
+        Self { operation: Some(operation) }
+    }
+}
+
 impl From<&StorageMapPatch> for proto::account::StorageMapPatch {
     fn from(patch: &StorageMapPatch) -> Self {
         use proto::account::storage_map_patch::Operation;
@@ -99,6 +125,7 @@ impl From<&AccountStoragePatch> for proto::account::AccountStoragePatch {
                     let patch = match slot_patch {
                         StorageSlotPatch::Value(value) => Patch::Value(value.into()),
                         StorageSlotPatch::Map(map) => Patch::Map(map.into()),
+                        StorageSlotPatch::Array(array) => Patch::Array(array.into()),
                     };
                     proto::account::StorageSlotPatch {
                         slot_name: slot_name.as_str().to_owned(),

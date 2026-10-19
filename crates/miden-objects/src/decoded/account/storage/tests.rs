@@ -37,9 +37,12 @@ fn account_storage_header_slot_defers_name_validation() {
         )),
     };
     let decoded = wire.decode_fields().unwrap();
+    let error = decoded.verify().unwrap_err();
     assert!(matches!(
-        decoded.verify(),
-        Err(miden_protocol::errors::StorageSlotNameError::TooShort)
+        core::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<miden_protocol::errors::StorageSlotNameError>(),
+        Some(miden_protocol::errors::StorageSlotNameError::TooShort)
     ));
 }
 
@@ -141,4 +144,15 @@ fn storage_map_rejects_an_empty_value() {
         crate::test_utils::error_source::<crate::decoded::account::StorageMapEntryError>(&error),
         Some(crate::decoded::account::StorageMapEntryError::EmptyValue(empty)) if *empty == key
     );
+}
+
+#[test]
+fn storage_array_rejects_invalid_lengths() -> anyhow::Result<()> {
+    for count in [0, 257] {
+        let wire = proto::account::StorageArray {
+            values: vec![Word::empty().into(); count],
+        };
+        assert!(wire.decode_fields()?.verify().is_err());
+    }
+    Ok(())
 }

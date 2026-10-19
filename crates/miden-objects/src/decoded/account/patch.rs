@@ -1,5 +1,10 @@
 use miden_protobuf::unwrap_infallible;
-pub use proto::account::DecodedAccountVaultPatchEntry as AccountVaultPatchEntry;
+pub use proto::account::{
+    DecodedAccountVaultPatchEntry as AccountVaultPatchEntry,
+    DecodedStorageArrayPatch as StorageArrayPatch,
+    DecodedStorageArrayPatchEntries as StorageArrayPatchEntries,
+    DecodedStorageArrayPatchEntry as StorageArrayPatchEntry,
+};
 
 use crate::decoded::VerificationError;
 use crate::{Verify, proto};
@@ -55,6 +60,47 @@ impl Verify for PrivateAccountUpdate {
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(Self::Verified::Private)
+    }
+}
+
+impl Verify for StorageArrayPatchEntry {
+    type Verified = (u16, miden_protocol::Word);
+    type Error = core::num::TryFromIntError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok((u16::try_from(self.index)?, self.value))
+    }
+}
+
+impl Verify for StorageArrayPatchEntries {
+    type Verified = miden_protocol::account::StorageArrayPatchEntries;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        let length = miden_protocol::account::StorageArrayLength::try_from(self.length as usize)?;
+        let entries = Self::Verified::new(length, self.entries.verify()?)?;
+        if entries.is_empty() {
+            return Err(miden_protocol::errors::AccountError::other(
+                "array update must contain at least one entry",
+            )
+            .into());
+        }
+        Ok(entries)
+    }
+}
+
+impl Verify for StorageArrayPatch {
+    type Verified = miden_protocol::account::StorageArrayPatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        use proto::account::storage_array_patch::DecodedOperation;
+        Ok(match self.operation {
+            DecodedOperation::Create(array) => Self::Verified::Create { array: array.verify()? },
+            DecodedOperation::Update(entries) => {
+                Self::Verified::Update { entries: entries.verify()? }
+            },
+            DecodedOperation::Remove(length) => Self::Verified::Remove {
+                length: miden_protocol::account::StorageArrayLength::try_from(length as usize)?,
+            },
+        })
     }
 }
 
@@ -138,6 +184,7 @@ impl Verify for StorageSlotPatch {
                 StorageSlotPatch::Value(unwrap_infallible(value.verify()))
             },
             DecodedPatch::Map(map) => StorageSlotPatch::Map(map.verify()?),
+            DecodedPatch::Array(array) => StorageSlotPatch::Array(array.verify()?),
         };
         Ok((name, patch))
     }

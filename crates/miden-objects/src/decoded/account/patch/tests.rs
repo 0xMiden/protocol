@@ -140,3 +140,28 @@ fn account_patch_protobuf_rejects_unspecified_version_after_decoding() {
 
     assert_eq!(error.to_string(), "account patch version is unspecified");
 }
+
+#[test]
+fn storage_array_patch_rejects_invalid_entries() -> anyhow::Result<()> {
+    for (length, indices) in [
+        (3, vec![3]),
+        (3, vec![0, 0]),
+        (3, vec![u32::MAX]),
+        (0, vec![0]),
+        (257, vec![0]),
+        (3, vec![]),
+    ] {
+        let wire = proto::account::StorageArrayPatchEntries {
+            length,
+            entries: indices
+                .into_iter()
+                .map(|index| proto::account::StorageArrayPatchEntry {
+                    index,
+                    value: Some(Word::empty().into()),
+                })
+                .collect(),
+        };
+        assert!(wire.decode_fields()?.verify().is_err());
+    }
+    Ok(())
+}

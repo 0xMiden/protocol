@@ -1,9 +1,8 @@
 use alloc::string::ToString;
 use core::fmt::Display;
 
-use miden_core::{ONE, ZERO};
-
 use crate::Felt;
+use crate::account::StorageArrayLength;
 use crate::errors::AccountError;
 use crate::utils::serde::{
     ByteReader,
@@ -18,20 +17,36 @@ use crate::utils::serde::{
 
 /// The type of a storage slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
 pub enum StorageSlotType {
-    /// Represents a slot that contains a value.
-    Value = Self::VALUE_TYPE,
-    /// Represents a slot that contains a commitment to a map with key-value pairs.
-    Map = Self::MAP_TYPE,
+    /// A single word.
+    Value,
+    /// A map commitment.
+    Map,
+    /// An array with its word count encoded in the slot type.
+    Array(StorageArrayLength),
 }
 
 impl StorageSlotType {
     const VALUE_TYPE: u8 = 0;
     const MAP_TYPE: u8 = 1;
+    const ARRAY_TYPE: u8 = 2;
 
     pub fn as_felt(&self) -> Felt {
-        Felt::from(*self as u8)
+        match self {
+            Self::Value => Felt::from(Self::VALUE_TYPE),
+            Self::Map => Felt::from(Self::MAP_TYPE),
+            Self::Array(length) => Felt::new_unchecked(
+                u64::from(Self::ARRAY_TYPE) + (u64::from(length.as_u16()) << 32),
+            ),
+        }
+    }
+
+    /// Words counted toward the account storage payload limit.
+    pub fn num_words(&self) -> usize {
+        match self {
+            Self::Value | Self::Map => 1,
+            Self::Array(length) => length.as_usize(),
+        }
     }
 
     /// Returns `true` if the slot is a value slot, `false` otherwise.
@@ -61,12 +76,12 @@ impl TryFrom<Felt> for StorageSlotType {
     type Error = AccountError;
 
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        if value == ZERO {
-            Ok(StorageSlotType::Value)
-        } else if value == ONE {
-            Ok(StorageSlotType::Map)
-        } else {
-            Err(AccountError::other("invalid storage slot type"))
+        let encoded = value.as_canonical_u64();
+        match (encoded as u32, encoded >> 32) {
+            (0, 0) => Ok(Self::Value),
+            (1, 0) => Ok(Self::Map),
+            (2, length) => Ok(Self::Array(StorageArrayLength::try_from(length as usize)?)),
+            _ => Err(AccountError::other("invalid storage slot type")),
         }
     }
 }
@@ -76,6 +91,7 @@ impl Display for StorageSlotType {
         match self {
             StorageSlotType::Value => f.write_str("value"),
             StorageSlotType::Map => f.write_str("map"),
+            StorageSlotType::Array(length) => write!(f, "array[{}]", length.as_u16()),
         }
     }
 }
@@ -86,14 +102,18 @@ impl Display for StorageSlotType {
 impl Serializable for StorageSlotType {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
-            Self::Value => target.write_u8(0),
-            Self::Map => target.write_u8(1),
+            Self::Value => target.write_u8(Self::VALUE_TYPE),
+            Self::Map => target.write_u8(Self::MAP_TYPE),
+            Self::Array(length) => {
+                target.write_u8(Self::ARRAY_TYPE);
+                target.write(length);
+            },
         }
     }
 
     fn get_size_hint(&self) -> usize {
         // The serialized size of a slot type.
-        0u8.get_size_hint()
+        if matches!(self, Self::Array(_)) { 3 } else { 1 }
     }
 }
 
@@ -104,6 +124,7 @@ impl Deserializable for StorageSlotType {
         match storage_slot_type {
             Self::VALUE_TYPE => Ok(Self::Value),
             Self::MAP_TYPE => Ok(Self::Map),
+            Self::ARRAY_TYPE => Ok(Self::Array(source.read()?)),
             _ => Err(DeserializationError::InvalidValue(storage_slot_type.to_string())),
         }
     }

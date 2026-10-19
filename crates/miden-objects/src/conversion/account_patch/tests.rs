@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -5,6 +6,9 @@ use miden_protocol::account::{
     AccountCode,
     AccountCodePatch,
     AccountStoragePatch,
+    StorageArray,
+    StorageArrayPatch,
+    StorageArrayPatchEntries,
     StorageMapPatch,
     StorageSlotName,
     StorageSlotPatch,
@@ -139,4 +143,27 @@ fn storage_value_patch_nested_in_account_storage_patch_roundtrips() {
     let decoded = proto::account::AccountStoragePatch::decode(encoded.as_slice()).unwrap();
 
     assert_eq!(decoded.decode_fields().unwrap().verify().unwrap(), patch);
+}
+
+#[test]
+fn storage_array_patch_oneof_roundtrips_all_operations() -> anyhow::Result<()> {
+    let array = StorageArray::new(vec![Word::empty(); 3])?;
+    let update = StorageArrayPatchEntries::new(
+        array.length(),
+        [(0, Word::empty()), (2, Word::from([9u32; 4]))],
+    )?;
+    for patch in [
+        StorageArrayPatch::Create { array: array.clone() },
+        StorageArrayPatch::Update { entries: update },
+        StorageArrayPatch::Remove { length: array.length() },
+    ] {
+        let storage = AccountStoragePatch::from_entries([(
+            StorageSlotName::mock(1),
+            StorageSlotPatch::Array(patch),
+        )])?;
+        let bytes = proto::account::AccountStoragePatch::from(&storage).encode_to_vec();
+        let wire = proto::account::AccountStoragePatch::decode(bytes.as_slice())?;
+        assert_eq!(wire.decode_fields()?.verify()?, storage);
+    }
+    Ok(())
 }
