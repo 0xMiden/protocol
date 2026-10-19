@@ -34,6 +34,7 @@ mod test_link_map;
 mod test_note;
 mod test_output_note;
 mod test_prologue;
+mod test_reexecution;
 mod test_tx;
 
 // HELPER FUNCTIONS

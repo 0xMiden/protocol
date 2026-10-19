@@ -1,413 +1,143 @@
-use alloc::string::ToString;
 use alloc::vec;
+use alloc::vec::Vec;
 use std::collections::BTreeMap;
-use std::vec::Vec;
 
 use assert_matches::assert_matches;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
+use crate::account::auth::{AuthScheme, AuthSecretKey, BoundSignature, SignatureKey};
 use crate::account::{
+    Account,
     AccountCode,
-    AccountHeader,
     AccountId,
-    AccountStorageHeader,
+    AccountStorage,
     PartialAccount,
-    PartialStorage,
-    StorageSlotHeader,
+    StorageMap,
+    StorageMapKey,
+    StorageMapWitness,
+    StorageSlot,
+    StorageSlotContent,
     StorageSlotName,
-    StorageSlotType,
 };
-use crate::asset::PartialVault;
+use crate::asset::{AssetVault, FungibleAsset};
 use crate::block::BlockHeader;
-use crate::block::account_tree::AccountIdKey;
-use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
+use crate::block::account_tree::AccountTree;
+use crate::crypto::merkle::smt::Smt;
+use crate::errors::TransactionInputError;
+use crate::note::NoteScript;
 use crate::protocol_config::ProtocolConfig;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
-use crate::transaction::{InputNotes, PartialBlockchain, TransactionArgs, TransactionInputs};
-use crate::utils::serde::{Deserializable, Serializable};
+use crate::transaction::{
+    AccountInputs,
+    InputNotes,
+    PartialBlockchain,
+    TransactionArgs,
+    TransactionInputs,
+};
 use crate::vm::AdviceInputs;
 use crate::{Felt, Word};
 
-#[test]
-fn test_read_foreign_account_inputs_missing_data() {
-    let native_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let foreign_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
+// HELPERS
+// ================================================================================================
 
-    // Create minimal transaction inputs with empty advice map.
-    let code = AccountCode::mock();
-    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
-    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
-    let partial_vault = PartialVault::new(Word::default());
-    let partial_account = PartialAccount::new(
-        native_account_id,
-        Felt::new_unchecked(10),
-        code,
-        partial_storage,
-        partial_vault,
-        None,
-    )
-    .unwrap();
+const MAP_SLOT_NAME: &str = "test::slot::map";
 
-    let tx_inputs = TransactionInputs {
-        account: partial_account,
-        block_header: BlockHeader::mock(0, None, None, &[]),
-        blockchain: PartialBlockchain::default(),
-        input_notes: InputNotes::new(vec![]).unwrap(),
-        protocol_config: ProtocolConfig::mock(),
-        tx_args: TransactionArgs::default(),
-        advice_inputs: AdviceInputs::default(),
-        foreign_account_code: Vec::new(),
-        foreign_account_slot_names: BTreeMap::new(),
-    };
-
-    // Try to read foreign account that doesn't exist in advice map.
-    let result = tx_inputs.read_foreign_account_inputs(foreign_account_id);
-
-    assert!(
-        matches!(result, Err(TransactionInputsExtractionError::ForeignAccountNotFound(id)) if id == foreign_account_id)
-    );
+fn map_key() -> StorageMapKey {
+    StorageMapKey::from_array([1, 2, 3, 4u32])
 }
 
-#[test]
-fn test_read_foreign_account_inputs_with_storage_data() {
-    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2;
+/// Returns an existing account with one value slot, one map slot with one entry and one asset.
+fn mock_account(account_id: AccountId) -> anyhow::Result<Account> {
+    let storage = AccountStorage::new(vec![
+        StorageSlot::with_value(
+            StorageSlotName::new("test::slot::value")?,
+            Word::from([1, 2, 3, 4u32]),
+        ),
+        StorageSlot::with_map(
+            StorageSlotName::new(MAP_SLOT_NAME)?,
+            StorageMap::with_entries([(map_key(), Word::from([5, 6, 7, 8u32]))])?,
+        ),
+    ])?;
 
-    let native_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let foreign_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
-
-    // Create minimal transaction inputs with proper advice map.
-    let code = AccountCode::mock();
-    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
-    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
-    let partial_vault = PartialVault::new(Word::default());
-    let partial_account = PartialAccount::new(
-        native_account_id,
-        Felt::new_unchecked(10),
-        code.clone(),
-        partial_storage,
-        partial_vault,
-        None,
-    )
-    .unwrap();
-
-    // Create foreign account header and storage data.
-    let foreign_header = AccountHeader::new(
-        foreign_account_id,
-        Felt::new_unchecked(5),
-        Word::default(),
-        Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
-        code.commitment(),
-    );
-
-    // Create storage slots with test data.
-    let slot_name1 = StorageSlotName::new("test::slot1::value".to_string()).unwrap();
-    let slot_name2 = StorageSlotName::new("test::slot2::value".to_string()).unwrap();
-    let slot1 = StorageSlotHeader::new(
-        slot_name1,
-        StorageSlotType::Value,
-        Word::new([Felt::from(10_u32), Felt::from(20_u32), Felt::from(30_u32), Felt::from(40_u32)]),
-    );
-    let slot2 = StorageSlotHeader::new(
-        slot_name2,
-        StorageSlotType::Map,
-        Word::new([Felt::from(50_u32), Felt::from(60_u32), Felt::from(70_u32), Felt::from(80_u32)]),
-    );
-
-    let mut slots = vec![slot1, slot2];
-    slots.sort_by_key(|slot| slot.id());
-    let foreign_storage_header = AccountStorageHeader::new(slots.clone()).unwrap();
-
-    // Create advice inputs with both account header and storage header.
-    let account_id_key = AccountIdKey::from(foreign_account_id);
-    let advice_inputs = AdviceInputs::default().with_map([
-        (account_id_key.as_word(), foreign_header.to_elements().to_vec()),
-        (foreign_header.storage_commitment(), foreign_storage_header.to_elements()),
-    ]);
-
-    let foreign_account_slot_names = BTreeMap::from([
-        (slots[0].id(), slots[0].name().clone()),
-        (slots[1].id(), slots[1].name().clone()),
-    ]);
-    let tx_inputs = TransactionInputs {
-        account: partial_account,
-        block_header: BlockHeader::mock(0, None, None, &[]),
-        blockchain: PartialBlockchain::default(),
-        input_notes: InputNotes::new(vec![]).unwrap(),
-        protocol_config: ProtocolConfig::mock(),
-        tx_args: TransactionArgs::default(),
-        advice_inputs,
-        foreign_account_code: vec![code],
-        foreign_account_slot_names,
-    };
-
-    // Try to read foreign account with storage data.
-    // Should succeed and create partial account with proper storage.
-    let account_inputs = tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap();
-    assert_eq!(account_inputs.id(), foreign_account_id);
-    assert_eq!(account_inputs.account().nonce(), Felt::new_unchecked(5));
-
-    // Verify storage was properly reconstructed.
-    let storage = account_inputs.account().storage();
-    assert_eq!(storage.header().slots().count(), 2);
-
-    // Verify witness data is valid.
-    let witness = account_inputs.witness();
-    assert_eq!(witness.id(), foreign_account_id);
-
-    // Verify the witness can compute a valid account root.
-    let computed_root = account_inputs.compute_account_root();
-    assert!(
-        computed_root.is_ok(),
-        "Failed to compute account root from witness: {:?}",
-        computed_root.err()
-    );
-
-    // Test that the witness path has the expected depth for SMT.
-    assert_eq!(witness.path().depth(), 64, "Witness path should have SMT depth of 64");
-}
-
-#[test]
-fn test_read_foreign_account_inputs_with_proper_witness() {
-    use crate::block::account_tree::AccountTree;
-    use crate::crypto::merkle::smt::Smt;
-    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2;
-
-    let native_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let foreign_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
-
-    // Create a native account.
-    let code = AccountCode::mock();
-    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
-    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
-    let partial_vault = PartialVault::new(Word::default());
-    let native_account = PartialAccount::new(
-        native_account_id,
-        Felt::new_unchecked(10),
-        code.clone(),
-        partial_storage,
-        partial_vault,
-        None,
-    )
-    .unwrap();
-
-    // Create a foreign account with proper commitment.
-    let foreign_header = AccountHeader::new(
-        foreign_account_id,
-        Felt::new_unchecked(5),
-        Word::default(),
-        Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
-        code.commitment(),
-    );
-
-    // Create storage header for the foreign account.
-    let foreign_storage_header = AccountStorageHeader::new(vec![]).unwrap();
-
-    // Create an account tree and insert both accounts to get proper Merkle paths.
-    let mut account_tree = AccountTree::<Smt>::default();
-
-    // Insert native account.
-    let native_commitment = AccountHeader::from(&native_account).to_commitment();
-    account_tree.insert(native_account_id, native_commitment).unwrap();
-
-    // Insert foreign account.
-    let _foreign_partial_account = PartialAccount::new(
-        foreign_account_id,
-        Felt::new_unchecked(5),
-        code.clone(),
-        PartialStorage::new(foreign_storage_header.clone(), []).unwrap(),
-        PartialVault::new(Word::default()),
-        None,
-    )
-    .unwrap();
-    account_tree.insert(foreign_account_id, foreign_header.to_commitment()).unwrap();
-
-    let foreign_witness = account_tree.open(foreign_account_id);
-
-    // Add account and storage headers to the advice map.
-    let account_id_key = AccountIdKey::from(foreign_account_id);
-    let leaf = foreign_witness.leaf();
-    let advice_inputs = AdviceInputs::default()
-        .with_map([
-            (account_id_key.as_word(), foreign_header.to_elements().to_vec()),
-            (foreign_header.storage_commitment(), foreign_storage_header.to_elements()),
-            (leaf.hash(), leaf.to_elements().collect()),
-        ])
-        .with_merkle_store(foreign_witness.authenticated_nodes().collect());
-
-    let block_header = BlockHeader::mock(0, None, None, &[]);
-
-    let tx_inputs = TransactionInputs {
-        account: native_account,
-        block_header,
-        blockchain: PartialBlockchain::default(),
-        input_notes: InputNotes::new(vec![]).unwrap(),
-        protocol_config: ProtocolConfig::mock(),
-        tx_args: TransactionArgs::default(),
-        advice_inputs,
-        foreign_account_code: vec![code],
-        foreign_account_slot_names: BTreeMap::new(),
-    };
-
-    // Test reading foreign account inputs.
-    // Should succeed and create proper witness.
-    let account_inputs = tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap();
-    assert_eq!(account_inputs.id(), foreign_account_id);
-    assert_eq!(account_inputs.account().nonce(), Felt::new_unchecked(5));
-
-    // Verify witness data.
-    let witness = account_inputs.witness();
-    assert_eq!(witness.id(), foreign_account_id);
-
-    // Verify the witness contains the expected account ID and can compute a root.
-    let computed_root = account_inputs.compute_account_root();
-    assert!(
-        computed_root.is_ok(),
-        "Failed to compute account root from witness: {:?}",
-        computed_root.err()
-    );
-
-    // The computed root should be consistent - we're mainly testing that
-    // the witness was properly reconstructed from the Merkle store data.
-    let _computed_root_value = computed_root.unwrap();
-
-    // Test that the witness path has the expected depth (64 for SMT).
-    assert_eq!(witness.path().depth(), 64, "Witness path should have SMT depth of 64");
-}
-
-#[test]
-fn test_transaction_inputs_serialization_with_foreign_slot_names() {
-    use miden_core::Felt;
-
-    use crate::account::{
-        AccountCode,
-        AccountId,
-        AccountStorageHeader,
-        PartialAccount,
-        PartialStorage,
-        StorageSlotName,
-    };
-    use crate::asset::PartialVault;
-    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-
-    // Create test account IDs
-    let native_account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-
-    // Create some slot names and IDs.
-    let slot_name_1 = StorageSlotName::new("test::slot1::value".to_string()).unwrap();
-    let slot_name_2 = StorageSlotName::new("test::slot2::map".to_string()).unwrap();
-    let slot_name_3 = StorageSlotName::new("another::slot::value".to_string()).unwrap();
-
-    let slot_id_1 = slot_name_1.id();
-    let slot_id_2 = slot_name_2.id();
-    let slot_id_3 = slot_name_3.id();
-
-    // Create foreign account slot names map.
-    let mut foreign_account_slot_names = BTreeMap::new();
-    foreign_account_slot_names.insert(slot_id_1, slot_name_1.clone());
-    foreign_account_slot_names.insert(slot_id_2, slot_name_2.clone());
-    foreign_account_slot_names.insert(slot_id_3, slot_name_3.clone());
-
-    // Create a basic TransactionInputs with foreign slot names.
-    let code = AccountCode::mock();
-    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
-    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
-    let partial_vault = PartialVault::new(Word::default());
-    let partial_account = PartialAccount::new(
-        native_account_id,
-        Felt::new_unchecked(10),
-        code,
-        partial_storage,
-        partial_vault,
-        None,
-    )
-    .unwrap();
-
-    let original_tx_inputs = TransactionInputs {
-        account: partial_account,
-        block_header: BlockHeader::mock(0, None, None, &[]),
-        blockchain: PartialBlockchain::default(),
-        input_notes: InputNotes::new(vec![]).unwrap(),
-        protocol_config: ProtocolConfig::mock(),
-        tx_args: TransactionArgs::default(),
-        advice_inputs: AdviceInputs::default(),
-        foreign_account_code: Vec::new(),
-        foreign_account_slot_names,
-    };
-
-    // Test serialization roundtrip.
-    let serialized = original_tx_inputs.to_bytes();
-    let deserialized = TransactionInputs::read_from_bytes(&serialized).unwrap();
-
-    // Verify that foreign account slot names are preserved.
-    assert_eq!(
-        original_tx_inputs.foreign_account_slot_names(),
-        deserialized.foreign_account_slot_names()
-    );
-
-    // Verify specific slot names.
-    let deserialized_slots = deserialized.foreign_account_slot_names();
-
-    // Check slots.
-    assert_eq!(deserialized_slots.get(&slot_id_1).unwrap(), &slot_name_1);
-    assert_eq!(deserialized_slots.get(&slot_id_2).unwrap(), &slot_name_2);
-    assert_eq!(deserialized_slots.get(&slot_id_3).unwrap(), &slot_name_3);
-
-    // Verify the entire structure is identical.
-    assert_eq!(original_tx_inputs, deserialized);
-}
-
-#[test]
-fn try_from_parts_preserves_all_transaction_input_components() {
-    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let code = AccountCode::mock();
-    let account = PartialAccount::new(
+    Ok(Account::new_existing(
         account_id,
-        Felt::new_unchecked(10),
-        code.clone(),
-        PartialStorage::new(AccountStorageHeader::new(vec![]).unwrap(), []).unwrap(),
-        PartialVault::new(Word::default()),
-        None,
-    )
-    .unwrap();
+        AssetVault::new(&[FungibleAsset::mock(100)])?,
+        storage,
+        AccountCode::mock(),
+        Felt::new_unchecked(5),
+    ))
+}
+
+fn native_account_id() -> anyhow::Result<AccountId> {
+    Ok(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
+}
+
+fn foreign_account_id() -> anyhow::Result<AccountId> {
+    Ok(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2)?)
+}
+
+/// Returns transaction inputs for the native account without notes or lazy loaded data.
+fn empty_tx_inputs() -> anyhow::Result<TransactionInputs> {
+    let blockchain = PartialBlockchain::default();
+    let block_header = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
+
+    Ok(TransactionInputs::builder()
+        .account(PartialAccount::from(&mock_account(native_account_id()?)?))
+        .block_header(block_header)
+        .protocol_config(ProtocolConfig::mock())
+        .blockchain(blockchain)
+        .input_notes(InputNotes::new(vec![])?)
+        .build()?)
+}
+
+/// Returns account inputs for the given account with a witness from a tree that only contains it.
+fn account_inputs(account: &Account) -> anyhow::Result<AccountInputs> {
+    let mut account_tree = AccountTree::<Smt>::default();
+    account_tree.insert(account.id(), account.to_commitment())?;
+
+    Ok(AccountInputs::new(
+        PartialAccount::from(account),
+        account_tree.open(account.id()),
+    ))
+}
+
+// TESTS
+// ================================================================================================
+
+#[test]
+fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
+    let account = PartialAccount::from(&mock_account(native_account_id()?)?);
     let blockchain = PartialBlockchain::default();
     let block_header = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
     let protocol_config = ProtocolConfig::mock();
-    let input_notes = InputNotes::new(vec![]).unwrap();
+    let input_notes = InputNotes::new(vec![])?;
     let tx_args = TransactionArgs::from_parts(
         None,
         Word::new([Felt::from(1_u32); 4]),
         BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
         AdviceInputs::default(),
         Word::new([Felt::from(2_u32); 4]),
         None,
     );
-    let advice_inputs = AdviceInputs::default()
-        .with_map([(Word::new([Felt::from(3_u32); 4]), vec![Felt::from(4_u32)])]);
-    let foreign_account_code = vec![code];
-    let slot_name = StorageSlotName::new("test::slot::value".to_string()).unwrap();
-    let foreign_account_slot_names = BTreeMap::from([(slot_name.id(), slot_name)]);
+    let foreign_account = account_inputs(&mock_account(foreign_account_id()?)?)?;
+    let note_script = NoteScript::mock();
 
-    let tx_inputs = TransactionInputs::try_from_parts(
-        account.clone(),
-        block_header.clone(),
-        protocol_config.clone(),
-        blockchain.clone(),
-        input_notes.clone(),
-        tx_args.clone(),
-        advice_inputs.clone(),
-        foreign_account_code.clone(),
-        foreign_account_slot_names.clone(),
-    )
-    .unwrap();
+    let tx_inputs = TransactionInputs::builder()
+        .account(account.clone())
+        .block_header(block_header.clone())
+        .protocol_config(protocol_config.clone())
+        .blockchain(blockchain.clone())
+        .input_notes(input_notes.clone())
+        .tx_args(tx_args.clone())
+        .foreign_accounts(vec![foreign_account.clone()])
+        .note_scripts(vec![note_script.clone()])
+        .build()?;
 
     assert_eq!(tx_inputs.account(), &account);
     assert_eq!(tx_inputs.block_header(), &block_header);
@@ -415,41 +145,141 @@ fn try_from_parts_preserves_all_transaction_input_components() {
     assert_eq!(tx_inputs.blockchain(), &blockchain);
     assert_eq!(tx_inputs.input_notes(), &input_notes);
     assert_eq!(tx_inputs.tx_args(), &tx_args);
-    assert_eq!(tx_inputs.advice_inputs(), &advice_inputs);
-    assert_eq!(tx_inputs.foreign_account_code(), foreign_account_code);
-    assert_eq!(tx_inputs.foreign_account_slot_names(), &foreign_account_slot_names);
+    assert_eq!(
+        tx_inputs.foreign_accounts(),
+        &BTreeMap::from([(foreign_account.id(), foreign_account)])
+    );
+    assert_eq!(tx_inputs.note_scripts(), &BTreeMap::from([(note_script.root(), note_script)]));
+
+    Ok(())
 }
 
 #[test]
-fn try_from_parts_rejects_an_inconsistent_protocol_config() {
-    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let account = PartialAccount::new(
-        account_id,
-        Felt::new_unchecked(10),
-        AccountCode::mock(),
-        PartialStorage::new(AccountStorageHeader::new(vec![]).unwrap(), []).unwrap(),
-        PartialVault::new(Word::default()),
-        None,
-    )
-    .unwrap();
+fn builder_rejects_an_inconsistent_protocol_config() -> anyhow::Result<()> {
     let blockchain = PartialBlockchain::default();
     let block_header = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
-    let different_fee_faucet =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
+    let different_fee_faucet = foreign_account_id()?;
     let protocol_config =
-        ProtocolConfig::current(crate::asset::AssetId::new_fungible(different_fee_faucet)).unwrap();
+        ProtocolConfig::current(crate::asset::AssetId::new_fungible(different_fee_faucet))?;
 
-    let result = TransactionInputs::try_from_parts(
-        account,
-        block_header,
-        protocol_config,
-        blockchain,
-        InputNotes::new(vec![]).unwrap(),
-        TransactionArgs::default(),
-        AdviceInputs::default(),
-        Vec::new(),
-        BTreeMap::new(),
-    );
+    let result = TransactionInputs::builder()
+        .account(PartialAccount::from(&mock_account(native_account_id()?)?))
+        .block_header(block_header)
+        .protocol_config(protocol_config)
+        .blockchain(blockchain)
+        .input_notes(InputNotes::new(vec![])?)
+        .build();
 
     assert_matches!(result, Err(TransactionInputError::InconsistentProtocolConfig { .. }));
+
+    Ok(())
+}
+
+#[test]
+fn add_signature_rejects_a_duplicate_key() -> anyhow::Result<()> {
+    let mut tx_inputs = empty_tx_inputs()?;
+    let mut rng = ChaCha20Rng::from_seed([0; 32]);
+    let secret_key = AuthSecretKey::with_scheme_and_rng(AuthScheme::EcdsaK256Keccak, &mut rng)?;
+    let message = Word::from([1u32, 2, 3, 4]);
+    let key = SignatureKey::new(secret_key.public_key().to_commitment(), message);
+    let signature = BoundSignature::new(key, secret_key.sign(message))?;
+
+    tx_inputs.add_signature(signature.clone())?;
+    assert_matches!(
+        tx_inputs.add_signature(signature),
+        Err(TransactionInputError::DuplicateSignature(duplicate_key)) if duplicate_key == key
+    );
+    assert_eq!(tx_inputs.signatures().len(), 1);
+
+    Ok(())
+}
+
+#[test]
+fn add_foreign_account_rejects_the_native_account_and_duplicates() -> anyhow::Result<()> {
+    let mut tx_inputs = empty_tx_inputs()?;
+    let native_account_id = native_account_id()?;
+    let foreign_account_id = foreign_account_id()?;
+
+    assert_matches!(
+        tx_inputs.add_foreign_account(account_inputs(&mock_account(native_account_id)?)?),
+        Err(TransactionInputError::ForeignAccountIsNativeAccount(id)) if id == native_account_id
+    );
+
+    tx_inputs.add_foreign_account(account_inputs(&mock_account(foreign_account_id)?)?)?;
+    assert_matches!(
+        tx_inputs.add_foreign_account(account_inputs(&mock_account(foreign_account_id)?)?),
+        Err(TransactionInputError::DuplicateForeignAccount(id)) if id == foreign_account_id
+    );
+
+    Ok(())
+}
+
+#[test]
+fn witnesses_are_added_to_the_account_with_the_given_id() -> anyhow::Result<()> {
+    let native_account = mock_account(native_account_id()?)?;
+    let foreign_account = mock_account(foreign_account_id()?)?;
+    let mut tx_inputs = empty_tx_inputs()?;
+    tx_inputs.add_foreign_account(account_inputs(&foreign_account)?)?;
+
+    let asset_id = FungibleAsset::mock(100).id();
+    let map_slot_name = StorageSlotName::new(MAP_SLOT_NAME)?;
+    let map_witness = |account: &Account| -> anyhow::Result<StorageMapWitness> {
+        match account.storage().get(&map_slot_name).map(StorageSlot::content) {
+            Some(StorageSlotContent::Map(map)) => Ok(map.open(&map_key())),
+            _ => anyhow::bail!("account should have a map slot"),
+        }
+    };
+
+    for account in [&native_account, &foreign_account] {
+        tx_inputs.add_asset_witnesses(account.id(), [account.vault().open(asset_id)])?;
+        tx_inputs.add_storage_map_witnesses(account.id(), [map_witness(account)?])?;
+    }
+
+    let foreign_inputs = &tx_inputs.foreign_accounts()[&foreign_account.id()];
+    for (account, partial_account) in [
+        (&native_account, tx_inputs.account()),
+        (&foreign_account, foreign_inputs.account()),
+    ] {
+        assert_eq!(partial_account.vault().get(asset_id)?, account.vault().get(asset_id));
+        assert!(
+            partial_account
+                .storage()
+                .maps()
+                .any(|map| map.get(&map_key()) == Some(Word::from([5, 6, 7, 8u32])))
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn witnesses_are_rejected_for_unknown_accounts_and_other_trees() -> anyhow::Result<()> {
+    let mut tx_inputs = empty_tx_inputs()?;
+    let native_account_id = native_account_id()?;
+    let foreign_account_id = foreign_account_id()?;
+    let asset_id = FungibleAsset::mock(100).id();
+
+    assert_matches!(
+        tx_inputs.add_asset_witnesses(foreign_account_id, []),
+        Err(TransactionInputError::WitnessForUnknownAccount(id)) if id == foreign_account_id
+    );
+    assert_matches!(
+        tx_inputs.add_storage_map_witnesses(foreign_account_id, []),
+        Err(TransactionInputError::WitnessForUnknownAccount(id)) if id == foreign_account_id
+    );
+
+    let other_vault = AssetVault::new(&[FungibleAsset::mock(200)])?;
+    assert_matches!(
+        tx_inputs.add_asset_witnesses(native_account_id, [other_vault.open(asset_id)]),
+        Err(TransactionInputError::InvalidAssetWitness { account_id, .. })
+            if account_id == native_account_id
+    );
+    let other_map = StorageMap::with_entries([(map_key(), Word::from([9, 9, 9, 9u32]))])?;
+    assert_matches!(
+        tx_inputs.add_storage_map_witnesses(native_account_id, [other_map.open(&map_key())]),
+        Err(TransactionInputError::InvalidStorageMapWitness { account_id, .. })
+            if account_id == native_account_id
+    );
+
+    Ok(())
 }
