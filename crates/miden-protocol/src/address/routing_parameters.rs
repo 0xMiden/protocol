@@ -7,6 +7,7 @@ use bech32::{Bech32m, Hrp};
 
 use crate::address::AddressInterface;
 use crate::crypto::dsa::{ecdsa_k256_keccak, eddsa_25519_sha512};
+use crate::crypto::ecdh::ecgfp5;
 use crate::crypto::ies::SealingKey;
 use crate::errors::{AddressError, Bech32Error};
 use crate::note::NoteTag;
@@ -52,11 +53,15 @@ const X25519_PUBLIC_KEY_LENGTH: usize = 32;
 /// The expected length of K256 (secp256k1) public keys in bytes (compressed format).
 const K256_PUBLIC_KEY_LENGTH: usize = 33;
 
+/// The expected length of an EcGFp5 public key in bytes.
+const ECGFP5_PUBLIC_KEY_LENGTH: usize = 40;
+
 /// Discriminants for encryption key variants.
 const ENCRYPTION_KEY_X25519_XCHACHA20POLY1305: u8 = 0;
 const ENCRYPTION_KEY_K256_XCHACHA20POLY1305: u8 = 1;
 const ENCRYPTION_KEY_X25519_AEAD_EIDOS: u8 = 4;
 const ENCRYPTION_KEY_K256_AEAD_EIDOS: u8 = 5;
+const ENCRYPTION_KEY_ECGFP5_EIDOS: u8 = 6;
 
 /// Parameters that define how a sender should route a note to the [`AddressId`](super::AddressId)
 /// in an [`Address`](super::Address).
@@ -325,6 +330,10 @@ fn encode_encryption_key(key: &SealingKey, encoded: &mut Vec<u8>) {
             encoded.push(ENCRYPTION_KEY_K256_AEAD_EIDOS);
             encoded.extend(&pk.to_bytes());
         },
+        SealingKey::Ecgfp5Eidos(pk) => {
+            encoded.push(ENCRYPTION_KEY_ECGFP5_EIDOS);
+            encoded.extend(&pk.to_bytes());
+        },
     }
 }
 
@@ -351,6 +360,7 @@ fn decode_encryption_key(
             SealingKey::X25519AeadEidos(read_x25519_pub_key(byte_iter)?)
         },
         ENCRYPTION_KEY_K256_AEAD_EIDOS => SealingKey::K256AeadEidos(read_k256_pub_key(byte_iter)?),
+        ENCRYPTION_KEY_ECGFP5_EIDOS => SealingKey::Ecgfp5Eidos(read_ecgfp5_pub_key(byte_iter)?),
         other => {
             return Err(AddressError::decode_error(format!(
                 "unknown encryption key variant: {}",
@@ -389,6 +399,21 @@ fn read_k256_pub_key(
     let key_bytes: [u8; K256_PUBLIC_KEY_LENGTH] = read_byte_array(byte_iter);
     ecdsa_k256_keccak::PublicKey::read_from_bytes(&key_bytes).map_err(|err| {
         AddressError::decode_error_with_source("failed to decode K256 public key", err)
+    })
+}
+
+fn read_ecgfp5_pub_key(
+    byte_iter: &mut impl ExactSizeIterator<Item = u8>,
+) -> Result<ecgfp5::PublicKey, AddressError> {
+    if byte_iter.len() < ECGFP5_PUBLIC_KEY_LENGTH {
+        return Err(AddressError::decode_error(format!(
+            "expected {} bytes to decode EcGFp5 public key",
+            ECGFP5_PUBLIC_KEY_LENGTH
+        )));
+    }
+    let key_bytes: [u8; ECGFP5_PUBLIC_KEY_LENGTH] = read_byte_array(byte_iter);
+    ecgfp5::PublicKey::read_from_bytes(&key_bytes).map_err(|err| {
+        AddressError::decode_error_with_source("failed to decode EcGFp5 public key", err)
     })
 }
 
@@ -580,7 +605,31 @@ mod tests {
             test_encryption_key_roundtrip(encryption_key, 5)?;
         }
 
+        // Test Ecgfp5Eidos
+        {
+            let secret_key = ecgfp5::SecretKey::with_rng(&mut rand::rng());
+            let encryption_key = SealingKey::Ecgfp5Eidos(secret_key.public_key());
+            test_encryption_key_roundtrip(encryption_key, 6)?;
+        }
+
         Ok(())
+    }
+
+    #[test]
+    fn ecgfp5_encryption_key_rejects_malformed_bytes() {
+        let secret_key = ecgfp5::SecretKey::with_rng(&mut rand::rng());
+        let mut encoded = Vec::new();
+        encode_encryption_key(&SealingKey::Ecgfp5Eidos(secret_key.public_key()), &mut encoded);
+
+        for len in 0..encoded.len() {
+            assert!(decode_encryption_key(&mut encoded[..len].iter().copied()).is_err());
+        }
+
+        for key_bytes in [[0; ECGFP5_PUBLIC_KEY_LENGTH], [255; ECGFP5_PUBLIC_KEY_LENGTH]] {
+            let invalid = [vec![ENCRYPTION_KEY_ECGFP5_EIDOS], key_bytes.to_vec()].concat();
+            let err = decode_encryption_key(&mut invalid.into_iter()).unwrap_err();
+            assert!(err.to_string().contains("failed to decode EcGFp5 public key"));
+        }
     }
 
     #[test]

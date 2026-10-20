@@ -63,7 +63,7 @@ end
 #! Whether the faucet's token metadata is public (non-empty token base URI) or private (empty) is
 #! fixed at creation, so both the current and the new token base URI must be non-empty.
 #!
-#! The caller passes the Poseidon2 hash of the new token base URI on the stack and provides the
+#! The caller passes the Eidos hash of the new token base URI on the stack and provides the
 #! actual 7 Words in the advice map under that hash. The hash is verified against the preimage
 #! during loading.
 #!
