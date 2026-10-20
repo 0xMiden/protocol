@@ -17,7 +17,7 @@ pub use executor::{
     NoteConsumptionInfo,
     NoteFailure,
     ProgramExecutor,
-    SponsorshipRejection,
+    SponsorshipRejectionError,
     SuccessfulNote,
     TransactionExecutor,
     TransactionExecutorHost,

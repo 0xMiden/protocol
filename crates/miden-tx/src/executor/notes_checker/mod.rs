@@ -23,7 +23,7 @@ use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
 mod bundle;
 mod checker_utils;
-mod sponsorship;
+mod error;
 
 use bundle::{NoteBundler, NoteBundles};
 pub use checker_utils::{
@@ -33,7 +33,7 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
-pub use sponsorship::SponsorshipRejection;
+pub use error::SponsorshipRejectionError;
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================

@@ -8,7 +8,7 @@ use miden_protocol::note::{Note, NoteId};
 use miden_standards::note::FeeSponsorshipNote;
 
 use super::checker_utils::{FailedNote, NoteFailure};
-use super::sponsorship::SponsorshipRejection;
+use super::error::SponsorshipRejectionError;
 
 // NOTE BUNDLE
 // ================================================================================================
@@ -182,19 +182,19 @@ impl NoteBundler {
         idx: usize,
         notes: &[Note],
         note_indices: &BTreeMap<NoteId, usize>,
-    ) -> Result<usize, SponsorshipRejection> {
+    ) -> Result<usize, SponsorshipRejectionError> {
         match note_indices.get(&sponsorship.feature_note_id()).copied() {
             // The feature note is absent, so the sponsorship can only be reclaimed, on its own.
             None => sponsorship
                 .check_reclaim(self.native_account_id, self.block_ref)
                 .map(|()| idx)
-                .map_err(SponsorshipRejection::NotReclaimable),
+                .map_err(SponsorshipRejectionError::NotReclaimable),
 
             // obtained index points to another sponsorship note
             Some(feature_note_idx)
                 if FeeSponsorshipNote::try_from(&notes[feature_note_idx]).is_ok() =>
             {
-                Err(SponsorshipRejection::FeatureNoteIsSponsorship {
+                Err(SponsorshipRejectionError::FeatureNoteIsSponsorship {
                     feature_note_id: sponsorship.feature_note_id(),
                 })
             },
@@ -207,7 +207,7 @@ impl NoteBundler {
                 if let Some(expected) = self.collected_fee_asset_id
                     && actual != expected
                 {
-                    return Err(SponsorshipRejection::WrongFeeAsset { expected, actual });
+                    return Err(SponsorshipRejectionError::WrongFeeAsset { expected, actual });
                 }
 
                 Ok(feature_note_idx)

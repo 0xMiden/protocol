@@ -50,7 +50,7 @@ use miden_tx::{
     NoteConsumptionChecker,
     NoteConsumptionInfo,
     NoteFailure,
-    SponsorshipRejection,
+    SponsorshipRejectionError,
     TransactionExecutor,
 };
 use rand::SeedableRng;
@@ -1576,8 +1576,8 @@ async fn note_checker_fails_an_orphan_sponsorship_alone(
     } else {
         // the account is not the orphan's reclaimer, so it is rejected without being executed
         assert_matches!(
-            rejection_reason::<SponsorshipRejection>(&info, orphan.note().id()),
-            SponsorshipRejection::NotReclaimable(ReclaimError::NotReclaimer { account_id, .. })
+            rejection_reason::<SponsorshipRejectionError>(&info, orphan.note().id()),
+            SponsorshipRejectionError::NotReclaimable(ReclaimError::NotReclaimer { account_id, .. })
                 if *account_id == network_account.id()
         );
     }
@@ -1638,8 +1638,8 @@ async fn note_checker_rejects_a_sponsorship_naming_another_sponsorship(
     );
 
     assert_matches!(
-        rejection_reason::<SponsorshipRejection>(&info, chained.id()),
-        SponsorshipRejection::FeatureNoteIsSponsorship { feature_note_id }
+        rejection_reason::<SponsorshipRejectionError>(&info, chained.id()),
+        SponsorshipRejectionError::FeatureNoteIsSponsorship { feature_note_id }
             if *feature_note_id == sponsorship.id()
     );
 
@@ -1818,8 +1818,8 @@ async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> an
     let rejected: Vec<_> = info.failed().iter().filter(|failed| failed.is_rejected()).collect();
     assert_eq!(rejected.len(), 1, "only the wrongly funded sponsorship should be rejected");
     assert_matches!(
-        rejection_reason::<SponsorshipRejection>(&info, sponsorship_notes[1].id()),
-        SponsorshipRejection::WrongFeeAsset { expected, actual }
+        rejection_reason::<SponsorshipRejectionError>(&info, sponsorship_notes[1].id()),
+        SponsorshipRejectionError::WrongFeeAsset { expected, actual }
             if *expected == AssetId::new_fungible(fee_faucet_id()?)
                 && *actual == other_asset(FEE_AMOUNT)?.id()
     );

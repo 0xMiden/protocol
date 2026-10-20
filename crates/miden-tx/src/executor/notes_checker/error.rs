@@ -15,7 +15,7 @@ use super::checker_utils::NoteFailure;
 /// downcasting the reason.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum SponsorshipRejection {
+pub enum SponsorshipRejectionError {
     /// The sponsorship is funded with an asset other than the one the account collects fees in.
     #[error(
         "FEE_SPONSORSHIP note is funded with asset {actual} rather than the asset {expected} the account collects fees in"
@@ -35,8 +35,8 @@ pub enum SponsorshipRejection {
     FeatureNoteIsSponsorship { feature_note_id: NoteId },
 }
 
-impl From<SponsorshipRejection> for NoteFailure {
-    fn from(rejection: SponsorshipRejection) -> Self {
+impl From<SponsorshipRejectionError> for NoteFailure {
+    fn from(rejection: SponsorshipRejectionError) -> Self {
         NoteFailure::Rejected { reason: Box::new(rejection) }
     }
 }
