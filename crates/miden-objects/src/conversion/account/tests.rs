@@ -242,10 +242,12 @@ fn storage_arrays_roundtrip_in_full_and_partial_storage() -> anyhow::Result<()> 
     let array = StorageArray::new(vec![Word::empty(), Word::from([1u32, 2, 3, 4]), Word::empty()])?;
     let storage =
         AccountStorage::new(vec![StorageSlot::with_array(StorageSlotName::mock(1), array)])?;
-    let full = proto::account::AccountStorage::from(&storage);
+    let bytes = proto::account::AccountStorage::from(&storage).encode_to_vec();
+    let full = proto::account::AccountStorage::decode(bytes.as_slice())?;
     assert_eq!(full.decode_fields()?.verify()?, storage);
     let partial = PartialStorage::new_minimal(&storage);
-    let message = proto::account::PartialStorage::from(&partial);
+    let bytes = proto::account::PartialStorage::from(&partial).encode_to_vec();
+    let message = proto::account::PartialStorage::decode(bytes.as_slice())?;
     assert_eq!(message.decode_fields()?.verify()?, partial);
     Ok(())
 }

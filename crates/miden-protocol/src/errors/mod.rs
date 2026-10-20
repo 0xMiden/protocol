@@ -34,6 +34,7 @@ use crate::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountVaultDelta,
+    StorageArrayError,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -123,7 +124,7 @@ pub enum ComponentMetadataError {
 #[derive(Debug, Error)]
 pub enum AccountError {
     #[error(transparent)]
-    InvalidStorageArray(#[from] crate::account::StorageArrayError),
+    InvalidStorageArray(#[from] StorageArrayError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]
@@ -507,7 +508,7 @@ pub enum AccountDeltaError {
 #[derive(Debug, Error)]
 pub enum AccountPatchError {
     #[error(transparent)]
-    InvalidStorageArray(#[from] crate::account::StorageArrayError),
+    InvalidStorageArray(#[from] StorageArrayError),
     #[error("final nonce can never be set to zero")]
     FinalNonceIsZero,
 
