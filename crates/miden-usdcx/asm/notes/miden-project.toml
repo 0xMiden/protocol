@@ -2,7 +2,7 @@
 members = ["set_attester"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.17.2"
 
 # The xreserve library is linked STATIC so each note package carries its own MAST and the note
 # executes on any node, without the xreserve package having to be loaded into that node's MAST
@@ -12,4 +12,4 @@ version = "0.1.0"
 miden-core      = { linkage = "dynamic", version = "0.36" }
 miden-protocol  = { linkage = "dynamic", version = "0.17.2" }
 miden-standards = { linkage = "dynamic", version = "0.17.2" }
-xreserve        = { linkage = "static", version = "0.1.0" }
+xreserve        = { linkage = "static", version = "0.17.2" }

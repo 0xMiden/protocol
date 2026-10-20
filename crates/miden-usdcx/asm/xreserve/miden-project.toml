@@ -1,6 +1,6 @@
 [package]
 name    = "xreserve"
-version = "0.1.0"
+version = "0.17.2"
 
 [lib]
 namespace = "xreserve"
