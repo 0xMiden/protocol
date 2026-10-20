@@ -6,6 +6,7 @@
 
 - Added private `CREATE_NOTE` requests with committed outputs, native fee funding, and sender recovery.
 - Added `AuthPassthrough` for stateless permissionless transactions with a supplied native fee note ([#4076](https://github.com/0xMiden/protocol/pull/4076)).
+- Added private `CREATE_NOTE` requests with committed outputs, native fee funding, and sender recovery ([#4075](https://github.com/0xMiden/protocol/pull/4075)).
 - Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
@@ -16,7 +17,7 @@
 
 ### Changes
 
-- [BREAKING] Public PSWAP paybacks now use a fixed P2ID recipient supplied by the creator. Both payback modes use fill attachments to distinguish successive outputs.
+- [BREAKING] Both PSWAP payback modes now use fixed P2ID recipients, with fill attachments distinguishing successive outputs ([#4074](https://github.com/0xMiden/protocol/pull/4074)).
 - [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
