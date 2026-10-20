@@ -2,8 +2,8 @@
 #
 # See the `NonFungibleFaucet` Rust type's documentation for more details. This component bundles
 # the non-fungible-faucet asset minting/burning procedures, the asset-status registry accessor,
-# and the token metadata accessors (name, description, logo URI, contract URI, mutability config)
-# into a single component.
+# the token base URI setter, and the token metadata accessors (name, description, logo URI,
+# contract URI, mutability config) into a single component.
 
 # Non-fungible token minting and burning
 pub use {
@@ -16,6 +16,12 @@ pub use {
     get_asset_status,
     get_symbol,
 } from miden::standards::faucets::non_fungible
+
+# Non-fungible token base URI: a non-empty value makes the token metadata public
+pub use {
+    is_token_base_uri_mutable,
+    set_token_base_uri,
+} from miden::standards::faucets::non_fungible::token_base_uri
 
 # Code inspection
 pub use {has_procedure} from miden::standards::inspection::code_inspection
