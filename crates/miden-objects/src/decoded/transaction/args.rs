@@ -46,6 +46,8 @@ impl Verify for TransactionArgs {
             tx_script,
             self.tx_script_args,
             note_args,
+            self.output_note_recipients.verify()?,
+            self.signatures.verify()?,
             self.advice_inputs.verify()?,
             self.auth_args,
             self.account_code_upgrade.verify()?,
