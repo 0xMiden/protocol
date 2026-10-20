@@ -4,7 +4,7 @@
       {
         "bytes32": "0x000000000000000000000000000000008110548cc41852010140bd1325ff0800",
         "cite": "DEV-10 + IMPL-ACCOUNTID-LAYOUT (R-B / Agglayer-mirroring draft, REQUIRES CIRCLE CONFIRMATION)",
-        "derivation": "AccountIdBuilder::new().build_with_seed([1; 32]) @ v0.17.0-rc.7; R-B layout: bytes[0..16]=0, [16..24]=prefix u64 BE, [24..32]=suffix u64 BE",
+        "derivation": "AccountIdBuilder::new().build_with_seed([1; 32]) @ v0.17.2; R-B layout: bytes[0..16]=0, [16..24]=prefix u64 BE, [24..32]=suffix u64 BE",
         "id": "aid-rt-1",
         "prefix_felt": "0x8110548cc4185201",
         "suffix_felt": "0x140bd1325ff0800",
@@ -16,7 +16,7 @@
       {
         "bytes32": "0x000000000000000000000000000000000320a8188931a401038036a64a672c00",
         "cite": "DEV-10 + IMPL-ACCOUNTID-LAYOUT (R-B / Agglayer-mirroring draft, REQUIRES CIRCLE CONFIRMATION)",
-        "derivation": "AccountIdBuilder::new().build_with_seed([2; 32]) @ v0.17.0-rc.7; R-B layout: bytes[0..16]=0, [16..24]=prefix u64 BE, [24..32]=suffix u64 BE",
+        "derivation": "AccountIdBuilder::new().build_with_seed([2; 32]) @ v0.17.2; R-B layout: bytes[0..16]=0, [16..24]=prefix u64 BE, [24..32]=suffix u64 BE",
         "id": "aid-rt-2",
         "prefix_felt": "0x320a8188931a401",
         "suffix_felt": "0x38036a64a672c00",
@@ -28,7 +28,7 @@
       {
         "bytes32": "0x000000000000000000000000000000008430fc24320cdd01726fbe7dcfa27200",
         "cite": "DEV-10 + IMPL-ACCOUNTID-LAYOUT (R-B / Agglayer-mirroring draft, REQUIRES CIRCLE CONFIRMATION)",
-        "derivation": "AccountIdBuilder::new().build_with_seed([3; 32]) @ v0.17.0-rc.7; R-B layout: bytes[0..16]=0, [16..24]=prefix u64 BE, [24..32]=suffix u64 BE",
+        "derivation": "AccountIdBuilder::new().build_with_seed([3; 32]) @ v0.17.2; R-B layout: bytes[0..16]=0, [16..24]=prefix u64 BE, [24..32]=suffix u64 BE",
         "id": "aid-rt-3",
         "prefix_felt": "0x8430fc24320cdd01",
         "suffix_felt": "0x726fbe7dcfa27200",
@@ -39,7 +39,7 @@
       },
       {
         "bytes32": "0x010000000000000000000000000000008110548cc41852010140bd1325ff0800",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
         "derivation": "aid-rt-1 R-B bytes32 with byte[0] = 0x01 (non-zero in the leading 16-byte pad)",
         "expected_variant": "AccountIdOutOfRange",
         "id": "aid-rej-out-of-range",
@@ -49,8 +49,8 @@
       },
       {
         "bytes32": "0x0000000000000000000000000000000000000000000000070000000000000007",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "R-B layout, zero pad; prefix=suffix=7 (in-field) rejected by AccountId::try_from_elements @ v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
+        "derivation": "R-B layout, zero pad; prefix=suffix=7 (in-field) rejected by AccountId::try_from_elements @ v0.17.2",
         "expected_variant": "NonCanonicalAccountId",
         "id": "aid-rej-non-canonical",
         "tv": [
@@ -82,7 +82,7 @@
         "uint256_be": "0x0000000000000000000000000000000000000000000000007fffffff80000000"
       },
       {
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
         "derivation": "x = y = 2^63 - 2^31 + 1 = MAX + 1 must reject (no saturation)",
         "expected_variant": "AmountOverCap",
         "id": "amt-rej-cap",
@@ -93,7 +93,7 @@
         "uint256_be": "0x0000000000000000000000000000000000000000000000007fffffff80000001"
       },
       {
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
         "derivation": "x = 2^130: high-4 limbs nonzero must reject (limb-overflow edge)",
         "expected_variant": "AmountTooLarge",
         "id": "amt-rej-limb-overflow",
@@ -385,8 +385,8 @@
     "b32": [
       {
         "bytes32": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "all-zero bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
+        "derivation": "all-zero bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.2 (gen_vectors)",
         "expected_key": [
           "0x5b31a8b9799ff836",
           "0xe385174fe60f4b08",
@@ -413,8 +413,8 @@
       },
       {
         "bytes32": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "all-0xff bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
+        "derivation": "all-0xff bytes32; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.2 (gen_vectors)",
         "expected_key": [
           "0x1d067ab9c44dbb5b",
           "0x762523a374914f4d",
@@ -441,8 +441,8 @@
       },
       {
         "bytes32": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "bytes 0x00..0x1f; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
+        "derivation": "bytes 0x00..0x1f; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.2 (gen_vectors)",
         "expected_key": [
           "0xe0a32b2c7c64989",
           "0x4c534fbbf6a6de82",
@@ -469,8 +469,8 @@
       },
       {
         "bytes32": "0xffffffffffffffff000102030405060708090a0b0c0d0e0f1011121314151617",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed @ v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors @ protocol v0.17.2",
+        "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed @ v0.17.2",
         "expected_key": [
           "0xdbabba2292f849d7",
           "0x655b1c0d9daf6e59",

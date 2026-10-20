@@ -2,7 +2,7 @@
 members = ["faucet_burn_policy", "faucet_extension"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.17.2"
 
 # The xreserve library is linked STATIC so a component package carries the code it exports, and the
 # account installing it needs nothing else loaded. Flip this to `dynamic` once the library is
@@ -10,6 +10,6 @@ version = "0.1.0"
 # `TransactionMastStore::new`).
 [workspace.dependencies]
 miden-core      = { linkage = "dynamic", version = "0.36" }
-miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
-miden-standards = { linkage = "dynamic", version = "0.17.0" }
-xreserve        = { linkage = "static", version = "0.1.0" }
+miden-protocol  = { linkage = "dynamic", version = "0.17.2" }
+miden-standards = { linkage = "dynamic", version = "0.17.2" }
+xreserve        = { linkage = "static", version = "0.17.2" }

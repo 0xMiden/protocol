@@ -1,6 +1,6 @@
 [package]
 name    = "xreserve"
-version = "0.1.0"
+version = "0.17.2"
 
 [lib]
 namespace = "xreserve"
@@ -10,5 +10,5 @@ path      = "mod.masm"
 # dependency is always linked dynamically into a library target.
 [dependencies]
 miden-core      = { linkage = "dynamic", version = "0.36" }
-miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
-miden-standards = { linkage = "dynamic", version = "0.17.0" }
+miden-protocol  = { linkage = "dynamic", version = "0.17.2" }
+miden-standards = { linkage = "dynamic", version = "0.17.2" }
