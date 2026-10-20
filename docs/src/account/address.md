@@ -116,6 +116,12 @@ The encryption key is optional in an address. If not provided, senders may use a
 
 When an encryption key is included in the address, it is encoded in bech32 format alongside other routing parameters. The encoding consists of a 1-byte variant discriminant followed by the public key bytes (32 bytes for Curve25519 keys, 33 bytes for compressed secp256k1 keys, or 40 bytes for EcGFp5 keys). EcGFp5 uses variant 6.
 
+This fixed mainnet address uses account ID `0xfa0000000000bb010000cc000000de`, the basic wallet interface, and an absent note tag length. Its EcGFp5 public key is byte `04` followed by 39 zero bytes. The 45-byte routing payload starts with `00 fc 00 01 06 04`, followed by 39 zero bytes.
+
+```text
+mm1araqqqqqqqqtkqgqqrxqqqqqmc8u3e5c_qr7qqqgxqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0rdkjt
+```
+
 ## Encoding
 
 The two parts of an address are encoded as follows:
