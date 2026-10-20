@@ -30,7 +30,7 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 /// [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
-/// [`AccountStorage`](crate::account::AccountStorage).
+/// [`AccountStorage`].
 ///
 /// Each component is independent of other components and can only access its own storage slots.
 /// Each component defines its own storage layout starting at index 0 up to the length of the
