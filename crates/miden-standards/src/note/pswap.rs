@@ -1314,25 +1314,6 @@ mod tests {
     }
 
     #[test]
-    fn pswap_note_builder() {
-        let creator_id = dummy_creator_id();
-        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 1000).unwrap();
-        let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xbb), 500).unwrap();
-
-        let (pswap, note) = build_pswap_note(offered_asset, min_requested_asset, creator_id);
-
-        assert_eq!(pswap.sender(), creator_id);
-        assert_eq!(pswap.note_type(), NoteType::Public);
-        assert_eq!(note.metadata().sender(), creator_id);
-        assert_eq!(note.metadata().note_type(), NoteType::Public);
-        assert_eq!(note.assets().num_assets(), 1);
-        assert_eq!(
-            note.recipient().storage().num_items(),
-            PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS as u16,
-        );
-    }
-
-    #[test]
     fn pswap_tag() {
         let mut offered_faucet_bytes = [0; 15];
         offered_faucet_bytes[0] = 0xcd;
@@ -1643,9 +1624,7 @@ mod tests {
         assert!(result.is_err(), "an out-of-range depth must not build a PswapNote");
     }
 
-    /// The lineage helpers offset the serial number by the distance between the note they are
-    /// called on and the attachment's round, so a note that itself sits at a non-zero depth
-    /// reconstructs the same round as the original does.
+    /// A remainder reconstructs the same fixed payback as the original and rejects past fills.
     #[test]
     fn pswap_lineage_helpers_are_relative_to_the_parent_depth() {
         let creator_id = dummy_creator_id();

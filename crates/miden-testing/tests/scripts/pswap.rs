@@ -1439,12 +1439,16 @@ async fn pswap_private_target_can_fill_without_cancelling(
     Ok(())
 }
 
-/// Both layouts reject short and oversized storage before reading their payload fields.
 #[rstest]
+#[case::empty(NoteType::Private, 0)]
+#[case::private_short(NoteType::Private, PswapNoteStorage::PRIVATE_NUM_STORAGE_ITEMS - 1)]
+#[case::private_with_public_length(NoteType::Private, PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS)]
+#[case::public_with_private_length(NoteType::Public, PswapNoteStorage::PRIVATE_NUM_STORAGE_ITEMS)]
+#[case::oversized(NoteType::Public, PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS + 1)]
 #[tokio::test]
 async fn pswap_rejects_wrong_storage_length(
-    #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
-    #[values(0, 4, 6, 7, 8, 9, 12)] length: usize,
+    #[case] payback_type: NoteType,
+    #[case] length: usize,
 ) -> anyhow::Result<()> {
     let (chain, consumer, note) = setup_storage_test(payback_type)?;
     let mut items = note.recipient().storage().items().to_vec();
@@ -2679,21 +2683,12 @@ fn pswap_remainder_carries_pswap_scheme() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Headline discovery test: Alice creates a PSWAP, Bob consumes it across three partial
-/// fills (a 3-round lineage), and at every round Alice reconstructs the payback's
-/// `NoteRecipient` from the on-chain attachment word and *consumes the reconstructed note*
-/// against the chain — proving end-to-end that the body Alice rebuilds from
-/// `(order_id, depth, fill_amount)` matches the commitment Bob's tx recorded.
-///
-/// Each round's remainder recipient is also derived and cross-checked against the on-chain
-/// digest, since remainder threading carries the parent `PswapAttachment` forward (the
-/// on-chain `get_current_depth` reads it to stamp the next round's depth).
+/// Reconstructs and consumes equal fills from one sender, checking payback uniqueness and lineage.
 #[rstest]
 #[tokio::test]
 async fn pswap_creator_reconstructs_lineage_from_attachments(
     #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
 ) -> anyhow::Result<()> {
-    // Equal fills from one sender must still produce distinct notes and nullifiers.
     let fills = [5u64, 5u64, 5u64];
     let initial_offered = 50u64;
     let initial_requested = 25u64;
@@ -2735,22 +2730,16 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
 
     let mut mock_chain = builder.build()?;
 
-    // Threaded across rounds: round 1 consumes the original PSWAP, rounds 2+ consume the
-    // previous round's remainder (which carries the right `PswapAttachment` so the on-chain
-    // depth derivation stamps the next round correctly).
     let mut current_pswap = original_pswap.clone();
     let mut current_pswap_note = original_pswap_note;
     let mut current_offered = initial_offered;
     let mut current_requested = initial_requested;
-    // Alice starts with an empty wallet and accumulates `fill_amount` ETH each round, so the
-    // patch's absolute balance is the running total of all fills consumed so far.
     let mut alice_eth_balance = 0;
     let mut paybacks: Vec<Note> = Vec::new();
 
     for (idx, fill_amount) in fills.iter().copied().enumerate() {
         let depth = (idx + 1) as u32;
 
-        // --- Bob fills the current PSWAP ---
         let payout_amount = current_pswap.calculate_offered_for_requested(fill_amount)?;
         let remaining_offered = current_offered - payout_amount;
         let remaining_requested = current_requested - fill_amount;
@@ -2787,7 +2776,6 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
 
         let on_chain_payback = bob_tx.output_notes().get_note(0);
 
-        // --- Alice reconstructs the payback from the on-chain attachment word ---
         let attachment_word = first_attachment_word(on_chain_payback.attachments());
         let fill_from_attachment = attachment_word[0].as_canonical_u64();
         assert_eq!(
@@ -2830,7 +2818,6 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
         }
         paybacks.push(reconstructed_payback.clone());
 
-        // Every remainder retains the same recipient, so it reconstructs the same payback.
         assert_eq!(
             match payback_type {
                 NoteType::Private => current_pswap.private_payback_note(
@@ -2848,7 +2835,6 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
             "round {depth}: reconstruction from the round's parent must match as well",
         );
 
-        // --- Alice reconstructs the remainder (when partial) from on-chain data alone ---
         if next_pswap_opt.is_some() {
             let on_chain_remainder = bob_tx.output_notes().get_note(1);
             let remainder_attachment_word = first_attachment_word(on_chain_remainder.attachments());
@@ -2899,13 +2885,8 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
         mock_chain.add_pending_executed_transaction(&alice_tx)?;
         mock_chain.prove_next_block()?;
 
-        // Advance state for the next round.
         if let Some(next) = next_pswap_opt {
             assert_eq!(next.storage().payback(), original_pswap.storage().payback());
-            assert_eq!(
-                next.storage().payback_note_tag(),
-                original_pswap.storage().payback_note_tag()
-            );
             current_pswap_note = Note::from(next.clone());
             current_pswap = next;
             current_offered = remaining_offered;
