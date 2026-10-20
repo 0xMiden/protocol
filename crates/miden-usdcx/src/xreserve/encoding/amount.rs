@@ -51,14 +51,18 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::vectors::load;
+    use crate::vectors::{load, selected};
 
     /// TV-AMT-1 (happy path, written first): in-bound amounts reduce to themselves.
+    ///
+    /// The cap vector belongs to `tv_amt_2_cap_boundary_accept`, so this filter selects exactly the
+    /// one accept row below the cap.
     #[test]
     fn tv_amt_1_in_bound() {
         let v = load();
-        for vec in v.families.amt.iter().filter(|v| v.kind == "accept" && v.id != "amt-cap-accept")
-        {
+        let in_bound =
+            v.families.amt.iter().filter(|v| v.kind == "accept" && v.id != "amt-cap-accept");
+        for vec in selected(in_bound, 1, "amt accept rows below the cap") {
             let y = uint256_to_asset_amount(vec.amount())
                 .unwrap_or_else(|e| panic!("vector {}: must accept, got {e}", vec.id));
             assert_eq!(y, vec.expected_amount(), "vector {}: reduced amount", vec.id);

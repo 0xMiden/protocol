@@ -25,6 +25,7 @@ pub use non_fungible::{
     AssetStatus,
     NonFungibleFaucet,
     NonFungibleFaucetBuilder,
+    TokenBaseUri,
     create_guarded_user_non_fungible_faucet,
     create_multisig_user_non_fungible_faucet,
     create_network_non_fungible_faucet,
@@ -125,6 +126,12 @@ pub enum NonFungibleFaucetError {
     NotANonFungibleFaucetAccount,
     #[error("asset status registry holds invalid status code {status}: must be 0, 1 or 2")]
     InvalidAssetStatus { status: u64 },
+    #[error("token base URI mutability flag has invalid value {value}: must be 0 or 1")]
+    InvalidTokenBaseUriMutabilityFlag { value: u64 },
+    #[error(
+        "token base URI is mutable but empty, so it can never be set: the faucet's token metadata is private"
+    )]
+    MutableEmptyTokenBaseUri,
     #[error(
         "faucet registers an owner-gated mint or burn policy but does not install the Ownable2Step component the policy reads the owner from"
     )]

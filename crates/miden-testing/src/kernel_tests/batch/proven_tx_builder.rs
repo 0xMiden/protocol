@@ -11,6 +11,7 @@ use miden_protocol::transaction::{
     InputNoteCommitment,
     OutputNote,
     ProvenTransaction,
+    TransactionLogDetails,
     TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
@@ -133,6 +134,7 @@ impl MockProvenTxBuilder {
             ref_block_commitment,
             self.expiration_block_num,
             self.proof,
+            TransactionLogDetails::Private(Word::empty()),
         )
         .context("failed to build proven transaction")
     }

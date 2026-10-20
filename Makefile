@@ -175,9 +175,9 @@ bench-tx: ## Run transaction benchmarks
 bench-note-checker: ## Run note checker benchmarks
 	cargo bench --bin bench-note-checker --bench benches
 
-.PHONY: update-note-costs
-update-note-costs: ## Regenerate bench-tx.json and the checked-in note consumption cost tables
-	cargo run --bin bench-transaction --features concurrent -- update-note-costs
+.PHONY: update-generated
+update-generated: ## Regenerate bench-tx.json and the checked-in note consumption cost tables
+	cargo run --release --bin bench-transaction --features concurrent -- update-generated
 	cargo +nightly fmt -p miden-standards -p miden-agglayer
 
 # --- installing ----------------------------------------------------------------------------------

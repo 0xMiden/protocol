@@ -3,10 +3,14 @@ use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::memory
 use miden::core::collections::mmr
+use miden::core::crypto::hashes::poseidon2
+use miden::core::mem as core_mem
 use miden::core::word
 use miden::protocol_utils::mem
 use {MAX_OUTPUT_NOTES_PER_TX} from miden::tx_kernel_core::constants
-use {PARTIAL_BLOCKCHAIN_PTR} from miden::tx_kernel_core::memory
+use {MAX_LOGS_PER_TX, MAX_LOG_CONTENT_WORDS, MAX_LOG_CONTENT_WORDS_PER_TX, WORD_NUM_ELEMENTS}
+    from miden::protocol_utils::constants
+use {LOG_COMMITMENTS_PTR, PARTIAL_BLOCKCHAIN_PTR} from miden::tx_kernel_core::memory
 
 # RE-EXPORTS
 # =================================================================================================
@@ -16,6 +20,15 @@ use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 # CONSTANTS
 # =================================================================================================
 
+# Hash domains shared with TransactionLog and TransactionLogs in Rust.
+const LOG_DOMAIN = 0x020004
+const LOGS_DOMAIN = 0x020003
+
+# add_log locals: two topic elements, two padding elements, then at most 256 content words.
+const TOPIC_SUFFIX_LOC = 0
+const TOPIC_PREFIX_LOC = TOPIC_SUFFIX_LOC + 1
+const CONTENT_LOC = TOPIC_SUFFIX_LOC + WORD_NUM_ELEMENTS
+
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
 
@@ -24,6 +37,11 @@ const MAX_CYCLES = 0x20000000
 
 # ERRORS
 # =================================================================================================
+
+const ERR_TX_LOG_COUNT_EXCEEDED = "transaction exceeds 64 logs"
+const ERR_TX_LOG_CONTENT_TOO_LARGE = "log content must contain at most 256 words"
+const ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED = "log content must consist of complete words"
+const ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE = "transaction log contents exceed 512 words"
 
 const ERR_TX_INVALID_EXPIRATION_DELTA =
     "transaction expiration block delta must be within 0x1 and 0xFFFF"
@@ -55,6 +73,8 @@ const ERR_TX_BLOCK_NUMBER_EXCEEDS_REFERENCE_BLOCK_NUMBER =
 
 # EVENTS
 # =================================================================================================
+
+const TX_LOG_ADDED_EVENT = event("miden::protocol::tx::log_added")
 
 # Event emitted before the commitment of a block other than the reference block is read from the
 # partial blockchain, so that the host can provide the block's authentication witness.
@@ -346,6 +366,87 @@ pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Commitment
     # => [fee_amount]
 end
 
+# TRANSACTION LOGS
+# =================================================================================================
+
+#! Adds a transaction log for the active account after verifying its content and the transaction limits.
+#! The caller must authenticate the account procedure before invoking this procedure.
+#!
+#! Inputs:  [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the transaction log count or content size exceeds its limit.
+#! - the content does not consist of complete words or does not match CONTENT_COMMITMENT.
+#!
+#! Invocation: exec
+@locals(1028)
+pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: word)
+    # Save the topic while validating the content from advice.
+    loc_store.TOPIC_SUFFIX_LOC loc_store.TOPIC_PREFIX_LOC
+    # => [CONTENT_COMMITMENT]
+
+    exec.memory::get_num_tx_logs u32lt.MAX_LOGS_PER_TX assert.err=ERR_TX_LOG_COUNT_EXCEEDED
+    # => [CONTENT_COMMITMENT]
+
+    adv.push_mapvaln adv_push u32assert.err=ERR_TX_LOG_CONTENT_TOO_LARGE
+    u32divmod.WORD_NUM_ELEMENTS
+    # => [remainder, num_words, CONTENT_COMMITMENT]
+
+    # Check alignment and both content limits before reading any content elements.
+    assertz.err=ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED
+    dup u32lte.MAX_LOG_CONTENT_WORDS assert.err=ERR_TX_LOG_CONTENT_TOO_LARGE
+    # => [num_words, CONTENT_COMMITMENT]
+
+    dup exec.memory::get_total_num_log_content_words add
+    dup u32lte.MAX_LOG_CONTENT_WORDS_PER_TX assert.err=ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE
+    exec.memory::set_total_num_log_content_words
+    # => [num_words, CONTENT_COMMITMENT]
+
+    movdn.4 dupw movup.8 locaddr.CONTENT_LOC swap
+    # => [num_words, content_ptr, CONTENT_COMMITMENT, CONTENT_COMMITMENT]
+
+    # The checked word count fits in the content locals. Verify the preimage while copying it.
+    exec.core_mem::pipe_preimage_to_memory drop
+    # => [CONTENT_COMMITMENT]
+
+    loc_load.TOPIC_PREFIX_LOC loc_load.TOPIC_SUFFIX_LOC exec.memory::get_account_id
+    # => [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+
+    emit.TX_LOG_ADDED_EVENT
+    # => [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+
+    push.LOG_DOMAIN exec.poseidon2::merge_in_domain
+    # => [LOG_COMMITMENT]
+
+    exec.memory::push_tx_log_commitment
+    # => []
+end
+
+#! Returns the transaction logs commitment included in the transaction proof.
+#! Appending another transaction log invalidates the cache.
+#! Before the first transaction log, the cached commitment is the empty word.
+#!
+#! Inputs:  []
+#! Outputs: [LOGS_COMMITMENT]
+#!
+#! Invocation: exec
+pub proc get_logs_commitment() -> word
+    exec.memory::get_tx_logs_dirty_flag
+    # => [is_dirty]
+
+    if.true
+        exec.compute_logs_commitment exec.memory::set_tx_logs_commitment
+        # => [LOGS_COMMITMENT]
+
+        push.0 exec.memory::set_tx_logs_dirty_flag
+        # => [LOGS_COMMITMENT]
+    else
+        exec.memory::get_tx_logs_commitment
+        # => [LOGS_COMMITMENT]
+    end
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 
@@ -521,4 +622,16 @@ proc assert_exclude_notes_sorted_and_unique(exclude_notes_ptr: ptr<u16>, num_exc
 
     drop drop
     # => []
+end
+
+#! Computes the commitment after at least one transaction log has been added.
+#!
+#! Inputs:  []
+#! Outputs: [LOGS_COMMITMENT]
+proc compute_logs_commitment() -> word
+    push.LOGS_DOMAIN exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
+    # => [LOG_COMMITMENTS_PTR, num_log_commitment_elements, LOGS_DOMAIN]
+
+    exec.poseidon2::hash_elements_in_domain
+    # => [LOGS_COMMITMENT]
 end
