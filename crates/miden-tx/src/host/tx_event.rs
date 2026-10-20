@@ -348,7 +348,7 @@ impl TransactionEvent {
                 let (slot_id, slot_type, _) =
                     process.get_storage_slot(process.get_stack_item(1))?;
                 let root = process.get_stack_word(2);
-                let miden_protocol::account::StorageSlotType::Array(length) = slot_type else {
+                let StorageSlotType::Array(length) = slot_type else {
                     return Err(TransactionKernelError::other(
                         "array event references a non-array slot",
                     ));
@@ -360,7 +360,13 @@ impl TransactionEvent {
                 if elements.len() != length.as_usize() * Word::NUM_ELEMENTS {
                     return Err(TransactionKernelError::other("array preimage length mismatch"));
                 }
-                let values = elements.as_chunks::<4>().0.iter().copied().map(Word::new).collect();
+                let values = elements
+                    .as_chunks::<{ Word::NUM_ELEMENTS }>()
+                    .0
+                    .iter()
+                    .copied()
+                    .map(Word::new)
+                    .collect();
                 let array = StorageArray::new(values).map_err(|err| {
                     TransactionKernelError::other_with_source("invalid array preimage", err)
                 })?;
