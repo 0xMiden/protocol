@@ -101,6 +101,15 @@ impl CombinedSpendingLimit {
 /// policy never changes the signature threshold.
 ///
 /// Non-fungible assets are not metered.
+///
+/// # Security
+///
+/// The limits are only as strong as the policies on the four procedures that edit them:
+/// `update_spending_limits_policy`, `update_spending_oracle`, `set_faucet_spending_limit` and
+/// `set_combined_spending_limit`. Without a [`ProcedurePolicy`](super::ProcedurePolicy) of their
+/// own each costs the default threshold, so a quorum able to spend is also able to lift the limit
+/// first and the limits add no protection against it. Give them a policy at least as strong as the
+/// protection the limits are meant to provide, for example every approver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpendingLimitsPolicy {
     window_blocks: NonZeroU32,
