@@ -15,6 +15,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Hasher, Word};
@@ -285,7 +286,7 @@ impl AuthMultisigSmart {
     ///
     /// Cancelling keeps the record and sets its unlock block to this value, which no reference
     /// block can reach, so the commitment stays closed to proposing and delayed execution.
-    pub const CANCELLED_UNLOCK_BLOCK: u32 = u32::MAX;
+    pub const CANCELLED_UNLOCK_BLOCK: BlockNumber = BlockNumber::MAX;
 
     pub const UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME: &'static str =
         "update_delayed_execution_policy";
@@ -521,7 +522,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
-        // Delay config slot (value: [min_delay, propose_expiration_delta, cancel_threshold, 0]).
+        // Delay config slot.
         let delayed_execution_policy = multisig.config.delayed_execution_policy();
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::delay_config_slot().clone(),
@@ -533,8 +534,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             ]),
         ));
 
-        // Tx-proposals map slot (TX_SUMMARY_COMMITMENT => [unlock_block, proposal_block,
-        // min_cancel_sigs, 0]). Existence is encoded by `unlock_block != 0`.
+        // Tx-proposals map slot.
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::tx_proposals_slot().clone(),
             StorageMap::default(),

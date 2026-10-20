@@ -1923,7 +1923,12 @@ async fn test_multisig_smart_cancel_requires_configured_threshold(
         .expect("tx proposals slot should exist");
     assert_eq!(
         stored,
-        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 3, 0]),
+        Word::from([
+            AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK.as_u32(),
+            propose_block.as_u32(),
+            3,
+            0
+        ]),
         "a valid cancel must leave a cancelled record"
     );
 
@@ -2067,7 +2072,12 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
         .expect("tx proposals slot should exist");
     assert_eq!(
         stored,
-        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 4, 0]),
+        Word::from([
+            AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK.as_u32(),
+            propose_block.as_u32(),
+            4,
+            0
+        ]),
         "the capped cancel must leave a cancelled record"
     );
 
@@ -2169,7 +2179,12 @@ async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_ca
         .expect("tx proposals slot should exist");
     assert_eq!(
         stored,
-        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 5, 0]),
+        Word::from([
+            AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK.as_u32(),
+            propose_block.as_u32(),
+            5,
+            0
+        ]),
         "the cancel must leave a cancelled record carrying the configured threshold"
     );
 
@@ -2265,7 +2280,12 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel(
         .expect("tx proposals slot should exist");
     assert_eq!(
         stored,
-        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 1, 0]),
+        Word::from([
+            AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK.as_u32(),
+            propose_block.as_u32(),
+            1,
+            0
+        ]),
         "a valid cancel must leave a cancelled record"
     );
 
