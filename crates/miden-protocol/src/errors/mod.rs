@@ -41,6 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
+use crate::block::code_tree::CodeTreePatch;
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::code::ProcedureRoot;
 use crate::note::{
@@ -1813,6 +1814,30 @@ pub enum CodeTreeError {
 
     #[error("failed to compute code tree mutations")]
     ComputeMutations(#[source] MerkleError),
+}
+
+// CODE TREE PATCH ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum CodeTreePatchError {
+    #[error("created procedure {0} is not a procedure root of the code tree patch MAST forest")]
+    CreatedProcedureNotInMastForest(ProcedureRoot),
+
+    #[error("procedure root {0} of the code tree patch MAST forest is not a created procedure")]
+    MastForestRootNotCreated(ProcedureRoot),
+
+    #[error("procedure root {0} of code tree patch is an external node")]
+    ExternalProcedureRoot(ProcedureRoot),
+
+    #[error(
+        "code tree patch of size {size} bytes exceeds maximum patch size of {max_size} bytes",
+        max_size = CodeTreePatch::MAX_SIZE
+    )]
+    SizeLimitExceeded { size: usize },
+
+    #[error("advice map key {0} of code tree patch is not the hash of its value")]
+    AdviceMapKeyNotValueHash(Word),
 }
 
 // AUTH SCHEME ERROR
