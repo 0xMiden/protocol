@@ -324,6 +324,11 @@ impl StandardNote {
     ///       height.
     /// - for `TX_FEE` note:
     ///     - check that note storage is empty; the note is otherwise consumable by any account.
+    /// - for `FEE_SPONSORSHIP` note:
+    ///     - check that the note parses as a [`FeeSponsorshipNote`].
+    ///     - check that the target account can reclaim the note, since a note checked on its own is
+    ///       one whose feature note is absent: see [`FeeSponsorshipNote::check_reclaim`]. A note
+    ///       whose reclaim height is not reached yet is consumable after that height.
     fn is_consumable_inner(
         &self,
         note: &Note,
