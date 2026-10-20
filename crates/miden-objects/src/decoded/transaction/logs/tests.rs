@@ -10,7 +10,7 @@ use crate::{DecodeMessage, Verify, proto};
 
 #[test]
 fn logs_roundtrip_preserves_order_duplicates_and_maximum_content() {
-    let log = TransactionLog::mock(TransactionLog::MAX_NUM_WORDS);
+    let log = TransactionLog::mock(TransactionLogs::MAX_NUM_WORDS / 2);
     let logs = TransactionLogs::new(vec![log.clone(), log]).unwrap();
     let bytes = proto::transaction::TransactionLogs::from(&logs).encode_to_vec();
     let decoded = proto::transaction::TransactionLogs::decode(bytes.as_slice()).unwrap();
