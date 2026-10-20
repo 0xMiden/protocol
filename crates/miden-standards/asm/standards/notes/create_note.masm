@@ -3,6 +3,8 @@ use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 use miden::protocol::output_note
 use miden::protocol::tx
 use miden::standards::note::note_reclaim
@@ -13,24 +15,27 @@ use miden::standards::wallets::basic as wallet
 # CONSTANTS
 # =================================================================================================
 
-# A zero fee asset disables fee creation.
-const NUM_STORAGE_ITEMS = 33
 const ACTION_RECLAIM = 1
 const STORAGE_PTR = 0
-const OUTPUT_RECIPIENT_PTR = 0
-const OUTPUT_ID_PTR = 4
-const OUTPUT_ASSET_PTR = 8
-const INPUT_ASSETS_PTR = 16
-const FEE_ASSET_PTR = 20
-const FEE_AMOUNT_PTR = 24
-const TARGET_SUFFIX_PTR = 28
-const TARGET_PREFIX_PTR = 29
-const TAG_PTR = 30
-const TYPE_PTR = 31
-const RECLAIM_HEIGHT_PTR = 32
-const PRIMARY_IDX_PTR = 36
-const FEE_IDX_PTR = 37
-const REMAINING_ASSETS_PTR = 40
+const OUTPUT_RECIPIENT_PTR = STORAGE_PTR
+const OUTPUT_ID_PTR = OUTPUT_RECIPIENT_PTR + WORD_NUM_ELEMENTS
+const OUTPUT_ASSET_PTR = OUTPUT_ID_PTR + WORD_NUM_ELEMENTS
+const INPUT_ASSETS_PTR = OUTPUT_ASSET_PTR + ASSET_SIZE
+# A zero fee asset disables fee creation.
+const FEE_ASSET_PTR = INPUT_ASSETS_PTR + WORD_NUM_ELEMENTS
+const FEE_AMOUNT_PTR = FEE_ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
+const TARGET_SUFFIX_PTR = FEE_ASSET_PTR + ASSET_SIZE
+const TARGET_PREFIX_PTR = TARGET_SUFFIX_PTR + 1
+const TAG_PTR = TARGET_PREFIX_PTR + 1
+const TYPE_PTR = TAG_PTR + 1
+const RECLAIM_HEIGHT_PTR = TYPE_PTR + 1
+const NUM_STORAGE_ITEMS = RECLAIM_HEIGHT_PTR + 1 - STORAGE_PTR
+
+# Scratch memory starts after the padded final storage word.
+const PRIMARY_IDX_PTR = RECLAIM_HEIGHT_PTR + WORD_NUM_ELEMENTS
+const FEE_IDX_PTR = PRIMARY_IDX_PTR + 1
+const REMAINING_ASSETS_PTR = PRIMARY_IDX_PTR + WORD_NUM_ELEMENTS
+
 # "CREATEFE" separates these serials from other fee note derivations.
 const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
 

@@ -38,10 +38,45 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 # The number of words in the PswapAttachment.
 const PSWAP_ATTACHMENT_NUM_WORDS = 1
 
-# Storage begins with [requested_faucet_suffix, requested_faucet_prefix, min_requested_amount,
-# min_fill_step, payback_note_type]. Public paybacks append [creator_suffix, creator_prefix,
-# SERIAL_NUM]; private paybacks append [RECIPIENT, tag]. The public tag is derived from the creator.
-# Remainders preserve the payback configuration and copy the active note's own tag.
+# Note storage is loaded at STORAGE_PTR by get_bounded_storage. Its layout depends on the
+# payback note type, independently of the PSWAP note's own visibility.
+#
+# Common fields (5 felts):
+# - requested_faucet_suffix    [0]  : 1 felt
+# - requested_faucet_prefix    [1]  : 1 felt
+# - min_requested_amount      [2]  : 1 felt
+# - min_fill_step             [3]  : 1 felt
+# - payback_note_type         [4]  : 1 felt
+#
+# Public payback fields (11 felts total):
+# - creator_id_suffix         [5]  : 1 felt
+# - creator_id_prefix         [6]  : 1 felt
+# - fixed_payback_serial   [7..11)  : 4 felts
+#
+# Private payback fields (10 felts total):
+# - payback_recipient      [5..9)  : 4 felts
+# - payback_tag               [9]  : 1 felt
+#
+# Where:
+# - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
+# - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
+#   (AccountIdPrefix as Felt)
+# - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
+# - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
+# - payback_note_type: The NoteType used for the P2ID payback note (0 = private, 1 = public)
+# - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
+# - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
+# - fixed_payback_serial: Serial number of the fixed public P2ID recipient (Word)
+# - payback_recipient: Digest of the fixed private P2ID recipient (Word); its preimage is
+#   retained by the owner and supplied privately for cancellation
+# - payback_tag: Explicit discovery tag for private payback notes (NoteTag as Felt, fits in u32)
+#
+# For public payback notes, the tag is derived at runtime from the creator's account ID
+# (via note_tag::create_account_target) rather than stored. For private payback notes, the tag
+# is stored explicitly because the recipient digest does not expose the target account ID.
+#
+# The remainder PSWAP note's own tag is copied from the active note's
+# metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
 const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
