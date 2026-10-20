@@ -2074,6 +2074,108 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
     Ok(())
 }
 
+/// Shrinking the approver set below the configured `cancel_threshold` does not brick cancelling.
+/// Proposals recorded afterwards still carry the configured threshold, and cancelling caps it by
+/// the approvers that exist, so the remaining approvers cancel with all of their signatures.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_cancellable(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+        2,
+        &public_keys,
+        100,
+        vec![],
+        DelayedExecutionPolicy::new(30, 2, 5)?,
+    )?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // Rotate down to the first four approvers (2-of-4) without touching the delay policy, so the
+    // configured cancel threshold of 5 now exceeds the approver count.
+    let surviving_keys = &public_keys[..4];
+    let multisig_config_data =
+        build_update_signers_config_vector(2, 4, surviving_keys, auth_scheme);
+    let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, multisig_config_data)]);
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+    let rotate_tx = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        update_signers_script,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(760)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        Some(multisig_config_hash),
+        Some(advice_inputs),
+    )
+    .await?
+    .expect("rotating the approver set should succeed");
+    multisig_account.apply_patch(rotate_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&rotate_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // A proposal recorded now still carries the configured threshold of 5...
+    let commitment = Word::from([Felt::from(761u32); 4]);
+    let propose_block = mock_chain.latest_block_header().block_num();
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        commitment,
+        MultisigAuthArgs::new(propose_block, salt(762)),
+        &[0],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("propose tx should succeed");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // ...and the four remaining approvers cancel it together.
+    let cancel_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(763)),
+        &[0, 1, 2, 3],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("all remaining approvers should be able to cancel");
+    multisig_account.apply_patch(cancel_tx.account_patch())?;
+
+    let stored = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
+        .expect("tx proposals slot should exist");
+    assert_eq!(
+        stored,
+        Word::from([AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK, propose_block.as_u32(), 5, 0]),
+        "the cancel must leave a cancelled record carrying the configured threshold"
+    );
+
+    Ok(())
+}
+
 /// Proposal signatures must not double as cancellation signatures. They are public once the propose
 /// transaction lands (and also authorize execution), so if `cancel_transaction_proposal` accepted
 /// them anyone could replay them to veto any proposal. Cancelling verifies signatures over the
