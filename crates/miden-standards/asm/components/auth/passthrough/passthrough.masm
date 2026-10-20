@@ -3,13 +3,13 @@ use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::tx
 use miden::standards::assets::fungible_asset
 use miden::standards::fee
 use miden::standards::note as std_note
 use miden::standards::notes::tx_fee
-use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 
 # CONSTANTS
 # =================================================================================================
@@ -51,8 +51,7 @@ pub proc auth_passthrough(auth_args: AuthArgs)
     assertz.err=ERR_PASSTHROUGH_AUTH_ARGS
     assertz.err=ERR_PASSTHROUGH_AUTH_ARGS
 
-    # Read the final state before changing the deployment nonce. This also rejects pending code
-    # upgrades and nonce changes made by the transaction itself.
+    # Check state before the deployment nonce increment.
     exec.native_account::has_state_changed assertz.err=ERR_PASSTHROUGH_STATE_CHANGED
     exec.active_account::get_vault_root push.EMPTY_VAULT_ROOT
     assert_eqw.err=ERR_PASSTHROUGH_VAULT_NOT_EMPTY
@@ -71,6 +70,8 @@ pub proc auth_passthrough(auth_args: AuthArgs)
         loc_load.FEE_NOTE_IDX exec.output_note::is_sealed
         assert.err=ERR_PASSTHROUGH_FEE_NOTE
         loc_load.FEE_NOTE_IDX exec.output_note::get_metadata
+        # => [METADATA, pad(12)]
+
         dupw exec.note::metadata_into_note_type eq.NOTE_TYPE_PUBLIC
         assert.err=ERR_PASSTHROUGH_FEE_NOTE
         exec.note::metadata_into_tag eq.TX_FEE_TAG assert.err=ERR_PASSTHROUGH_FEE_NOTE
@@ -85,9 +86,13 @@ pub proc auth_passthrough(auth_args: AuthArgs)
         padw assert_eqw.err=ERR_PASSTHROUGH_FEE_NOTE
 
         loc_load.FEE_NOTE_IDX exec.output_note::get_assets_info
+        # => [ASSETS_COMMITMENT, num_assets, pad(12)]
+
         dropw eq.1 assert.err=ERR_PASSTHROUGH_FEE_NOTE
         loc_load.FEE_NOTE_IDX locaddr.FEE_ASSET exec.output_note::get_assets drop
         locaddr.FEE_ASSET exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, pad(12)]
+
         exec.tx::get_fee_asset_id assert_eqw.err=ERR_PASSTHROUGH_FEE_NOTE
         exec.fungible_asset::value_into_amount_unchecked
         loc_load.REQUIRED_FEE swap

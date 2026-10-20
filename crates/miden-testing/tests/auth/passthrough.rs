@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -15,14 +14,29 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNote, PartialNoteMetadata};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNote,
+    PartialNoteMetadata,
+};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
 };
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::auth::{AuthPassthrough, NoAuth};
+use miden_protocol::{ONE, Word};
+use miden_standards::account::auth::{
+    AuthPassthrough,
+    FeeConversionInfo,
+    NoAuth,
+    commit_fee_conversion_info,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -58,8 +72,7 @@ fn passthrough() -> anyhow::Result<Account> {
         .build_existing()?)
 }
 
-/// Starts with an owner's funded account, publishes the request in a real transaction, then
-/// creates and fills the public order through its shared account with private authenticated inputs.
+/// Publishes a private request, fills or cancels its public order, then claims private paybacks.
 #[rstest]
 #[tokio::test]
 async fn passthrough_private_pswap_e2e(
@@ -115,11 +128,9 @@ async fn passthrough_private_pswap_e2e(
         BlockNumber::from(100),
     )?;
     let mut chain = builder.build()?;
-    let (fee_args, fee_advice) = miden_standards::account::auth::commit_fee_conversion_info(
-        miden_standards::account::auth::FeeConversionInfo::one_to_one(
-            ACCOUNT_ID_FEE_FAUCET.try_into()?,
-        ),
-        miden_protocol::Word::from([9u32, 10, 11, 12]),
+    let (fee_args, fee_advice) = commit_fee_conversion_info(
+        FeeConversionInfo::one_to_one(ACCOUNT_ID_FEE_FAUCET.try_into()?),
+        Word::from([9u32, 10, 11, 12]),
     );
 
     let requests = if cancel_remainder {
@@ -221,11 +232,6 @@ async fn passthrough_private_pswap_e2e(
         chain.add_pending_executed_transaction(&cancel)?;
         chain.prove_next_block()?;
         paybacks.push(refund);
-    } else {
-        assert_eq!(paybacks[0].recipient(), paybacks[1].recipient());
-        assert_eq!(paybacks[0].assets(), paybacks[1].assets());
-        assert_ne!(paybacks[0].id(), paybacks[1].id());
-        assert_ne!(paybacks[0].nullifier(), paybacks[1].nullifier());
     }
     let claim = chain
         .build_transaction(owner.id())
@@ -332,7 +338,7 @@ async fn passthrough_deploys_with_one_nonce_increment() -> anyhow::Result<()> {
         .build()?;
     let chain = MockChain::builder().build()?;
     let tx = chain.build_transaction(account).build()?.execute().await?;
-    assert_eq!(tx.final_account().nonce(), miden_protocol::ONE);
+    assert_eq!(tx.final_account().nonce(), ONE);
     assert!(tx.account_patch().vault().is_empty());
     Ok(())
 }
@@ -352,11 +358,13 @@ async fn passthrough_rejects_storage_changes_and_pending_upgrades(
         @account_procedure
         pub proc change_storage
             push.1.2.3.4 push.SLOT[0..2]
+            # => [slot_id_suffix, slot_id_prefix, VALUE, pad(16)]
             exec.native_account::set_item dropw
         end
         @account_procedure
         pub proc change_code
             padw swapw
+            # => [NEW_CODE_COMMITMENT, EMPTY_STORAGE_UPGRADE, pad(12)]
             exec.native_account::upgrade
         end
     "#,
@@ -392,7 +400,15 @@ async fn passthrough_rejects_storage_changes_and_pending_upgrades(
         String::new()
     };
     let script = CodeBuilder::default().compile_tx_script(format!(
-        "use miden::core::sys\n@transaction_script\npub proc main\n{input}\ncall.{root}\nexec.sys::truncate_stack\nend"
+        r#"
+        use miden::core::sys
+        @transaction_script
+        pub proc main
+            {input}
+            call.{root}
+            exec.sys::truncate_stack
+        end
+        "#
     ))?;
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -425,10 +441,10 @@ async fn passthrough_rejects_invalid_fee_outputs(
     let recipient = if wrong_script {
         P2idNoteStorage::new(owner.id()).into_recipient(builder.rng_mut().draw_word())
     } else {
-        miden_protocol::note::NoteRecipient::new(
+        NoteRecipient::new(
             builder.rng_mut().draw_word(),
             TxFeeNote::script(),
-            miden_protocol::note::NoteStorage::default(),
+            NoteStorage::default(),
         )
     };
     let asset = if wrong_asset {

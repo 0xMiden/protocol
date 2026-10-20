@@ -17,6 +17,8 @@ mod network_account;
 
 mod tx_fee_collector;
 
+mod passthrough;
+
 /// Returns an advice map entry that presents a signature by `foreign_key` as the signature for
 /// `key`.
 ///
@@ -34,5 +36,3 @@ fn foreign_signature_advice_entry(
 
     Ok((key.to_advice_map_key(), foreign_signature.to_encoded_signature()))
 }
-
-mod passthrough;
