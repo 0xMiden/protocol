@@ -59,7 +59,8 @@ where
     }
 
     /// Checks whether some set of the provided input notes could be consumed by the provided
-    /// account by executing the transaction with varying combination of notes.
+    /// account by executing the transaction with varying combination of notes. Returns a list of
+    /// successfully consumed notes and a list of failed notes.
     ///
     /// This function attempts to find the maximum set of notes that can be successfully executed
     /// together by the target account.
@@ -89,12 +90,7 @@ where
     /// `collected_fee_asset_id`.
     ///
     /// `collected_fee_asset_id` is the asset the target account collects fees in, as configured on
-    /// its fee policy manager (see `FeePolicyManager::fee_asset_id` in `miden-standards`). It is
-    /// not the chain's transaction fee asset, since an account may collect fees in another asset.
-    /// Pass `None` for an account that collects no fees, such as a regular wallet: no fee is
-    /// collected from the FEE_SPONSORSHIP notes it consumes, so their assets are left unchecked.
-    ///
-    /// Returns a list of successfully consumed notes and a list of failed notes.
+    /// its fee policy manager. Pass `None` for an account that collects no fees.
     ///
     /// # Errors
     ///
