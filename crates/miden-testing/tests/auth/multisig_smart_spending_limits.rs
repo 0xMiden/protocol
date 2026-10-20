@@ -21,7 +21,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -49,6 +49,9 @@ use miden_standards::account::oracle::PriceOracle;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_BASE_ASSET_NOT_FUNGIBLE,
+    ERR_COMBINED_LIMIT_REQUIRES_ORACLE,
+    ERR_FAUCET_ID_ZERO,
     ERR_MAX_ORACLE_BLOCK_AGE_ZERO,
     ERR_SPENDING_LIMIT_EXCEEDED,
     ERR_UNCOVERED_ASSET_POLICY_INVALID,
@@ -356,6 +359,19 @@ impl Harness {
         Ok(result)
     }
 
+    /// Sends each asset in its own P2ID note within one transaction, both approvers signing.
+    async fn send_many(
+        &mut self,
+        assets: Vec<Asset>,
+    ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+        let salt = self.next_salt();
+        let result = self.run_send_notes(assets, salt, &[0, 1], None).await?;
+        if let Ok(tx) = &result {
+            self.commit(tx)?;
+        }
+        Ok(result)
+    }
+
     async fn run_send(
         &self,
         asset: Asset,
@@ -363,17 +379,33 @@ impl Harness {
         signers: &[usize],
         reference_block: Option<BlockNumber>,
     ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
-        let note = self.output_note(asset, salt)?;
-        let script = SendNotesTransactionScript::new(
-            &self.account.code_interface(),
-            &[note.clone().into()],
-        )?;
+        self.run_send_notes(vec![asset], salt, signers, reference_block).await
+    }
+
+    async fn run_send_notes(
+        &self,
+        assets: Vec<Asset>,
+        salt: Word,
+        signers: &[usize],
+        reference_block: Option<BlockNumber>,
+    ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+        let notes = assets
+            .into_iter()
+            .enumerate()
+            .map(|(i, asset)| {
+                let seed = Word::from([salt[0], Felt::new_unchecked(i as u64), salt[2], salt[3]]);
+                self.output_note(asset, seed)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let partial_notes: Vec<_> = notes.iter().cloned().map(Into::into).collect();
+        let script =
+            SendNotesTransactionScript::new(&self.account.code_interface(), &partial_notes)?;
         let bound_block = reference_block.unwrap_or_else(|| self.latest_block());
 
         let mut builder = self
             .chain
             .build_transaction(self.account.id())
-            .expected_output_note(RawOutputNote::Full(note))
+            .expected_output_notes(notes.into_iter().map(RawOutputNote::Full).collect())
             .send_notes_script(&script)
             .multisig_auth_args(MultisigAuthArgs::new(bound_block, salt));
         if let Some(reference_block) = reference_block {
@@ -728,6 +760,10 @@ fn update_policy_script(window_blocks: u32, uncovered_policy: u32) -> String {
 }
 
 fn update_oracle_script(oracle_id: AccountId, max_block_age: u32, base_asset: AssetId) -> String {
+    update_oracle_script_raw(oracle_id, max_block_age, Word::from(base_asset))
+}
+
+fn update_oracle_script_raw(oracle_id: AccountId, max_block_age: u32, base_asset: Word) -> String {
     format!(
         "
         @transaction_script
@@ -740,9 +776,21 @@ fn update_oracle_script(oracle_id: AccountId, max_block_age: u32, base_asset: As
             drop drop drop dropw
         end
         ",
-        base_asset = Word::from(base_asset),
         prefix = oracle_id.prefix().as_felt(),
         suffix = oracle_id.suffix(),
+    )
+}
+
+fn set_combined_limit_script(limit: u64) -> String {
+    format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{limit}
+            call.::miden::standards::components::auth::multisig_smart::set_combined_spending_limit
+            drop
+        end
+        "
     )
 }
 
@@ -802,5 +850,141 @@ async fn update_spending_oracle_rejects_a_zero_block_age() -> anyhow::Result<()>
         .await?;
 
     assert_transaction_executor_error!(result, ERR_MAX_ORACLE_BLOCK_AGE_ZERO);
+    Ok(())
+}
+
+// INVARIANTS
+// ================================================================================================
+
+#[tokio::test]
+async fn assets_of_one_faucet_across_notes_accumulate_within_a_transaction() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), None, vec![])?;
+
+    // Two notes of 50_000 USDC each: 100_000 in one transaction exceeds the 80_000 limit.
+    let result = h.send_many(vec![fungible(usdc(), 50_000), fungible(usdc(), 50_000)]).await?;
+    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
+
+    // Two notes of 30_000 fit and the tracker holds their sum.
+    let block = h.latest_block();
+    h.send_many(vec![fungible(usdc(), 30_000), fungible(usdc(), 30_000)]).await??;
+    assert_eq!(h.tracker(Some(usdc())), tracker_word(60_000, block, 0));
+    Ok(())
+}
+
+/// Raises the USDC limit and sends 90_000 USDC in the same transaction. The limit is read from
+/// the initial account state, so the raise does not apply to the transaction that makes it.
+#[tokio::test]
+async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), None, vec![])?;
+
+    let target = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE)?;
+    let serial_num = Word::from([7u32, 7, 7, 7]);
+    let asset = fungible(usdc(), 90_000);
+    let note: Note = P2idNote::builder()
+        .sender(h.account.id())
+        .target(target)
+        .asset(asset)
+        .note_type(NoteType::Public)
+        .serial_number(serial_num)
+        .build()?
+        .into();
+
+    let script = compile_tx_script(format!(
+        "
+        use miden::standards::notes::p2id
+
+        @transaction_script
+        pub proc main
+            # raise the USDC limit far above the spend below
+            push.{new_limit}
+            push.{usdc_prefix}
+            push.{usdc_suffix}
+            call.::miden::standards::components::auth::multisig_smart::set_faucet_spending_limit
+            drop drop drop
+
+            # send 90_000 USDC
+            push.{serial_num}
+            push.{note_type}
+            push.{tag}
+            push.{target_prefix}
+            push.{target_suffix}
+            exec.p2id::create_output_note
+            # => [note_idx]
+
+            push.{asset_value}
+            push.{asset_id}
+            call.::miden::standards::wallets::basic::move_asset_to_note
+            dropw dropw dropw dropw
+        end
+        ",
+        new_limit = 1_000_000u64,
+        usdc_prefix = usdc().prefix().as_felt(),
+        usdc_suffix = usdc().suffix(),
+        note_type = NoteType::Public as u8,
+        tag = Felt::from(NoteTag::with_account_target(target)),
+        target_prefix = target.prefix().as_felt(),
+        target_suffix = target.suffix(),
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+    ))?;
+
+    let salt = h.next_salt();
+    let builder = h
+        .chain
+        .build_transaction(h.account.id())
+        .expected_output_note(RawOutputNote::Full(note))
+        .tx_script(script)
+        .multisig_auth_args(MultisigAuthArgs::new(h.latest_block(), salt));
+    let result =
+        Harness::sign_and_execute(builder, &[0, 1], &h.public_keys, &h.authenticators).await?;
+
+    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_combined_limit_cannot_be_set_without_an_oracle() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), None, vec![])?;
+
+    let result = h.configure(&set_combined_limit_script(100_000)).await?;
+    assert_transaction_executor_error!(result, ERR_COMBINED_LIMIT_REQUIRES_ORACLE);
+
+    // Clearing never needs one.
+    h.configure(&set_combined_limit_script(0)).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_spending_oracle_rejects_a_non_fungible_base_asset() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), None, vec![])?;
+
+    let result = h
+        .configure(&update_oracle_script_raw(
+            usdcx(),
+            MAX_ORACLE_BLOCK_AGE.into(),
+            nft().to_id_word(),
+        ))
+        .await?;
+
+    assert_transaction_executor_error!(result, ERR_BASE_ASSET_NOT_FUNGIBLE);
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_faucet_spending_limit_rejects_the_combined_budget_key() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), None, vec![])?;
+
+    // A zero faucet id would address the combined budget and skip its oracle check.
+    let script = "
+        @transaction_script
+        pub proc main
+            push.100000 push.0 push.0
+            call.::miden::standards::components::auth::multisig_smart::set_faucet_spending_limit
+            drop drop drop
+        end
+        ";
+    let result = h.configure(script).await?;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_ID_ZERO);
     Ok(())
 }

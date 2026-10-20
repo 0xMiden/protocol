@@ -44,7 +44,8 @@ const SPENDING_LIMITS_SLOT = word("miden::standards::auth::multisig_smart::spend
 # Map entries: [BUDGET_KEY] -> [spent_in_window, window_index, config_generation, 0]
 const SPENDING_TRACKERS_SLOT = word("miden::standards::auth::multisig_smart::spending_trackers")
 
-# Budget key of the combined budget. An account id is never all zeros, so no faucet key equals it.
+# Budget key of the combined budget. `set_faucet_spending_limit` rejects an all-zero faucet id, so no
+# faucet key equals it.
 const COMBINED_BUDGET_KEY = [0, 0, 0, 0]
 
 # Assets no budget charged are not metered.
@@ -69,6 +70,9 @@ const ERR_UNCOVERED_ASSET_POLICY_INVALID = "uncovered_asset_policy must be 0 or 
 const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32 = "max_oracle_block_age must be u32"
 const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16 = "max_oracle_block_age must be u16"
 const ERR_MAX_ORACLE_BLOCK_AGE_ZERO = "max_oracle_block_age must be non-zero"
+const ERR_FAUCET_ID_ZERO = "faucet id must be non-zero"
+const ERR_BASE_ASSET_NOT_FUNGIBLE = "spending limit base asset must be fungible"
+const ERR_COMBINED_LIMIT_REQUIRES_ORACLE = "combined spending limit requires a configured oracle"
 const ERR_UNCOVERED_ASSET_REJECTED = "spent asset is covered by no spending budget"
 const ERR_SPENDING_LIMIT_EXCEEDED = "spending limit exceeded for the current window"
 
@@ -194,10 +198,24 @@ end
 #! - `max_oracle_block_age` is zero (`ERR_MAX_ORACLE_BLOCK_AGE_ZERO`).
 #! - `max_oracle_block_age` exceeds the `u16` range `tx::update_expiration_block_delta` accepts
 #!   (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16`).
+#! - `BASE_ASSET_ID` is not a fungible asset id (`ERR_BASE_ASSET_NOT_FUNGIBLE`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc update_spending_oracle(oracle_id: AccountId, max_oracle_block_age: u16, base_asset_id: AssetId)
+    # ----- A combined budget in a non-fungible unit would be meaningless. -----
+    movdn.6 movdn.6 movdn.6
+    # => [BASE_ASSET_ID, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age]
+
+    dupw exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible, BASE_ASSET_ID, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age]
+
+    assert.err=ERR_BASE_ASSET_NOT_FUNGIBLE
+    # => [BASE_ASSET_ID, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age]
+
+    movdn.6 movdn.6 movdn.6 movdn.6
+    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, BASE_ASSET_ID]
+
     movup.2
     # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, BASE_ASSET_ID]
 
@@ -239,9 +257,19 @@ end
 #! - limit is the maximum amount of the faucet's assets that may leave the account per window.
 #!   Only fungible assets are metered, so a limit on a non-fungible faucet has no effect.
 #!
+#! Panics if:
+#! - both faucet id felts are zero (`ERR_FAUCET_ID_ZERO`): that key is the combined budget's, which
+#!   has its own setter and its own checks.
+#!
 #! Invocation: call
 @account_procedure
 pub proc set_faucet_spending_limit(faucet_id: AccountId, limit: AssetAmount)
+    dup eq.0 dup.2 eq.0 and
+    # => [is_zero_faucet_id, faucet_id_suffix, faucet_id_prefix, limit]
+
+    assertz.err=ERR_FAUCET_ID_ZERO
+    # => [faucet_id_suffix, faucet_id_prefix, limit]
+
     push.0.0 movdn.3 movdn.3
     # => [FAUCET_KEY, limit]
 
@@ -252,15 +280,37 @@ end
 #! Sets or clears the combined spending limit, in the base asset.
 #!
 #! Same governance considerations as `set_faucet_spending_limit`. A non-zero combined limit needs
-#! `update_spending_oracle` to have been called; otherwise the first priced asset fails the foreign
-#! call against a zero oracle id.
+#! `update_spending_oracle` to have been called first: without an oracle every priced spend would
+#! fail its foreign call, locking the account out of all non-base assets.
 #!
 #! Inputs:  [limit]
 #! Outputs: []
 #!
+#! Panics if:
+#! - `limit` is non-zero and no oracle is configured (`ERR_COMBINED_LIMIT_REQUIRES_ORACLE`).
+#!
 #! Invocation: call
 @account_procedure
 pub proc set_combined_spending_limit(limit: AssetAmount)
+    dup eq.0
+    # => [is_clearing, limit]
+
+    if.true
+        # Clearing the combined budget needs no oracle.
+    else
+        push.SPENDING_ORACLE_SLOT[0..2] exec.active_account::get_item
+        # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, limit]
+
+        movup.3 drop movup.2 drop
+        # => [oracle_id_suffix, oracle_id_prefix, limit]
+
+        eq.0 swap eq.0 and
+        # => [is_oracle_unset, limit]
+
+        assertz.err=ERR_COMBINED_LIMIT_REQUIRES_ORACLE
+        # => [limit]
+    end
+
     push.COMBINED_BUDGET_KEY
     # => [COMBINED_BUDGET_KEY, limit]
 
