@@ -616,19 +616,65 @@ mod tests {
     }
 
     #[test]
+    fn ecgfp5_address_fixed_vector() -> anyhow::Result<()> {
+        use crate::account::AccountId;
+        use crate::address::{Address, NetworkId};
+
+        const EXPECTED_ADDRESS: &str = "mm1araqqqqqqqqtkqgqqrxqqqqqmc8u3e5c_qr7qqqgxqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0rdkjt";
+
+        assert!(include_str!("../../../../docs/src/account/address.md").contains(EXPECTED_ADDRESS));
+
+        let mut public_key_bytes = [0; 40];
+        public_key_bytes[0] = 4;
+        let public_key = ecgfp5::PublicKey::from_bytes(public_key_bytes)?;
+        let params = RoutingParameters::new(AddressInterface::BasicWallet)
+            .with_encryption_key(SealingKey::Ecgfp5Eidos(public_key));
+
+        // Receiver profile parameter, absent tag length, encryption parameter, variant, key.
+        let mut expected_bytes = [0; 45];
+        expected_bytes[..6].copy_from_slice(&[0, 0xfc, 0, 1, 6, 4]);
+        assert_eq!(params.encode_to_bytes(), expected_bytes);
+        assert_eq!(RoutingParameters::decode_from_bytes(expected_bytes.into_iter())?, params);
+
+        let account_id = AccountId::from_hex("0xfa0000000000bb010000cc000000de")?;
+        let address = Address::new(account_id).with_routing_parameters(params);
+        assert_eq!(address.encode(NetworkId::Mainnet), EXPECTED_ADDRESS);
+        assert_eq!(Address::decode(EXPECTED_ADDRESS)?, (NetworkId::Mainnet, address));
+        Ok(())
+    }
+
+    #[test]
     fn ecgfp5_encryption_key_rejects_malformed_bytes() {
         let secret_key = ecgfp5::SecretKey::with_rng(&mut rand::rng());
         let mut encoded = Vec::new();
         encode_encryption_key(&SealingKey::Ecgfp5Eidos(secret_key.public_key()), &mut encoded);
 
         for len in 0..encoded.len() {
-            assert!(decode_encryption_key(&mut encoded[..len].iter().copied()).is_err());
+            let err = decode_encryption_key(&mut encoded[..len].iter().copied()).unwrap_err();
+            let AddressError::DecodeError { error_msg, source } = err else {
+                panic!("unexpected error: {err:?}");
+            };
+            let expected = if len == 0 {
+                "expected at least 1 byte for encryption key variant"
+            } else {
+                "expected 40 bytes to decode EcGFp5 public key"
+            };
+            assert_eq!(error_msg.as_ref(), expected);
+            assert!(source.is_none());
         }
 
         for key_bytes in [[0; ECGFP5_PUBLIC_KEY_LENGTH], [255; ECGFP5_PUBLIC_KEY_LENGTH]] {
             let invalid = [vec![ENCRYPTION_KEY_ECGFP5_EIDOS], key_bytes.to_vec()].concat();
             let err = decode_encryption_key(&mut invalid.into_iter()).unwrap_err();
-            assert!(err.to_string().contains("failed to decode EcGFp5 public key"));
+            let AddressError::DecodeError { error_msg, source } = err else {
+                panic!("unexpected error: {err:?}");
+            };
+            assert_eq!(error_msg.as_ref(), "failed to decode EcGFp5 public key");
+            let source = source.expect("invalid public keys should retain their decoding error");
+            assert_eq!(
+                source.downcast_ref::<DeserializationError>(),
+                Some(&DeserializationError::InvalidValue("invalid EcGFp5 public key".into()))
+            );
         }
     }
 
