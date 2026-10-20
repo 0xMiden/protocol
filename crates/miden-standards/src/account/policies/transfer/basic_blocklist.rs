@@ -3,15 +3,15 @@ use alloc::collections::BTreeSet;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
+use crate::account::account_component_package;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
-use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // BASIC BLOCKLIST TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(
-    BASIC_BLOCKLIST_TRANSFER_POLICY_CODE,
+account_component_package!(
+    BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE,
     "miden-standards-faucets-policies-transfer-basic-blocklist.masp"
 );
 
@@ -72,7 +72,7 @@ impl BasicBlocklist {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_BLOCKLIST_TRANSFER_POLICY_CODE
+        &BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE.code
     }
 
     /// Returns the MAST root of the basic blocklist transfer policy procedure.
@@ -82,7 +82,7 @@ impl BasicBlocklist {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE.metadata.clone()
     }
 }
 

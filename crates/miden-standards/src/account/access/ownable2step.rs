@@ -12,9 +12,9 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::account_id_from_felt_pair;
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 
-account_component_code!(OWNABLE2STEP_CODE, "miden-standards-access-ownable2step.masp");
+account_component_package!(OWNABLE2STEP_PACKAGE, "miden-standards-access-ownable2step.masp");
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")
@@ -61,7 +61,7 @@ impl Ownable2Step {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &OWNABLE2STEP_CODE
+        &OWNABLE2STEP_PACKAGE.code
     }
 
     // CONSTRUCTORS
@@ -138,7 +138,7 @@ impl Ownable2Step {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        OWNABLE2STEP_PACKAGE.metadata.clone()
     }
 }
 

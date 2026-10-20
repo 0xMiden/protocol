@@ -1,14 +1,14 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // ALLOW-ALL MINT POLICY
 // ================================================================================================
 
-account_component_code!(
-    ALLOW_ALL_MINT_POLICY_CODE,
+account_component_package!(
+    ALLOW_ALL_MINT_POLICY_PACKAGE,
     "miden-standards-faucets-policies-mint-allow-all.masp"
 );
 
@@ -48,7 +48,7 @@ impl MintAllowAll {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &ALLOW_ALL_MINT_POLICY_CODE
+        &ALLOW_ALL_MINT_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `allow_all` mint policy procedure.
@@ -58,7 +58,7 @@ impl MintAllowAll {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        ALLOW_ALL_MINT_POLICY_PACKAGE.metadata.clone()
     }
 }
 

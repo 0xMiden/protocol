@@ -13,9 +13,12 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
 use super::Approver;
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 
-account_component_code!(AUTH_TX_FEE_COLLECTOR_CODE, "miden-standards-auth-tx-fee-collector.masp");
+account_component_package!(
+    AUTH_TX_FEE_COLLECTOR_PACKAGE,
+    "miden-standards-auth-tx-fee-collector.masp"
+);
 
 // CONSTANTS
 // ================================================================================================
@@ -73,7 +76,7 @@ impl AuthTxFeeCollector {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &AUTH_TX_FEE_COLLECTOR_CODE
+        &AUTH_TX_FEE_COLLECTOR_PACKAGE.code
     }
 
     /// Creates a new [`AuthTxFeeCollector`] component with the given approver.
@@ -161,7 +164,7 @@ impl AuthTxFeeCollector {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        AUTH_TX_FEE_COLLECTOR_PACKAGE.metadata.clone()
     }
 }
 

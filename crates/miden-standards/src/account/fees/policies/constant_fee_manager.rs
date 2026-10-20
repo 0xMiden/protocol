@@ -9,14 +9,14 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::BasicConstantFeePolicy;
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // CONSTANT FEE MANAGER
 // ================================================================================================
 
-account_component_code!(
-    CONSTANT_FEE_MANAGER_CODE,
+account_component_package!(
+    CONSTANT_FEE_MANAGER_PACKAGE,
     "miden-standards-fees-policies-constant-fee-manager.masp"
 );
 
@@ -111,7 +111,7 @@ impl ConstantFeeManager {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &CONSTANT_FEE_MANAGER_CODE
+        &CONSTANT_FEE_MANAGER_PACKAGE.code
     }
 
     /// Returns the procedure root of the `set_note_fee` procedure exposed by this component.
@@ -134,7 +134,7 @@ impl ConstantFeeManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        CONSTANT_FEE_MANAGER_PACKAGE.metadata.clone()
     }
 }
 

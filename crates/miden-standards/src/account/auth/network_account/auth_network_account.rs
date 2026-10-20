@@ -17,15 +17,18 @@ use super::{
     NetworkAccountTxScriptAllowlist,
     SponsorshipPolicy,
 };
+use crate::account::account_component_package;
 use crate::account::fees::FeePolicyManager;
 use crate::account::wallets::BasicWallet;
-use crate::account::{account_component_code, package_metadata};
 use crate::note::config::NetworkAccountConfigNote;
 use crate::note::{FeeSponsorshipNote, P2idNote};
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
-account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
+account_component_package!(
+    NETWORK_ACCOUNT_AUTH_PACKAGE,
+    "miden-standards-auth-network-account.masp"
+);
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -307,7 +310,7 @@ impl AuthNetworkAccount {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &NETWORK_ACCOUNT_AUTH_CODE
+        &NETWORK_ACCOUNT_AUTH_PACKAGE.code
     }
 
     /// Returns the [`NetworkAccountNoteAllowlist`] of this component.
@@ -396,7 +399,7 @@ impl AuthNetworkAccount {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        NETWORK_ACCOUNT_AUTH_PACKAGE.metadata.clone()
     }
 }
 

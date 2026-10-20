@@ -11,9 +11,9 @@ use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
 use super::Approver;
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 
-account_component_code!(SINGLESIG_CODE, "miden-standards-auth-singlesig.masp");
+account_component_package!(SINGLESIG_PACKAGE, "miden-standards-auth-singlesig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -64,7 +64,7 @@ impl AuthSingleSig {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &SINGLESIG_CODE
+        &SINGLESIG_PACKAGE.code
     }
 
     /// Creates a new [`AuthSingleSig`] component with the given approver.
@@ -123,7 +123,7 @@ impl AuthSingleSig {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        SINGLESIG_PACKAGE.metadata.clone()
     }
 }
 

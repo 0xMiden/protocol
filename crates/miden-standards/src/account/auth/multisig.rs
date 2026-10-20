@@ -19,10 +19,10 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word, ZERO};
 
 use super::{Approver, ApproverSet, FeeConversionInfo};
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
-account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
+account_component_package!(MULTISIG_PACKAGE, "miden-standards-auth-multisig.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -271,7 +271,7 @@ impl AuthMultisig {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MULTISIG_CODE
+        &MULTISIG_PACKAGE.code
     }
 
     /// Returns the procedure root of the `set_procedure_threshold` account procedure.
@@ -337,7 +337,7 @@ impl AuthMultisig {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        MULTISIG_PACKAGE.metadata.clone()
     }
 }
 

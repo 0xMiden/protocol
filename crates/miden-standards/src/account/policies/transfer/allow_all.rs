@@ -1,14 +1,14 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // ALLOW-ALL TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(
-    ALLOW_ALL_TRANSFER_POLICY_CODE,
+account_component_package!(
+    ALLOW_ALL_TRANSFER_POLICY_PACKAGE,
     "miden-standards-faucets-policies-transfer-allow-all.masp"
 );
 
@@ -42,7 +42,7 @@ impl TransferAllowAll {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &ALLOW_ALL_TRANSFER_POLICY_CODE
+        &ALLOW_ALL_TRANSFER_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `allow_all` transfer policy procedure.
@@ -52,7 +52,7 @@ impl TransferAllowAll {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        ALLOW_ALL_TRANSFER_POLICY_PACKAGE.metadata.clone()
     }
 }
 

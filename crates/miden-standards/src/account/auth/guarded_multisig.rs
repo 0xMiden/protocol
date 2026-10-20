@@ -18,9 +18,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use super::{Approver, ApproverSet};
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 
-account_component_code!(GUARDED_MULTISIG_CODE, "miden-standards-auth-guarded-multisig.masp");
+account_component_package!(GUARDED_MULTISIG_PACKAGE, "miden-standards-auth-guarded-multisig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -210,7 +210,7 @@ impl AuthGuardedMultisig {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &GUARDED_MULTISIG_CODE
+        &GUARDED_MULTISIG_PACKAGE.code
     }
 
     /// Creates a new [`AuthGuardedMultisig`] component from the provided configuration.
@@ -259,7 +259,7 @@ impl AuthGuardedMultisig {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        GUARDED_MULTISIG_PACKAGE.metadata.clone()
     }
 }
 

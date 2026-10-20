@@ -38,11 +38,11 @@ use miden_protocol::utils::sync::LazyLock;
 use super::burn::BurnPolicy;
 use super::mint::MintPolicy;
 use super::transfer::TransferPolicy;
-use crate::account::{account_component_code, metadata_without_slots, package_metadata};
+use crate::account::{account_component_package, metadata_without_slots};
 use crate::procedure_root;
 
-account_component_code!(
-    POLICY_MANAGER_CODE,
+account_component_package!(
+    POLICY_MANAGER_PACKAGE,
     "miden-standards-faucets-policies-policy-manager.masp"
 );
 
@@ -527,7 +527,7 @@ impl TokenPolicyManager {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &POLICY_MANAGER_CODE
+        &POLICY_MANAGER_PACKAGE.code
     }
 
     /// Returns the [`AccountComponentMetadata`] for this configuration.
@@ -538,7 +538,7 @@ impl TokenPolicyManager {
     /// are only known once the component code is compiled and so cannot be declared in the
     /// manifest.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
-        let metadata = package_metadata(Self::code());
+        let metadata = POLICY_MANAGER_PACKAGE.metadata.clone();
         if !self.has_transfer_policy() {
             return metadata_without_slots(
                 metadata,

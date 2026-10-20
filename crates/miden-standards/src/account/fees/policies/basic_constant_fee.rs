@@ -15,14 +15,14 @@ use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // BASIC CONSTANT FEE POLICY
 // ================================================================================================
 
-account_component_code!(
-    BASIC_CONSTANT_FEE_POLICY_CODE,
+account_component_package!(
+    BASIC_CONSTANT_FEE_POLICY_PACKAGE,
     "miden-standards-fees-policies-basic-constant-fee.masp"
 );
 
@@ -146,7 +146,7 @@ impl BasicConstantFeePolicy {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_CONSTANT_FEE_POLICY_CODE
+        &BASIC_CONSTANT_FEE_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `compute_note_fee` fee policy procedure.
@@ -166,7 +166,7 @@ impl BasicConstantFeePolicy {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        BASIC_CONSTANT_FEE_POLICY_PACKAGE.metadata.clone()
     }
 }
 
