@@ -11,6 +11,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -56,6 +57,21 @@ use super::multisig::{
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// `min_delay` of the delayed-execution policy the test accounts are built with, in blocks.
+const TEST_MIN_DELAY: u32 = 30;
+
+/// `propose_expiration_delta` of the delayed-execution policy the test accounts are built with.
+const TEST_PROPOSE_EXPIRATION_DELTA: u16 = 2;
+
+/// `cancel_threshold` of the delayed-execution policy the test accounts are built with.
+const TEST_CANCEL_THRESHOLD: u32 = 1;
+
+/// The block at which a proposal recorded at `propose_block` unlocks under the test policy:
+/// `propose_block + propose_expiration_delta + min_delay`.
+fn test_unlock_block(propose_block: BlockNumber) -> BlockNumber {
+    propose_block + u32::from(TEST_PROPOSE_EXPIRATION_DELTA) + TEST_MIN_DELAY
+}
+
 /// Builds a multisig smart account with the given approvers, threshold, starting balance, and
 /// procedure policy map. Uses `BasicWallet` so the account exposes `receive_asset` and friends.
 fn create_multisig_smart_account(
@@ -69,7 +85,11 @@ fn create_multisig_smart_account(
         public_keys,
         starting_balance,
         proc_policy_map,
-        DelayedExecutionPolicy::new(30, 2, 1)?,
+        DelayedExecutionPolicy::new(
+            TEST_MIN_DELAY,
+            TEST_PROPOSE_EXPIRATION_DELTA,
+            TEST_CANCEL_THRESHOLD,
+        )?,
     )
 }
 
@@ -122,12 +142,10 @@ fn salt(seed: u32) -> Word {
 
 /// A 3-of-3 multisig with a `receive_asset` procedure policy that lowers the threshold to 1
 /// should let a single-signature transaction that only calls `receive_asset` succeed.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_three_to_one_signature(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_three_to_one_signature()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
 
@@ -393,12 +411,9 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 
 /// Tests `update_signers_and_threshold`: a 2-of-2 multisig is rotated to a 4-of-3
 /// signer set with new public keys. The new threshold and signers are persisted in storage.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_update_signers_and_thresholds(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_update_signers_and_thresholds() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
@@ -597,12 +612,9 @@ async fn test_multisig_smart_update_signers_rejects_too_many_approvers() -> anyh
 
 /// `set_procedure_policy` invoked from a transaction script must persist the policy to the
 /// `procedure_policies` storage map so subsequent transactions see the new policy.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_set_procedure_policy(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_set_procedure_policy() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
@@ -1025,12 +1037,10 @@ async fn execute_script_with_signers(
 /// is unreachable, so the transaction falls through to the delayed path, which requires a proposal.
 /// Called directly with no matching proposal and every approver's signature, it fails in
 /// `consume_tx_proposal` with `ERR_TX_NOT_PROPOSED`.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_proposal(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_proposal()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(
@@ -1085,12 +1095,9 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
 /// A transaction whose called procedures leave no execution path open, one allowing only immediate
 /// and another only delayed execution, can never be authorized, whatever the signatures. The auth
 /// procedure reports that as `ERR_PROC_POLICY_INVALID_MODE` rather than as a signature shortfall.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_conflicting_policies_leave_no_execution_path(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_conflicting_policies_leave_no_execution_path() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(
@@ -1263,12 +1270,9 @@ async fn test_multisig_smart_proposal_cannot_block_immediate_execution(
 /// transaction: the auth procedure calls `assert_only_one_non_auth_procedure_called`, which aborts
 /// the program. Here a single transaction calls both `propose_transaction` and
 /// `update_delayed_execution_policy`.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_delay_action_cannot_be_bundled(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_delay_action_cannot_be_bundled() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -1321,12 +1325,9 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled(
 }
 
 /// Proposing the same commitment twice must fail the second time with `ERR_TX_ALREADY_PROPOSED`.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_double_propose_fails(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_double_propose_fails() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -1372,12 +1373,9 @@ async fn test_multisig_smart_double_propose_fails(
 /// reached. Propose a delayed action, then immediately try to execute it on the next block, far
 /// short of the configured `min_delay` of 30 blocks counted from the proposal's expiration block.
 /// `consume_tx_proposal` should fail with `ERR_TX_STILL_TIMELOCKED`.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_execute_before_min_delay_fails(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_execute_before_min_delay_fails() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -1468,12 +1466,9 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
 /// reference block the proposer picked. Otherwise a proposer could reference a stale block so that
 /// `min_delay` is already spent by the time the proposal lands, leaving the other approvers almost
 /// no time to cancel.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
@@ -1610,12 +1605,9 @@ async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
 
 /// End-to-end happy-path round-trip: propose a delayed action, advance the chain past `min_delay`,
 /// then execute it. After execution the proposal entry must be removed from `TX_PROPOSALS_SLOT`.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_full_propose_wait_execute_lifecycle() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -1689,8 +1681,8 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         .expect("tx proposals slot should exist");
     assert_ne!(stored_before, Word::empty(), "proposal must be written to storage");
 
-    // Fast-forward past the unlock block (`bound_block + propose_expiration_delta + min_delay`).
-    mock_chain.prove_until_block(bound_block + 40u32)?;
+    // Fast-forward to the unlock block.
+    mock_chain.prove_until_block(test_unlock_block(bound_block))?;
 
     // Execute through the delayed path: one signature is below the immediate threshold of 2 and
     // reaches the delayed threshold of 1.
@@ -1730,12 +1722,9 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
 /// with `Unauthorized` rather than a policy panic, so clients obtain the commitment to propose. The
 /// policy leaves no immediate path, so even a fully signed transaction stays timelocked until the
 /// unlock block; once it is reached the delayed threshold suffices and the proposal is consumed.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_delay_only_proc_full_lifecycle(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_delay_only_proc_full_lifecycle() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -1815,9 +1804,8 @@ async fn test_multisig_smart_delay_only_proc_full_lifecycle(
     .await?;
     assert_transaction_executor_error!(early, ERR_TX_STILL_TIMELOCKED);
 
-    // Past the unlock block (`bound_block + propose_expiration_delta + min_delay`) the delayed
-    // threshold of 1 suffices.
-    mock_chain.prove_until_block(bound_block + 40u32)?;
+    // At the unlock block the delayed threshold of 1 suffices.
+    mock_chain.prove_until_block(test_unlock_block(bound_block))?;
     let executed_tx = execute_script_with_signers(
         &mock_chain,
         account_id,
@@ -1850,12 +1838,9 @@ async fn test_multisig_smart_delay_only_proc_full_lifecycle(
 /// 3, a proposal recorded by a single approver is not cancelled by two approvers, even though two
 /// signatures meet the account default (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`), and is cancelled by
 /// three.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_cancel_requires_configured_threshold(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_cancel_requires_configured_threshold() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account_with_delay_policy(
@@ -1863,7 +1848,7 @@ async fn test_multisig_smart_cancel_requires_configured_threshold(
         &public_keys,
         100,
         vec![],
-        DelayedExecutionPolicy::new(30, 2, 3)?,
+        DelayedExecutionPolicy::new(TEST_MIN_DELAY, TEST_PROPOSE_EXPIRATION_DELTA, 3)?,
     )?;
     let account_id = multisig_account.id();
     let mut mock_chain =
@@ -1936,12 +1921,10 @@ async fn test_multisig_smart_cancel_requires_configured_threshold(
 }
 
 /// `update_delayed_execution_policy` rejects a cancel threshold the current approvers cannot reach.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_update_policy_rejects_cancel_threshold_above_approvers(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_update_policy_rejects_cancel_threshold_above_approvers()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -1979,12 +1962,10 @@ async fn test_multisig_smart_update_policy_rejects_cancel_threshold_above_approv
 /// Cancelling caps the requirement by the current approver count, so the remaining approvers can
 /// still veto: a proposal recorded under a cancel threshold of 4 is cancelled by the two approvers
 /// that survive a rotation down to a 2-of-2 set.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_count(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_count()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account_with_delay_policy(
@@ -1992,7 +1973,7 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
         &public_keys,
         100,
         vec![],
-        DelayedExecutionPolicy::new(30, 2, 4)?,
+        DelayedExecutionPolicy::new(TEST_MIN_DELAY, TEST_PROPOSE_EXPIRATION_DELTA, 4)?,
     )?;
     let account_id = multisig_account.id();
     let mut mock_chain =
@@ -2087,12 +2068,10 @@ async fn test_multisig_smart_cancel_threshold_is_capped_by_current_approver_coun
 /// Shrinking the approver set below the configured `cancel_threshold` does not brick cancelling.
 /// Proposals recorded afterwards still carry the configured threshold, and cancelling caps it by
 /// the approvers that exist, so the remaining approvers cancel with all of their signatures.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_cancellable(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_cancellable()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account_with_delay_policy(
@@ -2100,7 +2079,7 @@ async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_ca
         &public_keys,
         100,
         vec![],
-        DelayedExecutionPolicy::new(30, 2, 5)?,
+        DelayedExecutionPolicy::new(TEST_MIN_DELAY, TEST_PROPOSE_EXPIRATION_DELTA, 5)?,
     )?;
     let account_id = multisig_account.id();
     let mut mock_chain =
@@ -2196,12 +2175,9 @@ async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_ca
 /// them anyone could replay them to veto any proposal. Cancelling verifies signatures over the
 /// domain-separated `cancel_signing_message` instead: replaying the proposal signatures fails, and
 /// signatures over the cancel message succeed.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_proposal_signatures_cannot_cancel(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_proposal_signatures_cannot_cancel() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -2292,14 +2268,12 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel(
     Ok(())
 }
 
-/// Cancelling is final: the cancelled record blocks re-proposing the same commitment, and it
-/// cannot be cancelled again (which would delete it and re-open proposing).
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+/// Cancelling is final: the cancelled record blocks re-proposing the same commitment, and a
+/// second cancellation is rejected rather than silently rewriting the record.
 #[tokio::test]
-async fn test_multisig_smart_cancelled_proposal_cannot_be_reproposed_or_recancelled(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_cancelled_proposal_cannot_be_reproposed_or_recancelled()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -2361,12 +2335,10 @@ async fn test_multisig_smart_cancelled_proposal_cannot_be_reproposed_or_recancel
 
 /// A cancelled proposal never executes through the timelock, however long the chain waits and
 /// however far in the future its signers set the approval expiration.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_cancelled_proposal_cannot_execute_through_timelock(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_cancelled_proposal_cannot_execute_through_timelock()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -2433,7 +2405,7 @@ async fn test_multisig_smart_cancelled_proposal_cannot_execute_through_timelock(
 
     // Well past where the proposal would have unlocked, the proposer's signature still only
     // reaches the delayed path, which the cancelled record keeps closed.
-    mock_chain.prove_until_block(bound_block + 40u32)?;
+    mock_chain.prove_until_block(test_unlock_block(bound_block))?;
     let result = execute_script_with_signers(
         &mock_chain,
         account_id,
@@ -2454,12 +2426,10 @@ async fn test_multisig_smart_cancelled_proposal_cannot_execute_through_timelock(
 /// A cancelled record only closes the delayed path. A transaction with enough signatures for
 /// immediate execution runs regardless, so proposing and cancelling a pending transaction's
 /// commitment cannot be used to block it, and the record is cleared when it executes.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_cancelled_proposal_does_not_block_immediate_execution(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_cancelled_proposal_does_not_block_immediate_execution()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -2545,12 +2515,9 @@ async fn test_multisig_smart_cancelled_proposal_does_not_block_immediate_executi
 /// After `update_delayed_execution_policy` rotates the policy, subsequent proposals must compute
 /// `unlock_block` from the new `min_delay` and `propose_expiration_delta`, not the previous ones,
 /// and record the new `cancel_threshold` as their cancellation quorum.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_policy_rotation_applies_to_new_proposals() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     // No proc policy on `update_delayed_execution_policy` — it runs on the immediate path under
@@ -2650,12 +2617,9 @@ async fn test_multisig_smart_policy_rotation_applies_to_new_proposals(
 
 /// Two distinct proposals must be storable side-by-side in `TX_PROPOSALS_SLOT`. After two
 /// independent propose tx's complete, both entries must remain in the map.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_multiple_concurrent_proposals_coexist() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
@@ -2771,12 +2735,9 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
 /// the same commitment that execution verifies, that signature already counts towards the execution
 /// threshold. So on a 3-of-3 account a procedure with `delay_threshold = 1` can be driven through
 /// the whole delayed path by one approver, while the immediate path still costs three signatures.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_delayed_path_costs_delay_threshold(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_delayed_path_costs_delay_threshold() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -2855,7 +2816,7 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    mock_chain.prove_until_block(bound_block + 40u32)?;
+    mock_chain.prove_until_block(test_unlock_block(bound_block))?;
 
     // ...and the same single approver can execute it once the delay elapsed, because the delayed
     // threshold is 1 and the propose floor no longer forces three signatures.
@@ -2889,12 +2850,10 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
 /// The single-signature propose gate must not weaken execution: it only makes starting the timelock
 /// cheap. The procedure's `delay_threshold` is still enforced when the proposed transaction runs,
 /// so a single approver can open a proposal but cannot execute one that requires two signatures.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -2956,7 +2915,7 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    mock_chain.prove_until_block(bound_block + 40u32)?;
+    mock_chain.prove_until_block(test_unlock_block(bound_block))?;
 
     // The delayed threshold of 2 is still enforced, so the lone proposer cannot execute.
     let under_threshold = execute_script_with_signers(
@@ -2999,12 +2958,9 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
 /// `update_signers_and_threshold` with an immediate threshold of 4 makes approver-set rotation
 /// require 4-of-5 on an account whose default is 3-of-5. This exercises
 /// `update_signers_and_threshold_root`, which callers need to key a policy on that procedure.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_policy_raises_threshold_for_signer_rotation(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_policy_raises_threshold_for_signer_rotation() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     // Five approvers, four of which can sign in this test.
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(5, 4, auth_scheme)?;
@@ -3082,12 +3038,9 @@ async fn test_multisig_smart_policy_raises_threshold_for_signer_rotation(
 
 /// `set_procedure_policy` can be guarded by its own policy, so editing the policy map requires more
 /// signatures than the account default. Exercises `set_procedure_policy_root`.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_policy_raises_threshold_for_policy_edits(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_policy_raises_threshold_for_policy_edits() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(5, 4, auth_scheme)?;
 
@@ -3162,12 +3115,9 @@ async fn test_multisig_smart_policy_raises_threshold_for_policy_edits(
 /// Delayed execution must bound its own validity window. The approver signatures are over the
 /// target commitment and stay usable until the approval expires, so a proposal whose auth args
 /// carry no approval expiration would be a perpetual authorization; executing one is rejected.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_delayed_execution_requires_expiration(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
+async fn test_multisig_smart_delayed_execution_requires_expiration() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let mut multisig_account = create_multisig_smart_account(
@@ -3229,7 +3179,7 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
     mock_chain.add_pending_executed_transaction(&propose_tx)?;
     mock_chain.prove_next_block()?;
 
-    mock_chain.prove_until_block(bound_block + 40u32)?;
+    mock_chain.prove_until_block(test_unlock_block(bound_block))?;
 
     let result = execute_script_with_signers(
         &mock_chain,
