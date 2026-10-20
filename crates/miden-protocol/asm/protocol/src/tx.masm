@@ -1,3 +1,5 @@
+use miden::core::crypto::hashes::poseidon2
+use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 use {TX_ADD_LOG_OFFSET, TX_GET_LOGS_COMMITMENT_OFFSET} from miden::protocol::kernel_proc_offsets
 use {
     AccountId,
@@ -471,6 +473,51 @@ pub proc add_log(topic: LogTopic, content_commitment: word)
     # => [pad(16)]
 
     dropw dropw dropw dropw
+    # => []
+end
+
+#! Emits a transaction log with content read from memory.
+#!
+#! Hashes the content words, inserts them into the advice map under their commitment, then delegates
+#! to `add_log`.
+#!
+#! Inputs:  [topic_suffix, topic_prefix, num_words, content_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - topic_{suffix,prefix} are the suffix and prefix felts of the log topic.
+#! - num_words is the number of complete content words, which may be zero.
+#! - content_ptr is the word-aligned pointer to the first content word.
+#!
+#! Panics if:
+#! - the caller is not an authenticated account procedure.
+#! - the transaction log count or content size exceeds its limit.
+#!
+#! Invocation: exec
+pub proc add_log_from_memory(topic: LogTopic, num_words: u16, content_ptr: ptr<word>)
+    movdn.3 movdn.3 mul.WORD_NUM_ELEMENTS
+    # => [num_elements, content_ptr, topic_suffix, topic_prefix]
+
+    # Compute the exclusive end of the content range.
+    dup.1 dup.1 add
+    # => [end_ptr, num_elements, content_ptr, topic_suffix, topic_prefix]
+
+    movdn.2 dup.1
+    # => [content_ptr, num_elements, content_ptr, end_ptr, topic_suffix, topic_prefix]
+
+    exec.poseidon2::hash_elements
+    # => [CONTENT_COMMITMENT, content_ptr, end_ptr, topic_suffix, topic_prefix]
+
+    adv.insert_mem
+    # => [CONTENT_COMMITMENT, content_ptr, end_ptr, topic_suffix, topic_prefix]
+
+    movup.4 drop movup.4 drop
+    # => [CONTENT_COMMITMENT, topic_suffix, topic_prefix]
+
+    movup.5 movup.5
+    # => [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+
+    exec.add_log
     # => []
 end
 

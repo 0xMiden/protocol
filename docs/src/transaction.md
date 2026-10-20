@@ -179,6 +179,28 @@ same padded elements to the advice map.
 The kernel checks the content and uses the active account as emitter. Note and transaction scripts
 must call an account procedure to emit logs.
 
+For content already in memory, `miden::protocol::tx::add_log_from_memory` takes
+`[topic_suffix, topic_prefix, num_words, content_ptr]`, computes the commitment, and inserts the
+content into the advice map before emitting the log. For example, this account procedure emits one
+word under the topic with suffix `17` and prefix `29`:
+
+```masm
+use miden::protocol::tx
+
+@account_procedure
+@locals(4)
+pub proc emit_log
+    push.1.2.3.4 loc_storew_le.0 dropw
+    # => []
+
+    locaddr.0 push.1.29.17
+    # => [topic_suffix, topic_prefix, num_words, content_ptr]
+
+    exec.tx::add_log_from_memory
+    # => []
+end
+```
+
 Individual transaction log commitments are hashed in emission order; `TransactionLogs` defines the
 commitment preimage. The kernel caches the aggregate until another log is appended. The aggregate
 commitment is bound to transaction outputs, IDs, and proofs.
