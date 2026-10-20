@@ -2,6 +2,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use {BlockNumber, Bool} from miden::protocol::types
 use miden::standards::auth::multisig
 use {SignatureThreshold, THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
@@ -29,17 +30,11 @@ const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_propo
 const EMPTY_WORD = [0, 0, 0, 0]
 
 # The unlock block of a cancelled proposal record. No reference block can reach it, so the record
-# keeps the delayed path closed for its commitment for good; `AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK`
-# on the Rust side.
+# keeps the delayed path closed for its commitment for good.
 const CANCELLED_UNLOCK_BLOCK = 0xFFFFFFFF
 
-# Domain of the cancel signing message; `StandardsDomainRegistry::MultisigSmartCancelProposal` on
-# the Rust side.
+# Domain of the cancel signing message.
 const CANCEL_PROPOSAL_DOMAIN = 0x028000
-
-# Maximum allowed `propose_expiration_delta`. The kernel's `tx::update_expiration_block_delta`
-# accepts a `u16` block delta (1..=65535), so any larger value would brick the propose flow.
-const MAX_PROPOSE_EXPIRATION_DELTA = 65535
 
 # ERRORS
 # =================================================================================================
@@ -91,9 +86,8 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
 #! - `min_delay` is zero (`ERR_MIN_DELAY_ZERO`).
 #! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
-#! - `propose_expiration_delta` exceeds `MAX_PROPOSE_EXPIRATION_DELTA` (u16 max), since the kernel's
-#!   `tx::update_expiration_block_delta` only accepts a u16 delta
-#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
+#! - `propose_expiration_delta` exceeds `MAX_EXPIRATION_BLOCK_DELTA`, the largest delta the kernel's
+#!   `tx::update_expiration_block_delta` accepts (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
 #! - `cancel_threshold` is not a valid `u32` field element (`ERR_CANCEL_THRESHOLD_NOT_U32`).
 #! - `cancel_threshold` is zero (`ERR_CANCEL_THRESHOLD_ZERO`).
 #! - `cancel_threshold` exceeds the current number of approvers
@@ -115,9 +109,9 @@ pub proc update_delayed_execution_policy(
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
     # => [propose_expiration_delta, min_delay, propose_expiration_delta, cancel_threshold]
 
-    # The kernel's `tx::update_expiration_block_delta` only accepts a u16 delta, so reject any
-    # value above `MAX_PROPOSE_EXPIRATION_DELTA` here rather than bricking the propose flow later.
-    u32lte.MAX_PROPOSE_EXPIRATION_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    # Reject a delta the kernel's `tx::update_expiration_block_delta` would not accept here, rather
+    # than bricking the propose flow later.
+    u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
     # => [min_delay, propose_expiration_delta, cancel_threshold]
 
     # Assert 0 < cancel_threshold <= current number of approvers, so the quorum is reachable by
@@ -322,9 +316,6 @@ end
 
 #! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally and returns the entry it
 #! replaced.
-#!
-#! Returning the previous entry lets callers learn whether a proposal already existed from the
-#! write itself, instead of reading the map first.
 #!
 #! Inputs:  [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 #! Outputs: [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
@@ -640,7 +631,8 @@ pub proc cancel_transaction_proposal(tx_summary_commitment: word)
     dup neq.0 assert.err=ERR_TX_NOT_PROPOSED
     # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
-    # A cancelled record is final; cancelling it again would delete it and re-open proposing.
+    # A cancelled record is final. A second cancellation would only rewrite it, so reject it with
+    # an explicit error instead of spending signatures and a nonce on a no-op.
     eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
     # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
@@ -678,7 +670,7 @@ pub proc cancel_transaction_proposal(tx_summary_commitment: word)
     # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
     push.CANCELLED_UNLOCK_BLOCK
-    # => [CANCELLED_UNLOCK_BLOCK, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    # => [cancelled_unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
     exec.write_tx_proposal
     # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
@@ -690,10 +682,10 @@ end
 #! Consumes the proposal matching the current transaction, enforcing the timelock.
 #!
 #! Called by the auth procedure when the current transaction executes on the delayed path, i.e. its
-#! signatures reach the delayed threshold but not the immediate one. Asserts
-#! the approval carries an expiration, then deletes the proposal entry and asserts on the entry it
-#! held that a live proposal existed and its unlock block has been reached. Replay protection
-#! against re-execution is provided by the multisig executed-transactions set.
+#! signatures reach the delayed threshold but not the immediate one. Asserts the approval carries an
+#! expiration, then deletes the proposal entry and asserts on the entry it held that a live proposal
+#! existed and its unlock block has been reached. Replay protection against re-execution is provided
+#! by the multisig executed-transactions set.
 #!
 #! A proposal is a standing authorization: the approver signatures are over this commitment, and the
 #! same commitment is what the execute transaction reproduces, so those signatures stay usable until
