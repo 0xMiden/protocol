@@ -71,10 +71,6 @@ impl StorageSlotSchema {
         init_storage_data: &InitStorageData,
     ) -> Result<StorageSlot, ComponentMetadataError> {
         match self {
-            StorageSlotSchema::Array(slot) => Ok(StorageSlot::with_array(
-                slot_name.clone(),
-                slot.try_build_array(init_storage_data, slot_name)?,
-            )),
             StorageSlotSchema::Value(slot) => {
                 let word = slot.try_build_word(init_storage_data, slot_name)?;
                 Ok(StorageSlot::with_value(slot_name.clone(), word))
@@ -83,17 +79,20 @@ impl StorageSlotSchema {
                 let storage_map = slot.try_build_map(init_storage_data, slot_name)?;
                 Ok(StorageSlot::with_map(slot_name.clone(), storage_map))
             },
+            StorageSlotSchema::Array(slot) => {
+                let array = slot.try_build_array(init_storage_data, slot_name)?;
+                Ok(StorageSlot::with_array(slot_name.clone(), array))
+            },
         }
     }
 
     pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         match self {
-            StorageSlotSchema::Value(slot) => slot.validate()?,
-            StorageSlotSchema::Array(slot) => slot.validate()?,
-            StorageSlotSchema::Map(slot) => slot.validate()?,
+            StorageSlotSchema::Value(slot) => slot.validate(),
+            StorageSlotSchema::Map(slot) => slot.validate(),
+            // ArraySlotSchema validates at construction and cannot be mutated.
+            StorageSlotSchema::Array(_) => Ok(()),
         }
-
-        Ok(())
     }
 
     pub(super) fn write_into_with_optional_defaults<W: ByteWriter>(
@@ -102,16 +101,16 @@ impl StorageSlotSchema {
         include_defaults: bool,
     ) {
         match self {
-            StorageSlotSchema::Array(slot) => {
-                target.write_u8(2);
-                slot.write_into_with_optional_defaults(target, include_defaults);
-            },
             StorageSlotSchema::Value(slot) => {
                 target.write_u8(0u8);
                 slot.write_into_with_optional_defaults(target, include_defaults);
             },
             StorageSlotSchema::Map(slot) => {
                 target.write_u8(1u8);
+                slot.write_into_with_optional_defaults(target, include_defaults);
+            },
+            StorageSlotSchema::Array(slot) => {
+                target.write_u8(2u8);
                 slot.write_into_with_optional_defaults(target, include_defaults);
             },
         }
@@ -130,7 +129,7 @@ impl Deserializable for StorageSlotSchema {
         match variant_tag {
             0 => Ok(StorageSlotSchema::Value(ValueSlotSchema::read_from(source)?)),
             1 => Ok(StorageSlotSchema::Map(MapSlotSchema::read_from(source)?)),
-            2 => Ok(Self::Array(source.read()?)),
+            2 => Ok(StorageSlotSchema::Array(ArraySlotSchema::read_from(source)?)),
             _ => Err(DeserializationError::InvalidValue(format!(
                 "unknown variant tag '{variant_tag}' for StorageSlotSchema"
             ))),

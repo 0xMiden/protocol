@@ -109,7 +109,7 @@ impl ArraySlotSchema {
         target.write(defaults);
     }
 
-    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
+    fn validate(&self) -> Result<(), ComponentMetadataError> {
         if let Some(description) = &self.description {
             validate_description_ascii(description)?;
         }
