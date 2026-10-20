@@ -304,14 +304,57 @@ impl Harness {
     }
 
     fn output_note(&self, asset: Asset, seed: Word) -> anyhow::Result<Note> {
+        self.output_note_with_assets(vec![asset], seed)
+    }
+
+    fn output_note_with_assets(&self, assets: Vec<Asset>, seed: Word) -> anyhow::Result<Note> {
         Ok(P2idNote::builder()
             .sender(self.account.id())
             .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into()?)
-            .asset(asset)
+            .assets(assets)
             .note_type(NoteType::Public)
             .generate_serial_number(&mut RandomCoin::new(seed))
             .build()?
             .into())
+    }
+
+    /// Sends all `assets` in one P2ID note, both approvers signing.
+    async fn send_bundle(
+        &mut self,
+        assets: Vec<Asset>,
+    ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+        let salt = self.next_salt();
+        let note = self.output_note_with_assets(assets, salt)?;
+        let script = SendNotesTransactionScript::new(
+            &self.account.code_interface(),
+            &[note.clone().into()],
+        )?;
+        let builder = self
+            .chain
+            .build_transaction(self.account.id())
+            .expected_output_note(RawOutputNote::Full(note))
+            .send_notes_script(&script)
+            .multisig_auth_args(MultisigAuthArgs::new(self.latest_block(), salt));
+        let builder = match &self.oracle {
+            Some(oracle) => {
+                builder.foreign_accounts([self.chain.get_foreign_account_inputs(oracle.id())?])
+            },
+            None => builder,
+        };
+        let result =
+            Self::sign_and_execute(builder, &[0, 1], &self.public_keys, &self.authenticators)
+                .await?;
+        if let Ok(tx) = &result {
+            self.commit(tx)?;
+        }
+        Ok(result)
+    }
+
+    fn config(&self) -> Word {
+        self.account
+            .storage()
+            .get_item(AuthMultisigSmart::spending_config_slot())
+            .expect("spending config slot should be present")
     }
 
     /// Builds a transaction sending `asset` in one P2ID note, bound to `reference_block` (or the
@@ -986,5 +1029,47 @@ async fn set_faucet_spending_limit_rejects_the_combined_budget_key() -> anyhow::
     let result = h.configure(script).await?;
 
     assert_transaction_executor_error!(result, ERR_FAUCET_ID_ZERO);
+    Ok(())
+}
+
+#[tokio::test]
+async fn two_faucets_in_one_note_are_each_charged_to_their_own_budget() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), Some("fixed_rate_3000"), vec![])?;
+    let block = h.latest_block();
+
+    // USDC has its own budget, ETH only the combined one; both ride in a single note.
+    h.send_bundle(vec![fungible(usdc(), 20), fungible(eth(), 5)]).await??;
+
+    assert_eq!(h.tracker(Some(usdc())), tracker_word(20, block, 0));
+    assert_eq!(h.tracker(Some(eth())), Word::empty());
+    // Combined: 20 USDC at 3000 plus 5 ETH at 3000.
+    assert_eq!(h.tracker(None), tracker_word(25 * ORACLE_RATE, block, 0));
+
+    // The second asset in the note is what pushes the combined budget over.
+    let result = h.send_bundle(vec![fungible(usdc(), 1), fungible(eth(), 10)]).await?;
+    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn disabling_and_re_enabling_the_policy_bumps_the_generation_twice() -> anyhow::Result<()> {
+    let mut h = Harness::new(Some(faucet_limit_policy()), None, vec![])?;
+    let reject = UncoveredAssetPolicy::Reject.as_u32();
+
+    h.send(fungible(usdc(), 50_000)).await?;
+    assert_eq!(h.config()[2], Felt::from(0u32));
+
+    // N -> 0: disabled, nothing is metered, generation 1.
+    h.configure(&update_policy_script(0, reject)).await??;
+    assert_eq!(h.config(), Word::from([0u32, reject, 1, 0]));
+    h.send(fungible(usdc(), 500_000)).await?;
+    assert_eq!(h.tracker(Some(usdc()))[0], Felt::new_unchecked(50_000));
+
+    // 0 -> N: enabled again, generation 2, the old tracker is stale and the budget starts over.
+    h.configure(&update_policy_script(WINDOW_BLOCKS, reject)).await??;
+    assert_eq!(h.config(), Word::from([WINDOW_BLOCKS, reject, 2, 0]));
+    let block = h.latest_block();
+    h.send(fungible(usdc(), 70_000)).await?;
+    assert_eq!(h.tracker(Some(usdc())), tracker_word(70_000, block, 2));
     Ok(())
 }
