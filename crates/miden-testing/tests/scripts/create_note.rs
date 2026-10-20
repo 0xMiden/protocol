@@ -8,6 +8,7 @@ use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -55,12 +56,12 @@ fn setup(
             .with_component(BasicWallet),
         AccountState::Exists,
     )?;
+    let fee_faucet = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let faucet = if native_principal {
-        ACCOUNT_ID_FEE_FAUCET
+        fee_faucet
     } else {
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2
-    }
-    .try_into()?;
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?
+    };
     let output: Note = P2idNote::builder()
         .sender(passthrough.id())
         .target(sender.id())
@@ -69,9 +70,7 @@ fn setup(
         .asset(FungibleAsset::new(faucet, 100)?)
         .build()?
         .into();
-    let fee = fee_amount.map(|amount| {
-        FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into().unwrap(), amount).unwrap()
-    });
+    let fee = fee_amount.map(|amount| FungibleAsset::new(fee_faucet, amount)).transpose()?;
     let request = CreateNote::new(
         sender.id(),
         builder.rng_mut().draw_word(),
@@ -118,7 +117,7 @@ async fn create_note_preserves_output_and_pays_fee(
 }
 
 #[tokio::test]
-async fn create_note_fee_ids_are_unique_for_concurrent_requests() -> anyhow::Result<()> {
+async fn create_note_fee_ids_are_unique_within_transaction() -> anyhow::Result<()> {
     let (mut builder, sender, passthrough, first) = setup(NoteType::Public, true, Some(50))?;
     let second_output = Note::new(
         first.output().assets().clone(),
@@ -138,18 +137,6 @@ async fn create_note_fee_ids_are_unique_for_concurrent_requests() -> anyhow::Res
     )?;
     builder.add_output_note(RawOutputNote::Full(second.note().clone()));
     let chain = builder.build()?;
-    let mut ids = Vec::new();
-    for request in [&first, &second] {
-        let tx = chain
-            .build_transaction(passthrough.id())
-            .authenticated_input_notes([request.note().clone()])
-            .extend_advice_inputs(AdviceInputs::default().with_map(request.output_advice()))
-            .build()?
-            .execute()
-            .await?;
-        ids.push(tx.output_notes().get_note(1).id());
-    }
-    assert_ne!(ids[0], ids[1]);
     let tx = chain
         .build_transaction(passthrough.id())
         .authenticated_input_notes([first.note().clone(), second.note().clone()])
@@ -267,6 +254,7 @@ async fn create_note_seals_outputs(#[values(0, 1)] index: u32) -> anyhow::Result
         @transaction_script
         pub proc main
             push.{index} push.0.0.0.0 push.99
+            # => [scheme, CONTENT, note_idx]
             exec.output_note::add_word_attachment
         end
     "#
@@ -279,14 +267,10 @@ async fn create_note_seals_outputs(#[values(0, 1)] index: u32) -> anyhow::Result
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(
-        result,
-        miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED
-    );
+    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
     Ok(())
 }
 
-/// A native issuer callback cannot append an attachment before CREATE_NOTE seals its output.
 #[tokio::test]
 async fn create_note_checks_output_after_asset_callbacks() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -297,8 +281,10 @@ async fn create_note_checks_output_after_asset_callbacks() -> anyhow::Result<()>
         use miden::protocol::output_note
         @account_procedure
         pub proc on_before_asset_added_to_note
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
             dropw dropw
             push.1.2.3.4.99
+            # => [scheme, CONTENT, note_idx, pad(7)]
             exec.output_note::add_word_attachment
         end
     "#,

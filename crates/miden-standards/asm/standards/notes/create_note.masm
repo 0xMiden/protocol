@@ -13,9 +13,7 @@ use miden::standards::wallets::basic as wallet
 # CONSTANTS
 # =================================================================================================
 
-# Storage: output recipient [0..4), output ID [4..8), output asset [8..16),
-# initial assets commitment [16..20), native fee asset [20..28), executing account [28..30),
-# output tag [30], output type [31], reclaim height [32]. A zero fee asset disables fee creation.
+# A zero fee asset disables fee creation.
 const NUM_STORAGE_ITEMS = 33
 const ACTION_RECLAIM = 1
 const STORAGE_PTR = 0
@@ -83,6 +81,7 @@ pub proc main(note_args: NoteArgs)
 
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     eq.NUM_STORAGE_ITEMS assert.err=ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS
+    # => [action, pad(12)]
 
     if.true
         exec.active_note::get_sender mem_load.RECLAIM_HEIGHT_PTR
@@ -92,7 +91,10 @@ pub proc main(note_args: NoteArgs)
         mem_load.TARGET_PREFIX_PTR mem_load.TARGET_SUFFIX_PTR
         exec.note_target::assert_active_account_is_target_account
 
-        exec.active_note::get_initial_assets_info movup.4 drop
+        exec.active_note::get_initial_assets_info
+        # => [ASSETS_COMMITMENT, num_assets, pad(12)]
+
+        movup.4 drop
         padw mem_loadw_le.INPUT_ASSETS_PTR assert_eqw.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
 
         padw mem_loadw_le.OUTPUT_RECIPIENT_PTR
@@ -100,10 +102,14 @@ pub proc main(note_args: NoteArgs)
         # => [tag, note_type, RECIPIENT, pad(12)]
 
         push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+        # => [tag, note_type, RECIPIENT, pad(10), pad(12)]
+
         call.wallet::create_note
         # => [note_idx, pad(15), pad(12)]
 
         movdn.15 dropw dropw dropw drop drop drop
+        # => [note_idx, pad(12)]
+
         dup mem_store.PRIMARY_IDX_PTR push.OUTPUT_ASSET_PTR exec.fund_output
 
         mem_load.FEE_AMOUNT_PTR neq.0
@@ -111,8 +117,7 @@ pub proc main(note_args: NoteArgs)
             padw mem_loadw_le.FEE_ASSET_PTR exec.tx::get_fee_asset_id
             assert_eqw.err=ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE
 
-            # Bind the fee serial to the inputs and output position, without exposing the private
-            # request ID or relying on a nonce increment by the shared account.
+            # Distinguish requests and output positions without disclosing private request IDs.
             exec.active_account::get_id exec.tx::get_num_output_notes push.CREATE_NOTE_FEE_DOMAIN
             exec.tx::get_input_notes_commitment
             # => [INPUT_NOTES_COMMITMENT, domain, note_idx, account_suffix, account_prefix, pad(12)]
@@ -124,7 +129,6 @@ pub proc main(note_args: NoteArgs)
             dup mem_store.FEE_IDX_PTR push.FEE_ASSET_PTR exec.fund_output
         end
 
-        # No funded input asset may remain or have been diverted before this script ran.
         push.REMAINING_ASSETS_PTR exec.active_note::remove_all_assets
         assertz.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
 
@@ -137,7 +141,11 @@ pub proc main(note_args: NoteArgs)
         if.true
             mem_load.FEE_IDX_PTR exec.output_note::get_assets_info
             movup.4 eq.1 assert.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
+            # => [ASSETS_COMMITMENT, pad(12)]
+
             push.FEE_ASSET_PTR exec.asset::load exec.poseidon2::merge
+            # => [EXPECTED_ASSETS_COMMITMENT, ASSETS_COMMITMENT, pad(12)]
+
             assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
             mem_load.FEE_IDX_PTR exec.output_note::get_attachments_commitment
             padw assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
