@@ -14,6 +14,12 @@ use crate::{Felt, Hasher, Word};
 mod errors;
 pub use errors::StorageArrayError;
 
+#[cfg(test)]
+mod tests;
+
+// STORAGE ARRAY
+// ================================================================================================
+
 /// An immutable array of words with a cached commitment.
 ///
 /// The commitment hashes every word in order, including zeros.
@@ -91,6 +97,9 @@ impl Deserializable for StorageArray {
     }
 }
 
+// STORAGE ARRAY LENGTH
+// ================================================================================================
+
 /// A validated storage array length, in words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StorageArrayLength(u16);
@@ -132,6 +141,3 @@ impl Deserializable for StorageArrayLength {
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,4 +1,19 @@
+use alloc::collections::BTreeMap;
+
 use super::*;
+use crate::account::{
+    AccountStorage,
+    AccountStorageHeader,
+    AccountStoragePatch,
+    PartialStorage,
+    StorageArrayPatch,
+    StorageArrayPatchEntries,
+    StorageSlot,
+    StorageSlotName,
+    StorageSlotPatch,
+    StorageSlotType,
+    StorageValuePatch,
+};
 
 #[test]
 fn array_commitment_and_serialization() -> anyhow::Result<()> {
@@ -22,16 +37,6 @@ fn invalid_lengths_are_rejected_before_reading_payload() {
 
 #[test]
 fn arrays_survive_full_partial_and_compact_storage_roundtrips() -> anyhow::Result<()> {
-    use alloc::collections::BTreeMap;
-
-    use crate::account::{
-        AccountStorage,
-        AccountStorageHeader,
-        PartialStorage,
-        StorageSlot,
-        StorageSlotName,
-        StorageSlotType,
-    };
     let name = StorageSlotName::new("test::array")?;
     let array = StorageArray::new(vec![Word::empty(), Word::from([1u32, 2, 3, 4]), Word::empty()])?;
     let storage = AccountStorage::new(vec![StorageSlot::with_array(name.clone(), array.clone())])?;
@@ -49,6 +54,11 @@ fn arrays_survive_full_partial_and_compact_storage_roundtrips() -> anyhow::Resul
         AccountStorageHeader::try_from_elements(&header.to_elements(), &names, &arrays)?,
         header
     );
+    Ok(())
+}
+
+#[test]
+fn array_slot_type_serialization() -> anyhow::Result<()> {
     for length in [1, 3, 256] {
         let slot_type = StorageSlotType::Array(StorageArrayLength::try_from(length)?);
         assert_eq!(StorageSlotType::try_from(slot_type.as_felt())?, slot_type);
@@ -62,7 +72,6 @@ fn arrays_survive_full_partial_and_compact_storage_roundtrips() -> anyhow::Resul
 
 #[test]
 fn array_patches_preserve_zeroes_and_reject_invalid_indices() -> anyhow::Result<()> {
-    use crate::account::{StorageArrayPatch, StorageArrayPatchEntries};
     let initial = StorageArray::new(vec![Word::from([1u32; 4]); 3])?;
     let final_array =
         StorageArray::new(vec![Word::empty(), initial.values()[1], Word::from([2u32; 4])])?;
@@ -84,15 +93,6 @@ fn array_patches_preserve_zeroes_and_reject_invalid_indices() -> anyhow::Result<
 
 #[test]
 fn storage_payload_budget_applies_to_final_state_atomically() -> anyhow::Result<()> {
-    use crate::account::{
-        AccountStorage,
-        AccountStoragePatch,
-        StorageArrayPatch,
-        StorageSlot,
-        StorageSlotName,
-        StorageSlotPatch,
-        StorageValuePatch,
-    };
     let name = StorageSlotName::new("test::array")?;
     let other = StorageSlotName::new("test::other")?;
     let array = StorageArray::empty(StorageArrayLength::try_from(256)?);
@@ -141,15 +141,6 @@ fn storage_payload_budget_applies_to_final_state_atomically() -> anyhow::Result<
 
 #[test]
 fn array_patch_merge_matches_sequential_application() -> anyhow::Result<()> {
-    use crate::account::{
-        AccountStorage,
-        AccountStoragePatch,
-        StorageArrayPatch,
-        StorageArrayPatchEntries,
-        StorageSlot,
-        StorageSlotName,
-        StorageSlotPatch,
-    };
     let name = StorageSlotName::new("test::array")?;
     let array = StorageArray::new(vec![Word::from([1u32; 4]); 3])?;
     let create = AccountStoragePatch::from_entries([(
