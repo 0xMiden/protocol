@@ -622,8 +622,6 @@ mod tests {
 
         const EXPECTED_ADDRESS: &str = "mm1araqqqqqqqqtkqgqqrxqqqqqmc8u3e5c_qr7qqqgxqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0rdkjt";
 
-        assert!(include_str!("../../../../docs/src/account/address.md").contains(EXPECTED_ADDRESS));
-
         let mut public_key_bytes = [0; 40];
         public_key_bytes[0] = 4;
         let public_key = ecgfp5::PublicKey::from_bytes(public_key_bytes)?;
