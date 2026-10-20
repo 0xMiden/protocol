@@ -2,7 +2,14 @@ use core::num::NonZeroU32;
 
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountProcedureRoot,
+    AccountType,
+    StorageMapKey,
+};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
@@ -55,7 +62,7 @@ fn create_multisig_smart_account(
     threshold: u32,
     public_keys: &[PublicKey],
     starting_balance: u64,
-    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    proc_policy_map: Vec<(AccountProcedureRoot, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     create_multisig_smart_account_with_delay_policy(
         threshold,
@@ -71,7 +78,7 @@ fn create_multisig_smart_account_with_delay_policy(
     threshold: u32,
     public_keys: &[PublicKey],
     starting_balance: u64,
-    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    proc_policy_map: Vec<(AccountProcedureRoot, ProcedurePolicy)>,
     delayed_execution_policy: DelayedExecutionPolicy,
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
@@ -126,7 +133,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
 
     let receive_asset_one_signature_policy = ProcedurePolicy::with_immediate_threshold(1)?;
     let proc_policy_map =
-        vec![(BasicWallet::receive_asset_root().as_word(), receive_asset_one_signature_policy)];
+        vec![(BasicWallet::receive_asset_root(), receive_asset_one_signature_policy)];
 
     let mut multisig_account = create_multisig_smart_account(3, &public_keys, 10, proc_policy_map)?;
 
@@ -252,7 +259,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
         &public_keys,
         100,
         vec![(
-            BasicWallet::receive_asset_root().as_word(),
+            BasicWallet::receive_asset_root(),
             ProcedurePolicy::with_immediate_threshold(1)?.with_note_restriction(restriction),
         )],
     )?;
@@ -328,7 +335,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         &public_keys,
         100,
         vec![(
-            BasicWallet::move_asset_to_note_root().as_word(),
+            BasicWallet::move_asset_to_note_root(),
             ProcedurePolicy::with_immediate_threshold(1)?.with_note_restriction(restriction),
         )],
     )?;
@@ -803,7 +810,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     // receive_asset configured with a low policy (1 sig), update_signers and
     // set_procedure_policy intentionally left unpolicied.
     let receive_policy = ProcedurePolicy::with_immediate_threshold(1)?;
-    let proc_policy_map = vec![(BasicWallet::receive_asset_root().as_word(), receive_policy)];
+    let proc_policy_map = vec![(BasicWallet::receive_asset_root(), receive_policy)];
     let multisig_account =
         create_multisig_smart_account(default_threshold, &public_keys, 10, proc_policy_map)?;
 
@@ -1031,7 +1038,7 @@ async fn test_multisig_smart_delayed_only_proc_rejects_direct_path_without_propo
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_delay_threshold(1)?,
         )],
     )?;
@@ -1092,11 +1099,11 @@ async fn test_multisig_smart_conflicting_policies_leave_no_execution_path(
         100,
         vec![
             (
-                AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+                AuthMultisigSmart::update_delayed_execution_policy_root(),
                 ProcedurePolicy::with_delay_threshold(1)?,
             ),
             (
-                AuthMultisigSmart::set_procedure_policy_root().as_word(),
+                AuthMultisigSmart::set_procedure_policy_root(),
                 ProcedurePolicy::with_immediate_threshold(1)?,
             ),
         ],
@@ -1159,7 +1166,7 @@ async fn test_multisig_smart_proposal_cannot_block_immediate_execution(
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
     let proc_policies = if immediate_only_policy {
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_threshold(2)?,
         )]
     } else {
@@ -1378,7 +1385,7 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;
@@ -1480,7 +1487,7 @@ async fn test_multisig_smart_stale_reference_block_does_not_shorten_delay(
         DelayedExecutionPolicy::new(min_delay, propose_expiration_delta, 1)?,
     )
     .with_proc_policies(vec![(
-        AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+        AuthMultisigSmart::update_delayed_execution_policy_root(),
         ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
     )])?;
     let mut multisig_account = AccountBuilder::new([0; 32])
@@ -1616,7 +1623,7 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;
@@ -1736,7 +1743,7 @@ async fn test_multisig_smart_delay_only_proc_full_lifecycle(
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_delay_threshold(1)?,
         )],
     )?;
@@ -2245,7 +2252,7 @@ async fn test_multisig_smart_cancelled_proposal_cannot_execute_through_timelock(
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;
@@ -2655,7 +2662,7 @@ async fn test_multisig_smart_delayed_path_costs_delay_threshold(
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(3, 1)?,
         )],
     )?;
@@ -2773,7 +2780,7 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(3, 2)?,
         )],
     )?;
@@ -2886,7 +2893,7 @@ async fn test_multisig_smart_policy_raises_threshold_for_signer_rotation(
         &public_keys,
         10,
         vec![(
-            AuthMultisigSmart::update_signers_and_threshold_root().as_word(),
+            AuthMultisigSmart::update_signers_and_threshold_root(),
             ProcedurePolicy::with_immediate_threshold(4)?,
         )],
     )?;
@@ -2967,7 +2974,7 @@ async fn test_multisig_smart_policy_raises_threshold_for_policy_edits(
         &public_keys,
         10,
         vec![(
-            AuthMultisigSmart::set_procedure_policy_root().as_word(),
+            AuthMultisigSmart::set_procedure_policy_root(),
             ProcedurePolicy::with_immediate_threshold(4)?,
         )],
     )?;
@@ -3046,7 +3053,7 @@ async fn test_multisig_smart_delayed_execution_requires_expiration(
         &public_keys,
         100,
         vec![(
-            AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
         )],
     )?;

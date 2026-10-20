@@ -4,7 +4,6 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
@@ -59,7 +58,7 @@ pub enum Auth {
     /// controlling propose/cancel/execute timelock flows.
     MultisigSmart {
         approver_set: ApproverSet,
-        proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+        proc_policy_map: Vec<(AccountProcedureRoot, ProcedurePolicy)>,
         delayed_execution_policy: DelayedExecutionPolicy,
     },
 

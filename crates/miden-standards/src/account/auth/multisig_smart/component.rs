@@ -65,6 +65,20 @@ procedure_root!(
     AuthMultisigSmart::code()
 );
 
+procedure_root!(
+    MULTISIG_SMART_PROPOSE_TRANSACTION,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::PROPOSE_TRANSACTION_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
+procedure_root!(
+    MULTISIG_SMART_CANCEL_TRANSACTION_PROPOSAL,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::CANCEL_TRANSACTION_PROPOSAL_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
 // CONSTANTS
 // ================================================================================================
 
@@ -93,7 +107,7 @@ static TX_PROPOSALS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigSmartConfig {
     approver_set: ApproverSet,
-    procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    procedure_policies: Vec<(AccountProcedureRoot, ProcedurePolicy)>,
     delayed_execution_policy: DelayedExecutionPolicy,
 }
 
@@ -116,10 +130,11 @@ impl AuthMultisigSmartConfig {
     /// Attaches a per-procedure smart policy map.
     ///
     /// The procedures that edit this configuration need policies of their own; see the `Security`
-    /// section on [`AuthMultisigSmart`].
+    /// section on [`AuthMultisigSmart`]. Policies on `propose_transaction` and
+    /// `cancel_transaction_proposal` are rejected, as the auth procedure would ignore them.
     pub fn with_proc_policies(
         mut self,
-        proc_policies: Vec<(Word, ProcedurePolicy)>,
+        proc_policies: Vec<(AccountProcedureRoot, ProcedurePolicy)>,
     ) -> Result<Self, AccountError> {
         validate_proc_policies(self.approver_set.approvers().len() as u32, &proc_policies)?;
         self.procedure_policies = proc_policies;
@@ -138,7 +153,7 @@ impl AuthMultisigSmartConfig {
         self.approver_set.threshold().get()
     }
 
-    pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
+    pub fn procedure_policies(&self) -> &[(AccountProcedureRoot, ProcedurePolicy)] {
         &self.procedure_policies
     }
 
@@ -149,7 +164,7 @@ impl AuthMultisigSmartConfig {
 
 fn validate_proc_policies(
     num_approvers: u32,
-    proc_policies: &[(Word, ProcedurePolicy)],
+    proc_policies: &[(AccountProcedureRoot, ProcedurePolicy)],
 ) -> Result<(), AccountError> {
     // Reject duplicate procedure roots. Catching it here turns the failure into a regular
     // `AccountError` returned from `with_proc_policies` / `AuthMultisigSmart::new`.
@@ -158,6 +173,15 @@ fn validate_proc_policies(
         if !policy_roots.insert(*proc_root) {
             return Err(AccountError::other(
                 "duplicate procedure roots are not allowed in the procedure policy map",
+            ));
+        }
+        // Mirrors `set_procedure_policy`: the delay actions verify their own signatures, so a
+        // policy on them would be ignored.
+        if *proc_root == AuthMultisigSmart::propose_transaction_root()
+            || *proc_root == AuthMultisigSmart::cancel_transaction_proposal_root()
+        {
+            return Err(AccountError::other(
+                "procedure policies cannot be set on propose_transaction or cancel_transaction_proposal",
             ));
         }
     }
@@ -272,6 +296,12 @@ impl AuthMultisigSmart {
     /// The name of the procedure that edits per-procedure policies.
     pub const SET_PROCEDURE_POLICY_PROC_NAME: &'static str = "set_procedure_policy";
 
+    /// The name of the procedure that records a delayed-execution proposal.
+    pub const PROPOSE_TRANSACTION_PROC_NAME: &'static str = "propose_transaction";
+
+    /// The name of the procedure that cancels a delayed-execution proposal.
+    pub const CANCEL_TRANSACTION_PROPOSAL_PROC_NAME: &'static str = "cancel_transaction_proposal";
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &MULTISIG_SMART_CODE
@@ -300,7 +330,7 @@ impl AuthMultisigSmart {
     }
 
     /// Returns the per-procedure smart policy map.
-    pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
+    pub fn procedure_policies(&self) -> &[(AccountProcedureRoot, ProcedurePolicy)] {
         self.config.procedure_policies()
     }
 
@@ -375,6 +405,20 @@ impl AuthMultisigSmart {
     /// on [`AuthMultisigSmart`].
     pub fn set_procedure_policy_root() -> AccountProcedureRoot {
         *MULTISIG_SMART_SET_PROCEDURE_POLICY
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the `propose_transaction` procedure.
+    ///
+    /// It cannot carry a [`ProcedurePolicy`]: proposing verifies its own signatures.
+    pub fn propose_transaction_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_PROPOSE_TRANSACTION
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the `cancel_transaction_proposal` procedure.
+    ///
+    /// It cannot carry a [`ProcedurePolicy`]: cancelling verifies its own signatures.
+    pub fn cancel_transaction_proposal_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_CANCEL_TRANSACTION_PROPOSAL
     }
 
     pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
@@ -466,11 +510,12 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ));
 
         // Procedure policies slot (map)
-        let procedure_policies =
-            StorageMap::with_entries(multisig.config.procedure_policies().iter().map(
-                |(proc_root, policy)| (StorageMapKey::from_raw(*proc_root), policy.to_word()),
-            ))
-            .unwrap();
+        let procedure_policies = StorageMap::with_entries(
+            multisig.config.procedure_policies().iter().map(|(proc_root, policy)| {
+                (StorageMapKey::from_raw(proc_root.as_word()), policy.to_word())
+            }),
+        )
+        .unwrap();
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::procedure_policies_slot().clone(),
             procedure_policies,
@@ -546,7 +591,7 @@ mod tests {
             ApproverSet::new(approvers, default_threshold).expect("invalid approver set");
         let config = AuthMultisigSmartConfig::new(approver_set, default_delayed_execution_policy())
             .with_proc_policies(vec![(
-                BasicWallet::receive_asset_root().as_word(),
+                BasicWallet::receive_asset_root(),
                 ProcedurePolicy::with_immediate_threshold(receive_asset_immediate_threshold)
                     .expect("procedure policy should be valid"),
             )])
@@ -589,7 +634,7 @@ mod tests {
             Approver::new(sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
         ];
 
-        let receive_asset_root = BasicWallet::receive_asset_root().as_word();
+        let receive_asset_root = BasicWallet::receive_asset_root();
         let policy_one =
             ProcedurePolicy::with_immediate_threshold(1).expect("procedure policy should be valid");
         let policy_two =
@@ -624,5 +669,29 @@ mod tests {
         let err = AuthMultisigSmart::new(AuthMultisigSmartConfig::new(approver_set, policy))
             .expect_err("a cancel threshold above the approver count must be rejected");
         assert!(err.to_string().contains("cancel_threshold cannot exceed number of approvers"));
+    }
+
+    #[test]
+    fn test_multisig_smart_component_rejects_policies_on_delay_actions() {
+        for root in [
+            AuthMultisigSmart::propose_transaction_root(),
+            AuthMultisigSmart::cancel_transaction_proposal_root(),
+        ] {
+            let sec_key = AuthSecretKey::new_ecdsa_k256_keccak();
+            let approver_set = ApproverSet::new(
+                vec![Approver::new(sec_key.public_key().to_commitment(), sec_key.auth_scheme())],
+                1,
+            )
+            .expect("invalid approver set");
+            let err =
+                AuthMultisigSmartConfig::new(approver_set, default_delayed_execution_policy())
+                    .with_proc_policies(vec![(
+                        root,
+                        ProcedurePolicy::with_immediate_threshold(1)
+                            .expect("procedure policy should be valid"),
+                    )])
+                    .expect_err("a policy on a delay action must be rejected");
+            assert!(err.to_string().contains("cannot be set on propose_transaction"));
+        }
     }
 }
