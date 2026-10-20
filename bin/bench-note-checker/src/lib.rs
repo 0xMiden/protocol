@@ -132,7 +132,13 @@ pub async fn run_mixed_notes_check(setup: &MixedNotesSetup) -> anyhow::Result<()
     let checker = NoteConsumptionChecker::new(&executor);
 
     let result = checker
-        .check_notes_consumability(setup.target_account_id, block_ref, setup.notes.clone(), tx_args)
+        .check_notes_consumability(
+            setup.target_account_id,
+            None,
+            block_ref,
+            setup.notes.clone(),
+            tx_args,
+        )
         .await?;
 
     // Validate that we got the expected number of successful notes.

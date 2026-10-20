@@ -83,7 +83,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
-        .check_notes_consumability(target_account_id, block_ref, notes.clone(), tx_args)
+        .check_notes_consumability(target_account_id, None, block_ref, notes.clone(), tx_args)
         .await?;
 
     let successful = consumption_info.successful();
@@ -123,7 +123,7 @@ async fn check_note_consumability_custom_notes_success(
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
-        .check_notes_consumability(account_id, block_ref, notes.clone(), tx_args)
+        .check_notes_consumability(account_id, None, block_ref, notes.clone(), tx_args)
         .await?;
 
     let successful = consumption_info.successful();
@@ -201,7 +201,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
-        .check_notes_consumability(account_id, block_ref, notes, tx_args)
+        .check_notes_consumability(account_id, None, block_ref, notes, tx_args)
         .await?;
 
     let successful = consumption_info.successful();
@@ -275,7 +275,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
-        .check_notes_consumability(account_id, block_ref, notes, tx_args)
+        .check_notes_consumability(account_id, None, block_ref, notes, tx_args)
         .await?;
 
     let successful = consumption_info.successful();
@@ -350,7 +350,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
     let consumption_info = notes_checker
-        .check_notes_consumability(account_id, block_ref, notes, tx_args)
+        .check_notes_consumability(account_id, None, block_ref, notes, tx_args)
         .await?;
 
     let successful = consumption_info.successful();
@@ -879,6 +879,7 @@ async fn note_checker_rejects_duplicate_notes() -> anyhow::Result<()> {
     let checker_error = NoteConsumptionChecker::new(&executor)
         .check_notes_consumability(
             account.id(),
+            None,
             block_ref,
             duplicate_notes,
             mock_tx.tx_args().clone(),

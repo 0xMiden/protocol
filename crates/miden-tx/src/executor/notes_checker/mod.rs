@@ -45,9 +45,6 @@ pub use error::SponsorshipRejectionError;
 /// account.
 pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor> {
     tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
-    /// The asset the target account collects fees in, which every FEE_SPONSORSHIP note it consumes
-    /// has to carry.
-    collected_fee_asset_id: Option<AssetId>,
 }
 
 impl<'a, STORE, AUTH, EXEC> NoteConsumptionChecker<'a, STORE, AUTH, EXEC>
@@ -57,23 +54,8 @@ where
     EXEC: ProgramExecutor,
 {
     /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
-    ///
-    /// The checker assumes the checked account collects no fees, such as a regular wallet, and so
-    /// leaves the assets of FEE_SPONSORSHIP notes unchecked. Use [`Self::with_fee_asset_id`] for an
-    /// account that collects fees.
     pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>) -> Self {
-        NoteConsumptionChecker {
-            tx_executor,
-            collected_fee_asset_id: None,
-        }
-    }
-
-    /// Sets the asset the checked account collects fees in, which every FEE_SPONSORSHIP note it
-    /// consumes has to carry.
-    #[must_use]
-    pub fn with_fee_asset_id(mut self, fee_asset_id: AssetId) -> Self {
-        self.collected_fee_asset_id = Some(fee_asset_id);
-        self
+        NoteConsumptionChecker { tx_executor }
     }
 
     /// Checks whether some set of the provided input notes could be consumed by the provided
@@ -102,8 +84,15 @@ where
     /// retried as a unit.
     ///
     /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
-    /// anything is executed: one carrying an asset other than the account's fee asset, and one
-    /// whose feature note is absent and which the account may not reclaim.
+    /// anything is executed: one whose feature note is absent and which the account may not
+    /// reclaim, and one bound to a feature note but carrying an asset other than
+    /// `collected_fee_asset_id`.
+    ///
+    /// `collected_fee_asset_id` is the asset the target account collects fees in, as configured on
+    /// its fee policy manager (see `FeePolicyManager::fee_asset_id` in `miden-standards`). It is
+    /// not the chain's transaction fee asset, since an account may collect fees in another asset.
+    /// Pass `None` for an account that collects no fees, such as a regular wallet: no fee is
+    /// collected from the FEE_SPONSORSHIP notes it consumes, so their assets are left unchecked.
     ///
     /// Returns a list of successfully consumed notes and a list of failed notes.
     ///
@@ -113,6 +102,7 @@ where
     pub async fn check_notes_consumability(
         &self,
         target_account_id: AccountId,
+        collected_fee_asset_id: Option<AssetId>,
         block_ref: BlockNumber,
         notes: Vec<Note>,
         tx_args: TransactionArgs,
@@ -125,8 +115,7 @@ where
         // Group the notes into bundles, dropping the ones that can be ruled out without executing
         // anything.
         let (bundles, rejected) =
-            NoteBundler::new(target_account_id, block_ref, self.collected_fee_asset_id)
-                .bundle(&notes);
+            NoteBundler::new(target_account_id, block_ref, collected_fee_asset_id).bundle(&notes);
         if bundles.is_empty() {
             return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
         }
