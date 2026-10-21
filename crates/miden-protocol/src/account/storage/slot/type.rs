@@ -136,19 +136,20 @@ impl Deserializable for StorageSlotType {
 #[cfg(test)]
 mod tests {
     use crate::Felt;
-    use crate::account::StorageSlotType;
+    use crate::account::{StorageArrayLength, StorageSlotType};
     use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage_slot_type() {
-        let type_0 = StorageSlotType::Value;
-        let type_1 = StorageSlotType::Value;
-        let type_0_bytes = type_0.to_bytes();
-        let type_1_bytes = type_1.to_bytes();
-        let deserialized_0 = StorageSlotType::read_from_bytes(&type_0_bytes).unwrap();
-        let deserialized_1 = StorageSlotType::read_from_bytes(&type_1_bytes).unwrap();
-        assert_eq!(type_0, deserialized_0);
-        assert_eq!(type_1, deserialized_1);
+        for slot_type in [
+            StorageSlotType::Value,
+            StorageSlotType::Map,
+            StorageSlotType::Array(StorageArrayLength::try_from(1).unwrap()),
+            StorageSlotType::Array(StorageArrayLength::try_from(256).unwrap()),
+        ] {
+            let bytes = slot_type.to_bytes();
+            assert_eq!(StorageSlotType::read_from_bytes(&bytes).unwrap(), slot_type);
+        }
     }
 
     #[test]
@@ -160,5 +161,14 @@ mod tests {
         let felt = Felt::ONE;
         let slot_type = StorageSlotType::try_from(felt).unwrap();
         assert_eq!(slot_type, StorageSlotType::Map);
+
+        for length in [1, 256] {
+            let slot_type = StorageSlotType::Array(StorageArrayLength::try_from(length).unwrap());
+            assert_eq!(StorageSlotType::try_from(slot_type.as_felt()).unwrap(), slot_type);
+        }
+
+        for invalid in [2, 2 + (257 << 32), 1 + (1 << 32), 3 + (1 << 32)] {
+            assert!(StorageSlotType::try_from(Felt::new_unchecked(invalid)).is_err());
+        }
     }
 }

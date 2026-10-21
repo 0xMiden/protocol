@@ -33,6 +33,10 @@ use crate::decoded::account::test_utils::{
     partial_account,
     private_account_id,
 };
+use crate::proto::account::{
+    AccountStorage as ProtoAccountStorage,
+    PartialStorage as ProtoPartialStorage,
+};
 use crate::{DecodeMessage, Verify, proto};
 
 #[test]
@@ -208,8 +212,8 @@ fn account_storage_roundtrips_through_protobuf() {
     assert!(contents.iter().any(|content| matches!(content, StorageSlotContent::Value(_))));
     assert!(contents.iter().any(|content| matches!(content, StorageSlotContent::Map(_))));
 
-    let encoded = proto::account::AccountStorage::from(&storage);
-    let wire = proto::account::AccountStorage::decode(encoded.encode_to_vec().as_slice()).unwrap();
+    let encoded = ProtoAccountStorage::from(&storage);
+    let wire = ProtoAccountStorage::decode(encoded.encode_to_vec().as_slice()).unwrap();
 
     assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), storage);
 }
@@ -242,12 +246,19 @@ fn storage_arrays_roundtrip_in_full_and_partial_storage() -> anyhow::Result<()> 
     let array = StorageArray::new(vec![Word::empty(), Word::from([1u32, 2, 3, 4]), Word::empty()])?;
     let storage =
         AccountStorage::new(vec![StorageSlot::with_array(StorageSlotName::mock(1), array)])?;
-    let bytes = proto::account::AccountStorage::from(&storage).encode_to_vec();
-    let full = proto::account::AccountStorage::decode(bytes.as_slice())?;
-    assert_eq!(full.decode_fields()?.verify()?, storage);
+
+    // Full storage includes the array contents.
+    let bytes = ProtoAccountStorage::from(&storage).encode_to_vec();
+    let message = ProtoAccountStorage::decode(bytes.as_slice())?;
+    let decoded = message.decode_fields()?.verify()?;
+    assert_eq!(decoded, storage);
+
+    // Minimal partial storage retains array contents in its header.
     let partial = PartialStorage::new_minimal(&storage);
-    let bytes = proto::account::PartialStorage::from(&partial).encode_to_vec();
-    let message = proto::account::PartialStorage::decode(bytes.as_slice())?;
-    assert_eq!(message.decode_fields()?.verify()?, partial);
+    let bytes = ProtoPartialStorage::from(&partial).encode_to_vec();
+    let message = ProtoPartialStorage::decode(bytes.as_slice())?;
+    let decoded = message.decode_fields()?.verify()?;
+    assert_eq!(decoded, partial);
+
     Ok(())
 }
