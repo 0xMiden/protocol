@@ -208,7 +208,7 @@ proc forward_note_assets
         dup.10 movdn.8
         # => [ASSET_ID, ASSET_VALUE, out_note_idx, note_idx, num_input_notes, out_note_idx]
 
-        exec.output_note::add_asset
+        exec.output_note::add_asset dropw dropw
         # => [note_idx, num_input_notes, out_note_idx]
 
         add.1 dup.1 dup.1 neq

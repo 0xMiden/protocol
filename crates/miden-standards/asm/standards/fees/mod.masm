@@ -825,6 +825,6 @@ proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx:
     padw loc_loadw_le.CREATE_FEE_ASSET_ID_LOC
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, sponsorship_note_idx]
 
-    exec.output_note::add_asset
+    exec.output_note::add_asset dropw dropw
     # => []
 end

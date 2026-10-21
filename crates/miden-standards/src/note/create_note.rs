@@ -28,16 +28,14 @@ static CREATE_NOTE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     .expect("standards library contains the CREATE note")
 });
 
-/// A private CREATE note that funds an output through a public account.
+/// A private CREATE note that funds an output and an optional public TX_FEE note.
 ///
-/// Carries the output's fungible assets and an optional native fee payment, paid in full through a
-/// public TX_FEE note. Both outputs remain unsealed. The creator is expected to construct the
-/// transaction locally and control later output changes. The executing account must expose
-/// BasicWallet's `create_note` procedure and check the final fee output during authentication.
+/// Outputs remain unsealed; the creator is expected to build the transaction locally. The public
+/// account must expose BasicWallet's `create_note` and check the fee output during authentication.
 ///
-/// Use independent random serials for the CREATE note and output. Authenticated consumption hides
-/// the CREATE note's header from the proven transaction; the executor and prover see its contents.
-/// The sender can recover an unconsumed CREATE note at any time using [`Self::reclaim_args`].
+/// The CREATE note and output use independent random serial numbers. Authenticated consumption
+/// omits the CREATE note's header from the proven transaction. The sender can reclaim an unspent
+/// CREATE note at any time using [`Self::reclaim_args`].
 #[derive(Debug, Clone)]
 pub struct CreateNote {
     note: Note,
