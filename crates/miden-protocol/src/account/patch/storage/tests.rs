@@ -15,6 +15,10 @@ use crate::account::{
     AccountStorage,
     AccountStoragePatch,
     AccountVaultPatch,
+    StorageArray,
+    StorageArrayLength,
+    StorageArrayPatch,
+    StorageArrayPatchEntries,
     StorageMapKey,
     StorageMapPatch,
     StorageMapPatchEntries,
@@ -176,6 +180,9 @@ fn test_serde_account_storage_patch() -> anyhow::Result<()> {
 #[case::map_create(StorageSlotPatch::Map(StorageMapPatch::Create { entries: TEST_MAP_ENTRIES.clone() }))]
 #[case::map_update(StorageSlotPatch::Map(StorageMapPatch::Update { entries: TEST_MAP_ENTRIES.clone() }))]
 #[case::map_remove(StorageSlotPatch::Map(StorageMapPatch::Remove))]
+#[case::array_create(build_slot_patch(SlotType::Array, Op::Create, CURRENT_SEED))]
+#[case::array_update(build_slot_patch(SlotType::Array, Op::Update, CURRENT_SEED))]
+#[case::array_remove(build_slot_patch(SlotType::Array, Op::Remove, CURRENT_SEED))]
 fn test_serde_storage_patch(#[case] slot_patch: StorageSlotPatch) -> anyhow::Result<()> {
     let serialized = slot_patch.to_bytes();
     let deserialized = StorageSlotPatch::read_from_bytes(&serialized)?;
@@ -188,11 +195,10 @@ fn test_serde_storage_patch(#[case] slot_patch: StorageSlotPatch) -> anyhow::Res
 // MERGE
 // --------------------------------------------------------------------------------------------
 //
-// The merge logic is duplicated verbatim between value slots ([`StorageValuePatch::merge`]) and
-// map slots ([`StorageMapPatch::merge`]): the same 3x3 operation matrix and the same errors.
+// Value, map, and array slots share the same 3x3 operation matrix and operation errors.
 // The tests below deduplicate along both axes:
 // - the delta-operation axis via the `#[case]` table (the nine current/incoming transitions),
-// - the slot-type axis via `#[values]` (every case is run against both value and map slots).
+// - the slot-type axis via `#[values]` (every case is run against all three slot types).
 
 static TEST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| StorageSlotName::mock(7));
 
@@ -204,7 +210,7 @@ const CURRENT_SEED: u32 = 1;
 /// value wins, so the expected result is always built from this seed.
 const INCOMING_SEED: u32 = 2;
 
-/// A delta operation, abstracting over value and map slots which share the same set.
+/// An operation shared by all storage slot types.
 #[derive(Clone, Copy, Debug)]
 enum Op {
     Create,
@@ -217,6 +223,7 @@ enum Op {
 enum SlotType {
     Value,
     Map,
+    Array,
 }
 
 /// The expected outcome of merging two slot patches.
@@ -258,6 +265,19 @@ fn build_slot_patch(slot_type: SlotType, op: Op, seed: u32) -> StorageSlotPatch 
             Op::Update => StorageMapPatch::Update { entries: build_map_entries(seed) },
             Op::Remove => StorageMapPatch::Remove,
         }),
+        SlotType::Array => {
+            let length = StorageArrayLength::try_from(1).unwrap();
+            let value = Word::from([seed, 0, 0, 0]);
+            StorageSlotPatch::Array(match op {
+                Op::Create => StorageArrayPatch::Create {
+                    array: StorageArray::new(vec![value]).unwrap(),
+                },
+                Op::Update => StorageArrayPatch::Update {
+                    entries: StorageArrayPatchEntries::new(length, [(0, value)]).unwrap(),
+                },
+                Op::Remove => StorageArrayPatch::Remove { length },
+            })
+        },
     }
 }
 
@@ -298,7 +318,7 @@ fn merge_slot_patch(
     #[case] current: Op,
     #[case] incoming: Op,
     #[case] expected: Expected,
-    #[values(SlotType::Value, SlotType::Map)] slot_type: SlotType,
+    #[values(SlotType::Value, SlotType::Map, SlotType::Array)] slot_type: SlotType,
 ) -> anyhow::Result<()> {
     let slot_name = TEST_SLOT_NAME.clone();
 
@@ -333,6 +353,8 @@ fn merge_slot_patch(
 #[rstest::rstest]
 #[case::value_then_map(SlotType::Value, SlotType::Map)]
 #[case::map_then_value(SlotType::Map, SlotType::Value)]
+#[case::array_then_value(SlotType::Array, SlotType::Value)]
+#[case::map_then_array(SlotType::Map, SlotType::Array)]
 #[test]
 fn merge_slot_patch_rejects_type_mismatch(
     #[case] current: SlotType,
