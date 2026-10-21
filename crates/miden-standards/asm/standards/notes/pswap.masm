@@ -445,7 +445,7 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     # => []
 end
 
-#! Returns the reserve encoded in storage; load_storage validates its native asset ID.
+#! Returns the cancellation reserve asset.
 proc load_cancellation_fee() -> Asset
     mem_load.CANCELLATION_FEE_AMOUNT_ITEM
     mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
@@ -493,7 +493,9 @@ proc pay_cancellation_fee()
     mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
     if.true
         exec.active_account::get_id exec.tx::get_num_output_notes push.CANCELLATION_FEE_DOMAIN
-        exec.tx::get_input_notes_commitment exec.poseidon2::merge
+        exec.tx::get_input_notes_commitment
+        # => [INPUT_NOTES_COMMITMENT, domain, note_idx, account_suffix, account_prefix]
+        exec.poseidon2::merge
         exec.tx_fee::create_output_note
         dup exec.load_cancellation_fee exec.output_note::add_asset
         dup exec.output_note::get_attachments_commitment
@@ -761,16 +763,15 @@ proc create_remainder_note(
     # => []
 end
 
-#! Verifies the canonical private P2ID recipient preimage independently of the executing account.
+#! Authorizes cancellation using the private P2ID recipient preimage.
 #!
 #! Inputs:  [EXPECTED_RECIPIENT]
 #! Outputs: []
 proc authenticate_cancellation(recipient: NoteRecipient)
+    # Knowledge of the secret serial authorizes cancellation; the target may be another account.
     exec.std_note::get_recipient_preimage
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    # Verifying the secret serial authorizes cancellation. Its value is unused afterward,
-    # but the public recipient commitments alone must not suffice to cancel an order.
     dropw procref.p2id::main assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => [STORAGE_COMMITMENT]
 
@@ -1284,7 +1285,7 @@ pub proc main(note_args: NoteArgs)
         # => [is_cancel, account_fill, note_fill]
 
         if.true
-            # Cancellation refunds the entire remainder and requires both fill amounts to be zero.
+            # Cancellation uses no fill amounts; require their canonical zero encoding.
             eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             # => []
