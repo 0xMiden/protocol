@@ -108,14 +108,14 @@ fn first_attachment_word(attachments: &NoteAttachments) -> Word {
 }
 
 fn public_payback(target: AccountId) -> PswapPayback {
-    PswapPayback::public(P2idNoteRecipient::new(
-        P2idNoteStorage::new(target),
-        Word::from([91u32, 92, 93, 94]),
-    ))
+    PswapPayback::public(
+        P2idNoteRecipient::new(P2idNoteStorage::new(target), Word::from([91u32, 92, 93, 94])),
+        NoteTag::new(27),
+    )
 }
 
 fn public_target(storage: &PswapNoteStorage) -> AccountId {
-    let PswapPayback::Public { recipient } = storage.payback() else {
+    let PswapPayback::Public { recipient, .. } = storage.payback() else {
         panic!("expected a public payback")
     };
     recipient.storage().target()
@@ -647,7 +647,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_note_type {
         NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-        NoteType::Public => PswapPayback::public(payback_recipient),
+        NoteType::Public => PswapPayback::public(payback_recipient, NoteTag::new(27)),
     };
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
@@ -1761,14 +1761,14 @@ async fn pswap_rejects_wrong_storage_length(
 )]
 #[case::creator_suffix(
     NoteType::Public,
-    8,
+    9,
     ONE,
     "invalid creator account ID",
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
 )]
 #[case::creator_prefix(
     NoteType::Public,
-    9,
+    10,
     ZERO,
     "invalid creator account ID",
     ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO
@@ -1799,11 +1799,14 @@ async fn pswap_rejects_malformed_storage_field(
 }
 
 /// Output creation rejects oversized tags without a duplicate check in PSWAP storage loading.
+#[rstest]
 #[tokio::test]
-async fn pswap_rejects_oversized_private_payback_tag() -> anyhow::Result<()> {
-    let (chain, consumer, note) = setup_storage_test(NoteType::Private)?;
+async fn pswap_rejects_oversized_payback_tag(
+    #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
+) -> anyhow::Result<()> {
+    let (chain, consumer, note) = setup_storage_test(payback_type)?;
     let mut items = note.recipient().storage().items().to_vec();
-    items[12] = Felt::from(u32::MAX) + ONE;
+    items[8] = Felt::from(u32::MAX) + ONE;
     let error = PswapNoteStorage::try_from(items.as_slice()).unwrap_err();
     assert!(
         error.to_string().contains("payback tag exceeds u32"),
@@ -2952,7 +2955,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
     let payback = match payback_type {
         NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-        NoteType::Public => PswapPayback::public(payback_recipient),
+        NoteType::Public => PswapPayback::public(payback_recipient, NoteTag::new(27)),
     };
     let original_pswap = PswapNote::builder()
         .sender(alice.id())
@@ -3045,10 +3048,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
         );
         assert_eq!(reconstructed_payback.recipient(), &NoteRecipient::from(payback_recipient));
         if payback_type == NoteType::Public {
-            assert_eq!(
-                reconstructed_payback.metadata().tag(),
-                NoteTag::with_account_target(alice.id())
-            );
+            assert_eq!(reconstructed_payback.metadata().tag(), NoteTag::new(27));
         }
         for previous in &paybacks {
             assert_eq!(previous.recipient(), reconstructed_payback.recipient());
