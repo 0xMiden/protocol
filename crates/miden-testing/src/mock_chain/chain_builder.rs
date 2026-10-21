@@ -235,16 +235,6 @@ impl MockChainBuilder {
         )
         .context("failed to create genesis account tree")?;
 
-        // Extract full notes before shrinking for later use in MockChain
-        let full_notes: Vec<Note> = self
-            .notes
-            .iter()
-            .filter_map(|note| match note {
-                RawOutputNote::Full(n) => Some(n.clone()),
-                _ => None,
-            })
-            .collect();
-
         let proven_notes: Vec<_> = self
             .notes
             .into_iter()
@@ -331,7 +321,6 @@ impl MockChainBuilder {
             self.account_authenticators,
             validator_secret_keys,
             protocol_config,
-            full_notes,
         )
     }
 
@@ -496,7 +485,7 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet = NonFungibleFaucet::builder().name(name).symbol(symbol).build();
+        let faucet = NonFungibleFaucet::builder().name(name).symbol(symbol).build()?;
 
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())

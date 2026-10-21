@@ -5,6 +5,7 @@ use super::{
     RawOutputNotes,
     TransactionCommitments,
     TransactionId,
+    TransactionLogs,
 };
 use crate::Word;
 use crate::account::AccountPatch;
@@ -25,16 +26,18 @@ pub struct TransactionEffects {
     ref_block_number: BlockNumber,
     ref_block_commitment: Word,
     expiration_block_num: BlockNumber,
+    logs: TransactionLogs,
 }
 
+#[bon::bon]
 impl TransactionEffects {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
     /// Returns new [`TransactionEffects`] instantiated from the provided data.
     ///
-    /// The [`TransactionId`] is computed from the account state commitments and the note
-    /// commitments, so it cannot disagree with the rest of the effects.
+    /// The [`TransactionId`] is computed from the account state, note, and logs commitments.
+    #[builder]
     pub fn new(
         initial_state_commitment: Word,
         final_state_commitment: Word,
@@ -44,12 +47,14 @@ impl TransactionEffects {
         ref_block_number: BlockNumber,
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
+        logs: TransactionLogs,
     ) -> Self {
         let transaction_id = TransactionId::new(TransactionCommitments::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
+            logs.commitment(),
         ));
 
         Self {
@@ -62,11 +67,22 @@ impl TransactionEffects {
             ref_block_number,
             ref_block_commitment,
             expiration_block_num,
+            logs,
         }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the complete local transaction logs.
+    pub fn logs(&self) -> &TransactionLogs {
+        &self.logs
+    }
+
+    /// Returns the commitment included in the transaction ID and proof.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs.commitment()
+    }
 
     /// Returns the unique identifier of the transaction that produced these effects.
     pub fn transaction_id(&self) -> TransactionId {
@@ -116,15 +132,16 @@ impl TransactionEffects {
 
 impl From<&ExecutedTransaction> for TransactionEffects {
     fn from(tx: &ExecutedTransaction) -> Self {
-        Self::new(
-            tx.initial_account().initial_commitment(),
-            tx.final_account().to_commitment(),
-            tx.account_patch().clone(),
-            tx.input_notes().clone(),
-            tx.output_notes().clone(),
-            tx.tx_inputs().ref_block(),
-            tx.block_header().commitment(),
-            tx.expiration_block_num(),
-        )
+        Self::builder()
+            .initial_state_commitment(tx.initial_account().initial_commitment())
+            .final_state_commitment(tx.final_account().to_commitment())
+            .account_patch(tx.account_patch().clone())
+            .input_notes(tx.input_notes().clone())
+            .output_notes(tx.output_notes().clone())
+            .ref_block_number(tx.tx_inputs().ref_block())
+            .ref_block_commitment(tx.block_header().commitment())
+            .expiration_block_num(tx.expiration_block_num())
+            .logs(tx.logs().clone())
+            .build()
     }
 }

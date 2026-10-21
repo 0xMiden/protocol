@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountCodeUpgrade,
@@ -16,6 +16,7 @@ use miden_protocol::account::{
     StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -29,9 +30,15 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
-use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
+use miden_protocol::transaction::{
+    LogTopic,
+    TransactionEventId,
+    TransactionLog,
+    TransactionLogs,
+    TransactionSummary,
+};
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -65,6 +72,7 @@ pub(crate) enum TransactionProgressEvent {
 /// The data necessary to handle a [`TransactionEventId`].
 #[derive(Debug)]
 pub(crate) enum TransactionEvent {
+    TxLogAdded(TransactionLog),
     /// The data necessary to request a foreign account's data from the data store.
     AccountBeforeForeignLoad {
         /// The foreign account's ID.
@@ -205,6 +213,9 @@ impl TransactionEvent {
         }
 
         let tx_event = match tx_event_id {
+            TransactionEventId::TxLogAdded => {
+                Some(TransactionEvent::TxLogAdded(extract_transaction_log(process)?))
+            },
             TransactionEventId::AccountBeforeForeignLoad => {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
                 let account_id_suffix = process.get_stack_item(1);
@@ -217,7 +228,17 @@ impl TransactionEvent {
                         )
                     })?;
 
-                Some(TransactionEvent::AccountBeforeForeignLoad { foreign_account_id: account_id })
+                // The advice provider already has the account if the transaction inputs contain
+                // it or if it was loaded before, so it is only requested from the host if it's
+                // missing.
+                let account_id_key = AccountIdKey::from(account_id).as_word();
+                if process.advice_provider().get_mapped_values(&account_id_key).is_some() {
+                    None
+                } else {
+                    Some(TransactionEvent::AccountBeforeForeignLoad {
+                        foreign_account_id: account_id,
+                    })
+                }
             },
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset
@@ -528,7 +549,8 @@ impl TransactionEvent {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
-                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+                let signature_key =
+                    SignatureKey::new(pub_key_commitment, message).to_advice_map_key();
 
                 let tx_summary_or_signature =
                     match process.advice_provider().get_mapped_values(&signature_key) {
@@ -685,6 +707,34 @@ pub(crate) enum RecipientData {
     },
 }
 
+/// Extracts a transaction log after the kernel has authenticated its emitter and content.
+fn extract_transaction_log(
+    process: &ProcessorState,
+) -> Result<TransactionLog, TransactionKernelError> {
+    // Expected stack: [event, emitter_suffix, emitter_prefix, topic_suffix, topic_prefix,
+    // CONTENT_COMMITMENT].
+    let emitter =
+        AccountId::try_from_elements(process.get_stack_item(1), process.get_stack_item(2))
+            .map_err(|err| {
+                TransactionKernelError::other_with_source("invalid transaction log emitter", err)
+            })?;
+    let topic = LogTopic::new(process.get_stack_item(3), process.get_stack_item(4));
+    let content_commitment = process.get_stack_word(5);
+    let elements = process
+        .advice_provider()
+        .get_mapped_values(&content_commitment)
+        .ok_or_else(|| TransactionKernelError::other("missing transaction log content"))?;
+    // The kernel checks word alignment before emitting this event. Hash padding does not change
+    // the advice map value; retain this check when decoding the host-side record as well.
+    let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
+    if !remainder.is_empty() || words.len() > TransactionLog::MAX_NUM_WORDS {
+        return Err(TransactionKernelError::other("invalid transaction log content length"));
+    }
+    let content = words.iter().copied().map(Word::new).collect();
+    TransactionLog::new(emitter, topic, content)
+        .map_err(|err| TransactionKernelError::other_with_source("invalid transaction log", err))
+}
+
 /// Checks if the necessary witness for accessing the asset identified by the asset ID is already
 /// in the merkle store, and:
 /// - If so, returns `None`.
@@ -788,7 +838,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 ///         [version, metadata, user_param0, user_param1],
 ///         [user_param2, user_param3, user_param4, user_param5],
 ///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
+///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -814,6 +864,7 @@ fn extract_tx_summary<'store, STORE>(
     let input_notes_commitment = extract_word(commitments, 12);
     let output_notes_commitment = extract_word(commitments, 16);
     let block_commitment = extract_word(commitments, 20);
+    let logs_commitment = extract_word(commitments, 24);
 
     // Validate the metadata against the kernel state so that a summary preimage carrying
     // fabricated values is rejected rather than presented to the signer.
@@ -825,6 +876,12 @@ fn extract_tx_summary<'store, STORE>(
         });
     }
 
+    let logs = TransactionLogs::new(base_host.logs().to_vec())
+        .expect("host validates transaction log limits before appending");
+    if logs.commitment() != logs_commitment {
+        return Err(TransactionKernelError::other("summary transaction logs commitment mismatch"));
+    }
+
     // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
     // block the transaction does not authenticate and cross-checks the bound block commitment
     // against the one the host knows for that block.
@@ -832,10 +889,10 @@ fn extract_tx_summary<'store, STORE>(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
-        metadata.block_number(),
+        metadata,
         block_commitment,
-        metadata.expiration_delta(),
         user_params,
+        logs,
     )?;
 
     if tx_summary.to_commitment() != message {

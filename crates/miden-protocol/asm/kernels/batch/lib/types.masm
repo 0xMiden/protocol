@@ -30,6 +30,7 @@ pub type TransactionCommitments = struct {
     final_account_commitment: word,
     input_notes_commitment: word,
     output_notes_commitment: word,
+    logs_commitment: word,
 }
 
 #! An input note as committed to by a transaction's input notes commitment, and as stored in the

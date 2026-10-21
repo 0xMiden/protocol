@@ -9,6 +9,9 @@ pub type AccountId = struct { suffix: felt, prefix: felt }
 # Two-felt identifier (suffix on top of the stack, prefix below).
 pub type StorageSlotId = struct { suffix: felt, prefix: felt }
 
+# Two-felt transaction log topic (suffix on top of the stack, prefix below).
+pub type LogTopic = struct { suffix: felt, prefix: felt }
+
 # Word-sized domain values that wrap a `Word` in Rust.
 pub type AssetId = word
 pub type NoteId = word

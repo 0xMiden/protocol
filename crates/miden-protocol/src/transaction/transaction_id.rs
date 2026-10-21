@@ -14,38 +14,42 @@ use crate::utils::serde::{
 // TRANSACTION COMMITMENTS
 // ================================================================================================
 
-/// The four commitments that make up the preimage of the corresponding [`TransactionId`].
+/// The five commitments that make up the preimage of the corresponding [`TransactionId`].
 #[derive(Clone, Copy)]
 pub struct TransactionCommitments {
     init_account_commitment: Word,
     final_account_commitment: Word,
     input_notes_commitment: Word,
     output_notes_commitment: Word,
+    logs_commitment: Word,
 }
 
 impl TransactionCommitments {
     /// Length of the felt sequence returned by [`Self::elements`].
-    pub const ELEMENTS_LEN: usize = 4 * WORD_SIZE;
+    pub const ELEMENTS_LEN: usize = 5 * WORD_SIZE;
 
-    /// Returns a new [`TransactionCommitments`] from the four commitment words.
+    /// Returns a new [`TransactionCommitments`] from the five commitment words.
     pub fn new(
         init_account_commitment: Word,
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        logs_commitment: Word,
     ) -> Self {
         Self {
             init_account_commitment,
             final_account_commitment,
             input_notes_commitment,
             output_notes_commitment,
+            logs_commitment,
         }
     }
 
     /// Returns the transaction commitments as a felt sequence.
     ///
     /// The layout is:
-    ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4]]`
+    ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4],
+    ///   LOGS_COMMITMENT[4]]`
     ///
     /// The batch kernel pipes this same felt sequence from the advice provider to memory and
     /// asserts the resulting hash matches a previously-verified `tx_id`.
@@ -55,6 +59,7 @@ impl TransactionCommitments {
         elements[4..8].copy_from_slice(self.final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(self.input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(self.output_notes_commitment.as_elements());
+        elements[16..20].copy_from_slice(self.logs_commitment.as_elements());
         elements
     }
 
@@ -77,6 +82,11 @@ impl TransactionCommitments {
     pub fn output_notes_commitment(&self) -> Word {
         self.output_notes_commitment
     }
+
+    /// Returns the transaction logs commitment.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs_commitment
+    }
 }
 
 impl From<&ProvenTransaction> for TransactionCommitments {
@@ -86,6 +96,7 @@ impl From<&ProvenTransaction> for TransactionCommitments {
             final_account_commitment: tx.account_update().final_state_commitment(),
             input_notes_commitment: tx.input_notes().commitment(),
             output_notes_commitment: tx.output_notes().commitment(),
+            logs_commitment: tx.log_details().commitment(),
         }
     }
 }
@@ -97,6 +108,7 @@ impl From<&ExecutedTransaction> for TransactionCommitments {
             final_account_commitment: tx.final_account().to_commitment(),
             input_notes_commitment: tx.input_notes().commitment(),
             output_notes_commitment: tx.output_notes().commitment(),
+            logs_commitment: tx.logs_commitment(),
         }
     }
 }
@@ -113,6 +125,7 @@ impl From<&ExecutedTransaction> for TransactionCommitments {
 ///     FINAL_ACCOUNT_COMMITMENT,
 ///     INPUT_NOTES_COMMITMENT,
 ///     OUTPUT_NOTES_COMMITMENT,
+///     LOGS_COMMITMENT,
 /// )
 ///
 /// This achieves the following properties:

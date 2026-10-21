@@ -344,6 +344,7 @@ async fn propose_batch_rejects_mismatched_precompile_witness() -> anyhow::Result
             original.proof().vm().clone(),
             PrecompileStatus::Deferred(foreign_witness),
         ),
+        original.log_details().clone(),
     )?;
 
     let (reference_block, partial_blockchain, unauthenticated_note_proofs) =

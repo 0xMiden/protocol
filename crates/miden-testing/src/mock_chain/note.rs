@@ -1,6 +1,6 @@
 use miden_objects::{Verify, proto};
 use miden_protocol::note::{Note, NoteAttachments, NoteId, NoteInclusionProof, NoteMetadata};
-use miden_protocol::transaction::{InputNote, PrivateOutputNote};
+use miden_protocol::transaction::{InputNote, PrivateOutputNote, PublicOutputNote};
 use proto::mock_chain as wire;
 
 // MOCK CHAIN NOTE
@@ -14,7 +14,7 @@ pub enum MockChainNote {
     /// needed to consume the note are expected to be stored locally, off-chain.
     Private(PrivateOutputNote, NoteInclusionProof),
     /// Contains the full [`Note`] object alongside its [`NoteInclusionProof`].
-    Public(Note, NoteInclusionProof),
+    Public(PublicOutputNote, NoteInclusionProof),
 }
 
 impl MockChainNote {
@@ -38,7 +38,7 @@ impl MockChainNote {
     pub fn attachments(&self) -> &NoteAttachments {
         match self {
             MockChainNote::Private(note, _) => note.attachments(),
-            MockChainNote::Public(note, _) => note.attachments(),
+            MockChainNote::Public(note, _) => note.as_note().attachments(),
         }
     }
 
@@ -54,7 +54,7 @@ impl MockChainNote {
     pub fn note(&self) -> Option<&Note> {
         match self {
             MockChainNote::Private(..) => None,
-            MockChainNote::Public(note, _) => Some(note),
+            MockChainNote::Public(note, _) => Some(note.as_note()),
         }
     }
 
@@ -92,7 +92,9 @@ impl TryFrom<MockChainNote> for InputNote {
             MockChainNote::Private(..) => Err(anyhow::anyhow!(
                 "private notes in the mock chain cannot be converted into input notes due to missing details"
             )),
-            MockChainNote::Public(note, proof) => Ok(InputNote::Authenticated { note, proof }),
+            MockChainNote::Public(note, proof) => {
+                Ok(InputNote::authenticated(note.into_note(), proof))
+            },
         }
     }
 }

@@ -1,5 +1,6 @@
+use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, BoundSignature};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::errors::MasmError;
@@ -25,7 +26,6 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 use miden_tx::TransactionExecutorError;
-use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -619,22 +619,30 @@ async fn tx_fee_collector_auth_requires_a_signature_to_create_an_account() -> an
 async fn tx_fee_collector_auth_rejects_a_foreign_key_signature() -> anyhow::Result<()> {
     let (account, target, fee_note, mock_chain) = tx_fee_collector_setup()?;
 
-    // re-derive the account's public key from the seed `Auth::TxFeeCollector` uses, then bind a
-    // foreign secret key to it, so the procedure gets a signature that must fail to verify
-    let mut account_rng = ChaCha20Rng::from_seed(Default::default());
-    let account_pub_key =
-        AuthSecretKey::with_scheme_and_rng(AUTH_SCHEME, &mut account_rng)?.public_key();
-
-    let mut foreign_rng = ChaCha20Rng::from_seed([1u8; 32]);
-    let foreign_sec_key = AuthSecretKey::with_scheme_and_rng(AUTH_SCHEME, &mut foreign_rng)?;
-
-    let authenticator = BasicAuthenticator::from_key_pairs(&[(foreign_sec_key, account_pub_key)]);
-
-    let result = mock_chain
+    let tx_builder = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(fee_note.id())
-        .auth_args(auth_args(target))
-        .authenticator(Some(authenticator))
+        .auth_args(auth_args(target));
+
+    // sign with the account's key to learn the message the procedure requests a signature for
+    let executed_tx = tx_builder.clone().build()?.execute().await?;
+    let signature_key = executed_tx
+        .tx_inputs()
+        .signatures()
+        .first()
+        .map(BoundSignature::key)
+        .context("transaction should have been signed with the account's key")?;
+
+    // present a foreign key's signature under the account's key, so the procedure gets a signature
+    // that must fail to verify
+    let mut foreign_rng = ChaCha20Rng::from_seed([1u8; 32]);
+    let foreign_sec_key = AuthSecretKey::with_scheme_and_rng(AUTH_SCHEME, &mut foreign_rng)?;
+    let (advice_key, foreign_signature) =
+        super::foreign_signature_advice_entry(&foreign_sec_key, signature_key)?;
+
+    let result = tx_builder
+        .authenticator(None)
+        .add_advice_map_entry(advice_key, foreign_signature)
         .build()?
         .execute()
         .await;
