@@ -1,12 +1,6 @@
 use alloc::vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -16,7 +10,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // PRICE ORACLE
@@ -103,25 +97,9 @@ impl PriceOracle {
         self.rate_provider
     }
 
-    /// Returns the storage slot schema for the active rate provider slot.
-    pub fn active_rate_provider_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::active_rate_provider_slot().clone(),
-            StorageSlotSchema::value(
-                "Procedure root of the active rate provider",
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([Self::active_rate_provider_slot_schema()])
-            .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Reports the conversion rate between two assets")
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 

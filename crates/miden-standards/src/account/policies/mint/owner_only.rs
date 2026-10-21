@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // OWNER-ONLY MINT POLICY
@@ -60,13 +60,16 @@ impl MintOwnerOnly {
     pub fn root() -> AccountProcedureRoot {
         *OWNER_ONLY_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
+    }
 }
 
 impl From<MintOwnerOnly> for AccountComponent {
     fn from(_: MintOwnerOnly) -> Self {
-        let metadata = AccountComponentMetadata::new(MintOwnerOnly::NAME).with_description(
-            "`owner_only` mint policy (owner-controlled family) for fungible faucets",
-        );
+        let metadata = MintOwnerOnly::component_metadata();
 
         AccountComponent::new(MintOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` mint policy component should satisfy the requirements of a valid account component",
