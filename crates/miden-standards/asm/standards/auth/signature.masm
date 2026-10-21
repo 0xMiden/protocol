@@ -436,10 +436,6 @@ pub proc verify_signatures(
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
             # => [scheme_slot_id_suffix, scheme_slot_id_prefix, SIG_KEY, PK_COMM, MSG, signer_idx]
 
-            dup.14 exec.create_approver_map_key
-            # => [APPROVER_MAP_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix, SIG_KEY,
-            #     PK_COMM, MSG, signer_idx]
-
             exec.verify_eip712_signature
             # => [is_verified, MSG, signer_idx]
 
@@ -494,12 +490,10 @@ end
 #! The raw signature key is domain-separated before the advice-map lookup. If no EIP-712 entry is
 #! present, this procedure returns 0 without performing signature verification.
 #!
-#! Inputs:  [APPROVER_MAP_KEY, scheme_slot_id_{suffix,prefix}, RAW_SIGNATURE_KEY, PK_COMM, MSG,
-#!           signer_idx]
+#! Inputs:  [scheme_slot_id_{suffix,prefix}, RAW_SIGNATURE_KEY, PK_COMM, MSG, signer_idx]
 #! Outputs: [is_verified, MSG, signer_idx]
 #!
 #! Where:
-#! - APPROVER_MAP_KEY is the key for the signer in the approver scheme map.
 #! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
 #!   containing signature scheme IDs.
 #! - RAW_SIGNATURE_KEY is the advice-map key for a raw transaction signature.
@@ -517,29 +511,26 @@ end
 #!
 #! Invocation: exec
 proc verify_eip712_signature(
-    approver_map_key: StorageMapKey,
     scheme_slot_id: StorageSlotId,
     raw_signature_key: word,
     public_key_commitment: word,
     msg: word,
     signer_idx: u8
 ) -> (Bool, word, u8)
-    # Move RAW_SIGNATURE_KEY to the top while preserving APPROVER_MAP_KEY and the remaining inputs.
-    movup.9 movup.9 movup.9 movup.9
-    # => [RAW_SIGNATURE_KEY, APPROVER_MAP_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
-    #     PK_COMM, MSG, signer_idx]
+    movdn.5 movdn.5
+    # => [RAW_SIGNATURE_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix, PK_COMM, MSG,
+    #     signer_idx]
 
     exec.compute_eip712_signature_key
-    # => [EIP712_SIG_KEY, APPROVER_MAP_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
-    #     PK_COMM, MSG, signer_idx]
+    # => [EIP712_SIG_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
 
     adv.has_mapkey
     adv_push
-    # => [has_eip712_signature, EIP712_SIG_KEY, APPROVER_MAP_KEY, scheme_slot_id_suffix,
-    #     scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
+    # => [has_eip712_signature, EIP712_SIG_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
+    #     PK_COMM, MSG, signer_idx]
 
     if.true
-        swapw
+        dup.14 exec.create_approver_map_key
         # => [APPROVER_MAP_KEY, EIP712_SIG_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
         #     PK_COMM, MSG, signer_idx]
 
@@ -576,7 +567,7 @@ proc verify_eip712_signature(
         push.1
         # => [is_verified, MSG, signer_idx]
     else
-        dropw dropw drop drop dropw
+        dropw drop drop dropw
         # => [MSG, signer_idx]
 
         push.0
