@@ -333,7 +333,7 @@ Consume reconstructed private paybacks and refunds with inclusion proofs; unauth
 
 ### CREATE note
 
-A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate sealed `TX_FEE` output. The payment is paid in full; the executing account checks fee sufficiency.
+A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate `TX_FEE` output. The payment is paid in full; the executing account checks the final fee output during authentication.
 
 Its NoteStorage contains 20 field elements:
 
@@ -347,7 +347,7 @@ Its NoteStorage contains 20 field elements:
 | `18` | Output tag |
 | `19` | Output type |
 
-The script verifies the funding, separates the creation fee, and transfers the remaining assets to the primary output. That output remains unsealed so the transaction script can add attachments. Its final note ID is not committed by the CREATE note. Public output recipient details are supplied as transaction advice.
+The script verifies the funding, separates the creation fee, and transfers the remaining assets to the primary output. Both outputs remain unsealed. This assumes the creator constructs the transaction locally and controls later changes, such as adding attachments to the primary output. Sealing would protect outputs from changes by an untrusted transaction constructor. The script does not verify the constructor's identity; anyone with the private witness can execute it. The final note ID is not committed by the CREATE note. Public output recipient details are supplied as transaction advice.
 
 The sender can instead consume the CREATE note at any time to recover its assets. Either path consumes it permanently. Use independent random serials for the CREATE note and output, consume the CREATE note as an authenticated input, and prove locally to keep its contents private.
 
