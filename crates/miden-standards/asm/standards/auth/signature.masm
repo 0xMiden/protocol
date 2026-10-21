@@ -313,15 +313,16 @@ end
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
 #!
-#! Inputs:  [scheme_slot_id_{suffix,prefix}, public_key_slot_id_{suffix,prefix},
+#! Inputs:  [approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
+#!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
 #!
 #! Where:
-#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
-#!   containing signature scheme IDs.
-#! - public_key_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map
-#!   slot containing public-key commitments.
+#! - approver_scheme_id_slot_id_{suffix,prefix} are the suffix and prefix felts of the account
+#!   storage-map slot containing signature scheme IDs.
+#! - approver_pub_key_slot_id_{suffix,prefix} are the suffix and prefix felts of the account
+#!   storage-map slot containing public-key commitments.
 #! - num_of_approvers is the number of approvers whose signatures may be verified.
 #! - MSG is the transaction message.
 #! - num_verified_signatures is the number of signatures that were successfully verified.
@@ -329,14 +330,14 @@ end
 #! Invocation: exec
 @locals(5)
 pub proc verify_signatures(
-    scheme_slot_id: StorageSlotId,
-    public_key_slot_id: StorageSlotId,
+    approver_scheme_id_slot_id: StorageSlotId,
+    approver_pub_key_slot_id: StorageSlotId,
     num_of_approvers: u8,
     msg: SignatureMessage
 ) -> (u8, SignatureMessage)
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
-    # => [public_key_slot_id_suffix, public_key_slot_id_prefix, num_of_approvers, MSG]
+    # => [approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix, num_of_approvers, MSG]
 
     loc_store.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
@@ -510,10 +511,10 @@ end
 proc verify_eip712_signature(
     scheme_slot_id: StorageSlotId,
     raw_signature_key: word,
-    public_key_commitment: word,
-    msg: word,
+    public_key_commitment: PublicKeyCommitment,
+    msg: SignatureMessage,
     signer_idx: u8
-) -> (Bool, word, u8)
+) -> (Bool, SignatureMessage, u8)
     movdn.5 movdn.5
     # => [RAW_SIGNATURE_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix, PK_COMM, MSG,
     #     signer_idx]
