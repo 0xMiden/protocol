@@ -59,28 +59,29 @@ use crate::{
 const EMIT_LOG_PROC: &str = "test::transaction_logs::emit_log";
 
 #[rstest]
-#[case::max_count(vec![0; TransactionLogs::MAX_COUNT], None)]
-#[case::count(vec![0; TransactionLogs::MAX_COUNT + 1], Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
-#[case::one_word_logs(vec![1; TransactionLogs::MAX_COUNT], None)]
-#[case::max_content(vec![TransactionLog::MAX_NUM_WORDS], None)]
-#[case::max_total_content(vec![TransactionLogs::MAX_NUM_WORDS / 2; 2], None)]
-#[case::individual_content(vec![TransactionLog::MAX_NUM_WORDS + 1], Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
-#[case::total_content(vec![TransactionLogs::MAX_NUM_WORDS / 2, TransactionLogs::MAX_NUM_WORDS / 2 + 1], Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
+#[case::max_count(TransactionLogs::MAX_COUNT, 1, None)]
+#[case::count(TransactionLogs::MAX_COUNT + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
+#[case::max_content(1, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::max_total_content(2, TransactionLogs::MAX_NUM_WORDS / 2, None)]
+#[case::individual_content(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
+#[case::total_content(2, TransactionLogs::MAX_NUM_WORDS / 2 + 1, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
 #[tokio::test]
 async fn kernel_enforces_log_limits(
-    #[case] content_word_counts: Vec<usize>,
+    #[case] count: usize,
+    #[case] content_words: usize,
     #[case] error: Option<MasmError>,
 ) -> anyhow::Result<()> {
-    let mut builder = TestTransactionBuilder::with_existing_mock_account();
-    let mut code = String::new();
-    for num_words in content_word_counts {
-        let (content, commitment) = content(vec![Word::from([71u32; 4]); num_words]);
-        builder =
-            builder.add_advice_map_entry(commitment, Word::words_as_elements(&content).to_vec());
-        code.push_str(&format!("push.{commitment} push.29.17 exec.tx::add_log\n"));
-    }
-    let tx = builder.build()?;
-    let code = kernel_log_program(&code);
+    let (content, commitment) = content(vec![Word::from([71u32; 4]); content_words]);
+    let tx = TestTransactionBuilder::with_existing_mock_account()
+        .add_advice_map_entry(commitment, Word::words_as_elements(&content).to_vec())
+        .build()?;
+    let code = kernel_log_program(&format!(
+        r"
+        repeat.{count}
+            push.{commitment} push.29.17 exec.tx::add_log
+        end
+        "
+    ));
     if let Some(error) = error {
         assert_execution_error!(tx.execute_code(&code).await, error);
     } else {

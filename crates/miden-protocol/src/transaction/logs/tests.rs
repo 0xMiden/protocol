@@ -62,14 +62,6 @@ fn constructors_reject_excessive_sizes() {
     );
 }
 
-#[rstest]
-#[case::single_log(1, TransactionLog::MAX_NUM_WORDS)]
-#[case::two_logs(2, TransactionLogs::MAX_NUM_WORDS / 2)]
-#[case::one_word_logs(TransactionLogs::MAX_COUNT, 1)]
-fn constructors_accept_maximum_content(#[case] count: usize, #[case] num_words: usize) {
-    TransactionLogs::new(vec![TransactionLog::mock(num_words); count]).unwrap();
-}
-
 #[test]
 fn private_log_details_have_no_commitment_preimage() {
     let logs = TransactionLogs::new(vec![TransactionLog::mock(1)]).unwrap();
