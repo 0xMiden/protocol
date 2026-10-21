@@ -21,6 +21,8 @@ To create a public PSWAP with private paybacks:
 2. Consume the authenticated request through the passthrough account, producing the PSWAP and fee note. The passthrough account appears as the PSWAP sender.
 3. Partial fills preserve the reserve in the remainder; a complete fill returns it in the final private payback. The owner can cancel through passthrough using the secret recipient preimage. The PSWAP itself funds the TX_FEE, so cancellation consumes only the order or remainder. Reconstruct private paybacks and refunds and consume them with inclusion proofs.
 
+If the reserve is insufficient, publish a private CREATE_NOTE committing to a TX_FEE that covers the whole cancellation transaction. Consume it alongside the PSWAP and select its fee output in the authentication arguments. This fallback takes two transactions; passthrough does not sum separate fee outputs.
+
 Execute and prove locally to keep private inputs confidential. The proven creation transaction omits the request header, removing the direct ledger link to its owner. Amounts, timing, and information shared outside the protocol can still correlate them.
 
 ## Account Component schemas
