@@ -13,7 +13,7 @@ The [storage](https://docs.rs/miden-protocol/latest/miden_protocol/account/struc
 - Key: Slot name.
 - Value: a single [`Word`](#storage-units), an array of words, or a key-value map of words.
 
-Storage payload is limited to 256 words. Each value or map root counts as one word; arrays count as their full length. Names and metadata do not count toward this limit.
+Value words, map roots, and array contents are limited to a combined 256 words per account. Each value or map root counts as one word; arrays count as their full length. Map entries, names, and metadata do not count toward this limit.
 
 #### Storage units
 

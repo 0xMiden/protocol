@@ -15,7 +15,9 @@ use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_core_lib::CoreLibrary;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use miden_protocol::ProtocolLib;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::utils::serde::Serializable;
 use miden_protocol_build_utils::{
     ErrorModule,
     PROJECT_MANIFEST,
@@ -70,6 +72,9 @@ fn main() -> Result<()> {
             source_dir.join(workspace_dir).join(PROJECT_MANIFEST),
             &mut registry,
             &target_dir.join(workspace_dir),
+            |metadata| {
+                Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes())
+            },
         )?;
     }
 
