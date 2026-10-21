@@ -561,9 +561,7 @@ pub proc set_array(slot_id: StorageSlotId, src_ptr: ptr<word>) -> u16
     # => [num_words, pad(15)]
 
     # clean the stack
-    repeat.15
-        swap drop
-    end
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [num_words]
 end
 
@@ -599,7 +597,8 @@ pub proc get_initial_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
     # => [ROOT, num_words, pad(11)]
 
     # clean the stack
-    repeat.11
+    swapdw dropw dropw
+    repeat.3
         movup.5 drop
     end
     # => [ROOT, num_words]

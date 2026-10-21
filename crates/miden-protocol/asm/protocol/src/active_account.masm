@@ -290,7 +290,9 @@ end
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [num_words]
 #!
-#! Panics if the slot is missing, is not an array, or the caller is not an account procedure.
+#! Panics if:
+#! - the slot is missing or is not an array.
+#! - the caller is not an account procedure.
 #!
 #! Invocation: exec
 pub proc get_array_length(slot_id: StorageSlotId) -> u16
@@ -351,28 +353,6 @@ pub proc get_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
     drop
     loc_load.1
     # => [num_words]
-end
-
-#! Fetches the active account's array commitment and length from the kernel.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix]
-#! Outputs: [ROOT, num_words]
-proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
-    push.0 movdn.2 push.ACCOUNT_GET_ARRAY_INFO_OFFSET
-    # => [offset, slot_id_suffix, slot_id_prefix, 0]
-
-    # pad the stack
-    padw swapw padw padw swapdw
-    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
-
-    syscall.exec_kernel_proc
-    # => [ROOT, num_words, pad(11)]
-
-    # clean the stack
-    repeat.11
-        movup.5 drop
-    end
-    # => [ROOT, num_words]
 end
 
 # VAULT
@@ -524,4 +504,30 @@ pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     # clean the stack
     swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [is_procedure_available]
+end
+
+# HELPERS
+# -------------------------------------------------------------------------------------------------
+
+#! Fetches the active account's array commitment and length from the kernel.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [ROOT, num_words]
+proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
+    push.0 movdn.2 push.ACCOUNT_GET_ARRAY_INFO_OFFSET
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
+
+    # pad the stack
+    padw swapw padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
+
+    syscall.exec_kernel_proc
+    # => [ROOT, num_words, pad(11)]
+
+    # clean the stack
+    swapdw dropw dropw
+    repeat.3
+        movup.5 drop
+    end
+    # => [ROOT, num_words]
 end
