@@ -18,7 +18,8 @@ use crate::utils::serde::{
 // ARRAY SLOT SCHEMA
 // ================================================================================================
 
-/// An array schema with a fixed length and a shared word schema.
+/// Describes a fixed-length array whose elements share a word schema.
+///
 /// Defaults must specify the whole array; element defaults are not supported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArraySlotSchema {
@@ -29,6 +30,14 @@ pub struct ArraySlotSchema {
 }
 
 impl ArraySlotSchema {
+    /// Creates a schema, validating the element type and any default values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The description contains non-ASCII characters.
+    /// - The element schema is invalid or has defaults of its own.
+    /// - The default array does not match the declared length or element schema.
     pub fn new(
         description: Option<String>,
         length: StorageArrayLength,
@@ -61,19 +70,33 @@ impl ArraySlotSchema {
         self.default_values.as_deref()
     }
 
+    /// Builds an array from initialization data, falling back to the complete default array.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slot has value or map entries, the array is missing, or its values
+    /// do not match the declared length and element schema.
     pub fn try_build_array(
         &self,
-        init: &InitStorageData,
-        name: &StorageSlotName,
+        init_storage_data: &InitStorageData,
+        slot_name: &StorageSlotName,
     ) -> Result<StorageArray, ComponentMetadataError> {
-        let value_name = StorageValueName::from_slot_name(name);
-        if init.has_value_entries_for_slot(name) || init.map_entries(name).is_some() {
+        let value_name = StorageValueName::from_slot_name(slot_name);
+        if init_storage_data.has_value_entries_for_slot(slot_name)
+            || init_storage_data.map_entries(slot_name).is_some()
+        {
             return Err(ComponentMetadataError::InvalidInitStorageValue(
                 value_name,
                 "expected an array".into(),
             ));
         }
-        let values = if let Some(values) = init.array_values(name) {
+        let values = if let Some(values) = init_storage_data.array_values(slot_name) {
+            if values.len() != self.length.as_usize() {
+                return Err(ComponentMetadataError::InvalidInitStorageValue(
+                    value_name,
+                    "array values must match the declared length".into(),
+                ));
+            }
             values
                 .iter()
                 .map(|value| parse_storage_value_with_schema(&self.element, value, &value_name))
@@ -83,12 +106,6 @@ impl ArraySlotSchema {
                 .clone()
                 .ok_or_else(|| ComponentMetadataError::InitValueNotProvided(value_name.clone()))?
         };
-        if values.len() != self.length.as_usize() {
-            return Err(ComponentMetadataError::InvalidInitStorageValue(
-                value_name,
-                "array values must match the declared length".into(),
-            ));
-        }
         Ok(StorageArray::new(values)?)
     }
 

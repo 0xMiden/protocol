@@ -1,6 +1,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use assert_matches::assert_matches;
+
 use super::super::{InitStorageData, SchemaType};
 use super::{
     ArraySlotSchema,
@@ -13,10 +15,12 @@ use super::{
 };
 #[cfg(feature = "std")]
 use crate::account::StorageSlotContent;
+use crate::account::component::InitStorageDataError;
 #[cfg(feature = "std")]
 use crate::account::component::{AccountComponentMetadata, StorageValueName};
 use crate::account::{StorageArrayLength, StorageMap, StorageMapKey, StorageSlotName};
 use crate::asset::TokenSymbol;
+use crate::errors::ComponentMetadataError;
 use crate::utils::serde::{Deserializable, Serializable};
 use crate::{Felt, Word};
 
@@ -240,15 +244,21 @@ fn array_schema_binds_length_and_type_but_not_defaults() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
+#[rstest::rstest]
+#[case::simple(WordSchema::new_simple(SchemaType::native_word()))]
+#[case::composite(WordSchema::new_value([
+    FeltSchema::u8("a"), FeltSchema::u8("b"), FeltSchema::u8("c"), FeltSchema::u8("d"),
+]))]
 #[cfg(feature = "std")]
-fn array_schema_toml_roundtrip_and_initialization() -> anyhow::Result<()> {
+fn array_schema_toml_roundtrip_and_initialization(
+    #[case] element: WordSchema,
+) -> anyhow::Result<()> {
     let schema = StorageSchema::new([(
         StorageSlotName::new("test::array")?,
         StorageSlotSchema::Array(ArraySlotSchema::new(
             None,
             StorageArrayLength::try_from(3)?,
-            WordSchema::new_simple(SchemaType::native_word()),
+            element,
             Some(vec![Word::empty(); 3]),
         )?),
     )])?;
@@ -263,10 +273,17 @@ fn array_schema_toml_roundtrip_and_initialization() -> anyhow::Result<()> {
     let StorageSlotContent::Array(array) = slots[0].content() else {
         panic!("expected array");
     };
-    assert_eq!(array.values()[1], Word::empty());
+    assert_eq!(
+        array.values(),
+        &[Word::from([1u32, 2, 3, 4]), Word::empty(), Word::from([5u32, 6, 7, 8]),]
+    );
     let invalid_init =
         InitStorageData::from_toml(r#""test::array" = { array = [["0", "0", "0", "0"]] }"#)?;
-    assert!(schema.build_storage_slots(&invalid_init).is_err());
+    assert_matches!(
+        schema.build_storage_slots(&invalid_init),
+        Err(ComponentMetadataError::InvalidInitStorageValue(_, message))
+            if message == "array values must match the declared length"
+    );
     Ok(())
 }
 
@@ -286,29 +303,45 @@ fn array_schema_validates_complete_typed_defaults() -> anyhow::Result<()> {
         schema.try_build_array(&InitStorageData::default(), &name)?.values(),
         &[valid; 2]
     );
-    assert!(ArraySlotSchema::new(None, length, element.clone(), Some(vec![valid])).is_err());
+    assert_matches!(
+        ArraySlotSchema::new(None, length, element.clone(), Some(vec![valid])),
+        Err(ComponentMetadataError::InvalidSchema(message))
+            if message == "array defaults must match the declared length"
+    );
     for invalid in [Word::from([2u32, 0, 0, 0]), Word::from([1u32, 256, 0, 0])] {
-        assert!(
-            ArraySlotSchema::new(None, length, element.clone(), Some(vec![invalid; 2])).is_err()
+        assert_matches!(
+            ArraySlotSchema::new(None, length, element.clone(), Some(vec![invalid; 2])),
+            Err(ComponentMetadataError::StorageValueParsingError(_))
         );
     }
-    assert!(
+    assert_matches!(
         ArraySlotSchema::new(
             None,
             length,
             WordSchema::new_simple_with_default(SchemaType::native_word(), Word::empty()),
             None
-        )
-        .is_err()
+        ),
+        Err(ComponentMetadataError::InvalidSchema(message))
+            if message == "array defaults must be supplied as complete arrays"
     );
     let mut init = InitStorageData::default();
-    init.set_array_values(name.clone(), vec![valid.into(); 2])?;
-    assert!(init.insert_value(&name, valid).is_err());
-    assert!(init.insert_map_entry(name.clone(), valid, valid).is_err());
+    init.set_array_values(name.as_str(), vec![valid.into(); 2])?;
+    assert_matches!(
+        init.insert_value(&name, valid),
+        Err(InitStorageDataError::ConflictingEntries(_))
+    );
+    assert_matches!(
+        init.insert_map_entry(name.clone(), valid, valid),
+        Err(InitStorageDataError::ConflictingEntries(_))
+    );
     let mut value_init = InitStorageData::default();
     value_init.insert_value(&name, valid)?;
-    assert!(schema.try_build_array(&value_init, &name).is_err());
-    assert!(value_init.set_array_values(name, vec![valid.into(); 2]).is_err());
+    assert_matches!(schema.try_build_array(&value_init, &name),
+        Err(ComponentMetadataError::InvalidInitStorageValue(_, message)) if message == "expected an array");
+    assert_matches!(
+        value_init.set_array_values(name, vec![valid.into(); 2]),
+        Err(InitStorageDataError::ConflictingEntries(_))
+    );
     Ok(())
 }
 
