@@ -14,7 +14,7 @@ pub const MAX_EXPIRATION_BLOCK_DELTA = 65535
 pub const MAX_LOGS_PER_TX = 64
 
 #! The maximum number of words in one transaction log content.
-pub const MAX_LOG_CONTENT_WORDS = 256
+pub const MAX_LOG_CONTENT_WORDS = 64
 
 #! The maximum number of content words across all transaction logs in one transaction.
-pub const MAX_LOG_CONTENT_WORDS_PER_TX = 512
+pub const MAX_LOG_CONTENT_WORDS_PER_TX = 64
