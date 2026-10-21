@@ -23,7 +23,7 @@ use crate::StandardsLib;
 static CREATE_NOTE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     NoteScript::from_package_reference(
         StandardsLib::default().as_ref(),
-        Path::new("::miden::standards::notes::create_note::main"),
+        Path::new("::miden::standards::notes::create::main"),
     )
     .expect("standards library contains the CREATE note")
 });
