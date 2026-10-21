@@ -8,6 +8,7 @@ use super::{
     NoteId,
     RawOutputNotes,
     TransactionArgs,
+    TransactionCommitments,
     TransactionId,
     TransactionLogs,
     TransactionOutputs,
@@ -64,13 +65,13 @@ impl ExecutedTransaction {
 
         // we create the id from the content, so we cannot construct the
         // `id` value after construction `Self {..}` without moving
-        let id = TransactionId::new(
+        let id = TransactionId::new(TransactionCommitments::new(
             tx_inputs.account().initial_commitment(),
             tx_outputs.account().to_commitment(),
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes().commitment(),
             tx_outputs.logs_commitment(),
-        );
+        ));
 
         Self {
             id,
