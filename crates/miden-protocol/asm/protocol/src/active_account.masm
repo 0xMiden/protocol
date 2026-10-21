@@ -321,8 +321,12 @@ pub proc get_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
     dup.5 mul.4 dup.1 add u32assert drop
     # => [dst_ptr, ROOT, num_words]
 
-    movup.5 exec.mem::pipe_preimage_to_memory drop
+    movup.5
+    # => [num_words, dst_ptr, ROOT]
+
+    exec.mem::pipe_preimage_to_memory drop
     loc_load.1
+    # => [num_words]
 end
 
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
@@ -336,6 +340,7 @@ proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
     repeat.11
         movup.5 drop
     end
+    # => [ROOT, num_words]
 end
 
 # VAULT

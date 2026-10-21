@@ -522,18 +522,26 @@ pub proc set_array(slot_id: StorageSlotId, src_ptr: ptr<word>) -> u16
 
     loc_load.2 u32assert
     loc_load.3 mul.4 add u32assert loc_load.2
-    dup.1 dup.1 exec.poseidon2::hash_words
+    dup.1 dup.1
+    # => [src_ptr, end_ptr, src_ptr, end_ptr]
+
+    exec.poseidon2::hash_words
     # => [ROOT, src_ptr, end_ptr]
 
     adv.insert_mem movup.4 drop movup.4 drop
+    # => [ROOT]
+
     loc_load.1 loc_load.0 push.ACCOUNT_SET_ARRAY_OFFSET
     push.0 movdn.7 padw padw swapdw
     # => [offset, slot_id_suffix, slot_id_prefix, ROOT, pad(9)]
 
     syscall.exec_kernel_proc
+    # => [num_words, pad(15)]
+
     repeat.15
         swap drop
     end
+    # => [num_words]
 end
 
 #! Copies the native account's initial array into caller memory.
@@ -565,8 +573,12 @@ pub proc get_initial_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
     dup.5 mul.4 dup.1 add u32assert drop
     # => [dst_ptr, ROOT, num_words]
 
-    movup.5 exec.mem::pipe_preimage_to_memory drop
+    movup.5
+    # => [num_words, dst_ptr, ROOT]
+
+    exec.mem::pipe_preimage_to_memory drop
     loc_load.1
+    # => [num_words]
 end
 
 # VAULT

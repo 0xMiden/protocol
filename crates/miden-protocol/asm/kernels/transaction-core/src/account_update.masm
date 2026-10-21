@@ -551,8 +551,10 @@ end
 
 #! Commits array entries in index order, followed by slot metadata.
 #! Creates include all words, including zeros; empty updates are omitted.
+#!
 #! Inputs:  [num_words, slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
+#!
 #! Locals:
 #! - 0: array length
 #! - 1..3: slot ID suffix and prefix
