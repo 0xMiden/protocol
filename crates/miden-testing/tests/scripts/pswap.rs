@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::advice::AdviceInputs;
+use miden_processor::advice::{AdviceError, AdviceInputs};
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -1347,12 +1347,16 @@ fn build_private_pswap_note(
     Ok((pswap, note, recipient))
 }
 
-/// A separate no-auth account refunds the full order only with the committed recipient's preimage.
+/// Even the sender needs the private recipient preimage and cannot redirect the refund.
 #[rstest]
-#[case::valid_preimage(true)]
-#[case::invalid_preimage(false)]
+#[case::valid_preimage(true, false)]
+#[case::invalid_preimage(true, true)]
+#[case::missing_preimage(false, false)]
 #[tokio::test]
-async fn pswap_private_cancel_through_no_auth(#[case] valid_preimage: bool) -> anyhow::Result<()> {
+async fn pswap_private_cancel_through_no_auth(
+    #[case] provide_preimage: bool,
+    #[case] corrupt_preimage: bool,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
     let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
@@ -1371,7 +1375,7 @@ async fn pswap_private_cancel_through_no_auth(#[case] valid_preimage: bool) -> a
     builder.add_account(router.clone())?;
     let (pswap, note, recipient) = build_private_pswap_note(
         &mut builder,
-        alice.id(),
+        router.id(),
         alice.id(),
         FungibleAsset::new(offered.id(), 50)?,
         FungibleAsset::new(requested.id(), 25)?,
@@ -1379,8 +1383,12 @@ async fn pswap_private_cancel_through_no_auth(#[case] valid_preimage: bool) -> a
     let mut chain = builder.build()?;
     let refund = pswap.refund_note(router.id(), recipient)?;
 
-    let mut advice = pswap.cancellation_advice(recipient)?;
-    if !valid_preimage {
+    let mut advice = if provide_preimage {
+        pswap.cancellation_advice(recipient)?
+    } else {
+        vec![]
+    };
+    if corrupt_preimage {
         // Corrupt the serial preimage while keeping its commitment.
         advice[0].1[0] += ONE;
     }
@@ -1393,7 +1401,17 @@ async fn pswap_private_cancel_through_no_auth(#[case] valid_preimage: bool) -> a
         .execute()
         .await;
 
-    if !valid_preimage {
+    if !provide_preimage {
+        assert_transaction_executor_error!(
+            result,
+            matches ExecutionError::AdviceError {
+                err: AdviceError::MapKeyNotFound { key },
+                ..
+            } if key == recipient.digest()
+        );
+        return Ok(());
+    }
+    if corrupt_preimage {
         assert_transaction_executor_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH);
         return Ok(());
     }
