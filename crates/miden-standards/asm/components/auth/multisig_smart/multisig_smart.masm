@@ -13,8 +13,7 @@ pub use {set_procedure_policy} from miden::standards::auth::multisig_smart
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig_smart
 pub use {update_spending_limits_policy} from miden::standards::auth::multisig_smart::spending_limits
 pub use {update_spending_oracle} from miden::standards::auth::multisig_smart::spending_limits
-pub use {set_faucet_spending_limit} from miden::standards::auth::multisig_smart::spending_limits
-pub use {set_combined_spending_limit} from miden::standards::auth::multisig_smart::spending_limits
+pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spending_limits
 
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
