@@ -1,7 +1,9 @@
-//! Tests for the `Authority` global emergency switch (`freeze` / `unfreeze`).
+//! Tests for the `Authority` global emergency switch (`freeze` / `unfreeze`) and the
+//! procedure role assignment (`set_procedure_role`).
 
 use std::collections::BTreeMap;
 
+use miden_protocol::Felt;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -18,8 +20,10 @@ use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::errors::standards::{
     ERR_AUTHORITY_FROZEN,
+    ERR_INVALID_ROLE_SYMBOL,
     ERR_SENDER_LACKS_ROLE,
     ERR_SENDER_NOT_OWNER,
+    ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_testing::{
     AccountState,
@@ -28,6 +32,7 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
+use rstest::rstest;
 
 use super::pausable::{
     ADMIN_ID,
@@ -37,7 +42,13 @@ use super::pausable::{
     build_set_max_supply_note,
     execute_note_on_faucet,
 };
-use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
+use super::rbac::{
+    build_grant_role_note,
+    build_note,
+    role,
+    set_role_admin_script,
+    test_account_id,
+};
 
 // FAUCET BUILDERS
 // ================================================================================================
@@ -128,8 +139,50 @@ fn build_unfreeze_note(sender: AccountId) -> anyhow::Result<Note> {
     )
 }
 
+/// Builds a note that calls `authority::set_procedure_role`, assigning `role_symbol`
+/// to `procedure_root`.
+fn build_set_procedure_role_note(
+    sender: AccountId,
+    role_symbol: Felt,
+    procedure_root: AccountProcedureRoot,
+) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        format!(
+            r#"
+            use miden::standards::access::authority
+
+            @note_script
+            pub proc main
+                repeat.11 push.0 end
+                push.{procedure_root}
+                push.{role_symbol}
+                call.authority::set_procedure_role
+                dropw dropw dropw dropw
+            end
+            "#,
+            procedure_root = procedure_root.as_word(),
+        ),
+    )
+}
+
 // HELPERS
 // ================================================================================================
+
+/// Returns the role currently assigned to `procedure_root` in the faucet's procedure-roles map.
+fn procedure_role(
+    mock_chain: &MockChain,
+    faucet_id: AccountId,
+    procedure_root: &AccountProcedureRoot,
+) -> anyhow::Result<Option<RoleSymbol>> {
+    let account = mock_chain.committed_account(faucet_id)?;
+    match Authority::try_from_storage(account.storage())? {
+        Authority::RbacControlled { procedure_roles } => {
+            Ok(procedure_roles.get(procedure_root).cloned())
+        },
+        other => anyhow::bail!("expected an RBAC-controlled authority, got {other:?}"),
+    }
+}
 
 /// Returns whether the faucet's authority surface is currently frozen.
 fn is_frozen(mock_chain: &MockChain, faucet_id: AccountId) -> anyhow::Result<bool> {
@@ -159,7 +212,8 @@ async fn owner_freezes_then_gated_procedure_is_blocked() -> anyhow::Result<()> {
 
     // The owner's own pause call is now blocked because the surface is frozen.
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[pause_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pause_note.clone())
         .build()?
         .execute()
         .await;
@@ -185,7 +239,8 @@ async fn frozen_blocks_authority_gated_metadata_setter() -> anyhow::Result<()> {
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &freeze_note).await?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[set_max_supply_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_max_supply_note.clone())
         .build()?
         .execute()
         .await;
@@ -207,7 +262,8 @@ async fn non_owner_cannot_freeze() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[attacker_freeze_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(attacker_freeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -284,7 +340,8 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
 
     // A PAUSER does not hold ADMIN, so cannot operate the emergency switch.
     let pauser_freeze_result = mock_chain
-        .build_tx_context(faucet.id(), &[pauser_freeze_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pauser_freeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -296,7 +353,8 @@ async fn frozen_blocks_role_holder_and_freeze_needs_admin() -> anyhow::Result<()
 
     // Now even the PAUSER's role-authorized pause is blocked by the frozen flag.
     let pause_after_result = mock_chain
-        .build_tx_context(faucet.id(), &[pause_note_after.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(pause_note_after.clone())
         .build()?
         .execute()
         .await;
@@ -344,7 +402,8 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
     // `freeze` is mapped to FREEZER, so it does not fall back to ADMIN: the seeded admin, holding
     // only ADMIN, cannot freeze.
     let admin_freeze_result = mock_chain
-        .build_tx_context(faucet.id(), &[admin_freeze_note.id()], &[])?
+        .build_transaction(faucet.id())
+        .authenticated_input_note(admin_freeze_note.clone())
         .build()?
         .execute()
         .await;
@@ -357,6 +416,333 @@ async fn freeze_and_unfreeze_use_distinct_roles() -> anyhow::Result<()> {
     // The UNFREEZER unfreezes it again.
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &unfreezer_unfreeze_note).await?;
     assert!(!is_frozen(&mock_chain, faucet.id())?);
+
+    Ok(())
+}
+
+/// An actor holding only the `FREEZER` authorization, capable of nothing but freezing,
+/// can flip the kill switch; it can never unfreeze the account, nor authorize any other
+/// protected procedure.
+#[tokio::test]
+async fn freezer_can_freeze_but_cannot_unfreeze_or_authorize() -> anyhow::Result<()> {
+    let freezer = test_account_id(25);
+    let unfreezer = test_account_id(26);
+
+    // `freeze` is the freezer's only reachable procedure: `unfreeze` carries its own role and
+    // `pause` is unmapped, so it falls back to ADMIN.
+    let roles = BTreeMap::from([
+        (Authority::freeze_root(), role("FREEZER")),
+        (Authority::unfreeze_root(), role("UNFREEZER")),
+    ]);
+
+    let admin = *ADMIN_ID;
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, roles, 66)?;
+
+    let grant_freezer = build_grant_role_note(admin, &role("FREEZER"), freezer)?;
+    let grant_unfreezer = build_grant_role_note(admin, &role("UNFREEZER"), unfreezer)?;
+    let freezer_pause_note = build_pause_note(freezer)?;
+    let freezer_freeze_note = build_freeze_note(freezer)?;
+    let freezer_unfreeze_note = build_unfreeze_note(freezer)?;
+    let admin_unfreeze_note = build_unfreeze_note(admin)?;
+    let unfreezer_unfreeze_note = build_unfreeze_note(unfreezer)?;
+    for note in [
+        &grant_freezer,
+        &grant_unfreezer,
+        &freezer_pause_note,
+        &freezer_freeze_note,
+        &freezer_unfreeze_note,
+        &admin_unfreeze_note,
+        &unfreezer_unfreeze_note,
+    ] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_freezer).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unfreezer).await?;
+
+    // The freezer holds no other role, so ordinary gated procedures stay out of reach.
+    let freezer_pause_result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(freezer_pause_note.clone())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(freezer_pause_result, ERR_SENDER_LACKS_ROLE);
+
+    // The freezer trips the emergency switch.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &freezer_freeze_note).await?;
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // But it cannot re-open the account: `unfreeze` requires UNFREEZER.
+    let freezer_unfreeze_result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(freezer_unfreeze_note.clone())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(freezer_unfreeze_result, ERR_SENDER_LACKS_ROLE);
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // Neither can the ADMIN, since `unfreeze` is explicitly mapped and so never falls back to it.
+    let admin_unfreeze_result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(admin_unfreeze_note.clone())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(admin_unfreeze_result, ERR_SENDER_LACKS_ROLE);
+    assert!(is_frozen(&mock_chain, faucet.id())?);
+
+    // Only the UNFREEZER re-opens the account.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unfreezer_unfreeze_note).await?;
+    assert!(!is_frozen(&mock_chain, faucet.id())?);
+
+    Ok(())
+}
+
+// TESTS — PROCEDURE ROLE ASSIGNMENT
+// ================================================================================================
+
+/// Executes `note` against the faucet and returns the execution result without applying it.
+async fn try_execute_note_on_faucet(
+    mock_chain: &MockChain,
+    faucet_id: AccountId,
+    note: &Note,
+) -> Result<miden_protocol::transaction::ExecutedTransaction, miden_tx::TransactionExecutorError> {
+    mock_chain
+        .build_transaction(faucet_id)
+        .authenticated_input_note(note.id())
+        .build()
+        .expect("transaction should build")
+        .execute()
+        .await
+}
+
+/// ADMIN reassigns a procedure's role, also while the account's procedure surface is frozen.
+#[rstest]
+#[case::unfrozen(false)]
+#[case::frozen(true)]
+#[tokio::test]
+async fn admin_reassigns_a_procedure_to_a_new_role(#[case] frozen: bool) -> anyhow::Result<()> {
+    let pauser = test_account_id(30);
+    let new_pauser = test_account_id(31);
+    let admin = *ADMIN_ID;
+    let pause_root = PausableManager::pause_root();
+
+    let roles = BTreeMap::from([(pause_root, role("PAUSER"))]);
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, roles, 80)?;
+
+    let grant_pauser = build_grant_role_note(admin, &role("PAUSER"), pauser)?;
+    let grant_new_pauser = build_grant_role_note(admin, &role("NEW_PAUSER"), new_pauser)?;
+    let reassign =
+        build_set_procedure_role_note(admin, Felt::from(&role("NEW_PAUSER")), pause_root)?;
+    let pauser_pause = build_pause_note(pauser)?;
+    let new_pauser_pause = build_pause_note(new_pauser)?;
+    let freeze_note = build_freeze_note(admin)?;
+    let unfreeze_note = build_unfreeze_note(admin)?;
+    for note in [
+        &grant_pauser,
+        &grant_new_pauser,
+        &reassign,
+        &pauser_pause,
+        &new_pauser_pause,
+        &freeze_note,
+        &unfreeze_note,
+    ] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_new_pauser).await?;
+    assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, Some(role("PAUSER")));
+
+    if frozen {
+        execute_note_on_faucet(&mut mock_chain, faucet.id(), &freeze_note).await?;
+        assert!(is_frozen(&mock_chain, faucet.id())?);
+    }
+
+    // ADMIN moves `pause` from PAUSER to NEW_PAUSER on the running account.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &reassign).await?;
+    assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, Some(role("NEW_PAUSER")));
+
+    if frozen {
+        execute_note_on_faucet(&mut mock_chain, faucet.id(), &unfreeze_note).await?;
+    }
+
+    // The old role no longer authorizes the procedure; the new one does.
+    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &pauser_pause).await;
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &new_pauser_pause).await?;
+
+    Ok(())
+}
+
+/// Writing `0` unmaps the procedure, which falls back to the `ADMIN` role like any unmapped one.
+#[tokio::test]
+async fn unmapping_a_procedure_falls_back_to_admin() -> anyhow::Result<()> {
+    let admin = *ADMIN_ID;
+    let pause_root = PausableManager::pause_root();
+
+    let roles = BTreeMap::from([(pause_root, role("PAUSER"))]);
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, roles, 81)?;
+
+    let admin_pause = build_pause_note(admin)?;
+    let unmap = build_set_procedure_role_note(admin, Felt::ZERO, pause_root)?;
+    for note in [&admin_pause, &unmap] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Mapped to PAUSER, so ADMIN (holding only ADMIN) is not authorized.
+    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &admin_pause).await;
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unmap).await?;
+    assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, None);
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &admin_pause).await?;
+
+    Ok(())
+}
+
+/// Assigning a role that no one holds makes this procedure unusable for everyone,
+/// including `ADMIN`, until the role is reassigned.
+#[tokio::test]
+async fn memberless_role_takes_a_procedure_out_of_service() -> anyhow::Result<()> {
+    let admin = *ADMIN_ID;
+    let pause_root = PausableManager::pause_root();
+
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, BTreeMap::new(), 82)?;
+
+    let disable = build_set_procedure_role_note(admin, Felt::from(&role("DISABLED")), pause_root)?;
+    let admin_pause = build_pause_note(admin)?;
+    let restore = build_set_procedure_role_note(admin, Felt::ZERO, pause_root)?;
+    for note in [&disable, &admin_pause, &restore] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &disable).await?;
+    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &admin_pause).await;
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &restore).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &admin_pause).await?;
+
+    Ok(())
+}
+
+/// `set_procedure_role` can hand itself to a memberless role without locking the account: `ADMIN`
+/// administers that role, so it can grant it to itself and return `set_procedure_role` to `ADMIN`.
+#[tokio::test]
+async fn memberless_set_procedure_role_is_recoverable() -> anyhow::Result<()> {
+    let admin = *ADMIN_ID;
+    let self_root = Authority::set_procedure_role_root();
+
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, BTreeMap::new(), 84)?;
+
+    let grant_role_mngr = build_grant_role_note(admin, &role("ROLE_MNGR"), admin)?;
+    let reassign = build_set_procedure_role_note(admin, Felt::from(&role("ROLE_MNGR")), self_root)?;
+    let restore = build_set_procedure_role_note(admin, Felt::ZERO, self_root)?;
+    for note in [&reassign, &restore, &grant_role_mngr] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // ROLE_MNGR has no members yet, so no one can call `set_procedure_role` after this.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &reassign).await?;
+    assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, Some(role("ROLE_MNGR")));
+
+    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &restore).await;
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    // ADMIN still administers ROLE_MNGR, so it can grant the role to itself and restore access.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_role_mngr).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &restore).await?;
+    assert_eq!(procedure_role(&mock_chain, faucet.id(), &self_root)?, None);
+
+    Ok(())
+}
+
+/// Changing a procedure's role requires administering its current role, so `ADMIN` cannot move a
+/// procedure whose role is delegated to a populated admin role. A memberless delegate falls back to
+/// `ADMIN`, as in `rbac::grant_role`.
+#[rstest]
+#[case::populated_delegate(true)]
+#[case::memberless_delegate(false)]
+#[tokio::test]
+async fn set_procedure_role_respects_role_delegation(
+    #[case] delegate_populated: bool,
+) -> anyhow::Result<()> {
+    let pauser_admin = test_account_id(33);
+    let admin = *ADMIN_ID;
+    let pause_root = PausableManager::pause_root();
+
+    let roles = BTreeMap::from([(pause_root, role("PAUSER"))]);
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, roles, 85)?;
+
+    let grant_pauser_admin = build_grant_role_note(admin, &role("PAUSER_ADMIN"), pauser_admin)?;
+    let delegate_pauser =
+        build_note(admin, set_role_admin_script(&role("PAUSER"), Some(&role("PAUSER_ADMIN"))))?;
+    let unmap = build_set_procedure_role_note(admin, Felt::ZERO, pause_root)?;
+    for note in [&grant_pauser_admin, &delegate_pauser, &unmap] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    if delegate_populated {
+        execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser_admin).await?;
+    }
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &delegate_pauser).await?;
+
+    if delegate_populated {
+        let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &unmap).await;
+        assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+        assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, Some(role("PAUSER")));
+    } else {
+        execute_note_on_faucet(&mut mock_chain, faucet.id(), &unmap).await?;
+        assert_eq!(procedure_role(&mock_chain, faucet.id(), &pause_root)?, None);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_procedure_role_rejects_a_non_canonical_role_symbol() -> anyhow::Result<()> {
+    let admin = *ADMIN_ID;
+
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet(&mut builder, admin, BTreeMap::new(), 87)?;
+
+    // 27 announces a one-character symbol carrying no character; it names no role.
+    let note = build_set_procedure_role_note(admin, Felt::new(27)?, PausableManager::pause_root())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = try_execute_note_on_faucet(&mock_chain, faucet.id(), &note).await;
+    assert_transaction_executor_error!(result, ERR_INVALID_ROLE_SYMBOL);
 
     Ok(())
 }

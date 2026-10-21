@@ -1,0 +1,28 @@
+[package]
+name              = "miden-standards-auth-tx-fee-collector"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::tx_fee_collector"
+path      = "tx_fee_collector.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "TX_FEE collector authentication component"
+name        = "miden::standards::auth::tx_fee_collector"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Public key commitment"
+name        = "miden::standards::auth::tx_fee_collector::pub_key"
+type        = "miden::standards::auth::pub_key"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Signature scheme"
+name        = "miden::standards::auth::tx_fee_collector::signature_scheme"
+type        = "miden::standards::auth::scheme"

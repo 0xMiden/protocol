@@ -1,0 +1,114 @@
+{
+  "schema": "miden-xusdc-depositintent-differential-vectors/v1",
+  "purpose": "DepositIntent envelope ground truth for Miden DC-1 differential testing, LOCALLY GENERATED/RECONSTRUCTED from Circle source via Circle's own encoder. NOT a Circle-shipped artifact and NOT copied from Circle's repo.",
+  "provenance": {
+    "source_repo": "https://github.com/circlefin/evm-xreserve-contracts.git",
+    "commit": "a571cbe12fa7cede3dfd48bc4fedb74739c04377",
+    "branch_at_recon": "master",
+    "forge_version": "1.7.1 (commit 4072e48705af9d93e3c0f6e29e93b5e9a40caed8)",
+    "solc_version": "0.8.29",
+    "encoder": "DepositIntentLib.encodeDepositIntent (src/lib/DepositIntentLib.sol:318-333)",
+    "encoder_is_circles_own": true,
+    "encoder_emission_path": "xReserve.encodeDepositIntent (src/xReserve.sol:154-155) delegates verbatim; Circle's deploy-contracts/GenerateDepositIntentAttestation.s.sol:181 calls the same library function (both verified present in Circle's tracked tree at this commit)",
+    "ground_truth_method": "LOCALLY GENERATED, not copied from Circle: the AGENT-AUTHORED Foundry script (circle-extraction/ExtractDepositIntentGroundTruth.s.sol, reproduced in this directory) was run against a clone of Circle @ a571cbe; it invokes Circle's own DepositIntentLib.encodeDepositIntent over hardcoded field values, self-asserts every DC-1 offset, and round-trips through Circle's DepositIntentLib.decodeDepositIntent. Circle's tracked tree at a571cbe contains NEITHER a golden-hex blob NOR this extraction script (Circle's own tests assert via decode round-trip + length, not a literal blob).",
+    "reproduction": "see circle-extraction/README.md; in a clone of Circle @ a571cbe with the script under script/: `forge script script/ExtractDepositIntentGroundTruth.s.sol -vvv --skip 'test/**'` (the console.logBytes output is bytes_hex).",
+    "provenance_correction": "An earlier description called this fixture 'copied verbatim from Circle's repo' and said expected fields come from 'Circle's decoder'; both were inaccurate and corrected (audit finding). The bytes are Circle's ENCODER output reconstructed locally; the differential test's expected fields are raw-byte-derived and source-verified against Circle's DC-1 layout.",
+    "envelope_endianness": "big-endian",
+    "header_bytes": 240,
+    "total_length_rule": "240 + hookDataLength",
+    "regeneration_note": "Re-run from scratch when the account-id rows (di-circle-3/4) were added: the two pre-existing rows (di-circle-1/2) came back byte-for-byte identical, hashes included, which re-confirms the recipe and the earlier bytes.",
+    "identifier_shapes": "di-circle-1/2 carry OPAQUE bytes32 identifiers and di-circle-3/4 carry Miden account ids in the right-aligned packaging (16 zero bytes, then prefix and suffix as big-endian u64s; the same two ids as aid-rt-2 / aid-rt-1 of the Miden golden-vector artifact). The ENVELOPE is identical either way, which is the point of the pair: the Miden decoder must accept the account-id rows and refuse the opaque ones, and both verdicts are asserted against bytes Circle's encoder produced."
+  },
+  "envelope_verdict": "CONFIRMED (all fields match Miden DC-1 layout; zero divergences)",
+  "content_caveat_DEV10": "remoteToken and remoteRecipient are opaque bytes32 in Circle's encoding (DepositIntent.sol:65-66). This evidence validates the ENVELOPE only; it does NOT determine how a Miden AccountId should be packed into those bytes32 fields (DEV-10 / Q-CRY-3 / Q-CRY-4 remain open Miden-side + Circle-registration decisions). The account-id rows use the layout Miden currently ships and are evidence about THIS decoder, not about Circle's registration.",
+  "vectors": [
+    {
+      "id": "di-circle-1",
+      "description": "non-empty hookData (6 bytes), opaque bytes32 identifiers",
+      "identifier_shape": "opaque",
+      "bytes_hex": "0x5a2e0acd0000000100000000000000000000000000000000000000000000000000000000000f42400000cafe52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e15243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000013884e4f4e434500000000000000000000000000000000000000000000000000000100000006deadbeefcafe",
+      "length": 246,
+      "message_hash_keccak256": "0x79df700dc0dd95bcb2e1190b9872cc7e0f6506bca5d025017983c4b37e698e92",
+      "fields": {
+        "magic": "0x5a2e0acd",
+        "version": 1,
+        "amount": 1000000,
+        "remoteDomain": 51966,
+        "remoteToken": "0x52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1",
+        "remoteRecipient": "0x5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243",
+        "localToken": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "localDepositor": "0x0000000000000000000000001111111111111111111111111111111111111111",
+        "maxFee": 5000,
+        "nonce": "0x4e4f4e4345000000000000000000000000000000000000000000000000000001",
+        "hookDataLength": 6,
+        "hookData": "0xdeadbeefcafe"
+      }
+    },
+    {
+      "id": "di-circle-2",
+      "description": "empty hookData, opaque bytes32 identifiers",
+      "identifier_shape": "opaque",
+      "bytes_hex": "0x5a2e0acd0000000100000000000000000000000000000000000000000000000000000000000f42400000cafe52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e15243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000013884e4f4e434500000000000000000000000000000000000000000000000000000100000000",
+      "length": 240,
+      "message_hash_keccak256": "0x4c9d81d3348914524879a8fadbe83fbb47c0d8bf70ad5587dcfd307346a4e96e",
+      "fields": {
+        "magic": "0x5a2e0acd",
+        "version": 1,
+        "amount": 1000000,
+        "remoteDomain": 51966,
+        "remoteToken": "0x52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1ee52e1",
+        "remoteRecipient": "0x5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243aa5243",
+        "localToken": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "localDepositor": "0x0000000000000000000000001111111111111111111111111111111111111111",
+        "maxFee": 5000,
+        "nonce": "0x4e4f4e4345000000000000000000000000000000000000000000000000000001",
+        "hookDataLength": 0,
+        "hookData": "0x"
+      }
+    },
+    {
+      "id": "di-circle-3",
+      "description": "non-empty hookData (6 bytes), Miden account-id identifiers",
+      "identifier_shape": "account_id",
+      "bytes_hex": "0x5a2e0acd0000000100000000000000000000000000000000000000000000000000000000000f42400000cafe000000000000000000000000000000000320a8188931a401038036a64a672c00000000000000000000000000000000008110548cc41852010140bd1325ff0800000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000013884e4f4e434500000000000000000000000000000000000000000000000000000100000006deadbeefcafe",
+      "length": 246,
+      "message_hash_keccak256": "0x0799661a24c59ea4576a0f9bff8de57d5f06e24aebffc09621f5af5b7b22192f",
+      "fields": {
+        "magic": "0x5a2e0acd",
+        "version": 1,
+        "amount": 1000000,
+        "remoteDomain": 51966,
+        "remoteToken": "0x000000000000000000000000000000000320a8188931a401038036a64a672c00",
+        "remoteRecipient": "0x000000000000000000000000000000008110548cc41852010140bd1325ff0800",
+        "localToken": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "localDepositor": "0x0000000000000000000000001111111111111111111111111111111111111111",
+        "maxFee": 5000,
+        "nonce": "0x4e4f4e4345000000000000000000000000000000000000000000000000000001",
+        "hookDataLength": 6,
+        "hookData": "0xdeadbeefcafe"
+      }
+    },
+    {
+      "id": "di-circle-4",
+      "description": "empty hookData, Miden account-id identifiers",
+      "identifier_shape": "account_id",
+      "bytes_hex": "0x5a2e0acd0000000100000000000000000000000000000000000000000000000000000000000f42400000cafe000000000000000000000000000000000320a8188931a401038036a64a672c00000000000000000000000000000000008110548cc41852010140bd1325ff0800000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000013884e4f4e434500000000000000000000000000000000000000000000000000000100000000",
+      "length": 240,
+      "message_hash_keccak256": "0x8ee07c4b6be7275d8858c26b99d026952e5d0d76d5bbe338bb9c996cdb0d2c90",
+      "fields": {
+        "magic": "0x5a2e0acd",
+        "version": 1,
+        "amount": 1000000,
+        "remoteDomain": 51966,
+        "remoteToken": "0x000000000000000000000000000000000320a8188931a401038036a64a672c00",
+        "remoteRecipient": "0x000000000000000000000000000000008110548cc41852010140bd1325ff0800",
+        "localToken": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "localDepositor": "0x0000000000000000000000001111111111111111111111111111111111111111",
+        "maxFee": 5000,
+        "nonce": "0x4e4f4e4345000000000000000000000000000000000000000000000000000001",
+        "hookDataLength": 0,
+        "hookData": "0x"
+      }
+    }
+  ]
+}

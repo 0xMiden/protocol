@@ -1,0 +1,264 @@
+# xreserve::attestation_verify
+#
+# The mint-time deposit-attestation check. Its contract is documented on `verify_attestation`
+# itself; this file ensures a mint proceeds only for a deposit Circle actually signed.
+
+use miden::protocol::active_account
+use miden::core::crypto::dsa::ecdsa_k256_keccak
+use miden::core::crypto::hashes::poseidon2
+use miden::core::word
+use miden::standards::utils
+use {XRESERVE_ATTESTERS_SLOT, ATTESTER_ENABLED_MARKER} from xreserve::attester_admin
+
+# CONSTANTS
+# =================================================================================================
+
+# The number of elements in a packed secp256k1 pubkey.
+const PUBKEY_FELTS = 16
+
+# One 32-byte ECDSA scalar occupies eight u32 limbs, so the signature's `r` sits at offset 0 of the
+# attested signature region and its `s` one scalar further in.
+const SIGNATURE_SCALAR_LIMBS = 8
+
+# `verify_signature` locals: the two signature scalars rewritten into the limb order the verifier
+# reads them in. This is the only value in this file that needs a memory home — every other operand
+# is a pointer that rides the operand stack.
+const NATIVE_SCALARS_LOC = 0
+const NATIVE_SCALARS_FELTS = SIGNATURE_SCALAR_LIMBS + SIGNATURE_SCALAR_LIMBS
+
+# ERRORS
+# =================================================================================================
+
+# The candidate pubkey's Poseidon2 commitment is not enabled in xReserveAttesters.
+const ERR_XRESERVE_DISALLOWED_PUB_KEY = "deposit attester pubkey commitment is not allowlisted"
+
+# A signature scalar limb read out of the attested signature region is not a valid u32, so it
+# cannot be a limb of a 32-byte scalar and the byte-order rewrite below would be meaningless.
+const ERR_XRESERVE_SIG_LIMB = "deposit attestation signature limb is not a valid u32"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Verifies the mint-time deposit attestation: gate the attester pubkey against the
+#! xReserveAttesters allowlist, then ECDSA-verify the signature over keccak256 of the payload.
+#!
+#! Reads from caller memory, hash-verified against the note's attachment commitment. The same
+#! pubkey pointer feeds both the allowlist commitment and the signature check, so an allowlisted
+#! commitment cannot be paired with a foreign key.
+#!
+#! Inputs:  [intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - intent_ptr is the memory address of the u32-LE-packed DepositIntent payload preimage.
+#! - intent_num_bytes is the payload length in bytes (keccak's hashed extent; equals the bytes the
+#!   attester signed).
+#! - pubkey_ptr is the word-aligned memory address of the candidate attester pubkey, 16
+#!   u32-LE-packed affine-coordinate felts.
+#! - signature_ptr is the word-aligned memory address of the 17-felt attestation signature.
+#!
+#! Panics if:
+#! - the candidate pubkey's commitment is not allowlisted (ERR_XRESERVE_DISALLOWED_PUB_KEY).
+#! - a signature scalar limb is not a valid u32 (ERR_XRESERVE_SIG_LIMB).
+#! - the signature does not verify over the payload digest for the candidate pubkey, or the key or
+#!   scalars are malformed — the verifier traps with its own error identity.
+#!
+#! Invocation: exec
+pub proc verify_attestation
+    # allowlist gate; the commitment survives the lookup, the signature check needs the same Word.
+    dup.2 exec.pubkey_commitment
+    # => [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    dupw
+    # => [PUBKEY_COMMITMENT, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr,
+    #     signature_ptr]
+
+    push.XRESERVE_ATTESTERS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, PUBKEY_COMMITMENT, PUBKEY_COMMITMENT, intent_ptr,
+    #     intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    exec.active_account::get_map_item
+    # => [MARKER, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    # the stored value must match the enabled marker to be considered allowlisted
+    push.ATTESTER_ENABLED_MARKER exec.word::eq
+    # => [is_allowed, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    assert.err=ERR_XRESERVE_DISALLOWED_PUB_KEY
+    # => [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    exec.verify_signature
+    # => []
+end
+
+#! Poseidon2 over the 16 u32-LE-packed affine-coordinate limbs: the attester-allowlist map key.
+#!
+#! Inputs:  [pubkey_ptr]
+#! Outputs: [PUBKEY_COMMITMENT]
+#!
+#! Where:
+#! - pubkey_ptr is the word-aligned memory address of the 16 packed pubkey felts.
+#! - PUBKEY_COMMITMENT is the Poseidon2 commitment Word.
+#!
+#! Invocation: exec
+pub proc pubkey_commitment
+    push.PUBKEY_FELTS swap exec.poseidon2::hash_elements
+    # => [PUBKEY_COMMITMENT]
+end
+
+# INTERNAL PROCEDURES
+# =================================================================================================
+
+#! Verifies the ECDSA signature over the payload's Keccak-256 digest using the caller's public key
+#! and signature.
+#!
+#! The verifier checks the public key against its commitment, but does not check a commitment to
+#! the signature itself.
+#!
+#! Inputs:  [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - PUBKEY_COMMITMENT is the Poseidon2 commitment of the 16 pubkey limbs at pubkey_ptr, which is
+#!   both the allowlist key and the PK_COMM the verifier binds the advice-supplied key to.
+#! - intent_ptr / intent_num_bytes are the payload extent the attester signed.
+#! - pubkey_ptr / signature_ptr are the hash-verified pubkey and signature regions.
+#!
+#! Panics if:
+#! - a signature scalar limb is not a valid u32 (ERR_XRESERVE_SIG_LIMB).
+#! - the key, the scalars, or the signature itself do not verify (the verifier's own errors).
+#!
+#! Locals:
+#! - 0..16: the two signature scalars in native limb order
+#!
+#! Invocation: exec
+@locals(16)
+proc verify_signature
+    dup.7 locaddr.NATIVE_SCALARS_LOC
+    # => [scalars_ptr, signature_ptr, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr,
+    #     signature_ptr]
+
+    exec.store_native_scalars
+    # => [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    # scalars first: push_mapval prepends, so the key ends on top, the verifier's read order.
+    locaddr.NATIVE_SCALARS_LOC dup add.NATIVE_SCALARS_FELTS swap
+    # => [scalars_ptr, scalars_end, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr,
+    #     signature_ptr]
+
+    push.NATIVE_SCALARS_FELTS locaddr.NATIVE_SCALARS_LOC exec.poseidon2::hash_elements
+    # => [SCALARS_COMMITMENT, scalars_ptr, scalars_end, PUBKEY_COMMITMENT, intent_ptr,
+    #     intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    exec.stage_region_on_advice
+    # => [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    # the key is also the PK_COMM operand and staging consumes it, so keep a copy.
+    dupw
+    # => [PUBKEY_COMMITMENT, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr,
+    #     signature_ptr]
+
+    dup.10 dup add.PUBKEY_FELTS swap movdn.5 movdn.5
+    # => [PUBKEY_COMMITMENT, pubkey_start, pubkey_end, PUBKEY_COMMITMENT, intent_ptr,
+    #     intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    exec.stage_region_on_advice
+    # => [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr, signature_ptr]
+
+    movup.7 drop movup.6 drop
+    # => [PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes]
+
+    exec.ecdsa_k256_keccak::verify_bytes
+    # => []
+end
+
+#! Publishes a memory region on the advice stack under a caller-supplied key.
+#!
+#! The key must be a commitment to the region's own contents: `adv.insert_mem` accepts an
+#! already-present key only when it maps to identical values, which is what makes it substitution-proof.
+#!
+#! Inputs:  [KEY, start_ptr, end_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - start_ptr / end_ptr bound the region as memory[start_ptr..end_ptr], in elements.
+#!
+#! Panics if:
+#! - the advice map already holds KEY with different values (the advice provider's own error).
+#!
+#! Invocation: exec
+proc stage_region_on_advice
+    adv.insert_mem
+    # => [KEY, start_ptr, end_ptr]
+
+    adv.push_mapval
+    # => [KEY, start_ptr, end_ptr]
+
+    dropw drop drop
+    # => []
+end
+
+#! Rewrites the attested signature's two scalars into the limb order the ECDSA verifier reads.
+#!
+#! Inputs:  [dst_ptr, signature_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - dst_ptr is a 16-element region receiving `r` then `s`.
+#! - signature_ptr is the attested signature region; its `v` byte is not part of the witness and is
+#!   left where it is.
+#!
+#! Panics if:
+#! - a limb is not a valid u32 (ERR_XRESERVE_SIG_LIMB).
+#!
+#! Invocation: exec
+proc store_native_scalars
+    dup.1 dup.1
+    # => [dst_ptr, signature_ptr, dst_ptr, signature_ptr]
+
+    exec.store_native_scalar
+    # => [dst_ptr, signature_ptr]
+
+    add.SIGNATURE_SCALAR_LIMBS swap add.SIGNATURE_SCALAR_LIMBS swap
+    # => [dst_ptr + 8, signature_ptr + 8]
+
+    exec.store_native_scalar
+    # => []
+end
+
+#! Rewrites one 32-byte scalar into the limb order the ECDSA verifier reads.
+#!
+#! The attestation wire carries a scalar the way keccak carries bytes: four wire bytes per felt,
+#! most significant limb first. The verifier reads scalars as numeric u32 limbs, least significant
+#! limb first. So the two pointers walk in opposite directions and every limb is byte-swapped on
+#! the way — the same rewrite the verifier applies to its own keccak digest.
+#!
+#! Inputs:  [dst_ptr, src_ptr]
+#! Outputs: []
+#!
+#! Panics if:
+#! - a limb is not a valid u32 (ERR_XRESERVE_SIG_LIMB).
+#!
+#! Invocation: exec
+proc store_native_scalar
+    add.SIGNATURE_SCALAR_LIMBS sub.1
+    # => [write_ptr, src_ptr]
+
+    repeat.SIGNATURE_SCALAR_LIMBS
+        dup.1 mem_load u32assert.err=ERR_XRESERVE_SIG_LIMB
+        # => [wire_limb, write_ptr, src_ptr]
+
+        exec.utils::swap_u32_bytes
+        # => [native_limb, write_ptr, src_ptr]
+
+        dup.1 mem_store
+        # => [write_ptr, src_ptr]
+
+        sub.1 swap add.1 swap
+        # => [write_ptr - 1, src_ptr + 1]
+    end
+    # => [write_ptr, src_ptr]
+
+    drop drop
+    # => []
+end

@@ -10,13 +10,14 @@ use crate::account::auth::{
     AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
+    AuthTxFeeCollector,
     NoAuth,
 };
 use crate::account::faucets::FungibleFaucet;
 use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
-use crate::account::wallets::{BasicWallet, NoteCreator};
+use crate::account::note_creator::NoteCreator;
+use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
@@ -32,12 +33,12 @@ pub enum StandardAccountComponent {
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
-    AuthSingleSigAcl,
     AuthMultisig,
     AuthMultisigSmart,
     AuthGuardedMultisig,
     AuthNoAuth,
     AuthNetworkAccount,
+    AuthTxFeeCollector,
 }
 
 impl StandardAccountComponent {
@@ -53,12 +54,12 @@ impl StandardAccountComponent {
             Self::Ownable2Step => Ownable2Step::code(),
             Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
             Self::AuthSingleSig => AuthSingleSig::code(),
-            Self::AuthSingleSigAcl => AuthSingleSigAcl::code(),
             Self::AuthMultisig => AuthMultisig::code(),
             Self::AuthMultisigSmart => AuthMultisigSmart::code(),
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
             Self::AuthNoAuth => NoAuth::code(),
             Self::AuthNetworkAccount => AuthNetworkAccount::code(),
+            Self::AuthTxFeeCollector => AuthTxFeeCollector::code(),
         };
 
         code.procedure_roots()
@@ -105,9 +106,6 @@ impl StandardAccountComponent {
                 Self::AuthSingleSig => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
                 },
-                Self::AuthSingleSigAcl => {
-                    component_interface_vec.push(AccountComponentInterface::AuthSingleSigAcl)
-                },
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
                 },
@@ -122,6 +120,9 @@ impl StandardAccountComponent {
                 },
                 Self::AuthNetworkAccount => {
                     component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
+                },
+                Self::AuthTxFeeCollector => {
+                    component_interface_vec.push(AccountComponentInterface::AuthTxFeeCollector)
                 },
             }
         }
@@ -143,11 +144,11 @@ impl StandardAccountComponent {
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
-        Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
         Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
+        Self::AuthTxFeeCollector.extract_component(procedures_set, component_interface_vec);
     }
 }

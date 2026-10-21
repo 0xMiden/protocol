@@ -11,9 +11,10 @@
 //!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
 //! The manager owns an `active_*_policy` slot per kind plus an `allowed_*_policies` map per kind
-//! for set-time validation. Mint and burn are dispatched via `dynexec` by `exec`-invoked
-//! wrappers; send and receive are dispatched by `invoke_send_policy` / `invoke_receive_policy`
-//! wrappers whose roots live in
+//! for set-time validation. Every policy is dispatched via `dyncall`, so it runs in its own memory
+//! context behind the standard `call` ABI and cannot reach the dispatching faucet's procedure
+//! locals. Mint and burn are dispatched by `exec`-invoked wrappers; send and receive are
+//! dispatched by `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in
 //! the protocol-reserved callback slots, so the kernel `dyncall`s the wrapper, which applies the
 //! pause check and then dispatches to the active policy.
 //!
@@ -24,7 +25,16 @@
 //!
 //! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`],
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
-//! manager's `dynexec` can dispatch to it.
+//! manager's `dyncall` can dispatch to it.
+//!
+//! Policies that may run through FPI and read mutable, security-sensitive state must set an
+//! expiration delta in the same execution path that reads the state. This includes transfer
+//! policies reached through asset callbacks and policies that read blocklists, allowlists, pause
+//! flags, active policy roots, oracle values, risk parameters, or similar mutable data. The
+//! built-in mutable transfer policies apply `miden::standards::expiration::apply_default`; custom
+//! policies should call that helper or `tx::update_expiration_block_delta` directly with a custom
+//! expiration delta. No expiration delta is required when a policy reads only immutable data or
+//! when stale data is acceptable.
 //!
 //! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
 //! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`

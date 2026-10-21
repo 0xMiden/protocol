@@ -1,6 +1,3 @@
-extern crate alloc;
-pub use alloc::collections::BTreeMap;
-pub use alloc::string::String;
 use std::fs::{read_to_string, write};
 use std::path::Path;
 
@@ -11,6 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, from_str, to_string_pretty};
 
 use super::ExecutionBenchmark;
+use crate::note_labels::NoteLabels;
 
 // MEASUREMENTS PRINTER
 // ================================================================================================
@@ -20,33 +18,55 @@ use super::ExecutionBenchmark;
 #[derive(Debug, Clone, Serialize)]
 pub struct MeasurementsPrinter {
     prologue: usize,
+    total_cycles: usize,
     notes_processing: usize,
-    note_execution: BTreeMap<String, usize>,
+    note_execution: Vec<NoteExecution>,
     tx_script_processing: usize,
     epilogue: EpilogueMeasurements,
     trace: TraceMeasurements,
 }
 
 impl MeasurementsPrinter {
-    pub fn from_parts(measurements: TransactionMeasurements, trace: TraceLenSummary) -> Self {
-        let note_execution_map = measurements
+    pub fn from_parts(
+        measurements: TransactionMeasurements,
+        trace: TraceLenSummary,
+        note_labels: &NoteLabels,
+    ) -> anyhow::Result<Self> {
+        let note_execution = measurements
             .note_execution
             .iter()
-            .map(|(id, len)| (id.to_hex(), *len))
-            .collect();
+            .map(|(measured, cycles)| {
+                let note = note_labels.label(*measured).with_context(|| {
+                    format!("measured note {measured} matches no input note of the transaction")
+                })?;
+                Ok(NoteExecution { note: note.to_string(), cycles: *cycles })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-        MeasurementsPrinter {
+        Ok(MeasurementsPrinter {
             prologue: measurements.prologue,
+            total_cycles: measurements.total_cycles(),
             notes_processing: measurements.notes_processing,
-            note_execution: note_execution_map,
+            note_execution,
             tx_script_processing: measurements.tx_script_processing,
             epilogue: EpilogueMeasurements::from_parts(
                 measurements.epilogue,
                 measurements.auth_procedure,
             ),
             trace: TraceMeasurements::from(trace),
-        }
+        })
     }
+}
+
+/// Cycles spent executing one input note.
+///
+/// `note` is the note's label; its `#N` suffix, when present, is the note's ordinal among the
+/// same-kind notes in *input-note* order, which need not match this entry's position in the
+/// measurement sequence.
+#[derive(Debug, Clone, Serialize)]
+struct NoteExecution {
+    note: String,
+    cycles: usize,
 }
 
 /// Helper structure holding the cycle count for different intervals in the epilogue, namely:
@@ -66,12 +86,14 @@ impl EpilogueMeasurements {
 }
 
 /// Per-component trace row counts from a real `ExecutionTrace`. `core_rows`, `chiplets_rows`,
-/// and `range_rows` are the AIR-side totals; `chiplets_shape` is an advisory per-chiplet breakdown
-/// that satisfies `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
+/// `poseidon2_permutation_rows`, and `range_rows` are the AIR-side totals; `chiplets_shape` is an
+/// advisory per-chiplet breakdown that satisfies
+/// `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
 #[derive(Debug, Clone, Serialize)]
 struct TraceMeasurements {
     core_rows: usize,
     chiplets_rows: usize,
+    poseidon2_permutation_rows: usize,
     range_rows: usize,
     chiplets_shape: ChipletsTraceShape,
 }
@@ -88,33 +110,17 @@ struct ChipletsTraceShape {
 impl From<TraceLenSummary> for TraceMeasurements {
     fn from(summary: TraceLenSummary) -> Self {
         let chiplets = summary.chiplets_trace_len();
-        // The pinned `miden-processor` doesn't expose an ACE accessor yet, so derive it from the
-        // total. The chiplet-bus invariant
-        // (`chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`) keeps holding
-        // when the upstream accessor lands.
-        let known = chiplets.hash_chiplet_len()
-            + chiplets.bitwise_chiplet_len()
-            + chiplets.memory_chiplet_len()
-            + chiplets.kernel_rom_len();
-        // Guard against the per-chiplet accessors and `trace_len()` going out of sync upstream;
-        // without this, `saturating_sub` below would silently produce `ace_rows = 0`.
-        debug_assert!(
-            known < chiplets.trace_len(),
-            "chiplet accessors disagree with trace_len(): known = {} >= trace_len = {}",
-            known,
-            chiplets.trace_len(),
-        );
-        let ace_rows = chiplets.trace_len().saturating_sub(known + 1);
         Self {
             core_rows: summary.core_trace_len(),
             chiplets_rows: chiplets.trace_len(),
+            poseidon2_permutation_rows: summary.poseidon2_permutation_trace_len(),
             range_rows: summary.range_trace_len(),
             chiplets_shape: ChipletsTraceShape {
                 hasher_rows: chiplets.hash_chiplet_len(),
                 bitwise_rows: chiplets.bitwise_chiplet_len(),
                 memory_rows: chiplets.memory_chiplet_len(),
                 kernel_rom_rows: chiplets.kernel_rom_len(),
-                ace_rows,
+                ace_rows: chiplets.ace_chiplet_len(),
             },
         }
     }
@@ -152,7 +158,7 @@ mod tests {
     use miden_processor::trace::{ChipletsLengths, TraceLenSummary};
     use serde::Deserialize;
 
-    use super::TraceMeasurements;
+    use super::{ExecutionBenchmark, TraceMeasurements};
 
     /// Minimal mirror of the bench-tx.json `trace` section used to validate the committed file
     /// against the producer's contract.
@@ -165,6 +171,7 @@ mod tests {
     struct TraceForTest {
         core_rows: u64,
         chiplets_rows: u64,
+        poseidon2_permutation_rows: u64,
         range_rows: u64,
         chiplets_shape: ChipletsShapeForTest,
     }
@@ -179,6 +186,7 @@ mod tests {
     }
 
     const MIN_TRACE_LEN: u64 = 64;
+    const POSEIDON2_CYCLE_LEN: u64 = 16;
     const COMMITTED_BENCH_TX_JSON: &str = include_str!("../../bench-tx.json");
 
     /// Expected padded brackets per committed scenario. Mirrors `COMMITTED_SCENARIO_EXPECTATIONS`
@@ -187,53 +195,63 @@ mod tests {
         name: &'static str,
         padded_core_side: u64,
         padded_chiplets: u64,
+        padded_poseidon2: u64,
     }
 
     const COMMITTED_SCENARIO_EXPECTATIONS: &[ScenarioExpectation] = &[
         ScenarioExpectation {
             name: "consume single P2ID note with Falcon signing",
             padded_core_side: 131_072,
-            padded_chiplets: 65_536,
+            padded_chiplets: 16_384,
+            padded_poseidon2: 65_536,
         },
         ScenarioExpectation {
             name: "consume single P2ID note with ECDSA signing",
             padded_core_side: 16_384,
-            padded_chiplets: 32_768,
+            padded_chiplets: 8_192,
+            padded_poseidon2: 32_768,
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with Falcon signing",
             padded_core_side: 131_072,
-            padded_chiplets: 65_536,
+            padded_chiplets: 16_384,
+            padded_poseidon2: 65_536,
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
             padded_core_side: 16_384,
-            padded_chiplets: 32_768,
+            padded_chiplets: 8_192,
+            padded_poseidon2: 32_768,
         },
         ScenarioExpectation {
             name: "create single P2ID note with Falcon signing",
             padded_core_side: 131_072,
-            padded_chiplets: 65_536,
+            padded_chiplets: 16_384,
+            padded_poseidon2: 65_536,
         },
         ScenarioExpectation {
             name: "create single P2ID note with ECDSA signing",
             padded_core_side: 16_384,
-            padded_chiplets: 32_768,
+            padded_chiplets: 8_192,
+            padded_poseidon2: 32_768,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L1 to Miden)",
             padded_core_side: 65_536,
-            padded_chiplets: 65_536,
+            padded_chiplets: 32_768,
+            padded_poseidon2: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L2 to Miden)",
             padded_core_side: 65_536,
-            padded_chiplets: 65_536,
+            padded_chiplets: 32_768,
+            padded_poseidon2: 65_536,
         },
         ScenarioExpectation {
             name: "consume B2AGG note (bridge-out)",
             padded_core_side: 262_144,
-            padded_chiplets: 262_144,
+            padded_chiplets: 131_072,
+            padded_poseidon2: 131_072,
         },
     ];
 
@@ -245,11 +263,11 @@ mod tests {
         t.chiplets_rows.next_power_of_two().max(MIN_TRACE_LEN)
     }
 
-    fn assert_scenario(scenarios: &serde_json::Value, expected: &ScenarioExpectation) {
-        let name = expected.name;
-        let raw = scenarios
-            .get(name)
-            .unwrap_or_else(|| panic!("scenario `{name}` is missing from bench-tx.json"));
+    fn padded_poseidon2(t: &TraceForTest) -> u64 {
+        t.poseidon2_permutation_rows.next_power_of_two().max(MIN_TRACE_LEN)
+    }
+
+    fn parse_and_assert_trace_contract(name: &str, raw: &serde_json::Value) -> TraceForTest {
         let scenario: ScenarioForTest = serde_json::from_value(raw.clone())
             .unwrap_or_else(|err| panic!("scenario `{name}` does not match the schema: {err}"));
         let trace = &scenario.trace;
@@ -257,6 +275,14 @@ mod tests {
 
         assert!(trace.core_rows > 0, "{name}: core_rows should be > 0");
         assert!(trace.chiplets_rows > 0, "{name}: chiplets_rows should be > 0");
+        assert!(
+            trace.poseidon2_permutation_rows > 0,
+            "{name}: poseidon2_permutation_rows should be > 0",
+        );
+        assert!(
+            trace.poseidon2_permutation_rows.is_multiple_of(POSEIDON2_CYCLE_LEN),
+            "{name}: poseidon2_permutation_rows should be a multiple of {POSEIDON2_CYCLE_LEN}",
+        );
         assert!(trace.range_rows > 0, "{name}: range_rows should be > 0");
 
         let chiplets_sum = chiplets_shape.hasher_rows
@@ -270,8 +296,18 @@ mod tests {
             "{name}: chiplets_rows must equal sum(chiplets_shape) + 1",
         );
 
-        let core_side = padded_core_side(trace);
-        let chiplets = padded_chiplets(trace);
+        scenario.trace
+    }
+
+    fn assert_scenario(scenarios: &serde_json::Value, expected: &ScenarioExpectation) {
+        let name = expected.name;
+        let raw = scenarios
+            .get(name)
+            .unwrap_or_else(|| panic!("scenario `{name}` is missing from bench-tx.json"));
+        let trace = parse_and_assert_trace_contract(name, raw);
+
+        let core_side = padded_core_side(&trace);
+        let chiplets = padded_chiplets(&trace);
         assert!(core_side.is_power_of_two(), "{name}: padded_core_side not a power of two");
         assert!(chiplets.is_power_of_two(), "{name}: padded_chiplets not a power of two");
         assert_eq!(
@@ -282,12 +318,26 @@ mod tests {
             chiplets, expected.padded_chiplets,
             "{name}: padded_chiplets regressed to a different bracket",
         );
+        assert_eq!(
+            padded_poseidon2(&trace),
+            expected.padded_poseidon2,
+            "{name}: padded_poseidon2 regressed to a different bracket",
+        );
     }
 
     #[test]
     fn committed_bench_tx_matches_trace_contract() {
         let parsed: serde_json::Value = serde_json::from_str(COMMITTED_BENCH_TX_JSON)
             .expect("bench-tx.json should be valid JSON");
+        let scenarios = parsed.as_object().expect("bench-tx.json should contain an object");
+        assert_eq!(
+            scenarios.len(),
+            ExecutionBenchmark::all().len(),
+            "bench-tx.json should contain every ExecutionBenchmark scenario",
+        );
+        for (name, raw) in scenarios {
+            parse_and_assert_trace_contract(name, raw);
+        }
         for expected in COMMITTED_SCENARIO_EXPECTATIONS {
             assert_scenario(&parsed, expected);
         }
@@ -306,6 +356,25 @@ mod tests {
 
         assert_eq!(measurements.core_rows, summary.core_trace_len());
         assert_eq!(measurements.chiplets_rows, summary.chiplets_trace_len().trace_len());
+        assert_eq!(
+            measurements.poseidon2_permutation_rows,
+            summary.poseidon2_permutation_trace_len(),
+        );
         assert_eq!(measurements.range_rows, summary.range_trace_len());
+    }
+
+    #[test]
+    fn trace_measurements_preserve_poseidon2_permutation_rows() {
+        let summary = TraceLenSummary::new_with_padded(
+            10,
+            20,
+            ChipletsLengths::from_parts(30, 40, 50, 60, 70),
+            80,
+            [128; 3],
+        );
+
+        let measurements = TraceMeasurements::from(summary);
+
+        assert_eq!(measurements.poseidon2_permutation_rows, 80);
     }
 }

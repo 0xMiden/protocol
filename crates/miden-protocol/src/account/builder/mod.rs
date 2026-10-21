@@ -29,10 +29,47 @@ use crate::{Felt, Word};
 /// - The `account_type` set to [`AccountType::Private`].
 /// - The `version` set to [`AccountIdVersion::Version1`].
 ///
-/// The methods that are required to be called are:
+/// **Asset Callbacks**
 ///
-/// - [`AccountBuilder::with_auth_component`],
-/// - [`AccountBuilder::with_component`], which must be called at least once.
+/// The [`AssetCallbackFlag`] determines whether the tx kernel dispatches asset callbacks for assets
+/// issued by the account (if any) and is encoded into the resulting [`AccountId`] at creation. Note
+/// that the flag only enables the dispatch: whether a callback actually runs additionally depends
+/// on the corresponding callback slot being present and holding a non-empty procedure root, so an
+/// enabled flag means callbacks may be invoked, not that the account has any.
+///
+/// The flag is derived from the account's storage: it is [`AssetCallbackFlag::Enabled`] if any
+/// component installs one of the protocol-reserved asset callback slots (see
+/// [`AccountStorage::has_callback_slots`]) and [`AssetCallbackFlag::Disabled`] otherwise. There is
+/// deliberately no way to disable the flag for an account that does install such a slot, since the
+/// tx kernel gates callback invocation on the flag alone and the flag cannot be changed after the
+/// ID is ground, so such a callback could never be invoked.
+///
+/// The converse is allowed: [`AccountBuilder::enable_asset_callbacks`] enables the flag without
+/// installing a callback slot, so that the account retains the ability to add a callback slot via
+/// an account upgrade later. This is particularly useful if new types of callbacks are introduced.
+///
+/// An enabled flag makes the account's state a required input of every transaction that moves one
+/// of its assets: dispatching a callback starts a foreign context against the issuing account, and
+/// the foreign state is loaded before the callback slot is looked up, so the load happens even when
+/// no callback procedure root is registered. An [`AccountType::Private`] account publishes only its
+/// commitment, so its holders have to obtain that state out of band. Both the account type and the
+/// flag are immutable parts of the [`AccountId`], so this is settled at creation.
+///
+/// [`AccountBuilder::with_component`] (or [`AccountBuilder::with_components`]) must be called at
+/// least once, and exactly one of the added components must be an authentication component (i.e. a
+/// component exporting a procedure marked with the `@auth_script` attribute). The auth component is
+/// identified and extracted automatically when [`AccountBuilder::build`] is called.
+///
+/// # Security
+///
+/// The builder only enforces the structural requirement of exactly one auth component; it does not
+/// check that the auth component is a sensible choice for the other components on the account. In
+/// particular, an auth component that performs no authentication makes the account permissionless:
+/// every state-changing procedure it exposes can be called by anyone. This is especially dangerous
+/// when combined with components that rely on the auth component as their sole access gate (such as
+/// authority-controlled setters), which then become permissionless as well. Higher-level factory
+/// functions vet these combinations; when building an account directly, the caller is responsible
+/// for pairing a suitable auth component with the account's other components.
 ///
 /// Under the `testing` feature, it is possible to:
 /// - Build an existing account using `AccountBuilder::build_existing`, which will set the account's
@@ -42,10 +79,10 @@ use crate::{Felt, Word};
 ///
 /// **Account Procedure Order**
 ///
-/// Note that the procedure in each components code are merged together in the same order as
-/// `with_component` is called, except for the auth component. The auth procedure is always moved to
-/// the first position, since the tx kernel assume procedure index 0 is the auth procedure within an
-/// [`AccountCode`].
+/// Note that the auth procedure is always moved to the first position, since the tx kernel assumes
+/// procedure index 0 is the auth procedure within an [`AccountCode`]. The procedures of all other
+/// components are merged and sorted, so the order in which `with_component` is called does not
+/// affect the resulting account code commitment.
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
@@ -53,7 +90,6 @@ pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
     nonce: Option<Felt>,
     components: Vec<AccountComponent>,
-    auth_component: Option<AccountComponent>,
     account_type: AccountType,
     asset_callbacks: AssetCallbackFlag,
     init_seed: [u8; 32],
@@ -72,7 +108,6 @@ impl AccountBuilder {
             #[cfg(any(feature = "testing", test))]
             nonce: None,
             components: vec![],
-            auth_component: None,
             init_seed,
             account_type: AccountType::Private,
             asset_callbacks: AssetCallbackFlag::Disabled,
@@ -92,14 +127,12 @@ impl AccountBuilder {
         self
     }
 
-    /// Sets the immutable [`AssetCallbackFlag`] of the account.
+    /// Enables the immutable [`AssetCallbackFlag`] of the account even if none of its components
+    /// install an asset callback slot.
     ///
-    /// This determines whether assets issued by the account (if any) trigger callbacks. It must be
-    /// set to [`AssetCallbackFlag::Enabled`] for faucets that configure a transfer policy, and
-    /// is encoded into the resulting [`AccountId`] at creation. Defaults to
-    /// [`AssetCallbackFlag::Disabled`].
-    pub fn with_asset_callbacks(mut self, asset_callbacks: AssetCallbackFlag) -> Self {
-        self.asset_callbacks = asset_callbacks;
+    /// See the [type-level docs](AccountBuilder#asset-callbacks) for details.
+    pub fn enable_asset_callbacks(mut self) -> Self {
+        self.asset_callbacks = AssetCallbackFlag::Enabled;
         self
     }
 
@@ -107,6 +140,10 @@ impl AccountBuilder {
     /// **must be called at least once** since an account must export at least one procedure.
     ///
     /// All components will be merged to form the final code and storage of the built account.
+    /// Exactly one of the added components must be an authentication component (see
+    /// [`AccountComponent::is_auth_component`]); it is identified and moved to the front of the
+    /// procedure list automatically when [`Self::build`] is called, while all other procedures are
+    /// sorted.
     ///
     /// For composite configurations that expand into multiple components (such as
     /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].
@@ -132,37 +169,9 @@ impl AccountBuilder {
         self
     }
 
-    /// Adds a designated authentication [`AccountComponent`] to the builder.
-    ///
-    /// This component may contain multiple procedures, but is expected to contain exactly one
-    /// authentication procedure (marked with the `@auth_script` attribute).
-    /// Calling this method multiple times will override the previous auth component.
-    ///
-    /// Procedures from this component will be placed at the beginning of the account procedure
-    /// list.
-    ///
-    /// # Security
-    ///
-    /// This only enforces the structural requirement above; it does not check that the auth
-    /// component is a sensible choice for the other components on the account. In particular, an
-    /// auth component that performs no authentication makes the account permissionless: every
-    /// state-changing procedure it exposes can be called by anyone. This is especially dangerous
-    /// when combined with components that rely on the auth component as their sole access gate
-    /// (such as authority-controlled setters), which then become permissionless as well.
-    /// Higher-level factory functions vet these combinations; when building an account
-    /// directly, the caller is responsible for pairing a suitable auth component with the
-    /// account's other components.
-    pub fn with_auth_component(mut self, account_component: impl Into<AccountComponent>) -> Self {
-        self.auth_component = Some(account_component.into());
-        self
-    }
-
     /// Returns an iterator of storage schemas attached to the builder's components.
     pub fn storage_schemas(&self) -> impl Iterator<Item = &StorageSchema> + '_ {
-        self.auth_component
-            .iter()
-            .chain(self.components.iter())
-            .map(|component| component.storage_schema())
+        self.components.iter().map(|component| component.storage_schema())
     }
 
     /// Builds the common parts of testing and non-testing code.
@@ -175,14 +184,8 @@ impl AccountBuilder {
         #[cfg(all(not(feature = "testing"), not(test)))]
         let vault = AssetVault::default();
 
-        let auth_component = self
-            .auth_component
-            .take()
-            .ok_or(AccountError::BuildError("auth component must be set".into(), None))?;
-
-        let mut components = vec![auth_component];
-        components.append(&mut self.components);
-
+        // The build method does not access components, so it is safe to `take` them out.
+        let components = core::mem::take(&mut self.components);
         let (code, storage) = Account::initialize_from_components(components).map_err(|err| {
             AccountError::BuildError(
                 "account components failed to build".into(),
@@ -193,18 +196,27 @@ impl AccountBuilder {
         Ok((vault, code, storage))
     }
 
+    /// Derives the account's [`AssetCallbackFlag`] from the asset callback slots installed by its
+    /// components.
+    ///
+    /// See the [type-level docs](AccountBuilder#asset-callbacks) for details.
+    fn derive_asset_callbacks(&self, storage: &AccountStorage) -> AssetCallbackFlag {
+        AssetCallbackFlag::from(self.asset_callbacks.is_enabled() || storage.has_callback_slots())
+    }
+
     /// Grinds a new [`AccountId`] using the `init_seed` as a starting point.
     fn grind_account_id(
         &self,
         init_seed: [u8; 32],
         version: AccountIdVersion,
+        asset_callbacks: AssetCallbackFlag,
         code_commitment: Word,
         storage_commitment: Word,
     ) -> Result<Word, AccountError> {
         let seed = AccountIdV1::compute_account_seed(
             init_seed,
             self.account_type,
-            self.asset_callbacks,
+            asset_callbacks,
             version,
             code_commitment,
             storage_commitment,
@@ -224,7 +236,7 @@ impl AccountBuilder {
     /// - The init seed is not set.
     /// - The number of procedures in all merged components is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`](crate::account::AccountCode::MAX_NUM_PROCEDURES).
-    /// - Two or more libraries export a procedure with the same MAST root.
+    /// - Two or more packages export a procedure with the same MAST root.
     /// - Authentication component is missing.
     /// - Multiple authentication procedures are found.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
@@ -243,9 +255,12 @@ impl AccountBuilder {
             ));
         }
 
+        let asset_callbacks = self.derive_asset_callbacks(&storage);
+
         let seed = self.grind_account_id(
             self.init_seed,
             self.id_version,
+            asset_callbacks,
             code.commitment(),
             storage.to_commitment(),
         )?;
@@ -259,7 +274,7 @@ impl AccountBuilder {
         .expect("get_account_seed should provide a suitable seed");
 
         debug_assert_eq!(account_id.account_type(), self.account_type);
-        debug_assert_eq!(account_id.asset_callback_flag(), self.asset_callbacks);
+        debug_assert_eq!(account_id.asset_callback_flag(), asset_callbacks);
 
         // SAFETY: The account ID was derived from the seed and the seed is provided, so it is safe
         // to bypass the checks of `Account::new`.
@@ -305,7 +320,7 @@ impl AccountBuilder {
                 bytes,
                 AccountIdVersion::Version1,
                 self.account_type,
-                self.asset_callbacks,
+                self.derive_asset_callbacks(&storage),
             )
         };
 
@@ -330,7 +345,8 @@ mod tests {
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
-    use crate::testing::assembler::assemble_test_library;
+    use crate::asset::AssetCallbacks;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "
@@ -346,11 +362,11 @@ mod tests {
             end
           ";
 
-    static CUSTOM_LIBRARY1: LazyLock<Package> = LazyLock::new(|| {
-        assemble_test_library("custom-library-1", "custom::component1", CUSTOM_CODE1)
+    static CUSTOM_PACKAGE1: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_package("custom-package-1", "custom::component1", CUSTOM_CODE1)
     });
-    static CUSTOM_LIBRARY2: LazyLock<Package> = LazyLock::new(|| {
-        assemble_test_library("custom-library-2", "custom::component2", CUSTOM_CODE2)
+    static CUSTOM_PACKAGE2: LazyLock<Package> = LazyLock::new(|| {
+        assemble_test_package("custom-package-2", "custom::component2", CUSTOM_CODE2)
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -376,7 +392,7 @@ mod tests {
 
             let metadata = AccountComponentMetadata::new("test::custom_component1");
             AccountComponent::new(
-                CUSTOM_LIBRARY1.clone(),
+                CUSTOM_PACKAGE1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
                 metadata,
             )
@@ -397,7 +413,7 @@ mod tests {
 
             let metadata = AccountComponentMetadata::new("test::custom_component2");
             AccountComponent::new(
-                CUSTOM_LIBRARY2.clone(),
+                CUSTOM_PACKAGE2.clone(),
                 vec![
                     StorageSlot::with_value(CUSTOM_COMPONENT2_SLOT_NAME0.clone(), value0),
                     StorageSlot::with_value(CUSTOM_COMPONENT2_SLOT_NAME1.clone(), value1),
@@ -415,7 +431,7 @@ mod tests {
         let storage_slot2 = 42;
 
         let account = Account::builder([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_component(CustomComponent2 {
                 slot0: storage_slot1,
@@ -436,14 +452,14 @@ mod tests {
         .unwrap();
         assert_eq!(account.id(), computed_id);
 
-        // The merged code should have one procedure from each library.
+        // The merged code should have one procedure from each package.
         assert_eq!(account.code.procedure_roots().count(), 3);
 
-        let foo_root = CUSTOM_LIBRARY1.mast_forest()[CUSTOM_LIBRARY1
-            .get_export_node_id(CUSTOM_LIBRARY1.manifest.exports().next().unwrap().path())]
+        let foo_root = CUSTOM_PACKAGE1.mast_forest()[CUSTOM_PACKAGE1
+            .get_export_node_id(CUSTOM_PACKAGE1.manifest.exports().next().unwrap().path())]
         .digest();
-        let bar_root = CUSTOM_LIBRARY2.mast_forest()[CUSTOM_LIBRARY2
-            .get_export_node_id(CUSTOM_LIBRARY2.manifest.exports().next().unwrap().path())]
+        let bar_root = CUSTOM_PACKAGE2.mast_forest()[CUSTOM_PACKAGE2
+            .get_export_node_id(CUSTOM_PACKAGE2.manifest.exports().next().unwrap().path())]
         .digest();
 
         assert!(account.code().procedures().contains(&AccountProcedureRoot::from_raw(foo_root)));
@@ -479,7 +495,7 @@ mod tests {
         ];
 
         let account = Account::builder([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_components(components)
             .build()
             .unwrap();
@@ -487,7 +503,7 @@ mod tests {
         // The account built via `with_components` should be identical to one built via
         // chained `with_component` calls in the same order.
         let expected = Account::builder([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_component(CustomComponent2 {
                 slot0: storage_slot1,
@@ -502,14 +518,14 @@ mod tests {
 
         // Empty iterators are accepted and behave as a no-op.
         let account_no_extra = Account::builder([6; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_components(core::iter::empty::<CustomComponent2>())
             .build()
             .unwrap();
 
         let expected_no_extra = Account::builder([6; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .build()
             .unwrap();
@@ -518,17 +534,113 @@ mod tests {
     }
 
     #[test]
+    fn account_builder_auth_component_position_is_irrelevant() {
+        let component1 = CustomComponent1 { slot0: 25 };
+        let component2 = CustomComponent2 { slot0: 12, slot1: 42 };
+        let common_components =
+            vec![AccountComponent::from(component1), AccountComponent::from(component2)];
+
+        let mut components_auth_1st = common_components.clone();
+        components_auth_1st.insert(0, AccountComponent::from(NoopAuthComponent));
+
+        let mut components_auth_2nd = common_components.clone();
+        components_auth_2nd.insert(1, AccountComponent::from(NoopAuthComponent));
+
+        let seed = [5; 32];
+        let auth_1st = Account::builder(seed).with_components(components_auth_1st).build().unwrap();
+        let auth_2nd = Account::builder(seed).with_components(components_auth_2nd).build().unwrap();
+
+        assert_eq!(auth_1st.id(), auth_2nd.id());
+        assert_eq!(auth_1st.code().commitment(), auth_2nd.code().commitment());
+        assert_eq!(auth_1st.storage().to_commitment(), auth_2nd.storage().to_commitment());
+    }
+
+    #[test]
+    fn account_builder_without_auth_component_fails() {
+        let build_error = Account::builder([5; 32])
+            .with_component(CustomComponent1 { slot0: 25 })
+            .build()
+            .unwrap_err();
+
+        assert_matches!(build_error, AccountError::BuildError(_, Some(source)) => {
+            assert_matches!(*source, AccountError::AccountCodeNoAuthComponent);
+        });
+    }
+
+    #[test]
+    fn account_builder_with_multiple_auth_components_fails() {
+        let build_error = Account::builder([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: 25 })
+            .build()
+            .unwrap_err();
+
+        assert_matches!(build_error, AccountError::BuildError(_, Some(source)) => {
+            assert_matches!(*source, AccountError::AccountCodeMultipleAuthComponents);
+        });
+    }
+
+    #[test]
     fn account_builder_non_empty_vault_on_new_account() {
         let storage_slot0 = 25;
 
         let build_error = Account::builder([0xff; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(CustomComponent1 { slot0: storage_slot0 })
             .with_assets(AssetVault::mock().assets())
             .build()
             .unwrap_err();
 
         assert_matches!(build_error, AccountError::BuildError(msg, _) if msg == "account asset vault must be empty on new accounts")
+    }
+
+    /// The [`AssetCallbackFlag`] is derived from the installed asset callback slots: the kernel
+    /// gates callback invocation on that flag alone and the flag is immutable once the ID is
+    /// ground, so an account that installs a callback slot must have callbacks enabled or whatever
+    /// the callback enforces would be silently and permanently bypassed.
+    #[test]
+    fn account_builder_derives_asset_callback_flag_from_callback_slots() {
+        let callback_component = |slots| {
+            AccountComponent::new(
+                CUSTOM_PACKAGE1.clone(),
+                slots,
+                AccountComponentMetadata::new("test::callback_component"),
+            )
+            .expect("component should be valid")
+        };
+
+        for slots in [
+            AssetCallbacks::new()
+                .on_before_asset_added_to_note(Word::from([1u32, 2, 3, 4]))
+                .into_storage_slots(),
+            AssetCallbacks::new()
+                .on_before_asset_added_to_account(Word::from([1u32, 2, 3, 4]))
+                .into_storage_slots(),
+        ] {
+            let account = Account::builder([7; 32])
+                .with_component(NoopAuthComponent)
+                .with_component(callback_component(slots))
+                .build()
+                .unwrap();
+
+            assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+        }
+    }
+
+    /// Without an installed callback slot the flag is disabled, unless callbacks are explicitly
+    /// enabled to reserve the capability for the account's lifetime.
+    #[test]
+    fn account_builder_derives_disabled_asset_callback_flag_without_callback_slots() {
+        let builder = Account::builder([7; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: 25 });
+
+        let account = builder.clone().build().unwrap();
+        assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+        let account = builder.enable_asset_callbacks().build().unwrap();
+        assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
     }
 
     // TODO: Test that a BlockHeader with a number which is not a multiple of 2^16 returns an error.

@@ -95,6 +95,10 @@ then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visib
 ## Output Format
 
 ```
+<BLOCK or CLEAN>: [see the Verdicts below. This must be the literal first thing in
+your response, substituting the real token for what's inside the angle brackets - do
+not write this line verbatim.]
+
 ## Adversarial Security Review
 
 **Verdict:** BLOCK | CLEAN
@@ -118,9 +122,19 @@ then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visib
 - **BLOCK** - Any Critical or Warning finding. Do not merge until addressed.
 - **CLEAN** - No Critical or Warning findings (Notes, if any, are surfaced but do not block). Safe to merge.
 
+### Empty Sections
+
+If `### Critical Findings` or `### Warnings` has no findings, its first line must open
+with `None.` - either bare, or with a period-terminated explanation on the same line
+("None. I tried X, Y, Z..."); further diligence notes on the lines below are fine
+either way. The rule cuts the other way too: if the section has any real finding, do
+not write `None.` anywhere in it - list the finding(s) directly. A section never
+contains both.
+
 ## Anti-Patterns - Do NOT Do These
 
 - **"LGTM, no issues found"** - Be skeptical if you found nothing, but don't fabricate findings. If a change is genuinely clean, use the CLEAN verdict.
+- **Mixing `None.` with a real finding in the same section** - `### Warnings` / `### Critical Findings` either has `None.` as its entire content, or lists real findings with no `None.` line anywhere in it. Never both.
 - **Pulling punches** - "This might possibly be a minor concern" is useless. Say what's wrong.
 - **Restating the diff** - "This function was added" is not a finding. What's WRONG with it?
 - **Cosmetic-only findings** - Reporting style issues while missing a panic is worse than no review.

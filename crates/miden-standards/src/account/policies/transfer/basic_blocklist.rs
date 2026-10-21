@@ -1,27 +1,31 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
 use crate::procedure_root;
 
 // BASIC BLOCKLIST TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(
-    BASIC_BLOCKLIST_TRANSFER_POLICY_CODE,
+account_component_package!(
+    BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE,
     "miden-standards-faucets-policies-transfer-basic-blocklist.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicBlocklist::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_BLOCKLIST_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::basic_blocklist";
+
 procedure_root!(
     BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT,
-    BasicBlocklist::NAME,
+    BASIC_BLOCKLIST_LIBRARY_PATH,
     BasicBlocklist::PROC_NAME,
     BasicBlocklist::code()
 );
@@ -33,6 +37,8 @@ procedure_root!(
 /// [`crate::account::policies::TokenPolicyManager`] whose send / receive policy maps include
 /// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
+///
+/// The issuing faucet is exempt from its own blocklist.
 ///
 /// The wrapped [`BlocklistStorage`] captures the initial blocklist contents (it can be empty
 /// for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
@@ -47,8 +53,7 @@ pub struct BasicBlocklist(BlocklistStorage);
 
 impl BasicBlocklist {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::basic_blocklist";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_blocklist";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
@@ -67,12 +72,17 @@ impl BasicBlocklist {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_BLOCKLIST_TRANSFER_POLICY_CODE
+        &BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE.code
     }
 
     /// Returns the MAST root of the basic blocklist transfer policy procedure.
     pub fn root() -> AccountProcedureRoot {
         *BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE.metadata.clone()
     }
 }
 
@@ -84,15 +94,7 @@ impl From<BlocklistStorage> for BasicBlocklist {
 
 impl From<BasicBlocklist> for AccountComponent {
     fn from(blocklist: BasicBlocklist) -> Self {
-        let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(BasicBlocklist::NAME)
-            .with_description(
-                "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` \
-                 storage map it reads",
-            )
-            .with_storage_schema(storage_schema);
+        let metadata = BasicBlocklist::component_metadata();
 
         AccountComponent::new(BasicBlocklist::code().clone(), vec![blocklist.0.into_slot()], metadata)
             .expect(

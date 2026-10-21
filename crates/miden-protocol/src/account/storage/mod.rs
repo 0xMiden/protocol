@@ -19,6 +19,7 @@ use crate::account::{
     StorageSlotPatch,
     StorageValuePatch,
 };
+use crate::asset::AssetCallbacks;
 use crate::crypto::SequentialCommit;
 
 pub(crate) mod slot;
@@ -162,6 +163,20 @@ impl AccountStorage {
     /// otherwise.
     pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlot> {
         self.slots.iter().find(|slot| slot.name().id() == slot_name.id())
+    }
+
+    /// Returns `true` if the storage contains at least one of the protocol-reserved asset callback
+    /// slots, `false` otherwise.
+    ///
+    /// Only the presence of a callback slot is relevant, not its value: a slot's value can be
+    /// rewritten over the account's lifetime, while its presence can only change through an account
+    /// upgrade, so only the presence can be tied to the immutable
+    /// [`AssetCallbackFlag`](crate::account::AssetCallbackFlag) encoded in the account ID. See the
+    /// [`AccountBuilder`](crate::account::AccountBuilder#asset-callbacks) docs for details.
+    pub fn has_callback_slots(&self) -> bool {
+        AssetCallbacks::slot_names()
+            .iter()
+            .any(|slot_name| self.get(slot_name).is_some())
     }
 
     /// Returns a mutable reference to the storage slot with the provided name, if it exists, `None`
@@ -356,14 +371,15 @@ impl AccountStorage {
     ///
     /// Returns an error if:
     /// - Adding the slot would exceed [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
+    /// - A single tree leaf of the map would hold more entries than the tree allows.
     fn create_map_slot(
         &mut self,
         slot_name: StorageSlotName,
         entries: &StorageMapPatchEntries,
     ) -> Result<(), AccountError> {
-        let storage_map =
-            StorageMap::with_entries(entries.as_map().iter().map(|(key, value)| (*key, *value)))
-                .expect("map should contain only unique entries");
+        // The patch entries are already a map, so only an overfull tree leaf can fail here.
+        let storage_map = StorageMap::from_btree_map(entries.as_map().clone())
+            .map_err(AccountError::MaxNumStorageMapLeavesExceeded)?;
 
         self.create_slot(StorageSlot::with_map(slot_name, storage_map))
     }

@@ -1,21 +1,18 @@
-use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
-use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
-use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_processor::LoadedMastForest;
 
 use super::Felt;
+use crate::assembly::Path;
 use crate::assembly::mast::{MastForest, MastNodeId};
-use crate::assembly::{Library, Path};
+use crate::crypto::utils::{bytes_to_elements_with_padding, padded_elements_to_bytes};
 use crate::errors::NoteError;
-use crate::package::{loaded_mast_forest, package_debug_info};
-use crate::utils::create_external_node_forest;
+use crate::script::MastForestScript;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -23,10 +20,10 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{AdviceMap, Program};
+use crate::vm::AdviceMap;
 use crate::{PrettyPrint, Word};
 
-/// The attribute name used to mark the entrypoint procedure in a note script library.
+/// The attribute name used to mark the entrypoint procedure in a note script package.
 const NOTE_SCRIPT_ATTRIBUTE: &str = "note_script";
 
 // NOTE SCRIPT ROOT
@@ -73,28 +70,11 @@ impl Deserializable for NoteScriptRoot {
 /// A note's script represents a program which must be executed for a note to be consumed. As such
 /// it defines the rules and side effects of consuming a given note.
 #[derive(Debug, Clone)]
-pub struct NoteScript {
-    mast: Arc<MastForest>,
-    entrypoint: MastNodeId,
-    package_debug_info: Option<Arc<PackageDebugInfo>>,
-}
+pub struct NoteScript(MastForestScript);
 
 impl NoteScript {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [NoteScript] instantiated from the provided program.
-    ///
-    /// TODO: since the note script now should be created from `Library`, not `Program`, this
-    /// constructor should be removed:
-    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
-    pub fn new(code: Program) -> Self {
-        Self {
-            entrypoint: code.entrypoint(),
-            mast: code.mast_forest().clone(),
-            package_debug_info: None,
-        }
-    }
 
     /// Returns a new [NoteScript] deserialized from the provided bytes.
     ///
@@ -106,110 +86,52 @@ impl NoteScript {
 
     /// Returns a new [NoteScript] instantiated from the provided components.
     ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        assert!(mast.get_node_by_id(entrypoint).is_some());
-        Self {
-            mast,
-            entrypoint,
-            package_debug_info: None,
-        }
+    /// # Errors
+    /// Returns an error if the specified entrypoint is not in the provided MAST forest.
+    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Result<Self, NoteError> {
+        MastForestScript::from_parts(mast, entrypoint)
+            .map_err(NoteError::MastForestScript)
+            .map(Self)
     }
 
-    /// Returns a new [NoteScript] instantiated from the provided library.
+    /// Returns a new [NoteScript] instantiated from the provided package.
     ///
-    /// The library must contain exactly one procedure with the `@note_script` attribute,
+    /// The package must contain exactly one procedure with the `@note_script` attribute,
     /// which will be used as the entrypoint.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The library does not contain a procedure with the `@note_script` attribute.
-    /// - The library contains multiple procedures with the `@note_script` attribute.
-    pub fn from_library(library: &Library) -> Result<Self, NoteError> {
-        let mut entrypoint = None;
-
-        for export in library.manifest.exports() {
-            if let Some(proc_export) = export.as_procedure() {
-                // Check for @note_script attribute
-                if proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
-                    if entrypoint.is_some() {
-                        return Err(NoteError::NoteScriptMultipleProceduresWithAttribute);
-                    }
-                    entrypoint = Some(
-                        proc_export.node.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?,
-                    );
-                }
-            }
-        }
-
-        let entrypoint = entrypoint.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?;
-
-        Ok(Self {
-            mast: library.mast_forest().clone(),
-            entrypoint,
-            package_debug_info: package_debug_info(library),
-        })
+    /// - The package is an executable (i.e., its target type is
+    ///   [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
+    /// - The package does not contain a procedure with the `@note_script` attribute.
+    /// - The package contains multiple procedures with the `@note_script` attribute.
+    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
+        let script = MastForestScript::from_package(package, NOTE_SCRIPT_ATTRIBUTE)
+            .map_err(NoteError::MastForestScript)?;
+        Ok(Self(script))
     }
 
     /// Returns a new [NoteScript] containing only a reference to a procedure in the provided
-    /// library.
+    /// package.
     ///
-    /// This method is useful when a library contains multiple note scripts and you need to
+    /// This method is useful when a package contains multiple note scripts and you need to
     /// extract a specific one by its fully qualified path (e.g.,
     /// `miden::standards::notes::burn::main`).
     ///
     /// The procedure at the specified path must have the `@note_script` attribute.
     ///
     /// Note: This method creates a minimal [MastForest] containing only an external node
-    /// referencing the procedure's digest, rather than copying the entire library. The actual
+    /// referencing the procedure's digest, rather than copying the entire package. The actual
     /// procedure code will be resolved at runtime via the `MastForestStore`.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The library does not contain a procedure at the specified path.
+    /// - The package does not contain a procedure at the specified path.
     /// - The procedure at the specified path does not have the `@note_script` attribute.
-    pub fn from_library_reference(library: &Library, path: &Path) -> Result<Self, NoteError> {
-        // Find the export matching the path
-        let export = library
-            .manifest
-            .exports()
-            .find(|e| e.path().as_ref() == path)
-            .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
-
-        // Get the procedure export and verify it has the @note_script attribute
-        let proc_export = export
-            .as_procedure()
-            .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
-
-        if !proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
-            return Err(NoteError::NoteScriptProcedureMissingAttribute(path.to_string().into()));
-        }
-
-        // Get the digest of the procedure from the library
-        let digest = proc_export.digest;
-
-        // Create a minimal MastForest with just an external node referencing the digest
-        let (mast, entrypoint) = create_external_node_forest(digest);
-
-        Ok(Self {
-            mast: Arc::new(mast),
-            entrypoint,
-            package_debug_info: package_debug_info(library),
-        })
-    }
-
-    /// Creates an [`NoteScript`] from a [`Package`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The package contains a library which does not contain a procedure with the `@note_script`
-    ///   attribute.
-    /// - The package contains a library which contains multiple procedures with the `@note_script`
-    ///   attribute.
-    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        Ok(NoteScript::from_library(package))?
+    pub fn from_package_reference(package: &Package, path: &Path) -> Result<Self, NoteError> {
+        let script = MastForestScript::from_package_reference(package, path, NOTE_SCRIPT_ATTRIBUTE)
+            .map_err(NoteError::MastForestScript)?;
+        Ok(Self(script))
     }
 
     // PUBLIC ACCESSORS
@@ -217,27 +139,27 @@ impl NoteScript {
 
     /// Returns the commitment of this note script (i.e., the script's MAST root).
     pub fn root(&self) -> NoteScriptRoot {
-        NoteScriptRoot::from_raw(self.mast[self.entrypoint].digest())
+        NoteScriptRoot::from_raw(self.0.digest())
     }
 
     /// Returns a reference to the [MastForest] backing this note script.
     pub fn mast(&self) -> Arc<MastForest> {
-        self.mast.clone()
+        self.0.mast()
     }
 
     /// Returns the MAST forest and package-owned debug information backing this note script.
     pub fn loaded_mast_forest(&self) -> LoadedMastForest {
-        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
+        self.0.loaded_mast_forest()
     }
 
     /// Returns an entrypoint node ID of the current script.
     pub fn entrypoint(&self) -> MastNodeId {
-        self.entrypoint
+        self.0.entrypoint()
     }
 
     /// Removes debug info from this note script, if any.
     pub fn clear_debug_info(&mut self) {
-        self.package_debug_info = None;
+        self.0.clear_debug_info();
     }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
@@ -246,112 +168,44 @@ impl NoteScript {
     /// This allows adding advice map entries to an already-compiled note script,
     /// which is useful when the entries are determined after script compilation.
     pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
-        if advice_map.is_empty() {
-            return self;
-        }
+        Self(self.0.with_advice_map(advice_map))
+    }
 
-        let mast = (*self.mast).clone().with_advice_map(advice_map);
-        Self {
-            mast: Arc::new(mast),
-            entrypoint: self.entrypoint,
-            package_debug_info: self.package_debug_info,
-        }
+    // CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the encoding of this note script as field elements.
+    ///
+    /// The serialized script is packed into field elements, 7 bytes per element.
+    pub fn to_elements(&self) -> Vec<Felt> {
+        bytes_to_elements_with_padding(&self.to_bytes())
+    }
+
+    /// Decodes a [`NoteScript`] from the elements produced by [`NoteScript::to_elements`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `elements` do not encode a valid note script.
+    pub fn try_from_elements(elements: &[Felt]) -> Result<Self, DeserializationError> {
+        let bytes = padded_elements_to_bytes(elements).ok_or_else(|| {
+            DeserializationError::InvalidValue("encoded note script is not padded".into())
+        })?;
+
+        Self::read_from_bytes(&bytes)
     }
 }
 
 impl PartialEq for NoteScript {
     fn eq(&self, other: &Self) -> bool {
-        self.mast == other.mast && self.entrypoint == other.entrypoint
+        self.0 == other.0
     }
 }
 
 impl Eq for NoteScript {}
 
-// CONVERSIONS INTO NOTE SCRIPT
-// ================================================================================================
-
-impl From<&NoteScript> for Vec<Felt> {
-    fn from(script: &NoteScript) -> Self {
-        let mut bytes = script.mast.to_bytes();
-        let len = bytes.len();
-
-        // Pad the data so that it can be encoded with u32
-        let missing = if !len.is_multiple_of(4) { 4 - (len % 4) } else { 0 };
-        bytes.resize(bytes.len() + missing, 0);
-
-        let final_size = 2 + bytes.len();
-        let mut result = Vec::with_capacity(final_size);
-
-        // Push the length, this is used to remove the padding later
-        result.push(Felt::from(u32::from(script.entrypoint)));
-        result.push(Felt::new_unchecked(len as u64));
-
-        // A Felt can not represent all u64 values, so the data is encoded using u32.
-        let mut encoded: &[u8] = &bytes;
-        while encoded.len() >= 4 {
-            let (data, rest) =
-                encoded.split_first_chunk::<4>().expect("The length has been checked");
-            let number = u32::from_le_bytes(*data);
-            result.push(Felt::from(number));
-
-            encoded = rest;
-        }
-
-        result
-    }
-}
-
-impl From<NoteScript> for Vec<Felt> {
-    fn from(value: NoteScript) -> Self {
-        (&value).into()
-    }
-}
-
 impl AsRef<NoteScript> for NoteScript {
     fn as_ref(&self) -> &NoteScript {
         self
-    }
-}
-
-// CONVERSIONS FROM NOTE SCRIPT
-// ================================================================================================
-
-impl TryFrom<&[Felt]> for NoteScript {
-    type Error = DeserializationError;
-
-    fn try_from(elements: &[Felt]) -> Result<Self, Self::Error> {
-        if elements.len() < 2 {
-            return Err(DeserializationError::UnexpectedEOF);
-        }
-
-        let entrypoint: u32 = elements[0]
-            .as_canonical_u64()
-            .try_into()
-            .map_err(|err: TryFromIntError| DeserializationError::InvalidValue(err.to_string()))?;
-        let len = elements[1].as_canonical_u64();
-        let mut data = Vec::with_capacity(elements.len() * 4);
-
-        for &felt in &elements[2..] {
-            let element: u32 =
-                felt.as_canonical_u64().try_into().map_err(|err: TryFromIntError| {
-                    DeserializationError::InvalidValue(err.to_string())
-                })?;
-            data.extend(element.to_le_bytes())
-        }
-        data.truncate(len as usize);
-
-        // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
-        let mast = MastForest::read_from_bytes(&data)?;
-        let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)?;
-        Ok(NoteScript::from_parts(Arc::new(mast), entrypoint))
-    }
-}
-
-impl TryFrom<Vec<Felt>> for NoteScript {
-    type Error = DeserializationError;
-
-    fn try_from(value: Vec<Felt>) -> Result<Self, Self::Error> {
-        value.as_slice().try_into()
     }
 }
 
@@ -360,27 +214,17 @@ impl TryFrom<Vec<Felt>> for NoteScript {
 
 impl Serializable for NoteScript {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.mast.write_into(target);
-        target.write_u32(u32::from(self.entrypoint));
+        self.0.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        // TODO: this is a temporary workaround. Replace mast.to_bytes().len() with
-        // MastForest::get_size_hint() (or a similar size-hint API) once it becomes
-        // available.
-        let mast_size = self.mast.to_bytes().len();
-        let u32_size = 0u32.get_size_hint();
-
-        mast_size + u32_size
+        self.0.get_size_hint()
     }
 }
 
 impl Deserializable for NoteScript {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mast = MastForest::read_from(source)?;
-        let entrypoint = MastNodeId::from_u32_safe(source.read_u32()?, &mast)?;
-
-        Ok(Self::from_parts(Arc::new(mast), entrypoint))
+        Ok(Self(MastForestScript::read_from(source)?))
     }
 }
 
@@ -390,7 +234,8 @@ impl Deserializable for NoteScript {
 impl PrettyPrint for NoteScript {
     fn render(&self) -> miden_core::prettier::Document {
         use miden_core::prettier::*;
-        let entrypoint = self.mast[self.entrypoint].to_pretty_print(&self.mast);
+        let mast = self.0.mast();
+        let entrypoint = mast[self.0.entrypoint()].to_pretty_print(&mast);
 
         indent(4, const_text("begin") + nl() + entrypoint.render()) + nl() + const_text("end")
     }
@@ -408,31 +253,34 @@ impl Display for NoteScript {
 #[cfg(test)]
 mod tests {
 
-    use super::{Felt, NoteScript, Vec};
-    use crate::testing::assembler::assemble_test_library;
+    use super::{Felt, NoteScript};
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
-    fn test_note_script_to_from_felt() {
-        let script_src = DEFAULT_NOTE_SCRIPT;
-        let library =
-            assemble_test_library("test-note-script-roundtrip", "test::note_roundtrip", script_src);
-        let note_script = NoteScript::from_library(&library).unwrap();
+    fn test_note_script_to_from_mast_elements() -> anyhow::Result<()> {
+        let package = assemble_test_package(
+            "test-note-script-roundtrip",
+            "test::note_roundtrip",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        let note_script = NoteScript::from_package(&package)?;
 
-        let encoded: Vec<Felt> = (&note_script).into();
-        let decoded: NoteScript = encoded.try_into().unwrap();
-
+        let encoded = note_script.to_elements();
+        let decoded = NoteScript::try_from_elements(&encoded)?;
         assert_eq!(note_script, decoded);
+
+        Ok(())
     }
 
     #[test]
     fn test_note_script_preserves_package_debug_info() {
-        let library = assemble_test_library(
+        let package = assemble_test_package(
             "test-note-script-debug-info",
             "test::note_debug_info",
             DEFAULT_NOTE_SCRIPT,
         );
-        let note_script = NoteScript::from_library(&library).unwrap();
+        let note_script = NoteScript::from_package(&package).unwrap();
 
         assert!(note_script.loaded_mast_forest().package_debug_info().unwrap().is_some());
     }
@@ -443,12 +291,12 @@ mod tests {
 
         use crate::Word;
 
-        let library = assemble_test_library(
+        let package = assemble_test_package(
             "test-note-script-with-advice-map",
             "test::note_with_advice_map",
             DEFAULT_NOTE_SCRIPT,
         );
-        let script = NoteScript::from_library(&library).unwrap();
+        let script = NoteScript::from_package(&package).unwrap();
 
         assert!(script.mast().advice_map().is_empty());
 
@@ -468,5 +316,24 @@ mod tests {
         let mast = script.mast();
         let stored = mast.advice_map().get(&key).expect("entry should be present");
         assert_eq!(stored.as_ref(), value.as_slice());
+    }
+
+    #[test]
+    fn test_note_script_from_executable_package() {
+        use assert_matches::assert_matches;
+
+        use crate::assembly::Assembler;
+        use crate::errors::NoteError;
+        use crate::script::MastForestScriptError;
+
+        // an executable package is rejected: note scripts are identified only by the @note_script
+        // attribute
+        let package = Assembler::default()
+            .assemble_program("test-note-script-executable", "begin nop end")
+            .unwrap();
+        assert_matches!(
+            NoteScript::from_package(&package),
+            Err(NoteError::MastForestScript(MastForestScriptError::ExecutablePackage))
+        );
     }
 }

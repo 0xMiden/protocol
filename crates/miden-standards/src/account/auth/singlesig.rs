@@ -1,12 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -17,9 +11,9 @@ use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
 use super::Approver;
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 
-account_component_code!(SINGLESIG_CODE, "miden-standards-auth-singlesig.masp");
+account_component_package!(SINGLESIG_PACKAGE, "miden-standards-auth-singlesig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -44,11 +38,11 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Before authenticating, `auth_tx` pays the transaction fee via
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
-/// fee-charging chains the account must hold a sufficient balance of the payment asset. The
-/// payment asset and conversion rate are committed to via the transaction's auth args (see
-/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo); native fee asset at rate 1/1 for
-/// plain native payment). On chains with a zero verification base fee no note is created. The
-/// fee note is created before the transaction summary, so it is covered by the signature.
+/// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
+/// conversion info committed via the transaction's auth args must name the reference block's fee
+/// asset at rate 1/1. On
+/// chains with a zero verification base fee no note is created. The fee note is created before
+/// the transaction summary, so it is covered by the signature.
 ///
 /// When linking against this component, the `miden::standards` library must be available to the
 /// assembler (which also implies availability of `miden::protocol`). This is the case when using
@@ -61,7 +55,7 @@ pub struct AuthSingleSig {
 
 impl AuthSingleSig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
+    pub const NAME: &'static str = "miden::standards::auth::singlesig";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -70,7 +64,7 @@ impl AuthSingleSig {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &SINGLESIG_CODE
+        &SINGLESIG_PACKAGE.code
     }
 
     /// Creates a new [`AuthSingleSig`] component with the given approver.
@@ -127,34 +121,9 @@ impl AuthSingleSig {
         &SCHEME_ID_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the public key slot.
-    pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", SchemaType::pub_key()),
-        )
-    }
-    /// Returns the storage slot schema for the scheme ID slot.
-    pub fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value("Scheme ID", SchemaType::auth_scheme()),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![
-            Self::public_key_slot_schema(),
-            Self::auth_scheme_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
-            )
-            .with_storage_schema(storage_schema)
+        SINGLESIG_PACKAGE.metadata.clone()
     }
 }
 

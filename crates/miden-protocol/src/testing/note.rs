@@ -13,7 +13,7 @@ use crate::note::{
     PartialNoteMetadata,
 };
 use crate::testing::account_id::ACCOUNT_ID_SENDER;
-use crate::testing::assembler::assemble_test_library;
+use crate::testing::assembler::assemble_test_package;
 
 pub const DEFAULT_NOTE_SCRIPT: &str = "\
 @note_script
@@ -42,11 +42,11 @@ impl Note {
 
 impl NoteScript {
     pub fn mock() -> Self {
-        let library = assemble_test_library(
+        let package = assemble_test_package(
             "miden-testing-note",
             "miden::testing::note",
             DEFAULT_NOTE_SCRIPT,
         );
-        Self::from_library(&library).unwrap()
+        Self::from_package(&package).unwrap()
     }
 }

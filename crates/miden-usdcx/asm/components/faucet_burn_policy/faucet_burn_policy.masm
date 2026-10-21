@@ -1,0 +1,3 @@
+# The faucet's burn policy checks the required note attachments and minimum burn amount.
+
+pub use {check_burn_policy} from xreserve::burn_policy

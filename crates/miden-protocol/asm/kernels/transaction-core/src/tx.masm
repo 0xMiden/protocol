@@ -1,14 +1,33 @@
+use {AccountId, AssetAmount, BlockNumber} from miden::protocol_utils::types
+use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::memory
+use miden::core::collections::mmr
+use miden::core::crypto::hashes::poseidon2
+use miden::core::mem as core_mem
 use miden::core::word
 use miden::protocol_utils::mem
 use {MAX_OUTPUT_NOTES_PER_TX} from miden::tx_kernel_core::constants
+use {MAX_LOGS_PER_TX, MAX_LOG_CONTENT_WORDS, MAX_LOG_CONTENT_WORDS_PER_TX, WORD_NUM_ELEMENTS}
+    from miden::protocol_utils::constants
+use {LOG_COMMITMENTS_PTR, PARTIAL_BLOCKCHAIN_PTR} from miden::tx_kernel_core::memory
+
+# RE-EXPORTS
+# =================================================================================================
+
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 
 # CONSTANTS
 # =================================================================================================
 
-# Max value for U16, used as the upper limit for expiration block delta
-const EXPIRY_UPPER_LIMIT = 0xFFFF + 1
+# Hash domains shared with TransactionLog and TransactionLogs in Rust.
+const LOG_DOMAIN = 0x020004
+const LOGS_DOMAIN = 0x020003
+
+# add_log locals: two topic elements, two padding elements, then at most 256 content words.
+const TOPIC_SUFFIX_LOC = 0
+const TOPIC_PREFIX_LOC = TOPIC_SUFFIX_LOC + 1
+const CONTENT_LOC = TOPIC_SUFFIX_LOC + WORD_NUM_ELEMENTS
 
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
@@ -18,6 +37,11 @@ const MAX_CYCLES = 0x20000000
 
 # ERRORS
 # =================================================================================================
+
+const ERR_TX_LOG_COUNT_EXCEEDED = "transaction exceeds 64 logs"
+const ERR_TX_LOG_CONTENT_TOO_LARGE = "log content must contain at most 256 words"
+const ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED = "log content must consist of complete words"
+const ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE = "transaction log contents exceed 512 words"
 
 const ERR_TX_INVALID_EXPIRATION_DELTA =
     "transaction expiration block delta must be within 0x1 and 0xFFFF"
@@ -42,12 +66,24 @@ const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_OUT_OF_BOUNDS =
 const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED =
     "the excluded output note indices must be sorted in ascending order and free of duplicates"
 
+const ERR_TX_BLOCK_NUMBER_NOT_U32 = "the block number must be a u32"
+
+const ERR_TX_BLOCK_NUMBER_EXCEEDS_REFERENCE_BLOCK_NUMBER =
+    "the block number must not exceed the transaction reference block number"
+
+# EVENTS
+# =================================================================================================
+
+const TX_LOG_ADDED_EVENT = event("miden::protocol::tx::log_added")
+
+# Event emitted before the commitment of a block other than the reference block is read from the
+# partial blockchain, so that the host can provide the block's authentication witness.
+const TX_BEFORE_BLOCK_WITNESS_LOAD_EVENT = event("miden::protocol::tx::before_block_witness_load")
+
 # PROCEDURES
 # =================================================================================================
 
-pub use {get_block_commitment} from miden::tx_kernel_core::memory
-
-pub use {get_blk_num as get_block_number} from miden::tx_kernel_core::memory
+pub use {get_blk_num as get_reference_block_number} from miden::tx_kernel_core::memory
 
 pub use {get_blk_timestamp as get_block_timestamp} from miden::tx_kernel_core::memory
 
@@ -62,6 +98,57 @@ pub use {get_num_output_notes} from miden::tx_kernel_core::memory
 
 pub use {get_tx_script_root} from miden::tx_kernel_core::memory
 
+#! Returns the commitment of the block with the provided block number.
+#!
+#! Any block up to and including the transaction reference block can be read, because the prologue
+#! unpacks the partial blockchain MMR and appends the reference block to it.
+#!
+#! Inputs:  [block_number]
+#! Outputs: [BLOCK_COMMITMENT]
+#!
+#! Where:
+#! - block_number is the number of the block whose commitment should be returned.
+#! - BLOCK_COMMITMENT is the commitment of that block.
+#!
+#! Panics if:
+#! - block_number is not a u32.
+#! - block_number exceeds the transaction reference block number.
+#!
+#! Invocation: exec
+pub proc get_block_commitment(block_number: BlockNumber) -> Commitment
+    u32assert.err=ERR_TX_BLOCK_NUMBER_NOT_U32
+    # => [block_number]
+
+    exec.get_reference_block_number
+    # => [reference_block_number, block_number]
+
+    dup.1 dup.1
+    # => [reference_block_number, block_number, reference_block_number, block_number]
+
+    # assert block_number <= reference_block_number
+    u32lte assert.err=ERR_TX_BLOCK_NUMBER_EXCEEDS_REFERENCE_BLOCK_NUMBER
+    # => [reference_block_number, block_number]
+
+    dup.1 eq
+    # => [is_reference_block, block_number]
+
+    if.true
+        # the reference block commitment is already in memory, so skip the MMR traversal.
+        drop exec.memory::get_ref_block_commitment
+        # => [BLOCK_COMMITMENT]
+    else
+        push.PARTIAL_BLOCKCHAIN_PTR swap
+        # => [block_number, partial_blockchain_ptr]
+
+        # let the host provide the authentication witness of the requested block
+        emit.TX_BEFORE_BLOCK_WITNESS_LOAD_EVENT
+        # => [block_number, partial_blockchain_ptr]
+
+        exec.mmr::get
+        # => [BLOCK_COMMITMENT]
+    end
+end
+
 #! Updates the transaction expiration block delta.
 #!
 #! The input block_height_delta is added to the block reference number in order to output an upper
@@ -73,7 +160,7 @@ pub use {get_tx_script_root} from miden::tx_kernel_core::memory
 #!
 #! Where:
 #! - block_height_delta is the desired expiration time delta (1 to 0xFFFF).
-pub proc update_expiration_block_delta
+pub proc update_expiration_block_delta(block_height_delta: u16)
     # Ensure block_height_delta is between 1 and 0xFFFF (inclusive)
     dup neq.0 assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
     # => [block_height_delta]
@@ -81,10 +168,10 @@ pub proc update_expiration_block_delta
     dup u32assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
     # => [block_height_delta, block_height_delta]
 
-    u32lt.EXPIRY_UPPER_LIMIT assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
+    u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
     # => [block_height_delta]
 
-    exec.get_block_number add
+    exec.get_reference_block_number add
     # => [absolute_expiration_num]
 
     # Load the current stored delta from memory
@@ -108,7 +195,7 @@ end
 #!
 #! Where:
 #! - block_height_delta is the stored expiration time delta (1 to 0xFFFF).
-pub proc get_expiration_delta
+pub proc get_expiration_delta() -> u16
     exec.memory::get_expiration_block_num
     # => [stored_expiration_block_num]
 
@@ -118,7 +205,7 @@ pub proc get_expiration_delta
         drop push.0
     else
         # Calculate the delta
-        exec.get_block_number sub
+        exec.get_reference_block_number sub
     end
 end
 
@@ -131,7 +218,7 @@ end
 #! Inputs:
 #!   Operand stack: [foreign_account_id_suffix, foreign_account_id_prefix]
 #!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID_KEY: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
+#!     FOREIGN_ACCOUNT_ID_KEY: [[account_version, account_nonce, foreign_account_id_suffix, foreign_account_id_prefix],
 #!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
 #!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
 #!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
@@ -144,6 +231,7 @@ end
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_ACCOUNT_ID_KEY is the map key constructed from the foreign_account_id as done by
 #!   account::create_id_key.
+#! - account_version is the version of the foreign account's metadata encoding.
 #! - account_nonce is the nonce of the foreign account.
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
@@ -156,7 +244,7 @@ end
 #! - foreign context is created against the native account.
 #!
 #! Invocation: exec
-pub proc start_foreign_context
+pub proc start_foreign_context(foreign_account_id: AccountId)
     # get the memory address and a flag whether this account was already loaded.
     exec.account::get_account_data_ptr
     # OS => [was_loaded, ptr, foreign_account_id_suffix, foreign_account_id_prefix]
@@ -191,7 +279,7 @@ end
 #! - the active account is the native account.
 #!
 #! Invocation: dynexec
-pub proc end_foreign_context
+pub proc end_foreign_context()
     exec.memory::pop_ptr_from_account_stack
     # => []
 end
@@ -201,7 +289,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-pub proc clear_fpi_memory
+pub proc clear_fpi_memory()
     # set the upcoming foreign account ID to zero
     push.0 push.0 exec.memory::set_fpi_account_id
     # => []
@@ -238,7 +326,7 @@ end
 #!   unsorted or contains duplicates).
 #!
 #! Invocation: exec
-pub proc compute_fee
+pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Commitment) -> AssetAmount
     # make sure the number of extra cycles is a u32 so the addition below cannot overflow the field
     u32assert.err=ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32
     # => [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
@@ -273,6 +361,87 @@ pub proc compute_fee
     # => [fee_amount]
 end
 
+# TRANSACTION LOGS
+# =================================================================================================
+
+#! Adds a transaction log for the active account after verifying its content and the transaction limits.
+#! The caller must authenticate the account procedure before invoking this procedure.
+#!
+#! Inputs:  [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the transaction log count or content size exceeds its limit.
+#! - the content does not consist of complete words or does not match CONTENT_COMMITMENT.
+#!
+#! Invocation: exec
+@locals(1028)
+pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: word)
+    # Save the topic while validating the content from advice.
+    loc_store.TOPIC_SUFFIX_LOC loc_store.TOPIC_PREFIX_LOC
+    # => [CONTENT_COMMITMENT]
+
+    exec.memory::get_num_tx_logs u32lt.MAX_LOGS_PER_TX assert.err=ERR_TX_LOG_COUNT_EXCEEDED
+    # => [CONTENT_COMMITMENT]
+
+    adv.push_mapvaln adv_push u32assert.err=ERR_TX_LOG_CONTENT_TOO_LARGE
+    u32divmod.WORD_NUM_ELEMENTS
+    # => [remainder, num_words, CONTENT_COMMITMENT]
+
+    # Check alignment and both content limits before reading any content elements.
+    assertz.err=ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED
+    dup u32lte.MAX_LOG_CONTENT_WORDS assert.err=ERR_TX_LOG_CONTENT_TOO_LARGE
+    # => [num_words, CONTENT_COMMITMENT]
+
+    dup exec.memory::get_total_num_log_content_words add
+    dup u32lte.MAX_LOG_CONTENT_WORDS_PER_TX assert.err=ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE
+    exec.memory::set_total_num_log_content_words
+    # => [num_words, CONTENT_COMMITMENT]
+
+    movdn.4 dupw movup.8 locaddr.CONTENT_LOC swap
+    # => [num_words, content_ptr, CONTENT_COMMITMENT, CONTENT_COMMITMENT]
+
+    # The checked word count fits in the content locals. Verify the preimage while copying it.
+    exec.core_mem::pipe_preimage_to_memory drop
+    # => [CONTENT_COMMITMENT]
+
+    loc_load.TOPIC_PREFIX_LOC loc_load.TOPIC_SUFFIX_LOC exec.memory::get_account_id
+    # => [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+
+    emit.TX_LOG_ADDED_EVENT
+    # => [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix, CONTENT_COMMITMENT]
+
+    push.LOG_DOMAIN exec.poseidon2::merge_in_domain
+    # => [LOG_COMMITMENT]
+
+    exec.memory::push_tx_log_commitment
+    # => []
+end
+
+#! Returns the transaction logs commitment included in the transaction proof.
+#! Appending another transaction log invalidates the cache.
+#! Before the first transaction log, the cached commitment is the empty word.
+#!
+#! Inputs:  []
+#! Outputs: [LOGS_COMMITMENT]
+#!
+#! Invocation: exec
+pub proc get_logs_commitment() -> word
+    exec.memory::get_tx_logs_dirty_flag
+    # => [is_dirty]
+
+    if.true
+        exec.compute_logs_commitment exec.memory::set_tx_logs_commitment
+        # => [LOGS_COMMITMENT]
+
+        push.0 exec.memory::set_tx_logs_dirty_flag
+        # => [LOGS_COMMITMENT]
+    else
+        exec.memory::get_tx_logs_commitment
+        # => [LOGS_COMMITMENT]
+    end
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 
@@ -294,7 +463,7 @@ end
 #!
 #! Invocation: exec
 @locals(1024)
-proc compute_output_notes_fee
+proc compute_output_notes_fee(exclude_notes_commitment: Commitment) -> AssetAmount
     locaddr.0 movdn.4
     # => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
 
@@ -335,7 +504,7 @@ end
 #! - the committed indices do not match EXCLUDE_NOTES_COMMITMENT.
 #!
 #! Invocation: exec
-proc write_exclude_notes
+proc write_exclude_notes(exclude_notes_commitment: Commitment, exclude_notes_ptr: ptr<u16>) -> u16
     # an empty commitment means there are no notes to exclude
     exec.word::testz
     # => [is_empty, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
@@ -395,7 +564,7 @@ end
 #! - the excluded indices are not sorted in ascending order and free of duplicates.
 #!
 #! Invocation: exec
-proc assert_exclude_notes_sorted_and_unique
+proc assert_exclude_notes_sorted_and_unique(exclude_notes_ptr: ptr<u16>, num_excluded_notes: u16)
     dup.1 neq.0
     # => [has_non_zero_entries, exclude_notes_ptr, num_excluded_notes]
 
@@ -448,4 +617,16 @@ proc assert_exclude_notes_sorted_and_unique
 
     drop drop
     # => []
+end
+
+#! Computes the commitment after at least one transaction log has been added.
+#!
+#! Inputs:  []
+#! Outputs: [LOGS_COMMITMENT]
+proc compute_logs_commitment() -> word
+    push.LOGS_DOMAIN exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
+    # => [LOG_COMMITMENTS_PTR, num_log_commitment_elements, LOGS_DOMAIN]
+
+    exec.poseidon2::hash_elements_in_domain
+    # => [LOGS_COMMITMENT]
 end

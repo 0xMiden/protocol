@@ -361,14 +361,6 @@ impl AccountId {
 // CONVERSIONS FROM ACCOUNT ID
 // ================================================================================================
 
-impl From<AccountId> for [Felt; 2] {
-    fn from(id: AccountId) -> Self {
-        match id {
-            AccountId::V1(account_id) => account_id.into(),
-        }
-    }
-}
-
 impl From<AccountId> for [u8; 15] {
     fn from(id: AccountId) -> Self {
         match id {

@@ -9,6 +9,7 @@ use assert_matches::assert_matches;
 use crate::account::{
     Account,
     AccountCode,
+    AccountCodePatch,
     AccountId,
     AccountPatch,
     AccountStorage,
@@ -491,7 +492,7 @@ fn value_slot_account_patch(
         *ACCOUNT_ID,
         storage,
         AccountVaultPatch::default(),
-        None,
+        AccountCodePatch::default(),
         Some(Felt::from(final_nonce)),
     )?)
 }

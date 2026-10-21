@@ -1,10 +1,4 @@
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -16,34 +10,42 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // MIN-BURN-AMOUNT BURN POLICY
 // ================================================================================================
 
-account_component_code!(
-    MIN_BURN_AMOUNT_BURN_POLICY_CODE,
+account_component_package!(
+    MIN_BURN_AMOUNT_BURN_POLICY_PACKAGE,
     "miden-standards-faucets-policies-burn-min-burn-amount.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`MinBurnAmount::NAME`],
+/// which mirrors the standards-side MASM module path.
+const MIN_BURN_AMOUNT_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::burn::min_burn_amount";
+
 procedure_root!(
     MIN_BURN_AMOUNT_POLICY_ROOT,
-    MinBurnAmount::NAME,
+    MIN_BURN_AMOUNT_LIBRARY_PATH,
     MinBurnAmount::PROC_NAME,
     MinBurnAmount::code()
 );
 
 procedure_root!(
     MIN_BURN_AMOUNT_SET_ROOT,
-    MinBurnAmount::NAME,
+    MIN_BURN_AMOUNT_LIBRARY_PATH,
     MinBurnAmount::SET_PROC_NAME,
     MinBurnAmount::code()
 );
 
 procedure_root!(
     MIN_BURN_AMOUNT_GET_ROOT,
-    MinBurnAmount::NAME,
+    MIN_BURN_AMOUNT_LIBRARY_PATH,
     MinBurnAmount::GET_PROC_NAME,
     MinBurnAmount::code()
 );
@@ -70,8 +72,7 @@ pub struct MinBurnAmount {
 
 impl MinBurnAmount {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::burn::min_burn_amount";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::burn::min_burn_amount";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
     const SET_PROC_NAME: &str = "set_min_burn_amount";
@@ -89,7 +90,7 @@ impl MinBurnAmount {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MIN_BURN_AMOUNT_BURN_POLICY_CODE
+        &MIN_BURN_AMOUNT_BURN_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `check_policy` burn policy procedure.
@@ -117,14 +118,6 @@ impl MinBurnAmount {
         self.min_burn_amount
     }
 
-    /// Returns the storage slot schema for the minimum burn amount slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::value("Minimum burn amount", SchemaType::native_word()),
-        )
-    }
-
     /// Converts the configured minimum burn amount into its storage value word
     /// `[min_burn_amount, 0, 0, 0]`.
     fn to_word(self) -> Word {
@@ -138,12 +131,7 @@ impl MinBurnAmount {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema =
-            StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("`min_burn_amount` burn policy for fungible faucets")
-            .with_storage_schema(storage_schema)
+        MIN_BURN_AMOUNT_BURN_POLICY_PACKAGE.metadata.clone()
     }
 }
 

@@ -294,11 +294,10 @@ mod tests {
     use super::PartialBlockchain;
     use crate::Word;
     use crate::alloc::vec::Vec;
-    use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorKeys};
+    use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorConfig};
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
-    use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
     use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 
     #[test]
@@ -368,7 +367,7 @@ mod tests {
                 .unwrap();
         }
 
-        let fake_block_header2 = BlockHeader::mock(2, None, None, &[], Word::empty());
+        let fake_block_header2 = BlockHeader::mock(2, None, None, &[]);
 
         assert_ne!(block_header2.commitment(), fake_block_header2.commitment());
 
@@ -407,7 +406,7 @@ mod tests {
                 .unwrap();
         }
 
-        let fake_block_header2 = BlockHeader::mock(2, None, None, &[], Word::empty());
+        let fake_block_header2 = BlockHeader::mock(2, None, None, &[]);
 
         assert_ne!(block_header2.commitment(), fake_block_header2.commitment());
 
@@ -476,14 +475,12 @@ mod tests {
     }
 
     fn int_to_block_header(block_num: impl Into<BlockNumber>) -> BlockHeader {
-        let fee_parameters =
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let validator_keys =
-            ValidatorKeys::new(alloc::vec![SigningKey::with_rng(&mut rng).public_key()]).unwrap();
+        let validator_config =
+            ValidatorConfig::new(alloc::vec![SigningKey::with_rng(&mut rng).public_key()], 1)
+                .unwrap();
 
         BlockHeader::new(
-            0,
             Word::empty(),
             block_num.into(),
             Word::empty(),
@@ -491,9 +488,10 @@ mod tests {
             Word::empty(),
             Word::empty(),
             Word::empty(),
+            validator_config,
+            FeeParameters::new(500),
             Word::empty(),
-            validator_keys,
-            fee_parameters,
+            None,
             0,
         )
     }

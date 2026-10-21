@@ -1,15 +1,10 @@
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -28,10 +23,27 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
-use crate::account::account_component_code;
-use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
+use crate::account::account_component_package;
+use crate::account::auth::{Approver, ApproverSet};
+use crate::procedure_root;
 
-account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
+account_component_package!(MULTISIG_SMART_PACKAGE, "miden-standards-auth-multisig-smart.masp");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`AuthMultisigSmart::NAME`], which mirrors the standards-side MASM module path.
+const MULTISIG_SMART_LIBRARY_PATH: &str = "miden::standards::components::auth::multisig_smart";
+
+// Initialize the procedure root of the `set_procedure_policy` procedure only once. It is the only
+// procedure that writes the policy map, so callers configuring policies commonly need its root.
+procedure_root!(
+    MULTISIG_SMART_SET_PROCEDURE_POLICY,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::SET_PROCEDURE_POLICY_PROC_NAME,
+    AuthMultisigSmart::code()
+);
 
 // CONSTANTS
 // ================================================================================================
@@ -106,9 +118,7 @@ fn validate_proc_policies(
     }
 
     for (_, policy) in proc_policies {
-        if let Some(immediate_threshold) = policy.immediate_threshold()
-            && immediate_threshold > num_approvers
-        {
+        if policy.immediate_threshold() > num_approvers {
             return Err(AccountError::other(
                 "procedure policy immediate threshold cannot exceed number of approvers",
             ));
@@ -126,6 +136,17 @@ fn validate_proc_policies(
 }
 
 /// An [`AccountComponent`] implementing a multisig auth component with smart-policy slots.
+///
+/// # Auth args
+///
+/// The transaction's auth args are the commitment to
+/// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
+/// # Security
+///
+/// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
+/// [`AuthMultisig`](crate::account::auth::AuthMultisig), so a procedure with such a policy should
+/// seal the notes it creates for the reasons described there.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
@@ -133,11 +154,19 @@ pub struct AuthMultisigSmart {
 
 impl AuthMultisigSmart {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::multisig_smart";
+    pub const NAME: &'static str = "miden::standards::auth::multisig_smart";
+
+    /// The name of the procedure that edits per-procedure policies.
+    const SET_PROCEDURE_POLICY_PROC_NAME: &'static str = "set_procedure_policy";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MULTISIG_SMART_CODE
+        &MULTISIG_SMART_PACKAGE.code
+    }
+
+    /// Returns the procedure root of the `set_procedure_policy` account procedure.
+    pub fn set_procedure_policy_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_SET_PROCEDURE_POLICY
     }
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
@@ -166,31 +195,9 @@ impl AuthMultisigSmart {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
 
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::threshold_config_slot_schema()
-    }
-
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_public_keys_slot_schema()
-    }
-
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_auth_scheme_slot_schema()
-    }
-
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::executed_transactions_slot_schema()
-    }
-
-    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::procedure_policies_slot().clone(),
-            StorageSlotSchema::map(
-                "Procedure policies",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        MULTISIG_SMART_PACKAGE.metadata.clone()
     }
 }
 
@@ -244,18 +251,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
-        let storage_schema = StorageSchema::new(vec![
-            AuthMultisigSmart::threshold_config_slot_schema(),
-            AuthMultisigSmart::approver_public_keys_slot_schema(),
-            AuthMultisigSmart::approver_auth_scheme_slot_schema(),
-            AuthMultisigSmart::executed_transactions_slot_schema(),
-            AuthMultisigSmart::procedure_policies_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME)
-            .with_description("Multisig smart authentication component")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthMultisigSmart::component_metadata();
 
         AccountComponent::new(AuthMultisigSmart::code().clone(), storage_slots, metadata).expect(
             "multisig smart component should satisfy the requirements of a valid account component",
@@ -299,7 +295,7 @@ mod tests {
             AuthMultisigSmart::new(config).expect("multisig smart component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(component)
+            .with_component(component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

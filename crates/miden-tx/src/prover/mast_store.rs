@@ -1,6 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
+use miden_agglayer::agglayer_package;
 use miden_processor::{LoadedMastForest, MastForestStore};
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::mast::MastForest;
@@ -42,9 +43,8 @@ impl TransactionMastStore {
         let kernel = TransactionKernel::package();
         store.insert_package(kernel.as_ref());
 
-        // load miden-core-lib MAST forest
-        let miden_core_lib = CoreLibrary::default();
-        store.insert_package(miden_core_lib.as_ref());
+        // load the miden-core-lib MAST forest
+        store.insert_package(CoreLibrary::default().package().as_ref());
 
         // load protocol lib MAST forest
         let protocol_lib = ProtocolLib::default();
@@ -53,6 +53,9 @@ impl TransactionMastStore {
         // load standards lib MAST forest
         let standards_lib = StandardsLib::default();
         store.insert_package(standards_lib.as_ref());
+
+        // load agglayer lib MAST forest
+        store.insert_package(&agglayer_package());
 
         store
     }

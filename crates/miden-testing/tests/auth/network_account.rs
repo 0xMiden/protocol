@@ -1,26 +1,56 @@
 use core::num::NonZeroU16;
-use core::slice;
 use std::collections::BTreeSet;
 
-use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::note::{Note, NoteScriptRoot};
-use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountCode,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
+use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC,
+    ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
+    ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT,
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
+    ERR_UPGRADE_NOTE_IS_NOT_PUBLIC,
+    ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT,
+    ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
 };
+use miden_standards::note::config::{NetworkAccountConfig, NetworkAccountConfigNote};
+use miden_standards::note::{
+    AccountCodeUpgradeAttachment,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    P2idNote,
+    UpgradeNote,
+};
+use miden_standards::testing::account_component::{MockAccountComponent, MockProceduresComponent};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
+
+use crate::{consume_note, into_private_note};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -38,19 +68,46 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
     build_account_with_allowlists(allowed_script_roots, Vec::new())
 }
 
+/// A zero-fee `FeePolicyManager` giving a network account an active fee policy for
+/// `collect_sponsored_fees`. A constant policy aborts fee estimation for note scripts without a
+/// schedule entry, so every note the account can consume must be scheduled; each root in
+/// `note_script_roots` is scheduled with an explicit 0 fee, keeping collection a no-op on these
+/// fee-free chains.
+fn zero_fee_policy_manager(
+    note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+) -> anyhow::Result<FeePolicyManager> {
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
+    for note_script in note_script_roots {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+    }
+
+    Ok(FeePolicyManager::builder()
+        .active_fee_policy(basic_constant_fee_policy.into())
+        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
+        .build())
+}
+
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
 /// note-script and tx-script allowlists.
 fn build_account_with_allowlists(
     allowed_note_script_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowed_notes(
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
-    )?
-    .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
+    // Add the config note to the allowlist (it may be consumed to update the allowlists, and the
+    // auth flow needs a price for the config note, too).
+    let note_roots: BTreeSet<NoteScriptRoot> = allowed_note_script_roots
+        .into_iter()
+        .map(NoteScriptRoot::from_raw)
+        .chain([NetworkAccountConfigNote::script_root()])
+        .collect();
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
+
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts(allowed_tx_script_roots);
 
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
+        .with_components(auth_component)
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .build_existing()?)
@@ -82,8 +139,151 @@ fn expiration_tx_script(delta: u16) -> TransactionScript {
         .expect("expiration tx script should compile")
 }
 
+/// Compiles a transaction script that changes account storage through the test-only mock account
+/// component without consuming an input note.
+fn storage_update_tx_script(slot_name: &StorageSlotName) -> TransactionScript {
+    let code = format!(
+        r#"
+        use mock::account
+
+        const ACTION_SLOT = word("{slot_name}")
+
+        @transaction_script
+        pub proc main
+            push.1.0.0.0
+            push.ACTION_SLOT[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+    );
+
+    CodeBuilder::with_mock_packages()
+        .compile_tx_script(code)
+        .expect("storage update tx script should compile")
+}
+
 // TESTS
 // ================================================================================================
+
+/// A network account transaction must consume an input note, create an output note, or change
+/// account state before the auth procedure pays its fee. Otherwise, permissionless callers could
+/// repeatedly submit transactions that only withdraw the transaction fee from the account's vault.
+#[tokio::test]
+async fn test_auth_network_account_rejects_transaction_without_effect() -> anyhow::Result<()> {
+    let account = build_allowlist_account(vec![placeholder_script_root()])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT);
+
+    Ok(())
+}
+
+/// An allowlisted transaction script that only changes transaction metadata does not justify
+/// charging the network account. In particular, attaching the default expiration script must not
+/// let a zero-input transaction bypass the no-effect check.
+#[tokio::test]
+async fn test_auth_network_account_rejects_metadata_only_tx_script() -> anyhow::Result<()> {
+    let tx_script = expiration_tx_script(10);
+    let account =
+        build_account_with_allowlists(vec![placeholder_script_root()], vec![tx_script.root()])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT);
+
+    Ok(())
+}
+
+/// A root-allowlisted transaction script may execute without input notes or output notes when it
+/// changes the account state before authentication pays the fee. This preserves the script-only
+/// network-account use case while preventing fee payment itself from satisfying the effect
+/// requirement.
+#[tokio::test]
+async fn test_auth_network_account_accepts_state_changing_tx_script() -> anyhow::Result<()> {
+    let action_slot = StorageSlotName::new("test::network_account::script_only_action")?;
+    let tx_script = storage_update_tx_script(&action_slot);
+
+    let note_roots = BTreeSet::from([NoteScriptRoot::from_raw(placeholder_script_root())]);
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts([tx_script.root()]);
+
+    let account = AccountBuilder::new([0; 32])
+        .with_components(auth_component)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_value(
+            action_slot.clone(),
+        )]))
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let mut final_account = account;
+    final_account.apply_patch(executed.account_patch())?;
+    let stored_action = final_account.storage().get_item(&action_slot)?;
+    assert_eq!(stored_action, Word::from([0u32, 0, 0, 1]));
+
+    Ok(())
+}
+
+/// A new network account must increment its nonce even when it consumes an input note on a
+/// zero-fee chain without otherwise changing its state. The prologue replaces the empty initial
+/// commitment of a new account with its actual commitment, so newness must be detected from its
+/// zero nonce rather than from the initial commitment.
+#[tokio::test]
+async fn test_auth_network_account_increments_nonce_for_new_account() -> anyhow::Result<()> {
+    let input_note = build_input_note()?;
+    let note_roots = BTreeSet::from([input_note.script().root()]);
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?;
+
+    let account = AccountBuilder::new([1; 32])
+        .with_components(auth_component)
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build()?;
+    assert_eq!(account.nonce(), Felt::ZERO);
+
+    let mut builder = MockChain::builder().verification_base_fee(0);
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_note(input_note)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.final_account().nonce(), Felt::ONE);
+
+    Ok(())
+}
 
 /// A transaction that executes a tx script whose root is not in the tx-script allowlist must be
 /// rejected by `AuthNetworkAccount`. An empty tx-script allowlist rejects every tx script.
@@ -100,7 +300,7 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
         CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -134,7 +334,8 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -170,7 +371,8 @@ async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist(
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;
@@ -201,7 +403,7 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     );
 
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(other_script)
         .build()?
         .execute()
@@ -240,7 +442,8 @@ async fn test_auth_network_account_accepts_any_of_multiple_allowlisted_roots(
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -293,7 +496,8 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_arg
     let mock_chain = builder.build()?;
 
     let executed = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .tx_script(script.into())
         .tx_script_args(script.tx_script_args())
         .build()?
@@ -304,6 +508,361 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_arg
         executed.expiration_block_num(),
         executed.block_header().block_num() + u32::from(delta),
         "the caller-supplied expiration delta should be applied",
+    );
+
+    Ok(())
+}
+
+// TESTS — POST-DEPLOYMENT ALLOWLIST MUTATION
+// ================================================================================================
+
+/// A dummy owner account ID used both as the Ownable2Step owner and as the sender of admin notes.
+fn owner_id() -> AccountId {
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32])
+}
+
+/// Builds a network account that opts into allowlist management (its note allowlist includes the
+/// standardized action-note root plus `extra_allowed_note_roots`) and whose admin procedures are
+/// gated by the Ownable2Step `owner` via `Authority::OwnerControlled`.
+///
+/// `fee_scheduled_note_roots` are note roots that are fee-scheduled (at 0) but not allowlisted at
+/// deployment, so a note whose root is added to the allowlist post-deployment can still be
+/// consumed: the basic constant fee policy aborts fee estimation for note scripts without a
+/// schedule entry.
+fn build_owner_controlled_account(
+    extra_allowed_note_roots: Vec<Word>,
+    allowed_tx_script_roots: Vec<TransactionScriptRoot>,
+    owner: AccountId,
+    fee_scheduled_note_roots: Vec<NoteScriptRoot>,
+) -> anyhow::Result<Account> {
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        extra_allowed_note_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+
+    // The config note is allowlisted explicitly below and may be consumed to update the
+    // allowlists; the network auth flow prices every consumed note, so it needs a fee schedule
+    // entry too.
+    let scheduled_roots = note_roots
+        .iter()
+        .copied()
+        .chain(fee_scheduled_note_roots)
+        .chain([NetworkAccountConfigNote::script_root()]);
+    let fee_policy_manager = zero_fee_policy_manager(scheduled_roots)?;
+
+    let auth_component = AuthNetworkAccount::custom(
+        note_roots
+            .iter()
+            .copied()
+            .chain([NetworkAccountConfigNote::script_root()])
+            .collect(),
+        fee_policy_manager,
+    )?
+    .with_allowed_tx_scripts(BTreeSet::from_iter(allowed_tx_script_roots));
+
+    Ok(AccountBuilder::new([7; 32])
+        .with_components(auth_component)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build_existing()?)
+}
+
+/// Builds a standardized [`NetworkAccountConfigNote`] sent by `sender` to `account` that applies
+/// `config`. `serial_seed` distinguishes otherwise-identical notes.
+fn build_config_note(
+    sender: AccountId,
+    account: AccountId,
+    config: NetworkAccountConfig,
+    serial_seed: u32,
+) -> anyhow::Result<Note> {
+    let note = NetworkAccountConfigNote::builder()
+        .sender(sender)
+        .target(account)
+        .config(config)
+        .serial_number(Word::from([serial_seed, 0, 0, 0]))
+        .build()?;
+
+    Ok(Note::from(note))
+}
+
+/// The owner can add a note script root after deployment: a note whose root was not allowlisted at
+/// creation becomes consumable once the owner sends a standardized config note that adds it.
+#[tokio::test]
+async fn test_owner_can_add_note_script_root_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    // The note the account cannot consume yet.
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    // Deploy allowlisting only the config note (via allowlist management), NOT `new_note`, but
+    // fee-schedule `new_root` so the note is consumable once it is added to the allowlist.
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![new_root])?;
+    let admin_note = build_config_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        1,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(new_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The owner adds `new_root` to the note-script allowlist.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    // A subsequent transaction consuming `new_note` now succeeds; it would have failed against the
+    // deployed allowlist.
+    consume_note(&mut mock_chain, account.id(), &new_note).await?;
+
+    Ok(())
+}
+
+/// A note sender that is not the owner cannot mutate the allowlist: the config note is allowlisted
+/// (so auth passes) but the authority check rejects the non-owner sender.
+#[tokio::test]
+async fn test_non_owner_cannot_mutate_allowlist() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let stranger = AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
+    let mut builder = MockChain::builder();
+
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+    let admin_note = build_config_note(
+        stranger,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        2,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(admin_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// The owner can remove a note script root after deployment: a previously allowlisted note becomes
+/// unconsumable once the owner sends an config note that removes its root.
+#[tokio::test]
+async fn test_owner_can_remove_note_script_root_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    let target_note = build_input_note()?;
+    let target_root = target_note.script().root();
+
+    // Deploy with the target note allowlisted (plus the config note via allowlist management).
+    let account = build_owner_controlled_account(vec![target_root.into()], vec![], owner, vec![])?;
+    let admin_note = build_config_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::RemoveAllowedNoteScript { script_root: target_root },
+        3,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(target_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The owner removes `target_root` from the note-script allowlist.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    // Consuming `target_note` now fails.
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(target_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// A root added within a transaction does not take effect for a note consumed in that same
+/// transaction: auth reads the allowlist from the transaction's initial state. Consuming the action
+/// note (which adds `new_root`) together with `new_note` in one transaction is rejected.
+#[tokio::test]
+async fn test_added_note_root_does_not_take_effect_in_same_transaction() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+    let admin_note = build_config_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        4,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(new_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_notes([admin_note.id(), new_note.id()])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// The owner can add a tx script root after deployment: a tx script not allowlisted at creation
+/// runs against the account once the owner sends an config note that adds its root.
+#[tokio::test]
+async fn test_owner_can_add_tx_script_root_after_deployment() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    // The tx script to allowlist post-deployment, and a plain note to consume alongside it (a
+    // transaction must consume a note or change state).
+    let tx_script = expiration_tx_script(10);
+    let tx_root = tx_script.root();
+    let plain_note = build_input_note()?;
+    let plain_root = plain_note.script().root();
+
+    // Deploy allowlisting the plain note (and the config note), but NOT the tx script.
+    let account = build_owner_controlled_account(vec![plain_root.into()], vec![], owner, vec![])?;
+    let admin_note = build_config_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
+        5,
+    )?;
+
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(plain_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The owner adds the tx script root to the tx-script allowlist.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    // The tx script, now allowlisted, runs in a subsequent transaction; it would have been rejected
+    // against the deployed allowlist.
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(plain_note.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// A network account manages its allowed fee policies through the same config note: the owner sends
+/// an add/remove config note (always allowlisted, and fee-scheduled by
+/// `build_owner_controlled_account`), and the account-exposed `add_allowed_fee_policy` /
+/// `remove_allowed_fee_policy` runs under the owner authority. The target root is a procedure of
+/// the account that is not the active policy, so both actions are permitted (the remove is a
+/// no-op).
+#[rstest]
+#[case::add(NetworkAccountConfig::AddAllowedFeePolicy {
+    policy_root: AuthNetworkAccount::get_fee_policy_root(),
+})]
+#[case::remove(NetworkAccountConfig::RemoveAllowedFeePolicy {
+    policy_root: AuthNetworkAccount::get_fee_policy_root(),
+})]
+#[tokio::test]
+async fn test_owner_can_manage_allowed_fee_policy_after_deployment(
+    #[case] action: NetworkAccountConfig,
+) -> anyhow::Result<()> {
+    let owner = owner_id();
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+
+    let admin_note = build_config_note(owner, account.id(), action, 6)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The network account consumes the config note; the owner-authorized fee-policy mutator runs to
+    // completion.
+    consume_note(&mut mock_chain, account.id(), &admin_note).await?;
+
+    Ok(())
+}
+
+/// A config note is bound to its target account by a `NetworkAccountTarget` attachment, so a decoy
+/// account cannot consume a note meant for another account. The decoy is owned by the note's sender
+/// (so it passes both the note-script allowlist and the owner authority), yet consuming a note
+/// targeted at a different account aborts at the target-account check before any action runs.
+#[tokio::test]
+async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
+    let owner = owner_id();
+
+    // The note's intended target. It need not be built: the note only references its ID.
+    let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
+
+    // The decoy account, owned by the same `owner` (so it authorizes the sender's notes) and
+    // allowlisting the config note by default.
+    let decoy = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+
+    // A config note targeted at `target` (not the decoy), sent by `owner`.
+    let admin_note = build_config_note(
+        owner,
+        target,
+        NetworkAccountConfig::AddAllowedFeePolicy {
+            policy_root: AuthNetworkAccount::get_fee_policy_root(),
+        },
+        8,
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(decoy.clone())?;
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The decoy consumes the note; the target-account check aborts before any action runs.
+    let result = mock_chain
+        .build_transaction(decoy.id())
+        .authenticated_input_note(admin_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
     );
 
     Ok(())
@@ -345,7 +904,8 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
 
     let input_notes = [note_allowed, note_disallowed];
     let result = mock_chain
-        .build_tx_context(account.id(), &[], &input_notes)?
+        .build_transaction(account.id())
+        .unauthenticated_input_notes(input_notes)
         .build()?
         .execute()
         .await;
@@ -368,7 +928,8 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
         .build()?
         .execute()
         .await?;
@@ -379,65 +940,124 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
 // UPGRADE NOTE
 // ================================================================================================
 
-/// Builds an upgradeable network account: the [`AuthNetworkAccount`] auth component with the given
-/// note-script allowlist, `OwnerControlled` authority (via [`AccessControl::Ownable2Step`]) so the
-/// `UpgradeManager::upgrade` procedure authorizes the note sender against `owner`, plus the
-/// [`UpgradeManager`] procedure itself.
+/// Returns the components of an upgradeable network account: the [`AuthNetworkAccount`] auth
+/// component with the given note-script allowlist, `OwnerControlled` authority (via
+/// [`AccessControl::Ownable2Step`]) so the `UpgradeManager::upgrade` procedure authorizes the note
+/// sender against `owner`, plus the [`UpgradeManager`] procedure itself.
+fn upgradeable_network_account_components(
+    owner: AccountId,
+    allowed_note_script_roots: Vec<Word>,
+) -> anyhow::Result<Vec<AccountComponent>> {
+    let note_roots: BTreeSet<NoteScriptRoot> =
+        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
+    let fee_policy_manager = zero_fee_policy_manager(
+        note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
+    )?;
+
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?;
+
+    Ok(auth_component
+        .into_iter()
+        .chain(AccessControl::Ownable2Step { owner })
+        .chain([UpgradeManager.into()])
+        .collect())
+}
+
+/// Builds an upgradeable network account from [`upgradeable_network_account_components`].
 fn build_upgradeable_network_account(
     owner: AccountId,
     allowed_note_script_roots: Vec<Word>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowed_notes(
-        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
-    )?;
-
     Ok(AccountBuilder::new([7; 32])
-        .with_auth_component(auth_component)
-        .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(UpgradeManager)
-        .with_component(BasicWallet)
+        .with_components(upgradeable_network_account_components(owner, allowed_note_script_roots)?)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
 
-/// Builds an ad-hoc note from `sender` whose script calls the `UpgradeManager::upgrade` procedure
-/// with two fixed commitment words pushed directly on the stack, matching the procedure layout
-/// `[CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]`.
+/// Returns the code of an upgradeable network account extended with the [`BasicWallet`] and
+/// `extra_components`.
 ///
-/// The commitment values are immaterial here; these tests only exercise the allowlist and authority
-/// paths, not the stored commitments. The script root is independent of `sender`, so it can be
-/// allowlisted regardless of who sends the note.
-fn build_upgrade_note(sender: AccountId) -> anyhow::Result<Note> {
-    let script = "
-        use miden::standards::account_upgrade
+/// The allowlists only live in storage, so the code does not depend on them.
+fn upgraded_network_account_code(
+    owner: AccountId,
+    extra_components: Vec<AccountComponent>,
+) -> anyhow::Result<AccountCode> {
+    let mut components =
+        upgradeable_network_account_components(owner, vec![placeholder_script_root()])?;
+    components.push(BasicWallet.into());
+    components.extend(extra_components);
 
-        @note_script
-        pub proc main
-            padw padw
-            push.5.6.7.8
-            push.1.2.3.4
-            call.account_upgrade::upgrade
-            dropw dropw dropw dropw
-        end
-    ";
-    Ok(NoteBuilder::new(sender, &mut rand::rng()).code(script).build()?)
+    Ok(AccountCode::from_components(&components)?)
 }
 
-/// Consuming an allowlisted upgrade note sent by the owner runs the full note -> `upgrade` ->
-/// `assert_authorized` -> kernel path without panicking.
+/// Builds an [`UpgradeNote`] from `sender` that upgrades `target` to `code`.
+fn build_upgrade_note(
+    sender: AccountId,
+    target: AccountId,
+    code: AccountCode,
+) -> anyhow::Result<Note> {
+    Ok(UpgradeNote::builder()
+        .sender(sender)
+        .target(target)
+        .code(code)
+        .serial_number(Word::from([1u32, 0, 0, 0]))
+        .build()?
+        .into())
+}
+
+/// Consuming an allowlisted upgrade note sent by the owner upgrades the account's code, so that a
+/// later transaction can call procedures that only exist in the new code.
+///
+/// The transaction does not provide the new code, so the host must take it from the note's
+/// attachments.
+#[rstest]
+#[case::single_chunk(vec![], 1)]
+#[case::two_chunks(vec![MockProceduresComponent::new(150).into()], 2)]
 #[tokio::test]
-async fn test_auth_network_account_accepts_authorized_upgrade_note() -> anyhow::Result<()> {
+async fn test_auth_network_account_upgrades_code_via_authorized_note(
+    #[case] extra_components: Vec<AccountComponent>,
+    #[case] expected_num_chunks: usize,
+) -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
-    let note = build_upgrade_note(owner)?;
-    let account = build_upgradeable_network_account(owner, vec![note.script().root().into()])?;
+    let upgraded_code = upgraded_network_account_code(owner, extra_components)?;
+    let account = build_upgradeable_network_account(
+        owner,
+        vec![UpgradeNote::script_root().into(), P2idNote::script_root().into()],
+    )?;
+    assert_ne!(account.code(), &upgraded_code);
+    let upgrade_note = build_upgrade_note(owner, account.id(), upgraded_code.clone())?;
+    let num_chunks = upgrade_note
+        .attachments()
+        .iter()
+        .filter(|attachment| {
+            attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
+        })
+        .count();
+    assert_eq!(num_chunks, expected_num_chunks);
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
+    builder.add_output_note(RawOutputNote::Full(upgrade_note.clone()));
+    let p2id_note =
+        builder.add_p2id_note(owner, account.id(), &[FungibleAsset::mock(10)], NoteType::Public)?;
+    let mut mock_chain = builder.build()?;
 
+    let executed_tx = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(upgrade_note.id())
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(executed_tx.final_account().code_commitment(), upgraded_code.commitment());
+
+    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    mock_chain.prove_next_block()?;
+    assert_eq!(mock_chain.committed_account(account.id())?.code(), &upgraded_code);
+
+    // The P2ID note calls `receive_asset`, which only the upgraded code provides.
     mock_chain
         .build_transaction(account.id())
-        .unauthenticated_input_note(note)
+        .authenticated_input_note(p2id_note.id())
         .build()?
         .execute()
         .await?;
@@ -452,7 +1072,9 @@ async fn test_auth_network_account_rejects_non_allowlisted_upgrade_note() -> any
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     // Allowlist a placeholder root, not the upgrade note root.
     let account = build_upgradeable_network_account(owner, vec![placeholder_script_root()])?;
-    let note = build_upgrade_note(owner)?;
+    // Upgrade to the current code, so that the upgrade is a no-op and the allowlist check in the
+    // auth procedure is the first to fail.
+    let note = build_upgrade_note(owner, account.id(), account.code().clone())?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -475,11 +1097,13 @@ async fn test_auth_network_account_rejects_non_allowlisted_upgrade_note() -> any
 #[tokio::test]
 async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
 
     // The note sender is not the owner, so the OwnerControlled authority check must reject it.
     let not_owner = AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32]);
-    let note = build_upgrade_note(not_owner)?;
-    let account = build_upgradeable_network_account(owner, vec![note.script().root().into()])?;
+    let note =
+        build_upgrade_note(not_owner, account.id(), upgraded_network_account_code(owner, vec![])?)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -493,6 +1117,199 @@ async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// An upgrade note sent by the owner but targeting another account must be rejected by the note
+/// script, even though the consuming account allowlists it.
+#[tokio::test]
+async fn test_auth_network_account_rejects_upgrade_note_for_other_target() -> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+
+    let other_target =
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32]);
+    let note =
+        build_upgrade_note(owner, other_target, upgraded_network_account_code(owner, vec![])?)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
+
+    Ok(())
+}
+
+/// A private upgrade note sent by the owner must be rejected by the note script.
+#[tokio::test]
+async fn test_auth_network_account_rejects_private_upgrade_note() -> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let note =
+        build_upgrade_note(owner, account.id(), upgraded_network_account_code(owner, vec![])?)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_UPGRADE_NOTE_IS_NOT_PUBLIC);
+
+    Ok(())
+}
+
+/// A note carrying the upgrade note script but a storage item count other than
+/// [`UpgradeNote::NUM_STORAGE_ITEMS`] must be rejected. An oversized note is rejected by the bound
+/// the script passes to `get_bounded_storage`; the other counts reach the script's own guard.
+#[rstest]
+#[case::empty(0, ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS)]
+#[case::too_few(
+    UpgradeNote::NUM_STORAGE_ITEMS - 1,
+    ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+)]
+#[case::too_many(UpgradeNote::NUM_STORAGE_ITEMS + 1, ERR_NOTE_TOO_MANY_STORAGE_ITEMS)]
+#[tokio::test]
+async fn test_auth_network_account_rejects_upgrade_note_with_wrong_storage_item_count(
+    #[case] num_items: usize,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let note = NoteBuilder::new(owner, &mut rand::rng())
+        .script(UpgradeNote::script())
+        .note_storage(vec![Felt::from(1u32); num_items])?
+        .attachment(NetworkAccountTarget::new(account.id(), NoteExecutionHint::Always)?)
+        .build()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// An upgrade note that does not carry the new code in an `AccountCodeUpgradeAttachment` must be
+/// rejected by the note script, since it is the only source of the code.
+#[tokio::test]
+async fn test_auth_network_account_rejects_upgrade_note_without_code_attachment()
+-> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let upgraded_code = upgraded_network_account_code(owner, vec![])?;
+    let note = NoteBuilder::new(owner, &mut rand::rng())
+        .script(UpgradeNote::script())
+        .note_storage(upgraded_code.commitment().as_elements().to_vec())?
+        .attachment(NetworkAccountTarget::new(account.id(), NoteExecutionHint::Always)?)
+        .build()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT);
+
+    Ok(())
+}
+
+/// The auth procedure rejects a transaction whose sponsorship policy slot does not hold a valid
+/// policy: neither an unknown discriminant nor a non-zero reserved element is accepted.
+#[rstest]
+#[case::unknown_discriminant(Word::from([2u32, 0, 0, 0]))]
+#[case::non_zero_reserved_element(Word::from([1u32, 0, 0, 7]))]
+#[tokio::test]
+async fn test_auth_network_account_rejects_invalid_sponsorship_policy(
+    #[case] policy: Word,
+) -> anyhow::Result<()> {
+    let note = build_input_note()?;
+    let mut account = build_allowlist_account(vec![note.script().root().into()])?;
+    account
+        .storage_mut()
+        .set_item(AuthNetworkAccount::sponsorship_policy_slot(), policy)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY);
+
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the allowlist changes.
+#[tokio::test]
+async fn test_private_config_note_cannot_mutate_allowlist() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let mut builder = MockChain::builder();
+
+    let new_note = build_input_note()?;
+    let new_root = new_note.script().root();
+
+    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
+    let admin_note = build_config_note(
+        owner,
+        account.id(),
+        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
+        4,
+    )?;
+
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(into_private_note(admin_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC);
 
     Ok(())
 }

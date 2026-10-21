@@ -1,0 +1,6 @@
+syntax = "proto3";
+package blockchain;
+
+message BlockNumber {
+  fixed32 block_num = 1;
+}

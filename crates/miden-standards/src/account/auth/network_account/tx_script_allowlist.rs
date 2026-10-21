@@ -1,6 +1,5 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
     AccountStorage,
     StorageMap,
@@ -73,16 +72,12 @@ impl NetworkAccountTxScriptAllowlist {
         self.allowed_script_roots
     }
 
-    /// Returns the schema entry for the allowlist slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::map(
-                "Allowed transaction script roots",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+    /// Extends the set of allowed tx script roots.
+    pub(super) fn extend_script_roots(
+        &mut self,
+        allowed_tx_script_roots: impl IntoIterator<Item = TransactionScriptRoot>,
+    ) {
+        self.allowed_script_roots.extend(allowed_tx_script_roots);
     }
 
     /// Consumes this allowlist and returns the [`StorageSlot`] suitable for inclusion in an
@@ -122,11 +117,10 @@ impl TryFrom<&AccountStorage> for NetworkAccountTxScriptAllowlist {
             return Err(NetworkAccountTxScriptAllowlistError::UnexpectedSlotType);
         };
 
-        // Only entries with a non-empty value mark a root as allowed, matching the MASM check
-        // (`word::eqz`), so the reconstructed view agrees with on-chain enforcement.
+        // A removed root leaves no entry behind, so every entry marks an allowed root. This
+        // agrees with the MASM check (`word::eqz`), which reads a removed root as empty.
         let allowed_script_roots = map
             .entries()
-            .filter(|(_key, value)| **value != Word::empty())
             .map(|(key, _value)| TransactionScriptRoot::from_raw(key.as_word()))
             .collect();
 
@@ -157,10 +151,13 @@ pub enum NetworkAccountTxScriptAllowlistError {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountBuilder, StorageSlotContent};
+    use miden_protocol::account::{AccountBuilder, StorageMap, StorageMapKey, StorageSlotContent};
+    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::note::NoteScriptRoot;
 
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
+    use crate::account::fees::FeePolicyManager;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -205,10 +202,11 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
-                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([
-                    miden_protocol::note::NoteScriptRoot::from_array([9, 9, 9, 9]),
-                ]))
+            .with_components(
+                AuthNetworkAccount::custom(
+                    BTreeSet::from_iter([NoteScriptRoot::from_array([9, 9, 9, 9])]),
+                    FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+                )
                 .expect("non-empty note allowlist should construct")
                 .with_allowed_tx_scripts(original_roots.clone()),
             )
@@ -236,6 +234,24 @@ mod tests {
 
         let result = NetworkAccountTxScriptAllowlist::try_from(&storage);
         assert!(matches!(result, Err(NetworkAccountTxScriptAllowlistError::SlotNotFound)));
+    }
+
+    /// An allowlist whose every root has been removed reconstructs as empty, because a removed
+    /// root leaves no entry behind.
+    #[test]
+    fn try_from_yields_no_roots_when_all_entries_removed() {
+        let removed = TransactionScriptRoot::from_raw(Word::from([5, 6, 7, 8u32]));
+        let map =
+            StorageMap::with_entries([(StorageMapKey::new(removed.as_word()), Word::empty())])
+                .expect("map entries should have unique keys");
+        assert_eq!(map.entries().count(), 0, "a removed root leaves no entry behind");
+
+        let slot = StorageSlot::with_map(NetworkAccountTxScriptAllowlist::slot_name().clone(), map);
+        let storage = AccountStorage::new(vec![slot]).expect("storage should be valid");
+
+        let allowlist = NetworkAccountTxScriptAllowlist::try_from(&storage)
+            .expect("an empty tx script allowlist is valid");
+        assert!(allowlist.allowed_script_roots().is_empty());
     }
 
     #[test]

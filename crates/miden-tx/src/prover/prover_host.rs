@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -8,7 +9,8 @@ use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
-use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
 
@@ -39,29 +41,37 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be created.
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
+            block_commitments,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-        );
+        )?;
 
-        Self { base_host }
+        Ok(Self { base_host })
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    /// Consumes `self` and returns the account patch, input and output notes, and transaction logs.
+    pub fn into_parts(
+        self,
+    ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
         self.base_host.into_parts()
     }
 }
@@ -163,6 +173,10 @@ where
                 self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
             },
 
+            TransactionEvent::AccountBeforeCodeUpgrade { new_code_commitment, code_upgrade } => {
+                self.base_host.on_account_before_code_upgrade(new_code_commitment, code_upgrade)
+            },
+
             TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
                 match recipient_data {
                     RecipientData::Digest(recipient_digest) => self
@@ -181,10 +195,18 @@ where
                 self.base_host.on_note_before_add_asset(note_idx, asset).map(|_| Vec::new())
             },
 
+            TransactionEvent::TxLogAdded(log) => {
+                self.base_host.on_log_added(log).map(|_| Vec::new())
+            },
+
             TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment } => self
                 .base_host
                 .on_note_before_add_attachment(note_idx, attachment)
                 .map(|_| Vec::new()),
+
+            TransactionEvent::InputNoteIndexLookup { note_id } => {
+                Ok(self.base_host.on_input_note_index_lookup(note_id))
+            },
 
             TransactionEvent::AuthRequest { tx_summary_or_signature, .. } => {
                 if let TxSummaryOrSignature::Signature(signature) = tx_summary_or_signature {

@@ -289,8 +289,7 @@ impl RawStorageSlotSchema {
             ))
         })?;
 
-        let description =
-            description.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+        let description = description.filter(|d| !d.trim().is_empty());
 
         let slot_prefix = StorageValueName::from_slot_name(&slot_name);
 

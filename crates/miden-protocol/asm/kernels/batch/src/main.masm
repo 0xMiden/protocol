@@ -1,3 +1,14 @@
+use {BlockCommitment, BlockNumber} from miden::protocol_utils::types
+
+#! Commitment to the transactions in a batch.
+type BatchId = word
+
+#! Sequential commitment to the input notes of the batch's transactions.
+type InputNotesCommitment = word
+
+#! Root of the batch note tree over the transactions' output notes.
+type BatchNoteTreeRoot = word
+
 # MAIN
 # =================================================================================================
 
@@ -32,7 +43,7 @@
 #! - batch_expiration_block_num will be the minimum of every transaction's
 #!   `expiration_block_num`. In this skeleton it is zero.
 #!
-proc main
+proc main(block_commitment: BlockCommitment, batch_id: BatchId, padding: [felt; 8]) -> (InputNotesCommitment, BatchNoteTreeRoot, BlockNumber, [felt; 7])
     dropw dropw
 end
 

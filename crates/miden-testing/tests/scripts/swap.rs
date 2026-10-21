@@ -14,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_testing::{Auth, MockChain};
 
-use crate::prove_and_verify_transaction;
+use crate::prove_and_verify_transaction_complete;
 
 /// Creates a SWAP note from the transaction script and proves and verifies the transaction.
 #[tokio::test]
@@ -58,10 +58,9 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
     let create_swap_note_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(swap_note.clone())])
+        .expected_output_note(RawOutputNote::Full(swap_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -84,7 +83,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
 
     let swap_output_note = create_swap_note_tx.output_notes().iter().next().unwrap();
     assert_eq!(swap_output_note.assets().iter().next().unwrap(), &offered_asset);
-    assert!(prove_and_verify_transaction(create_swap_note_tx).await.is_ok());
+    assert!(prove_and_verify_transaction_complete(create_swap_note_tx).await.is_ok());
 
     Ok(())
 }
@@ -110,8 +109,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let consume_swap_note_tx = mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
-        .context("failed to build tx context")?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
         .build()?
         .execute()
         .await?;
@@ -140,8 +139,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     );
 
     let consume_payback_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
+        .unauthenticated_input_note(full_payback_note)
         .build()?
         .execute()
         .await?;
@@ -152,11 +151,11 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
     assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
 
-    prove_and_verify_transaction(consume_swap_note_tx)
+    prove_and_verify_transaction_complete(consume_swap_note_tx)
         .await
         .context("failed to prove/verify consume_swap_note_tx")?;
 
-    prove_and_verify_transaction(consume_payback_tx)
+    prove_and_verify_transaction_complete(consume_payback_tx)
         .await
         .context("failed to prove/verify consume_payback_tx")?;
 
@@ -181,8 +180,8 @@ async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()>
     } = setup_swap_test(payback_note_type)?;
 
     let consume_swap_note_tx = mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
-        .context("failed to build tx context")?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
         .build()?
         .execute()
         .await?;
@@ -206,8 +205,8 @@ async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()>
     );
 
     let consume_payback_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
+        .unauthenticated_input_note(full_payback_note)
         .build()?
         .execute()
         .await?;
@@ -238,7 +237,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
 
     // When consuming a SWAP note with a public payback note output
     // it is necessary to add the details of the public note to the advice provider
-    // via `.extend_expected_output_notes()`
+    // via `.expected_output_notes()`
     let payback_p2id_note = Note::from(
         P2idNote::builder()
             .sender(target_account.id())
@@ -251,9 +250,9 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     );
 
     let consume_swap_note_tx = mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
-        .context("failed to build tx context")?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(payback_p2id_note)])
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
+        .expected_output_note(RawOutputNote::Full(payback_p2id_note))
         .build()?
         .execute()
         .await?;
@@ -280,8 +279,8 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     );
 
     let consume_payback_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
+        .unauthenticated_input_note(full_payback_note)
         .build()?
         .execute()
         .await?;
@@ -345,8 +344,8 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let mock_chain = builder.build()?;
     let settle_tx = mock_chain
-        .build_tx_context(matcher_account.id(), &[swap_note_1.id(), swap_note_2.id()], &[])
-        .context("failed to build tx context")?
+        .build_transaction(matcher_account.id())
+        .authenticated_input_notes([swap_note_1.id(), swap_note_2.id()])
         .build()?
         .execute()
         .await?;
@@ -411,7 +410,6 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
         .add_swap_note(sender_account.id(), offered_asset, requested_asset, payback_note_type)
         .unwrap();
 
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
     let mock_chain = builder.build()?;
 
     Ok(SwapTestSetup {

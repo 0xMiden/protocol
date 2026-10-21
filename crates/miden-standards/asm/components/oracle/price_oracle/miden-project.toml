@@ -1,0 +1,23 @@
+[package]
+name              = "miden-standards-oracle-price-oracle"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::oracle::price_oracle"
+path      = "price_oracle.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Reports the conversion rate between two assets"
+name        = "miden::standards::oracle::price_oracle"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Procedure root of the active rate provider"
+name        = "miden::standards::oracle::price_oracle::active_rate_provider_proc_root"
+type        = "word"

@@ -1,18 +1,22 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
+    AccountCodeUpgrade,
     AccountId,
+    AssetDelta,
     StorageMap,
     StorageMapKey,
     StorageSlotName,
     StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -26,9 +30,15 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
-use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
+use miden_protocol::transaction::{
+    LogTopic,
+    TransactionEventId,
+    TransactionLog,
+    TransactionLogs,
+    TransactionSummary,
+};
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -62,6 +72,7 @@ pub(crate) enum TransactionProgressEvent {
 /// The data necessary to handle a [`TransactionEventId`].
 #[derive(Debug)]
 pub(crate) enum TransactionEvent {
+    TxLogAdded(TransactionLog),
     /// The data necessary to request a foreign account's data from the data store.
     AccountBeforeForeignLoad {
         /// The foreign account's ID.
@@ -119,6 +130,13 @@ pub(crate) enum TransactionEvent {
         procedure_root: Word,
     },
 
+    AccountBeforeCodeUpgrade {
+        /// The commitment to the new code.
+        new_code_commitment: Word,
+        /// The code upgrade read from the advice map.
+        code_upgrade: AccountCodeUpgrade,
+    },
+
     NoteBeforeCreated {
         /// The note index extracted from the stack.
         note_idx: usize,
@@ -140,6 +158,11 @@ pub(crate) enum TransactionEvent {
         note_idx: usize,
         /// The attachment that is appended to the output note.
         attachment: NoteAttachment,
+    },
+
+    /// A lookup that resolves an input note ID to its index through the advice provider.
+    InputNoteIndexLookup {
+        note_id: NoteId,
     },
 
     /// The data necessary to handle an auth request.
@@ -190,6 +213,9 @@ impl TransactionEvent {
         }
 
         let tx_event = match tx_event_id {
+            TransactionEventId::TxLogAdded => {
+                Some(TransactionEvent::TxLogAdded(extract_transaction_log(process)?))
+            },
             TransactionEventId::AccountBeforeForeignLoad => {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
                 let account_id_suffix = process.get_stack_item(1);
@@ -202,17 +228,30 @@ impl TransactionEvent {
                         )
                     })?;
 
-                Some(TransactionEvent::AccountBeforeForeignLoad { foreign_account_id: account_id })
+                // The advice provider already has the account if the transaction inputs contain
+                // it or if it was loaded before, so it is only requested from the host if it's
+                // missing.
+                let account_id_key = AccountIdKey::from(account_id).as_word();
+                if process.advice_provider().get_mapped_values(&account_id_key).is_some() {
+                    None
+                } else {
+                    Some(TransactionEvent::AccountBeforeForeignLoad {
+                        foreign_account_id: account_id,
+                    })
+                }
             },
             TransactionEventId::AccountVaultBeforeAddAsset
-            | TransactionEventId::AccountVaultBeforeRemoveAsset => {
-                // Expected stack state: [event, ASSET_ID, ASSET_VALUE, account_vault_root_ptr]
+            | TransactionEventId::AccountVaultBeforeRemoveAsset
+            | TransactionEventId::AccountVaultBeforeMintAsset
+            | TransactionEventId::AccountVaultBeforeBurnAsset => {
+                // Expected stack state:
+                // [event, ASSET_ID, ASSET_VALUE, {input,account}_vault_root_ptr]
                 let asset_id = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(9);
 
                 let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "AccountVaultBefore{Add,Remove}Asset",
+                        handler: "AccountVaultBefore{Add,Remove,Mint,Burn}Asset",
                         source,
                     }
                 })?;
@@ -258,13 +297,12 @@ impl TransactionEvent {
                         source,
                     }
                 })?;
-                let asset =
-                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountOnAssetDeltaComputation",
-                            source,
-                        }
-                    })?;
+                let asset = Asset::new(asset_id, delta_asset_value).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountOnAssetDeltaComputation",
+                        source,
+                    }
+                })?;
                 let delta_op = AssetDeltaOperation::try_from(
                     u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
                         TransactionKernelError::other("failed to convert asset delta op to u8")
@@ -278,7 +316,7 @@ impl TransactionEvent {
                 })?;
 
                 TransactionEvent::AccountOnAssetDeltaComputation {
-                    delta: AssetDelta { delta_op, asset },
+                    delta: AssetDelta::new(delta_op, asset),
                 }
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
@@ -375,6 +413,29 @@ impl TransactionEvent {
                 })
             },
 
+            TransactionEventId::AccountBeforeCodeUpgrade => {
+                // Expected stack state: [event, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+                let new_code_commitment = process.get_stack_word(1);
+
+                let upgrade_key = AccountCodeUpgrade::advice_map_key(new_code_commitment);
+                let upgrade_data =
+                    process.advice_provider().get_mapped_values(&upgrade_key).ok_or(
+                        TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment),
+                    )?;
+                let code_upgrade =
+                    AccountCodeUpgrade::try_from_elements(upgrade_data).map_err(|source| {
+                        TransactionKernelError::AccountCodeUpgradeInvalid {
+                            new_code_commitment,
+                            source,
+                        }
+                    })?;
+
+                Some(TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
+                })
+            },
+
             TransactionEventId::NoteBeforeCreated => {
                 // Expected stack state:  [event, tag, note_type, RECIPIENT]
                 let tag = process.get_stack_item(1);
@@ -394,10 +455,10 @@ impl TransactionEvent {
                     let note_script = process
                         .advice_provider()
                         .get_mapped_values(&script_root)
-                        .map(|script_data| {
-                            NoteScript::try_from(script_data).map_err(|source| {
+                        .map(|script_elements| {
+                            NoteScript::try_from_elements(script_elements).map_err(|source| {
                                 TransactionKernelError::MalformedNoteScript {
-                                    data: script_data.to_vec(),
+                                    script_elements: script_elements.to_vec(),
                                     source,
                                 }
                             })
@@ -473,30 +534,39 @@ impl TransactionEvent {
                 Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
             },
 
+            TransactionEventId::InputNoteIndexLookup => {
+                // Expected stack state: [event, NOTE_ID]
+                let note_id = NoteId::from_raw(process.get_stack_word(1));
+                Some(TransactionEvent::InputNoteIndexLookup { note_id })
+            },
+
+            // TODO(block_witness_lazy_loading): provide the authentication witness of the requested
+            // block so that a block which the transaction inputs do not already authenticate can be
+            // read.
+            TransactionEventId::TxBeforeBlockWitnessLoad => None,
+
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
-                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+                let signature_key =
+                    SignatureKey::new(pub_key_commitment, message).to_advice_map_key();
 
-                let auth_request = if let Some(signature) = process
-                    .advice_provider()
-                    .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec())
-                {
-                    TransactionEvent::AuthRequest {
-                        pub_key_commitment,
-                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
-                    }
-                } else {
-                    let tx_summary = extract_tx_summary(base_host, process, message)?;
-                    TransactionEvent::AuthRequest {
-                        pub_key_commitment,
-                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
-                    }
-                };
+                let tx_summary_or_signature =
+                    match process.advice_provider().get_mapped_values(&signature_key) {
+                        Some(encoded_signature) => TxSummaryOrSignature::from_encoded_signature(
+                            signature_key,
+                            encoded_signature,
+                        )?,
+                        None => TxSummaryOrSignature::TxSummary(extract_tx_summary(
+                            base_host, process, message,
+                        )?),
+                    };
 
-                Some(auth_request)
+                Some(TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary_or_signature,
+                })
             },
 
             TransactionEventId::Unauthorized => {
@@ -578,7 +648,35 @@ pub(crate) enum TxSummaryOrSignature {
     Signature(Vec<Felt>),
 }
 
-// ASSET PATCH AND DELTA
+impl TxSummaryOrSignature {
+    /// Copies the encoded signature found in the advice map under the given key.
+    ///
+    /// The length is validated before the copy is made. Because any transaction can insert
+    /// arbitrary entries into the advice map, an entry under a signature key is untrusted input
+    /// and must not be able to make the host allocate an unbounded amount of memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the encoded signature is empty or longer than any
+    /// [`Signature`] variant can produce.
+    fn from_encoded_signature(
+        signature_key: Word,
+        encoded_signature: &[Felt],
+    ) -> Result<Self, TransactionKernelError> {
+        if encoded_signature.is_empty()
+            || encoded_signature.len() > Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
+        {
+            return Err(TransactionKernelError::InvalidEncodedSignatureLength {
+                signature_key,
+                actual: encoded_signature.len(),
+            });
+        }
+
+        Ok(TxSummaryOrSignature::Signature(encoded_signature.to_vec()))
+    }
+}
+
+// ASSET PATCH
 // ================================================================================================
 
 #[derive(Debug)]
@@ -588,12 +686,6 @@ pub(crate) struct AssetPatch {
     pub initial_vault_value: Word,
     /// The absolute value of `asset_id` in the vault after the operation.
     pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 // RECIPIENT DATA
@@ -613,6 +705,34 @@ pub(crate) enum RecipientData {
         script_root: Word,
         note_storage: NoteStorage,
     },
+}
+
+/// Extracts a transaction log after the kernel has authenticated its emitter and content.
+fn extract_transaction_log(
+    process: &ProcessorState,
+) -> Result<TransactionLog, TransactionKernelError> {
+    // Expected stack: [event, emitter_suffix, emitter_prefix, topic_suffix, topic_prefix,
+    // CONTENT_COMMITMENT].
+    let emitter =
+        AccountId::try_from_elements(process.get_stack_item(1), process.get_stack_item(2))
+            .map_err(|err| {
+                TransactionKernelError::other_with_source("invalid transaction log emitter", err)
+            })?;
+    let topic = LogTopic::new(process.get_stack_item(3), process.get_stack_item(4));
+    let content_commitment = process.get_stack_word(5);
+    let elements = process
+        .advice_provider()
+        .get_mapped_values(&content_commitment)
+        .ok_or_else(|| TransactionKernelError::other("missing transaction log content"))?;
+    // The kernel checks word alignment before emitting this event. Hash padding does not change
+    // the advice map value; retain this check when decoding the host-side record as well.
+    let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
+    if !remainder.is_empty() || words.len() > TransactionLog::MAX_NUM_WORDS {
+        return Err(TransactionKernelError::other("invalid transaction log content length"));
+    }
+    let content = words.iter().copied().map(Word::new).collect();
+    TransactionLog::new(emitter, topic, content)
+        .map_err(|err| TransactionKernelError::other_with_source("invalid transaction log", err))
 }
 
 /// Checks if the necessary witness for accessing the asset identified by the asset ID is already
@@ -715,7 +835,10 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT
+///         [version, metadata, user_param0, user_param1],
+///         [user_param2, user_param3, user_param4, user_param5],
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -730,22 +853,46 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    if commitments.len() != 16 {
-        return Err(TransactionKernelError::TransactionSummaryConstructionFailed(
-            "expected 4 words for transaction summary commitments".into(),
-        ));
+    // This also validates the preimage length and the layout version, which is what makes the
+    // commitment words below safe to slice out.
+    let (metadata, user_params) = TransactionSummary::try_params_from_elements(commitments)
+        .map_err(|source| {
+            TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(source))
+        })?;
+
+    let account_delta_commitment = extract_word(commitments, 8);
+    let input_notes_commitment = extract_word(commitments, 12);
+    let output_notes_commitment = extract_word(commitments, 16);
+    let block_commitment = extract_word(commitments, 20);
+    let logs_commitment = extract_word(commitments, 24);
+
+    // Validate the metadata against the kernel state so that a summary preimage carrying
+    // fabricated values is rejected rather than presented to the signer.
+    let expected_expiration_delta = process.get_expiration_block_delta()?;
+    if metadata.expiration_delta() != expected_expiration_delta {
+        return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
+            expected: expected_expiration_delta,
+            actual: metadata.expiration_delta(),
+        });
     }
 
-    let account_delta_commitment = extract_word(commitments, 0);
-    let input_notes_commitment = extract_word(commitments, 4);
-    let output_notes_commitment = extract_word(commitments, 8);
-    let salt = extract_word(commitments, 12);
+    let logs = TransactionLogs::new(base_host.logs().to_vec())
+        .expect("host validates transaction log limits before appending");
+    if logs.commitment() != logs_commitment {
+        return Err(TransactionKernelError::other("summary transaction logs commitment mismatch"));
+    }
 
+    // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
+    // block the transaction does not authenticate and cross-checks the bound block commitment
+    // against the one the host knows for that block.
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
-        salt,
+        metadata,
+        block_commitment,
+        user_params,
+        logs,
     )?;
 
     if tx_summary.to_commitment() != message {
@@ -823,7 +970,9 @@ fn extract_note_attachment(
     }
 
     let words: Vec<Word> = elements
-        .chunks_exact(WORD_SIZE)
+        .as_chunks::<WORD_SIZE>()
+        .0
+        .iter()
         .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
 

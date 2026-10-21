@@ -1,3 +1,4 @@
+use {AccountId} from miden::protocol::types
 # miden::standards::faucets::policies::transfer::blocklist::manager
 #
 # Authority-gated blocklist admin: wraps the `Invocation: exec` helpers from
@@ -29,7 +30,7 @@ use miden::standards::faucets::policies::transfer::blocklist
 #!
 #! Invocation: call
 @account_procedure
-pub proc block_account
+pub proc block_account(account_id: AccountId)
     exec.authority::assert_authorized
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
@@ -47,7 +48,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc unblock_account
+pub proc unblock_account(account_id: AccountId)
     exec.authority::assert_authorized
     # => [account_id_suffix, account_id_prefix, pad(14)]
 

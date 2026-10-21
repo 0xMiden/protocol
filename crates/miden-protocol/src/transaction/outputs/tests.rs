@@ -1,16 +1,24 @@
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
+use rstest::rstest;
 
-use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
-use crate::account::AccountId;
-use crate::assembly::mast::{ExternalNodeBuilder, JoinNodeBuilder, MastForest};
+use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
+use crate::account::{AccountHeader, AccountId};
+use crate::assembly::mast::{DenseMastForestBuilder, ExternalNodeBuilder, JoinNodeBuilder};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteDetailsCommitment,
+    NoteHeader,
+    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
@@ -20,11 +28,56 @@ use crate::note::{
 };
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use crate::utils::serde::Serializable;
+use crate::transaction::{
+    LogTopic,
+    TransactionLog,
+    TransactionLogDetails,
+    TransactionLogs,
+    TransactionOutputs,
+};
+use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 use crate::{Felt, Word};
+
+#[rstest]
+#[case::private(ACCOUNT_ID_PRIVATE_SENDER)]
+#[case::public(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)]
+fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] account_id: u128) {
+    let account_id = account_id.try_into().unwrap();
+    let account =
+        AccountHeader::new(account_id, Felt::ONE, Word::empty(), Word::empty(), Word::empty());
+    let log = TransactionLog::new(
+        account_id,
+        LogTopic::from_name("test::updated"),
+        vec![Word::from([1u32, 2, 3, 4])],
+    )
+    .unwrap();
+    for entries in [vec![], vec![log]] {
+        let logs = TransactionLogs::new(entries).unwrap();
+        let outputs = TransactionOutputs::new(
+            account.clone(),
+            Word::empty(),
+            RawOutputNotes::new(vec![]).unwrap(),
+            1u32.into(),
+            logs.clone(),
+        );
+        assert_eq!(outputs.logs(), &logs);
+        assert_eq!(outputs.logs_commitment(), logs.commitment());
+        let expected = if account_id.is_public() {
+            TransactionLogDetails::Public(logs)
+        } else {
+            TransactionLogDetails::Private(logs.commitment())
+        };
+        let (final_account, output_notes, log_details) = outputs.into_parts();
+        assert_eq!(final_account, account);
+        assert!(output_notes.is_empty());
+        assert_eq!(log_details, expected);
+    }
+}
 
 #[test]
 fn test_duplicate_output_notes() -> anyhow::Result<()> {
@@ -77,6 +130,59 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn private_output_note_rejects_attachment_header_mismatch() -> anyhow::Result<()> {
+    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
+    let provided_attachments = note_attachments(2, Word::from([1, 2, 3, 4u32]));
+    let header = private_note_header(&committed_attachments);
+
+    let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
+    assert_matches!(error, OutputNoteError::AttachmentHeadersMismatch(_));
+
+    Ok(())
+}
+
+#[test]
+fn private_output_note_rejects_attachments_commitment_mismatch() -> anyhow::Result<()> {
+    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
+    let provided_attachments = note_attachments(1, Word::from([5, 6, 7, 8u32]));
+    let header = private_note_header(&committed_attachments);
+
+    let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
+    assert_matches!(error, OutputNoteError::AttachmentsCommitmentMismatch(_));
+
+    Ok(())
+}
+
+#[test]
+fn private_output_note_deserialization_rejects_uncommitted_attachments() -> anyhow::Result<()> {
+    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
+    let provided_attachments = note_attachments(1, Word::from([5, 6, 7, 8u32]));
+    let header = private_note_header(&committed_attachments);
+    let mut bytes = header.to_bytes();
+    bytes.extend_from_slice(&provided_attachments.to_bytes());
+
+    let error = PrivateOutputNote::read_from_bytes(&bytes).unwrap_err();
+
+    assert_matches!(error, DeserializationError::InvalidValue(message) if message.contains("attachments commitment does not match"));
+
+    Ok(())
+}
+
+fn note_attachments(scheme: u16, content: Word) -> NoteAttachments {
+    let scheme = NoteAttachmentScheme::new(scheme).expect("test attachment scheme should be valid");
+    NoteAttachment::with_word(scheme, content).into()
+}
+
+fn private_note_header(attachments: &NoteAttachments) -> NoteHeader {
+    let sender_id = ACCOUNT_ID_SENDER.try_into().expect("test account ID should be valid");
+    let partial_metadata = PartialNoteMetadata::new(sender_id, NoteType::Private);
+    let metadata = NoteMetadata::new(partial_metadata, attachments);
+    let details_commitment =
+        NoteDetailsCommitment::from_raw_commitments(Word::empty(), Word::empty());
+    NoteHeader::new(details_commitment, metadata)
+}
+
 // Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by building a MastForest with
 // many reachable external nodes. External nodes carry no debug info, so `minify_script()` (called
 // inside `PublicOutputNote::new()`) cannot shrink them below the limit.
@@ -87,22 +193,20 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     // Build a large reachable MastForest by joining many external nodes. Each external node stores
     // a 32-byte digest, and each join node keeps the previous nodes reachable after compaction. The
     // joins are balanced to keep recursive traversals shallow.
-    let mut mast = MastForest::new();
-    let mut roots = alloc::vec::Vec::new();
+    //
+    // The dense builder computes the forest commitment once in `build`, while adding nodes to a
+    // `MastForest` directly recomputes it on every external node, which is quadratic.
+    let mut builder = DenseMastForestBuilder::new();
+    let mut roots = Vec::new();
     for i in 0..7_000_u16 {
         let digest = Word::new([Felt::from(i + 1), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-        let external_id = ExternalNodeBuilder::new(digest)
-            .add_to_forest(&mut mast)
-            .expect("adding external node should not fail");
-        roots.push(external_id);
+        roots.push(builder.push_node(ExternalNodeBuilder::new(digest))?);
     }
     while roots.len() > 1 {
-        let mut next_roots = alloc::vec::Vec::with_capacity(roots.len().div_ceil(2));
+        let mut next_roots = Vec::with_capacity(roots.len().div_ceil(2));
         for chunk in roots.chunks(2) {
             let root_id = match chunk {
-                [left, right] => JoinNodeBuilder::new([*left, *right])
-                    .add_to_forest(&mut mast)
-                    .expect("adding join node should not fail"),
+                [left, right] => builder.push_node(JoinNodeBuilder::new([*left, *right]))?,
                 [root] => *root,
                 _ => unreachable!("chunks of two have one or two elements"),
             };
@@ -110,13 +214,13 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
         }
         roots = next_roots;
     }
-    let root_id = roots.pop().expect("at least one root should exist");
-    mast.make_root(root_id);
+    let builder_root_id = roots.pop().expect("at least one root should exist");
+    builder.mark_root(builder_root_id);
+    let (mast, id_map) = builder.build_with_id_map()?;
+    let root_id = id_map.get(builder_root_id).expect("root should be mapped after build");
 
-    let script = NoteScript::from_parts(Arc::new(mast), root_id);
-
-    let serial_num = Word::empty();
-    let storage = NoteStorage::new(alloc::vec::Vec::new())?;
+    let script = NoteScript::from_parts(Arc::new(mast), root_id)
+        .expect("root_id should be in the MAST forest");
 
     // Create a public note (NoteType::Public is required for PublicOutputNote)
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
@@ -126,6 +230,8 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public)
         .with_tag(NoteTag::with_account_target(sender_id));
 
+    let serial_num = Word::empty();
+    let storage = NoteStorage::default();
     let recipient = NoteRecipient::new(serial_num, script, storage);
     let oversized_note = Note::new(assets, metadata, recipient);
 
@@ -153,7 +259,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
             if note_size > NOTE_MAX_SIZE as usize
     );
 
-    // to_output_note() should also fail
+    // into_output_note() should also fail
     let output_note = RawOutputNote::Full(oversized_note);
     let result = output_note.into_output_note();
 

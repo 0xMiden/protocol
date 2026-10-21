@@ -1,5 +1,5 @@
 # RE-EXPORTS
 # =================================================================================================
 
-pub use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_CUSTOM, COMPOSITION_FUNGIBLE, COMPOSITION_NONE, FUNGIBLE_ASSET_MAX_AMOUNT, id_to_faucet_id, id_into_faucet_id, id_to_asset_class, id_into_asset_class, id_to_composition, id_into_composition, load, store, fungible_value_into_amount}
+pub use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_CUSTOM, COMPOSITION_FUNGIBLE, COMPOSITION_NONE, FUNGIBLE_ASSET_MAX_AMOUNT, id_to_faucet_id, id_into_faucet_id, id_to_asset_class, id_into_asset_class, id_to_composition, id_into_composition, load, store, fungible_value_into_amount_unchecked}
     from miden::protocol_utils::asset

@@ -24,6 +24,7 @@ use miden_protocol::{Felt, Word};
 
 use super::decode_optional_block_height;
 use crate::StandardsLib;
+use crate::note::costs::{NoteConsumptionCost, P2IDE_CONSUMPTION_CYCLES};
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -34,7 +35,7 @@ const P2IDE_SCRIPT_PATH: &str = "::miden::standards::notes::p2ide::main";
 static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(P2IDE_SCRIPT_PATH);
-    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+    NoteScript::from_package_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains P2IDE note script procedure")
 });
 
@@ -363,6 +364,15 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             reclaim_height,
             timelock_height,
         })
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for P2ideNote {
+    fn consumption_cycles() -> u32 {
+        P2IDE_CONSUMPTION_CYCLES
     }
 }
 

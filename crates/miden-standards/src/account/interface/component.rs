@@ -12,7 +12,7 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes the `create_note` procedure from the
-    /// [`NoteCreator`][crate::account::wallets::NoteCreator] component.
+    /// [`NoteCreator`][crate::account::note_creator::NoteCreator] component.
     NoteCreator,
     /// Exposes procedures from the
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
@@ -34,9 +34,6 @@ pub enum AccountComponentInterface {
     /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
     AuthSingleSig,
     /// Exposes procedures from the
-    /// [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] module.
-    AuthSingleSigAcl,
-    /// Exposes procedures from the
     /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
     AuthMultisig,
     /// Exposes procedures from the
@@ -54,9 +51,19 @@ pub enum AccountComponentInterface {
     /// [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] module.
     ///
     /// This authentication scheme is intended for network-owned accounts. It rejects transactions
-    /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
-    /// script roots.
+    /// that executed a tx script or consumed input notes outside of fixed allowlists, as well as
+    /// transactions that do not consume an input note, create an output note, or change the
+    /// account before fee payment.
     AuthNetworkAccount,
+    /// Exposes procedures from the
+    /// [`AuthTxFeeCollector`][crate::account::auth::AuthTxFeeCollector] module.
+    ///
+    /// This authentication scheme forwards the single asset of every consumed note into one P2ID
+    /// note, verifies a signature over the transaction summary and rejects any transaction that
+    /// changes the account's state.
+    AuthTxFeeCollector,
+    /// A non-standard authentication component, holding the account's authentication procedure.
+    CustomAuth(AccountProcedureRoot),
     /// A non-standard, custom interface which exposes the contained procedures.
     ///
     /// Custom interface holds all procedures which are not part of some standard interface which is
@@ -82,36 +89,44 @@ impl AccountComponentInterface {
                 "Role Based Access Control".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
-            AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthMultisigSmart => "Multisig Smart".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
+            AccountComponentInterface::AuthTxFeeCollector => "Tx Fee Collector Auth".to_string(),
+            AccountComponentInterface::CustomAuth(proc_root) => {
+                format!("Custom Auth({})", shortened_mast_root(proc_root))
+            },
             AccountComponentInterface::Custom(proc_root_vec) => {
-                let result = proc_root_vec
-                    .iter()
-                    .map(|proc_root| proc_root.mast_root().to_hex()[..9].to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let result =
+                    proc_root_vec.iter().map(shortened_mast_root).collect::<Vec<_>>().join(", ");
                 format!("Custom([{result}])")
             },
         }
     }
 
     /// Returns true if this component interface is an authentication component.
-    ///
-    /// TODO: currently this can identify only standard auth components
     pub fn is_auth_component(&self) -> bool {
         matches!(
             self,
             AccountComponentInterface::AuthSingleSig
-                | AccountComponentInterface::AuthSingleSigAcl
                 | AccountComponentInterface::AuthMultisig
                 | AccountComponentInterface::AuthMultisigSmart
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
+                | AccountComponentInterface::AuthTxFeeCollector
+                | AccountComponentInterface::CustomAuth(_)
         )
     }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Returns a shortened hex representation of the procedure's MAST root: the `0x` prefix followed
+/// by the first seven hex digits, e.g. `0x6d93447`.
+fn shortened_mast_root(proc_root: &AccountProcedureRoot) -> String {
+    proc_root.mast_root().to_hex()[..9].to_string()
 }

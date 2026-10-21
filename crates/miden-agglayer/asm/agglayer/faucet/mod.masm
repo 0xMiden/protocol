@@ -1,6 +1,0 @@
-# PUBLIC INTERFACE
-# =================================================================================================
-
-pub use {receive_and_burn} from miden::standards::faucets::fungible
-pub use {mint_and_send} from miden::standards::faucets::fungible
-pub use {has_procedure} from miden::standards::inspection::code_inspection

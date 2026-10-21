@@ -1,16 +1,18 @@
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::marker::PhantomData;
 
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{ExecutionError, FastProcessor, StackInputs};
-pub use miden_processor::{ExecutionOptions, MastForestStore};
+pub use miden_processor::{ExecutionOptions, MastForestStore, ProgramExecutor};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
+    AccountInputs,
     ExecutedTransaction,
     InputNote,
     InputNotes,
@@ -19,7 +21,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
+use miden_protocol::vm::StackOutputs;
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -39,11 +41,9 @@ pub use notes_checker::{
     MAX_NUM_CHECKER_NOTES,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
+    NoteFailure,
     SuccessfulNote,
 };
-
-mod program_executor;
-pub use program_executor::ProgramExecutor;
 
 // TRANSACTION EXECUTOR
 // ================================================================================================
@@ -201,32 +201,22 @@ where
 
         // Use the package-debug execution API even when the embedded release kernel has no debug
         // sections. This enables package-owned debug info for dynamically loaded scripts.
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
-
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
-        let output = processor
-            .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::main_entrypoint_source_node(),
-                &mut host,
-            )
-            .await
-            .map_err(map_execution_error)?;
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+            .map_err(ExecutionError::advice_error_no_context)
+            .map_err(map_execution_error)?
+            .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
+            .with_entrypoint_source_node(TransactionKernel::main_entrypoint_source_node());
+        let output = processor.execute(&program, &mut host).await.map_err(map_execution_error)?;
         let stack_outputs = output.stack;
         let advice_provider = output.advice;
 
-        // The stack is not necessary since it is being reconstructed when re-executing.
-        let (_stack, advice_map, merkle_store, _pc_requests) = advice_provider.into_parts();
-        let advice_inputs = AdviceInputs {
-            map: advice_map,
-            store: merkle_store,
-            ..Default::default()
-        };
+        // The final advice is only needed to parse the transaction outputs.
+        let (_stack, advice_map, merkle_store) = advice_provider.into_parts();
+        let final_advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
 
-        build_executed_transaction(advice_inputs, tx_inputs, stack_outputs, host)
+        build_executed_transaction(final_advice_inputs, tx_inputs, stack_outputs, host)
     }
 
     // SCRIPT EXECUTION
@@ -255,17 +245,18 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
         let program = TransactionKernel::tx_script_main();
         let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
+        let processor =
+            EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+                .map_err(ExecutionError::advice_error_no_context)
+                .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?
+                .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
+                .with_entrypoint_source_node(
+                    TransactionKernel::tx_script_main_entrypoint_source_node(),
+                );
         let output = processor
-            .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::tx_script_main_entrypoint_source_node(),
-                &mut host,
-            )
+            .execute(&program, &mut host)
             .await
             .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?;
         let stack_outputs = output.stack;
@@ -291,24 +282,28 @@ where
         let (mut asset_ids, mut ref_blocks) = validate_input_notes(&input_notes, block_ref)?;
         ref_blocks.insert(block_ref);
 
-        let (account, block_header, blockchain) = self
+        let (account, block_header, protocol_config, blockchain) = self
             .data_store
             .get_transaction_inputs(account_id, ref_blocks)
             .await
             .map_err(TransactionExecutorError::FetchTransactionInputsFailed)?;
 
+        // Filter out any asset IDs that the native partial vault already tracks.
+        asset_ids.retain(|asset_id| account.vault().get(*asset_id).is_err());
         let native_account_vault_root = account.vault().root();
 
-        let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
-            .map_err(TransactionExecutorError::InvalidTransactionInputs)?
-            .with_tx_args(tx_args);
+        let mut tx_inputs = TransactionInputs::builder()
+            .account(account)
+            .block_header(block_header)
+            .protocol_config(protocol_config)
+            .blockchain(blockchain)
+            .input_notes(input_notes)
+            .tx_args(tx_args)
+            .build()
+            .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
 
-        // filter out any asset IDs for which we already have witnesses in the advice inputs
-        asset_ids.retain(|asset_id| {
-            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_id)
-        });
-
-        // if any of the witnesses are missing, fetch them from the data store and add to tx_inputs
+        // If any of the witnesses are missing, fetch them from the data store and add them to the
+        // native partial account.
         if !asset_ids.is_empty() {
             let asset_witnesses = self
                 .data_store
@@ -316,7 +311,9 @@ where
                 .await
                 .map_err(TransactionExecutorError::FetchAssetWitnessFailed)?;
 
-            tx_inputs = tx_inputs.with_asset_witnesses(asset_witnesses);
+            tx_inputs
+                .add_asset_witnesses(account_id, asset_witnesses)
+                .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
         }
 
         Ok(tx_inputs)
@@ -341,10 +338,15 @@ where
             input_notes.iter().map(|n| n.note().script()),
         );
 
-        // To start executing the transaction, the procedure index map only needs to contain the
-        // native account's procedures. Foreign accounts are inserted into the map on first access.
-        let account_procedure_index_map =
-            AccountProcedureIndexMap::new([tx_inputs.account().code()]);
+        // Insert all available account's code into the procedure index map (native and foreign).
+        // The procedures of lazy-loaded foreign accounts are inserted into the map on first access.
+        let account_procedure_index_map = AccountProcedureIndexMap::new(
+            tx_inputs
+                .foreign_accounts()
+                .values()
+                .map(AccountInputs::code)
+                .chain([tx_inputs.account().code()]),
+        );
 
         let host = TransactionExecutorHost::new(
             tx_inputs.account(),
@@ -354,8 +356,10 @@ where
             account_procedure_index_map,
             self.authenticator,
             tx_inputs.block_header().block_num(),
+            tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
-        );
+        )
+        .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 
         let advice_inputs = tx_advice_inputs.into_advice_inputs();
 
@@ -368,24 +372,21 @@ where
 
 /// Creates a new [ExecutedTransaction] from the provided data.
 fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenticator + Sync>(
-    mut advice_inputs: AdviceInputs,
-    tx_inputs: TransactionInputs,
+    final_advice_inputs: AdviceInputs,
+    mut tx_inputs: TransactionInputs,
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    let (
-        account_patch,
-        _input_notes,
-        output_notes,
-        accessed_foreign_account_code,
-        generated_signatures,
-        tx_progress,
-        foreign_account_slot_names,
-    ) = host.into_parts();
+    let (account_patch, _input_notes, output_notes, logs, tx_progress, lazy_loaded_data) =
+        host.into_parts();
 
-    let tx_outputs =
-        TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-            .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
+    let tx_outputs = TransactionKernel::from_transaction_parts(
+        &stack_outputs,
+        &final_advice_inputs,
+        output_notes,
+        logs,
+    )
+    .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
     let patch_commitment = account_patch.to_commitment();
     if tx_outputs.account_patch_commitment() != patch_commitment {
@@ -405,15 +406,10 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         });
     }
 
-    // Introduce generated signatures into the witness inputs.
-    advice_inputs.map.extend(generated_signatures);
-
-    // Overwrite advice inputs from after the execution on the transaction inputs. This is
-    // guaranteed to be a superset of the original advice inputs.
-    let tx_inputs = tx_inputs
-        .with_foreign_account_code(accessed_foreign_account_code)
-        .with_foreign_account_slot_names(foreign_account_slot_names)
-        .with_advice_inputs(advice_inputs);
+    // Add the lazy loaded data, so the transaction can be re-executed from its inputs alone.
+    lazy_loaded_data
+        .add_to(&mut tx_inputs)
+        .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
 
     Ok(ExecutedTransaction::new(
         tx_inputs,

@@ -13,8 +13,13 @@ pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
-use miden_protocol::transaction::TransactionEventId;
-use miden_protocol::vm::{EventId, EventName};
+use miden_protocol::transaction::{
+    TransactionEventId,
+    TransactionLog,
+    TransactionLogError,
+    TransactionLogs,
+};
+use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -37,11 +42,13 @@ use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
+    AccountCodeUpgrade,
     AccountDelta,
     AccountHeader,
     AccountId,
     AccountPatch,
     AccountStorageHeader,
+    AssetDelta,
     PartialAccount,
     StorageMapKey,
     StorageSlotHeader,
@@ -49,6 +56,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     InputNote,
@@ -57,6 +65,8 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
+    TransactionSummaryMetadata,
+    TransactionSummaryUserParams,
 };
 pub(crate) use tx_event::{
     RecipientData,
@@ -67,7 +77,7 @@ pub(crate) use tx_event::{
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -100,9 +110,13 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
 
+    /// The commitments of the blocks the transaction authenticates, keyed by block number.
+    block_commitments: BTreeMap<BlockNumber, Word>,
+
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
+    logs: Vec<TransactionLog>,
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
@@ -113,13 +127,18 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the [`AccountUpdateTracker`] cannot be created for the account.
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
@@ -131,17 +150,19 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             }
             registry
         };
-        Self {
+        Ok(Self {
             mast_store,
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            update_tracker: AccountUpdateTracker::new(account),
+            update_tracker: AccountUpdateTracker::new(account)?,
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
+            logs: Vec::new(),
             input_notes,
+            block_commitments,
             core_lib_handlers,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -200,11 +221,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.output_notes.values().cloned().map(|builder| builder.build()).collect()
     }
 
-    /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    /// Consumes `self` and returns the account patch, input and output notes, and transaction logs.
+    pub fn into_parts(
+        self,
+    ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (self.update_tracker.into_patch(), self.input_notes, output_notes)
+        (
+            self.update_tracker.into_patch(),
+            self.input_notes,
+            output_notes,
+            TransactionLogs::new(self.logs)
+                .expect("host validates transaction log limits before appending"),
+        )
+    }
+
+    /// Returns the complete transaction logs collected during execution.
+    pub fn logs(&self) -> &[TransactionLog] {
+        &self.logs
     }
 
     // MUTATORS
@@ -267,6 +301,48 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
 
+    /// Appends a transaction log emitted by the kernel.
+    pub(crate) fn on_log_added(
+        &mut self,
+        log: TransactionLog,
+    ) -> Result<(), TransactionKernelError> {
+        let num_logs = self.logs.len() + 1;
+        if num_logs > TransactionLogs::MAX_COUNT {
+            return Err(TransactionKernelError::other_with_source(
+                "invalid transaction logs",
+                TransactionLogError::TooManyLogs(num_logs),
+            ));
+        }
+        let num_words = self.logs().iter().map(TransactionLog::num_content_words).sum::<usize>()
+            + log.num_content_words();
+        if num_words > TransactionLogs::MAX_NUM_WORDS {
+            return Err(TransactionKernelError::other_with_source(
+                "invalid transaction logs",
+                TransactionLogError::TooManyTotalContentWords(num_words),
+            ));
+        }
+        self.logs.push(log);
+        Ok(())
+    }
+
+    /// Pushes an input note's index and a presence flag onto the advice stack.
+    ///
+    /// When the note is absent, index zero is returned with a cleared presence flag. The index is
+    /// an unauthenticated hint and must be validated by the VM before it is used.
+    pub fn on_input_note_index_lookup(&self, note_id: NoteId) -> Vec<AdviceMutation> {
+        let note_idx =
+            self.input_notes.iter().position(|input_note| input_note.id() == note_id).map(
+                |note_idx| {
+                    u16::try_from(note_idx).expect("maximum number of input notes fits in u16")
+                },
+            );
+
+        let is_found = Felt::from(note_idx.is_some() as u8);
+        let note_idx = Felt::from(note_idx.unwrap_or(0));
+
+        vec![AdviceMutation::extend_advice_stack_with([note_idx, is_found])]
+    }
+
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
     /// event ID.
     ///
@@ -300,7 +376,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
-        vec![AdviceMutation::extend_stack(signature)]
+        vec![AdviceMutation::extend_advice_stack_with(signature)]
     }
 
     /// Adds an asset to the output note identified by the note index.
@@ -342,7 +418,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_stack([Felt::from(proc_idx)])])
+        Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(proc_idx)])])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.
@@ -356,6 +432,38 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.update_tracker.increment_nonce();
 
         Ok(Vec::new())
+    }
+
+    /// Handles the before code upgrade event by recording the new code in the update tracker and
+    /// providing its procedures to the kernel through the advice map.
+    ///
+    /// The `code_upgrade` is taken from the advice map entry under
+    /// [`AccountCodeUpgrade::advice_map_key`] when the event is extracted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the commitment of `code_upgrade` does not match `new_code_commitment`.
+    /// - the update tracker rejects the upgrade.
+    pub fn on_account_before_code_upgrade(
+        &mut self,
+        new_code_commitment: Word,
+        code_upgrade: AccountCodeUpgrade,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        if code_upgrade.commitment() != new_code_commitment {
+            return Err(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
+                expected: new_code_commitment,
+                actual: code_upgrade.commitment(),
+            });
+        }
+
+        let procedures = code_upgrade.code().to_elements();
+        self.update_tracker.record_code_upgrade(code_upgrade)?;
+
+        Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
+            new_code_commitment,
+            procedures,
+        )]))])
     }
 
     // ACCOUNT STORAGE UPDATE HANDLERS
@@ -400,11 +508,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Tracks the computation of an asset delta for the account delta.
+    ///
+    /// The kernel iterates its asset delta map once per computation, so this is called at most once
+    /// per asset ID, and only after
+    /// [`Self::on_account_before_asset_delta_computation`] has reset the accumulated delta.
     pub fn on_account_on_asset_delta_computation(
         &mut self,
         delta: AssetDelta,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.update_asset_delta(delta);
+        self.update_tracker.add_asset_delta(delta);
 
         Ok(Vec::new())
     }
@@ -429,8 +541,12 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        salt: Word,
+        metadata: TransactionSummaryMetadata,
+        block_commitment: Word,
+        user_params: TransactionSummaryUserParams,
+        logs: TransactionLogs,
     ) -> Result<TransactionSummary, TransactionKernelError> {
+        let block_number = metadata.block_number();
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
         let output_notes_vec = self.build_output_notes();
@@ -469,7 +585,29 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        Ok(TransactionSummary::new(account_delta, input_notes, output_notes, salt))
+        let expected_block_commitment = self
+            .block_commitments
+            .get(&block_number)
+            .ok_or(TransactionKernelError::TransactionSummaryUnknownBlockNumber(block_number))?;
+        if *expected_block_commitment != block_commitment {
+            return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
+                format!(
+                    "expected block commitment to be {expected_block_commitment} but was {block_commitment}"
+                )
+                .into(),
+            ));
+        }
+
+        Ok(TransactionSummary::new(
+            account_delta,
+            input_notes,
+            output_notes,
+            block_number,
+            block_commitment,
+            metadata.expiration_delta(),
+            user_params,
+            logs,
+        ))
     }
 
     /// Returns the underlying store of the base host.

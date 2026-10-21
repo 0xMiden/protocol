@@ -21,23 +21,21 @@ testing = ["dep:rand", "miden-assembly/testing", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
+miden-core-lib = { workspace = true }
 miden-protocol = { workspace = true }
 
 # External dependencies
-bon       = { workspace = true }
-rand      = { optional = true, workspace = true }
-thiserror = { workspace = true }
+bon             = { workspace = true }
+primitive-types = { workspace = true }
+rand            = { optional = true, workspace = true }
+thiserror       = { workspace = true }
 
 [build-dependencies]
-fs-err                 = { workspace = true }
-miden-assembly         = { features = ["std"], workspace = true }
-miden-core-lib         = { workspace = true }
-miden-mast-package     = { features = ["std"], workspace = true }
-miden-package-registry = { features = ["resolver", "std"], workspace = true }
-miden-project          = { features = ["serde", "std"], workspace = true }
-miden-protocol         = { workspace = true }
-regex                  = { workspace = true }
-walkdir                = { workspace = true }
+miden-assembly             = { features = ["std"], workspace = true }
+miden-core-lib             = { workspace = true }
+miden-package-registry     = { features = ["resolver", "std"], workspace = true }
+miden-protocol             = { features = ["std"], workspace = true }
+miden-protocol-build-utils = { workspace = true }
 
 [dev-dependencies]
 anyhow         = { workspace = true }

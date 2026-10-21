@@ -1,8 +1,10 @@
+use alloc::string::ToString;
+
 use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
-use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockProof, BlockSignatures};
+use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -10,12 +12,15 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::vm::ExecutionProof;
 
 // PROVEN BLOCK ERROR
 // ================================================================================================
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProvenBlockError {
+    #[error("block proof contains precompiles")]
+    BlockProofContainsPrecompiles,
     #[error(
         "proven block has {actual} signatures but its parent's validator set has {expected} keys"
     )]
@@ -90,8 +95,14 @@ pub struct ProvenBlock {
     /// The validators' positional signatures over the block header.
     signatures: BlockSignatures,
 
-    /// The proof of the block.
-    proof: BlockProof,
+    /// The execution proof of the block kernel over this block.
+    // TODO: The block kernel takes BATCHES_COMMITMENT as a public input, but this struct carries
+    // neither that commitment nor the `BatchId`s it is built from, so the claim the proof attests
+    // to cannot be reconstructed here. Recomputing the batch IDs additionally needs the per-batch
+    // grouping of `body.transactions()`, which is flattened away. Add the batch IDs and that
+    // grouping to this struct or to `BlockBody` so the proof can be tied back to the block's data:
+    // https://github.com/0xMiden/protocol/issues/1706
+    proof: ExecutionProof,
 }
 
 impl ProvenBlock {
@@ -116,6 +127,7 @@ impl ProvenBlock {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - If the execution proof contains precompiles.
     /// - If the transaction commitment in the block header is inconsistent with the transactions
     ///   included in the block body.
     /// - If the note root in the block header is inconsistent with the notes included in the block
@@ -124,7 +136,7 @@ impl ProvenBlock {
         header: BlockHeader,
         body: BlockBody,
         signatures: BlockSignatures,
-        proof: BlockProof,
+        proof: ExecutionProof,
     ) -> Result<Self, ProvenBlockError> {
         let proven_block = Self { header, signatures, body, proof };
 
@@ -143,7 +155,7 @@ impl ProvenBlock {
         header: BlockHeader,
         body: BlockBody,
         signatures: BlockSignatures,
-        proof: BlockProof,
+        proof: ExecutionProof,
     ) -> Self {
         Self { header, signatures, body, proof }
     }
@@ -172,6 +184,7 @@ impl ProvenBlock {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - the execution proof contains precompiles;
     /// - the transaction commitment in the block header is inconsistent with the transactions
     ///   included in the block body;
     /// - the note root in the block header is inconsistent with the notes included in the block
@@ -180,6 +193,8 @@ impl ProvenBlock {
     ///   block (which has no parent), the parent's number or commitment do not match, or the
     ///   signatures do not verify against the parent's validator keys.
     pub fn validate(&self, parent: Option<&BlockHeader>) -> Result<(), ProvenBlockError> {
+        self.validate_proof()?;
+
         // Validate that header / body transaction commitments match.
         self.validate_tx_commitment()?;
 
@@ -214,18 +229,27 @@ impl ProvenBlock {
         &self.signatures
     }
 
-    /// Returns the proof of the block.
-    pub fn proof(&self) -> &BlockProof {
+    /// Returns the execution proof attached to this block.
+    pub fn proof(&self) -> &ExecutionProof {
         &self.proof
     }
 
     /// Destructures this proven block into individual parts.
-    pub fn into_parts(self) -> (BlockHeader, BlockBody, BlockSignatures, BlockProof) {
+    pub fn into_parts(self) -> (BlockHeader, BlockBody, BlockSignatures, ExecutionProof) {
         (self.header, self.body, self.signatures, self.proof)
     }
 
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
+
+    /// Validates that the block proof has no outstanding or settled precompile work.
+    fn validate_proof(&self) -> Result<(), ProvenBlockError> {
+        if self.proof.has_precompiles() {
+            Err(ProvenBlockError::BlockProofContainsPrecompiles)
+        } else {
+            Ok(())
+        }
+    }
 
     /// Validates that the transaction commitments between the header and body match for this proven
     /// block.
@@ -273,8 +297,12 @@ impl Deserializable for ProvenBlock {
             header: BlockHeader::read_from(source)?,
             body: BlockBody::read_from(source)?,
             signatures: BlockSignatures::read_from(source)?,
-            proof: BlockProof::read_from(source)?,
+            proof: ExecutionProof::read_from(source)?,
         };
+
+        block
+            .validate_proof()
+            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
 
         Ok(block)
     }
@@ -291,8 +319,7 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::block::ValidatorKeys;
-    use crate::testing::validator_keys::{random_validator_set as validator_set, sign_all};
+    use crate::block::ValidatorConfig;
     use crate::transaction::OrderedTransactionHeaders;
 
     fn empty_body() -> BlockBody {
@@ -309,42 +336,74 @@ mod tests {
     /// wires the signatures and parent header through to the shared check.
     fn block_one(
         parent: &BlockHeader,
-        parent_keys: &ValidatorKeys,
+        parent_keys: &ValidatorConfig,
         signers: &[SigningKey],
     ) -> ProvenBlock {
-        let next_keys = validator_set(3).1;
+        let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
-        let signatures = sign_all(parent_keys, signers, header.commitment());
-        ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy())
+        let signatures = parent_keys.sign_all(signers, header.commitment());
+        ProvenBlock::new_unchecked(
+            header,
+            empty_body(),
+            signatures,
+            crate::testing::dummy_execution_proof(),
+        )
     }
 
     #[test]
     fn validate_accepts_committed_signers() {
-        let (signers, keys) = validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn validate_accepts_single_validator() {
-        let (signers, keys) = validator_set(1);
+        let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
-    fn validate_rejects_uncommitted_signers() {
-        let (_, keys) = validator_set(3);
+    fn rejects_proofs_with_precompiles() {
+        let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        let next_keys = validator_set(3).1;
+        let block = block_one(&parent, &keys, &signers);
+        let (header, body, signatures, _) = block.into_parts();
+
+        for proof in [
+            crate::testing::dummy_deferred_execution_proof(),
+            crate::testing::dummy_precompile_execution_proof(),
+        ] {
+            let error =
+                ProvenBlock::new(header.clone(), body.clone(), signatures.clone(), proof.clone())
+                    .unwrap_err();
+            assert!(matches!(error, ProvenBlockError::BlockProofContainsPrecompiles));
+
+            let block =
+                ProvenBlock::new_unchecked(header.clone(), body.clone(), signatures.clone(), proof);
+            let error = ProvenBlock::read_from_bytes(&block.to_bytes()).unwrap_err();
+            assert!(matches!(error, DeserializationError::InvalidValue(_)));
+        }
+    }
+
+    #[test]
+    fn validate_rejects_uncommitted_signers() {
+        let (_, keys) = ValidatorConfig::random_with_signers(3);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
 
         // The block is signed by a full, valid validator set of the same size the parent never
         // committed.
-        let (impostor_signers, impostor_keys) = validator_set(3);
-        let signatures = sign_all(&impostor_keys, &impostor_signers, header.commitment());
-        let block =
-            ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy());
+        let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
+        let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
+        let block = ProvenBlock::new_unchecked(
+            header,
+            empty_body(),
+            signatures,
+            crate::testing::dummy_execution_proof(),
+        );
 
         let result = block.validate(Some(&parent));
         assert!(matches!(result, Err(ProvenBlockError::InvalidSignatureAtPosition { .. })));

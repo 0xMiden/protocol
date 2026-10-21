@@ -189,7 +189,8 @@ impl FungibleAsset {
 
 impl From<FungibleAsset> for Asset {
     fn from(asset: FungibleAsset) -> Self {
-        Asset::Fungible(asset)
+        Asset::new(asset.id(), asset.to_value_word())
+            .expect("fungible asset should be a valid asset")
     }
 }
 
@@ -205,41 +206,34 @@ impl fmt::Display for FungibleAsset {
 
 impl Serializable for FungibleAsset {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Lead with the asset composition byte to distinguish asset types on the wire.
-        target.write(AssetComposition::Fungible);
-        target.write(self.faucet_id);
+        // Serialize the asset ID to version the fungible asset.
+        self.id().write_into(target);
         target.write(self.amount.as_u64());
     }
 
     fn get_size_hint(&self) -> usize {
-        AssetComposition::SERIALIZED_SIZE
-            + self.faucet_id.get_size_hint()
-            + self.amount.as_u64().get_size_hint()
+        self.id().get_size_hint() + self.amount.as_u64().get_size_hint()
     }
 }
 
 impl Deserializable for FungibleAsset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let composition: AssetComposition = source.read()?;
-        if !composition.is_fungible() {
+        let id = AssetId::read_from(source)?;
+
+        if !id.composition().is_fungible() {
             return Err(DeserializationError::InvalidValue(format!(
-                "expected fungible asset composition but found {composition:?}"
+                "expected fungible asset composition but found {:?}",
+                id.composition()
             )));
         }
-        FungibleAsset::deserialize_body(source)
-    }
-}
+        debug_assert!(
+            id.asset_class().is_empty(),
+            "asset ID should validate asset class is empty for composition fungible"
+        );
 
-impl FungibleAsset {
-    /// Reads the remaining body of a fungible asset, after the leading composition byte has
-    /// already been consumed.
-    pub(super) fn deserialize_body<R: ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, DeserializationError> {
-        let faucet_id: AccountId = source.read()?;
         let amount: u64 = source.read()?;
 
-        FungibleAsset::new(faucet_id, amount)
+        FungibleAsset::new(id.faucet_id(), amount)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
@@ -265,8 +259,10 @@ mod tests {
 
     #[test]
     fn fungible_asset_from_id_and_value_words_fails_on_invalid_composition() -> anyhow::Result<()> {
-        let asset_id =
-            set_asset_metadata(FungibleAsset::mock(25).id(), AssetComposition::None.as_u8());
+        let asset_id = set_asset_metadata(
+            FungibleAsset::mock(25).id(),
+            AssetId::encode_metadata(AssetComposition::None),
+        );
 
         let err = FungibleAsset::from_id_and_value_words(
             asset_id,

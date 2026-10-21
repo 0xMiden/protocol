@@ -1,13 +1,7 @@
+use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -22,7 +16,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{NonFungibleAsset, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
@@ -36,15 +30,21 @@ use super::{
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use crate::account::account_component_code;
-use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
+use crate::account::account_component_package;
+use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
+use crate::account::faucets::registers_owner_only_policy;
+use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
-use crate::tx_script::ExpirationTransactionScript;
 
 #[cfg(test)]
 mod tests;
+
+mod token_base_uri;
+pub use token_base_uri::TokenBaseUri;
+use token_base_uri::TokenBaseUriConfig;
 
 // CONSTANTS
 // ================================================================================================
@@ -77,11 +77,11 @@ const STATUS_BURNED: u8 = 2;
 /// and reported as `NotIssued`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetStatus {
-    /// The commitment has never been issued by this faucet.
+    /// The token ID has never been issued by this faucet.
     NotIssued,
-    /// An NFT has been issued for the commitment and has not been burned.
+    /// An NFT has been issued for the token ID and has not been burned.
     Issued,
-    /// The commitment was issued and later burned; it is permanently consumed and can never be
+    /// The token ID was issued and later burned; it is permanently consumed and can never be
     /// issued again.
     Burned,
 }
@@ -104,53 +104,74 @@ impl TryFrom<u8> for AssetStatus {
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(
-    NON_FUNGIBLE_FAUCET_CODE,
+account_component_package!(
+    NON_FUNGIBLE_FAUCET_PACKAGE,
     "miden-standards-faucets-non-fungible-faucet.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`NonFungibleFaucet::NAME`], which mirrors the standards-side MASM module path.
+const NON_FUNGIBLE_FAUCET_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::non_fungible_faucet";
+
 procedure_root!(
     NON_FUNGIBLE_FAUCET_MINT_AND_SEND,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::MINT_AND_SEND_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_DESCRIPTION,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_DESCRIPTION_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_LOGO_URI,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_LOGO_URI_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_CONTRACT_URI,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_CONTRACT_URI_PROC_NAME,
+    NonFungibleFaucet::code()
+);
+
+procedure_root!(
+    NON_FUNGIBLE_FAUCET_SET_TOKEN_BASE_URI,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
+    NonFungibleFaucet::SET_TOKEN_BASE_URI_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 /// An [`AccountComponent`] implementing a non-fungible (NFT) faucet.
 ///
-/// The asset value is the off-chain commitment `hash(user_data, salt)`; the NFT's token ID is
-/// `(hash0, hash1)` - the asset class the protocol derives from those first two elements, which
-/// uniquely identifies each NFT within the faucet. Uniqueness is enforced on-chain by an
-/// asset-status registry keyed by `[hash0, hash1, 0, 0]`: a commitment can be issued at most once,
-/// and once burned it is permanently consumed.
+/// The asset value is an opaque word chosen by the caller. By convention the minter sets it to the
+/// off-chain commitment [`compute_asset_commitment`] produces, but the faucet validates neither
+/// that construction nor knowledge of a preimage - see that method's documentation.
+///
+/// The NFT's token ID is `(hash0, hash1)` - the asset class the protocol derives from the value's
+/// first two elements, which uniquely identifies each NFT within the faucet. The one property
+/// enforced on-chain is token ID uniqueness, via an asset-status registry keyed by
+/// `[hash0, hash1, 0, 0]`: a token ID can be issued at most once, and once burned it is permanently
+/// consumed. Which values may be issued is decided entirely by the active mint policy, which
+/// receives the full asset value; a permissive policy such as `allow_all` lets any caller claim any
+/// token ID.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::non_fungible` plus the shared
 /// token metadata accessors. The procedures are:
@@ -158,14 +179,36 @@ procedure_root!(
 /// - `receive_and_burn`, which receives the NFT from the active note and burns it.
 /// - `get_symbol`, `get_asset_status`, and the metadata accessors/setters (see the embedded
 ///   [`TokenMetadata`]).
+/// - `is_token_base_uri_mutable` and `set_token_base_uri`, for the token base URI.
 ///
 /// `mint_and_send` is gated by the active mint policy from the associated [`TokenPolicyManager`];
 /// `receive_and_burn` is gated by the active burn policy.
+///
+/// ## Token metadata
+///
+/// Each faucet has either public or private token metadata, fixed at creation. Public and private
+/// refer to the visibility of each token's metadata, not to the faucet's account type or to note
+/// types.
+///
+/// A faucet with a [`TokenBaseUri`] has public token metadata: a token's metadata lives at the
+/// base URI followed by its token ID, see [`token_uri`]. Its asset values are computed by
+/// [`compute_asset_commitment`] with a zero salt, so an asset value is the commitment to the hosted
+/// metadata bytes, which anyone can fetch and verify. The base URI can be updated through
+/// `set_token_base_uri` if it is mutable, but it can never be cleared, and a faucet created without
+/// one can never set it.
+///
+/// A faucet without a [`TokenBaseUri`] has private token metadata, and [`token_uri`] returns
+/// `None` for its assets.
+///
+/// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
+/// [`token_uri`]: NonFungibleFaucet::token_uri
 #[derive(Debug, Clone)]
 pub struct NonFungibleFaucet {
     symbol: TokenSymbol,
     /// Embeds name, optional fields, and mutability flags.
     metadata: TokenMetadata,
+    /// Embeds the token base URI and its mutability flag.
+    token_base_uri: TokenBaseUriConfig,
 }
 
 #[bon::bon]
@@ -174,10 +217,17 @@ impl NonFungibleFaucet {
     ///
     /// Required setters: [`name`], [`symbol`]. Optional string fields default to `None`;
     /// mutability flags default to `false`. The collection metadata pointer is named
-    /// `contract_uri` (it reuses the shared `external_link` storage).
+    /// `contract_uri` (it reuses the shared `external_link` storage). Setting [`token_base_uri`]
+    /// makes the faucet's token metadata public.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NonFungibleFaucetError::MutableEmptyTokenBaseUri`] if the token base URI is
+    /// mutable but not set, since the setter can never switch it from empty to non-empty.
     ///
     /// [`name`]: NonFungibleFaucetBuilder::name
     /// [`symbol`]: NonFungibleFaucetBuilder::symbol
+    /// [`token_base_uri`]: NonFungibleFaucetBuilder::token_base_uri
     #[builder]
     pub fn new(
         name: TokenName,
@@ -185,10 +235,12 @@ impl NonFungibleFaucet {
         description: Option<Description>,
         logo_uri: Option<LogoURI>,
         contract_uri: Option<ExternalLink>,
+        token_base_uri: Option<TokenBaseUri>,
         #[builder(default)] is_description_mutable: bool,
         #[builder(default)] is_logo_uri_mutable: bool,
         #[builder(default)] is_contract_uri_mutable: bool,
-    ) -> NonFungibleFaucet {
+        #[builder(default)] is_token_base_uri_mutable: bool,
+    ) -> Result<NonFungibleFaucet, NonFungibleFaucetError> {
         let mut metadata = TokenMetadata::new(name);
         if let Some(desc) = description {
             metadata = metadata.with_description(desc, is_description_mutable);
@@ -206,7 +258,9 @@ impl NonFungibleFaucet {
             metadata = metadata.with_external_link_mutable(is_contract_uri_mutable);
         }
 
-        Self { symbol, metadata }
+        let token_base_uri = TokenBaseUriConfig::new(token_base_uri, is_token_base_uri_mutable)?;
+
+        Ok(Self { symbol, metadata, token_base_uri })
     }
 }
 
@@ -215,7 +269,7 @@ impl NonFungibleFaucet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::faucets::non_fungible_faucet";
+    pub const NAME: &'static str = "miden::standards::faucets::non_fungible";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -227,13 +281,14 @@ impl NonFungibleFaucet {
     const SET_DESCRIPTION_PROC_NAME: &'static str = "set_description";
     const SET_LOGO_URI_PROC_NAME: &'static str = "set_logo_uri";
     const SET_CONTRACT_URI_PROC_NAME: &'static str = "set_contract_uri";
+    const SET_TOKEN_BASE_URI_PROC_NAME: &'static str = "set_token_base_uri";
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &NON_FUNGIBLE_FAUCET_CODE
+        &NON_FUNGIBLE_FAUCET_PACKAGE.code
     }
 
     /// Returns the procedure root of the `mint_and_send` account procedure.
@@ -261,6 +316,12 @@ impl NonFungibleFaucet {
         *NON_FUNGIBLE_FAUCET_SET_CONTRACT_URI
     }
 
+    /// Returns the procedure root of the `set_token_base_uri` account procedure.
+    /// Authority-gated.
+    pub fn set_token_base_uri_root() -> AccountProcedureRoot {
+        *NON_FUNGIBLE_FAUCET_SET_TOKEN_BASE_URI
+    }
+
     /// Returns the [`StorageSlotName`] holding the token symbol word.
     pub fn symbol_slot() -> &'static StorageSlotName {
         &SYMBOL_SLOT
@@ -269,6 +330,17 @@ impl NonFungibleFaucet {
     /// Returns the [`StorageSlotName`] holding the asset-status registry map.
     pub fn asset_status_slot() -> &'static StorageSlotName {
         &ASSET_STATUS_SLOT
+    }
+
+    /// Returns the [`StorageSlotName`] holding the non-fungible faucet's mutability config word
+    /// `[is_token_base_uri_mutable, 0, 0, 0]`.
+    pub fn mutability_config_slot() -> &'static StorageSlotName {
+        token_base_uri::mutability_config_slot()
+    }
+
+    /// Returns the [`StorageSlotName`] for a token base URI chunk by index (0..=6).
+    pub fn token_base_uri_slot(index: usize) -> &'static StorageSlotName {
+        token_base_uri::token_base_uri_slot(index)
     }
 
     /// Returns the token symbol.
@@ -297,19 +369,54 @@ impl NonFungibleFaucet {
         self.metadata.external_link()
     }
 
-    /// Computes the off-chain asset commitment `hash(user_data, salt)` used as the NFT asset
-    /// value.
+    /// Returns the base URI of the public token metadata, or `None` if the faucet's token
+    /// metadata is private.
+    pub fn token_base_uri(&self) -> Option<&TokenBaseUri> {
+        self.token_base_uri.token_base_uri()
+    }
+
+    /// Returns whether the token base URI can be updated through `set_token_base_uri`.
+    pub fn is_token_base_uri_mutable(&self) -> bool {
+        self.token_base_uri.is_mutable()
+    }
+
+    /// Returns the URI of the given asset's public token metadata, or `None` if the faucet's
+    /// token metadata is private.
+    ///
+    /// The URI is the token base URI followed by the asset's token ID, written as its
+    /// [`AssetClass`](miden_protocol::asset::AssetClass): `0x` followed by the prefix and the
+    /// suffix as 16-digit lowercase hex each. The asset is expected to be issued by this faucet.
+    pub fn token_uri(&self, asset: &NonFungibleAsset) -> Option<String> {
+        self.token_base_uri()
+            .map(|base_uri| alloc::format!("{}{}", base_uri.as_str(), asset.id().asset_class()))
+    }
+
+    /// Computes the off-chain asset commitment `hash(user_data, salt)` that the minter is expected
+    /// to use as the NFT asset value.
     ///
     /// This must be computed off-chain: computing it on-chain would leak the salt and make the
     /// underlying `user_data` invertible. The faucet never sees `user_data` or `salt` — only
     /// this commitment word.
+    ///
+    /// Using this helper is a convention, not an enforced property. `mint_and_send` accepts any
+    /// word: it cannot check that a value is a hash output, that a salt was used, or that the
+    /// minter knows a preimage. Consequently a minted asset value attests to nothing the faucet
+    /// verified. Integrators that rely on the value identifying specific off-chain data must
+    /// recompute the commitment from the `user_data` and `salt` they received and compare it to
+    /// the on-chain asset value themselves. Where issuance itself must be controlled - e.g. so a
+    /// published commitment cannot be claimed by a third party - install a restrictive mint policy
+    /// such as `owner_only` rather than `allow_all`; the policy hook receives the full asset value.
     pub fn compute_asset_commitment(user_data: &[u8], salt: Word) -> Word {
         let data_digest = Hasher::hash(user_data);
         Hasher::merge(&[data_digest, salt])
     }
 
-    /// Reads the issuance [`AssetStatus`] of the asset identified by `asset_commitment` (as
-    /// produced by [`compute_asset_commitment`]) from the faucet account's `storage`.
+    /// Reads the issuance [`AssetStatus`] of the token ID derived from `asset_commitment` (the
+    /// asset value, by convention produced by [`compute_asset_commitment`]) from the faucet
+    /// account's `storage`.
+    ///
+    /// The status is keyed by the token ID - elements 0 and 1 of the value - so two values that
+    /// differ only in elements 2 and 3 share a single status entry.
     ///
     /// # Errors
     ///
@@ -342,57 +449,22 @@ impl NonFungibleFaucet {
         AssetStatus::try_from(status_code)
     }
 
-    /// Returns the storage slot schema for the token symbol slot.
-    pub fn symbol_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::symbol_slot().clone(),
-            StorageSlotSchema::value(
-                "Token symbol",
-                [
-                    FeltSchema::felt("symbol"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the asset-status registry map.
-    pub fn asset_status_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::asset_status_slot().clone(),
-            StorageSlotSchema::map(
-                "Asset status registry. Key is the token ID padded to a word \
-                 `[token_id_suffix, token_id_prefix, 0, 0]`; value is the status (0 = not issued, \
-                 1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`.",
-                SchemaType::native_word(),
-                SchemaType::native_felt(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let mut schema_entries = vec![Self::symbol_slot_schema(), Self::asset_status_slot_schema()];
-        schema_entries.extend(TokenMetadata::storage_schema());
-
-        let storage_schema =
-            StorageSchema::new(schema_entries).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Non-fungible faucet component bundling minting, burning, status, and metadata",
-            )
-            .with_storage_schema(storage_schema)
+        NON_FUNGIBLE_FAUCET_PACKAGE.metadata.clone()
     }
 
     /// Returns the storage slots produced by this faucet (token symbol word + empty asset-status
-    /// map + name + mutability config + description + logo URI + contract URI).
+    /// map + non-fungible mutability config + token base URI + name + mutability config +
+    /// description + logo URI + contract URI).
+    ///
+    /// A faucet with private token metadata stores the token base URI as the empty string.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.symbol_slot_value());
         slots.push(StorageSlot::with_map(Self::asset_status_slot().clone(), StorageMap::default()));
+
+        slots.extend(self.token_base_uri.into_storage_slots());
         slots.extend(self.metadata.into_storage_slots());
         slots
     }
@@ -422,18 +494,6 @@ impl NonFungibleFaucet {
 
         NonFungibleFaucet::try_from(storage)
     }
-
-    /// Reconstructs from the token symbol word and the embedded [`TokenMetadata`].
-    pub(crate) fn from_symbol_word_and_token_metadata(
-        word: Word,
-        metadata: TokenMetadata,
-    ) -> Result<Self, NonFungibleFaucetError> {
-        let [symbol, ..] = *word;
-        let symbol =
-            TokenSymbol::try_from(symbol).map_err(TokenMetadataError::InvalidTokenSymbol)?;
-
-        Ok(Self { symbol, metadata })
-    }
 }
 
 // TRAIT IMPLEMENTATIONS
@@ -459,10 +519,15 @@ impl TryFrom<&AccountStorage> for NonFungibleFaucet {
                 source: err,
             }
         })?;
+        let [symbol, ..] = *symbol_word;
+        let symbol =
+            TokenSymbol::try_from(symbol).map_err(TokenMetadataError::InvalidTokenSymbol)?;
 
-        let token_metadata = TokenMetadata::try_from_storage(storage)?;
-
-        Self::from_symbol_word_and_token_metadata(symbol_word, token_metadata)
+        Ok(Self {
+            symbol,
+            metadata: TokenMetadata::try_from_storage(storage)?,
+            token_base_uri: TokenBaseUriConfig::try_from_storage(storage)?,
+        })
     }
 }
 
@@ -477,25 +542,103 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Creates a new **user-account** non-fungible faucet. The account's auth component is the sole
-/// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
+/// Creates a new **user-account** non-fungible faucet authenticated by a single signature.
+/// The account's auth component is the sole gate for authority-protected setters
+/// ([`Authority::AuthControlled`] is installed directly).
 ///
-/// The caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list
-/// semantics, every authority-gated setter (`mint_and_send`, the metadata setters, the policy
-/// setters, and `pause` / `unpause`) requires a signature by default. A setter only becomes
-/// callable without a signature if its root is explicitly added to the exempt set, so
-/// authority-gated setters must never be exempted.
-pub fn create_user_non_fungible_faucet(
+/// The caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter
+/// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
+/// signature.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
+/// `Ownable2Step` component, so such a policy would abort on every dispatch.
+pub fn create_singlesig_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
-    auth_component: AuthSingleSigAcl,
+    auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build()
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)
+}
+
+/// Creates a new **user-account** non-fungible faucet authenticated by a multisig approver set.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
+/// `Ownable2Step` component, so such a policy would abort on every dispatch.
+pub fn create_multisig_user_non_fungible_faucet(
+    init_seed: [u8; 32],
+    faucet: NonFungibleFaucet,
+    auth_component: AuthMultisig,
+    token_policy_manager: TokenPolicyManager,
+    account_type: AccountType,
+) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
+    AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .with_component(auth_component)
+        .with_component(faucet)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build()
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)
+}
+
+/// Creates a new **user-account** non-fungible faucet authenticated by a guardian-backed multisig.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
+/// `Ownable2Step` component, so such a policy would abort on every dispatch.
+pub fn create_guarded_user_non_fungible_faucet(
+    init_seed: [u8; 32],
+    faucet: NonFungibleFaucet,
+    auth_component: AuthGuardedMultisig,
+    token_policy_manager: TokenPolicyManager,
+    account_type: AccountType,
+) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
+    AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .with_component(auth_component)
+        .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -508,25 +651,38 @@ pub fn create_user_non_fungible_faucet(
 /// [`AccountType::Public`]. Setter gating is enforced in-procedure by the owner / role check
 /// installed via `access_control` ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
-/// The factory builds the [`AuthNetworkAccount`] auth component internally with a note allowlist
-/// covering the faucet's own [`MintNote`] and [`BurnNote`] scripts, plus a
-/// tx-script allowlist covering the canonical expiration setter
-/// ([`ExpirationTransactionScript`]) so the network can bound its own transactions' expiry.
+/// The factory builds the account via [`NetworkAccount::builder`] with a note allowlist covering
+/// the faucet's own [`MintNote`] and [`BurnNote`] scripts. The auth component installs
+/// [`BasicWallet`](crate::account::wallets::BasicWallet) and allowlists the P2ID script root, so
+/// the faucet can be funded by a P2ID note; the builder also allowlists the canonical expiration
+/// setter ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
+/// network can bound its own transactions' expiry.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy while `access_control` is
+/// [`AccessControl::Rbac`], which installs no `Ownable2Step` component for the policy to read the
+/// owner from.
 pub fn create_network_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
+    fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
-    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
-    let tx_script_allowlist = [ExpirationTransactionScript::script_root()].into_iter().collect();
-    let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
-        .expect("MintNote + BurnNote allowlist is non-empty")
-        .with_allowed_tx_scripts(tx_script_allowlist);
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager)
+        && !matches!(access_control, AccessControl::Ownable2Step { .. })
+    {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
 
-    AccountBuilder::new(init_seed)
-        .account_type(AccountType::Public)
-        .with_auth_component(auth_component)
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+
+    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
+        .expect("MintNote + BurnNote allowlist is non-empty")
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)

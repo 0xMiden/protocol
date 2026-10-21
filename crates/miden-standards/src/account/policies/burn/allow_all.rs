@@ -1,20 +1,28 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // ALLOW-ALL BURN POLICY
 // ================================================================================================
 
-account_component_code!(
-    ALLOW_ALL_BURN_POLICY_CODE,
+account_component_package!(
+    ALLOW_ALL_BURN_POLICY_PACKAGE,
     "miden-standards-faucets-policies-burn-allow-all.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BurnAllowAll::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BURN_ALLOW_ALL_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::burn::allow_all";
+
 procedure_root!(
     ALLOW_ALL_POLICY_ROOT,
-    BurnAllowAll::NAME,
+    BURN_ALLOW_ALL_LIBRARY_PATH,
     BurnAllowAll::PROC_NAME,
     BurnAllowAll::code()
 );
@@ -29,8 +37,7 @@ pub struct BurnAllowAll;
 
 impl BurnAllowAll {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::burn::allow_all";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::burn::allow_all";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
@@ -41,19 +48,23 @@ impl BurnAllowAll {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &ALLOW_ALL_BURN_POLICY_CODE
+        &ALLOW_ALL_BURN_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `allow_all` burn policy procedure.
     pub fn root() -> AccountProcedureRoot {
         *ALLOW_ALL_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        ALLOW_ALL_BURN_POLICY_PACKAGE.metadata.clone()
+    }
 }
 
 impl From<BurnAllowAll> for AccountComponent {
     fn from(_: BurnAllowAll) -> Self {
-        let metadata = AccountComponentMetadata::new(BurnAllowAll::NAME)
-            .with_description("`allow_all` burn policy for fungible faucets");
+        let metadata = BurnAllowAll::component_metadata();
 
         AccountComponent::new(BurnAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` burn policy component should satisfy the requirements of a valid account component",

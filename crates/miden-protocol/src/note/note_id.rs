@@ -1,4 +1,3 @@
-use alloc::string::String;
 use core::fmt::Display;
 
 use miden_crypto_derive::WordWrapper;

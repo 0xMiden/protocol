@@ -4,7 +4,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, ONE, Word, ZERO};
+use miden_core::{Felt, Word};
 use miden_protocol::DoubleWord;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
@@ -18,27 +18,41 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
-use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::NoteError;
+use miden_protocol::note::{Note, NoteScriptRoot};
+use miden_standards::account::access::{PausableManager, PausableStorage, RoleConfig};
+use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::ConstantFeeManager;
+use miden_standards::note::config::{
+    ConstantFeePolicyConfigNote,
+    PauseConfig,
+    PauseConfigNote,
+    RbacConfigNote,
+};
+use miden_standards::note::{NetworkAccountTarget, NetworkAccountTargetError, NoteExecutionHint};
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
-use super::agglayer_bridge_component_library;
-use crate::claim_note::CgiChainHash;
+use super::agglayer_bridge_component_package;
 use crate::utils::Keccak256Output;
 
 /// Removed-GER hash chain representation (32-byte Keccak256 hash)
 pub type RemovedGerHashChain = Keccak256Output;
+pub use miden_standards::interop::eth::{
+    EthAddress,
+    EthAmount,
+    EthAmountError,
+    EthEmbeddedAccountId,
+};
+
 pub use crate::{
     B2AggNote,
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     DeregisterAggFaucetNote,
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
     ExitRoot,
     GlobalIndex,
     GlobalIndexError,
@@ -84,6 +98,10 @@ static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 static FAUCET_METADATA_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("agglayer::bridge::faucet_metadata_map")
         .expect("faucet metadata map storage slot name should be valid")
+});
+static NETWORK_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::network_id")
+        .expect("network ID storage slot name should be valid")
 });
 
 // bridge in
@@ -134,11 +152,15 @@ static GER_INJECTOR_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
 static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
     RoleSymbol::new("GER_REMOVER").expect("GER_REMOVER role symbol should be valid")
 });
+static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
+    LazyLock::new(|| RoleSymbol::new("FEE_MNGR").expect("FEE_MNGR role symbol should be valid"));
+static PAUSER_ROLE: LazyLock<RoleSymbol> =
+    LazyLock::new(|| RoleSymbol::new("PAUSER").expect("PAUSER role symbol should be valid"));
 
 /// The assembled bridge account component code, used to resolve the roots of the bridge's
 /// role-gated procedures.
 static BRIDGE_COMPONENT_CODE: LazyLock<AccountComponentCode> =
-    LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_library()));
+    LazyLock::new(|| AccountComponentCode::from(agglayer_bridge_component_package()));
 
 procedure_root!(
     REGISTER_FAUCET_ROOT,
@@ -171,63 +193,73 @@ procedure_root!(
     AggLayerBridge::code()
 );
 
+// BRIDGE ROLES
+// ================================================================================================
+
 /// The accounts that initially hold each of the bridge's privileged RBAC roles.
 ///
 /// Used to seed the bridge account's RBAC role membership at creation. Each role gates a distinct
 /// set of bridge procedures:
-/// - `FAUCET_MNGR` gates `register_faucet` and `store_faucet_metadata_hash`.
+/// - `FAUCET_MNGR` gates `register_faucet`, `store_faucet_metadata_hash` and `deregister_faucet`.
 /// - `GER_INJECTOR` gates `update_ger`.
 /// - `GER_REMOVER` gates `remove_ger`.
+/// - `FEE_MNGR` gates `set_note_fee`.
+/// - `PAUSER` gates `pause`; `unpause` remains gated by `ADMIN`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoles {
-    faucet_managers: BTreeSet<AccountId>,
-    ger_injectors: BTreeSet<AccountId>,
-    ger_removers: BTreeSet<AccountId>,
+    roles: Vec<RoleConfig>,
 }
 
 impl BridgeRoles {
     /// Creates the initial bridge role membership from the holders of each role.
     ///
+    /// The roles are left administered by the `ADMIN` role.
+    ///
     /// # Errors
     ///
-    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the three roles is given an empty
+    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the five roles is given an empty
     /// set of holders.
     pub fn new(
         faucet_managers: BTreeSet<AccountId>,
         ger_injectors: BTreeSet<AccountId>,
         ger_removers: BTreeSet<AccountId>,
+        fee_managers: BTreeSet<AccountId>,
+        pausers: BTreeSet<AccountId>,
     ) -> Result<Self, AgglayerBridgeError> {
+        let mut roles = Vec::new();
         for (role, members) in [
             (AggLayerBridge::faucet_manager_role(), &faucet_managers),
             (AggLayerBridge::ger_injector_role(), &ger_injectors),
             (AggLayerBridge::ger_remover_role(), &ger_removers),
+            (AggLayerBridge::fee_manager_role(), &fee_managers),
+            (AggLayerBridge::pauser_role(), &pausers),
         ] {
             if members.is_empty() {
                 return Err(AgglayerBridgeError::EmptyBridgeRole(role));
             }
+            roles.push(RoleConfig::new(role).with_members(members.iter().copied()));
         }
 
-        Ok(Self {
-            faucet_managers,
-            ger_injectors,
-            ger_removers,
-        })
-    }
-
-    /// Returns the RBAC role-membership map used to seed the account's RBAC component.
-    pub(crate) fn role_members(&self) -> BTreeMap<RoleSymbol, BTreeSet<AccountId>> {
-        BTreeMap::from([
-            (AggLayerBridge::faucet_manager_role(), self.faucet_managers.clone()),
-            (AggLayerBridge::ger_injector_role(), self.ger_injectors.clone()),
-            (AggLayerBridge::ger_remover_role(), self.ger_removers.clone()),
-        ])
+        Ok(Self { roles })
     }
 }
+
+impl IntoIterator for BridgeRoles {
+    type Item = RoleConfig;
+    type IntoIter = alloc::vec::IntoIter<RoleConfig>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.roles.into_iter()
+    }
+}
+
+// AGG LAYER BRIDGE
+// ================================================================================================
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
 /// It reexports the procedures from `agglayer::bridge`. When linking against this
-/// component, the `agglayer` library must be available to the assembler.
+/// component, the `agglayer` package must be available to the assembler.
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `deregister_faucet`, which clears a previously-registered faucet from both the faucet registry
@@ -259,6 +291,7 @@ impl BridgeRoles {
 /// - [`Self::faucet_metadata_map_slot_name`]: Stores conversion metadata (origin address, origin
 ///   network, scale, metadata hash) for all registered faucets, keyed by sub-key scheme based on
 ///   faucet ID.
+/// - [`Self::network_id_slot_name`]: Stores the bridge's AggLayer network ID.
 /// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
 ///   source_bridge_network) → \[1, 0, 0, 0\]).
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
@@ -271,27 +304,34 @@ impl BridgeRoles {
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes and can be removed via DEREGISTER_AGG_FAUCET notes.
 ///
-/// Claim validation compares the leaf's `destination_network` to the global MASM constant
-/// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
-/// [`Self::MIDEN_NETWORK_ID`] from generated `agglayer_constants.rs` file.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct AggLayerBridge;
+/// Claim validation compares the leaf's `destination_network` to the bridge's own network ID,
+/// which is stored in [`Self::network_id_slot_name`] at account creation and read at runtime by
+/// the bridge MASM. The network ID is set once and never mutated, so different deployments (e.g.
+/// testnet vs mainnet) can use different IDs.
+#[derive(Debug, Clone, Copy)]
+pub struct AggLayerBridge {
+    network_id: u32,
+}
 
 impl AggLayerBridge {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// AggLayer-assigned network ID for this Miden chain.
-    ///
-    /// Matches `const MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm`.
-    pub const MIDEN_NETWORK_ID: u32 = MIDEN_NETWORK_ID;
-
-    const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
-
-    /// Namespace of the assembled bridge account component library (the
+    /// Namespace of the assembled bridge account component package (the
     /// `asm/components/bridge/bridge.masm` wrapper). Procedure roots are resolved as
     /// `<namespace>::<proc_name>`.
     const COMPONENT_NAMESPACE: &'static str = "agglayer::components::bridge";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new AggLayer bridge component with the standard configuration.
+    ///
+    /// `network_id` is the AggLayer network ID assigned to the Miden chain; it is written to the
+    /// [`Self::network_id_slot_name`] storage slot at account creation.
+    pub fn new(network_id: u32) -> Self {
+        Self { network_id }
+    }
 
     // RBAC ROLES
     // --------------------------------------------------------------------------------------------
@@ -315,6 +355,16 @@ impl AggLayerBridge {
     /// Returns the `GER_REMOVER` role symbol. Holders may remove GERs (`remove_ger`).
     pub fn ger_remover_role() -> RoleSymbol {
         GER_REMOVER_ROLE.clone()
+    }
+
+    /// Returns the `FEE_MNGR` role symbol. Holders may update the bridge's note fee schedule.
+    pub fn fee_manager_role() -> RoleSymbol {
+        FEE_MANAGER_ROLE.clone()
+    }
+
+    /// Returns the `PAUSER` role symbol. Holders may pause, but not unpause, the bridge.
+    pub fn pauser_role() -> RoleSymbol {
+        PAUSER_ROLE.clone()
     }
 
     /// Returns the procedure root of the bridge's `register_faucet` procedure.
@@ -352,6 +402,8 @@ impl AggLayerBridge {
             (Self::deregister_faucet_root(), Self::faucet_manager_role()),
             (Self::update_ger_root(), Self::ger_injector_role()),
             (Self::remove_ger_root(), Self::ger_remover_role()),
+            (ConstantFeeManager::set_note_fee_root(), Self::fee_manager_role()),
+            (PausableManager::pause_root(), Self::pauser_role()),
         ])
     }
 
@@ -391,6 +443,14 @@ impl AggLayerBridge {
     /// for all registered faucets, keyed by sub-key scheme based on faucet ID.
     pub fn faucet_metadata_map_slot_name() -> &'static StorageSlotName {
         &FAUCET_METADATA_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the bridge's AggLayer network ID.
+    ///
+    /// Holds the network ID assigned to this bridge as a single felt in the first word element.
+    /// It is set at account creation and never mutated by any bridge procedure.
+    pub fn network_id_slot_name() -> &'static StorageSlotName {
+        &NETWORK_ID_SLOT_NAME
     }
 
     // --- bridge in --------
@@ -435,23 +495,64 @@ impl AggLayerBridge {
     // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the set of input-note script roots that AggLayer bridge accounts accept.
+    /// Returns the input-note script roots allowlisted on a newly deployed AggLayer bridge.
     ///
-    /// The bridge's [`AuthNetworkAccount`] component is initialized with this allowlist, which
-    /// means any transaction consuming a note outside this set is rejected before reaching
-    /// `output_note::create`.
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    /// A live account's allowlist is available through
+    /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
-        BTreeSet::from([
+        let mut notes = BTreeSet::from([
             ClaimNote::script_root(),
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
             DeregisterAggFaucetNote::script_root(),
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
-        ])
+            PauseConfigNote::script_root(),
+            RbacConfigNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
+        ]);
+        notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
+        notes
     }
+
+    // PAUSE NOTE
+    // --------------------------------------------------------------------------------------------
+
+    /// Builds a [`PauseConfigNote`] that toggles the emergency pause of the bridge account
+    /// `bridge_id`. For [`PauseConfig::Pause`], `sender` must hold the bridge's `PAUSER` role; for
+    /// [`PauseConfig::Unpause`], `sender` must hold its `ADMIN` role.
+    ///
+    /// Use this instead of [`PauseConfigNote::builder`] directly: it reports a non-public
+    /// `bridge_id` as [`AgglayerBridgeError::NonPublicPauseNoteTarget`] rather than as an opaque
+    /// note creation failure.
+    ///
+    /// # Errors
+    /// Returns an error if `bridge_id` is not a public account, or if note creation fails.
+    pub fn pause_note<R: FeltRng>(
+        config: PauseConfig,
+        sender: AccountId,
+        bridge_id: AccountId,
+        rng: &mut R,
+    ) -> Result<Note, AgglayerBridgeError> {
+        let attachment = NetworkAccountTarget::new(bridge_id, NoteExecutionHint::Always)
+            .map_err(AgglayerBridgeError::NonPublicPauseNoteTarget)?;
+
+        PauseConfigNote::builder()
+            .sender(sender)
+            .target(bridge_id)
+            .config(config)
+            .attachment(attachment)
+            .generate_serial_number(rng)
+            .build()
+            .map(Into::into)
+            .map_err(AgglayerBridgeError::PauseNoteCreationFailed)
+    }
+
+    // STORAGE READERS
+    // --------------------------------------------------------------------------------------------
+
+    const REGISTERED_GER_MAP_VALUE: Word =
+        Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
     /// bridge account.
@@ -519,6 +620,26 @@ impl AggLayerBridge {
         Ok(dword.to_vec())
     }
 
+    /// Returns the AggLayer network ID stored in the bridge account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn network_id(account: &Account) -> Result<u32, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_bridge_account(account)?;
+
+        let value = account
+            .storage()
+            .get_item(AggLayerBridge::network_id_slot_name())
+            .expect("should be able to read the network ID");
+        let network_id = u32::try_from(value.to_vec()[0].as_canonical_u64())
+            .map_err(|_| AgglayerBridgeError::InvalidNetworkId)?;
+
+        Ok(network_id)
+    }
+
     /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
     pub fn read_let_num_leaves(account: &Account) -> u64 {
         let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
@@ -535,7 +656,9 @@ impl AggLayerBridge {
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerBridge`] account.
-    pub fn cgi_chain_hash(bridge_account: &Account) -> Result<CgiChainHash, AgglayerBridgeError> {
+    pub fn cgi_chain_hash(
+        bridge_account: &Account,
+    ) -> Result<crate::claim_note::CgiChainHash, AgglayerBridgeError> {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
 
@@ -548,7 +671,10 @@ impl AggLayerBridge {
             .get_item(AggLayerBridge::cgi_chain_hash_hi_slot_name())
             .expect("failed to get CGI hash chain hi slot");
 
-        Ok(CgiChainHash::new(Self::chain_hash_bytes(cgi_chain_hash_lo, cgi_chain_hash_hi)))
+        Ok(crate::claim_note::CgiChainHash::new(Self::chain_hash_bytes(
+            cgi_chain_hash_lo,
+            cgi_chain_hash_hi,
+        )))
     }
 
     /// Returns the removed-GER keccak256 hash chain from the corresponding storage slots.
@@ -654,7 +780,12 @@ impl AggLayerBridge {
         Ok(())
     }
 
-    /// Returns a vector of all [`AggLayerBridge`] storage slot names.
+    /// Returns a vector of all storage slot names a bridge account must have.
+    ///
+    /// Besides the [`AggLayerBridge`] component's own slots, this includes the standards-owned
+    /// `is_paused` slot: `pausable::assert_not_paused` treats a missing slot as unpaused, so this
+    /// validator certifies the slot exists. (In production the slot is guaranteed by
+    /// `AggLayerBridge::account_builder` always installing the `Pausable` component.)
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*GER_MAP_SLOT_NAME,
@@ -670,12 +801,14 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
+            &*NETWORK_ID_SLOT_NAME,
+            PausableStorage::is_paused_slot(),
         ]
     }
 }
 
 impl From<AggLayerBridge> for AccountComponent {
-    fn from(_bridge: AggLayerBridge) -> Self {
+    fn from(bridge: AggLayerBridge) -> Self {
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
@@ -690,6 +823,10 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
+            StorageSlot::with_value(
+                NETWORK_ID_SLOT_NAME.clone(),
+                Word::new([Felt::from(bridge.network_id), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            ),
         ];
         bridge_component(bridge_storage_slots)
     }
@@ -711,6 +848,12 @@ pub enum AgglayerBridgeError {
     CodeCommitmentMismatch,
     #[error("bridge role {0} must have at least one initial holder")]
     EmptyBridgeRole(RoleSymbol),
+    #[error("the network ID stored in the bridge account does not fit into a u32")]
+    InvalidNetworkId,
+    #[error("bridge account must be public to be named by a network account target")]
+    NonPublicPauseNoteTarget(#[source] NetworkAccountTargetError),
+    #[error("failed to create a PAUSE_CONFIG note for the bridge account")]
+    PauseNoteCreationFailed(#[source] NoteError),
 }
 
 // HELPER FUNCTIONS
@@ -718,10 +861,54 @@ pub enum AgglayerBridgeError {
 
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = agglayer_bridge_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge")
-        .with_description("Bridge component for AggLayer");
+    let package = agglayer_bridge_component_package();
+    let metadata = AccountComponentMetadata::try_from(&package)
+        .expect("shipped bridge package should declare account component metadata");
 
-    AccountComponent::new(library, storage_slots, metadata)
+    AccountComponent::new(package, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use miden_protocol::account::component::{InitStorageData, StorageValueName};
+
+    use super::*;
+    use crate::agglayer_bridge_component_package;
+
+    /// Checks that instantiating the bridge package from its storage schema yields the same storage
+    /// slots as the Rust [`AggLayerBridge`] component, so the manifest and the Rust code cannot
+    /// drift apart.
+    #[test]
+    fn bridge_package_schema_matches_rust_component() {
+        let network_id = 7u32;
+
+        let mut init_storage_data = InitStorageData::default();
+        let network_id_name = StorageValueName::from_slot_name_with_suffix(
+            AggLayerBridge::network_id_slot_name(),
+            "network_id",
+        )
+        .unwrap();
+        init_storage_data.insert_value(network_id_name, network_id.to_string()).unwrap();
+
+        let from_package =
+            AccountComponent::from_package(agglayer_bridge_component_package(), &init_storage_data)
+                .unwrap();
+        let from_rust = AccountComponent::from(AggLayerBridge::new(network_id));
+
+        // The schema yields slots in slot ID order, so compare them independent of order.
+        let by_name = |component: &AccountComponent| -> BTreeMap<StorageSlotName, StorageSlot> {
+            component
+                .storage_slots()
+                .iter()
+                .map(|slot| (slot.name().clone(), slot.clone()))
+                .collect()
+        };
+        assert_eq!(by_name(&from_package), by_name(&from_rust));
+    }
 }

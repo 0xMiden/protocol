@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use crate::account::AccountVaultDelta;
 use crate::asset::{Asset, AssetId};
 use crate::errors::AssetError;
 use crate::utils::serde::{
@@ -23,8 +24,9 @@ pub struct AccountVaultPatch {
 }
 
 impl AccountVaultPatch {
-    /// Domain separator for assets in the account patch commitment.
-    const DOMAIN: Felt = Felt::new_unchecked(3);
+    /// The asset sections of a delta and a patch share one domain. They cannot collide,
+    /// because the delta and patch commitments already use distinct hasher domains.
+    const DOMAIN: Felt = AccountVaultDelta::DOMAIN;
 
     /// Creates a new vault patch directly from its raw key/value entries.
     ///
@@ -37,7 +39,7 @@ impl AccountVaultPatch {
             // If the asset was not removed (final value != Word::empty), ensure the provided entry
             // is a valid asset.
             if !value.is_empty() {
-                Asset::from_id_and_value(*key, *value)?;
+                Asset::new(*key, *value)?;
             }
         }
 
@@ -118,9 +120,7 @@ impl AccountVaultPatch {
         self.entries
             .iter()
             .filter(|(_key, value)| !value.is_empty())
-            .map(|(key, value)| {
-                Asset::from_id_and_value(*key, *value).expect("patch should track valid assets")
-            })
+            .map(|(key, value)| Asset::new(*key, *value).expect("patch should track valid assets"))
     }
 }
 
@@ -134,7 +134,8 @@ impl Serializable for AccountVaultPatch {
     }
 
     fn get_size_hint(&self) -> usize {
-        let removed_size = AssetId::SERIALIZED_SIZE * self.removed_asset_ids().count();
+        let removed_size: usize =
+            self.removed_asset_ids().map(|asset_id| asset_id.get_size_hint()).sum();
         let updated_size: usize = self.updated_assets().map(|asset| asset.get_size_hint()).sum();
 
         2 * 0usize.get_size_hint() + removed_size + updated_size

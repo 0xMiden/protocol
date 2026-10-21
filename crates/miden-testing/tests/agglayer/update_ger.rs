@@ -5,10 +5,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_agglayer::errors::ERR_GER_ALREADY_REGISTERED;
-use miden_agglayer::{AggLayerBridge, ExitRoot, UpdateGerNote, agglayer_library};
+use miden_agglayer::{AggLayerBridge, ExitRoot, UpdateGerNote, agglayer_package};
 use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
-use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::Felt;
 use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 use miden_protocol::account::auth::AuthScheme;
@@ -21,8 +20,11 @@ use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
 use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
     execute_program_with_default_host,
+    hash_with_keccak256_to_elements,
 };
 
 // EXIT ROOT TEST VECTORS
@@ -74,9 +76,13 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -97,10 +103,11 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     // EXECUTE UPDATE_GER NOTE AGAINST BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // VERIFY GER HASH WAS STORED IN MAP
     // --------------------------------------------------------------------------------------------
@@ -118,7 +125,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 /// The GER (Global Exit Root) is computed as keccak256(mainnet_exit_root || rollup_exit_root).
 #[tokio::test]
 async fn compute_ger() -> anyhow::Result<()> {
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
     let vectors = &*EXIT_ROOTS_VECTORS;
 
     for i in 0..vectors.mainnet_exit_roots.len() {
@@ -136,8 +143,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         // Computed GER using keccak256
         let ger_preimage: Vec<u8> =
             [mainnet_exit_root_bytes.as_ref(), rollup_exit_root_bytes.as_ref()].concat();
-        let ger_preimage = KeccakPreimage::new(ger_preimage);
-        let computed_ger_felts: Vec<Felt> = ger_preimage.digest().as_ref().to_vec();
+        let computed_ger_felts: Vec<Felt> = hash_with_keccak256_to_elements(&ger_preimage);
 
         assert_eq!(
             computed_ger_felts, expected_ger_felts,
@@ -178,7 +184,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
             .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .unwrap()
-            .with_package(Arc::new(agglayer_lib.clone()), Linkage::Dynamic)
+            .with_package(Arc::new(agglayer_package.clone()), Linkage::Dynamic)
             .unwrap()
             .assemble_program("agglayer-test-script", &source)
             .unwrap()
@@ -200,7 +206,7 @@ async fn compute_ger() -> anyhow::Result<()> {
 /// The GER (Global Exit Root) is computed as keccak256(mainnet_exit_root || rollup_exit_root).
 #[tokio::test]
 async fn test_compute_ger_basic() -> anyhow::Result<()> {
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
 
     // Define test exit roots (32 bytes each)
     let mainnet_exit_root: [u8; 32] = [
@@ -221,8 +227,8 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     ger_preimage.extend_from_slice(&rollup_exit_root);
 
     // Compute expected GER using keccak256
-    let expected_ger_preimage = KeccakPreimage::new(ger_preimage.clone());
-    let expected_ger_felts: [Felt; 8] = expected_ger_preimage.digest().as_ref().try_into().unwrap();
+    let expected_ger_felts: [Felt; 8] =
+        hash_with_keccak256_to_elements(&ger_preimage).try_into().unwrap();
 
     let ger_bytes: [u8; 32] = packed_u32_elements_to_bytes(&expected_ger_felts).try_into().unwrap();
 
@@ -263,7 +269,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
         .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_package(Arc::new(agglayer_lib.clone()), Linkage::Dynamic)
+        .with_package(Arc::new(agglayer_package.clone()), Linkage::Dynamic)
         .unwrap()
         .assemble_program("agglayer-test-script", &source)
         .unwrap()
@@ -303,9 +309,13 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -328,16 +338,18 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // TX1: Consume first UPDATE_GER note (should succeed)
-    let tx_context_1 = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note_1.id()], &[])?
+    let mock_tx_1 = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note_1.id())
         .build()?;
-    let executed_tx_1 = tx_context_1.execute().await?;
+    let executed_tx_1 = mock_tx_1.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_tx_1)?;
     mock_chain.prove_next_block()?;
 
     // TX2: Consume second UPDATE_GER note with same GER (should fail)
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[update_ger_note_2])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(update_ger_note_2)
         .build()?
         .execute()
         .await;
@@ -366,9 +378,13 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -382,7 +398,8 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?
         .execute()
         .await;

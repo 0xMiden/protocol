@@ -18,24 +18,23 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::vm::Package;
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::interop::eth::{EthAddress, EthAmount};
+use miden_standards::note::costs::NoteConsumptionCost;
+use miden_standards::note::{MintNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
+use crate::costs::CLAIM_CONSUMPTION_CYCLES;
 use crate::utils::Keccak256Output;
-use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash};
+use crate::{GlobalIndex, MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the CLAIM note script procedure in the agglayer package.
+const CLAIM_SCRIPT_PATH: &str = "::agglayer::notes::claim::main";
+
 // Initialize the CLAIM note script only once
-static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/miden-agglayer-claim.masp"));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped CLAIM script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped CLAIM script is well-formed")
-});
+static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(CLAIM_SCRIPT_PATH));
 
 // CLAIM NOTE
 // ================================================================================================
@@ -240,5 +239,20 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
         claim_storage.push(storage.miden_claim_amount);
 
         NoteStorage::new(claim_storage)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for ClaimNote {
+    fn consumption_cycles() -> u32 {
+        CLAIM_CONSUMPTION_CYCLES
+    }
+
+    /// Consuming a CLAIM note creates the MINT note routed to the agglayer faucet (a network
+    /// account).
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![MintNote::script_root()]
     }
 }

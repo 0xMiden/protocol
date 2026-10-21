@@ -1,7 +1,13 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageMapKey};
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::account::{
+    AccountBuilder,
+    AccountId,
+    AccountType,
+    AssetCallbackFlag,
+    StorageMapKey,
+};
+use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
 use super::{
@@ -11,35 +17,27 @@ use super::{
     create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };
-use crate::account::access::{AccessControl, PausableManager};
+use crate::account::access::{AccessControl, Authority, Ownable2Step};
 use crate::account::auth::{
     Approver,
     AuthGuardedMultisig,
     AuthMultisig,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
     GuardianConfig,
 };
-use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
-use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
-use crate::account::wallets::BasicWallet;
-use crate::testing::faucet::{
-    user_faucet_guarded,
-    user_faucet_multisig,
-    user_faucet_single_sig_acl,
+use crate::account::faucets::test_utils::{
+    allow_all_policy_manager,
+    mint_burn_only_policy_manager,
+    owner_only_mint_policy_manager,
+    reserved_owner_only_burn_policy_manager,
 };
+use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
+use crate::account::fees::FeePolicyManager;
+use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
+use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 use crate::tx_script::ExpirationTransactionScript;
-
-/// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
-fn allow_all_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build()
-}
 
 /// Builds a sample `FungibleFaucet` shared by construction tests.
 fn sample_faucet() -> FungibleFaucet {
@@ -54,7 +52,7 @@ fn sample_faucet() -> FungibleFaucet {
 }
 
 #[test]
-fn user_fungible_faucet_with_single_sig_acl() {
+fn user_fungible_faucet_with_single_sig() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
     let init_seed: [u8; 32] = [
         90, 110, 209, 94, 84, 105, 250, 242, 223, 203, 216, 124, 22, 159, 14, 132, 215, 85, 183,
@@ -67,7 +65,7 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let description_string = "A polygon token";
 
     let auth_component =
-        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2);
+        AuthSingleSig::new(Approver::new(pub_key_word.into(), AuthScheme::Falcon512Poseidon2));
 
     let faucet_account = create_singlesig_user_fungible_faucet(
         init_seed,
@@ -80,35 +78,16 @@ fn user_fungible_faucet_with_single_sig_acl() {
 
     // The auth component's public key should be present.
     assert_eq!(
-        faucet_account.storage().get_item(AuthSingleSigAcl::public_key_slot()).unwrap(),
+        faucet_account.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),
         pub_key_word
     );
 
-    // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet -
-    // every authority-gated setter requires a signature. Probe the full former trigger set so
-    // a regression that put any of them back into the exempt map would surface here.
-    for probed_root in [
-        FungibleFaucet::mint_and_send_root(),
-        FungibleFaucet::set_max_supply_root(),
-        FungibleFaucet::set_description_root(),
-        FungibleFaucet::set_logo_uri_root(),
-        FungibleFaucet::set_external_link_root(),
-        TokenPolicyManager::set_mint_policy_root(),
-        TokenPolicyManager::set_burn_policy_root(),
-        TokenPolicyManager::set_send_policy_root(),
-        TokenPolicyManager::set_receive_policy_root(),
-        PausableManager::pause_root(),
-        PausableManager::unpause_root(),
-    ] {
-        let value = faucet_account
-            .storage()
-            .get_map_item(
-                AuthSingleSigAcl::exempt_procedure_roots_slot(),
-                StorageMapKey::from_raw(probed_root.as_word()),
-            )
-            .unwrap();
-        assert_eq!(value, Word::empty());
-    }
+    // Authority-gated setters are gated by the auth component itself, not by a separate owner /
+    // role check.
+    assert_eq!(
+        Authority::try_from_storage(faucet_account.storage()).unwrap(),
+        Authority::AuthControlled
+    );
 
     // Token config slot layout: [token_supply, max_supply, decimals, symbol]
     assert_eq!(
@@ -223,6 +202,7 @@ fn network_fungible_faucet_with_ownable2step() {
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
         allow_all_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
     )
     .expect("Ownable2Step network faucet should be accepted");
 }
@@ -240,6 +220,7 @@ fn network_fungible_faucet_allowlists_expiration_tx_script() {
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
         allow_all_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
     )
     .unwrap();
 
@@ -271,7 +252,7 @@ fn faucet_create_from_account() {
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .with_component(faucet)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             mock_public_key,
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -283,7 +264,7 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             mock_public_key,
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -294,6 +275,64 @@ fn faucet_create_from_account() {
     let err = FungibleFaucet::try_from(invalid_faucet_account)
         .expect_err("fungible faucet creation should fail");
     assert_matches!(err, FungibleFaucetError::MissingFungibleFaucetInterface);
+}
+
+/// Every fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID when
+/// the policy manager registers a transfer policy, and `Disabled` when it does not.
+#[rstest::rstest]
+#[case::with_transfer_policy(allow_all_policy_manager(), AssetCallbackFlag::Enabled)]
+#[case::without_transfer_policy(mint_burn_only_policy_manager(), AssetCallbackFlag::Disabled)]
+fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
+    #[case] token_policy_manager: TokenPolicyManager,
+    #[case] expected_flag: AssetCallbackFlag,
+) {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let approver = Approver::new(
+        PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
+        AuthScheme::Falcon512Poseidon2,
+    );
+
+    let singlesig = create_singlesig_user_fungible_faucet(
+        [21u8; 32],
+        sample_faucet(),
+        AuthSingleSig::new(approver),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+    assert_eq!(singlesig.id().asset_callback_flag(), expected_flag);
+
+    let multisig = create_multisig_user_fungible_faucet(
+        [22u8; 32],
+        sample_faucet(),
+        user_faucet_multisig(sample_approvers(3), 2).unwrap(),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+    assert_eq!(multisig.id().asset_callback_flag(), expected_flag);
+
+    let guarded = create_guarded_user_fungible_faucet(
+        [23u8; 32],
+        sample_faucet(),
+        user_faucet_guarded(sample_approvers(3), 2, GuardianConfig::new(approver)).unwrap(),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+    assert_eq!(guarded.id().asset_callback_flag(), expected_flag);
+
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let network = create_network_fungible_faucet(
+        [24u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        token_policy_manager,
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )
+    .unwrap();
+    assert_eq!(network.id().asset_callback_flag(), expected_flag);
 }
 
 /// Check that the obtaining of the fungible faucet procedure roots does not panic.
@@ -309,4 +348,89 @@ fn get_faucet_procedures() {
     let _set_burn_policy_root = TokenPolicyManager::set_burn_policy_root();
     let _set_send_policy_root = TokenPolicyManager::set_send_policy_root();
     let _set_receive_policy_root = TokenPolicyManager::set_receive_policy_root();
+}
+
+/// A user faucet installs no `Ownable2Step` component, so an owner-gated mint policy would have no
+/// owner slot to read and every mint would abort. The factory must reject that configuration
+/// instead of producing a faucet that can never mint.
+#[test]
+fn user_fungible_faucet_rejects_owner_only_mint_policy() {
+    let auth_component = AuthSingleSig::new(Approver::new(
+        Word::new([Felt::ONE; 4]).into(),
+        AuthScheme::Falcon512Poseidon2,
+    ));
+
+    let err = create_singlesig_user_fungible_faucet(
+        [11u8; 32],
+        sample_faucet(),
+        auth_component,
+        owner_only_mint_policy_manager(),
+        AccountType::Private,
+    )
+    .expect_err("owner-only mint policy without Ownable2Step should be rejected");
+
+    assert_matches!(err, FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+}
+
+/// The check covers reserved policies too: a policy registered as an allowed alternative can be
+/// activated later via `set_burn_policy`, at which point the missing owner slot breaks burning.
+#[test]
+fn user_fungible_faucet_rejects_reserved_owner_only_burn_policy() {
+    let auth_component = AuthSingleSig::new(Approver::new(
+        Word::new([Felt::ONE; 4]).into(),
+        AuthScheme::Falcon512Poseidon2,
+    ));
+
+    let err = create_singlesig_user_fungible_faucet(
+        [12u8; 32],
+        sample_faucet(),
+        auth_component,
+        reserved_owner_only_burn_policy_manager(),
+        AccountType::Private,
+    )
+    .expect_err("reserved owner-only burn policy without Ownable2Step should be rejected");
+
+    assert_matches!(err, FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+}
+
+/// `AccessControl::Rbac` installs no `Ownable2Step` component, so a network faucet configured with
+/// an owner-gated policy is rejected the same way.
+#[test]
+fn network_fungible_faucet_rejects_owner_only_policy_under_rbac() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let admin = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+
+    let err = create_network_fungible_faucet(
+        [13u8; 32],
+        sample_faucet(),
+        AccessControl::Rbac {
+            admin,
+            procedure_roles: Default::default(),
+        },
+        owner_only_mint_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )
+    .expect_err("owner-only mint policy under RBAC access control should be rejected");
+
+    assert_matches!(err, FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+}
+
+/// `AccessControl::Ownable2Step` installs the owner slot, so the same policy manager is accepted.
+#[test]
+fn network_fungible_faucet_accepts_owner_only_policy_under_ownable2step() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+
+    let account = create_network_fungible_faucet(
+        [14u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        owner_only_mint_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )
+    .expect("owner-only mint policy is satisfied by the Ownable2Step access control");
+
+    assert_eq!(Ownable2Step::try_from_storage(account.storage()).unwrap().owner(), Some(owner));
 }

@@ -10,41 +10,54 @@ use miden_protocol::{Felt, Hasher, Word};
 /// Conversion info instructing `miden::standards::fee::pay_fee` which asset to pay
 /// the transaction fee in.
 ///
-/// The fee amount computed by the transaction kernel is denominated in the native fee asset;
-/// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
-/// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::trivial`].
+/// `pay_fee` accepts only the native fee asset at rate 1/1, so the paid amount is the fee the
+/// kernel computed. Build it with [`Self::one_to_one`] and the reference block's fee faucet.
 ///
-/// For signature-based authentication components the conversion info is typically committed to
-/// via the transaction's auth args (see [`commit_fee_conversion_info`]).
+/// For signature-based authentication components the conversion info is committed to via the
+/// transaction's auth args (see [`commit_fee_conversion_info`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeeConversionInfo {
     faucet_id: AccountId,
-    rate_num: u32,
-    rate_den: u32,
+    rate_num: Felt,
+    rate_den: Felt,
 }
 
 impl FeeConversionInfo {
     /// Creates new fee conversion info paying the fee in the asset issued by `faucet_id` at the
     /// rate `rate_num / rate_den`.
     ///
+    /// Any faucet or rate other than the native fee asset at 1/1 aborts until multi-asset
+    /// fee payments are supported.
+    ///
     /// # Errors
     ///
-    /// Returns an error if `rate_num` or `rate_den` is zero.
-    pub fn new(faucet_id: AccountId, rate_num: u32, rate_den: u32) -> Result<Self, NoteError> {
+    /// Returns an error if `rate_num` or `rate_den` is zero or does not fit into a field
+    /// element.
+    pub fn new(faucet_id: AccountId, rate_num: u64, rate_den: u64) -> Result<Self, NoteError> {
         if rate_num == 0 {
             return Err(NoteError::other("fee conversion rate numerator must be non-zero"));
         }
         if rate_den == 0 {
             return Err(NoteError::other("fee conversion rate denominator must be non-zero"));
         }
+        let rate_num = Felt::try_from(rate_num).map_err(|err| {
+            NoteError::other_with_source("fee conversion rate numerator is not a valid felt", err)
+        })?;
+        let rate_den = Felt::try_from(rate_den).map_err(|err| {
+            NoteError::other_with_source("fee conversion rate denominator is not a valid felt", err)
+        })?;
 
         Ok(Self { faucet_id, rate_num, rate_den })
     }
 
     /// Creates fee conversion info paying the fee in the asset issued by `faucet_id` at the
-    /// trivial rate 1/1, e.g. to pay in the native fee asset itself.
-    pub fn trivial(faucet_id: AccountId) -> Self {
-        Self { faucet_id, rate_num: 1, rate_den: 1 }
+    /// rate 1/1.
+    pub fn one_to_one(faucet_id: AccountId) -> Self {
+        Self {
+            faucet_id,
+            rate_num: Felt::ONE,
+            rate_den: Felt::ONE,
+        }
     }
 
     // PUBLIC ACCESSORS
@@ -56,12 +69,12 @@ impl FeeConversionInfo {
     }
 
     /// Returns the numerator of the conversion rate.
-    pub fn rate_num(&self) -> u32 {
+    pub fn rate_num(&self) -> Felt {
         self.rate_num
     }
 
     /// Returns the denominator of the conversion rate.
-    pub fn rate_den(&self) -> u32 {
+    pub fn rate_den(&self) -> Felt {
         self.rate_den
     }
 
@@ -76,8 +89,8 @@ impl FeeConversionInfo {
         Word::from([
             self.faucet_id.suffix(),
             self.faucet_id.prefix().as_felt(),
-            Felt::from(self.rate_num),
-            Felt::from(self.rate_den),
+            self.rate_num,
+            self.rate_den,
         ])
     }
 }
@@ -130,6 +143,15 @@ mod tests {
         assert!(FeeConversionInfo::new(faucet(), 0, 1).is_err());
         assert!(FeeConversionInfo::new(faucet(), 1, 0).is_err());
         assert!(FeeConversionInfo::new(faucet(), 1, 1).is_ok());
+    }
+
+    /// A rate numerator or denominator at or above the field modulus is rejected by
+    /// construction, while large rates below it are accepted.
+    #[test]
+    fn rates_exceeding_field_modulus_are_rejected() {
+        assert!(FeeConversionInfo::new(faucet(), u64::MAX, 1).is_err());
+        assert!(FeeConversionInfo::new(faucet(), 1, u64::MAX).is_err());
+        assert!(FeeConversionInfo::new(faucet(), 10u64.pow(16), 10u64.pow(4)).is_ok());
     }
 
     /// The advice map value is the preimage of the auth args commitment.

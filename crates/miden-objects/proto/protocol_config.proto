@@ -1,0 +1,28 @@
+syntax = "proto3";
+package protocol_config;
+
+import "primitives.proto";
+
+message KernelConfig {
+  primitives.Word main_proc = 1;
+  repeated primitives.Word kernel_procs = 2;
+}
+
+message ProofSecurityPolicy {
+  primitives.Word security_estimator_root = 1;
+  uint32 minimum_bits = 2;
+}
+
+message ProofVerificationConfig {
+  primitives.Word vm_verifier_root = 1;
+  primitives.Word precompile_verifier_root = 2;
+  ProofSecurityPolicy security_policy = 3;
+}
+
+message ProtocolConfig {
+  primitives.Word fee_asset_id = 1;
+  KernelConfig tx_kernel = 2;
+  KernelConfig batch_kernel = 3;
+  KernelConfig block_kernel = 4;
+  ProofVerificationConfig proof_verification = 5;
+}

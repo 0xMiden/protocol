@@ -73,6 +73,14 @@ impl AssetCallbacks {
         &ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT_NAME
     }
 
+    /// Returns the names of all protocol-reserved asset callback storage slots.
+    pub fn slot_names() -> [&'static StorageSlotName; 2] {
+        [
+            Self::on_before_asset_added_to_account_slot(),
+            Self::on_before_asset_added_to_note_slot(),
+        ]
+    }
+
     /// Returns the procedure root of the `on_before_asset_added_to_account` callback.
     pub fn on_before_asset_added_to_account_proc_root(&self) -> Word {
         self.on_before_asset_added_to_account

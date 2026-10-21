@@ -1,20 +1,28 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // ALLOW-ALL TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(
-    ALLOW_ALL_TRANSFER_POLICY_CODE,
+account_component_package!(
+    ALLOW_ALL_TRANSFER_POLICY_PACKAGE,
     "miden-standards-faucets-policies-transfer-allow-all.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`TransferAllowAll::NAME`], which mirrors the standards-side MASM module path.
+const TRANSFER_ALLOW_ALL_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::allow_all";
+
 procedure_root!(
     ALLOW_ALL_TRANSFER_POLICY_ROOT,
-    TransferAllowAll::NAME,
+    TRANSFER_ALLOW_ALL_LIBRARY_PATH,
     TransferAllowAll::PROC_NAME,
     TransferAllowAll::code()
 );
@@ -28,26 +36,29 @@ pub struct TransferAllowAll;
 
 impl TransferAllowAll {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::allow_all";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::allow_all";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &ALLOW_ALL_TRANSFER_POLICY_CODE
+        &ALLOW_ALL_TRANSFER_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `allow_all` transfer policy procedure.
     pub fn root() -> AccountProcedureRoot {
         *ALLOW_ALL_TRANSFER_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        ALLOW_ALL_TRANSFER_POLICY_PACKAGE.metadata.clone()
+    }
 }
 
 impl From<TransferAllowAll> for AccountComponent {
     fn from(_: TransferAllowAll) -> Self {
-        let metadata = AccountComponentMetadata::new(TransferAllowAll::NAME)
-            .with_description("`allow_all` transfer policy for callback-enabled faucets");
+        let metadata = TransferAllowAll::component_metadata();
 
         AccountComponent::new(TransferAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` transfer policy component should satisfy the requirements of a valid account component",

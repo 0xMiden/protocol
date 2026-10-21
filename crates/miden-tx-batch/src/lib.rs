@@ -5,6 +5,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub use miden_processor::ExecutionOptions;
+
 mod batch_executor;
 pub use batch_executor::BatchExecutor;
 

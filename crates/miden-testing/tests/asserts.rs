@@ -34,8 +34,9 @@ async fn execute_with_output(
     let chain = builder.build()?;
 
     let executed = chain
-        .build_tx_context(sender, &[spawn.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output)])
+        .build_transaction(sender)
+        .authenticated_input_note(spawn.id())
+        .expected_output_note(RawOutputNote::Full(output))
         .build()?
         .execute()
         .await?;

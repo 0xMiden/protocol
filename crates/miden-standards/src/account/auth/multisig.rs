@@ -1,15 +1,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::num::NonZeroU32;
 
-use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -19,21 +12,31 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word, ZERO};
 
-use super::{Approver, ApproverSet};
-use crate::account::account_component_code;
+use super::{Approver, ApproverSet, FeeConversionInfo};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
-account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
+account_component_package!(MULTISIG_PACKAGE, "miden-standards-auth-multisig.masp");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`AuthMultisig::NAME`],
+/// which mirrors the standards-side MASM module path.
+const MULTISIG_LIBRARY_PATH: &str = "miden::standards::components::auth::multisig";
 
 // Initialize the procedure root of the `set_procedure_threshold` procedure only once. It gates
 // edits to per-procedure overrides, so [`AuthMultisig::new`] uses it to reject overrides that
 // exceed its own threshold.
 procedure_root!(
     MULTISIG_SET_PROCEDURE_THRESHOLD,
-    AuthMultisig::NAME,
+    MULTISIG_LIBRARY_PATH,
     AuthMultisig::SET_PROCEDURE_THRESHOLD_PROC_NAME,
     AuthMultisig::code()
 );
@@ -137,6 +140,35 @@ impl AuthMultisigConfig {
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides.
 ///
+/// # Auth args
+///
+/// The transaction's auth args are the commitment to [`MultisigAuthArgs`].
+///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_multisig` pays the transaction fee via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
+/// conversion info from the auth args must name the reference block's fee asset at rate 1/1 (see
+/// [`FeeConversionInfo::one_to_one`](super::FeeConversionInfo::one_to_one)). On chains with a
+/// zero verification base fee no note is created. The fee note is created before the transaction
+/// summary, so it is covered by the approver signatures.
+///
+/// # Expiration
+///
+/// Two independent expirations apply, and the earlier one ends the transaction's validity.
+///
+/// The approval expiration defines how long the signature stays usable. It is set with
+/// [`MultisigAuthArgs::with_approval_expiration_delta`] and is measured from the block the
+/// summary binds, and is bound by the summary itself.
+///
+/// The transaction's own expiration delta is a freshness bound: a procedure that reads mutable
+/// foreign state through FPI caps how stale that read may be.
+///
+/// Neither is set by default: the signatures of an approval without an expiration stay usable for
+/// as long as the summary they cover can be reproduced.
+///
 /// # Privacy
 ///
 /// Approvers using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature
@@ -201,6 +233,25 @@ impl AuthMultisigConfig {
 /// override exceeds the threshold of `set_procedure_threshold`. Note that
 /// `update_signers_and_threshold` can also weaken an override by growing the signer set (see
 /// above), so protect it the same way where relevant.
+///
+/// # Security: a lowered override authorizes changes to the procedure's output notes
+///
+/// The transaction threshold is derived only from the called account procedures, but a
+/// transaction script can also change output notes without calling one: it can add attachments to
+/// any output note, and add assets that were removed from the vault but not yet placed in a note.
+/// These changes do not raise the threshold, so an override below the default lets that smaller
+/// group of approvers also change the notes the procedure creates.
+///
+/// For example, a procedure with an override of 1 creates a note with a fixed recipient and
+/// asset. A single approver can still add a secret attachment that the recipient cannot
+/// reconstruct, so the recipient cannot consume the note. Or the approver can add a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment, which makes the account
+/// fund a fee sponsorship for a network account the approver chooses.
+///
+/// To prevent this, a procedure with a lowered override should seal every note it creates with
+/// `miden::protocol::output_note::seal`, after it adds its own assets and attachments. A sealed
+/// note rejects further assets and attachments. The auth procedure cannot check this, so the
+/// protection holds only when the procedure itself seals its notes.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
@@ -208,7 +259,7 @@ pub struct AuthMultisig {
 
 impl AuthMultisig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::multisig";
+    pub const NAME: &'static str = "miden::standards::auth::multisig";
 
     /// The name of the procedure that edits per-procedure threshold overrides.
     const SET_PROCEDURE_THRESHOLD_PROC_NAME: &'static str = "set_procedure_threshold";
@@ -220,7 +271,7 @@ impl AuthMultisig {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MULTISIG_CODE
+        &MULTISIG_PACKAGE.code
     }
 
     /// Returns the procedure root of the `set_procedure_threshold` account procedure.
@@ -284,84 +335,9 @@ impl AuthMultisig {
         &PROCEDURE_THRESHOLDS_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the threshold configuration slot.
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::threshold_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Threshold configuration",
-                [
-                    FeltSchema::u32("threshold"),
-                    FeltSchema::u32("num_approvers"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the approver public keys slot.
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::approver_public_keys_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver public keys",
-                SchemaType::u32(),
-                SchemaType::pub_key(),
-            ),
-        )
-    }
-
-    // Returns the storage slot schema for the approver scheme IDs slot.
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::approver_scheme_ids_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver scheme IDs",
-                SchemaType::u32(),
-                SchemaType::auth_scheme(),
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the executed transactions slot.
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::executed_transactions_slot().clone(),
-            StorageSlotSchema::map(
-                "Executed transactions",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the procedure thresholds slot.
-    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::procedure_thresholds_slot().clone(),
-            StorageSlotSchema::map(
-                "Procedure thresholds",
-                SchemaType::native_word(),
-                SchemaType::u32(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([
-            Self::threshold_config_slot_schema(),
-            Self::approver_public_keys_slot_schema(),
-            Self::approver_auth_scheme_slot_schema(),
-            Self::executed_transactions_slot_schema(),
-            Self::procedure_thresholds_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Multisig authentication component using hybrid signature schemes")
-            .with_storage_schema(storage_schema)
+        MULTISIG_PACKAGE.metadata.clone()
     }
 }
 
@@ -428,6 +404,124 @@ impl From<AuthMultisig> for AccountComponent {
     }
 }
 
+// MULTISIG AUTH ARGS
+// ================================================================================================
+
+/// The inputs the multisig authentication components receive through the transaction's auth args.
+///
+/// ```text
+/// AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO]
+/// ```
+///
+/// where `BLOCK_WORD` is `[bound_block_num, approval_expiration_block_num, 0, 0]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MultisigAuthArgs {
+    bound_block_num: BlockNumber,
+    approval_expiration_block_num: Option<BlockNumber>,
+    salt: Word,
+    conversion_info: Option<FeeConversionInfo>,
+}
+
+impl MultisigAuthArgs {
+    /// Creates new multisig auth args binding the summary to the given block.
+    ///
+    /// The signers approve a transaction summary that commits to `bound_block_num`, so the party
+    /// executing the transaction must pass the same block number, no matter how far the chain has
+    /// advanced since. The block must be at or before the transaction's reference block and must
+    /// be tracked by the transaction's partial blockchain, since that is the only way the kernel
+    /// can read its commitment.
+    ///
+    /// The approval does not expire unless [`Self::with_approval_expiration_delta`] sets an
+    /// expiration.
+    ///
+    /// `salt` is bound by the transaction summary and is what makes otherwise identical
+    /// transactions distinguishable, which is what the replay protection of the multisig
+    /// components relies on. It should be chosen at random.
+    pub fn new(bound_block_num: BlockNumber, salt: Word) -> Self {
+        Self {
+            bound_block_num,
+            approval_expiration_block_num: None,
+            salt,
+            conversion_info: None,
+        }
+    }
+
+    /// Returns new multisig auth args whose approval expires `delta` blocks after the bound block.
+    ///
+    /// The transaction must be included by block `bound_block_num + delta`. The expiration is bound
+    /// by the transaction summary, so the party executing the transaction can neither shorten nor
+    /// extend it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `bound_block_num + delta` exceeds [`BlockNumber::MAX`].
+    pub fn with_approval_expiration_delta(
+        mut self,
+        delta: NonZeroU32,
+    ) -> Result<Self, AccountError> {
+        let expiration_block_num =
+            self.bound_block_num.as_u32().checked_add(delta.get()).ok_or_else(|| {
+                AccountError::other(
+                    "approval expiration block number exceeds the maximum block number",
+                )
+            })?;
+
+        self.approval_expiration_block_num = Some(BlockNumber::from(expiration_block_num));
+        Ok(self)
+    }
+
+    /// Returns new multisig auth args carrying the conversion info the fee payment needs.
+    ///
+    /// Must be [`FeeConversionInfo::one_to_one`] built with the reference block's fee faucet.
+    /// Anything else, or no conversion info at all, aborts on chains that charge a non-zero
+    /// verification base fee.
+    #[must_use]
+    pub fn with_conversion_info(mut self, conversion_info: FeeConversionInfo) -> Self {
+        self.conversion_info = Some(conversion_info);
+        self
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the number of the block the transaction summary binds.
+    pub fn bound_block_num(&self) -> BlockNumber {
+        self.bound_block_num
+    }
+
+    /// Returns the first reference block at which the approvers' signatures are no longer valid,
+    /// or `None` if the approval does not expire.
+    pub fn approval_expiration_block_num(&self) -> Option<BlockNumber> {
+        self.approval_expiration_block_num
+    }
+
+    /// Returns the salt bound by the transaction summary.
+    pub fn salt(&self) -> Word {
+        self.salt
+    }
+
+    /// Returns the fee conversion info, or `None` if none was committed - in which case the fee
+    /// payment aborts on fee-charging chains.
+    pub fn conversion_info(&self) -> Option<FeeConversionInfo> {
+        self.conversion_info
+    }
+}
+
+impl SequentialCommit for MultisigAuthArgs {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        let conversion_info = self.conversion_info.map_or(EMPTY_WORD, |info| info.to_word());
+        let approval_expiration = self.approval_expiration_block_num.map_or(Felt::ZERO, Felt::from);
+
+        let mut elements = Vec::with_capacity(3 * WORD_SIZE);
+        elements.extend([Felt::from(self.bound_block_num), approval_expiration, ZERO, ZERO]);
+        elements.extend(self.salt.iter());
+        elements.extend(conversion_info.iter());
+        elements
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -435,7 +529,6 @@ impl From<AuthMultisig> for AccountComponent {
 mod tests {
     use alloc::string::ToString;
 
-    use miden_protocol::Word;
     use miden_protocol::account::auth::AuthSecretKey;
     use miden_protocol::account::{AccountBuilder, auth};
 
@@ -467,7 +560,7 @@ mod tests {
 
         // Build account with multisig component
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
@@ -517,7 +610,7 @@ mod tests {
             .expect("multisig component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

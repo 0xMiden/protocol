@@ -1,6 +1,8 @@
+use alloc::vec::Vec;
+
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
-use miden_protocol::errors::{AccountIdError, NoteError};
+use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteType};
 
 use crate::note::{NoteExecutionHint, StandardNoteAttachment};
@@ -51,6 +53,88 @@ impl NetworkAccountTarget {
         }
 
         Ok(Self { target_id, exec_hint })
+    }
+
+    /// Ensures `attachments` carries a [`NetworkAccountTarget`] for `target_id`, appending one with
+    /// [`NoteExecutionHint::Always`] if none is present.
+    ///
+    /// This lets a note that is always targeted at a single network account derive its target from
+    /// that account, while leaving the caller free to supply the target themselves, e.g. to pick a
+    /// different execution hint, and to add any number of unrelated attachments in their own order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - an attachment with the [`NetworkAccountTarget::ATTACHMENT_SCHEME`] does not decode as a
+    ///   [`NetworkAccountTarget`] or targets an account other than `target_id`.
+    /// - no such attachment is present and `target_id` is not
+    ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public), since a network
+    ///   account must be public.
+    pub(crate) fn ensure_presence(
+        attachments: &mut Vec<NoteAttachment>,
+        target_id: AccountId,
+    ) -> Result<(), NetworkAccountTargetError> {
+        if !Self::validate_target(attachments, target_id)? {
+            let target = Self::new(target_id, NoteExecutionHint::Always)?;
+            attachments.push(NoteAttachment::from(target));
+        }
+
+        Ok(())
+    }
+
+    /// Behaves like [`Self::ensure_presence`], except that a non-public `target_id` is accepted
+    /// without appending a target.
+    ///
+    /// A private account is never a network account, so it has no routing target to derive. This
+    /// lets a note whose target may be either kind of account carry the target exactly when it is
+    /// meaningful, while a caller-supplied target for another account is rejected either way.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an attachment with the [`NetworkAccountTarget::ATTACHMENT_SCHEME`] does
+    /// not decode as a [`NetworkAccountTarget`] or targets an account other than `target_id`.
+    pub(crate) fn ensure_presence_if_public(
+        attachments: &mut Vec<NoteAttachment>,
+        target_id: AccountId,
+    ) -> Result<(), NetworkAccountTargetError> {
+        if target_id.is_public() {
+            return Self::ensure_presence(attachments, target_id);
+        }
+
+        // No target is derived, but any attachment the caller supplied under the scheme is still
+        // validated against `target_id`.
+        Self::validate_target(attachments, target_id).map(|_| ())
+    }
+
+    /// Validates every attachment carrying the [`NetworkAccountTarget::ATTACHMENT_SCHEME`]
+    /// against `target_id`, returning whether one of them is present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if such an attachment does not decode as a [`NetworkAccountTarget`], which
+    /// is the case for one naming a non-public account, or targets an account other than
+    /// `target_id`.
+    fn validate_target(
+        attachments: &[NoteAttachment],
+        target_id: AccountId,
+    ) -> Result<bool, NetworkAccountTargetError> {
+        let mut is_present = false;
+        for attachment in attachments
+            .iter()
+            .filter(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME)
+        {
+            let attached_target_id = Self::try_from(attachment)?.target_id();
+            if attached_target_id != target_id {
+                return Err(NetworkAccountTargetError::TargetMismatch {
+                    expected: target_id,
+                    actual: attached_target_id,
+                });
+            }
+
+            is_present = true;
+        }
+
+        Ok(is_present)
     }
 
     // ACCESSORS
@@ -116,10 +200,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
         let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
             .map_err(NetworkAccountTargetError::DecodeTargetId)?;
 
-        let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())
-            .map_err(NetworkAccountTargetError::DecodeExecutionHint)?;
-
-        NetworkAccountTarget::new(target_id, exec_hint)
+        NetworkAccountTarget::new(target_id, NoteExecutionHint::from(exec_hint))
     }
 }
 
@@ -132,6 +213,8 @@ pub enum NetworkAccountTargetError {
     MissingAttachmentScheme,
     #[error("target account ID must have public account type")]
     TargetNotPublic(AccountId),
+    #[error("attached network account target {actual} does not match expected target {expected}")]
+    TargetMismatch { expected: AccountId, actual: AccountId },
     #[error(
         "attachment scheme {0} did not match expected type {expected}",
         expected = NetworkAccountTarget::ATTACHMENT_SCHEME
@@ -141,8 +224,6 @@ pub enum NetworkAccountTargetError {
     AttachmentContentNumWordsMismatch(u16),
     #[error("failed to decode target account ID")]
     DecodeTargetId(#[source] AccountIdError),
-    #[error("failed to decode execution hint")]
-    DecodeExecutionHint(#[source] NoteError),
     #[error("network note must be public, but was {0:?}")]
     NoteNotPublic(NoteType),
 }
@@ -152,21 +233,143 @@ pub enum NetworkAccountTargetError {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use assert_matches::assert_matches;
+    use miden_protocol::Felt;
     use miden_protocol::account::AccountType;
     use miden_protocol::testing::account_id::AccountIdBuilder;
 
     use super::*;
 
+    fn public_account_id() -> AccountId {
+        AccountIdBuilder::new()
+            .account_type(AccountType::Public)
+            .build_with_rng(&mut rand::rng())
+    }
+
     #[test]
     fn network_account_target_serde() -> anyhow::Result<()> {
-        let id = AccountIdBuilder::new()
-            .account_type(AccountType::Public)
-            .build_with_rng(&mut rand::rng());
+        let id = public_account_id();
         let network_account_target = NetworkAccountTarget::new(id, NoteExecutionHint::Always)?;
         assert_eq!(
             network_account_target,
             NetworkAccountTarget::try_from(&NoteAttachment::from(network_account_target))?
+        );
+
+        Ok(())
+    }
+
+    /// An execution hint encoding this version does not recognize must not hide the target
+    /// account, since the on-chain check discards the hint felt entirely.
+    #[test]
+    fn unrecognized_execution_hint_preserves_target_id() -> anyhow::Result<()> {
+        let target_id = public_account_id();
+
+        // Tag 7 is above the highest known tag, and a non-zero payload on the `Always` tag is
+        // rejected by `NoteExecutionHint::from_parts`.
+        for raw_hint in [7u64, (1 << 8) | 1] {
+            let raw_hint = Felt::new(raw_hint)?;
+            let mut word = Word::empty();
+            word[0] = target_id.suffix();
+            word[1] = target_id.prefix().as_felt();
+            word[2] = raw_hint;
+            let attachment =
+                NoteAttachment::with_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word);
+
+            let target = NetworkAccountTarget::try_from(&attachment)?;
+            assert_eq!(target.target_id(), target_id);
+            assert_eq!(target.execution_hint(), NoteExecutionHint::Unknown(raw_hint));
+            // Re-encoding is lossless, so the note commitment is unaffected.
+            assert_eq!(NoteAttachment::from(target), attachment);
+        }
+
+        Ok(())
+    }
+
+    /// A caller-supplied target for the same account is kept as-is, so its execution hint survives
+    /// and no duplicate attachment is added.
+    #[test]
+    fn ensure_presence_keeps_matching_target() -> anyhow::Result<()> {
+        let target_id = public_account_id();
+        let supplied = NetworkAccountTarget::new(target_id, NoteExecutionHint::None)?;
+        let mut attachments = vec![NoteAttachment::from(supplied)];
+
+        NetworkAccountTarget::ensure_presence(&mut attachments, target_id)?;
+
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(NetworkAccountTarget::try_from(&attachments[0])?, supplied);
+
+        Ok(())
+    }
+
+    /// A caller-supplied target for another account is rejected instead of being silently
+    /// shadowed by the note's own target.
+    #[test]
+    fn ensure_presence_rejects_mismatched_target() -> anyhow::Result<()> {
+        let target_id = public_account_id();
+        let other_id = public_account_id();
+        let supplied = NetworkAccountTarget::new(other_id, NoteExecutionHint::Always)?;
+        let mut attachments = vec![NoteAttachment::from(supplied)];
+
+        let err = NetworkAccountTarget::ensure_presence(&mut attachments, target_id).unwrap_err();
+
+        assert_matches!(
+            err,
+            NetworkAccountTargetError::TargetMismatch { expected, actual }
+                if expected == target_id && actual == other_id
+        );
+
+        Ok(())
+    }
+
+    /// The appended target is placed after the caller's attachments, leaving their order intact.
+    #[test]
+    fn ensure_presence_appends_missing_target() -> anyhow::Result<()> {
+        let target_id = public_account_id();
+        let unrelated =
+            NoteAttachment::with_word(NoteAttachmentScheme::new(64)?, Word::from([7u32, 0, 0, 0]));
+        let mut attachments = vec![unrelated.clone()];
+
+        NetworkAccountTarget::ensure_presence(&mut attachments, target_id)?;
+
+        assert_eq!(
+            attachments,
+            vec![
+                unrelated,
+                NoteAttachment::from(NetworkAccountTarget::new(
+                    target_id,
+                    NoteExecutionHint::Always
+                )?)
+            ]
+        );
+
+        Ok(())
+    }
+
+    /// A non-public target has no network routing target, so none is appended, but a
+    /// caller-supplied target for another account is still rejected.
+    #[test]
+    fn ensure_presence_if_public_skips_private_target() -> anyhow::Result<()> {
+        let private_id = AccountIdBuilder::new()
+            .account_type(AccountType::Private)
+            .build_with_rng(&mut rand::rng());
+        let mut attachments = vec![];
+
+        NetworkAccountTarget::ensure_presence_if_public(&mut attachments, private_id)?;
+        assert!(attachments.is_empty());
+
+        let other_id = public_account_id();
+        let supplied = NetworkAccountTarget::new(other_id, NoteExecutionHint::Always)?;
+        let mut attachments = vec![NoteAttachment::from(supplied)];
+
+        let err = NetworkAccountTarget::ensure_presence_if_public(&mut attachments, private_id)
+            .unwrap_err();
+
+        assert_matches!(
+            err,
+            NetworkAccountTargetError::TargetMismatch { expected, actual }
+                if expected == private_id && actual == other_id
         );
 
         Ok(())

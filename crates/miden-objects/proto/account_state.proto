@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+// Complete account state, in the same package as account.proto. It is a separate file because
+// asset.proto imports account.proto, so only a second file can depend on asset.proto in turn.
+package account;
+
+import "account.proto";
+import "asset.proto";
+import "primitives.proto";
+
+// The complete entries of a storage map, keyed by their unhashed keys. Its size is unbounded,
+// so a consumer at a trust boundary must cap the message size before it decodes one.
+message StorageMap {
+  repeated StorageMapEntry entries = 1;
+}
+
+// A complete storage slot. AccountStorageHeader.StorageSlot carries only a map root; this carries
+// the map entries.
+message StorageSlot {
+  string slot_name = 1;
+  oneof storage_slot_content {
+    primitives.Word value = 2;
+    StorageMap map = 3;
+  }
+}
+
+// The complete storage of an account. Every map slot carries its entries, so its size is
+// unbounded; prefer PartialStorage for transport.
+message AccountStorage {
+  repeated StorageSlot slots = 1;
+}
+
+// A complete account. It carries every storage map entry and every vault asset, so its size is
+// unbounded; prefer PartialAccount for transport.
+//
+// Verification binds the account ID to the code and storage only for an account that is not yet
+// created on chain, through its seed. A consumer that must trust the state of an existing account
+// has to check its commitment itself.
+message Account {
+  AccountVersion version = 1;
+  AccountId account_id = 2;
+  primitives.Felt nonce = 3;
+  AccountCode code = 4;
+  AccountStorage storage = 5;
+  asset.AssetVault vault = 6;
+  // Present only for an account that is not yet created on chain.
+  optional primitives.Word seed = 7;
+}

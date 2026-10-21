@@ -7,11 +7,24 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+use self::config::{
+    AllowlistConfigNote,
+    BlocklistConfigNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
+    FaucetPolicyConfigNote,
+    MinBurnAmountConfigNote,
+    NetworkAccountConfigNote,
+    OwnerConfigNote,
+    PauseConfigNote,
+    RbacConfigNote,
+};
+
+pub mod config;
+pub mod costs;
+
 mod burn;
 pub use burn::BurnNote;
-
-mod faucet_policy_action;
-pub use faucet_policy_action::{FaucetPolicyAction, FaucetPolicyActionNote};
 
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
@@ -19,14 +32,8 @@ pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
 
-mod file;
-pub use file::{NoteFile, NoteSyncHint};
-
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
-
-mod owner_action;
-pub use owner_action::{OwnerAction, OwnerActionNote};
 
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
@@ -34,14 +41,8 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
-mod pause_action;
-pub use pause_action::{PauseAction, PauseActionNote};
-
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
-
-mod rbac_action;
-pub use rbac_action::{RbacAction, RbacActionNote};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
@@ -49,8 +50,17 @@ pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap}
 mod tx_fee;
 pub use tx_fee::TxFeeNote;
 
+mod upgrade;
+pub use upgrade::UpgradeNote;
+
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
+
+mod account_code_upgrade_attachment;
+pub use account_code_upgrade_attachment::{
+    AccountCodeUpgradeAttachment,
+    AccountCodeUpgradeAttachmentError,
+};
 
 mod network_note;
 pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
@@ -63,6 +73,7 @@ pub use standard_note_attachment::StandardNoteAttachment;
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -70,10 +81,17 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
-    FAUCET_POLICY_ACTION,
-    PAUSE_ACTION,
-    OWNER_ACTION,
-    RBAC_ACTION,
+    CONSTANT_FEE_POLICY_CONFIG,
+    FAUCET_POLICY_CONFIG,
+    FAUCET_METADATA_CONFIG,
+    MIN_BURN_AMOUNT_CONFIG,
+    ALLOWLIST_CONFIG,
+    BLOCKLIST_CONFIG,
+    PAUSE_CONFIG,
+    OWNER_CONFIG,
+    RBAC_CONFIG,
+    NETWORK_ACCOUNT_CONFIG,
+    UPGRADE,
     FEE_SPONSORSHIP,
     TX_FEE,
 }
@@ -109,17 +127,38 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
-        if root == FaucetPolicyActionNote::script_root() {
-            return Some(Self::FAUCET_POLICY_ACTION);
+        if root == ConstantFeePolicyConfigNote::script_root() {
+            return Some(Self::CONSTANT_FEE_POLICY_CONFIG);
         }
-        if root == PauseActionNote::script_root() {
-            return Some(Self::PAUSE_ACTION);
+        if root == FaucetPolicyConfigNote::script_root() {
+            return Some(Self::FAUCET_POLICY_CONFIG);
         }
-        if root == OwnerActionNote::script_root() {
-            return Some(Self::OWNER_ACTION);
+        if root == FaucetMetadataConfigNote::script_root() {
+            return Some(Self::FAUCET_METADATA_CONFIG);
         }
-        if root == RbacActionNote::script_root() {
-            return Some(Self::RBAC_ACTION);
+        if root == MinBurnAmountConfigNote::script_root() {
+            return Some(Self::MIN_BURN_AMOUNT_CONFIG);
+        }
+        if root == AllowlistConfigNote::script_root() {
+            return Some(Self::ALLOWLIST_CONFIG);
+        }
+        if root == BlocklistConfigNote::script_root() {
+            return Some(Self::BLOCKLIST_CONFIG);
+        }
+        if root == PauseConfigNote::script_root() {
+            return Some(Self::PAUSE_CONFIG);
+        }
+        if root == OwnerConfigNote::script_root() {
+            return Some(Self::OWNER_CONFIG);
+        }
+        if root == RbacConfigNote::script_root() {
+            return Some(Self::RBAC_CONFIG);
+        }
+        if root == NetworkAccountConfigNote::script_root() {
+            return Some(Self::NETWORK_ACCOUNT_CONFIG);
+        }
+        if root == UpgradeNote::script_root() {
+            return Some(Self::UPGRADE);
         }
         if root == FeeSponsorshipNote::script_root() {
             return Some(Self::FEE_SPONSORSHIP);
@@ -143,32 +182,56 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
-            Self::FAUCET_POLICY_ACTION => "FAUCET_POLICY_ACTION",
-            Self::PAUSE_ACTION => "PAUSE_ACTION",
-            Self::OWNER_ACTION => "OWNER_ACTION",
-            Self::RBAC_ACTION => "RBAC_ACTION",
+            Self::CONSTANT_FEE_POLICY_CONFIG => "CONSTANT_FEE_POLICY_CONFIG",
+            Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
+            Self::FAUCET_METADATA_CONFIG => "FAUCET_METADATA_CONFIG",
+            Self::MIN_BURN_AMOUNT_CONFIG => "MIN_BURN_AMOUNT_CONFIG",
+            Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
+            Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
+            Self::PAUSE_CONFIG => "PAUSE_CONFIG",
+            Self::OWNER_CONFIG => "OWNER_CONFIG",
+            Self::RBAC_CONFIG => "RBAC_CONFIG",
+            Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
+            Self::UPGRADE => "UPGRADE",
             Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
             Self::TX_FEE => "TX_FEE",
         }
     }
 
-    /// Returns the expected number of storage items of the active note.
-    pub fn expected_num_storage_items(&self) -> usize {
+    /// Returns the [`NumStorageItems`] items this kind of note accepts.
+    pub fn num_storage_items(&self) -> NumStorageItems {
         match self {
-            Self::P2ID => P2idNote::NUM_STORAGE_ITEMS,
-            Self::P2IDE => P2ideNote::NUM_STORAGE_ITEMS,
-            Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
-            Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
-            Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
-            Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
-            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::NUM_STORAGE_ITEMS,
-            Self::PAUSE_ACTION => PauseActionNote::NUM_STORAGE_ITEMS,
-            // OwnerAction storage is variable per action; this returns the upper bound.
-            Self::OWNER_ACTION => OwnerActionNote::MAX_NUM_STORAGE_ITEMS,
-            // RbacAction storage is variable per action; this returns the upper bound.
-            Self::RBAC_ACTION => RbacActionNote::MAX_NUM_STORAGE_ITEMS,
-            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::NUM_STORAGE_ITEMS,
-            Self::TX_FEE => TxFeeNote::NUM_STORAGE_ITEMS,
+            Self::P2ID => NumStorageItems::Exact(P2idNote::NUM_STORAGE_ITEMS),
+            Self::P2IDE => NumStorageItems::Exact(P2ideNote::NUM_STORAGE_ITEMS),
+            Self::SWAP => NumStorageItems::Exact(SwapNote::NUM_STORAGE_ITEMS),
+            Self::PSWAP => NumStorageItems::Exact(PswapNote::NUM_STORAGE_ITEMS),
+            Self::MINT => MintNote::NUM_STORAGE_ITEMS,
+            Self::BURN => NumStorageItems::Exact(BurnNote::NUM_STORAGE_ITEMS),
+            Self::CONSTANT_FEE_POLICY_CONFIG => {
+                NumStorageItems::Exact(ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::FAUCET_POLICY_CONFIG => {
+                NumStorageItems::Exact(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::NUM_STORAGE_ITEMS,
+            Self::MIN_BURN_AMOUNT_CONFIG => {
+                NumStorageItems::Exact(MinBurnAmountConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::ALLOWLIST_CONFIG => {
+                NumStorageItems::Exact(AllowlistConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::BLOCKLIST_CONFIG => {
+                NumStorageItems::Exact(BlocklistConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::PAUSE_CONFIG => NumStorageItems::Exact(PauseConfigNote::NUM_STORAGE_ITEMS),
+            Self::OWNER_CONFIG => OwnerConfigNote::NUM_STORAGE_ITEMS,
+            Self::RBAC_CONFIG => RbacConfigNote::NUM_STORAGE_ITEMS,
+            Self::NETWORK_ACCOUNT_CONFIG => {
+                NumStorageItems::Exact(NetworkAccountConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::UPGRADE => NumStorageItems::Exact(UpgradeNote::NUM_STORAGE_ITEMS),
+            Self::FEE_SPONSORSHIP => NumStorageItems::Exact(FeeSponsorshipNote::NUM_STORAGE_ITEMS),
+            Self::TX_FEE => NumStorageItems::Exact(TxFeeNote::NUM_STORAGE_ITEMS),
         }
     }
 
@@ -181,10 +244,17 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
-            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script(),
-            Self::PAUSE_ACTION => PauseActionNote::script(),
-            Self::OWNER_ACTION => OwnerActionNote::script(),
-            Self::RBAC_ACTION => RbacActionNote::script(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script(),
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script(),
+            Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::script(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
+            Self::PAUSE_CONFIG => PauseConfigNote::script(),
+            Self::OWNER_CONFIG => OwnerConfigNote::script(),
+            Self::RBAC_CONFIG => RbacConfigNote::script(),
+            Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script(),
+            Self::UPGRADE => UpgradeNote::script(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script(),
             Self::TX_FEE => TxFeeNote::script(),
         }
@@ -199,10 +269,17 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
-            Self::FAUCET_POLICY_ACTION => FaucetPolicyActionNote::script_root(),
-            Self::PAUSE_ACTION => PauseActionNote::script_root(),
-            Self::OWNER_ACTION => OwnerActionNote::script_root(),
-            Self::RBAC_ACTION => RbacActionNote::script_root(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script_root(),
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script_root(),
+            Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::script_root(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
+            Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
+            Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
+            Self::RBAC_CONFIG => RbacConfigNote::script_root(),
+            Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script_root(),
+            Self::UPGRADE => UpgradeNote::script_root(),
             Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script_root(),
             Self::TX_FEE => TxFeeNote::script_root(),
         }
@@ -330,6 +407,37 @@ impl StandardNote {
     }
 }
 
+// NUM STORAGE ITEMS
+// ================================================================================================
+
+/// The number of storage items a [`StandardNote`] accepts.
+///
+/// A note script asserts the size of the storage it is handed, and some scripts accept more than
+/// one size: they branch on it, or hold a variable-length tail. This is the set of sizes one of
+/// them accepts, so that a caller can check a note against it instead of comparing against a
+/// single constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumStorageItems {
+    /// The note holds exactly this many storage items.
+    Exact(usize),
+    /// The note holds any number of storage items in this inclusive range.
+    Range { min: usize, max: usize },
+    /// The note holds a number of storage items accepted by any of these, and by none of the
+    /// sizes in between them.
+    AnyOf(&'static [NumStorageItems]),
+}
+
+impl NumStorageItems {
+    /// Returns `true` if `num_items` is one of the accepted numbers of storage items.
+    pub fn accepts(&self, num_items: usize) -> bool {
+        match self {
+            Self::Exact(expected) => num_items == *expected,
+            Self::Range { min, max } => (*min..=*max).contains(&num_items),
+            Self::AnyOf(accepted) => accepted.iter().any(|accepted| accepted.accepts(num_items)),
+        }
+    }
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -392,6 +500,80 @@ impl Clone for NoteConsumptionStatus {
                 let err = error.to_string();
                 NoteConsumptionStatus::NeverConsumable(err.into())
             },
+        }
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::MAX_NOTE_STORAGE_ITEMS;
+
+    use super::*;
+
+    /// A MINT note holds exactly 13 items when it creates a private output note, and 20 or more
+    /// when it creates a public one, so the sizes in between are the only invalid ones below the
+    /// protocol limit.
+    #[test]
+    fn mint_accepts_both_the_private_and_the_public_storage_sizes() {
+        for num_items in [MintNote::NUM_STORAGE_ITEMS_PRIVATE, 20, 21, MAX_NOTE_STORAGE_ITEMS] {
+            assert!(
+                StandardNote::MINT.num_storage_items().accepts(num_items),
+                "{num_items} items should be accepted"
+            );
+        }
+
+        for num_items in [0, 12, 14, 19, MAX_NOTE_STORAGE_ITEMS + 1] {
+            assert!(
+                !StandardNote::MINT.num_storage_items().accepts(num_items),
+                "{num_items} items should be rejected"
+            );
+        }
+    }
+
+    /// The config notes size their storage per action, and the sizes no action uses must be
+    /// rejected even when they fall between the bounds.
+    #[test]
+    fn config_notes_accept_only_the_sizes_their_actions_use() {
+        for (note, accepted, rejected) in [
+            (StandardNote::OWNER_CONFIG, [1, 3].as_slice(), [0, 2, 4].as_slice()),
+            (StandardNote::RBAC_CONFIG, [2, 3, 4].as_slice(), [0, 1, 5].as_slice()),
+            (
+                StandardNote::FAUCET_METADATA_CONFIG,
+                [2, 32].as_slice(),
+                [0, 3, 31, 33].as_slice(),
+            ),
+        ] {
+            for &num_items in accepted {
+                assert!(
+                    note.num_storage_items().accepts(num_items),
+                    "{} should accept {num_items} items",
+                    note.name()
+                );
+            }
+
+            for &num_items in rejected {
+                assert!(
+                    !note.num_storage_items().accepts(num_items),
+                    "{} should reject {num_items} items",
+                    note.name()
+                );
+            }
+        }
+    }
+
+    /// A note of fixed layout reports its size as exact, so no other size is accepted.
+    #[test]
+    fn fixed_size_notes_report_an_exact_size() {
+        for (note, num_items) in [
+            (StandardNote::P2ID, P2idNote::NUM_STORAGE_ITEMS),
+            (StandardNote::P2IDE, P2ideNote::NUM_STORAGE_ITEMS),
+            (StandardNote::TX_FEE, TxFeeNote::NUM_STORAGE_ITEMS),
+        ] {
+            assert_eq!(note.num_storage_items(), NumStorageItems::Exact(num_items));
+            assert!(!note.num_storage_items().accepts(num_items + 1));
         }
     }
 }

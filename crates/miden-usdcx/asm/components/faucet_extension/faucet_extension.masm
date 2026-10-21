@@ -1,0 +1,10 @@
+# What the xUSDC faucet adds on top of the stock fungible faucet: the attestation mint policy the
+# stock `mint_and_send` dispatches to, and the attester allowlist setter that policy reads.
+#
+# The two procedures below are the whole of it. Everything the faucet can be asked to do from
+# outside is either a stock component's procedure or one of these, so the account's surface is a
+# decision recorded here rather than a side effect of which library procedure happens to carry the
+# account-procedure attribute.
+
+pub use {set_attester} from xreserve::attester_admin
+pub use {check_policy} from xreserve::mint_policy

@@ -1,5 +1,8 @@
+use alloc::string::ToString;
+
 use crate::Word;
-use crate::account::{AccountId, AccountUpdateDetails};
+use crate::account::{AccountId, AccountUpdateDetails, validate_new_public_account};
+use crate::errors::BlockAccountUpdateError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -28,8 +31,21 @@ pub struct BlockAccountUpdate {
 }
 
 impl BlockAccountUpdate {
-    /// Returns a new [BlockAccountUpdate] instantiated from the specified components.
-    pub const fn new(
+    /// Returns a new validated [`BlockAccountUpdate`].
+    pub fn new(
+        account_id: AccountId,
+        final_state_commitment: Word,
+        details: AccountUpdateDetails,
+    ) -> Result<Self, BlockAccountUpdateError> {
+        let update = Self::new_unchecked(account_id, final_state_commitment, details);
+        update.validate()?;
+        Ok(update)
+    }
+
+    /// Returns a new [`BlockAccountUpdate`] without validating its invariants.
+    ///
+    /// Callers must ensure that the update details are compatible with the account ID.
+    pub(crate) const fn new_unchecked(
         account_id: AccountId,
         final_state_commitment: Word,
         details: AccountUpdateDetails,
@@ -39,6 +55,25 @@ impl BlockAccountUpdate {
             final_state_commitment,
             details,
         }
+    }
+
+    /// Validates that this account update's details are compatible with its account ID.
+    pub(crate) fn validate(&self) -> Result<(), BlockAccountUpdateError> {
+        self.details.validate_for_account(self.account_id)?;
+        Ok(())
+    }
+
+    /// Validates that the update of a new public account reconstructs to its final state
+    /// commitment.
+    ///
+    /// The update itself cannot tell a creation from an upgrade, so the caller must know that the
+    /// account is new.
+    pub(super) fn validate_new_account_patch(&self) -> Result<(), BlockAccountUpdateError> {
+        if let AccountUpdateDetails::Public(patch) = &self.details {
+            validate_new_public_account(patch, self.final_state_commitment)?;
+        }
+
+        Ok(())
     }
 
     /// Returns the ID of the updated account.
@@ -74,10 +109,35 @@ impl Serializable for BlockAccountUpdate {
 
 impl Deserializable for BlockAccountUpdate {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self {
-            account_id: AccountId::read_from(source)?,
-            final_state_commitment: Word::read_from(source)?,
-            details: AccountUpdateDetails::read_from(source)?,
-        })
+        Self::new(
+            AccountId::read_from(source)?,
+            Word::read_from(source)?,
+            AccountUpdateDetails::read_from(source)?,
+        )
+        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::BlockAccountUpdate;
+    use crate::Word;
+    use crate::account::{AccountId, AccountPatch, AccountUpdateDetails};
+    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    #[test]
+    fn accepts_partial_public_account_patch() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE)?;
+
+        BlockAccountUpdate::new(
+            account_id,
+            Word::empty(),
+            AccountUpdateDetails::Public(AccountPatch::empty(account_id)),
+        )?;
+
+        Ok(())
     }
 }

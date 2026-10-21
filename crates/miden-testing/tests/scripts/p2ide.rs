@@ -6,10 +6,10 @@ use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteType};
 use miden_standards::errors::standards::{
-    ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER,
-    ERR_P2IDE_RECLAIM_DISABLED,
-    ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED,
     ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED,
+    ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER,
+    ERR_RECLAIM_DISABLED,
+    ERR_RECLAIM_HEIGHT_NOT_REACHED,
 };
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -36,7 +36,7 @@ async fn p2ide_script_success_without_reclaim_or_timelock() -> anyhow::Result<()
         .execute()
         .await;
 
-    assert_transaction_executor_error!(executed_transaction_1, ERR_P2IDE_RECLAIM_DISABLED);
+    assert_transaction_executor_error!(executed_transaction_1, ERR_RECLAIM_DISABLED);
 
     // CONSTRUCT AND EXECUTE TX (Success - Target Account)
     let executed_transaction_2 = mock_chain
@@ -147,7 +147,7 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(early_reclaim, ERR_P2IDE_RECLAIM_DISABLED);
+    assert_transaction_executor_error!(early_reclaim, ERR_RECLAIM_DISABLED);
 
     // ───────────────────── target spends successfully ───────────────────────
     let final_tx = mock_chain
@@ -275,7 +275,7 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(early_reclaim, ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED);
+    assert_transaction_executor_error!(early_reclaim, ERR_RECLAIM_HEIGHT_NOT_REACHED);
 
     // ───────────────────── advance chain past reclaim height ──────────────────────
     mock_chain.prove_until_block(reclaim_height + 1)?;
@@ -290,7 +290,7 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
 
     assert_transaction_executor_error!(
         executed_transaction_1,
-        ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER
+        ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER
     );
 
     // ───────────────────── target spends successfully ───────────────────────
@@ -403,7 +403,7 @@ async fn p2ide_script_reclaim_by_distinct_reclaimer() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(sender_reclaim, ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER);
+    assert_transaction_executor_error!(sender_reclaim, ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER);
 
     // ───────────────────── reclaimer reclaims successfully ───────────────────────
     let final_tx = mock_chain

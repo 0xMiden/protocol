@@ -22,6 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{NoteConsumptionCost, P2ID_CONSUMPTION_CYCLES};
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -32,7 +33,7 @@ const P2ID_SCRIPT_PATH: &str = "::miden::standards::notes::p2id::main";
 static P2ID_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(P2ID_SCRIPT_PATH);
-    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+    NoteScript::from_package_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains P2ID note script procedure")
 });
 
@@ -71,8 +72,7 @@ impl P2idNote {
         #[builder(field)] assets: Vec<Asset>,
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        #[builder(name = target, with = |target: AccountId| P2idNoteStorage::new(target))]
-        storage: P2idNoteStorage,
+        target: AccountId,
         serial_number: Word,
         #[builder(default)] note_type: NoteType,
     ) -> Result<Self, NoteError> {
@@ -80,6 +80,7 @@ impl P2idNote {
             return Err(NoteError::other("a P2ID note must contain at least one asset"));
         }
 
+        let storage = P2idNoteStorage::new(target);
         let assets = NoteAssets::new(assets)?;
         let attachments = NoteAttachments::new(attachments)?;
 
@@ -228,7 +229,7 @@ impl P2idNoteStorage {
     /// Expected number of storage items of the P2ID note.
     pub const NUM_ITEMS: usize = 2;
 
-    /// Creates new P2ID note storage targeting the given account.
+    /// Creates P2ID note storage targeting the given account.
     pub fn new(target: AccountId) -> Self {
         Self { target }
     }
@@ -274,6 +275,15 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
     }
 }
 
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for P2idNote {
+    fn consumption_cycles() -> u32 {
+        P2ID_CONSUMPTION_CYCLES
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -303,22 +313,21 @@ mod tests {
             P2idNoteStorage::try_from(storage.as_slice()).expect("storage should be valid");
 
         assert_eq!(parsed.target(), target);
+        assert_eq!(NoteStorage::from(parsed).items(), storage.as_slice());
     }
 
     #[test]
     fn try_from_invalid_length_returns_error() {
-        let storage = vec![Felt::ZERO];
+        for len in [0, 1, 3, 4, 5] {
+            let storage = vec![Felt::ZERO; len];
+            let err = P2idNoteStorage::try_from(storage.as_slice())
+                .expect_err("should fail due to invalid length");
 
-        let err = P2idNoteStorage::try_from(storage.as_slice())
-            .expect_err("should fail due to invalid length");
-
-        assert!(matches!(
-            err,
-            NoteError::InvalidNoteStorageLength {
+            assert_matches!(err, NoteError::InvalidNoteStorageLength {
                 expected: P2idNote::NUM_STORAGE_ITEMS,
-                actual: 1
-            }
-        ));
+                actual,
+            } => assert_eq!(actual, len));
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_crypto::SequentialCommit;
 
-use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use crate::asset::{Asset, FungibleAsset};
 use crate::errors::NoteError;
 use crate::utils::serde::{
     ByteReader,
@@ -18,7 +18,7 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 /// An asset container for a note.
 ///
-/// A note can contain between 0 and 64 assets. No duplicates are allowed, but the order of assets
+/// A note can contain between 0 and 16 assets. No duplicates are allowed, but the order of assets
 /// is unspecified.
 ///
 /// All the assets in a note can be reduced to a single commitment which is computed by
@@ -44,7 +44,7 @@ impl NoteAssets {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The list contains more than 64 assets.
+    /// - The list contains more than 16 assets.
     /// - There are duplicate assets in the list.
     pub fn new(assets: Vec<Asset>) -> Result<Self, NoteError> {
         if assets.len() > Self::MAX_NUM_ASSETS {
@@ -56,9 +56,11 @@ impl NoteAssets {
             // for all assets except the first one, check if the asset is the same as any other
             // asset in the list, and if so return an error
             if assets[..i].iter().any(|a| a.is_same(asset)) {
-                return Err(match asset {
-                    Asset::Fungible(asset) => NoteError::DuplicateFungibleAsset(asset.faucet_id()),
-                    Asset::NonFungible(asset) => NoteError::DuplicateNonFungibleAsset(*asset),
+                return Err(match asset.as_fungible() {
+                    Some(fungible_asset) => {
+                        NoteError::DuplicateFungibleAsset(fungible_asset.faucet_id())
+                    },
+                    None => NoteError::DuplicateNonFungibleAsset(*asset),
                 });
             }
         }
@@ -74,6 +76,11 @@ impl NoteAssets {
     /// Returns a commitment to the note's assets.
     pub fn commitment(&self) -> Word {
         self.commitment
+    }
+
+    /// Returns the assets as a slice.
+    pub fn as_slice(&self) -> &[Asset] {
+        &self.assets
     }
 
     /// Returns the number of assets.
@@ -98,18 +105,7 @@ impl NoteAssets {
 
     /// Returns an iterator over all [`FungibleAsset`].
     pub fn iter_fungible(&self) -> impl Iterator<Item = FungibleAsset> {
-        self.assets.iter().filter_map(|asset| match asset {
-            Asset::Fungible(fungible_asset) => Some(*fungible_asset),
-            Asset::NonFungible(_) => None,
-        })
-    }
-
-    /// Returns iterator over all [`NonFungibleAsset`].
-    pub fn iter_non_fungible(&self) -> impl Iterator<Item = NonFungibleAsset> {
-        self.assets.iter().filter_map(|asset| match asset {
-            Asset::Fungible(_) => None,
-            Asset::NonFungible(non_fungible_asset) => Some(*non_fungible_asset),
-        })
+        self.assets.iter().filter_map(Asset::as_fungible)
     }
 
     /// Consumes self and returns the underlying vector of assets.
@@ -207,7 +203,7 @@ mod tests {
                 // Use the index bytes to create unique asset data.
                 let data = (i as u64).to_le_bytes().to_vec();
                 let details = NonFungibleAssetDetails::new(faucet_id, data);
-                Asset::NonFungible(NonFungibleAsset::new(&details))
+                Asset::from(NonFungibleAsset::new(&details))
             })
             .collect()
     }
@@ -219,9 +215,9 @@ mod tests {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
         let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
 
-        let asset1 = Asset::Fungible(FungibleAsset::new(faucet_id_1, 100).unwrap());
-        let asset2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 50).unwrap());
-        let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&details));
+        let asset1 = Asset::from(FungibleAsset::new(faucet_id_1, 100).unwrap());
+        let asset2 = Asset::from(FungibleAsset::new(faucet_id_2, 50).unwrap());
+        let non_fungible_asset = Asset::from(NonFungibleAsset::new(&details));
 
         // Create NoteAsset from assets
         let assets = NoteAssets::new([asset1, asset2, non_fungible_asset].to_vec()).unwrap();
@@ -234,6 +230,8 @@ mod tests {
 
     #[test]
     fn note_assets_at_max_succeeds() {
+        assert_eq!(NoteAssets::MAX_NUM_ASSETS, 16);
+
         let assets = make_non_fungible_assets(NoteAssets::MAX_NUM_ASSETS);
         assert_eq!(assets.len(), NoteAssets::MAX_NUM_ASSETS);
 

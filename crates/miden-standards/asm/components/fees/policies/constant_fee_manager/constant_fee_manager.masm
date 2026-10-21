@@ -1,0 +1,10 @@
+# Authority-gated constant-fee schedule admin component.
+#
+# Re-exports `set_note_fee` from `miden::standards::fees::policies::constant_fee_manager`,
+# which is gated by the account-wide `Authority` component via `authority::assert_authorized`.
+#
+# Pair with the [`Authority`] component and an `AuthNetworkAccount` whose active fee policy is a
+# `BasicConstantFeePolicy` (which installs the `fee_schedule` slot and the fee asset ID this
+# component reads).
+
+pub use {set_note_fee} from miden::standards::fees::policies::constant_fee_manager

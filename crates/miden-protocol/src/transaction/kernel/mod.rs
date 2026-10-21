@@ -4,15 +4,19 @@ use alloc::vec::Vec;
 use miden_core_lib::CoreLibrary;
 
 use crate::account::{AccountHeader, AccountId};
-#[cfg(any(feature = "testing", test))]
-use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
 use crate::assembly::{Assembler, DefaultSourceManager, Linkage};
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
-use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
+use crate::transaction::{
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionInputs,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use crate::utils::sync::LazyLock;
 use crate::vm::{
     AdviceInputs,
@@ -170,7 +174,7 @@ impl TransactionKernel {
         // TODO: make static
         let program_hash = Self::main().hash();
         let kernel = Self::package()
-            .to_kernel()
+            .to_kernel_descriptor()
             .expect("transaction kernel package should describe a valid kernel");
 
         ProgramInfo::new(program_hash, kernel)
@@ -215,7 +219,7 @@ impl TransactionKernel {
             .link_package(CoreLibrary::default().package(), Linkage::Dynamic)
             .expect("failed to load std-lib");
         assembler
-            .link_package(Arc::new(ProtocolLib::default().into()), Linkage::Dynamic)
+            .link_package(ProtocolLib::default().package(), Linkage::Dynamic)
             .expect("failed to load miden-lib");
         assembler
     }
@@ -270,11 +274,13 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     expiration_block_num
+    ///     LOGS_COMMITMENT,
+    ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
@@ -284,13 +290,15 @@ impl TransactionKernel {
         account_delta_commitment: Word,
         output_notes_commitment: Word,
         expiration_block_num: BlockNumber,
+        logs_commitment: Word,
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
 
-        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
+        let mut outputs: Vec<Felt> = Vec::with_capacity(13);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
+        outputs.extend(logs_commitment);
         outputs.push(Felt::from(expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
@@ -304,11 +312,13 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
+    ///     LOGS_COMMITMENT,
     ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   delta commitment.
@@ -319,11 +329,11 @@ impl TransactionKernel {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Indices 9..16 on the stack are not zeroes.
+    /// - Indices 13..16 on the stack are not zeroes.
     /// - Overflow addresses are not empty.
     pub fn parse_output_stack(
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> Result<(Word, Word, BlockNumber), TransactionOutputError> {
+    ) -> Result<(Word, Word, BlockNumber, Word), TransactionOutputError> {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -331,6 +341,10 @@ impl TransactionKernel {
         let account_update_commitment = stack
             .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
+
+        let logs_commitment = stack
+            .get_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX)
+            .expect("logs_commitment (third word) missing");
 
         let expiration_block_num = stack
             .get_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
@@ -344,14 +358,19 @@ impl TransactionKernel {
             })?
             .into();
 
-        // Make sure that indices 9..16 are zeros.
-        if stack.as_slice()[9..].iter().any(|element| *element != Felt::ZERO) {
+        // Make sure that indices 13..16 are zeros.
+        if stack.as_slice()[13..].iter().any(|element| *element != Felt::ZERO) {
             return Err(TransactionOutputError::OutputStackInvalid(
-                "indices 9..16 on the output stack should be ZERO".into(),
+                "indices 13..16 on the output stack should be ZERO".into(),
             ));
         }
 
-        Ok((output_notes_commitment, account_update_commitment, expiration_block_num))
+        Ok((
+            output_notes_commitment,
+            account_update_commitment,
+            expiration_block_num,
+            logs_commitment,
+        ))
     }
 
     // TRANSACTION OUTPUT PARSER
@@ -365,11 +384,13 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
+    ///     LOGS_COMMITMENT,
     ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
+    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and the account
     ///   delta commitment of the account that the transaction is being executed against.
@@ -385,16 +406,25 @@ impl TransactionKernel {
         stack: &StackOutputs,
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
+        logs: TransactionLogs,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
-        let (output_notes_commitment, account_update_commitment, expiration_block_num) =
-            Self::parse_output_stack(stack)?;
+        let (
+            output_notes_commitment,
+            account_update_commitment,
+            expiration_block_num,
+            logs_commitment,
+        ) = Self::parse_output_stack(stack)?;
+
+        if logs.commitment() != logs_commitment {
+            return Err(TransactionOutputError::LogsCommitmentInconsistent);
+        }
 
         let (final_account_commitment, account_patch_commitment) =
             Self::parse_account_update_commitment(account_update_commitment, advice_inputs)?;
 
         // parse final account state
         let final_account_data = advice_inputs
-            .map
+            .map()
             .get(&final_account_commitment)
             .ok_or(TransactionOutputError::FinalAccountCommitmentMissingInAdviceMap)?;
 
@@ -415,6 +445,7 @@ impl TransactionKernel {
             account_patch_commitment,
             output_notes,
             expiration_block_num,
+            logs,
         ))
     }
 
@@ -425,7 +456,7 @@ impl TransactionKernel {
         advice_inputs: &AdviceInputs,
     ) -> Result<(Word, Word), TransactionOutputError> {
         let account_update_data =
-            advice_inputs.map.get(&account_update_commitment).ok_or_else(|| {
+            advice_inputs.map().get(&account_update_commitment).ok_or_else(|| {
                 TransactionOutputError::AccountUpdateCommitment(
                     "failed to find ACCOUNT_UPDATE_COMMITMENT in advice map".into(),
                 )
@@ -479,14 +510,19 @@ fn package_entrypoint_source_node(
 
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
-    const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
+    const KERNEL_CORE_PACKAGE_BYTES: &'static [u8] =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-core.masp"));
 
-    /// Returns the kernel library.
-    pub fn library() -> Library {
+    /// Returns the transaction kernel procedures as a [`Package`] linkable under the
+    /// `miden::tx_kernel_core` namespace.
+    ///
+    /// Unlike [`TransactionKernel::package()`], which returns the assembled kernel itself, this
+    /// package exposes the kernel procedures as a regular library so that they can be invoked
+    /// individually in tests.
+    pub fn core_package() -> Package {
         // These bytes are produced by this crate's build script and embedded in the binary.
-        Package::read_from_bytes_trusted(Self::KERNEL_TESTING_PACKAGE_BYTES)
-            .expect("failed to deserialize transaction kernel library package")
+        Package::read_from_bytes_trusted(Self::KERNEL_CORE_PACKAGE_BYTES)
+            .expect("failed to deserialize transaction kernel core package")
     }
 }
 
@@ -524,7 +560,7 @@ pub(crate) mod source_manager_ext {
 
     /// Implements the logic of the above function with error handling.
     fn load(source_manager: &dyn SourceManager) -> io::Result<()> {
-        for file in get_masm_files(concat!(env!("OUT_DIR"), "/asm"))? {
+        for file in get_masm_files(concat!(env!("CARGO_MANIFEST_DIR"), "/asm"))? {
             source_manager.load_file(&file).map_err(io::Error::other)?;
         }
 
@@ -568,5 +604,54 @@ pub(crate) mod source_manager_ext {
         }
 
         Ok(files)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transaction::kernel::memory::KERNEL_PROCEDURES_PTR;
+    use crate::word;
+
+    /// The root of `exec_kernel_proc`.
+    ///
+    /// Every kernel caller commits to this root through its `syscall` instructions, so this root
+    /// must be stable.
+    const EXEC_KERNEL_PROC_ROOT: Word =
+        word!("0x5234d0969f1a3e08bcd099fd71220f5c354eac99ab6a750368560722c5b8b113");
+
+    #[test]
+    fn exec_kernel_proc_root_is_stable() {
+        let root = TransactionKernel::package()
+            .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+            .unwrap();
+
+        assert_eq!(
+            root, EXEC_KERNEL_PROC_ROOT,
+            "exec_kernel_proc root {root} was not the expected {EXEC_KERNEL_PROC_ROOT}"
+        );
+    }
+
+    /// `exec_kernel_proc` derives the procedure pointer from the procedure offset alone, which is
+    /// only correct while the kernel procedures section begins at address 0.
+    #[test]
+    fn kernel_procedures_section_begins_at_zero() {
+        assert_eq!(KERNEL_PROCEDURES_PTR, 0);
+    }
+
+    #[test]
+    fn tx_kernel_exports_only_exec_kernel_proc() {
+        let kernel_prog_info = TransactionKernel::program_info();
+        let proc_hashes = kernel_prog_info.kernel().proc_hashes();
+
+        assert_eq!(proc_hashes.len(), 1, "only one proc should be a syscallable export");
+
+        assert_eq!(
+            TransactionKernel::package()
+                .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+                .unwrap(),
+            proc_hashes[0],
+            "only exec_kernel_proc should be a syscallable export"
+        );
     }
 }

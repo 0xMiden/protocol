@@ -4,7 +4,7 @@ version.workspace = true
 
 [lib]
 kind = "kernel"
-path = "lib/api.masm"
+path = "lib/dispatcher.masm"
 
 [[bin]]
 name = "main"

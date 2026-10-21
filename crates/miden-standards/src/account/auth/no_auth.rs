@@ -1,9 +1,9 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 
-account_component_code!(NO_AUTH_CODE, "miden-standards-auth-no-auth.masp");
+account_component_package!(NO_AUTH_PACKAGE, "miden-standards-auth-no-auth.masp");
 
 /// An [`AccountComponent`] implementing a no-authentication scheme.
 ///
@@ -25,7 +25,7 @@ pub struct NoAuth;
 
 impl NoAuth {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::no_auth";
+    pub const NAME: &'static str = "miden::standards::auth::no_auth";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -34,7 +34,7 @@ impl NoAuth {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &NO_AUTH_CODE
+        &NO_AUTH_PACKAGE.code
     }
 
     /// Creates a new [`NoAuth`] component.
@@ -44,7 +44,7 @@ impl NoAuth {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description("No authentication component")
+        NO_AUTH_PACKAGE.metadata.clone()
     }
 }
 
@@ -77,7 +77,7 @@ mod tests {
     fn test_no_auth_component() {
         // Create an account using the NoAuth component
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

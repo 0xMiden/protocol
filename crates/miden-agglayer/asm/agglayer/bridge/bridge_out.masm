@@ -1,3 +1,5 @@
+use {Keccak256Digest, NetworkId, ConvertedAsset, LeafData} from agglayer::types
+use {Asset, AssetId, NoteSerialNumber} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::active_account
 use miden::protocol::asset
@@ -6,18 +8,17 @@ use miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
-use {DEFAULT_TAG} from miden::standards::note_tag
-use {ALWAYS} from miden::standards::note::execution_hint
-use {MemoryAddress} from miden::protocol::types
+use {DEFAULT_TAG} from miden::standards::note::note_tag
+use {ALWAYS} from miden::standards::note::note_execution_hint
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
-use {MIDEN_NETWORK_ID} from agglayer::common::constants
-use agglayer::common::utils
-use agglayer::common::asset_conversion
+use miden::standards::access::pausable
+use miden::standards::utils
+use miden::standards::assets::asset_amount
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-use {EthereumAddressFormat} from agglayer::common::eth_address
+use {EthereumAddress} from miden::standards::interop::eth
 
 # ERRORS
 # =================================================================================================
@@ -84,7 +85,7 @@ const ATTACHMENT_SCHEME_LOC=12
 
 const LEAF_TYPE_ASSET=0
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
-const BURN_NOTE_NUM_STORAGE_ITEMS=0
+const BURN_NOTE_NUM_STORAGE_ITEMS=8
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -93,7 +94,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #!
 #! This procedure handles the complete bridge-out operation:
 #! 1. Validates the asset's faucet is registered in the bridge's faucet registry
-#! 2. Queries the faucet for origin asset conversion data via FPI
+#! 2. Reads the faucet's origin asset conversion data from the bridge's faucet_metadata_map
 #! 3. Builds the leaf data (origin token, destination, amount, metadata)
 #! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
@@ -108,13 +109,16 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Panics if:
+#! - the bridge is paused.
 #! - the B2AGG note calling `bridge_out` is not public.
 #! - destination network ID is Miden's AggLayer network ID.
 #!
 #! Invocation: call
 @locals(15)
 @account_procedure
-pub proc bridge_out
+pub proc bridge_out(asset: Asset, dest_network_id: NetworkId, dest_address: EthereumAddress)
+    exec.pausable::assert_not_paused
+
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
     # => [ASSET_ID, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 
@@ -134,7 +138,7 @@ pub proc bridge_out
     loc_store.DESTINATION_ADDRESS_4_LOC
     # => [pad(16)]
 
-    # --- 1. Validate faucet registration and convert asset via FPI ---
+    # --- 1. Validate faucet registration and convert asset using bridge-stored metadata ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
@@ -248,23 +252,29 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts that the bridge-out destination network ID is not equal to the Miden's AggLayer network
-#! ID.
+#! Asserts that the bridge-out destination network ID is not equal to the bridge's configured
+#! network ID.
 #!
 #! Inputs:  [dest_network_id]
 #! Outputs: []
 #!
+#! Where:
+#! - dest_network_id is the LE-packed u32 destination network ID of the B2AGG note.
+#!
 #! Panics if:
-#! - the destination network ID equals `MIDEN_NETWORK_ID`.
+#! - the destination network ID equals the bridge's configured network ID.
 #!
 #! Invocation: exec
-proc assert_destination_id_not_miden_id
-    # change the endianness to BE to compare it with the Miden network ID
+proc assert_destination_id_not_miden_id(dest_network_id: NetworkId)
+    # change the endianness to BE to compare it with the network ID
     exec.utils::swap_u32_bytes
     # => [destination_network_id_be]
 
-    # assert that the destination network ID is not equal to the Miden network ID
-    push.MIDEN_NETWORK_ID neq assert.err=ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN
+    # assert that the destination network ID is not equal to the bridge's configured network ID
+    exec.bridge_config::load_network_id
+    # => [network_id, destination_network_id_be]
+
+    neq assert.err=ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN
     # => []
 end
 
@@ -286,8 +296,8 @@ end
 #! - The faucet is not registered in the faucet registry.
 #!
 #! Invocation: exec
-proc convert_asset
-    swapw exec.fungible_asset::value_into_amount movdn.4
+proc convert_asset(asset: Asset) -> ConvertedAsset
+    swapw exec.fungible_asset::value_into_amount_unchecked movdn.4
     # => [ASSET_ID, amount]
 
     exec.asset::id_into_faucet_id
@@ -301,15 +311,15 @@ proc convert_asset
     exec.bridge_config::get_faucet_conversion_info
     # => [addr0, addr1, addr2, addr3, addr4, origin_network, scale, amount]
 
-    # Bring [amount, scale] to the top for scale_native_amount_to_u256.
+    # Bring [amount, scale] to the top for scale_asset_amount_to_u256.
     movup.6
     # => [scale, addr0, addr1, addr2, addr3, addr4, origin_network, amount]
 
     movup.7
     # => [amount, scale, addr0, addr1, addr2, addr3, addr4, origin_network]
 
-    exec.asset_conversion::scale_native_amount_to_u256
-    exec.asset_conversion::reverse_limbs_and_change_byte_endianness
+    exec.asset_amount::scale_asset_amount_to_u256
+    exec.asset_amount::reverse_limbs_and_change_byte_endianness
     # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network]
 
     # Byte-swap origin_network to match the EVM-side big-endian encoding used in the leaf layout.
@@ -337,7 +347,7 @@ end
 #! ]
 #!
 #! Invocation: exec
-proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
+proc add_leaf_bridge(leaf_data_start_ptr: ptr<LeafData>)
     exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI]
 
@@ -399,7 +409,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc load_let_frontier_selective
+proc load_let_frontier_selective()
     # 1. Load num_leaves from its value slot
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.active_account::get_item
@@ -451,7 +461,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc save_let_root_and_num_leaves
+proc save_let_root_and_num_leaves(root: Keccak256Digest, new_leaf_count: u32)
     # 1. Save root lo word to its value slot
     push.LET_ROOT_LO_SLOT[0..2]
     exec.native_account::set_item
@@ -505,7 +515,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc save_let_frontier_selective
+proc save_let_frontier_selective()
     # Get old_num_leaves = new_num_leaves - 1
     push.LET_FRONTIER_MEM_PTR mem_load sub.1
     # => [old_num_leaves]
@@ -548,7 +558,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFormat)
+proc write_address_to_memory(mem_ptr: ptr<EthereumAddress>, address: EthereumAddress)
     dup movdn.6 mem_store movup.4 add.1
     # => [mem_ptr+1, address(4)]
 
@@ -578,7 +588,7 @@ end
 #! - num_leaves is the number of leaves in the Local Exit Tree, post-append.
 #!
 #! Invocation: exec
-proc compute_burn_note_serial_num
+proc compute_burn_note_serial_num(asset_id: AssetId) -> NoteSerialNumber
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_ID]
 
@@ -608,7 +618,7 @@ end
 #!
 #! Invocation: exec
 @locals(14)
-proc create_burn_note
+proc create_burn_note(asset: Asset)
     swapw dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
@@ -637,7 +647,7 @@ proc create_burn_note
     procref.::miden::standards::notes::burn::main swapw
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
-    push.BURN_NOTE_NUM_STORAGE_ITEMS push.0
+    push.BURN_NOTE_NUM_STORAGE_ITEMS locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::compute_and_store_recipient
@@ -682,7 +692,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc lock_asset
+proc lock_asset(asset: Asset)
     exec.native_account::add_asset
     # => [FINAL_ASSET_VALUE]
 

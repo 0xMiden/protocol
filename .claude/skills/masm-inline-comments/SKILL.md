@@ -14,7 +14,7 @@ Inline comments (single `#`) should begin with a lowercase letter.
 ```masm
 # good: lowercase start
 exec.native_account::remove_asset
-# => [ASSET, note_idx, pad(11)]
+# => [FINAL_ASSET_VALUE, note_idx, pad(11)]
 
 # Bad: uppercase start (avoid)
 # Remove the asset from the account
@@ -31,7 +31,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 - Standard control flow: `if.true`, `while.true`, `end`
 
 **Do comment:**
-- Stack state after complex operations: `# => [ptr, ASSET, end_ptr]`
+- Stack state after complex operations: `# => [ptr, ASSET_ID, ASSET_VALUE, end_ptr]`
 - Purpose of a code block: `# compute the pointer at which we should stop iterating`
 - Non-obvious logic or business rules
 - TODO items and references to external specs
@@ -50,11 +50,16 @@ This pairs each stack state visually with the operation that produced it and let
 **Good:**
 
 ```masm
-exec.native_account::remove_asset
-# => [ASSET, note_idx, pad(11)]
+# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-dupw dup.8 movdn.4
-# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+dupw.1 dupw.1
+# => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+exec.native_account::remove_asset
+# => [FINAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+dropw
+# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 ```
 
 **Also OK (no blank line before `end` or control flow):**
@@ -69,7 +74,7 @@ end
 An inline `# => [...]` tracker uses the same item names, capitalization, and `(N)` span notation as the `#!` doc block for the enclosing procedure (see masm-doc-comments skill):
 
 - Single-felt names stay lowercase: `note_idx`, `final_nonce`.
-- Word names stay UPPERCASE: `ASSET`, `RECIPIENT`.
+- Word names stay UPPERCASE: `ASSET_ID`, `ASSET_VALUE`, `RECIPIENT`.
 - `(N)` spans stay lowercase: `pad(12)`, `foreign_procedure_inputs(15)`.
 
 Composite names like `account_id_{suffix,prefix}` are a doc-block shorthand for a group of felts. In inline trackers they decompose into their individual felts since each felt occupies one stack slot:
@@ -86,9 +91,38 @@ end
 
 Use the vocabulary already established in the surrounding code and doc comments. Do not coin new terms or colloquialisms for a concept that already has a name — a value written to a local is "stored", not "stashed". This applies to inline comments and to constant-header comments.
 
-### 6. Comment the code, not the change
+### 6. Comment the code, not the change or the design
 
 Inline comments explain what the code does for a future reader, not why a particular PR made a change. Avoid PR narrative and framing such as "this is the X that prevents Y"; describe the operation and its purpose as the code stands.
+
+An inline comment states, in one line, what the next instruction block does or which invariant it relies on. It does not:
+
+- explain why the design is the way it is, or which alternatives were rejected
+- restate reasoning from a PR review or from the procedure's `#!` doc comment
+- justify the ordering of steps with rationale; that belongs in the doc comment (see masm-doc-comments skill)
+
+**Avoid (implementation detail and rationale in an inline comment):**
+
+```masm
+# one slot beyond the approvers, for the guardian signature. It is unconditional because the
+# rotation path verifies no guardian signature but scans every account procedure instead, which
+# the slot also covers.
+add.1
+
+# settle the sponsorship obligation first, in pay_fee's order; the bound below guards the
+# host-supplied rate, which the sponsorship amounts do not depend on
+exec.fees::create_network_note_sponsorships drop
+```
+
+**Good:**
+
+```masm
+# one slot beyond the approvers, for the guardian signature
+add.1
+
+# settle the sponsorship obligation
+exec.fees::create_network_note_sponsorships drop
+```
 
 ### 7. Accessing a word's individual elements
 
@@ -107,15 +141,18 @@ dup
 **Good:**
 
 ```masm
-# remove the asset from the account
-exec.native_account::remove_asset
-# => [ASSET, note_idx, pad(11)]
+# preserve the asset before removing it from the account
+dupw.1 dupw.1
+# => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-dupw dup.8 movdn.4
-# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+exec.native_account::remove_asset
+# => [FINAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+dropw
+# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
 exec.output_note::add_asset
-# => [ASSET, note_idx, pad(11)]
+# => [pad(16)]
 ```
 
 **Avoid:**

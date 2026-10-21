@@ -3,7 +3,10 @@ extern crate alloc;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_agglayer::errors::ERR_FAUCET_NOT_REGISTERED;
+use miden_agglayer::errors::{
+    ERR_FAUCET_NOT_REGISTERED,
+    ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET,
+};
 use miden_agglayer::{
     AggLayerBridge,
     AgglayerBridgeError,
@@ -11,7 +14,6 @@ use miden_agglayer::{
     ConfigAggBridgeNote,
     ConversionMetadata,
     DeregisterAggFaucetNote,
-    EthAddress,
     MetadataHash,
 };
 use miden_protocol::account::auth::AuthScheme;
@@ -27,10 +29,28 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::access::PausableManager;
+use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
+use miden_standards::interop::eth::EthAddress;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::create_existing_bridge_account_with_roles;
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_account_id,
+    create_existing_bridge_account_with_roles,
+    setup_bridge,
+};
+
+const USDC_TOKEN_ADDR: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+
+fn usdc_token_address() -> EthAddress {
+    EthAddress::from_hex(USDC_TOKEN_ADDR).expect("USDC token address should be valid")
+}
+
+fn usdc_metadata_hash() -> MetadataHash {
+    MetadataHash::from_token_info("USD Coin", "USDC", 6)
+}
 
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
@@ -44,13 +64,13 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
 }
 
 /// Pins the bridge's procedure-to-role authorization map: each role-gated procedure must map to
-/// the expected role. Resolving the procedure roots also exercises the component-library lookup,
+/// the expected role. Resolving the procedure roots also exercises the component-package lookup,
 /// so a broken namespace or missing export would fail here.
 #[test]
 fn test_bridge_procedure_roles_mapping() {
     let roles = AggLayerBridge::procedure_roles();
 
-    assert_eq!(roles.len(), 5, "exactly the five role-gated procedures must be mapped");
+    assert_eq!(roles.len(), 7, "exactly the seven role-gated procedures must be mapped");
     assert_eq!(
         roles.get(&AggLayerBridge::register_faucet_root()),
         Some(&AggLayerBridge::faucet_manager_role()),
@@ -70,6 +90,15 @@ fn test_bridge_procedure_roles_mapping() {
     assert_eq!(
         roles.get(&AggLayerBridge::remove_ger_root()),
         Some(&AggLayerBridge::ger_remover_role()),
+    );
+    assert_eq!(
+        roles.get(&ConstantFeeManager::set_note_fee_root()),
+        Some(&AggLayerBridge::fee_manager_role()),
+    );
+    assert_eq!(roles.get(&PausableManager::pause_root()), Some(&AggLayerBridge::pauser_role()),);
+    assert!(
+        !roles.contains_key(&PausableManager::unpause_root()),
+        "unpause must fall back to ADMIN",
     );
 }
 
@@ -103,9 +132,13 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -124,11 +157,10 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let scale = 0u8;
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_to_register,
@@ -147,9 +179,11 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // CONSUME THE CONFIG_AGG_BRIDGE NOTE WITH THE BRIDGE ACCOUNT
-    let tx_context =
-        mock_chain.build_tx_context(bridge_account.id(), &[], &[config_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(config_note)
+        .build()?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // VERIFY FAUCET IS NOW REGISTERED
     let mut updated_bridge = bridge_account.clone();
@@ -196,9 +230,13 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -209,12 +247,11 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     let faucet_network_2 =
         AccountId::builder().account_type(AccountType::Public).build_with_seed([22; 32]);
 
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network_1: u32 = 1;
     let origin_network_2: u32 = 2;
 
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
     let config_note_1 = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_network_1,
@@ -249,14 +286,16 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     // Consume the two registration notes in two separate transactions so each one writes its
     // own delta to the bridge account.
     let tx1 = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note_1.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note_1.id())
         .build()?;
     let executed_1 = tx1.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_1)?;
     mock_chain.prove_next_block()?;
 
     let tx2 = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note_2.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note_2.id())
         .build()?;
     let executed_2 = tx2.execute().await?;
 
@@ -312,9 +351,13 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -326,14 +369,11 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_to_register,
-            origin_token_address: EthAddress::from_hex(
-                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-            )
-            .unwrap(),
+            origin_token_address: usdc_token_address(),
             scale: 0,
             origin_network: 1,
             is_native: false,
-            metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+            metadata_hash: usdc_metadata_hash(),
         },
         ger_injector.id(),
         bridge_account.id(),
@@ -344,7 +384,8 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], &[config_note])?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(config_note)
         .build()?
         .execute()
         .await;
@@ -363,25 +404,33 @@ fn bridge_roles_new_rejects_empty_role() {
             .account_type(AccountType::Public)
             .build_with_seed([seed; 32])
     };
-    let (a, b, c) = (account(1), account(2), account(3));
+    let (a, b, c, d, e) = (account(1), account(2), account(3), account(4), account(5));
 
     // A non-empty set for every role succeeds.
     assert!(
-        BridgeRoles::new(BTreeSet::from([a]), BTreeSet::from([b]), BTreeSet::from([c]),).is_ok()
+        BridgeRoles::new(
+            BTreeSet::from([a]),
+            BTreeSet::from([b]),
+            BTreeSet::from([c]),
+            BTreeSet::from([d]),
+            BTreeSet::from([e]),
+        )
+        .is_ok()
     );
 
     // An empty set for any single role is rejected.
-    for empty in 0..3 {
-        let sets: [BTreeSet<AccountId>; 3] = core::array::from_fn(|i| {
+    for empty in 0..5 {
+        let sets: [BTreeSet<AccountId>; 5] = core::array::from_fn(|i| {
             if i == empty {
                 BTreeSet::new()
             } else {
                 BTreeSet::from([a])
             }
         });
-        let [faucet_managers, ger_injectors, ger_removers] = sets;
-        let err = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers).unwrap_err();
-        assert!(matches!(err, AgglayerBridgeError::EmptyBridgeRole(_)));
+        let [faucet_managers, ger_injectors, ger_removers, fee_managers, pausers] = sets;
+        let result =
+            BridgeRoles::new(faucet_managers, ger_injectors, ger_removers, fee_managers, pausers);
+        assert!(matches!(result, Err(AgglayerBridgeError::EmptyBridgeRole(_))));
     }
 }
 
@@ -392,6 +441,100 @@ fn faucet_metadata_key(faucet: AccountId, sub_key: u8) -> StorageMapKey {
     StorageMapKey::from_raw(
         [Felt::from(sub_key), Felt::ZERO, faucet.suffix(), faucet.prefix().as_felt()].into(),
     )
+}
+
+/// Encodes a faucet account ID in the value layout used by `token_registry_map`.
+fn faucet_id_value(faucet: AccountId) -> Word {
+    [Felt::ZERO, Felt::ZERO, faucet.suffix(), faucet.prefix().as_felt()].into()
+}
+
+/// A token identity already assigned to one faucet cannot be reassigned to another faucet.
+#[tokio::test]
+async fn register_faucet_rejects_token_key_owned_by_another_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let faucet_a = AccountId::dummy(
+        [11; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let faucet_b = AccountId::dummy(
+        [22; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let origin_token_address = usdc_token_address();
+    let origin_network = 1;
+    let metadata_hash = usdc_metadata_hash();
+
+    let register_a = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_a,
+            origin_token_address,
+            scale: 0,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        setup.faucet_manager.id(),
+        setup.bridge.id(),
+        builder.rng_mut(),
+    )?;
+    let register_b = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_b,
+            origin_token_address,
+            scale: 0,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        setup.faucet_manager.id(),
+        setup.bridge.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(register_a.clone()));
+    builder.add_output_note(RawOutputNote::Full(register_b.clone()));
+    let mut mock_chain = builder.build()?;
+
+    let register_a_tx = mock_chain
+        .build_transaction(setup.bridge.id())
+        .authenticated_input_note(register_a.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&register_a_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .authenticated_input_note(register_b.id())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET);
+
+    let bridge = mock_chain.committed_account(setup.bridge.id())?;
+    let token_key = token_registry_key(&origin_token_address, origin_network);
+    assert_eq!(
+        bridge
+            .storage()
+            .get_map_item(AggLayerBridge::token_registry_map_slot_name(), token_key)?,
+        faucet_id_value(faucet_a),
+        "the original faucet must retain the token key"
+    );
+    let faucet_b_key = StorageMapKey::from_raw(AccountIdKey::new(faucet_b).as_word());
+    assert_eq!(
+        bridge
+            .storage()
+            .get_map_item(AggLayerBridge::faucet_registry_map_slot_name(), faucet_b_key)?,
+        [Felt::ZERO; 4].into(),
+        "the rejected faucet must not be registered"
+    );
+
+    Ok(())
 }
 
 /// Tests that a DEREGISTER_AGG_FAUCET note clears a previously-registered faucet from the faucet
@@ -420,9 +563,13 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -432,10 +579,9 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     // ---- Build registration + deregistration notes ----
     let config_note = ConfigAggBridgeNote::create(
@@ -464,7 +610,8 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 
     // ---- TX0: consume CONFIG_AGG_BRIDGE to register ----
     let register_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?;
     let register_executed = register_tx.execute().await?;
 
@@ -511,7 +658,8 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 
     // ---- TX1: consume DEREGISTER_AGG_FAUCET to clear ----
     let deregister_tx = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()?;
     let deregister_executed = deregister_tx.execute().await?;
 
@@ -561,9 +709,13 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -573,10 +725,9 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
@@ -603,7 +754,8 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
     let mut mock_chain = builder.build()?;
 
     let register_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await?;
@@ -627,7 +779,8 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
     mock_chain.prove_next_block()?;
 
     let deregister_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()?
         .execute()
         .await?;
@@ -690,9 +843,13 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -709,14 +866,11 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         Some(ConfigAggBridgeNote::create(
             ConversionMetadata {
                 faucet_account_id: faucet_id,
-                origin_token_address: EthAddress::from_hex(
-                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                )
-                .unwrap(),
+                origin_token_address: usdc_token_address(),
                 scale: 0,
                 origin_network: 1,
                 is_native: false,
-                metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+                metadata_hash: usdc_metadata_hash(),
             },
             faucet_manager.id(),
             bridge_account.id(),
@@ -757,7 +911,8 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 
     if let Some(note) = config_note {
         let register_executed = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
             .build()?
             .execute()
             .await?;
@@ -767,7 +922,8 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 
     if let Some(note) = prior_deregister_note {
         let deregister_executed = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
             .build()?
             .execute()
             .await?;
@@ -776,7 +932,8 @@ async fn test_deregister_agg_faucet_rejects_invalid(
     }
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(deregister_note.id())
         .build()?
         .execute()
         .await;

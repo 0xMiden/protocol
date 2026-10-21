@@ -10,12 +10,17 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::{
+    ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT,
+    ERR_NOTE_METADATA_UNSUPPORTED_VERSION,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachmentHeader,
     NoteAttachmentScheme,
     NoteAttachments,
+    NoteId,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -43,15 +48,15 @@ use crate::{
     AccountState,
     Auth,
     MockChain,
+    MockTransaction,
     TestTransactionBuilder,
-    TransactionContext,
-    TxContextInput,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 
 #[tokio::test]
 async fn test_note_setup() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -66,7 +71,8 @@ async fn test_note_setup() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_transaction(account.id())
+            .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
 
@@ -86,16 +92,16 @@ async fn test_note_setup() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    note_setup_stack_assertions(&exec_output, &tx_context);
+    note_setup_stack_assertions(&exec_output, &mock_tx);
     note_setup_memory_assertions(&exec_output);
     Ok(())
 }
 
 #[tokio::test]
 async fn test_note_script_and_note_args() -> anyhow::Result<()> {
-    let mut tx_context = {
+    let mut mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -116,12 +122,8 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
         mock_chain.prove_next_block().unwrap();
 
         mock_chain
-            .build_tx_context(
-                TxContextInput::AccountId(account.id()),
-                &[],
-                &[p2id_note_1, p2id_note_2],
-            )
-            .unwrap()
+            .build_transaction(account.id())
+            .unauthenticated_input_notes([p2id_note_1, p2id_note_2])
             .build()
             .unwrap()
     };
@@ -154,15 +156,15 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
 
     let note_args = [Word::from([91, 91, 91, 91u32]), Word::from([92, 92, 92, 92u32])];
     let note_args_map = BTreeMap::from([
-        (tx_context.input_notes().get_note(0).note().id(), note_args[1]),
-        (tx_context.input_notes().get_note(1).note().id(), note_args[0]),
+        (mock_tx.input_notes().get_note(0).note().id(), note_args[1]),
+        (mock_tx.input_notes().get_note(1).note().id(), note_args[0]),
     ]);
 
-    let tx_args = TransactionArgs::new(tx_context.tx_args().advice_inputs().clone().map)
+    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().map().clone())
         .with_note_args(note_args_map);
 
-    tx_context.set_tx_args(tx_args);
-    let exec_output = tx_context.execute_code(code).await.unwrap();
+    mock_tx.set_tx_args(tx_args);
+    let exec_output = mock_tx.execute_code(code).await.unwrap();
 
     assert_eq!(exec_output.get_stack_word(0), note_args[0]);
     assert_eq!(exec_output.get_stack_word(4), note_args[1]);
@@ -170,7 +172,7 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn note_setup_stack_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn note_setup_stack_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     // assert that the stack contains the note storage at the end of execution
     assert_eq!(
         exec_output.get_stack_word(0),
@@ -189,9 +191,60 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
     );
 }
 
+/// Regression test.
+/// The note IDs reported through `TransactionMeasurements` must be the input notes' actual IDs.
+///
+/// The active note ID is read out of the note's memory segment, where the ID sits at
+/// `INPUT_NOTE_ID_OFFSET`; reading the segment's base word instead yields the note's details
+/// commitment.
+#[tokio::test]
+async fn active_note_id_is_reported_for_every_executed_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let p2id_note_1 = builder.add_p2id_note(
+        ACCOUNT_ID_SENDER.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(150)],
+        NoteType::Public,
+    )?;
+    let p2id_note_2 = builder.add_p2id_note(
+        ACCOUNT_ID_SENDER.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(300)],
+        NoteType::Public,
+    )?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes([p2id_note_1.clone(), p2id_note_2.clone()])
+        .build()?
+        .execute()
+        .await?;
+
+    let note_execution = &executed.measurements().note_execution;
+    assert_eq!(note_execution.len(), 2, "both input notes should have been measured");
+    assert_eq!(
+        note_execution[0].0,
+        p2id_note_1.id(),
+        "reported IDs should be the input notes' IDs, in consumption order",
+    );
+    assert_eq!(note_execution[1].0, p2id_note_2.id());
+    assert_ne!(
+        note_execution[0].0,
+        NoteId::from_raw(p2id_note_1.details_commitment().as_word()),
+        "the details commitment must not be mistaken for the note ID",
+    );
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     // Create test script and serial number
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
@@ -245,7 +298,7 @@ async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
         serial_num = serial_num,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     // Create expected NoteStorage for each test case
     let inputs_4 = word_1.to_vec();
@@ -286,7 +339,7 @@ async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     // Define test values as Words
     let word_1 = Word::from([1, 2, 3, 4u32]);
@@ -344,7 +397,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
         addr_3 = BASE_ADDR + 12,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     let mut inputs_5 = word_1.to_vec();
     inputs_5.push(word_2[0]);
@@ -370,9 +423,9 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_build_metadata() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
-    let sender = tx_context.account().id();
+    let sender = mock_tx.account().id();
     let receiver = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
         .map_err(|e| anyhow::anyhow!("Failed to convert account ID: {}", e))?;
 
@@ -400,7 +453,7 @@ async fn test_build_metadata() -> anyhow::Result<()> {
             tag = test_metadata.tag(),
         );
 
-        let exec_output = tx_context.execute_code(&code).await?;
+        let exec_output = mock_tx.execute_code(&code).await?;
 
         let metadata_word = exec_output.get_stack_word(0);
 
@@ -458,7 +511,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .note_storage([Felt::from(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
         .build()?;
 
     builder.add_output_note(RawOutputNote::Full(timelock_note.clone()));
@@ -470,11 +523,12 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 
     // Attempt to consume note too early.
     // ----------------------------------------------------------------------------------------
-    let tx_context = mock_chain
-        .build_tx_context(account.clone(), &[timelock_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(timelock_note.id())
         .with_source_manager(source_manager.clone())
         .build()?;
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, TIMESTAMP_ERROR);
 
     // Consume note where lock timestamp matches the block timestamp.
@@ -483,8 +537,11 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .prove_next_block_at(lock_timestamp)
         .context("failed to prove next block at lock timestamp")?;
 
-    let tx_context = mock_chain.build_tx_context(account, &[timelock_note.id()], &[])?.build()?;
-    tx_context.execute().await?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .authenticated_input_note(timelock_note.id())
+        .build()?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -531,11 +588,12 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(note_with_pub_key.clone()));
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(target_account, &[note_with_pub_key.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(target_account)
+        .authenticated_input_note(note_with_pub_key.id())
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
     Ok(())
 }
 
@@ -688,6 +746,84 @@ async fn test_find_attachment_idx(
     if expected_found {
         let attachment_idx = exec_output.get_stack_element(1);
         assert_eq!(attachment_idx, Felt::from(expected_idx), "attachment_idx mismatch");
+    }
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::private(NoteType::Private)]
+#[case::public(NoteType::Public)]
+#[tokio::test]
+async fn test_metadata_into_version(#[case] note_type: NoteType) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let partial_metadata = PartialNoteMetadata::new(sender, note_type);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let metadata_word = metadata.to_metadata_word();
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::note
+
+        begin
+            push.{metadata_word}
+            exec.note::metadata_into_version
+            # => [version, pad(16)]
+
+            # truncate the stack
+            swap drop
+        end
+        ",
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    // The metadata encoder only ever writes version 1.
+    assert_eq!(exec_output.get_stack_element(0), Felt::from(1u8));
+
+    Ok(())
+}
+
+/// Tests that `validate_metadata` accepts version 1 metadata and rejects metadata with an unknown
+/// version or with its reserved bit set.
+#[rstest::rstest]
+#[case::valid_private(0b0000_0001, None)]
+#[case::valid_public(0b0100_0001, None)]
+#[case::version_zero(0b0000_0000, Some(ERR_NOTE_METADATA_UNSUPPORTED_VERSION))]
+#[case::unknown_version(0b0000_0010, Some(ERR_NOTE_METADATA_UNSUPPORTED_VERSION))]
+#[case::reserved_bit_set(0b1000_0001, Some(ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT))]
+#[tokio::test]
+async fn test_validate_note_metadata(
+    #[case] metadata_byte: u8,
+    #[case] expected_err: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let partial_metadata = PartialNoteMetadata::new(sender, NoteType::Public);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let mut metadata_word = metadata.to_metadata_word();
+
+    // The lower byte of the sender ID suffix is zero by construction, so it can be replaced by the
+    // byte holding the version, note type and reserved bit.
+    metadata_word[0] = sender.suffix() + Felt::from(metadata_byte);
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::note
+
+        begin
+            push.{metadata_word}
+            exec.note::validate_metadata
+        end
+        ",
+    );
+
+    let exec_result = CodeExecutor::with_default_host().run(&code).await;
+
+    match expected_err {
+        Some(err) => assert_execution_error!(exec_result, err),
+        None => {
+            exec_result.context("version 1 metadata should be accepted")?;
+        },
     }
 
     Ok(())

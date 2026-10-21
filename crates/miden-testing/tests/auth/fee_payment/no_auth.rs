@@ -25,7 +25,7 @@ async fn execute_no_auth_tx(
     input_note: Option<Note>,
 ) -> anyhow::Result<(Account, Result<ExecutedTransaction, miden_tx::TransactionExecutorError>)> {
     let account = AccountBuilder::new([11; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_assets(assets)
         .account_type(AccountType::Public)
@@ -39,7 +39,12 @@ async fn execute_no_auth_tx(
     let mock_chain = builder.build()?;
 
     let notes: Vec<Note> = input_note.into_iter().collect();
-    let result = mock_chain.build_tx_context(account.id(), &[], &notes)?.build()?.execute().await;
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes(notes)
+        .build()?
+        .execute()
+        .await;
 
     Ok((account, result))
 }
@@ -65,9 +70,7 @@ async fn no_auth_pays_fee_note() -> anyhow::Result<()> {
     // the note carries the native fee asset, covering the computed fee
     let assets = output_note.assets();
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(paid_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid_asset = asset.unwrap_fungible();
     assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
     assert!(paid_asset.amount() >= executed_transaction.compute_fee());
 

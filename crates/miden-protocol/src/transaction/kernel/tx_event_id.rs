@@ -27,6 +27,9 @@ pub enum TransactionEventId {
     AccountVaultBeforeRemoveAsset = ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_ID,
     AccountVaultAfterRemoveAsset = ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID,
 
+    AccountVaultBeforeMintAsset = ACCOUNT_VAULT_BEFORE_MINT_ASSET_ID,
+    AccountVaultBeforeBurnAsset = ACCOUNT_VAULT_BEFORE_BURN_ASSET_ID,
+
     AccountBeforeAssetDeltaComputation = ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID,
     AccountOnAssetDeltaComputation = ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID,
 
@@ -45,6 +48,8 @@ pub enum TransactionEventId {
 
     AccountPushProcedureIndex = ACCOUNT_PUSH_PROCEDURE_INDEX_ID,
 
+    AccountBeforeCodeUpgrade = ACCOUNT_BEFORE_CODE_UPGRADE_ID,
+
     NoteBeforeCreated = NOTE_BEFORE_CREATED_ID,
     NoteAfterCreated = NOTE_AFTER_CREATED_ID,
 
@@ -52,6 +57,12 @@ pub enum TransactionEventId {
     NoteAfterAddAsset = NOTE_AFTER_ADD_ASSET_ID,
 
     NoteBeforeAddAttachment = NOTE_BEFORE_ADD_ATTACHMENT_ID,
+
+    InputNoteIndexLookup = INPUT_NOTE_INDEX_LOOKUP_ID,
+
+    TxLogAdded = TX_LOG_ADDED_ID,
+
+    TxBeforeBlockWitnessLoad = TX_BEFORE_BLOCK_WITNESS_LOAD_ID,
 
     AuthRequest = AUTH_REQUEST_ID,
 
@@ -85,10 +96,8 @@ impl TransactionEventId {
     ///
     /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
-        let is_unprivileged = matches!(
-            self,
-            Self::AuthRequest | Self::Unauthorized | Self::LinkMapSet | Self::LinkMapGet
-        );
+        let is_unprivileged =
+            matches!(self, Self::AuthRequest | Self::InputNoteIndexLookup | Self::Unauthorized);
         !is_unprivileged
     }
 
@@ -105,6 +114,8 @@ impl TransactionEventId {
             Self::AccountVaultAfterAddAsset => &ACCOUNT_VAULT_AFTER_ADD_ASSET_NAME,
             Self::AccountVaultBeforeRemoveAsset => &ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_NAME,
             Self::AccountVaultAfterRemoveAsset => &ACCOUNT_VAULT_AFTER_REMOVE_ASSET_NAME,
+            Self::AccountVaultBeforeMintAsset => &ACCOUNT_VAULT_BEFORE_MINT_ASSET_NAME,
+            Self::AccountVaultBeforeBurnAsset => &ACCOUNT_VAULT_BEFORE_BURN_ASSET_NAME,
             Self::AccountBeforeAssetDeltaComputation => {
                 &ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_NAME
             },
@@ -118,11 +129,15 @@ impl TransactionEventId {
             Self::AccountBeforeIncrementNonce => &ACCOUNT_BEFORE_INCREMENT_NONCE_NAME,
             Self::AccountAfterIncrementNonce => &ACCOUNT_AFTER_INCREMENT_NONCE_NAME,
             Self::AccountPushProcedureIndex => &ACCOUNT_PUSH_PROCEDURE_INDEX_NAME,
+            Self::AccountBeforeCodeUpgrade => &ACCOUNT_BEFORE_CODE_UPGRADE_NAME,
             Self::NoteBeforeCreated => &NOTE_BEFORE_CREATED_NAME,
             Self::NoteAfterCreated => &NOTE_AFTER_CREATED_NAME,
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
             Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
+            Self::InputNoteIndexLookup => &INPUT_NOTE_INDEX_LOOKUP_NAME,
+            Self::TxLogAdded => &TX_LOG_ADDED_NAME,
+            Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
@@ -168,6 +183,13 @@ impl TryFrom<EventId> for TransactionEventId {
                 Ok(TransactionEventId::AccountVaultAfterRemoveAsset)
             },
 
+            ACCOUNT_VAULT_BEFORE_MINT_ASSET_ID => {
+                Ok(TransactionEventId::AccountVaultBeforeMintAsset)
+            },
+            ACCOUNT_VAULT_BEFORE_BURN_ASSET_ID => {
+                Ok(TransactionEventId::AccountVaultBeforeBurnAsset)
+            },
+
             ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID => {
                 Ok(TransactionEventId::AccountOnAssetDeltaComputation)
             },
@@ -200,6 +222,8 @@ impl TryFrom<EventId> for TransactionEventId {
 
             ACCOUNT_PUSH_PROCEDURE_INDEX_ID => Ok(TransactionEventId::AccountPushProcedureIndex),
 
+            ACCOUNT_BEFORE_CODE_UPGRADE_ID => Ok(TransactionEventId::AccountBeforeCodeUpgrade),
+
             NOTE_BEFORE_CREATED_ID => Ok(TransactionEventId::NoteBeforeCreated),
             NOTE_AFTER_CREATED_ID => Ok(TransactionEventId::NoteAfterCreated),
 
@@ -207,6 +231,11 @@ impl TryFrom<EventId> for TransactionEventId {
             NOTE_AFTER_ADD_ASSET_ID => Ok(TransactionEventId::NoteAfterAddAsset),
 
             NOTE_BEFORE_ADD_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeAddAttachment),
+
+            INPUT_NOTE_INDEX_LOOKUP_ID => Ok(TransactionEventId::InputNoteIndexLookup),
+
+            TX_LOG_ADDED_ID => Ok(TransactionEventId::TxLogAdded),
+            TX_BEFORE_BLOCK_WITNESS_LOAD_ID => Ok(TransactionEventId::TxBeforeBlockWitnessLoad),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 

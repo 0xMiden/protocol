@@ -21,5 +21,5 @@ pub(super) mod note_tracker;
 mod kernel;
 pub use kernel::BatchKernel;
 
-mod output;
-pub use output::BatchOutputs;
+mod batch_outputs;
+pub use batch_outputs::BatchOutputs;

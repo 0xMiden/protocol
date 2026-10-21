@@ -1,24 +1,32 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
-account_component_code!(
-    ALLOWLIST_MANAGER_CODE,
+account_component_package!(
+    ALLOWLIST_MANAGER_PACKAGE,
     "miden-standards-faucets-policies-transfer-allowlist-manager.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`AllowlistManager::NAME`], which mirrors the standards-side MASM module path.
+const ALLOWLIST_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::allowlist::manager";
+
 procedure_root!(
     ALLOWLIST_MANAGER_ALLOW_ACCOUNT,
-    AllowlistManager::NAME,
+    ALLOWLIST_MANAGER_LIBRARY_PATH,
     AllowlistManager::ALLOW_ACCOUNT_PROC_NAME,
     AllowlistManager::code()
 );
 
 procedure_root!(
     ALLOWLIST_MANAGER_DISALLOW_ACCOUNT,
-    AllowlistManager::NAME,
+    ALLOWLIST_MANAGER_LIBRARY_PATH,
     AllowlistManager::DISALLOW_ACCOUNT_PROC_NAME,
     AllowlistManager::code()
 );
@@ -47,14 +55,14 @@ pub struct AllowlistManager;
 impl AllowlistManager {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::allowlist::manager";
+        "miden::standards::faucets::policies::transfer::allowlist::manager";
 
     const ALLOW_ACCOUNT_PROC_NAME: &'static str = "allow_account";
     const DISALLOW_ACCOUNT_PROC_NAME: &'static str = "disallow_account";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &ALLOWLIST_MANAGER_CODE
+        &ALLOWLIST_MANAGER_PACKAGE.code
     }
 
     /// Returns the procedure root of the `allow_account` procedure exposed by this component.
@@ -73,10 +81,7 @@ impl AllowlistManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description(
-            "Authority-gated allowlist admin: wraps `allowlist::allow_account` / \
-             `disallow_account` with the account-wide Authority component.",
-        )
+        ALLOWLIST_MANAGER_PACKAGE.metadata.clone()
     }
 }
 

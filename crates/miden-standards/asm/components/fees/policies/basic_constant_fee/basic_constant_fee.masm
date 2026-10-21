@@ -1,0 +1,9 @@
+# The MASM code of the `basic_constant_fee` Fee Policy Account Component.
+#
+# Exposes the `compute_note_fee` procedure so its MAST root can be registered as the active
+# (or allowed) fee policy of an `AuthNetworkAccount`. Owns the `fee_schedule` slot; the fee asset
+# ID is read from the fee-policy storage of the `AuthNetworkAccount` this policy is installed on.
+#
+# See the `BasicConstantFeePolicy` Rust type's documentation for more details.
+
+pub use {compute_note_fee} from miden::standards::fees::policies::basic_constant_fee

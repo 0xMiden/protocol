@@ -1,24 +1,32 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
-account_component_code!(
-    BLOCKLIST_MANAGER_CODE,
+account_component_package!(
+    BLOCKLIST_MANAGER_PACKAGE,
     "miden-standards-faucets-policies-transfer-blocklist-manager.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`BlocklistManager::NAME`], which mirrors the standards-side MASM module path.
+const BLOCKLIST_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::blocklist::manager";
+
 procedure_root!(
     BLOCKLIST_MANAGER_BLOCK_ACCOUNT,
-    BlocklistManager::NAME,
+    BLOCKLIST_MANAGER_LIBRARY_PATH,
     BlocklistManager::BLOCK_ACCOUNT_PROC_NAME,
     BlocklistManager::code()
 );
 
 procedure_root!(
     BLOCKLIST_MANAGER_UNBLOCK_ACCOUNT,
-    BlocklistManager::NAME,
+    BLOCKLIST_MANAGER_LIBRARY_PATH,
     BlocklistManager::UNBLOCK_ACCOUNT_PROC_NAME,
     BlocklistManager::code()
 );
@@ -47,14 +55,14 @@ pub struct BlocklistManager;
 impl BlocklistManager {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::blocklist::manager";
+        "miden::standards::faucets::policies::transfer::blocklist::manager";
 
     const BLOCK_ACCOUNT_PROC_NAME: &'static str = "block_account";
     const UNBLOCK_ACCOUNT_PROC_NAME: &'static str = "unblock_account";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BLOCKLIST_MANAGER_CODE
+        &BLOCKLIST_MANAGER_PACKAGE.code
     }
 
     /// Returns the procedure root of the `block_account` procedure exposed by this component.
@@ -73,10 +81,7 @@ impl BlocklistManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description(
-            "Authority-gated blocklist admin: wraps `blocklist::block_account` / \
-             `unblock_account` with the account-wide Authority component.",
-        )
+        BLOCKLIST_MANAGER_PACKAGE.metadata.clone()
     }
 }
 

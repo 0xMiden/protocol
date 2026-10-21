@@ -21,9 +21,13 @@ implementation are called out inline with `TODO (Future)` markers.
 |--------|-------------|--------------|
 | **User** | End-user Miden account that holds assets and initiates bridge-out deposits, or receives assets from a bridge-in claim. | Any account with `basic_wallet` component |
 | **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with a single `bridge` component |
-| **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
-| **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
-| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
+| **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, owned by the bridge |
+| **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Creates notes targeting bridge/faucet |
+| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Creates config notes |
+| **Bridge Admin (`BRIDGE_ADMIN`)** (offchain) | Holds the bridge account's built-in `ADMIN` role. Manages bridge roles, restores a paused bridge, and controls allowlists and fee-policy selection. | Creates RBAC_CONFIG, PAUSE_CONFIG, and NETWORK_ACCOUNT_CONFIG notes |
+| **Faucet Admin (`FAUCET_ADMIN`)** (offchain) | Holds a faucet account's separate built-in `ADMIN` role. Manages that faucet's roles, allowlists, and fee-policy selection but cannot mint or change its owner. | Creates RBAC_CONFIG and NETWORK_ACCOUNT_CONFIG notes |
+| **Fee Manager (`FEE_MNGR`)** (offchain) | Holds a bridge or faucet account's `FEE_MNGR` role and updates that account's note fee schedule. | Creates CONSTANT_FEE_POLICY_CONFIG notes |
+| **Pauser (`PAUSER`)** (offchain) | Holds the bridge account's `PAUSER` role and can halt bridge operations, but cannot resume them. | Creates PAUSE_CONFIG notes |
 
 ---
 
@@ -49,7 +53,7 @@ asset and the destination network/address. The bridge account consumes this note
 5. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (LET).
 6. Dispatches on the faucet's `is_native` flag (also read from the registry):
    - **Wrapped faucet (`is_native = false`):** the bridge does not hold the asset onchain; it
-     emits a public [`BURN`](#47-burn-generated) note targeting the faucet, which the faucet
+     emits a public [`BURN`](#48-burn-generated) note targeting the faucet, which the faucet
      consumes to burn the asset and decrement the faucet's token supply.
    - **Miden-native faucet (`is_native = true`):** the bridge does not hold mint/burn authority
      for the faucet, so it cannot emit a `BURN`. Instead it locks the asset by adding it to
@@ -59,8 +63,7 @@ asset and the destination network/address. The bridge account consumes this note
 The leaf appended to the LET can later be included in a Merkle proof on any
 AggLayer-connected chain to claim the bridged asset.
 
-TODO: The bridge currently has no emergency pause mechanism to halt operations
-([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+The bridge supports an emergency pause; see [Section 2.5](#25-administration).
 
 ### 2.2 Bridge-in (AggLayer to Miden)
 
@@ -85,16 +88,16 @@ The `CLAIM` note is consumed by the bridge account:
    (`assert_faucet_registered`) so a claim only ever mints through a currently-registered faucet.
 7. Verifies the claim amount against the leaf's U256 amount and the faucet's scale factor.
 8. Dispatches on the faucet's `is_native` flag:
-   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#49-mint-generated)
+   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#410-mint-generated)
      note targeting the faucet. The faucet consumes the `MINT` note, mints the specified amount,
-     and creates a [`P2ID`](#48-p2id-generated) note delivering the minted assets to the
+     and creates a [`P2ID`](#49-p2id-generated) note delivering the minted assets to the
      recipient's Miden account.
    - **Miden-native faucet (`is_native = true`):** the bridge cannot mint via the faucet, so
      it removes the asset from its own vault (`native_account::remove_asset`) and emits a
      `P2ID` note targeted at the recipient directly. The asset must have been previously
      locked into the bridge by a prior bridge-out for the same token.
 
-Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the global MASM constant `MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm` (after `swap_u32_bytes` on the LE-packed memory limb). The same value is exposed to Rust as `AggLayerBridge::MIDEN_NETWORK_ID`, matching Solidity test vectors.
+Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the bridge's configured network ID (after `swap_u32_bytes` on the LE-packed memory limb). The network ID is a deployment setting passed to `AggLayerBridge::account_builder` and stored in the `agglayer::bridge::network_id` slot; `bridge_config::load_network_id` reads it at runtime. It is set once at account creation and never mutated.
 This mirrors Solidity `claimAsset` destination-network checks.
 
 TODO: The leaf type field is not validated to be `LEAF_TYPE_ASSET` (0)
@@ -159,9 +162,10 @@ to the empty word, the `GER_INJECTOR` role holder can re-register the same GER v
 `UPDATE_GER` note (re-insertion does not touch the removal chain). This is a security
 caveat worth calling out: a compromised or faulty `GER_INJECTOR` role holder can undo a `REMOVE_GER`
 emergency patch and re-open the very claim window the removal was meant to close. The
-split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only if the offending role can be
-rotated out, which is not yet supported
-([#2706](https://github.com/0xMiden/protocol/issues/2706)). The removed-GER hash chain is
+split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only for
+operational-key compromise: `BRIDGE_ADMIN` can rotate the offending holder out via
+[`RBAC_CONFIG`](#47-rbac_config) notes (see [Section 2.5](#25-administration)). It does not
+bound a compromised `BRIDGE_ADMIN`, which can grant itself either role. The removed-GER hash chain is
 therefore an append-only log of removal events, not a registry of currently revoked GERs
 - a GER listed in the chain may have been revived since its removal.
 
@@ -199,12 +203,14 @@ TODO: Faucet existence and code commitment are not validated during registration
 
 The bridge uses role-based access control (RBAC) for its privileged operations, built on the
 `miden-standards` access-control stack (`RoleBasedAccessControl` + `Authority`) installed on the
-bridge account alongside the bridge component.
+bridge account alongside the bridge component. Each faucet installs those same two components with
+its own, unrelated role set. Both use the built-in `ADMIN` role symbol; this document calls the
+bridge instance `BRIDGE_ADMIN` and each faucet instance `FAUCET_ADMIN`.
 
-- **`ADMIN` role**: the built-in administrative role. Members of `ADMIN` administer (grant and
-  revoke) the operational roles below. It is the effective admin of any role whose delegated admin
-  is unset, and it administers itself, so `ADMIN` membership can be granted, revoked, and renounced
-  through the standard RBAC API.
+- **`BRIDGE_ADMIN` role**: the bridge's built-in administrative role. Its members administer the
+  operational roles below and bridge procedures without an explicit role mapping.
+- **`FAUCET_ADMIN` role**: a faucet's built-in administrative role. It controls that faucet's
+  authority-gated configuration procedures.
 - **`FAUCET_MNGR` role**: authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes (`register_faucet`,
   `store_faucet_metadata_hash`) and faucet deregistration via
@@ -214,23 +220,82 @@ bridge account alongside the bridge component.
 - **`GER_REMOVER` role**: authorizes GER removal via [`REMOVE_GER`](#46-remove_ger) notes
   (`remove_ger`). Kept distinct from the `GER_INJECTOR` role so that insertion and revocation
   authority can be split.
+- **`FEE_MNGR` role**: authorizes note-fee updates via
+  [`CONSTANT_FEE_POLICY_CONFIG`](#412-constant_fee_policy_config-standards) notes
+  (`set_note_fee`). The bridge and each faucet have separate holders of this account-local role.
+- **`PAUSER` role**: authorizes emergency pause via [`PAUSE_CONFIG`](#411-pause_config-standards)
+  notes (`pause`). Unpause remains restricted to `BRIDGE_ADMIN`.
 
 Each role-gated procedure calls `authority::assert_authorized`, which resolves the calling
 procedure's required role from the account's `Authority` procedure-to-role map and asserts that the
-note sender holds that role (a role may have multiple holders). Procedures with no mapped role fall
-back to requiring the `ADMIN` role. The initial `ADMIN` member and the initial operational-role
+note sender holds that role (a role may have multiple holders). Bridge procedures with no mapped role
+fall back to requiring `BRIDGE_ADMIN`. The initial `BRIDGE_ADMIN` member and operational-role
 holders are seeded at account creation, so the bridge is born fully functional.
 
-TODO: On-chain role management — notes that call `grant_role` / `revoke_role` / `renounce_role` /
-`set_role_admin` — is not yet part of the bridge's accepted-note allowlist; it is planned as a
-follow-up to [#2706](https://github.com/0xMiden/protocol/issues/2706). The note scripts and Rust
-builders for these `Rbac` procedures are tracked more broadly by
-[#3046](https://github.com/0xMiden/protocol/issues/3046) (note configuration for standards
-components); once they exist, the bridge only needs to add their script roots to
-[`AggLayerBridge::allowed_notes`].
+Roles are managed on-chain via [`RBAC_CONFIG`](#47-rbac_config) notes, which dispatch to the
+RBAC component's `grant_role` / `revoke_role` / `set_role_admin` / `renounce_role` procedures.
+Authorization is enforced by those procedures against the note sender: a member of the target
+role's effective admin role for grant / revoke / set-admin, or the role holder itself for
+renounce. This makes every bridge and faucet role rotatable after account creation, including each
+account's built-in `ADMIN` role.
 
-TODO: No emergency pause mechanism exists
-([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+Role management via notes comes with caveats. The generic hazards are documented on the
+miden-standards [`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs)
+component and the [`RBAC_CONFIG` note](../miden-standards/src/note/rbac_config.rs); the
+AggLayer-specific consequences are:
+
+- **`BRIDGE_ADMIN` is the bridge's root authority.** It is the effective admin of all five
+  operational roles, and the auto-allowlisted `NETWORK_ACCOUNT_CONFIG` note dispatches the
+  admin-defaulted note-, tx-script-, and allowed-fee-policy-update procedures, so a compromised
+  `BRIDGE_ADMIN` key controls the whole bridge configuration (see
+  [Section 1](#1-entities-and-trust-model)). For the same
+  reason the `BRIDGE_ADMIN` role must never be emptied: role rotation and every admin-defaulted
+  procedure - the bridge's post-deployment configuration channel, including `unpause` - would
+  be lost forever, and on a paused bridge that would freeze claims and bridge-outs
+  permanently. Contain `BRIDGE_ADMIN` compromise risk with strong key custody (e.g. a multisig
+  member account), not by decommissioning the role.
+- **Consumption order is not under the operator's control.** The bridge executes without a
+  signature gate, so any party chooses which pending note is consumed first; never have an
+  `BRIDGE_ADMIN` grant and a `BRIDGE_ADMIN` revoke/renounce in flight simultaneously.
+- **`FAUCET_ADMIN` must retain a live administration path.** Allowlisting `RBAC_CONFIG` makes the
+  role rotatable, but it cannot recover a faucet after its only administrator becomes unavailable.
+  A compromised administrator also remains able to change the faucet's roles and allowlists until
+  it is revoked.
+
+#### Emergency pause
+
+The bridge account installs the `miden-standards` `Pausable` and `PausableManager` components.
+Every agglayer bridge procedure except `remove_ger` and `deregister_faucet` starts with
+`pausable::assert_not_paused`, so while the bridge is paused it rejects all bridge-out, claim,
+GER-injection, and faucet-registration operations. The two removal procedures are deliberately
+exempt: a paused bridge can still revoke a fraudulent GER or compromised faucet without resuming
+claims and bridge-outs. Because `update_ger` and `register_faucet` remain paused, neither can be
+restored until unpause. The management notes (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`,
+`PAUSE_CONFIG`, `CONSTANT_FEE_POLICY_CONFIG`) remain consumable while paused, so a paused bridge
+can still be administered; `P2ID` deposits are not paused either.
+
+The pause is toggled via the standards [`PAUSE_CONFIG`](#411-pause_config-standards) note, which
+dispatches to `PausableManager`'s `pause` / `unpause`. The bridge maps `pause` to `PAUSER`, while
+`unpause` has no explicit mapping and therefore falls back to `BRIDGE_ADMIN`.
+
+The pause complements the `Authority` freeze switch: freezing blocks every authority-gated
+procedure - including `remove_ger` - but not `claim` / `bridge_out`, while the pause is the
+inverse.
+
+#### Fee schedule administration
+
+Both network accounts deploy with a `BasicConstantFeePolicy` generated by
+`NetworkNotePricer::basic_constant_fee_policy`. The schedule uses the chain's fee asset and prices
+every feature-note root in the account's deployment allowlist. `FEE_SPONSORSHIP` remains
+allowlisted and has an explicit zero fee because it never requires a sponsorship of its own.
+`P2ID` is allowlisted by default as well, so a P2ID note carrying the fee asset can fund the
+account, e.g. for its account-creating transaction. The schedule prices it like any other feature
+note, so such a deposit is consumed together with a `FEE_SPONSORSHIP` note bound to it.
+
+The bridge's and each faucet's `FEE_MNGR` holders update that account's schedule through
+`CONSTANT_FEE_POLICY_CONFIG` notes. The account's `ADMIN` retains control of fee-policy selection
+and the allowed fee-policy set. A root added through `NETWORK_ACCOUNT_CONFIG` must receive a
+schedule entry before it can be consumed.
 
 ---
 
@@ -242,6 +307,7 @@ The bridge account has a single unified `bridge` component (`components/bridge.m
 which is a thin wrapper that re-exports procedures from the `agglayer` library modules:
 
 - `bridge_config::register_faucet`
+- `bridge_config::store_faucet_metadata_hash`
 - `bridge_config::deregister_faucet`
 - `bridge_config::update_ger`
 - `bridge_config::remove_ger`
@@ -251,6 +317,13 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
 `asm/agglayer/common/`.
 
+In addition to the `bridge` component, the account installs the standards access-control stack
+(`RoleBasedAccessControl`, `Authority`), the emergency-pause stack (`Pausable`,
+`PausableManager`) and `BasicWallet`, whose `receive_asset` accepts `P2ID` deposits and whose
+`move_asset_to_note` and `create_note` are reachable only through the note and transaction scripts
+on the account's allowlists, which `BRIDGE_ADMIN` manages. All bridge procedures below except
+`remove_ger` and `deregister_faucet` panic while the bridge is paused.
+
 #### `bridge_out::bridge_out`
 
 | | |
@@ -259,42 +332,46 @@ The underlying library code lives in `asm/agglayer/bridge/` with supporting modu
 | **Inputs** | `[ASSET, dest_network_id, dest_addr(5), pad(4)]` |
 | **Outputs** | `[]` |
 | **Context** | Consuming a `B2AGG` note on the bridge account |
-| **Panics** | Faucet not in registry; FPI to faucet fails |
+| **Panics** | Bridge is paused; faucet not in registry; destination network is Miden's AggLayer network ID |
 
 Bridges an asset out of Miden into the AggLayer:
 
 1. Validates the asset's faucet is registered in the faucet registry.
-2. FPIs to `agglayer_faucet::asset_to_origin_asset` on the faucet account to obtain the scaled U256 amount, origin token address, and origin network.
+2. Reads the faucet's conversion metadata (origin token address, origin network, scale) from the bridge's own `faucet_metadata_map` via `bridge_config::get_faucet_conversion_info`, then scales the amount to the origin chain's U256 representation locally.
 3. Builds a leaf-data structure in memory (leaf type, origin network, origin token address, destination network, destination address, amount, metadata hash).
 4. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree.
-5. Creates a public `BURN` note targeting the faucet via a `NetworkAccountTarget` attachment.
+5. If the faucet is not native, creates a public `BURN` note targeting the faucet via a `NetworkAccountTarget` attachment. If the faucet is native (`is_native = 1`), locks the asset in the bridge's own vault and emits no `BURN` note (see [Section 7](#7-faucet-registry)).
 
 #### `bridge_config::register_faucet`
 
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]` |
+| **Inputs** | `[origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused; token key is assigned to a different faucet |
 
 Asserts that the note sender holds the `FAUCET_MNGR`
-role, then performs a two-step registration:
+role, then registers the faucet across three storage maps:
 
-1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
+1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, is_native, 0, 0]` into the
    `faucet_registry_map` map slot.
-2. Hashes `origin_token_addr` (5 felts) together with `origin_network` (1 felt) using
-   `Poseidon2::hash_elements` and writes
+2. Writes the faucet's conversion metadata into `faucet_metadata_map` under two
+   faucet-ID-keyed sub-keys: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [addr0, addr1, addr2, addr3]`
+   and `[1, 0, faucet_id_suffix, faucet_id_prefix] -> [addr4, origin_network, scale, 0]`.
+3. Hashes `origin_token_addr` (5 felts) together with `origin_network` (1 felt, byte-swapped
+   to match the leaf-side representation) using `Poseidon2::hash_elements` and writes
    `hash(origin_token_addr, origin_network) -> [0, 0, faucet_id_suffix, faucet_id_prefix]`
    into the `token_registry_map` map slot. The `(origin_network, origin_token_address)`
    pair is the canonical asset identity (matching the Solidity `tokenInfoHash`); keying on
    the address alone would let a CLAIM bound to one origin network resolve to the faucet of
    the same address on another network.
 
-If the faucet is already registered (a re-registration under a different token identity), the prior
-`token_registry` key is recomputed from the existing metadata and cleared before the new entry is
-written, so a `token_registry` key never outlives the registration that created it.
+The new token key must be unassigned or already point to the faucet being registered. If the faucet
+is already registered under a different token identity, the prior `token_registry` key is
+recomputed from the existing metadata and cleared only after confirming that it still points to
+that faucet. These checks preserve a one-to-one mapping between token identities and faucets.
 
 #### `bridge_config::deregister_faucet`
 
@@ -304,16 +381,15 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered; token key does not point to the faucet |
 
 Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
 
 1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
 2. `token_registry_map`: recomputes the key from the faucet's stored `origin_token_addr` and
-   `origin_network` (via `get_faucet_conversion_info`, matching `register_faucet`) and clears it to
-   `[0, 0, 0, 0]`. Recomputing the key from on-chain metadata rather than the note guarantees it
-   matches the faucet's current registration.
+   `origin_network` (via `get_faucet_conversion_info`, matching `register_faucet`), asserts that it
+   still points to the faucet, and clears it to `[0, 0, 0, 0]`.
 3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
 
 After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so a `FAUCET_MNGR`
@@ -329,7 +405,7 @@ role holder should warn users with notes in flight. As defense-in-depth, `claim`
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | Note sender does not hold the `GER_INJECTOR` role; GER has already been registered in storage |
+| **Panics** | Note sender does not hold the `GER_INJECTOR` role; bridge is paused; GER has already been registered in storage |
 
 Asserts that the note sender holds the `GER_INJECTOR`
 role, then computes
@@ -346,16 +422,16 @@ in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Bridge is paused; leaf `destination_network` does not match the bridge's configured network ID; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 1. Pipes proof data and leaf data from the advice map into memory, verifying preimage
-   integrity, then asserts the leaf's `destination_network` matches the global
-   `MIDEN_NETWORK_ID` constant (`asm/agglayer/common/constants.masm`) after `swap_u32_bytes` on
-   the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
+   integrity, then asserts the leaf's `destination_network` matches the bridge's configured
+   network ID (read from the `agglayer::bridge::network_id` storage slot) after `swap_u32_bytes`
+   on the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
 2. Extracts the destination account ID from the leaf data's destination address
-   (via `eth_address::to_account_id`).
+   (via `eth::to_account_id`).
 3. Validates the Merkle proof via `verify_leaf_bridge`: computes the leaf
    value from leaf data, computes the GER from mainnet + rollup exit roots, asserts
    GER is known, processes global index (mainnet or rollup), verifies Merkle proof.
@@ -372,9 +448,13 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    address alone) prevents same-address cross-network collisions where a CLAIM proven on one
    origin network could resolve to a faucet registered on another.
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
-   faucet's scale factor (via FPI to `agglayer_faucet::get_scale`), using
-   `asset_conversion::verify_u256_to_native_amount_conversion`.
-8. Builds a MINT output note targeting the faucet (see [Section 4.9](#49-mint-generated)).
+   faucet's scale factor (read from the bridge's `faucet_metadata_map` via
+   `bridge_config::get_faucet_scale`), using
+   `miden::standards::assets::asset_amount::verify_u256_to_asset_amount_conversion`.
+8. If the faucet is not native, builds a MINT output note targeting the faucet (see
+   [Section 4.10](#410-mint-generated)). If the faucet is native (`is_native = 1`), unlocks the
+   asset from the bridge's vault and emits a `P2ID` note directly to the recipient
+   (`bridge_in_output::unlock_and_send`), emitting no MINT note (see [Section 7](#7-faucet-registry)).
 
 #### Bridge Account Storage
 
@@ -385,38 +465,46 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::let_root_lo` | Value | -- | Lower word of the LET root | LET root low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::let_root_hi` | Value | -- | Upper word of the LET root | LET root high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
-| `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered | Registered faucet lookup |
+| `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, is_native, 0, 0]` if registered | Registered faucet lookup; `is_native` selects burn/mint vs. lock/unlock |
+| `agglayer::bridge::faucet_metadata_map` | Map | `[sub_key, 0, faucet_id_suffix, faucet_id_prefix]` (sub_key 0..3) | sub 0: `[addr0, addr1, addr2, addr3]`; sub 1: `[addr4, origin_network, scale, 0]`; sub 2: `METADATA_HASH_LO`; sub 3: `METADATA_HASH_HI` | Per-faucet conversion metadata (origin address, origin network, scale, metadata hash) |
 | `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5] \|\| origin_network)` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | (Origin token address, origin network) to faucet ID lookup |
 | `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
 | `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_lo` | Value | -- | Lower word of the removed-GER hash chain | Removed-GER hash chain low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_hi` | Value | -- | Upper word of the removed-GER hash chain | Removed-GER hash chain high word (Keccak-256 upper 16 bytes) |
+| `agglayer::bridge::network_id` | Value | -- | `[network_id, 0, 0, 0]` | AggLayer network ID of this bridge; written once at account creation, never mutated |
 
 The privileged-role state is held by the access-control components installed on the bridge account
 (`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
-documented in `miden-standards`, rather than in dedicated bridge slots. See
+documented in `miden-standards`, rather than in dedicated bridge slots. Likewise, the emergency
+pause state lives in the `Pausable` component's own `is_paused` slot. See
 [Administration](#25-administration).
 
-Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
-the initial `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
-access-control components at account creation time.
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `BRIDGE_ADMIN`
+member and the initial `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` / `FEE_MNGR` / `PAUSER` role
+holders are seeded into the access-control components at account creation time.
 
-### 3.2 Faucet Account Component
+### 3.2 Faucet Account
 
-The faucet account has the `agglayer_faucet` component (`components/faucet.masm`),
-which is a thin wrapper that re-exports procedures from the `agglayer` library:
+The faucet account is the standard `FungibleFaucet` installed on top of `Ownable2Step`,
+`BasicWallet` and the RBAC access-control stack (`RoleBasedAccessControl` +
+`Authority::RbacControlled`). Bridge-in and bridge-out run through the standard `mint_and_send`
+and `receive_and_burn`, and the unified MINT/BURN note scripts use `has_procedure` to detect the
+faucet kind reflectively.
 
-- `faucet::mint_and_send`
-- `faucet::asset_to_origin_asset`
-- `faucet::get_metadata_hash`
-- `faucet::get_scale`
-- `faucet::burn`
+What makes it an AggLayer faucet is its deployment configuration:
 
-The underlying library code lives in `asm/agglayer/faucet/mod.masm` with supporting
-modules in `asm/agglayer/common/`.
+- The bridge is its `Ownable2Step` owner, and its active mint and burn policies are `owner_only`,
+  so only the bridge can mint on a bridge-in claim or burn on a bridge-out.
+- Its note allowlist is limited to MINT, BURN, RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG plus the
+  network-account defaults, which keeps the standard `set_*` metadata setters unreachable until
+  `FAUCET_ADMIN` explicitly allowlists a note that calls them.
+- Its token name holds the foreign token's real name rather than a copy of its symbol, so the
+  faucet carries the metadata hash preimage `abi.encode(name, symbol, decimals)` (see
+  [Section 7.1](#71-registering-faucets-on-miden)).
 
-#### `agglayer_faucet::mint_and_send`
+#### `fungible::mint_and_send`
 
 | | |
 |-|-|
@@ -426,57 +514,18 @@ modules in `asm/agglayer/common/`.
 | **Context** | Consuming a `MINT` note on the faucet account |
 | **Panics** | Faucet owner verification fails; minting exceeds supply; the asset stored in the MINT note does not belong to the consuming faucet |
 
-Re-export of `miden::standards::faucets::fungible::mint_and_send`. Mints the asset
+Mints the asset
 identified by `ASSET_ID` / `ASSET_VALUE` and creates an output note with the given
 recipient. Requires the faucet's owner (the bridge account) to be the creator of this note
 (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's
 `mint_and_send` executes the current access policy via
 `exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
 for the active faucet and panics if the stored `ASSET_ID` does not belong to that faucet,
-which binds the MINT note to its resolved faucet (see §4.8).
+which binds the MINT note to its resolved faucet (see §4.10).
 
-#### `agglayer_faucet::get_metadata_hash`
+#### `fungible::receive_and_burn`
 
-| | |
-|-|-|
-| **Invocation** | `call` |
-| **Inputs** | `[pad(16)]` |
-| **Outputs** | `[METADATA_HASH_LO, METADATA_HASH_HI, pad(8)]` |
-| **Context** | FPI target - called by the bridge during bridge-out |
-
-Reads the pre-computed metadata hash from the two faucet storage slots
-(`metadata_hash_lo`, `metadata_hash_hi`) and returns it as 8 u32 felts.
-
-#### `agglayer_faucet::get_scale`
-
-| | |
-|-|-|
-| **Invocation** | `call` |
-| **Inputs** | `[pad(16)]` |
-| **Outputs** | `[scale, pad(15)]` |
-| **Context** | FPI target - called by the bridge during bridge-in claim amount verification |
-
-Reads the scale factor from the `conversion_info_2` storage slot and returns it.
-
-#### `agglayer_faucet::asset_to_origin_asset`
-
-| | |
-|-|-|
-| **Invocation** | `call` (invoked via FPI from the bridge) |
-| **Inputs** | `[amount, pad(15)]` |
-| **Outputs** | `[AMOUNT_U256_0(4), AMOUNT_U256_1(4), addr(5), origin_network, pad(2)]` |
-| **Context** | FPI target -- called by the bridge during bridge-out |
-| **Panics** | Scale exceeds 18 |
-
-Converts a Miden-native asset amount to the origin chain's U256 representation:
-
-1. Reads the scale from storage, calls `asset_conversion::scale_native_amount_to_u256`.
-2. Since `scale_native_amount_to_u256` operates on BE bytes, and Keccak expects LE, the procedure calls `reverse_limbs_and_change_byte_endianness`
-3. Returns the origin token address and origin network from storage.
-
-#### `agglayer_faucet::burn`
-
-This is a re-export of `miden::standards::faucets::fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
+Burns the fungible asset from the active note, decreasing the faucet's token supply.
 
 | | |
 |-|-|
@@ -488,20 +537,38 @@ This is a re-export of `miden::standards::faucets::fungible::burn`. It burns the
 
 #### Faucet Account Storage
 
+The faucet contributes the full standard `FungibleFaucet` slot set (25 value slots):
+
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
-| Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
-| `agglayer::faucet::conversion_info_1` | Value | `[addr_0, addr_1, addr_2, addr_3]` | Origin token address, first 4 u32 limbs |
-| `agglayer::faucet::conversion_info_2` | Value | `[addr_4, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
-| `agglayer::faucet::metadata_hash_lo` | Value | Lower word of the metadata hash | Metadata hash low word (4 u32 felts) |
-| `agglayer::faucet::metadata_hash_hi` | Value | Upper word of the metadata hash | Metadata hash high word (4 u32 felts) |
+| `token_config` | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard fungible faucet token configuration |
+| `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. Part of the AggLayer metadata hash preimage |
+| `mutability_config` | Value | Boolean flags | Whether description / logo URI / external link / max supply may be updated. All `false` for AggLayer faucets |
+| `token_description_0` .. `_6` | Value | Fixed-width string chunks | Optional description; empty for AggLayer faucets |
+| `logo_uri_0` .. `_6` | Value | Fixed-width string chunks | Optional logo URI; empty for AggLayer faucets |
+| `external_link_0` .. `_6` | Value | Fixed-width string chunks | Optional external link; empty for AggLayer faucets |
 
-**Companion component storage slots:** The faucet account also includes storage from
-companion components required by `fungible::mint_and_send`:
+Conversion metadata (origin token address, origin network, scale, metadata hash) is **not** stored
+here. It lives on the bridge in `faucet_metadata_map`, written at registration time (see
+[Section 7](#7-faucet-registry)).
+
+**Companion component storage slots:**
 
 - `Ownable2Step` owner config slot: stores the bridge account ID as owner.
-- `OwnerControlled` slots (3): `active_policy_proc_root`, `allowed_policy_proc_roots`,
-  `policy_authority`.
+- `TokenPolicyManager` slots: `active_policy_proc_root`, `allowed_policy_proc_roots` per policy
+  kind.
+- `RoleBasedAccessControl` role storage, seeded with the deployment `FAUCET_ADMIN` and `FEE_MNGR`
+  members, and the `Authority` config slot (`RbacControlled`) mapping `set_note_fee` to `FEE_MNGR`.
+- `ConstantFeeManager` value slot: the ID of the fee schedule slot it reprices.
+
+`MintOwnerOnly` and `BurnOwnerOnly` gate minting and burning on the bridge as the `Ownable2Step`
+owner. AggLayer faucets register no send or receive policies and install no asset callback slots,
+so their account IDs have asset callbacks disabled.
+
+Note repricing is gated by `FEE_MNGR`; other authority-gated configuration falls back to
+`FAUCET_ADMIN`, which cannot mint or change the owner.
+[#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the ownership-transfer
+procedures.
 
 ---
 
@@ -555,7 +622,7 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 - **Bridge-out:** Consuming account is the bridge -> note validates attachment target,
   loads storage and asset, calls `bridge_out::bridge_out`.
 - **Reclaim:** Consuming account is the original sender -> assets are added back to the
-  account via `basic_wallet::add_assets_to_account`. No output notes.
+  account via `basic_wallet::move_note_assets_to_account`. No output notes.
 
 #### Permissions
 
@@ -633,8 +700,8 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
    advice map as two keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
 4. The `miden_claim_amount` is read from memory.
 5. `bridge_in::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
-   on the stack. The bridge asserts the leaf's `destination_network` matches the global
-   `MIDEN_NETWORK_ID` MASM constant, validates the proof, checks the claim nullifier, looks up the faucet via the token
+   on the stack. The bridge asserts the leaf's `destination_network` matches the bridge's
+   configured network ID, validates the proof, checks the claim nullifier, looks up the faucet via the token
    registry, verifies the amount conversion, then builds a MINT output note targeting the faucet.
 
 #### Permissions
@@ -669,21 +736,27 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `config_agg_bridge.masm` |
-| `storage` | 8 felts -- see layout below |
+| `storage` | 18 felts -- see layout below |
 
-**Storage layout (8 felts):**
+**Storage layout (18 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
 | 0-4 | `origin_token_addr` | 5 x u32 felts (20-byte Ethereum address) |
-| 5 | `origin_network` | Felt (LE-packed u32 origin network identifier) |
-| 6 | `faucet_id_suffix` | Felt (AccountId suffix) |
-| 7 | `faucet_id_prefix` | Felt (AccountId prefix) |
+| 5 | `faucet_id_suffix` | Felt (AccountId suffix) |
+| 6 | `faucet_id_prefix` | Felt (AccountId prefix) |
+| 7 | `scale` | Felt (decimal scale factor between origin-chain and Miden-side units) |
+| 8 | `origin_network` | Felt (raw u32 origin network identifier) |
+| 9 | `is_native` | Felt (0 or 1; 1 marks a Miden-native lock/unlock faucet) |
+| 10-13 | `METADATA_HASH_LO` | Lower word of the Keccak-256 metadata hash (4 u32 felts) |
+| 14-17 | `METADATA_HASH_HI` | Upper word of the Keccak-256 metadata hash (4 u32 felts) |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
-`bridge_config::register_faucet` (which asserts that the
-sender holds the `FAUCET_MNGR` role and performs two-step registration into
-`faucet_registry_map` and `token_registry_map`).
+`bridge_config::register_faucet` (which asserts that the sender holds the `FAUCET_MNGR` role
+and registers the faucet into `faucet_registry_map`, `faucet_metadata_map`, and
+`token_registry_map`) followed by `bridge_config::store_faucet_metadata_hash` (which writes
+the metadata hash into `faucet_metadata_map`). The split into two calls is required because
+the 16-element MASM stack cannot hold all 18 registration felts at once.
 
 #### Permissions
 
@@ -843,7 +916,58 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | **Issuer** | Holders of the `GER_REMOVER` role only -- **enforced** by `bridge_config::remove_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.7 BURN (generated)
+### 4.7 RBAC_CONFIG
+
+**Purpose:** Triggers a role-management action (`grant_role`, `revoke_role`, `set_role_admin`,
+`renounce_role`) on a bridge or faucet RBAC component, enabling on-chain rotation of
+`BRIDGE_ADMIN`, `FAUCET_ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, `GER_REMOVER`, `FEE_MNGR`, and
+`PAUSER` roles (see [Section 2.5](#25-administration)). This is the `miden-standards` `RBAC_CONFIG`
+note (`RbacConfigNote` in Rust), not a bridge-specific script.
+
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | The account authorized for the selected action: a member of the role's effective admin role for `grant_role` / `revoke_role` / `set_role_admin`, or the role holder itself for `renounce_role` (enforced by the RBAC procedures) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::with_account_target(managed_account)` |
+| `attachment` | `NetworkAccountTarget` (target: the managed account; execution hint: Always), added by the builder unless the caller supplies one. The script asserts the consuming account matches this target. |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `rbac_config.masm` (miden-standards) |
+| `storage` | 2-4 felts, selector-dispatched -- see layout below |
+
+**Storage layout (selector-dispatched):**
+
+| Selector (item 0) | Action | Items | Layout |
+|-------------------|--------|-------|--------|
+| `0` | `grant_role` | 4 | `[0, role_symbol, member_suffix, member_prefix]` |
+| `1` | `revoke_role` | 4 | `[1, role_symbol, member_suffix, member_prefix]` |
+| `2` | `set_role_admin` | 3 | `[2, role_symbol, admin_role_symbol]` (`0` reverts to the default `ADMIN` role) |
+| `3` | `renounce_role` | 2 | `[3, role_symbol]` |
+
+**Consumption:** Script asserts the consuming account matches the `NetworkAccountTarget` and
+that the storage item count matches the selector, then dispatches to the corresponding `rbac`
+procedure. Authorization is enforced by those procedures against the note sender.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
+| **Consumer** | Bridge or faucet account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
+
+### 4.8 BURN (generated)
 
 **Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
 
@@ -868,17 +992,21 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 |-------|-------|
 | `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
-| `storage` | None (0 felts) |
+| `storage` | Asset to burn (8 felts) |
 
-**Storage layout (0 felts):**
+**Storage layout (8 felts):**
 
-No fields -- this is a standard burn note with no custom data.
+| Offset | Field | Description |
+|--------|-------|-------------|
+| 0-3 | `ASSET_ID` | Identifier of the asset to burn |
+| 4-7 | `ASSET_VALUE` | Value of the asset to burn |
 
 **Consumption:**
 
-The standard BURN script calls `faucets::burn` on the consuming faucet account. This
-validates that the note contains exactly one fungible asset issued by that faucet and
-decreases the faucet's total token supply by the burned amount.
+The standard BURN script validates that the note carries exactly one asset matching the asset in
+storage, then passes the stored asset to the faucet's `receive_and_burn` procedure. The faucet
+validates that the fungible asset was issued by it and decreases its total token supply by the
+burned amount.
 
 #### Permissions
 
@@ -887,7 +1015,7 @@ decreases the faucet's total token supply by the burned amount.
 | **Issuer** | Bridge account (created by `bridge_out::bridge_out`) |
 | **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.8 P2ID (generated)
+### 4.9 P2ID (generated)
 
 **Purpose:** Created by the faucet (via `mint_and_send`) when consuming a MINT note, to
 deliver minted assets to the recipient.
@@ -919,14 +1047,14 @@ deliver minted assets to the recipient.
 
 | Index | Field | Encoding |
 |-------|-------|----------|
-| 0 | `target_account_id_prefix` | Felt (AccountId prefix) |
-| 1 | `target_account_id_suffix` | Felt (AccountId suffix) |
+| 0 | `target_account_id_suffix` | Felt (AccountId suffix) |
+| 1 | `target_account_id_prefix` | Felt (AccountId prefix) |
 
 **Consumption:**
 
 Consuming account must match `target_account_id` from note storage (enforced by the P2ID
 script). All note assets are added to the consuming account via
-`basic_wallet::add_assets_to_account`.
+`basic_wallet::move_note_assets_to_account`.
 
 #### Permissions
 
@@ -935,7 +1063,7 @@ script). All note assets are added to the consuming account via
 | **Issuer** | Faucet account (created by `mint_and_send`) |
 | **Consumer** | Destination account only -- **enforced** by P2ID script (checks `target_account_id`) |
 
-### 4.9 MINT (generated)
+### 4.10 MINT (generated)
 
 **Purpose:** Created by `bridge_in::claim` on the bridge account. Consumed by the faucet
 to mint and distribute assets to the recipient.
@@ -1000,6 +1128,50 @@ note via `output_note::add_asset`.
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
 | **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_ID` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
+
+### 4.11 PAUSE_CONFIG (standards)
+
+**Purpose:** Toggles the bridge's emergency pause (see [Section 2.5](#25-administration)). This is
+the `miden-standards` `PAUSE_CONFIG` note (`pause_config.masm` / `PauseConfigNote`), not an
+agglayer-specific note; the bridge merely includes its script root in
+[`AggLayerBridge::allowed_notes`]. Its single storage felt is a selector: `0` dispatches to
+`PausableManager::pause`, `1` to `PausableManager::unpause`.
+
+**Consumption:** The script loads the selector and `call`s the matching `PausableManager`
+procedure, which runs `authority::assert_authorized` before flipping the pause state. On the
+bridge, `pause` is mapped to `PAUSER`; `unpause` has no explicit mapping and falls back to
+`BRIDGE_ADMIN`.
+
+The builder binds the note to the bridge via a `NetworkAccountTarget` attachment, which the
+script asserts against the consuming account; [`AggLayerBridge::pause_note`] wraps the builder
+with clearer error reporting for non-public targets.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | `PAUSER` for pause; `BRIDGE_ADMIN` for unpause -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (explicit pause mapping and unmapped unpause fallback) |
+| **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
+
+---
+
+### 4.12 CONSTANT_FEE_POLICY_CONFIG (standards)
+
+**Purpose:** Reprices one entry of a network account's `BasicConstantFeePolicy` fee schedule
+after deployment (see [Section 2.5](#25-administration)). Both the bridge and faucet allowlist
+this `miden-standards` note.
+
+**Consumption:** The script asserts the consuming account matches its `NetworkAccountTarget`
+attachment, then calls `ConstantFeeManager::set_note_fee`. The sender must hold the target
+account's `FEE_MNGR` role, and the supplied asset ID must match its configured fee asset. Repricing
+remains available while the bridge is paused.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Target account's `FEE_MNGR` only -- **enforced** by `ConstantFeeManager::set_note_fee` via `authority::assert_authorized` |
+| **Consumer** | Bridge or faucet account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ---
 
@@ -1139,7 +1311,7 @@ extract the recipient's `AccountId` from the embedded Ethereum address and e.g. 
 
 #### 6.4.3 Ethereum Address → `AccountId` (MASM)
 
-`eth_address::to_account_id` — Module: `agglayer::common::eth_address`
+`eth::to_account_id` — Module: `miden::standards::interop::eth`
 
 This is the in-VM counterpart of the Rust `to_account_id`, invoked during CLAIM note
 consumption to decode the recipient's address from the leaf data, and eventually for building the P2ID note for the recipient.
@@ -1248,7 +1420,9 @@ consumption:
   (`bridge_config::lookup_faucet_by_token_address`). Keying on the pair (rather than the
   address alone) matches the canonical asset identity used by Solidity's
   `tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))` and
-  prevents same-address cross-network collisions.
+  prevents same-address cross-network collisions. Each token key is owned by at most one faucet;
+  registration cannot overwrite another faucet's mapping, and cleanup verifies ownership before
+  clearing a key.
 - **Faucet metadata map** (`agglayer::bridge::faucet_metadata_map`): stores all conversion
   metadata — origin address, origin network, scale, and the precomputed
   `keccak256(abi.encode(name, symbol, decimals))` metadata hash — for every registered
@@ -1274,9 +1448,20 @@ be referenced by a `B2AGG` (bridge-out) or `CLAIM` (bridge-in) note. Registratio
 same flow for both kinds; the `is_native` flag in the `CONFIG_AGG_BRIDGE` note storage tells
 the bridge which dispatch path to take for each future bridge operation against that faucet.
 
-The `AggLayerFaucet` Rust struct (`src/faucet.rs`) holds only
-token metadata — symbol, decimals, max supply, and token supply
-(TODO Missing token name ([#2585](https://github.com/0xMiden/protocol/issues/2585))).
+The faucet holds only token metadata — name, symbol, decimals, max supply, and token supply.
+Because the name is stored alongside the symbol and decimals, the full metadata hash preimage
+`abi.encode(name, symbol, decimals)` is recoverable from faucet storage, which is what makes
+registration-time verification possible.
+
+The preimage is the *origin* token's `(name, symbol, decimals)`, and Miden's types cannot always
+hold those values: `FungibleFaucet::MAX_DECIMALS` is 12, so an 18-decimal ERC-20 cannot be
+mirrored; `TokenName` caps names at 32 bytes; and `TokenSymbol` admits only 1-12 uppercase ASCII
+characters, which excludes symbols such as `USDC.e`, `wstETH` or `1INCH`. A wrapped faucet
+therefore may not be able to reproduce its registered hash at all, in which case that hash is the
+one carried in the origin chain's leaf
+(TODO Support metadata hash verification for wrapped faucets
+([#2586](https://github.com/0xMiden/protocol/issues/2586))).
+
 Conversion metadata (origin address, origin network, scale, and metadata hash) is
 *not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
 time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is
@@ -1297,7 +1482,8 @@ perform the following writes:
    `[2, 0, fid_s, fid_p]` and `[3, 0, fid_s, fid_p]`.
 3. `token_registry_map`: `Poseidon2(origin_token_addr, origin_network)` → `[0, 0, fid_s, fid_p]`.
    Keying on the pair (not the address alone) matches Solidity's `tokenInfoHash` and
-   prevents same-address cross-network collisions.
+   prevents same-address cross-network collisions. Registration fails if this key already points
+   to a different faucet.
 
 The token registry enables the bridge to resolve which Miden-side faucet corresponds to a
 given origin asset during CLAIM note processing. When the bridge processes a

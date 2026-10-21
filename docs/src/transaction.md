@@ -17,7 +17,7 @@ Miden's `Transaction` model aims for the following:
 
 Compared to most blockchains, where a `Transaction` typically involves more than one account (e.g., sender and receiver), a `Transaction` in Miden involves a single account. To illustrate, Alice sends 5 ETH to Bob. In Miden, sending 5 ETH from Alice to Bob takes two transactions, one in which Alice creates a note containing 5 ETH and one in which Bob consumes that note and receives the 5 ETH. This model removes the need for a global lock on the blockchain's state, enabling Miden to process transactions in parallel.
 
-Currently the protocol limits the number of notes that can be consumed and produced in a transaction to 1000 each, which means that in a single `Transaction` an application could serve up to 2000 different user requests like deposits or withdrawals into/from a pool.
+Currently the protocol allows a `Transaction` to consume up to `1024` input notes and produce up to `1024` output notes. In aggregate, a `Transaction` can therefore process up to `2048` note-based requests, such as deposits into or withdrawals from a pool.
 
 A simple transaction currently takes about 1-2 seconds on a MacBook Pro. It takes around `90K` cycles to create the proof, as of now the signature verification step is the dominant cost.
 
@@ -50,12 +50,34 @@ A `Transaction` requires several inputs:
    `Transaction` scripts are an optional piece of code defined by the executor which interacts with account methods after all notes have been executed. For example, `Transaction` scripts can be used to sign the `Transaction` (e.g., sign the transaction by incrementing the nonce of the account, without which, the transaction would fail), to mint tokens from a faucet, create notes, or modify account storage. `Transaction` scripts can also invoke methods of foreign accounts to read their state.
 4. **Epilogue**
    Completes the execution, resulting in an updated account state and a generated zero-knowledge proof. The validity of the resulting transaction is ensured by a combination of user-defined and protocol-defined checks:
-   - The account's [authentication procedure](account/code#authentication) is called to authorize the transaction. As part of authorization, the procedure pays the transaction fee by creating a public TX_FEE note funded from the account's vault, in any asset of the user's choosing. Note that the payment asset & its conversion rate to the native fee asset are user-supplied (via the auth args). The client software is responsible for choosing the right asset & conversion rate. Enforcement only happens at the batch builder end: if the user provided a conversion rate which underpays the batch builder for executing this transaction, it will be rejected. See [Fees](fees.md).
+   - The account's [authentication procedure](account/code#authentication) is called to authorize the transaction. As part of authorization, the procedure pays the transaction fee by creating a public `TX_FEE` note funded from the account's vault, in the chain's native fee asset and for the amount the kernel computed. The payment asset and its conversion rate to the native fee asset are user-supplied via the auth args, so a signature covers them, but the standard `pay_fee` procedure asserts that they use the native fee asset at rate 1/1. See [Fees](fees.md).
    - The account's state must have changed, or at least one input note must have been consumed to make the transaction non-empty.
    - If the account's state has changed, the `nonce` must have been incremented to prevent replay attacks.
    - Additionally, the sum of all input assets must be equal to the sum of all output assets (if the account is not a faucet).
 
 The proof together with the corresponding data needed for verification and updates of the global state can then be submitted and processed by the network.
+
+### Foreign procedure invocation (FPI) and expiration
+
+Note scripts and transaction scripts can read state from foreign accounts by calling public account procedures through foreign procedure invocation (FPI). FPI authenticates the foreign account state against the transaction reference block, but it does not prove that the state is current when the transaction is included in a block.
+
+The executor chooses the transaction reference block. If no expiration delta is set, a transaction can be proved against an old canonical block where mutable, security-sensitive foreign state still allowed the action. For example, a prover could choose a block from before an account was added to a blocklist, before an account was removed from an allowlist, or before an oracle value or active policy root changed.
+
+:::warning
+
+Any FPI-callable procedure or asset callback that reads mutable, security-sensitive state must call `tx::update_expiration_block_delta` in the execution path that reads that state.
+
+:::
+
+The expiration block is computed as:
+
+```text
+expiration_block = transaction_reference_block + expiration_delta
+```
+
+The expiration delta bounds the age of the reference block relative to the block that includes the transaction. For example, if an oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 or less. If the current block is 40 and the delta is 5, the reference block must be block 35 or newer, so a value from block 20 cannot be used.
+
+The FPI-callable procedure sets the expiration delta because the caller controls which valid reference block is used for proving. No expiration delta is required when the procedure reads only immutable data or when stale data is acceptable.
 
 ## Examples
 
@@ -79,7 +101,7 @@ To start the transaction process, the executor fetches and prepares all the inpu
 
 In the transaction's prologue the data is being authenticated by re-hashing the provided values and comparing them to the blockchain's data (this is how private data can be used and verified during the execution of transaction without actually revealing it to the network).
 
-Then the P2ID note script is being executed. The script starts by reading the note storage `active_note::get_storage` — in our case the account ID of the intended target account. It checks if the provided target account ID equals the account ID of the executing account. This is the first time the note invokes a method exposed by the `Transaction` kernel, `active_account::get_id`.
+Then the P2ID note script is being executed. The script starts by reading the note storage `active_note::get_bounded_storage` — in our case the account ID of the intended target account. It checks if the provided target account ID equals the account ID of the executing account. This is the first time the note invokes a method exposed by the `Transaction` kernel, `active_account::get_id`.
 
 If the check passes, the note script pushes the assets it holds into the account's vault. For every asset the note contains, the script calls the `wallets::basic::receive_asset` method exposed by the account's wallet component. The `wallets::basic::receive_asset` procedure calls `native_account::add_asset`, which cannot be called from the note itself. This allows accounts to control what functionality to expose, e.g. whether the account supports receiving assets or not, and the note cannot bypass that.
 
@@ -129,9 +151,7 @@ The ability to facilitate both, local and network transactions, **is one of the 
 
 - In Miden, executors can choose arbitrary reference blocks to execute against their state. Hence it is possible to set `Transaction` expiration heights and in doing so, to define a block height until a `Transaction` should be included into a block. If the `Transaction` is expired, the resulting account state change is not valid and the `Transaction` cannot be verified anymore.
 
-- Note and `Transaction` scripts can read the state of foreign accounts during execution. This is called foreign procedure invocation. For example, the price of an asset for the **Swap** script might depend on a certain value stored in the oracle account.
-
-- Values read from a foreign account through foreign procedure invocation reflect that account's state at the transaction's reference block, which the executor chooses and which may be an older canonical block. Unlike the native account's initial state, a foreign read is bound only to the reference block: the foreign account commitment is not part of the transaction's public inputs and is never revalidated against the foreign account's current on-chain state when the `Transaction` is included in a block. Because the party proving the `Transaction` can anchor it to a past block in which a foreign value was outdated but favorable (for example to bypass cross-account authorization such as roles or allowlists, or to act on a stale oracle price), a foreign account holding time-sensitive data must protect itself: it is the responsibility of that account to set a transaction expiration delta according to how time-sensitive the data is, so the FPI interface cannot be used in unintended ways. The delta bounds how old the reference block can be relative to the block the `Transaction` is included in. For example, if an oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 (or smaller): if the current block is 40 and the delta is 5, the reference block must be block 35 or newer, so a value from block 20 could not be read.
+- Note and `Transaction` scripts can read the state of foreign accounts during execution. This is called [foreign procedure invocation (FPI)](#foreign-procedure-invocation-fpi-and-expiration). A transaction can load at most **63 distinct foreign accounts** in addition to its native account. This does not limit the total number of FPI calls: once a foreign account is loaded, subsequent calls to the same account reuse the loaded data and do not consume another foreign-account slot. The caller identifies the invoked procedure by its root, which the kernel requires to be part of the code of the foreign account it is called on, so the executed logic is always one the account committed to.
 
 - An example of the right usage of `Transaction` arguments is the consumption of a **Swap** note. Those notes allow asset exchange based on predefined conditions. Example:
   - The note's consumption condition is defined as "anyone can consume this note to take `X` units of asset A if they simultaneously create a note sending Y units of asset B back to the creator." If an executor wants to buy only a fraction `(X-m)` of asset A, they provide this amount via transaction arguments. The executor would provide the value `m`. The note script then enforces the correct transfer:
@@ -141,3 +161,49 @@ The ability to facilitate both, local and network transactions, **is one of the 
 - When executing a `Transaction` the max number of VM cycles is **$2^{30}$**.
 
 :::
+
+## Transaction logs
+
+### Emission and commitments
+
+An authenticated account procedure emits a transaction log with `miden::protocol::tx::add_log`.
+The procedure takes a `LogTopic` (a suffix and prefix) and a content commitment. The advice map must
+contain the content field elements under that commitment. Named topics use the first two felts of
+`word(name)`.
+
+Content must consist of complete words of four field elements. Hashing a shorter sequence does not
+pad the advice map value. To log an arbitrary number of elements, encode the original length in the
+application's content format and pad to complete words before computing the commitment and adding the
+same padded elements to the advice map.
+
+The kernel checks the content and uses the active account as emitter. Note and transaction scripts
+must call an account procedure to emit logs.
+
+Individual transaction log commitments are hashed in emission order; `TransactionLogs` defines the
+commitment preimage. The kernel caches the aggregate until another log is appended. The aggregate
+commitment is bound to transaction outputs, IDs, and proofs.
+
+The standard authentication procedures also include the logs in their signing summaries. Applications
+that construct their own summaries or signature schemes must explicitly bind the logs they authorize.
+Emit all transaction logs before constructing the summary that authorizes them.
+
+### Visibility and privacy
+
+Visibility follows the native account: the account against which the transaction executes. A public
+native account submits complete transaction logs; a private native account submits only their
+commitment. This also applies during FPI, regardless of the emitting account's visibility.
+
+Public and private transaction logs use the same deterministic commitment. Keeping log contents
+private does not prevent observers from guessing a predictable complete log list and comparing its
+commitment with the published value. Applications that need protection against guessing can include
+fresh, secret randomness in their log contents, for example by appending a random log before
+constructing the signing summary. That log counts toward the usual limits and must be retained for
+proving. Empty transaction logs commit to zero, so the presence of transaction logs is visible.
+
+Local execution data and standard signing summaries retain complete transaction logs, including in
+debug output. Remote provers and validators that decrypt execution witnesses can access this data.
+
+### Limits
+
+A transaction allows 64 transaction logs, 256 words per content and 512 total content words, excluding
+metadata. Transaction logs alone do not make an otherwise empty transaction valid.

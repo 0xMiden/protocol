@@ -31,11 +31,22 @@ pub enum MintPolicyError {
 
 /// Descriptor for the mint policy registered with a [`super::TokenPolicyManager`].
 ///
-/// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
+/// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
 /// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to the
 /// [`super::TokenPolicyManager`] builder via `active_mint_policy` or `allowed_mint_policy`.
+///
+/// # Policy interface
+///
+/// The manager invokes the policy procedure with `[ASSET_VALUE, tag, note_type, RECIPIENT,
+/// pad(6)]` on the stack and expects the same layout back:
+///
+/// - `ASSET_VALUE` may be adjusted by the policy. A fungible faucet mints the returned amount
+///   (which lets a policy cap or scale a mint), while a non-fungible faucet rejects any change to
+///   it.
+/// - `tag`, `note_type`, and `RECIPIENT` describe the output note the caller asked for and are
+///   passed for inspection only.
 #[derive(Debug, Clone)]
 pub struct MintPolicy {
     root: AccountProcedureRoot,

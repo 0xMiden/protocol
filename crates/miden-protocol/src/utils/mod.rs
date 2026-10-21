@@ -28,7 +28,7 @@ pub(crate) use strings::ShortCapitalString;
 /// Creates a minimal [MastForest] containing only an external node referencing the given digest.
 ///
 /// This is useful for creating lightweight references to procedures without copying entire
-/// libraries. The external reference will be resolved at runtime, assuming the source library
+/// packages. The external reference will be resolved at runtime, assuming the source package
 /// is loaded into the VM's MastForestStore.
 pub(crate) fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
     let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();

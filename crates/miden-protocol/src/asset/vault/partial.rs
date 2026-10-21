@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -60,14 +60,7 @@ impl PartialVault {
         let mut entries = BTreeMap::new();
 
         let partial_smt = PartialSmt::from_proofs(witnesses.into_iter().map(|witness| {
-            // Skip empty values so `entries` only ever tracks valid assets (mirrors
-            // `AssetVault::new`).
-            entries.extend(
-                witness
-                    .entries()
-                    .filter(|(_, value)| !value.is_empty())
-                    .map(|(id, value)| (*id, *value)),
-            );
+            entries.extend(witness.entries().map(|(id, value)| (*id, *value)));
             SmtProof::from(witness)
         }))
         .map_err(PartialAssetVaultError::FailedToAddProof)?;
@@ -102,13 +95,18 @@ impl PartialVault {
     /// Returns an error if:
     /// - any ID's hashed form is not present in the partial SMT.
     /// - any of the resulting `(asset_id, value)` pairs does not form a valid asset.
-    fn from_partial_smt_and_ids(
+    pub fn try_from_parts(
         partial_smt: PartialSmt,
         ids: impl IntoIterator<Item = AssetId>,
     ) -> Result<Self, PartialAssetVaultError> {
         let mut entries = BTreeMap::new();
+        let mut seen_ids = BTreeSet::new();
 
         for id in ids {
+            if !seen_ids.insert(id) {
+                return Err(PartialAssetVaultError::DuplicateAssetId(id));
+            }
+
             let value = partial_smt
                 .get_value(&id.hash().as_word())
                 .map_err(PartialAssetVaultError::UntrackedAsset)?;
@@ -116,8 +114,10 @@ impl PartialVault {
             // Validate that the (id, value) pair forms a valid asset, even when the value is
             // empty: an empty value paired with e.g. a non-fungible ID carrying a non-zero asset
             // class is malformed and must be rejected rather than silently tracked.
-            Asset::from_id_and_value(id, value).map_err(|source| {
-                PartialAssetVaultError::InvalidAssetForId { id, value, source }
+            Asset::new(id, value).map_err(|source| PartialAssetVaultError::InvalidAssetForId {
+                id,
+                value,
+                source,
             })?;
 
             // Skip empty values so `entries` stays in sync with the SMT, which treats empty values
@@ -138,6 +138,11 @@ impl PartialVault {
         self.partial_smt.root()
     }
 
+    /// Returns the partial SMT underlying this vault.
+    pub fn partial_smt(&self) -> &PartialSmt {
+        &self.partial_smt
+    }
+
     /// Returns an iterator over all inner nodes in the Sparse Merkle Tree proofs.
     ///
     /// This is useful for reconstructing parts of the Sparse Merkle Tree or for
@@ -154,9 +159,13 @@ impl PartialVault {
     /// Returns an iterator over the [`Asset`]s tracked by this partial vault.
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
         self.entries.iter().map(|(id, value)| {
-            Asset::from_id_and_value(*id, *value)
-                .expect("partial vault should only track valid assets")
+            Asset::new(*id, *value).expect("partial vault should only track valid assets")
         })
+    }
+
+    /// Returns an iterator over the asset IDs tracked by this partial vault.
+    pub fn asset_ids(&self) -> impl Iterator<Item = AssetId> + '_ {
+        self.entries.keys().copied()
     }
 
     /// Returns an iterator over the raw `(asset_id, value)` pairs tracked by this partial vault.
@@ -199,8 +208,7 @@ impl PartialVault {
             Ok(None)
         } else {
             Ok(Some(
-                Asset::from_id_and_value(asset_id, value)
-                    .expect("partial vault should only track valid assets"),
+                Asset::new(asset_id, value).expect("partial vault should only track valid assets"),
             ))
         }
     }
@@ -212,20 +220,26 @@ impl PartialVault {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the new root after the insertion of the leaf and the path does not match the existing root
-    ///   (except when the first leaf is added).
+    /// Returns an error if the root of the witness does not match the root of this vault. The vault
+    /// stays unchanged in this case.
     pub fn add(&mut self, witness: AssetWitness) -> Result<(), PartialAssetVaultError> {
-        // Take ownership of the witness' entries up front so that, if `add_proof` fails, no
-        // partial state escapes into `self.entries`. The type-level guarantee (entries are a
-        // subset of partial_smt) must hold even after an error.
-        let (proof, new_entries) = witness.into_parts();
+        // Check the root before adding the proof, because a partial SMT is left in an inconsistent
+        // state if adding a proof fails.
+        let witness_root = witness.proof().compute_root();
+        if witness_root != self.root() {
+            return Err(PartialAssetVaultError::FailedToAddProof(MerkleError::ConflictingRoots {
+                expected_root: self.root(),
+                actual_root: witness_root,
+            }));
+        }
+
+        // mutation safety: add_proof shouldn't fail because we've just checked root consistency, so
+        // mutating entries before is ok
+        self.entries.extend(witness.entries());
         self.partial_smt
-            .add_proof(proof)
+            .add_proof(SmtProof::from(witness))
             .map_err(PartialAssetVaultError::FailedToAddProof)?;
-        // Skip empty values so `entries` only ever tracks valid assets (mirrors `AssetVault::new`).
-        self.entries
-            .extend(new_entries.into_iter().filter(|(_, value)| !value.is_empty()));
+
         Ok(())
     }
 }
@@ -244,7 +258,7 @@ impl Deserializable for PartialVault {
         let num_entries: usize = source.read()?;
         let ids = source.read_many_iter::<AssetId>(num_entries)?.collect::<Result<Vec<_>, _>>()?;
 
-        Self::from_partial_smt_and_ids(partial_smt, ids)
+        Self::try_from_parts(partial_smt, ids)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
@@ -262,6 +276,14 @@ mod tests {
     use super::*;
     use crate::asset::{FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET;
+
+    #[test]
+    fn partial_smt_accessor_returns_vault_smt() {
+        let root = Word::from([1_u32, 2, 3, 4]);
+        let vault = PartialVault::new(root);
+
+        assert_eq!(vault.partial_smt().root(), root);
+    }
 
     #[test]
     fn partial_vault_open_returns_correct_asset_after_full_conversion() -> anyhow::Result<()> {
@@ -360,22 +382,19 @@ mod tests {
         let vault_b = AssetVault::new(&[asset_b])?;
 
         let mut partial = PartialVault::with_witnesses([vault_a.open(asset_a.id())])?;
-        let entries_before: Vec<_> = partial.entries().map(|(k, v)| (*k, *v)).collect();
-        let root_before = partial.root();
+        let expected = partial.clone();
 
         let err = partial.add(vault_b.open(asset_b.id())).unwrap_err();
         assert_matches!(err, PartialAssetVaultError::FailedToAddProof(_));
 
-        // Atomicity: failed `add` must not leak entries or shift the root.
-        let entries_after: Vec<_> = partial.entries().map(|(k, v)| (*k, *v)).collect();
-        assert_eq!(entries_before, entries_after);
-        assert_eq!(partial.root(), root_before);
+        // Atomicity: failed `add` must not leak entries or Merkle nodes into the vault.
+        assert_eq!(partial, expected);
 
         Ok(())
     }
 
     #[test]
-    fn from_partial_smt_and_ids_rejects_inconsistent_asset() -> anyhow::Result<()> {
+    fn try_from_parts_rejects_inconsistent_asset() -> anyhow::Result<()> {
         let fungible = FungibleAsset::mock(500);
         let non_fungible = NonFungibleAsset::mock(&[4, 5, 6]);
 
@@ -387,9 +406,52 @@ mod tests {
         let proof = inconsistent_smt.open(&fungible_id.hash().as_word());
         let partial_smt = PartialSmt::from_proofs([proof])?;
 
-        let err = PartialVault::from_partial_smt_and_ids(partial_smt, [fungible_id]).unwrap_err();
+        let err = PartialVault::try_from_parts(partial_smt, [fungible_id]).unwrap_err();
         assert_matches!(err, PartialAssetVaultError::InvalidAssetForId { .. });
 
         Ok(())
+    }
+
+    #[test]
+    fn try_from_parts_preserves_unrelated_partial_smt_material() -> anyhow::Result<()> {
+        let tracked_asset = FungibleAsset::mock(500);
+        let extra_asset = NonFungibleAsset::mock(&[1, 2, 3]);
+        let vault = AssetVault::new(&[tracked_asset, extra_asset])?;
+        let partial_smt = PartialSmt::from_proofs([
+            vault.open(tracked_asset.id()).into(),
+            vault.open(extra_asset.id()).into(),
+        ])?;
+
+        let partial_vault = PartialVault::try_from_parts(partial_smt, [tracked_asset.id()])?;
+
+        assert_eq!(partial_vault.asset_ids().collect::<Vec<_>>(), [tracked_asset.id()]);
+        assert_eq!(partial_vault.get(extra_asset.id())?, Some(extra_asset));
+
+        Ok(())
+    }
+
+    #[test]
+    fn try_from_parts_rejects_duplicate_asset_ids() -> anyhow::Result<()> {
+        let asset = FungibleAsset::mock(500);
+        let vault = AssetVault::new(&[asset])?;
+        let partial_smt = PartialSmt::from_proofs([vault.open(asset.id()).into()])?;
+
+        let result = PartialVault::try_from_parts(partial_smt, [asset.id(), asset.id()]);
+
+        assert_matches!(result, Err(PartialAssetVaultError::DuplicateAssetId(id)) if id == asset.id());
+
+        Ok(())
+    }
+
+    #[test]
+    fn try_from_parts_rejects_untracked_asset_ids() {
+        let asset_id = FungibleAsset::mock(500).id();
+        let result = PartialVault::try_from_parts(PartialSmt::new(Word::empty()), [asset_id]);
+
+        assert_matches!(
+            result,
+            Err(PartialAssetVaultError::UntrackedAsset(MerkleError::UntrackedKey(hashed_id)))
+                if hashed_id == asset_id.hash().as_word()
+        );
     }
 }

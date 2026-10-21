@@ -1,4 +1,4 @@
 # CONSTANTS
 # =================================================================================================
 
-pub use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+pub use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol_utils::constants

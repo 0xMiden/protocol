@@ -25,25 +25,23 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::vm::Package;
+use miden_standards::interop::eth::EthAddress;
+use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::{EthAddress, MetadataHash};
+use crate::costs::CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES;
+use crate::{MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the CONFIG_AGG_BRIDGE note script procedure in the agglayer package.
+const CONFIG_AGG_BRIDGE_SCRIPT_PATH: &str = "::agglayer::notes::config_agg_bridge::main";
+
 // Initialize the CONFIG_AGG_BRIDGE note script only once
-static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/note_scripts/miden-agglayer-config_agg_bridge.masp"
-    ));
-    let package = Package::read_from_bytes_trusted(bytes)
-        .expect("shipped CONFIG_AGG_BRIDGE script package is well-formed");
-    NoteScript::from_package(&package).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
-});
+static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(CONFIG_AGG_BRIDGE_SCRIPT_PATH));
 
 // CONVERSION METADATA
 // ================================================================================================
@@ -182,6 +180,15 @@ impl ConfigAggBridgeNote {
     }
 }
 
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for ConfigAggBridgeNote {
+    fn consumption_cycles() -> u32 {
+        CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -191,6 +198,16 @@ mod tests {
 
     use super::*;
 
+    const USDC_TOKEN_ADDR: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+
+    fn usdc_token_address() -> EthAddress {
+        EthAddress::from_hex(USDC_TOKEN_ADDR).expect("USDC token address should be valid")
+    }
+
+    fn usdc_metadata_hash() -> MetadataHash {
+        MetadataHash::from_token_info("USD Coin", "USDC", 6)
+    }
+
     /// Locks in the 18-felt wire layout of `CONFIG_AGG_BRIDGE` note storage. Any reordering in
     /// `to_elements` would silently desync from the indices the MASM `CONFIG_AGG_BRIDGE` script
     /// reads from (`ORIGIN_TOKEN_ADDR_0..4`, `FAUCET_ID_SUFFIX=5`, ... `METADATA_HASH_HI_3=17`).
@@ -198,9 +215,8 @@ mod tests {
     fn to_elements_layout_matches_masm_storage_indices() {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("valid faucet account id");
-        let origin_token_address =
-            EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
-        let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+        let origin_token_address = usdc_token_address();
+        let metadata_hash = usdc_metadata_hash();
 
         let metadata = ConversionMetadata {
             faucet_account_id: faucet,

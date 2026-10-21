@@ -1,3 +1,4 @@
+use {StorageSlotId} from miden::protocol::types
 # The MASM code for the Double-Word Array abstraction.
 #
 # It provides an abstraction layer over a storage map, treating it as an array
@@ -17,16 +18,7 @@ const SLOT_ID_PREFIX_LOC=0
 const SLOT_ID_SUFFIX_LOC=1
 const INDEX_LOC=2
 
-pub type DoubleWord = struct {
-    a: felt,
-    b: felt,
-    c: felt,
-    d: felt,
-    e: felt,
-    f: felt,
-    g: felt,
-    h: felt
-}
+pub use {DoubleWord} from miden::protocol::types
 
 # PROCEDURES
 # =================================================================================================
@@ -48,8 +40,7 @@ pub type DoubleWord = struct {
 #! Invocation: exec
 @locals(3)
 pub proc set(
-    slot_id_suffix: felt,
-    slot_id_prefix: felt,
+    slot_id: StorageSlotId,
     index: felt,
     value: DoubleWord
 ) -> DoubleWord
@@ -99,7 +90,7 @@ end
 #!
 #! Invocation: exec
 @locals(3)
-pub proc get(slot_id_suffix: felt, slot_id_prefix: felt, index: felt) -> DoubleWord
+pub proc get(slot_id: StorageSlotId, index: felt) -> DoubleWord
     # Save inputs to locals for reuse.
     loc_store.SLOT_ID_SUFFIX_LOC
     loc_store.SLOT_ID_PREFIX_LOC

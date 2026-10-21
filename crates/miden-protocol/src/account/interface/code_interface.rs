@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn account_code_interface_matches_code_procedures() -> anyhow::Result<()> {
         let account = AccountBuilder::new([7; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
 
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn partial_account_code_interface_matches_code_procedures() -> anyhow::Result<()> {
         let account = AccountBuilder::new([8; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         let partial = PartialAccount::from(&account);

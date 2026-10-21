@@ -1,6 +1,16 @@
+use core::num::{NonZeroU16, NonZeroU32};
+
+use miden_core::deferred::PrecompileError;
+use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
+use miden_protocol::account::auth::{
+    AuthScheme,
+    AuthSecretKey,
+    BoundSignature,
+    PublicKey,
+    SignatureKey,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -10,27 +20,47 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
+use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::{RawOutputNote, TransactionScript};
-use miden_protocol::vm::AdviceMap;
+use miden_protocol::transaction::{
+    RawOutputNote,
+    TransactionSummary,
+    TransactionSummaryUserParams,
+};
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
+use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthMultisig,
+    Eip712TransactionSummary,
+    MultisigAuthArgs,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
+    ERR_EIP712_INVALID_SIGNATURE_LENGTH,
+    ERR_EIP712_REQUIRES_ECDSA,
+    ERR_MULTISIG_APPROVAL_EXPIRED,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_TOO_MANY_APPROVERS,
     ERR_TX_ALREADY_EXECUTED,
 };
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
-use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_standards::tx_script::{ExpirationTransactionScript, SendNotesTransactionScript};
 use miden_testing::utils::create_spawn_note;
-use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{
+    Auth,
+    MockChainBuilder,
+    MockTransactionBuilder,
+    assert_transaction_executor_error,
+};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
@@ -40,6 +70,21 @@ use rstest::rstest;
 // ================================================================================================
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Sets the auth args of the multisig authentication components on a [`MockTransactionBuilder`].
+pub(super) trait MultisigAuthArgsExt {
+    fn multisig_auth_args(self, multisig_auth_args: MultisigAuthArgs) -> Self;
+}
+
+impl MultisigAuthArgsExt for MockTransactionBuilder<'_> {
+    fn multisig_auth_args(self, multisig_auth_args: MultisigAuthArgs) -> Self {
+        let commitment = multisig_auth_args.to_commitment();
+
+        self.auth_args(commitment)
+            .add_advice_map_entry(commitment, multisig_auth_args.to_elements())
+            .required_block(multisig_auth_args.bound_block_num())
+    }
+}
 
 pub(super) type MultisigTestSetup =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
@@ -124,7 +169,7 @@ fn create_multisig_account(
     let approver_set = ApproverSet::new(approvers, threshold)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::Multisig { approver_set, proc_threshold_map })
+        .with_components(Auth::Multisig { approver_set, proc_threshold_map })
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
@@ -133,9 +178,32 @@ fn create_multisig_account(
     Ok(multisig_account)
 }
 
+pub(super) fn eip712_signature_witness(
+    secret_key: &AuthSecretKey,
+    public_key: &PublicKey,
+    tx_summary: &TransactionSummary,
+) -> anyhow::Result<(Word, Vec<Felt>)> {
+    let AuthSecretKey::EcdsaK256Keccak(signing_key) = secret_key else {
+        anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA signing key");
+    };
+    let PublicKey::EcdsaK256Keccak(public_key) = public_key else {
+        anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA public key");
+    };
+    let signature = signing_key.sign_prehash(tx_summary.eip712_hash().into_bytes());
+    Ok(tx_summary.eip712_signature_advice(public_key, &signature))
+}
+
 // ================================================================================================
 // TESTS
 // ================================================================================================
+
+#[derive(Clone, Copy)]
+enum InvalidEip712Witness {
+    RawSignature,
+    RawAdviceKey,
+    WrongApprover,
+    WrongTransactionSummary,
+}
 
 /// Tests basic 2-of-2 multisig functionality with note creation.
 ///
@@ -188,14 +256,18 @@ async fn test_multisig_2_of_2_with_note_creation(
 
     let salt = Word::from([Felt::ONE; 4]);
 
-    // Build base transaction context
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .auth_args(salt);
+    // Build base mock transaction
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures - should fail
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -215,16 +287,16 @@ async fn test_multisig_2_of_2_with_note_creation(
         .await?;
 
     // Execute transaction with signatures - should succeed
-    let tx_context_execute = tx_context_builder
+    let mock_tx_execute = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .build()?
         .execute()
         .await?;
 
-    multisig_account.apply_patch(tx_context_execute.account_patch())?;
+    multisig_account.apply_patch(mock_tx_execute.account_patch())?;
 
-    mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
+    mock_chain.add_pending_executed_transaction(&mock_tx_execute)?;
     mock_chain.prove_next_block()?;
 
     assert_eq!(
@@ -236,6 +308,392 @@ async fn test_multisig_2_of_2_with_note_creation(
             .as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
+
+    Ok(())
+}
+
+#[rstest]
+#[case::raw_signer_at_index_0(Some(0), &[1])]
+#[case::raw_signer_at_index_1(Some(1), &[0])]
+#[case::both_signers_use_eip712(None, &[0, 1])]
+#[tokio::test]
+async fn test_multisig_2_of_2_with_eip712_signatures(
+    #[case] raw_signer_index: Option<usize>,
+    #[case] eip712_signer_indices: &[usize],
+) -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(public_key, auth_scheme)| (public_key.clone(), *auth_scheme))
+        .collect::<Vec<_>>();
+
+    let starting_balance = 10u64;
+    let mut multisig_account = create_multisig_account(2, &approvers, starting_balance, vec![])?;
+
+    let output_note_asset = FungibleAsset::mock(1);
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[output_note_asset],
+        NoteType::Public,
+    )?;
+    let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
+    let mut mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
+
+    let mut signed_tx_builder = mock_tx_builder;
+    if let Some(signer_index) = raw_signer_index {
+        let raw_signature = authenticators[signer_index]
+            .get_signature(public_keys[signer_index].to_commitment(), &signing_inputs)
+            .await?;
+        signed_tx_builder = signed_tx_builder.add_signature(
+            public_keys[signer_index].to_commitment(),
+            tx_summary_hash,
+            raw_signature,
+        );
+    }
+
+    for &signer_index in eip712_signer_indices {
+        let (signature_key, witness) = eip712_signature_witness(
+            &secret_keys[signer_index],
+            &public_keys[signer_index],
+            tx_summary.as_ref(),
+        )?;
+        signed_tx_builder = signed_tx_builder.add_advice_map_entry(signature_key, witness);
+    }
+
+    let executed_transaction = signed_tx_builder.build()?.execute().await?;
+
+    multisig_account.apply_patch(executed_transaction.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    assert_eq!(
+        multisig_account
+            .vault()
+            .get_balance(AssetId::new_fungible(AccountId::try_from(
+                ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+            )?))?
+            .as_u64(),
+        starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
+    );
+
+    Ok(())
+}
+
+#[rstest]
+#[case::raw_signature_under_eip712_key(InvalidEip712Witness::RawSignature)]
+#[case::eip712_signature_under_raw_key(InvalidEip712Witness::RawAdviceKey)]
+#[case::signature_bound_to_another_approver(InvalidEip712Witness::WrongApprover)]
+#[case::signature_bound_to_another_summary(InvalidEip712Witness::WrongTransactionSummary)]
+#[tokio::test]
+async fn test_multisig_rejects_invalid_eip712_witness(
+    #[case] invalid_witness: InvalidEip712Witness,
+) -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(2, 0, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes)
+        .map(|(public_key, scheme)| (public_key.clone(), scheme))
+        .collect::<Vec<_>>();
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+    let salt = Word::from([Felt::new_unchecked(9); 4]);
+    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+    );
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let raw_key = Hasher::merge(&[public_keys[0].to_commitment().into(), tx_summary_hash]);
+    let raw_witness = BoundSignature::new(
+        SignatureKey::new(public_keys[0].to_commitment(), tx_summary_hash),
+        secret_keys[0].sign(tx_summary_hash),
+    )?
+    .to_encoded_signature();
+    let (eip712_key, eip712_witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
+
+    let (key, witness) = match invalid_witness {
+        InvalidEip712Witness::RawSignature => (eip712_key, raw_witness),
+        InvalidEip712Witness::RawAdviceKey => (raw_key, eip712_witness),
+        InvalidEip712Witness::WrongApprover => {
+            let (_, signer_b_witness) =
+                eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary.as_ref())?;
+            (eip712_key, signer_b_witness)
+        },
+        InvalidEip712Witness::WrongTransactionSummary => {
+            let other_summary = TransactionSummary::new(
+                tx_summary.account_delta().clone(),
+                tx_summary.input_notes().clone(),
+                tx_summary.output_notes().clone(),
+                tx_summary.block_number(),
+                tx_summary.block_commitment(),
+                tx_summary.expiration_delta(),
+                TransactionSummaryUserParams::new(
+                    [Felt::new_unchecked(42); TransactionSummaryUserParams::NUM_ELEMENTS],
+                ),
+                tx_summary.logs().clone(),
+            );
+            let (_, other_summary_witness) =
+                eip712_signature_witness(&secret_keys[0], &public_keys[0], &other_summary)?;
+            (eip712_key, other_summary_witness)
+        },
+    };
+    let result = mock_tx_builder.add_advice_map_entry(key, witness).build()?.execute().await;
+
+    match invalid_witness {
+        InvalidEip712Witness::WrongApprover => assert_transaction_executor_error!(
+            result,
+            MasmError::from_static_str("invalid public key commitment")
+        ),
+        InvalidEip712Witness::RawSignature
+        | InvalidEip712Witness::RawAdviceKey
+        | InvalidEip712Witness::WrongTransactionSummary => {
+            assert_transaction_executor_error!(
+                result,
+                matches ExecutionError::DeferredError {
+                    err: PrecompileError::Precompile { name: "uint256", source },
+                    ..
+                } if matches!(source.as_ref(), PrecompileError::AssertionFailed)
+            )
+        },
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_eip712_replay_protection() -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(1, 0, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+    let salt = Word::from([Felt::new_unchecked(11); 4]);
+    let reference_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(reference_block, salt);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args);
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let (signature_key, witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
+
+    let executed_transaction = mock_tx_builder
+        .add_advice_map_entry(signature_key, witness.clone())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    let replay = mock_chain
+        .build_transaction(multisig_account.id())
+        .reference_block(reference_block)
+        .multisig_auth_args(auth_args)
+        .add_advice_map_entry(signature_key, witness)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(replay, ERR_TX_ALREADY_EXECUTED);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 1, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(public_key, auth_scheme)| (public_key.clone(), *auth_scheme))
+        .collect::<Vec<_>>();
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+
+    let output_note_asset = FungibleAsset::mock(1);
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[output_note_asset],
+        NoteType::Public,
+    )?;
+    let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
+    let mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
+
+    let raw_signature = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let (eip712_key, eip712_witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
+
+    let result = mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
+        .add_advice_map_entry(eip712_key, eip712_witness)
+        .build()?
+        .execute()
+        .await;
+
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_rejects_eip712_for_falcon_approver() -> anyhow::Result<()> {
+    let (_, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(1, 0, AuthScheme::Falcon512Poseidon2)?;
+    let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+
+    let output_note_asset = FungibleAsset::mock(1);
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[output_note_asset],
+        NoteType::Public,
+    )?;
+    let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
+    let mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let eip712_key = tx_summary.eip712_signature_key(public_keys[0].to_commitment());
+
+    let result = mock_tx_builder
+        .add_advice_map_entry(eip712_key, vec![Felt::ZERO; 32])
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_EIP712_REQUIRES_ECDSA);
+
+    Ok(())
+}
+
+#[rstest]
+#[case::short(31)]
+#[case::long(33)]
+#[tokio::test]
+async fn test_multisig_rejects_invalid_eip712_signature_length(
+    #[case] witness_length: usize,
+) -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(1, 1, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+
+    let output_note_asset = FungibleAsset::mock(1);
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[output_note_asset],
+        NoteType::Public,
+    )?;
+    let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
+    let mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let (signature_key, mut witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
+    witness.resize(witness_length, Felt::ZERO);
+
+    let result = mock_tx_builder
+        .add_advice_map_entry(signature_key, witness)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_EIP712_INVALID_SIGNATURE_LENGTH);
 
     Ok(())
 }
@@ -286,12 +744,14 @@ async fn test_multisig_2_of_4_all_signer_combinations(
     for (i, (signer1_idx, signer2_idx)) in signer_combinations.iter().enumerate() {
         let salt = Word::from([Felt::new_unchecked(10 + i as u64); 4]);
 
-        // Build base transaction context
-        let tx_context_builder =
-            mock_chain.build_tx_context(multisig_account.id(), &[], &[])?.auth_args(salt);
+        // Build base mock transaction
+        let mock_tx_builder =
+            mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+                MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+            );
 
         // Execute transaction without signatures first to get tx summary
-        let tx_summary = tx_context_builder
+        let tx_summary = mock_tx_builder
             .clone()
             .build()?
             .execute()
@@ -311,12 +771,12 @@ async fn test_multisig_2_of_4_all_signer_combinations(
             .await?;
 
         // Execute transaction with signatures - should succeed for any combination
-        let tx_context_execute = tx_context_builder
+        let mock_tx_execute = mock_tx_builder
             .add_signature(public_keys[*signer1_idx].to_commitment(), msg, sig_1)
             .add_signature(public_keys[*signer2_idx].to_commitment(), msg, sig_2)
             .build()?;
 
-        let executed_tx = tx_context_execute.execute().await.unwrap_or_else(|_| {
+        let executed_tx = mock_tx_execute.execute().await.unwrap_or_else(|_| {
             panic!("Transaction should succeed with signers {signer1_idx} and {signer2_idx}")
         });
 
@@ -362,13 +822,15 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
+    let ref_block = mock_chain.latest_block_header().block_num();
 
-    // Build base transaction context
-    let tx_context_builder =
-        mock_chain.build_tx_context(multisig_account.id(), &[], &[])?.auth_args(salt);
+    // Build base mock transaction
+    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+    );
 
     // Execute transaction without signatures first to get tx summary
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -388,7 +850,7 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .await?;
 
     // Execute transaction with signatures - should succeed (first execution)
-    let tx_context_execute = tx_context_builder
+    let mock_tx_execute = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
         .build()?
@@ -396,21 +858,442 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .await?;
 
     // Apply the transaction to the mock chain
-    mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
+    mock_chain.add_pending_executed_transaction(&mock_tx_execute)?;
     mock_chain.prove_next_block()?;
 
-    // Attempt to execute the same transaction again - should fail due to replay protection
-    // Must rebuild from the updated mock chain to pick up the new account state
-    let tx_context_replay = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    // Attempt to execute the same transaction again - should fail due to replay protection.
+    // Must rebuild from the updated mock chain to pick up the new account state. The reference
+    // block is pinned to the original one because the signed message commits to the reference
+    // block commitment: against a newer reference block the signatures would not verify and the
+    // transaction would fail authentication before the replay protection check is reached.
+    let mock_tx_replay = mock_chain
+        .build_transaction(multisig_account.id())
+        .reference_block(ref_block)
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(ref_block, salt))
         .build()?;
 
     // This should fail due to replay protection
-    let result = tx_context_replay.execute().await;
+    let result = mock_tx_replay.execute().await;
     assert_transaction_executor_error!(result, ERR_TX_ALREADY_EXECUTED);
+
+    Ok(())
+}
+
+/// Tests that multisig signatures go stale once the chain moves past the signed reference block.
+///
+/// Approvers sign a valid 2/3 transaction summary that sets an expiration delta. The chain then
+/// advances past that delta, and re-executing against the newer reference block fails
+/// authentication because the signatures are bound to the original block commitment and
+/// expiration.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script setting the expiration delta
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_stale_signatures_fail_after_expiration(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let salt = Word::from([Felt::new_unchecked(5); 4]);
+    let expiration_delta = NonZeroU16::new(3).unwrap();
+    let expiration_script = ExpirationTransactionScript::new(expiration_delta);
+    let ref_block = mock_chain.latest_block_header().block_num();
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+
+    // Execute without signatures to obtain the transaction summary to sign.
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    // The summary binds the expiration delta set by the transaction script.
+    assert_eq!(tx_summary.expiration_delta(), expiration_delta.get());
+    let original_block_commitment = tx_summary.block_commitment();
+
+    let msg = tx_summary.to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+
+    // Sanity check: against the signed reference block the signatures authenticate the tx.
+    mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .build()?
+        .execute()
+        .await?;
+
+    // Advance the chain past the expiration window of the signed transaction.
+    mock_chain.prove_until_block(ref_block + 5)?;
+
+    // Re-executing against the newer reference block fails authentication: the summary now
+    // commits to a different block commitment, so the collected signatures do not cover it.
+    let stale_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_ne!(stale_summary.block_commitment(), original_block_commitment);
+    assert_ne!(stale_summary.to_commitment(), msg);
+
+    Ok(())
+}
+
+/// Tests that signatures collected against an older block still authorize the transaction after
+/// the chain advanced.
+///
+/// This is what lets approvers sign at their own pace: the transaction executes against the
+/// current chain tip, but the summary they signed keeps binding the block that was the tip when
+/// the summary was created.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+#[tokio::test]
+async fn test_multisig_binds_block_older_than_reference_block() -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::new_unchecked(7); 4]);
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt);
+
+    // The approvers are shown the summary while `signed_block` is the chain tip.
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_eq!(tx_summary.block_number(), signed_block);
+
+    let msg = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing_inputs)
+        .await?;
+
+    // The chain moves on while the signatures are collected.
+    mock_chain.prove_until_block(signed_block + 5)?;
+
+    let executed_transaction = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await?;
+
+    // The transaction executed against the new chain tip, not against the block it bound.
+    assert_eq!(executed_transaction.block_header().block_num(), signed_block + 5);
+
+    Ok(())
+}
+
+/// Tests that an approver who inspects the transaction after the chain advanced is shown the same
+/// summary the earlier approvers signed, even when an expiration delta is set.
+///
+/// The expiration restriction must not change the kernel state the host validates the summary
+/// against, otherwise re-deriving the summary fails instead of reporting the missing signatures.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script setting the expiration delta
+#[tokio::test]
+async fn test_multisig_tx_summary_is_stable_while_the_chain_advances() -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::from(17u32); 4]);
+    let expiration_delta = NonZeroU16::new(10).unwrap();
+    let expiration_script = ExpirationTransactionScript::new(expiration_delta);
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt);
+
+    // The first approver is shown the summary while `signed_block` is the chain tip.
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let tx_summary_commitment = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+
+    mock_chain.prove_until_block(signed_block + 2)?;
+
+    // The second approver inspects the same proposal against the new chain tip and must see the
+    // summary the first approver signed.
+    let later_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), tx_summary_commitment, sig_1)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_eq!(later_summary.to_commitment(), tx_summary_commitment);
+
+    Ok(())
+}
+
+/// Tests that the approval expires relative to the block the summary binds rather than relative to
+/// the transaction reference block.
+///
+/// The cases walk the chain tip through the approval window: the transaction keeps the expiration
+/// the approvers signed for until the chain reaches it, and the block at which the approval expires
+/// is already too late to build the transaction from.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+#[rstest]
+#[case::first_block_of_the_window(1, None)]
+#[case::last_block_the_tx_can_be_built_from(2, None)]
+#[case::approval_expired(3, Some(ERR_MULTISIG_APPROVAL_EXPIRED))]
+#[tokio::test]
+async fn test_multisig_approval_expires_relative_to_bound_block(
+    #[case] blocks_advanced: u32,
+    #[case] expected_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::from(11u32); 4]);
+    let approval_expiration_delta = NonZeroU32::new(3).unwrap();
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt)
+        .with_approval_expiration_delta(approval_expiration_delta)?;
+    let expiration_block = signed_block + approval_expiration_delta.get();
+
+    // The approvers are shown the summary while `signed_block` is the chain tip.
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    // The approval expiration is bound as the first user param, while the transaction itself sets
+    // no expiration delta.
+    assert_eq!(tx_summary.expiration_delta(), 0);
+    assert_eq!(tx_summary.user_params().as_elements()[0], Felt::from(expiration_block));
+
+    let tx_summary_commitment = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing_inputs)
+        .await?;
+
+    mock_chain.prove_until_block(signed_block + blocks_advanced)?;
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), tx_summary_commitment, sig_1)
+        .add_signature(public_keys[1].to_commitment(), tx_summary_commitment, sig_2)
+        .build()?
+        .execute()
+        .await;
+
+    match expected_error {
+        // The transaction expires at the block the approvers signed for instead of at the
+        // reference block plus the delta.
+        None => assert_eq!(result?.expiration_block_num(), expiration_block),
+        Some(expected_error) => assert_transaction_executor_error!(result, expected_error),
+    }
+
+    Ok(())
+}
+
+/// Tests that a freshness expiration delta stays relative to the execution reference block rather
+/// than shortening the approval window.
+///
+/// A procedure reading foreign state through FPI caps how stale that read may be by setting the
+/// transaction's expiration delta; paying the transaction fee does so through the fee asset's send
+/// callback. Re-basing that delta onto the block the summary binds would make every fee-paying
+/// multisig transaction expire a few blocks after it was proposed. See issue #3874.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script setting the freshness expiration delta
+#[tokio::test]
+async fn test_multisig_freshness_delta_is_relative_to_the_reference_block() -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::from(23u32); 4]);
+    let freshness_delta = NonZeroU16::new(3).unwrap();
+    let expiration_script = ExpirationTransactionScript::new(freshness_delta);
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let approval_expiration_delta = NonZeroU32::new(50).unwrap();
+    // The approval window is far wider than the freshness delta.
+    let auth_args = MultisigAuthArgs::new(signed_block, salt)
+        .with_approval_expiration_delta(approval_expiration_delta)?;
+
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_eq!(tx_summary.expiration_delta(), freshness_delta.get());
+    assert_eq!(
+        tx_summary.user_params().as_elements()[0],
+        Felt::from(signed_block.as_u32() + approval_expiration_delta.get())
+    );
+
+    let tx_summary_commitment = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing_inputs)
+        .await?;
+
+    // The chain moves well past the freshness delta while the signatures are collected.
+    let blocks_advanced = 10;
+    mock_chain.prove_until_block(signed_block + blocks_advanced)?;
+
+    let executed_transaction = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), tx_summary_commitment, sig_1)
+        .add_signature(public_keys[1].to_commitment(), tx_summary_commitment, sig_2)
+        .build()?
+        .execute()
+        .await?;
+
+    // The freshness delta applies to the execution reference block, exactly as it would for a
+    // single-sig account.
+    assert_eq!(
+        executed_transaction.expiration_block_num(),
+        signed_block + blocks_advanced + u32::from(freshness_delta.get())
+    );
 
     Ok(())
 }
@@ -464,7 +1347,6 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
     // Setup new signers
-    let mut advice_map = AdviceMap::default();
     let (_new_secret_keys, _new_auth_schemes, new_public_keys, _new_authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
@@ -478,7 +1360,6 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
@@ -489,24 +1370,28 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
 
-    // Build base transaction context
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    // Build base mock transaction
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(tx_script)
         .tx_script_args(tx_script_args)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures first to get tx summary
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -526,7 +1411,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .await?;
 
     // Execute transaction with signatures - should succeed
-    let update_approvers_tx = tx_context_builder
+    let update_approvers_tx = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .build()?
@@ -634,15 +1519,19 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     new_mock_chain_builder.add_output_note(RawOutputNote::Full(input_note_new.clone()));
     let new_mock_chain = new_mock_chain_builder.build().unwrap();
 
-    // Build base transaction context for the new signers
-    let tx_context_builder_new = new_mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
-        .auth_args(salt_new);
+    // Build base mock transaction for the new signers
+    let mock_tx_builder_new = new_mock_chain
+        .build_transaction(updated_multisig_account.id())
+        .authenticated_input_note(input_note_new.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            new_mock_chain.latest_block_header().block_num(),
+            salt_new,
+        ));
 
     // Execute transaction without signatures first to get tx summary
-    let tx_summary_new = tx_context_builder_new
+    let tx_summary_new = mock_tx_builder_new
         .clone()
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .expected_output_note(RawOutputNote::Full(output_note.clone()))
         .build()?
         .execute()
         .await
@@ -667,8 +1556,8 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     // ================================================================================
 
     // Execute transaction with new signatures - should succeed
-    let tx_context_execute_new = tx_context_builder_new
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_new)])
+    let mock_tx_execute_new = mock_tx_builder_new
+        .expected_output_note(RawOutputNote::Full(output_note_new))
         .add_signature(new_public_keys[0].to_commitment(), msg_new, sig_1_new)
         .add_signature(new_public_keys[1].to_commitment(), msg_new, sig_2_new)
         .add_signature(new_public_keys[2].to_commitment(), msg_new, sig_3_new)
@@ -678,7 +1567,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
 
     // Verify the transaction executed successfully with new signers
     assert_eq!(
-        tx_context_execute_new.account_patch().final_nonce(),
+        mock_tx_execute_new.account_patch().final_nonce(),
         Some(updated_multisig_account.nonce() + Felt::ONE)
     );
 
@@ -732,28 +1621,30 @@ async fn test_multisig_update_signers_remove_owner(
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-    let mut advice_map = AdviceMap::default();
-    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
-    // Build base transaction context
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    // Build base mock transaction
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute without signatures to get tx summary
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -779,7 +1670,7 @@ async fn test_multisig_update_signers_remove_owner(
         .await?;
 
     // Execute with signatures
-    let update_approvers_tx = tx_context_builder
+    let update_approvers_tx = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(public_keys[2].to_commitment(), msg, sig_3)
@@ -923,22 +1814,24 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-    let mut advice_map = AdviceMap::default();
-    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
     let salt = Word::from([Felt::new_unchecked(8); 4]);
 
     let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_transaction(multisig_account.id())
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?
         .execute()
         .await;
@@ -949,10 +1842,6 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
 }
 
 /// Tests that `update_signers_and_threshold` rejects a signer set containing duplicate public keys.
-///
-/// Without this check a duplicated key lets a single signature satisfy multiple approver slots
-/// (signatures are looked up in the advice map by public key, not by signer index, and are not
-/// consumed on lookup), which would defeat the distinct-approvers policy.
 #[tokio::test]
 async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
@@ -985,11 +1874,9 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-    let mut advice_map = AdviceMap::default();
-    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(
         "
         @transaction_script
@@ -999,11 +1886,71 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
         ",
     )?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
     let salt = Word::from([Felt::new_unchecked(9); 4]);
 
     let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_transaction(multisig_account.id())
+        .tx_script(tx_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
+
+    Ok(())
+}
+
+/// Tests that `update_signers_and_threshold` rejects a signer set larger than `MAX_NUM_APPROVERS`.
+#[tokio::test]
+async fn test_multisig_update_signers_rejects_too_many_approvers() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let num_of_approvers = u64::from(ApproverSet::MAX_APPROVERS) + 1;
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(num_of_approvers as usize, 1, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .take(2)
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let config_and_pubkeys_vector =
+        build_update_signers_config_vector(2, num_of_approvers, &public_keys, auth_scheme);
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(AuthMultisig::code())?
+        .compile_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
+    let salt = Word::from([Felt::new_unchecked(9); 4]);
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
@@ -1012,7 +1959,7 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
+    assert_transaction_executor_error!(result, ERR_TOO_MANY_APPROVERS);
 
     Ok(())
 }
@@ -1059,10 +2006,9 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     // SECTION 2: Prepare a signer update transaction with new approvers
     // ================================================================================
 
-    // Get the multisig library
+    // Get the multisig package
 
     // Setup new signers (these should NOT be able to sign the update transaction)
-    let mut advice_map = AdviceMap::default();
     let (_new_secret_keys, _new_auth_schemes, new_public_keys, new_authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
@@ -1076,7 +2022,6 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
@@ -1087,24 +2032,28 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
 
-    // Build base transaction context
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    // Build base mock transaction
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(tx_script)
         .tx_script_args(tx_script_args)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures first to get tx summary
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -1127,7 +2076,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
         .await?;
 
     // Try to execute transaction with NEW signatures - should FAIL
-    let tx_context_with_new_sigs = tx_context_builder
+    let mock_tx_with_new_sigs = mock_tx_builder
         .add_signature(new_public_keys[0].to_commitment(), msg, new_sig_1)
         .add_signature(new_public_keys[1].to_commitment(), msg, new_sig_2)
         .build()?;
@@ -1136,7 +2085,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     // ================================================================================
 
     // Should fail - new approvers not yet authorized
-    let result = tx_context_with_new_sigs.execute().await;
+    let result = mock_tx_with_new_sigs.execute().await;
 
     // Assert that the transaction fails as expected
     assert!(
@@ -1195,12 +2144,16 @@ async fn test_multisig_proc_threshold_overrides(
 
     // 2. consume without signatures
     let salt = Word::from([Felt::ONE; 4]);
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // consume without signatures
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -1216,7 +2169,7 @@ async fn test_multisig_proc_threshold_overrides(
         .await?;
 
     // 4. execute with signature
-    let tx_result = tx_context_builder
+    let tx_result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig)
         .build()?
         .execute()
@@ -1244,20 +2197,23 @@ async fn test_multisig_proc_threshold_overrides(
         .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
         .build()?
         .into();
-    let send_note_transaction_script = TransactionScript::from(SendNotesTransactionScript::new(
+    let send_note_transaction_script = SendNotesTransactionScript::new(
         &multisig_account.code_interface(),
         &[output_note.clone().into()],
-    )?);
+    )?;
 
-    // Build base transaction context for note sending
-    let tx_context_builder2 = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(send_note_transaction_script)
-        .auth_args(salt2);
+    // Build base mock transaction for note sending
+    let mock_tx_builder2 = mock_chain
+        .build_transaction(multisig_account.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .send_notes_script(&send_note_transaction_script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt2,
+        ));
 
     // Execute transaction without signatures to get tx summary
-    let tx_summary2 = tx_context_builder2
+    let tx_summary2 = mock_tx_builder2
         .clone()
         .build()?
         .execute()
@@ -1273,7 +2229,7 @@ async fn test_multisig_proc_threshold_overrides(
         .await?;
 
     // Try to execute with only 1 signature - should FAIL
-    let result = tx_context_builder2
+    let result = mock_tx_builder2
         .clone()
         .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
         .build()?
@@ -1291,7 +2247,7 @@ async fn test_multisig_proc_threshold_overrides(
         .await?;
 
     // Execute with 2 signatures - should SUCCEED
-    let result = tx_context_builder2
+    let result = mock_tx_builder2
         .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg2, sig_2)
         .build()?
@@ -1358,16 +2314,19 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let set_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(set_script_code)?;
 
     // 1) Set override to 1 (requires default 2 signatures).
     let set_salt = Word::from([Felt::new_unchecked(50); 4]);
 
     let set_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_transaction(multisig_account.id())
         .tx_script(set_script)
-        .auth_args(set_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            set_salt,
+        ));
     let set_summary = set_builder
         .clone()
         .build()?
@@ -1399,8 +2358,12 @@ async fn test_multisig_set_procedure_threshold(
     let one_sig_salt = Word::from([Felt::new_unchecked(51); 4]);
 
     let one_sig_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[one_sig_note.id()], &[])?
-        .auth_args(one_sig_salt);
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(one_sig_note.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            one_sig_salt,
+        ));
     let one_sig_summary = one_sig_builder
         .clone()
         .build()?
@@ -1438,14 +2401,17 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let clear_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(clear_script_code)?;
     let clear_salt = Word::from([Felt::new_unchecked(52); 4]);
 
     let clear_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+        .build_transaction(multisig_account.id())
         .tx_script(clear_script)
-        .auth_args(clear_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            clear_salt,
+        ));
     let clear_summary = clear_builder
         .clone()
         .build()?
@@ -1477,8 +2443,12 @@ async fn test_multisig_set_procedure_threshold(
     let clear_check_salt = Word::from([Felt::new_unchecked(53); 4]);
 
     let clear_check_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[clear_check_note.id()], &[])?
-        .auth_args(clear_check_salt);
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(clear_check_note.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            clear_check_salt,
+        ));
     let clear_check_summary = clear_check_builder
         .clone()
         .build()?
@@ -1537,7 +2507,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         "#
     );
     let script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(script_code)?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
@@ -1546,13 +2516,16 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         .unwrap();
     let salt = Word::from([Felt::new_unchecked(54); 4]);
 
-    let tx_context_init = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    let mock_tx_init = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(script.clone())
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?;
 
-    let result = tx_context_init.execute().await;
+    let result = mock_tx_init.execute().await;
 
     assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
 
@@ -1584,7 +2557,6 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
     let proc_root = BasicWallet::receive_asset_root().as_word();
 
     // Build a new config that reduces num_approvers to 1 (and threshold to 1).
-    let mut advice_map = AdviceMap::default();
     let (_new_sec, _new_schemes, new_public_keys, _new_auth) =
         setup_keys_and_authenticators_with_scheme(1, 1, auth_scheme)?;
 
@@ -1597,8 +2569,8 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
 
     // Same transaction: first reduce num_approvers to 1, then try to set a per-procedure
     // override of 2 — which exceeds the *current* num_approvers and must be rejected.
@@ -1616,7 +2588,7 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
         "#
     );
     let script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(script_code)?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
@@ -1625,15 +2597,18 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
         .unwrap();
     let salt = Word::from([Felt::from_u8(55); 4]);
 
-    let tx_context = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
 
@@ -1666,19 +2641,22 @@ where
 
     let script_code = build_script(&public_keys);
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(AuthMultisig::code())?
+        .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(&script_code)?;
 
     let salt = Word::from([Felt::from_u8(77); 4]);
 
-    let tx_context_builder = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
         .tx_script(tx_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // First pass without signatures: the getter `call` must return cleanly so the transaction
     // reaches authentication and only fails there for missing signatures.
-    let tx_summary = tx_context_builder
+    let tx_summary = mock_tx_builder
         .clone()
         .build()?
         .execute()
@@ -1697,7 +2675,7 @@ where
         .await?;
 
     // Second pass with a valid quorum: the whole transaction, getter included, executes.
-    tx_context_builder
+    mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .build()?

@@ -1,18 +1,29 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // CODE INSPECTION
 // ================================================================================================
 
-account_component_code!(CODE_INSPECTION_CODE, "miden-standards-inspection-code-inspection.masp");
+account_component_package!(
+    CODE_INSPECTION_PACKAGE,
+    "miden-standards-inspection-code-inspection.masp"
+);
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`CodeInspection::NAME`],
+/// which mirrors the standards-side MASM module path.
+const CODE_INSPECTION_LIBRARY_PATH: &str =
+    "miden::standards::components::inspection::code_inspection";
 
 // Initialize the procedure root of the `has_procedure` procedure only once.
 procedure_root!(
     CODE_INSPECTION_HAS_PROCEDURE,
-    CodeInspection::NAME,
+    CODE_INSPECTION_LIBRARY_PATH,
     CodeInspection::HAS_PROCEDURE_PROC_NAME,
     CodeInspection::code()
 );
@@ -20,7 +31,7 @@ procedure_root!(
 // Initialize the procedure root of the `get_code_commitment` procedure only once.
 procedure_root!(
     CODE_INSPECTION_GET_CODE_COMMITMENT,
-    CodeInspection::NAME,
+    CODE_INSPECTION_LIBRARY_PATH,
     CodeInspection::GET_CODE_COMMITMENT_PROC_NAME,
     CodeInspection::code()
 );
@@ -28,7 +39,7 @@ procedure_root!(
 // Initialize the procedure root of the `get_num_procedures` procedure only once.
 procedure_root!(
     CODE_INSPECTION_GET_NUM_PROCEDURES,
-    CodeInspection::NAME,
+    CODE_INSPECTION_LIBRARY_PATH,
     CodeInspection::GET_NUM_PROCEDURES_PROC_NAME,
     CodeInspection::code()
 );
@@ -36,7 +47,7 @@ procedure_root!(
 // Initialize the procedure root of the `get_procedure_root` procedure only once.
 procedure_root!(
     CODE_INSPECTION_GET_PROCEDURE_ROOT,
-    CodeInspection::NAME,
+    CODE_INSPECTION_LIBRARY_PATH,
     CodeInspection::GET_PROCEDURE_ROOT_PROC_NAME,
     CodeInspection::code()
 );
@@ -65,7 +76,7 @@ impl CodeInspection {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::inspection::code_inspection";
+    pub const NAME: &'static str = "miden::standards::inspection::code_inspection";
 
     const HAS_PROCEDURE_PROC_NAME: &str = "has_procedure";
     const GET_CODE_COMMITMENT_PROC_NAME: &str = "get_code_commitment";
@@ -82,7 +93,7 @@ impl CodeInspection {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &CODE_INSPECTION_CODE
+        &CODE_INSPECTION_PACKAGE.code
     }
 
     /// Returns the procedure root of the `has_procedure` procedure.
@@ -107,8 +118,7 @@ impl CodeInspection {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Read-only introspection over the account's own code")
+        CODE_INSPECTION_PACKAGE.metadata.clone()
     }
 }
 
@@ -147,7 +157,7 @@ mod tests {
     fn account_exposes_code_inspection_procedures() -> anyhow::Result<()> {
         let account = AccountBuilder::new([1; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(CodeInspection)
             .build_existing()?;
 

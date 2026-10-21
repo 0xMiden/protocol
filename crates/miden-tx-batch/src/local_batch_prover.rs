@@ -1,6 +1,10 @@
+use alloc::string::ToString;
+
+use miden_processor::ExecutionError;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_prover::{ExecutionProof, ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
+use miden_prover::HashFunction::Poseidon2;
+use miden_prover::{ExecutionProof, Prover};
 
 use crate::ExecutedBatch;
 
@@ -11,15 +15,41 @@ use crate::ExecutedBatch;
 ///
 /// Proves an [`ExecutedBatch`] (produced by [`BatchExecutor`](crate::BatchExecutor)) into a
 /// [`ProvenBatch`] carrying an [`ExecutionProof`] over the batch's public commitments.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct LocalBatchProver {
-    proving_options: ProvingOptions,
+    prover: Prover,
+    skip_precompile_proof_generation: bool,
+}
+
+impl Default for LocalBatchProver {
+    fn default() -> Self {
+        Self::new(Prover::new().with_hash_fn(Poseidon2))
+    }
 }
 
 impl LocalBatchProver {
     /// Creates a new [`LocalBatchProver`] instance.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(prover: Prover) -> Self {
+        Self {
+            prover,
+            skip_precompile_proof_generation: false,
+        }
+    }
+
+    /// Returns the prover with generation of the batch's precompile proof turned off.
+    ///
+    /// [`ProposedBatch::new`] has already verified each transaction's proof, including the binding
+    /// between its deferred witness and its committed precompile root, so the resulting batch is
+    /// unchanged; only the in-circuit evidence for those claims is missing.
+    ///
+    /// This option can be removed once the batch kernel proof recursively verifies the transaction
+    /// precompiles.
+    pub fn skip_precompile_proof_generation(
+        mut self,
+        skip_precompile_proof_generation: bool,
+    ) -> Self {
+        self.skip_precompile_proof_generation = skip_precompile_proof_generation;
+        self
     }
 
     /// Proves the [`ExecutedBatch`] into a [`ProvenBatch`].
@@ -28,17 +58,35 @@ impl LocalBatchProver {
     /// the returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against
     /// the proposed batch's expected values.
     ///
+    /// The precompile claims of the batch's transactions are settled with a single precompile proof
+    /// over their ordered witnesses, unless [`Self::skip_precompile_proof_generation`] was called.
+    /// That proof is discarded rather than attached to the returned batch; see [`ProvenBatch`] for
+    /// what this does and does not establish.
+    ///
     /// # Errors
     ///
     /// Returns an error if proof generation fails.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let (proposed_batch, trace_inputs) = executed_batch.into_parts();
+        let (proposed_batch, witness, precompile_witnesses) = executed_batch.into_parts();
 
-        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
-            trace_inputs,
-            self.proving_options.clone(),
-        ))
-        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
+        if !self.skip_precompile_proof_generation && !precompile_witnesses.is_empty() {
+            // The proof is dropped: the batch kernel cannot verify it yet, and shipping it on the
+            // proven batch would add a wire format field that has to be removed again once the
+            // kernel does. Each witness was already bound to its transaction proof by
+            // `ProposedBatch::new`; proving them adds that the aggregate statement holds
+            // in-circuit.
+            let _precompile_proof = self
+                .prover
+                .prove_precompiles(precompile_witnesses)
+                .map_err(|error| ExecutionError::ProvingError(error.to_string()))
+                .map_err(ProvenBatchError::PrecompileProvingFailed)?;
+        }
+
+        let proof = self
+            .prover
+            .prove_vm_witness(witness)
+            .map_err(|error| ExecutionError::ProvingError(error.to_string()))
+            .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
 
         Self::build_proven_batch(proposed_batch, proof)
     }
@@ -50,7 +98,31 @@ impl LocalBatchProver {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, ProvenBatchError> {
-        Self::build_proven_batch(proposed_batch, ExecutionProof::new_dummy())
+        Self::build_proven_batch(proposed_batch, miden_protocol::testing::dummy_execution_proof())
+    }
+
+    /// Returns a batch carrying a structurally incomplete proof for verifier tests.
+    #[cfg(any(feature = "testing", test))]
+    pub fn prove_dummy_deferred(
+        &self,
+        proposed_batch: ProposedBatch,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
+        Self::build_proven_batch(
+            proposed_batch,
+            miden_protocol::testing::dummy_deferred_execution_proof(),
+        )
+    }
+
+    /// Returns a batch carrying a structurally complete proof with precompile work.
+    #[cfg(any(feature = "testing", test))]
+    pub fn prove_dummy_precompile(
+        &self,
+        proposed_batch: ProposedBatch,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
+        Self::build_proven_batch(
+            proposed_batch,
+            miden_protocol::testing::dummy_precompile_execution_proof(),
+        )
     }
 
     /// Combines the parts of a [`ProposedBatch`] with the produced [`ExecutionProof`] into a

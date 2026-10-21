@@ -1,20 +1,23 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_processor::ExecutionOptions;
+use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
+    AccountInputs,
     InputNote,
     InputNotes,
     ProvenTransaction,
-    TransactionInputs,
+    RawOutputNotes,
     TransactionKernel,
     TransactionOutputs,
+    TransactionWitness,
     TxAccountUpdate,
 };
 use miden_prover::HashFunction::Poseidon2;
-pub use miden_prover::ProvingOptions;
-use miden_prover::{ExecutionProof, Word, prove_sync};
+pub use miden_prover::Prover;
+use miden_prover::{ExecutionProof, Word};
 
 use super::TransactionProverError;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
@@ -30,26 +33,48 @@ pub use mast_store::TransactionMastStore;
 
 /// Local Transaction prover is a stateless component which is responsible for proving transactions.
 ///
+/// The produced proof covers the VM execution only. Precompile claims are left deferred, because a
+/// batch settles the claims of all its transactions with a single precompile proof.
+///
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
 #[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
-    proof_options: ProvingOptions,
+    prover: Prover,
+    execution_options: ExecutionOptions,
 }
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
-        Self {
-            proof_options: ProvingOptions::new(Poseidon2),
-        }
+        Self::new(Prover::new().with_hash_fn(Poseidon2))
     }
 }
 
 impl LocalTransactionProver {
-    /// Creates a new [LocalTransactionProver] instance.
-    pub fn new(proof_options: ProvingOptions) -> Self {
-        Self { proof_options }
+    /// Creates a new [LocalTransactionProver] instance with the default [`ExecutionOptions`].
+    pub fn new(prover: Prover) -> Self {
+        Self {
+            prover,
+            execution_options: ExecutionOptions::default(),
+        }
+    }
+
+    /// Sets the [`ExecutionOptions`] used while proving and returns the resulting prover.
+    ///
+    /// This lets a caller tune the VM limits enforced during proving, so that proving can use the
+    /// same options as execution.
+    ///
+    /// This will overwrite any previously set options.
+    #[must_use]
+    pub fn with_execution_options(mut self, execution_options: ExecutionOptions) -> Self {
+        self.execution_options = execution_options;
+        self
+    }
+
+    /// Returns the [`ExecutionOptions`] this prover uses.
+    pub fn execution_options(&self) -> ExecutionOptions {
+        self.execution_options
     }
 
     fn build_proven_transaction(
@@ -63,7 +88,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (account_header, output_notes) = tx_outputs.into_parts();
+        let (account_header, output_notes, log_details) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
         let output_notes: Vec<_> = output_notes
@@ -99,15 +124,26 @@ impl LocalTransactionProver {
             ref_block_commitment,
             expiration_block_num,
             proof,
+            log_details,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 
+    /// Proves the transaction described by the provided witness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The execution of the transaction fails.
+    /// - The output notes of the execution are invalid.
+    /// - The stack outputs of the execution do not match the outputs built from the witness and the
+    ///   execution.
+    /// - Proof generation fails.
     pub fn prove(
         &self,
-        tx_inputs: impl Into<TransactionInputs>,
+        tx_witness: impl Into<TransactionWitness>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let tx_inputs = tx_inputs.into();
+        let (tx_inputs, final_account, expiration_block_num) = tx_witness.into().into_parts();
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
         // Create a per-call MAST store to avoid accumulating forests across prove
@@ -118,8 +154,8 @@ impl LocalTransactionProver {
         // conflict on a shared mutable store.
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(tx_inputs.account().code());
-        for account_code in tx_inputs.foreign_account_code() {
-            mast_store.load_account_code(account_code);
+        for foreign_account in tx_inputs.foreign_accounts().values() {
+            mast_store.load_account_code(foreign_account.code());
         }
 
         let script_mast_store = ScriptMastForestStore::new(
@@ -128,35 +164,60 @@ impl LocalTransactionProver {
         );
 
         let account_procedure_index_map = AccountProcedureIndexMap::new(
-            tx_inputs.foreign_account_code().iter().chain([tx_inputs.account().code()]),
+            tx_inputs
+                .foreign_accounts()
+                .values()
+                .map(AccountInputs::code)
+                .chain([tx_inputs.account().code()]),
         );
+
+        let block_commitments = tx_inputs.collect_block_commitments();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
+            block_commitments,
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
-        );
-
-        let advice_inputs = advice_inputs.into_advice_inputs();
-
-        let (stack_outputs, proof) = prove_sync(
-            &TransactionKernel::main(),
-            stack_inputs,
-            advice_inputs.clone(),
-            &mut host,
-            ExecutionOptions::default(),
-            self.proof_options.clone(),
         )
+        .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
+
+        let processor = FastProcessor::new_with_options(
+            stack_inputs,
+            advice_inputs.into_advice_inputs(),
+            self.execution_options,
+        )
+        .map_err(ExecutionError::advice_error_no_context)
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
-        // Extract transaction outputs and process transaction data.
-        let (account_patch, input_notes, output_notes) = host.into_parts();
-        let tx_outputs =
-            TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
-                .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
+        let witness = processor
+            .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
+            .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+
+        let (account_patch, input_notes, output_notes, logs) = host.into_parts();
+        let output_notes = RawOutputNotes::new(output_notes)
+            .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
+        let tx_outputs = TransactionOutputs::new(
+            final_account,
+            account_patch.to_commitment(),
+            output_notes,
+            expiration_block_num,
+            logs,
+        );
+
+        // The proof commits to the stack outputs, so checking them against the outputs binds the
+        // witness data and the host-tracked patch and notes to the proof. Check before proving to
+        // fail early.
+        if *witness.claim().stack_outputs() != tx_outputs.to_stack_outputs() {
+            return Err(TransactionProverError::StackOutputsMismatch);
+        }
+
+        let proof = self
+            .prover
+            .prove(witness)
+            .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
 
         self.build_proven_transaction(
             &input_notes,
@@ -176,6 +237,40 @@ impl LocalTransactionProver {
         &self,
         executed_transaction: miden_protocol::transaction::ExecutedTransaction,
     ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with_dummy(
+            executed_transaction,
+            miden_protocol::testing::dummy_execution_proof(),
+        )
+    }
+
+    /// Returns a proven transaction carrying a structurally incomplete proof for verifier tests.
+    pub fn prove_dummy_deferred(
+        &self,
+        executed_transaction: miden_protocol::transaction::ExecutedTransaction,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with_dummy(
+            executed_transaction,
+            miden_protocol::testing::dummy_deferred_execution_proof(),
+        )
+    }
+
+    /// Returns a proven transaction carrying a complete proof with precompile work for verifier
+    /// tests.
+    pub fn prove_dummy_precompile(
+        &self,
+        executed_transaction: miden_protocol::transaction::ExecutedTransaction,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with_dummy(
+            executed_transaction,
+            miden_protocol::testing::dummy_precompile_execution_proof(),
+        )
+    }
+
+    fn prove_with_dummy(
+        &self,
+        executed_transaction: miden_protocol::transaction::ExecutedTransaction,
+        proof: ExecutionProof,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
         let (tx_inputs, tx_outputs, account_patch, _) = executed_transaction.into_parts();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
@@ -187,7 +282,25 @@ impl LocalTransactionProver {
             partial_account,
             ref_block.block_num(),
             ref_block.commitment(),
-            ExecutionProof::new_dummy(),
+            proof,
         )
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_execution_options_are_used_unless_replaced() {
+        let prover = LocalTransactionProver::default();
+        assert_eq!(prover.execution_options(), ExecutionOptions::default());
+
+        let custom_options = ExecutionOptions::default().with_max_advice_size_bytes(1);
+        let prover = prover.with_execution_options(custom_options);
+        assert_eq!(prover.execution_options(), custom_options);
     }
 }

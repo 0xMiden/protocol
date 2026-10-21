@@ -22,6 +22,14 @@ merged to form the account's `Code` and `Storage`.
 
 The component's code defines a library of functions that can perform arbitrary computations, as well as read and write to account storage.
 
+### FPI-callable mutable reads
+
+Account component procedures can become part of an account's public interface and can be called from note scripts, transaction scripts, and foreign accounts through FPI. If a procedure reads mutable, security-sensitive state, it must set an expiration delta in the execution path that reads that state.
+
+The component procedure defines the expiration delta because callers can choose an old reference block, so callers cannot be trusted to set it. Standards components can use `miden::standards::expiration::apply_default` for the common expiration delta, or call `tx::update_expiration_block_delta` directly when they need a custom expiration delta.
+
+For more information, see [Foreign procedure invocation (FPI) and expiration](../transaction#foreign-procedure-invocation-fpi-and-expiration).
+
 ## Component metadata
 
 The component metadata describes the account component entirely: its name, description, version, and storage layout.

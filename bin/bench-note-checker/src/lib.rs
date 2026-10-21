@@ -7,7 +7,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain, TxContextInput};
+use miden_testing::{Auth, MockChain};
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor};
 use serde::{Deserialize, Serialize};
@@ -117,17 +117,18 @@ pub fn setup_mixed_notes_benchmark(config: MixedNotesConfig) -> anyhow::Result<M
 
 /// Runs the note consumability check and validates the results.
 pub async fn run_mixed_notes_check(setup: &MixedNotesSetup) -> anyhow::Result<()> {
-    // Create transaction context with the setup data.
-    let tx_context = setup
+    // Create the mock transaction with the setup data.
+    let mock_tx = setup
         .mock_chain
-        .build_tx_context(TxContextInput::AccountId(setup.target_account_id), &[], &setup.notes)?
+        .build_transaction(setup.target_account_id)
+        .unauthenticated_input_notes(setup.notes.clone())
         .build()?;
 
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let tx_args = tx_context.tx_args().clone();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
 
     // Create executor and checker.
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let checker = NoteConsumptionChecker::new(&executor);
 
     let result = checker

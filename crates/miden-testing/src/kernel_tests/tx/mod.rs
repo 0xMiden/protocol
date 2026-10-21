@@ -31,9 +31,11 @@ mod test_fpi;
 mod test_input_note;
 mod test_lazy_loading;
 mod test_link_map;
+mod test_logs;
 mod test_note;
 mod test_output_note;
 mod test_prologue;
+mod test_reexecution;
 mod test_tx;
 
 // HELPER FUNCTIONS
@@ -112,7 +114,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     let mut builder = MockChain::builder();
 
     // asset for the account
-    let fungible_asset_0_double_amount = Asset::Fungible(
+    let fungible_asset_0_double_amount = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             10,
@@ -121,14 +123,14 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     );
 
     // assets for the P2ID notes
-    let fungible_asset_0 = Asset::Fungible(
+    let fungible_asset_0 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             5,
         )
         .context("fungible_asset_0 is invalid")?,
     );
-    let fungible_asset_1 = Asset::Fungible(
+    let fungible_asset_1 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)
                 .context("id should be valid")?,

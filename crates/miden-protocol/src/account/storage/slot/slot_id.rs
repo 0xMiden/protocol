@@ -94,7 +94,7 @@ impl Display for StorageSlotId {
     ///
     /// This means it encodes 16 bytes.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("0x{:032x}", self.as_u128()))
+        write!(f, "0x{:032x}", self.as_u128())
     }
 }
 
