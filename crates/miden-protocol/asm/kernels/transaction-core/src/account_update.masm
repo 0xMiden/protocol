@@ -319,8 +319,13 @@ proc commit_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
         exec.commit_value_slot_patch
     else
         dup eq.STORAGE_SLOT_TYPE_MAP
+        # => [is_map_slot_type, storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
+
         if.true
-            drop exec.commit_map_slot_patch
+            drop
+            # => [slot_idx, RATE0, RATE1, CAPACITY]
+
+            exec.commit_map_slot_patch
         else
             exec.account::array_length_from_type
             # => [num_words, slot_idx, RATE0, RATE1, CAPACITY]
@@ -561,63 +566,150 @@ end
 #! - 3: changed word count
 #! - 4..8: initial commitment
 #! - 8..12: current commitment
-#! - 12: current index
 #! - 13: create flag
 #! - 16..1040: initial words
 #! - 1040..2064: current words
 @locals(2064)
 proc commit_array_slot_patch(num_words: u16, slot_idx: u8, state: HasherState) -> HasherState
     loc_store.0
+    # => [slot_idx, RATE0, RATE1, CAPACITY]
+
     exec.account::get_item_patch
+    # => [INITIAL_ROOT, CURRENT_ROOT, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
+
+    # save the commitments and slot ID
     loc_storew_le.4 dropw loc_storew_le.8 dropw
     loc_store.1 loc_store.2
     # => [RATE0, RATE1, CAPACITY]
 
     padw loc_loadw_le.4 padw loc_loadw_le.8 exec.word::eq not
+    # => [has_changed, RATE0, RATE1, CAPACITY]
+
+    # creates include every word, even when the array has not changed
     exec.memory::is_new_account dup loc_store.13 or
     # => [should_commit, RATE0, RATE1, CAPACITY]
 
     if.true
         loc_load.13 not
+        # => [is_update, RATE0, RATE1, CAPACITY]
+
         if.true
-            locaddr.16 loc_load.0 padw loc_loadw_le.4 exec.account::read_array
+            # updates compare against the verified initial contents
+            locaddr.16 loc_load.0 padw loc_loadw_le.4
+            # => [INITIAL_ROOT, num_words, initial_ptr, RATE0, RATE1, CAPACITY]
+
+            exec.account::read_array
+            # => [RATE0, RATE1, CAPACITY]
         end
-        locaddr.1040 loc_load.0 padw loc_loadw_le.8 exec.account::read_array
+
+        locaddr.1040 loc_load.0 padw loc_loadw_le.8
+        # => [CURRENT_ROOT, num_words, current_ptr, RATE0, RATE1, CAPACITY]
+
+        exec.account::read_array
         # => [RATE0, RATE1, CAPACITY]
 
-        # Reset counters: authentication may compute the commitment more than once.
-        push.0 loc_store.3 push.0 loc_store.12
-        push.1
-        while.true
-            loc_load.13
-            if.true
-                push.1
-            else
-                padw loc_load.12 mul.4 locaddr.16 add mem_loadw_le
-                padw loc_load.12 mul.4 locaddr.1040 add mem_loadw_le
-                exec.word::eq not
-            end
-            # => [include_word, RATE0, RATE1, CAPACITY]
+        locaddr.1040 locaddr.16 loc_load.0 loc_load.13
+        # => [is_create, num_words, initial_ptr, current_ptr, RATE0, RATE1, CAPACITY]
 
-            if.true
-                padw loc_load.12 mul.4 locaddr.1040 add mem_loadw_le
-                push.0.0.0 loc_load.12
-                # => [[index, 0, 0, 0], VALUE, RATE0, RATE1, CAPACITY]
+        exec.commit_array_entries
+        # => [num_entries, RATE0, RATE1, CAPACITY]
 
-                swapdw dropw dropw exec.poseidon2::permute
-                loc_load.3 add.1 loc_store.3
-            end
-
-            loc_load.12 add.1 dup loc_store.12 loc_load.0 neq
-        end
+        loc_store.3
         # => [RATE0, RATE1, CAPACITY]
 
+        # append the array length, entry count, and slot metadata
         push.0.0 loc_load.3 loc_load.0
         loc_load.2 loc_load.1 exec.get_storage_slot_patch_op push.DOMAIN_ARRAY
-        # => [[domain_array, patch_op, suffix, prefix], [num_words, num_entries, 0, 0], RATE0, RATE1, CAPACITY]
+        # => [[domain_array, patch_op, slot_id_suffix, slot_id_prefix], [num_words, num_entries, 0, 0], RATE0, RATE1, CAPACITY]
 
-        swapdw dropw dropw exec.poseidon2::permute
+        # replace the previous rate words with the slot metadata
+        swapdw dropw dropw
+        # => [[domain_array, patch_op, slot_id_suffix, slot_id_prefix], [num_words, num_entries, 0, 0], CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
     end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Commits array words in index order and returns the number of committed entries.
+#! Creates include every word; updates include only words that differ from the initial array.
+#! Both buffers contain num_words verified words, except that creates do not read initial_ptr.
+#!
+#! Inputs:  [is_create, num_words, initial_ptr, current_ptr, RATE0, RATE1, CAPACITY]
+#! Outputs: [num_entries, RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: is_create
+#! - 1: num_words
+#! - 2: initial_ptr
+#! - 3: current_ptr
+#! - 4: index
+#! - 5: num_entries
+@locals(6)
+proc commit_array_entries(
+    is_create: Bool,
+    num_words: u16,
+    initial_ptr: ptr<word>,
+    current_ptr: ptr<word>,
+    state: HasherState,
+) -> (u16, HasherState)
+    loc_store.0 loc_store.1 loc_store.2 loc_store.3
+    # => [RATE0, RATE1, CAPACITY]
+
+    # reset counters because authentication can compute the commitment more than once
+    push.0 loc_store.4 push.0 loc_store.5
+    # => [RATE0, RATE1, CAPACITY]
+
+    # arrays contain at least one word
+    push.1
+    # => [should_loop, RATE0, RATE1, CAPACITY]
+
+    while.true
+        loc_load.0
+        # => [is_create, RATE0, RATE1, CAPACITY]
+
+        if.true
+            push.1
+            # => [include_word = 1, RATE0, RATE1, CAPACITY]
+        else
+            padw loc_load.4 mul.4 loc_load.2 add mem_loadw_le
+            # => [INITIAL_VALUE, RATE0, RATE1, CAPACITY]
+
+            padw loc_load.4 mul.4 loc_load.3 add mem_loadw_le
+            # => [CURRENT_VALUE, INITIAL_VALUE, RATE0, RATE1, CAPACITY]
+
+            exec.word::eq not
+            # => [include_word, RATE0, RATE1, CAPACITY]
+        end
+        # => [include_word, RATE0, RATE1, CAPACITY]
+
+        if.true
+            padw loc_load.4 mul.4 loc_load.3 add mem_loadw_le
+            # => [VALUE, RATE0, RATE1, CAPACITY]
+
+            push.0.0.0 loc_load.4
+            # => [[index, 0, 0, 0], VALUE, RATE0, RATE1, CAPACITY]
+
+            # replace the previous rate words with the index and value
+            swapdw dropw dropw
+            # => [[index, 0, 0, 0], VALUE, CAPACITY]
+
+            exec.poseidon2::permute
+            # => [RATE0, RATE1, CAPACITY]
+
+            loc_load.5 add.1 loc_store.5
+            # => [RATE0, RATE1, CAPACITY]
+        end
+
+        # advance the index and continue until every word has been visited
+        loc_load.4 add.1 dup loc_store.4 loc_load.1 neq
+        # => [should_loop, RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+
+    loc_load.5
+    # => [num_entries, RATE0, RATE1, CAPACITY]
 end
 
 #! Updates the given delta hasher with the asset vault delta.

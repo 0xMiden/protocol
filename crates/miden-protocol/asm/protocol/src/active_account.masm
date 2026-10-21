@@ -294,7 +294,11 @@ end
 #!
 #! Invocation: exec
 pub proc get_array_length(slot_id: StorageSlotId) -> u16
-    exec.get_array_info dropw
+    exec.get_array_info
+    # => [ROOT, num_words]
+
+    dropw
+    # => [num_words]
 end
 
 #! Copies the active account's array into caller memory.
@@ -308,35 +312,63 @@ end
 #! - the caller is not an account procedure.
 #! - the preimage or destination range is invalid.
 #!
+#! Locals:
+#! - 0: dst_ptr
+#! - 1: num_words
+#!
 #! Invocation: exec
 @locals(2)
 pub proc get_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
     movup.2 loc_store.0
+    # => [slot_id_suffix, slot_id_prefix]
+
     exec.get_array_info
-    dup.4 loc_store.1
-    adv.push_mapvaln adv_push loc_load.1 mul.4 assert_eq
     # => [ROOT, num_words]
 
+    # save the length and require exactly four advice elements per word
+    dup.4 loc_store.1
+    adv.push_mapvaln adv_push
+    # => [num_elements, ROOT, num_words]
+
+    loc_load.1 mul.4 assert_eq
+    # => [ROOT, num_words]
+
+    # check that both ends of the destination range fit in u32
     loc_load.0 dup u32assert drop
-    dup.5 mul.4 dup.1 add u32assert drop
+    dup.5 mul.4 dup.1 add u32assert
+    # => [end_ptr, dst_ptr, ROOT, num_words]
+
+    drop
     # => [dst_ptr, ROOT, num_words]
 
     movup.5
     # => [num_words, dst_ptr, ROOT]
 
-    exec.mem::pipe_preimage_to_memory drop
+    # copy the array and verify its commitment
+    exec.mem::pipe_preimage_to_memory
+    # => [end_ptr]
+
+    drop
     loc_load.1
     # => [num_words]
 end
 
+#! Fetches the active account's array commitment and length from the kernel.
+#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [ROOT, num_words]
 proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
     push.0 movdn.2 push.ACCOUNT_GET_ARRAY_INFO_OFFSET
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
+
+    # pad the stack
     padw swapw padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
+
     syscall.exec_kernel_proc
     # => [ROOT, num_words, pad(11)]
 
+    # clean the stack
     repeat.11
         movup.5 drop
     end
