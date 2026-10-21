@@ -99,6 +99,7 @@ async fn passthrough_private_pswap_e2e(
             PswapNoteStorage::builder()
                 .min_requested_asset(requested)
                 .payback(PswapPayback::private(recipient, NoteTag::new(27)))
+                .cancellation_fee(native(50_000))
                 .build(),
         )
         .serial_number(builder.rng_mut().draw_word())
@@ -113,31 +114,13 @@ async fn passthrough_private_pswap_e2e(
         Some(native(50_000)),
         BlockNumber::from(100),
     )?;
-    // Cancellation has its own privately funded fee request, committing a TX_FEE as its output.
-    let cancel_fee: Note = TxFeeNote::builder()
-        .sender(account.id())
-        .serial_number(builder.rng_mut().draw_word())
-        .asset(native(50_000))
-        .build()?
-        .into();
-    let cancel_request = CreateNote::new(
-        owner.id(),
-        builder.rng_mut().draw_word(),
-        cancel_fee.clone(),
-        None,
-        BlockNumber::from(100),
-    )?;
     let mut chain = builder.build()?;
     let (fee_args, fee_advice) = commit_fee_conversion_info(
         FeeConversionInfo::one_to_one(ACCOUNT_ID_FEE_FAUCET.try_into()?),
         Word::from([9u32, 10, 11, 12]),
     );
 
-    let requests = if cancel_remainder {
-        vec![request.note().clone(), cancel_request.note().clone()]
-    } else {
-        vec![request.note().clone()]
-    };
+    let requests = vec![request.note().clone()];
     let partials = requests.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
     let send = SendNotesTransactionScript::new(&owner.code_interface(), &partials)?;
     let publish = chain
@@ -192,7 +175,7 @@ async fn passthrough_private_pswap_e2e(
             .execute()
             .await?;
         let attachment = PswapNoteAttachment::new(AssetAmount::new(25)?, order.order_id(), depth);
-        let payback = order.private_payback_note(filler.id(), &attachment, recipient)?;
+        let payback = current.private_payback_note(filler.id(), &attachment, recipient)?;
         assert_eq!(fill.output_notes().get_note(0).id(), payback.id());
         assert_eq!(payback.metadata().note_type(), NoteType::Private);
         let (_, remainder) = current.execute(
@@ -209,26 +192,32 @@ async fn passthrough_private_pswap_e2e(
         }
     }
     if cancel_remainder {
-        let advice = AdviceInputs::default()
-            .with_map(current.cancellation_advice(recipient)?)
-            .with_map(cancel_request.output_advice());
+        let advice = AdviceInputs::default().with_map(current.cancellation_advice(recipient)?);
         let cancel = chain
             .build_transaction(account.id())
-            // Put the fee request first, so the fee remains at index zero.
-            .authenticated_input_notes([cancel_request.note().clone(), current_note.clone()])
+            .authenticated_input_notes([current_note.clone()])
             .extend_advice_inputs(advice)
             .extend_note_args(BTreeMap::from([(
                 current_note.id(),
                 PswapNote::create_cancel_args(),
             )]))
-            .auth_args(AuthPassthrough::auth_args(0))
+            .auth_args(AuthPassthrough::auth_args(1))
             .build()?
             .execute()
             .await?;
         let refund = current.refund_note(account.id(), recipient)?;
         assert!(cancel.output_notes().iter().any(|note| note.id() == refund.id()));
         assert_eq!(cancel.final_account().to_commitment(), account.to_commitment());
+        assert_eq!(cancel.input_notes().num_notes(), 1);
+        assert_eq!(cancel.output_notes().num_notes(), 2);
+        assert_eq!(
+            cancel.output_notes().get_note(1).assets(),
+            &NoteAssets::new(vec![native(50_000).into()])?
+        );
         assert!(native(50_000).amount() >= cancel.compute_fee());
+        let (proven, outcome) = crate::prove_and_verify_transaction(cancel.clone()).await?;
+        assert!(outcome.is_complete());
+        assert_eq!(proven.unauthenticated_notes().count(), 0);
         chain.add_pending_executed_transaction(&cancel)?;
         chain.prove_next_block()?;
         paybacks.push(refund);

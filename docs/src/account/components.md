@@ -17,9 +17,9 @@ Combine `AuthPassthrough` with `BasicWallet` in a public account for permissionl
 
 To create a public PSWAP with private paybacks:
 
-1. Fund a private [CREATE_NOTE](../note.md#create_note) with the offered asset and creation fee. Commit to a public PSWAP whose payback recipient remains private.
+1. Fund a private [CREATE_NOTE](../note.md#create_note) with the offered asset, creation fee, and cancellation reserve. Commit to a public PSWAP whose payback recipient remains private.
 2. Consume the authenticated request through the passthrough account, producing the PSWAP and fee note. The passthrough account appears as the PSWAP sender.
-3. Fillers create private paybacks, which the owner reconstructs and consumes with inclusion proofs. The owner can cancel through the passthrough account using the secret recipient preimage; a separate CREATE_NOTE can fund cancellation by creating a fee note.
+3. Partial fills preserve the reserve in the remainder; a complete fill returns it in the final private payback. The owner can cancel through passthrough using the secret recipient preimage. The PSWAP itself funds the TX_FEE, so cancellation consumes only the order or remainder. Reconstruct private paybacks and refunds and consume them with inclusion proofs.
 
 Execute and prove locally to keep private inputs confidential. The proven creation transaction omits the request header, removing the direct ledger link to its owner. Amounts, timing, and information shared outside the protocol can still correlate them.
 
