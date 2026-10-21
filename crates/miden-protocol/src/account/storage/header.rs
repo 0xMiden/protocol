@@ -215,7 +215,7 @@ impl SequentialCommit for AccountStorageHeader {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        self.slots().flat_map(|slot| slot.to_dword()).collect()
+        self.slots().flat_map(|slot| slot.to_double_word()).collect()
     }
 }
 
@@ -301,7 +301,7 @@ impl StorageSlotHeader {
     ///
     /// The low word is `[0, slot_type, slot_id_suffix, slot_id_prefix]` and the high word is the
     /// slot value.
-    pub(crate) fn to_dword(&self) -> DoubleWord {
+    pub(crate) fn to_double_word(&self) -> DoubleWord {
         let id = self.id();
         let header_word = Word::new([Felt::ZERO, self.r#type.as_felt(), id.suffix(), id.prefix()]);
         DoubleWord::new(header_word, self.value)
@@ -494,7 +494,7 @@ mod tests {
         );
 
         // Serialize the single slot to elements
-        let elements = slot1.to_dword();
+        let elements = slot1.to_double_word();
 
         // Create slot names map using the slot's ID
         let mut slot_names = BTreeMap::new();

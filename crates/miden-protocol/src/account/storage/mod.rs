@@ -438,7 +438,7 @@ impl SequentialCommit for AccountStorage {
                     slot.content().slot_type(),
                     slot.content().value(),
                 )
-                .to_dword()
+                .to_double_word()
             })
             .collect()
     }
