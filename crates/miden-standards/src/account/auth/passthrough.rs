@@ -12,9 +12,10 @@ account_component_code!(PASSTHROUGH_CODE, "miden-standards-auth-passthrough.masp
 /// increments the nonce once. Anyone with the input witnesses can execute against a public
 /// account, so input note scripts must constrain their outputs; plain P2ID funding is unsuitable.
 ///
-/// [`Self::auth_args`] selects a sealed public TX_FEE output covering the transaction's native
+/// [`Self::auth_args`] selects a public TX_FEE output covering the transaction's native
 /// fee. [`CreateNote`](crate::note::CreateNote) can fund it. This component creates no fee output;
 /// the selected note must cover the fee in full. On chains with zero fees, the index is ignored.
+/// The check runs after the transaction script, so the selected output need not be sealed.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AuthPassthrough;
 

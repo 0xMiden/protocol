@@ -29,7 +29,7 @@ const REQUIRED_FEE = 12
 const ERR_PASSTHROUGH_STATE_CHANGED = "passthrough account state must remain unchanged"
 const ERR_PASSTHROUGH_VAULT_NOT_EMPTY = "passthrough account vault must be empty"
 const ERR_PASSTHROUGH_AUTH_ARGS = "passthrough auth expects a fee note index and zero reserved arguments"
-const ERR_PASSTHROUGH_FEE_NOTE = "passthrough requires a public sealed native TX_FEE note"
+const ERR_PASSTHROUGH_FEE_NOTE = "passthrough requires a public native TX_FEE note"
 const ERR_PASSTHROUGH_INSUFFICIENT_FEE = "passthrough fee note does not cover the transaction"
 
 # AUTHENTICATION
@@ -41,7 +41,8 @@ const ERR_PASSTHROUGH_INSUFFICIENT_FEE = "passthrough fee note does not cover th
 #! Inputs:  [fee_note_idx, pad(15)]
 #! Outputs: [pad(16)]
 #!
-#! fee_note_idx selects a sealed public TX_FEE output. Reserved arguments must be zero.
+#! fee_note_idx selects a public TX_FEE output. Reserved arguments must be zero.
+#! Authentication runs after the transaction script, so the selected output need not be sealed.
 #! The index is ignored on chains with zero fees.
 @auth_script
 @locals(13)
@@ -67,8 +68,6 @@ pub proc auth_passthrough(auth_args: AuthArgs)
 
     dup loc_store.REQUIRED_FEE neq.0
     if.true
-        loc_load.FEE_NOTE_IDX exec.output_note::is_sealed
-        assert.err=ERR_PASSTHROUGH_FEE_NOTE
         loc_load.FEE_NOTE_IDX exec.output_note::get_metadata
         # => [METADATA, pad(12)]
 

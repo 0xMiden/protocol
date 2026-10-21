@@ -27,7 +27,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
 };
-use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{ONE, Word};
 use miden_standards::account::auth::{
     AuthPassthrough,
@@ -60,18 +60,6 @@ use rstest::rstest;
 
 fn native(amount: u64) -> FungibleAsset {
     FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into().unwrap(), amount).unwrap()
-}
-
-fn seal_output(index: u16) -> anyhow::Result<TransactionScript> {
-    Ok(CodeBuilder::default().compile_tx_script(format!(
-        r#"
-        use miden::protocol::output_note
-        @transaction_script
-        pub proc main
-            push.{index} exec.output_note::seal
-        end
-    "#
-    ))?)
 }
 
 fn passthrough() -> anyhow::Result<Account> {
@@ -251,7 +239,7 @@ async fn passthrough_private_pswap_e2e(
             advice = advice.with_map(funding.output_advice());
             fee_note_index = 2;
         }
-        let mut cancel = chain
+        let cancel = chain
             .build_transaction(account.id())
             .authenticated_input_notes(inputs)
             .extend_advice_inputs(advice)
@@ -259,11 +247,10 @@ async fn passthrough_private_pswap_e2e(
                 current_note.id(),
                 PswapNote::create_cancel_args(),
             )]))
-            .auth_args(AuthPassthrough::auth_args(fee_note_index));
-        if additional_fee {
-            cancel = cancel.tx_script(seal_output(fee_note_index)?);
-        }
-        let cancel = cancel.build()?.execute().await?;
+            .auth_args(AuthPassthrough::auth_args(fee_note_index))
+            .build()?
+            .execute()
+            .await?;
         let refund = current.refund_note(account.id(), recipient)?;
         assert!(cancel.output_notes().iter().any(|note| note.id() == refund.id()));
         assert_eq!(cancel.final_account().to_commitment(), account.to_commitment());
@@ -494,7 +481,6 @@ async fn passthrough_rejects_invalid_fee_outputs(
         .authenticated_input_notes([create_note.note().clone()])
         .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .auth_args(AuthPassthrough::auth_args(0))
-        .tx_script(seal_output(0)?)
         .build()?
         .execute()
         .await;
@@ -503,24 +489,37 @@ async fn passthrough_rejects_invalid_fee_outputs(
 }
 
 #[tokio::test]
-async fn passthrough_rejects_unsealed_fee_output() -> anyhow::Result<()> {
+async fn passthrough_checks_fee_after_transaction_script() -> anyhow::Result<()> {
     let account = passthrough()?;
     let mut builder = MockChain::builder().verification_base_fee(500);
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
     builder.add_account(account.clone())?;
+    let output: Note = P2idNote::builder()
+        .sender(account.id())
+        .target(owner.id())
+        .serial_number(builder.rng_mut().draw_word())
+        .asset(native(100))
+        .build()?
+        .into();
+    let create_note =
+        CreateNote::new(owner.id(), builder.rng_mut().draw_word(), output, Some(native(50_000)))?;
+    builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
     let chain = builder.build()?;
     let script = CodeBuilder::default().compile_tx_script(
         r#"
-        use miden::standards::notes::tx_fee
+        use miden::protocol::output_note
         @transaction_script
         pub proc main
-            push.1.2.3.4 exec.tx_fee::create_output_note drop
+            push.1 push.0.0.0.0 push.99 exec.output_note::add_word_attachment
         end
     "#,
     )?;
     let result = chain
         .build_transaction(account.id())
+        .authenticated_input_notes([create_note.note().clone()])
+        .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .tx_script(script)
-        .auth_args(AuthPassthrough::auth_args(0))
+        .auth_args(AuthPassthrough::auth_args(1))
         .build()?
         .execute()
         .await;
