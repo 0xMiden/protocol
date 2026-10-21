@@ -1384,7 +1384,7 @@ async fn pswap_private_cancel_through_no_auth(
     let refund = pswap.refund_note(router.id(), recipient)?;
 
     let mut advice = if provide_preimage {
-        pswap.cancellation_advice(recipient)?
+        pswap.cancellation_advice(recipient)?.to_vec()
     } else {
         vec![]
     };
