@@ -43,6 +43,7 @@ impl From<&ProvenBatch> for proto::transaction::ProvenBatch {
             expiration_block_num: Some(value.batch_expiration_block_num().into()),
             transactions: value.transactions().as_slice().iter().map(Into::into).collect(),
             proof: Some(value.proof().into()),
+            note_tree_root: Some(value.note_tree_root().into()),
         }
     }
 }

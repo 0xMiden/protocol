@@ -72,6 +72,7 @@ fn proven(proposal: &ProposedBatch) -> ProvenBatch {
         proposal.account_updates().values().cloned(),
         proposal.input_notes().clone(),
         proposal.output_notes().to_vec(),
+        proposal.batch_note_tree().root(),
         proposal.batch_expiration_block_num(),
         proposal.transaction_headers(),
         dummy_execution_proof(),
@@ -110,13 +111,19 @@ fn proven_batch_roundtrips_and_checks_proposal_agreement() {
 fn proven_batch_rejects_changed_proposal_fields() {
     let proposal = proposal();
     let batch = proven(&proposal);
-    for field in ["reference block number", "reference block commitment", "expiration block"] {
+    for field in [
+        "reference block number",
+        "reference block commitment",
+        "note tree root",
+        "expiration block",
+    ] {
         let mut wire: proto::transaction::ProvenBatch = (&batch).into();
         match field {
             "reference block number" => wire.reference_block_num.as_mut().unwrap().block_num -= 1,
             "reference block commitment" => {
                 wire.reference_block_commitment = Some(Word::empty().into())
             },
+            "note tree root" => wire.note_tree_root = Some(Word::empty().into()),
             "expiration block" => wire.expiration_block_num.as_mut().unwrap().block_num += 1,
             _ => unreachable!(),
         }

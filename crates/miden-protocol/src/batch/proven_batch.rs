@@ -50,9 +50,10 @@ pub struct ProvenBatch {
     /// The root of the [`BatchNoteTree`](crate::batch::BatchNoteTree) built over `output_notes`.
     ///
     /// This value is stored as-is and is **not** recomputed from or checked against `output_notes`
-    /// by [`ProvenBatch::new_unchecked`] or deserialization. It must therefore not be trusted at a
-    /// trust boundary until a consumer binds it to `output_notes` (e.g. the block kernel, which
-    /// will verify it against the per-batch note tree it reconstructs).
+    /// by [`ProvenBatch::new`], [`ProvenBatch::new_unchecked`] or deserialization. It must
+    /// therefore not be trusted at a trust boundary until a consumer binds it to `output_notes`
+    /// (e.g. the block kernel, which will verify it against the per-batch note tree it
+    /// reconstructs).
     note_tree_root: Word,
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
@@ -69,7 +70,8 @@ impl ProvenBatch {
     /// This verifies that the account updates form the state transitions described by the
     /// [`TransactionHeader`]s. It also checks the supplied input and output notes for duplicates
     /// and known overlap, but does not verify that they are the correctly aggregated note sets
-    /// derived from the transaction headers.
+    /// derived from the transaction headers, or that `note_tree_root` is the root of the
+    /// [`BatchNoteTree`](crate::batch::BatchNoteTree) built over `output_notes`.
     ///
     /// This does not verify the execution proof, per-transaction reference blocks or expiration
     /// block numbers, or note inclusion proofs. Those checks require data which is not present in
@@ -87,6 +89,7 @@ impl ProvenBatch {
         account_updates: impl IntoIterator<Item = BatchAccountUpdate>,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
+        note_tree_root: Word,
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
@@ -140,6 +143,7 @@ impl ProvenBatch {
             account_updates_by_id,
             input_notes,
             output_notes,
+            note_tree_root,
             batch_expiration_block_num,
             transactions,
             proof,
@@ -255,9 +259,9 @@ impl ProvenBatch {
     /// Returns the root of the [`BatchNoteTree`](crate::batch::BatchNoteTree) built over the
     /// batch's output notes.
     ///
-    /// This root is not validated against [`Self::output_notes`] by the constructor or
-    /// deserialization, so it must not be trusted at a trust boundary until a consumer binds it to
-    /// the output notes.
+    /// This root is not validated against [`Self::output_notes`] by [`Self::new`],
+    /// [`Self::new_unchecked`] or deserialization, so it must not be trusted at a trust boundary
+    /// until a consumer binds it to the output notes.
     pub fn note_tree_root(&self) -> Word {
         self.note_tree_root
     }
@@ -555,6 +559,7 @@ mod tests {
             vec![update],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transactions,
             dummy_execution_proof(),
@@ -573,6 +578,7 @@ mod tests {
             vec![update],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -591,6 +597,7 @@ mod tests {
                 vec![private_account_update()],
                 InputNotes::default(),
                 Vec::new(),
+                Word::empty(),
                 BlockNumber::from(2),
                 transaction_headers(),
                 proof,
@@ -612,6 +619,7 @@ mod tests {
             vec![update.clone(), update],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -645,6 +653,7 @@ mod tests {
             account_updates,
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -673,6 +682,7 @@ mod tests {
             Vec::new(),
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -693,6 +703,7 @@ mod tests {
             vec![private_account_update(), private_account_update_for(unexpected_account_id)],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -735,6 +746,7 @@ mod tests {
             vec![update],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -780,6 +792,7 @@ mod tests {
             vec![update],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transactions,
             dummy_execution_proof(),
@@ -811,6 +824,7 @@ mod tests {
             vec![private_account_update()],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transactions,
             dummy_execution_proof(),
@@ -832,6 +846,7 @@ mod tests {
             BTreeMap::from([(account_id(), update)]),
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transactions,
             dummy_execution_proof(),
@@ -861,6 +876,7 @@ mod tests {
             BTreeMap::from([(account_id(), private_account_update())]),
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transactions,
             dummy_execution_proof(),
@@ -880,6 +896,7 @@ mod tests {
             vec![private_account_update()],
             InputNotes::default(),
             output_notes,
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -903,6 +920,7 @@ mod tests {
             vec![private_account_update()],
             InputNotes::default(),
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transactions,
             dummy_execution_proof(),
@@ -923,6 +941,7 @@ mod tests {
             vec![private_account_update()],
             input_notes,
             Vec::new(),
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -946,6 +965,7 @@ mod tests {
             vec![private_account_update()],
             InputNotes::default(),
             vec![output_note.clone(), output_note],
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
@@ -968,6 +988,7 @@ mod tests {
             vec![private_account_update()],
             input_notes,
             output_notes,
+            Word::empty(),
             BlockNumber::from(2),
             transaction_headers(),
             dummy_execution_proof(),
