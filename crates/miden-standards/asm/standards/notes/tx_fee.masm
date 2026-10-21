@@ -19,7 +19,7 @@ const STORAGE_PTR = 0
 # non-zero, so the tag can never collide with a default account-target tag, which has its 18 least
 # significant bits set to zero.
 # Must be kept in sync with the Rust `TxFeeNote::TAG` constant.
-const TX_FEE_NOTE_TAG = 0xFEE
+pub const TX_FEE_NOTE_TAG = 0xFEE
 
 # PROCEDURES
 # =================================================================================================

@@ -10,13 +10,13 @@ use miden::standards::assets::fungible_asset
 use miden::standards::fee
 use miden::standards::note as std_note
 use miden::standards::notes::tx_fee
+use {TX_FEE_NOTE_TAG} from miden::standards::notes::tx_fee
 
 # CONSTANTS
 # =================================================================================================
 
 # Same empty vault root as the transaction kernel's EMPTY_SMT_ROOT.
 const EMPTY_VAULT_ROOT = [3975378004049472045, 2532873049833957132, 2640800763532531478, 11158234471980764993]
-const TX_FEE_TAG = 0xFEE
 # Estimated cycles for the remaining fee-note checks. apply_cycle_margins adds the epilogue cost.
 const POST_FEE_CYCLES = 4096
 const FEE_NOTE_IDX = 0
@@ -73,7 +73,7 @@ pub proc auth_passthrough(auth_args: AuthArgs)
 
         dupw exec.note::metadata_into_note_type eq.NOTE_TYPE_PUBLIC
         assert.err=ERR_PASSTHROUGH_FEE_NOTE
-        exec.note::metadata_into_tag eq.TX_FEE_TAG assert.err=ERR_PASSTHROUGH_FEE_NOTE
+        exec.note::metadata_into_tag eq.TX_FEE_NOTE_TAG assert.err=ERR_PASSTHROUGH_FEE_NOTE
 
         loc_load.FEE_NOTE_IDX exec.std_note::output_note_get_recipient_preimage
         # => [SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
