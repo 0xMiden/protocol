@@ -8,4 +8,9 @@ pub use procedure_policies::{
     ProcedurePolicyExecutionMode,
     ProcedurePolicyNoteRestriction,
 };
-pub use spending_limits::{SpendingBudget, SpendingLimitsPolicy, UncoveredAssetPolicy};
+pub use spending_limits::{
+    SpendingBudget,
+    SpendingLimitsPolicy,
+    SpendingOracle,
+    UncoveredAssetPolicy,
+};
