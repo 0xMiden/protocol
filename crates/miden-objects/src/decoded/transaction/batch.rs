@@ -54,8 +54,8 @@ pub enum ProposedBatchError {
 
 pub use proto::transaction::DecodedProvenBatch as ProvenBatch;
 
-/// Checks local batch invariants, but not proof validity, note aggregation, or transaction
-/// ordering.
+/// Checks local batch invariants, but not proof validity, note aggregation, the note tree root, or
+/// transaction ordering.
 impl crate::BuildUnchecked for ProvenBatch {
     type Output = miden_protocol::batch::ProvenBatch;
     type Error = VerificationError;
@@ -79,6 +79,7 @@ impl crate::BuildUnchecked for ProvenBatch {
             updates,
             miden_protocol::transaction::InputNotes::new_unchecked(inputs),
             outputs,
+            self.note_tree_root,
             unwrap_infallible(self.expiration_block_num.verify()),
             miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions),
             self.proof,
@@ -115,6 +116,8 @@ impl crate::VerifyWith<&miden_protocol::batch::ProposedBatch> for ProvenBatch {
             Some("input notes")
         } else if batch.output_notes() != proposed.output_notes() {
             Some("output notes")
+        } else if batch.note_tree_root() != proposed.batch_note_tree().root() {
+            Some("note tree root")
         } else if batch.batch_expiration_block_num() != proposed.batch_expiration_block_num() {
             Some("expiration block")
         } else if batch.transactions().as_slice() != proposed.transaction_headers().as_slice() {
