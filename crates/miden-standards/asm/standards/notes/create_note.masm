@@ -4,7 +4,7 @@ use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
-use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_FUNGIBLE} from miden::protocol::asset
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 use miden::protocol::output_note
 use miden::protocol::tx
@@ -48,6 +48,7 @@ const ERR_CREATE_NOTE_INVALID_ACTION = "CREATE note expects create or reclaim wi
 const ERR_CREATE_NOTE_FUNDING_MISMATCH = "CREATE note assets do not match the committed funding"
 const ERR_CREATE_NOTE_OUTPUT_ALTERED = "CREATE note output assets differ from the expected funding"
 const ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE = "CREATE note fee must use the native fee asset"
+const ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS = "CREATE note output must contain fungible assets with nonzero amounts"
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -71,6 +72,10 @@ proc prepare_output_assets() -> felt
     loc_load.ASSETS_CURSOR loc_load.ASSETS_END neq
     while.true
         padw loc_load.ASSETS_CURSOR mem_loadw_le
+        exec.asset::id_to_composition eq.COMPOSITION_FUNGIBLE
+        assert.err=ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS
+        loc_load.ASSETS_CURSOR add.ASSET_VALUE_MEMORY_OFFSET mem_load
+        neq.0 assert.err=ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS
         padw mem_loadw_le.FEE_ASSET_PTR exec.word::eq
         if.true
             push.1 loc_store.FEE_FOUND
@@ -93,6 +98,7 @@ proc prepare_output_assets() -> felt
         loc_load.ASSETS_END neq
     end
     loc_load.FEE_FOUND assert.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+    loc_load.ASSETS_WRITE_CURSOR neq.ASSETS_PTR assert.err=ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS
     loc_load.ASSETS_WRITE_CURSOR sub.ASSETS_PTR push.ASSETS_PTR
     exec.poseidon2::hash_elements mem_storew_le.EXPECTED_ASSETS_PTR dropw
     loc_load.ASSETS_WRITE_CURSOR

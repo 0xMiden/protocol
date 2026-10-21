@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
 
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountType};
-use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
     Note,
@@ -22,11 +21,13 @@ use miden_protocol::testing::account_id::{
     AccountIdBuilder,
 };
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE,
     ERR_CREATE_NOTE_FUNDING_MISMATCH,
+    ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS,
     ERR_CREATE_NOTE_OUTPUT_ALTERED,
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT,
 };
@@ -183,6 +184,49 @@ async fn create_note_rejects_changed_input_assets() -> anyhow::Result<()> {
         .execute()
         .await;
     assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FUNDING_MISMATCH);
+    Ok(())
+}
+
+#[rstest]
+#[case::empty_output(None, false)]
+#[case::fee_only(None, true)]
+#[case::nft(Some(NonFungibleAsset::mock(&[1, 2, 3, 4])), false)]
+#[case::zero_amount(Some(FungibleAsset::mock(0)), false)]
+#[tokio::test]
+async fn create_note_rejects_unsupported_output_assets(
+    #[case] output_asset: Option<Asset>,
+    #[case] fee_only: bool,
+) -> anyhow::Result<()> {
+    let (mut builder, _, passthrough, template) = setup(NoteType::Public, true, Some(50), 0)?;
+    let assets = NoteAssets::new(if fee_only {
+        vec![template.fee().unwrap().into()]
+    } else {
+        output_asset.into_iter().collect()
+    })?;
+    let mut storage = template.note().storage().items().to_vec();
+    storage[4..8].copy_from_slice(assets.commitment().as_elements());
+    if !fee_only {
+        storage[8..16].fill(ZERO);
+    }
+    let note = Note::new(
+        assets,
+        template.note().metadata().into_partial_metadata(),
+        NoteRecipient::new(
+            builder.rng_mut().draw_word(),
+            CreateNote::script(),
+            NoteStorage::new(storage)?,
+        ),
+    );
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let chain = builder.build()?;
+    let result = chain
+        .build_transaction(passthrough.id())
+        .authenticated_input_notes([note])
+        .extend_advice_inputs(AdviceInputs::default().with_map(template.output_advice()))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS);
     Ok(())
 }
 
