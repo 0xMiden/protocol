@@ -674,6 +674,93 @@ pub proc account_set_map_item(slot_id: StorageSlotId, key: word, new_value: word
     # => [OLD_VALUE, pad(12)]
 end
 
+#! Returns the active account's array commitment and word count.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
+#! Outputs: [ROOT, num_words, pad(11)]
+#!
+#! Panics if:
+#! - the slot is missing or is not an array.
+#! - the invocation does not originate from the account context.
+#!
+#! Invocation: dynexec
+pub proc account_get_array_info(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, u16, [felt; 11])
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+    # fetch the array commitment and length
+    exec.account::get_array_info
+    # => [ROOT, num_words, pad(15)]
+
+    # truncate the stack
+    repeat.4
+        movup.5 drop
+    end
+    # => [ROOT, num_words, pad(11)]
+end
+
+#! Returns the native account's initial array commitment and word count.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
+#! Outputs: [ROOT, num_words, pad(11)]
+#!
+#! Panics if:
+#! - the slot is missing or is not an array.
+#! - the invocation does not originate from the account context.
+#! - the active account is not the native account.
+#!
+#! Invocation: dynexec
+pub proc account_get_initial_array_info(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, u16, [felt; 11])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+    # fetch the initial array commitment and length
+    exec.account::get_initial_array_info
+    # => [ROOT, num_words, pad(15)]
+
+    # truncate the stack
+    repeat.4
+        movup.5 drop
+    end
+    # => [ROOT, num_words, pad(11)]
+end
+
+#! Replaces a native account array with the verified preimage of ROOT.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ROOT, pad(10)]
+#! Outputs: [num_words, pad(15)]
+#!
+#! Panics if:
+#! - the slot is missing or is not an array.
+#! - the invocation does not originate from the account context.
+#! - the active account is not the native account.
+#! - the preimage length or commitment is invalid.
+#!
+#! Invocation: dynexec
+pub proc account_set_array(slot_id: StorageSlotId, root: word, padding: [felt; 10]) -> (u16, [felt; 15])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, ROOT, pad(10)]
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [slot_id_suffix, slot_id_prefix, ROOT, pad(10)]
+
+    # verify the preimage and update the array commitment
+    exec.account::set_array
+    # => [num_words, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [num_words, pad(15)]
+end
+
 #! Returns the vault root of the native account at the beginning of the transaction.
 #!
 #! Inputs:  [pad(16)]
@@ -2242,49 +2329,4 @@ pub proc tx_get_logs_commitment(padding: [felt; 16]) -> (word, [felt; 12])
 
     swapw dropw
     # => [LOGS_COMMITMENT, pad(12)]
-end
-
-#! Returns the active array commitment and word count.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
-#! Outputs: [ROOT, num_words, pad(11)]
-#!
-#! Invocation: dynexec
-pub proc account_get_array_info(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, u16, [felt; 11])
-    exec.authenticate_account_origin
-    exec.account::get_array_info
-    repeat.4
-        movup.5 drop
-    end
-    # => [ROOT, num_words, pad(11)]
-end
-
-#! Returns the native account's initial array commitment and word count.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
-#! Outputs: [ROOT, num_words, pad(11)]
-#!
-#! Invocation: dynexec
-pub proc account_get_initial_array_info(slot_id: StorageSlotId, padding: [felt; 14]) -> (word, u16, [felt; 11])
-    exec.memory::assert_native_account
-    exec.authenticate_account_origin
-    exec.account::get_initial_array_info
-    repeat.4
-        movup.5 drop
-    end
-    # => [ROOT, num_words, pad(11)]
-end
-
-#! Replaces a native account array with the verified preimage of ROOT.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, ROOT, pad(10)]
-#! Outputs: [num_words, pad(15)]
-#!
-#! Invocation: dynexec
-pub proc account_set_array(slot_id: StorageSlotId, root: word, padding: [felt; 10]) -> (u16, [felt; 15])
-    exec.memory::assert_native_account
-    exec.authenticate_account_origin
-    exec.account::set_array
-    swap drop
-    # => [num_words, pad(15)]
 end
