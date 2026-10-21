@@ -84,26 +84,46 @@ fn setup(
 }
 
 #[rstest]
-#[case::combined_funding(NoteType::Public, true, Some(50), 0)]
-#[case::separate_funding(NoteType::Public, false, Some(50), 0)]
-#[case::private_output(NoteType::Private, false, Some(50), 0)]
-#[case::without_fee(NoteType::Public, false, None, 0)]
-#[case::multiple_assets_combined_fee(NoteType::Public, true, Some(50), 1)]
-#[case::multiple_assets_separate_fee(NoteType::Private, false, Some(50), 1)]
-#[case::maximum_output_assets(NoteType::Public, true, Some(50), NoteAssets::MAX_NUM_ASSETS - 1)]
+#[case::combined_funding(NoteType::Public, true, Some(50), 0, None)]
+#[case::fee_before_output(NoteType::Public, false, Some(50), 0, Some(0))]
+#[case::private_output(NoteType::Private, false, Some(50), 0, None)]
+#[case::without_fee(NoteType::Public, false, None, 0, None)]
+#[case::multiple_assets_combined_fee(NoteType::Public, true, Some(50), 1, None)]
+#[case::fee_between_outputs(NoteType::Private, false, Some(50), 1, Some(1))]
+#[case::maximum_output_assets(NoteType::Public, true, Some(50), NoteAssets::MAX_NUM_ASSETS - 1, None)]
 #[tokio::test]
 async fn create_note_preserves_output_and_pays_fee(
     #[case] note_type: NoteType,
     #[case] native_principal: bool,
     #[case] fee_amount: Option<u64>,
     #[case] extra_assets: usize,
+    #[case] fee_asset_index: Option<usize>,
 ) -> anyhow::Result<()> {
-    let (builder, _, passthrough, create_note) =
+    let (mut builder, _, passthrough, create_note) =
         setup(note_type, native_principal, fee_amount, extra_assets)?;
+    let mut input = create_note.note().clone();
+    if let Some(index) = fee_asset_index {
+        let mut assets = input.assets().clone().into_vec();
+        let fee = assets.pop().unwrap();
+        assets.insert(index, fee);
+        let assets = NoteAssets::new(assets)?;
+        let mut storage = input.storage().items().to_vec();
+        storage[4..8].copy_from_slice(assets.commitment().as_elements());
+        input = Note::new(
+            assets,
+            input.metadata().into_partial_metadata(),
+            NoteRecipient::new(
+                input.serial_num(),
+                CreateNote::script(),
+                NoteStorage::new(storage)?,
+            ),
+        );
+        builder.add_output_note(RawOutputNote::Full(input.clone()));
+    }
     let chain = builder.build()?;
     let tx = chain
         .build_transaction(passthrough.id())
-        .authenticated_input_notes([create_note.note().clone()])
+        .authenticated_input_notes([input])
         .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .build()?
         .execute()
