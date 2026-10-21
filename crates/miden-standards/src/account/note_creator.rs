@@ -1,13 +1,13 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // NOTE CREATOR
 // ================================================================================================
 
-account_component_code!(NOTE_CREATOR_CODE, "miden-standards-note-note-creator.masp");
+account_component_package!(NOTE_CREATOR_PACKAGE, "miden-standards-note-note-creator.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -55,7 +55,7 @@ impl NoteCreator {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &NOTE_CREATOR_CODE
+        &NOTE_CREATOR_PACKAGE.code
     }
 
     /// Returns the procedure root of the `create_note` procedure.
@@ -65,8 +65,7 @@ impl NoteCreator {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Note creator component exposing only the create_note procedure")
+        NOTE_CREATOR_PACKAGE.metadata.clone()
     }
 }
 

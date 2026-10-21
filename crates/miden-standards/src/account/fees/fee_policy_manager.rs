@@ -4,7 +4,6 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
     AccountComponent,
     AccountId,
@@ -153,38 +152,6 @@ impl FeePolicyManager {
         header
             .find_slot_header_by_name(Self::fee_asset_id_slot())
             .and_then(|slot| AssetId::try_from(slot.value()).ok())
-    }
-
-    /// Returns the schema entries for the three fee-policy storage slots.
-    ///
-    /// These slots are installed by the owning
-    /// [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] component, whose storage
-    /// schema includes them.
-    pub(crate) fn slot_schemas() -> [(StorageSlotName, StorageSlotSchema); 3] {
-        [
-            (
-                ACTIVE_FEE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Active fee policy procedure root",
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Allowed fee policy procedure roots",
-                    SchemaType::native_word(),
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                FEE_ASSET_ID_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "ID of the asset fees are charged in",
-                    SchemaType::native_word(),
-                ),
-            ),
-        ]
     }
 
     /// Builds the three fee-policy storage slots from this manager's configuration:
