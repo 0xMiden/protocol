@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 use {TX_ADD_LOG_OFFSET, TX_GET_LOGS_COMMITMENT_OFFSET} from miden::protocol::kernel_proc_offsets
 use {
@@ -516,7 +516,7 @@ pub proc add_log_from_memory(topic: LogTopic, num_words: u16, content_ptr: ptr<w
     movdn.2 dup.1
     # => [content_ptr, num_elements, content_ptr, end_ptr, topic_suffix, topic_prefix]
 
-    exec.poseidon2::hash_elements
+    exec.eidos::hash_elements
     # => [CONTENT_COMMITMENT, content_ptr, end_ptr, topic_suffix, topic_prefix]
 
     adv.insert_mem
