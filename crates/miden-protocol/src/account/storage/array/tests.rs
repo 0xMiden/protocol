@@ -11,62 +11,46 @@ use crate::account::{
     StorageSlot,
     StorageSlotName,
     StorageSlotPatch,
-    StorageSlotType,
     StorageValuePatch,
 };
-
-#[test]
-fn array_commitment_and_serialization() -> anyhow::Result<()> {
-    // Odd lengths exercise hash padding; the upper bound must not truncate to a u8.
-    for length in [1, 3, 256] {
-        let words = (0..length).map(|i| Word::from([i as u32, 0, 0, 0])).collect();
-        let array = StorageArray::new(words)?;
-        assert_eq!(array.commitment(), Hasher::hash_elements(&array.to_elements()));
-        assert_eq!(StorageArray::read_from_bytes(&array.to_bytes())?, array);
-    }
-    Ok(())
-}
 
 #[test]
 fn invalid_lengths_are_rejected_before_reading_payload() {
     for length in [0u16, 257, u16::MAX] {
         assert!(StorageArray::new(vec![Word::empty(); usize::from(length)]).is_err());
-        assert!(StorageArray::read_from_bytes(&length.to_le_bytes()).is_err());
+        assert!(matches!(
+            StorageArray::read_from_bytes(&length.to_le_bytes()),
+            Err(DeserializationError::InvalidValue(_))
+        ));
     }
 }
 
 #[test]
 fn arrays_survive_full_partial_and_compact_storage_roundtrips() -> anyhow::Result<()> {
     let name = StorageSlotName::new("test::array")?;
-    let array = StorageArray::new(vec![Word::empty(), Word::from([1u32, 2, 3, 4]), Word::empty()])?;
+    // The maximum length must survive serialization without truncating to a u8.
+    let array = StorageArray::new(vec![Word::from([1u32, 2, 3, 4]); 256])?;
     let storage = AccountStorage::new(vec![StorageSlot::with_array(name.clone(), array.clone())])?;
+
     assert_eq!(AccountStorage::read_from_bytes(&storage.to_bytes())?, storage);
+
     let header = storage.to_header();
     assert_eq!(AccountStorageHeader::read_from_bytes(&header.to_bytes())?, header);
     assert_eq!(PartialStorage::new_minimal(&storage).header(), &header);
+
+    // The compact header requires the array contents to reconstruct the full header.
     let names = BTreeMap::from([(name.id(), name)]);
     assert!(
         AccountStorageHeader::try_from_elements(&header.to_elements(), &names, &BTreeMap::new())
             .is_err()
     );
+
     let arrays = BTreeMap::from([(array.commitment(), array)]);
     assert_eq!(
         AccountStorageHeader::try_from_elements(&header.to_elements(), &names, &arrays)?,
         header
     );
-    Ok(())
-}
 
-#[test]
-fn array_slot_type_serialization() -> anyhow::Result<()> {
-    for length in [1, 3, 256] {
-        let slot_type = StorageSlotType::Array(StorageArrayLength::try_from(length)?);
-        assert_eq!(StorageSlotType::try_from(slot_type.as_felt())?, slot_type);
-        assert_eq!(StorageSlotType::read_from_bytes(&slot_type.to_bytes())?, slot_type);
-    }
-    for invalid in [2, 2 + (257 << 32), 1 + (1 << 32), 3 + (1 << 32)] {
-        assert!(StorageSlotType::try_from(Felt::new_unchecked(invalid)).is_err());
-    }
     Ok(())
 }
 

@@ -4,6 +4,7 @@ use alloc::vec;
 use miden_protocol::Word;
 
 use crate::decoded::account::test_utils::account_patch;
+use crate::proto::account::{StorageArrayPatchEntries, StorageArrayPatchEntry};
 use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
 
@@ -151,14 +152,11 @@ fn storage_array_patch_rejects_invalid_entries() -> anyhow::Result<()> {
         (257, vec![0]),
         (3, vec![]),
     ] {
-        let wire = proto::account::StorageArrayPatchEntries {
+        let wire = StorageArrayPatchEntries {
             length,
             entries: indices
                 .into_iter()
-                .map(|index| proto::account::StorageArrayPatchEntry {
-                    index,
-                    value: Some(Word::empty().into()),
-                })
+                .map(|index| StorageArrayPatchEntry { index, value: Some(Word::empty().into()) })
                 .collect(),
         };
         assert!(wire.decode_fields()?.verify().is_err());
