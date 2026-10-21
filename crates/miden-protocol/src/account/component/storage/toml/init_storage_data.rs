@@ -19,14 +19,10 @@ impl InitStorageData {
     ///
     /// ```toml
     /// # Value entry (string)
-    /// "slot::name" = "0x1234"
+    /// "slot::value" = "0x1234"
     ///
     /// # Value entry (4-element word)
-    /// "slot::name" = ["0", "0", "0", "100"]
-    ///
-    /// # Nested table (flattened to slot::name.field)
-    /// ["slot::name"]
-    /// field = "value"
+    /// "slot::word" = ["0", "0", "0", "100"]
     ///
     /// # Array of words
     /// "slot::array" = { array = [["1", "2", "3", "4"], ["5", "6", "7", "8"]] }
@@ -35,6 +31,10 @@ impl InitStorageData {
     /// "slot::map" = [
     ///     { key = "0x01", value = "0x10" },
     /// ]
+    ///
+    /// # Nested table (flattened to slot::fields.field)
+    /// ["slot::fields"]
+    /// field = "value"
     /// ```
     pub fn from_toml(toml_str: &str) -> Result<Self, InitStorageDataError> {
         let table: toml::Table = toml::from_str(toml_str)?;

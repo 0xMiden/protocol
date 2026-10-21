@@ -326,8 +326,7 @@ impl RawStorageSlotSchema {
                         "array slots use default-elements".into(),
                     ));
                 }
-                let length = StorageArrayLength::try_from(array_type.length)
-                    .map_err(|err| ComponentMetadataError::InvalidSchema(err.to_string()))?;
+                let length = StorageArrayLength::try_from(array_type.length)?;
                 let element = Self::parse_word_schema(array_type.element, "type.element")?;
                 let defaults = default_elements
                     .map(|values| {

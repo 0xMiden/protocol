@@ -89,8 +89,7 @@ impl ArraySlotSchema {
                 "array values must match the declared length".into(),
             ));
         }
-        StorageArray::new(values)
-            .map_err(|err| ComponentMetadataError::InvalidSchema(err.to_string()))
+        Ok(StorageArray::new(values)?)
     }
 
     pub(super) fn write_into_with_optional_defaults<W: ByteWriter>(
