@@ -1415,20 +1415,24 @@ async fn pswap_private_cancel_through_no_auth(#[case] valid_preimage: bool) -> a
 }
 
 #[rstest]
+#[case::separate_reserve(false, false)]
+#[case::native_offered(true, false)]
+#[case::native_requested(false, true)]
 #[tokio::test]
 async fn pswap_cancellation_reserve_lifecycle(
     #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
-    #[values(0, 1, 2)] native_position: u8,
+    #[case] native_offered: bool,
+    #[case] native_requested: bool,
     #[values(false, true)] cancel: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let native_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-    let offered_id = if native_position == 1 {
+    let offered_id = if native_offered {
         native_id
     } else {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?
     };
-    let requested_id = if native_position == 2 {
+    let requested_id = if native_requested {
         native_id
     } else {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?
@@ -1504,13 +1508,10 @@ async fn pswap_cancellation_reserve_lifecycle(
             current = remainder;
         } else {
             let assets = tx.output_notes().get_note(0).assets();
-            assert_eq!(assets.num_assets(), if native_position == 2 { 1 } else { 2 });
+            assert_eq!(assets.num_assets(), if native_requested { 1 } else { 2 });
             let returned_native =
                 assets.iter_fungible().find(|asset| asset.faucet_id() == native_id).unwrap();
-            assert_eq!(
-                returned_native.amount().as_u64(),
-                if native_position == 2 { 45 } else { 20 }
-            );
+            assert_eq!(returned_native.amount().as_u64(), if native_requested { 45 } else { 20 });
         }
     }
     if cancel {
@@ -1538,7 +1539,7 @@ async fn pswap_cancellation_reserve_lifecycle(
             assert_eq!(tx.account_patch().vault().num_assets(), 0);
             claims.push(refund);
         } else {
-            let expected = if native_position == 1 {
+            let expected = if native_offered {
                 vec![FungibleAsset::new(offered_id, 70)?]
             } else {
                 vec![FungibleAsset::new(offered_id, 50)?, fee]
