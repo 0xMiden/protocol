@@ -59,12 +59,12 @@ use crate::{
 const EMIT_LOG_PROC: &str = "test::transaction_logs::emit_log";
 
 #[rstest]
-#[case::max_count(TransactionLogs::MAX_COUNT, 0, None)]
+#[case::max_count(TransactionLogs::MAX_COUNT, 1, None)]
 #[case::count(TransactionLogs::MAX_COUNT + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
 #[case::max_content(1, TransactionLog::MAX_NUM_WORDS, None)]
-#[case::max_total_content(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::max_total_content(2, TransactionLogs::MAX_NUM_WORDS / 2, None)]
 #[case::individual_content(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
-#[case::total_content(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS + 1, TransactionLog::MAX_NUM_WORDS, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
+#[case::total_content(2, TransactionLogs::MAX_NUM_WORDS / 2 + 1, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
 #[tokio::test]
 async fn kernel_enforces_log_limits(
     #[case] count: usize,
@@ -291,7 +291,8 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
     let mut entries = Vec::new();
     let mut builder = TestTransactionBuilder::new(account.clone());
     let mut code = String::from("exec.tx::get_logs_commitment padw assert_eqw\n");
-    for num_words in [0usize, 1, 2, 3, TransactionLog::MAX_NUM_WORDS] {
+    // Leave room for the empty, one-word, and odd/even content cases before filling the budget.
+    for num_words in [0usize, 1, 2, 3, TransactionLogs::MAX_NUM_WORDS - 6] {
         let content = (0..num_words).map(|i| Word::from([i as u32 + 1; 4])).collect();
         let entry = TransactionLog::new(account.id(), topic, content)?;
         let content_commitment = entry.content_commitment();
