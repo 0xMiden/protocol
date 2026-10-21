@@ -676,7 +676,7 @@ async fn test_malicious_note_cannot_remove_asset_from_later_p2id_note() -> anyho
             # Move the asset stolen from the P2ID note into the attacker's output note.
             push.{asset_value}
             push.{asset_id}
-            exec.output_note::add_asset
+            exec.output_note::add_asset dropw dropw
             exec.sys::truncate_stack
         end
     "#,
@@ -740,7 +740,7 @@ async fn test_malicious_note_cannot_remove_all_assets_from_later_p2id_note() -> 
             # Move the asset stolen from the P2ID note into the attacker's output note.
             push.{stolen_asset_ptr}
             exec.asset::load
-            exec.output_note::add_asset
+            exec.output_note::add_asset dropw dropw
             exec.sys::truncate_stack
         end
     "#,
@@ -837,7 +837,7 @@ async fn test_malicious_note_cannot_remove_assets_via_foreign_account() -> anyho
 
             push.{asset_value}
             push.{asset_id}
-            exec.output_note::add_asset
+            exec.output_note::add_asset dropw dropw
             exec.sys::truncate_stack
         end
     "#,

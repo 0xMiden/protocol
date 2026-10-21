@@ -1579,9 +1579,10 @@ pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRe
 end
 
 #! Adds the asset to the note specified by the index.
+#! Returns the asset added by this call, excluding any existing balance or callback additions.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [pad(16)]
+#! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
@@ -1594,7 +1595,7 @@ end
 #! - the output note is sealed.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> [felt; 16]
+pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> (Asset, [felt; 8])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
@@ -1603,7 +1604,7 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
-    # => [pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 end
 
 #! Prevents further changes to the specified output note's assets and attachments.
