@@ -396,7 +396,7 @@ where
 
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let executor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options)
+        let executor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options.clone())
             .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error)
             .map_err(TransactionCheckerError::PrologueExecution)?;

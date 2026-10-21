@@ -2,10 +2,14 @@ use alloc::format;
 use alloc::string::ToString;
 
 use miden_agglayer::{ExitRoot, SmtNode, agglayer_package};
+use miden_core::deferred::WorkClass;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
+use miden_processor::ExecutionOptions;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, MockTransaction};
+use miden_tx::TransactionExecutor;
 
 // MERKLE TREE FRONTIER
 // ================================================================================================
@@ -106,12 +110,11 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
-    mock_chain
+    let tx = mock_chain
         .build_transaction(account.id())
         .tx_script(tx_script.clone())
-        .build()?
-        .execute()
-        .await?;
+        .build()?;
+    execute_frontier_stress_test(tx).await?;
 
     Ok(())
 }
@@ -143,12 +146,11 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
-    mock_chain
+    let tx = mock_chain
         .build_transaction(account.id())
         .tx_script(tx_script.clone())
-        .build()?
-        .execute()
-        .await?;
+        .build()?;
+    execute_frontier_stress_test(tx).await?;
 
     Ok(())
 }
@@ -212,6 +214,37 @@ fn test_solidity_mtf_compatibility() {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+async fn execute_frontier_stress_test(tx: MockTransaction) -> anyhow::Result<()> {
+    let options = ExecutionOptions::new(
+        Some(MAX_TX_EXECUTION_CYCLES),
+        MIN_TX_EXECUTION_CYCLES,
+        ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
+    )?;
+    let hash_class = WorkClass::new("hash");
+    let mut hash_limit = options
+        .execution_precompile_limits()
+        .class(hash_class)
+        .expect("default policy should admit hash precompiles");
+    // Each stress transaction performs 32 frontier updates with 32 Keccak calls per update.
+    hash_limit.max_count = 32 * 32;
+    let limits = options.execution_precompile_limits().clone().with_class(hash_class, hash_limit);
+    let options = options
+        .with_execution_precompile_limits(limits.clone())
+        .with_verification_precompile_limits(limits);
+
+    TransactionExecutor::<_, ()>::new(&tx)
+        .with_source_manager(tx.source_manager())
+        .with_options(options)?
+        .execute_transaction(
+            tx.account().id(),
+            tx.tx_inputs().block_header().block_num(),
+            tx.input_notes().clone(),
+            tx.tx_args().clone(),
+        )
+        .await?;
+    Ok(())
+}
 
 fn leaf_assertion_code(leaf: SmtNode, expected_root: ExitRoot, num_leaves: u32) -> String {
     let [leaf_lo, leaf_hi] = leaf.to_words();
