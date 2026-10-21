@@ -61,6 +61,8 @@ impl AccountComponent {
     ///
     /// Returns an error if:
     /// - The number of given [`StorageSlot`]s exceeds 255.
+    /// - The combined value words, map roots, and array contents exceed
+    ///   [`AccountStorage::MAX_NUM_STORAGE_WORDS`].
     pub fn new(
         code: impl Into<AccountComponentCode>,
         storage_slots: Vec<StorageSlot>,
@@ -263,6 +265,10 @@ mod tests {
 
         // Verify the component was created correctly
         assert_eq!(component.storage_size(), 0);
+        assert!(
+            AccountComponentMetadata::try_from(component.component_code().as_package()).is_err(),
+            "component code should not carry the metadata section"
+        );
 
         // Test without metadata - should fail
         let result = AccountComponent::from_package(package, &init_data);

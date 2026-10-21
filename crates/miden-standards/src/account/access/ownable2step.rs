@@ -1,10 +1,4 @@
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -18,9 +12,9 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::account_id_from_felt_pair;
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 
-account_component_code!(OWNABLE2STEP_CODE, "miden-standards-access-ownable2step.masp");
+account_component_package!(OWNABLE2STEP_PACKAGE, "miden-standards-access-ownable2step.masp");
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")
@@ -67,7 +61,7 @@ impl Ownable2Step {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &OWNABLE2STEP_CODE
+        &OWNABLE2STEP_PACKAGE.code
     }
 
     // CONSTRUCTORS
@@ -114,22 +108,6 @@ impl Ownable2Step {
         &OWNER_CONFIG_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the ownership configuration slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::value(
-                "Ownership data (owner and nominated owner)",
-                [
-                    FeltSchema::felt("owner_suffix"),
-                    FeltSchema::felt("owner_prefix"),
-                    FeltSchema::felt("nominated_suffix"),
-                    FeltSchema::felt("nominated_prefix"),
-                ],
-            ),
-        )
-    }
-
     /// Returns the current owner, or `None` if ownership has been renounced.
     pub fn owner(&self) -> Option<AccountId> {
         self.owner
@@ -160,12 +138,7 @@ impl Ownable2Step {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema =
-            StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Two-step ownership management component")
-            .with_storage_schema(storage_schema)
+        OWNABLE2STEP_PACKAGE.metadata.clone()
     }
 }
 

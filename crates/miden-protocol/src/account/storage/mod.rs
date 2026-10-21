@@ -12,6 +12,7 @@ use super::{
     Serializable,
     Word,
 };
+use crate::DoubleWord;
 use crate::account::{
     AccountComponent,
     StorageArrayPatch,
@@ -518,17 +519,9 @@ impl SequentialCommit for AccountStorage {
             .iter()
             .flat_map(|slot| {
                 let id = slot.id();
-                let value = slot.value();
-                [
-                    Felt::ZERO,
-                    slot.slot_type().as_felt(),
-                    id.suffix(),
-                    id.prefix(),
-                    value[0],
-                    value[1],
-                    value[2],
-                    value[3],
-                ]
+                let header_word =
+                    Word::new([Felt::ZERO, slot.slot_type().as_felt(), id.suffix(), id.prefix()]);
+                DoubleWord::new(header_word, slot.value())
             })
             .collect()
     }
