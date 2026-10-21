@@ -7,7 +7,6 @@ use miden_protocol::account::{
     StorageArrayPatch as ProtocolStorageArrayPatch,
     StorageArrayPatchEntries as ProtocolStorageArrayPatchEntries,
 };
-use miden_protocol::errors::AccountError;
 pub use proto::account::{
     DecodedAccountVaultPatchEntry as AccountVaultPatchEntry,
     DecodedStorageArrayPatch as StorageArrayPatch,
@@ -86,11 +85,7 @@ impl Verify for StorageArrayPatchEntries {
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let length = StorageArrayLength::try_from(self.length as usize)?;
-        let entries = Self::Verified::new(length, self.entries.verify()?)?;
-        if entries.is_empty() {
-            return Err(AccountError::other("array update must contain at least one entry").into());
-        }
-        Ok(entries)
+        Ok(Self::Verified::new(length, self.entries.verify()?)?)
     }
 }
 
@@ -103,13 +98,23 @@ impl Verify for StorageArrayPatch {
                 Self::Verified::Create { array: array.verify()? }
             },
             DecodedArrayPatchOperation::Update(entries) => {
-                Self::Verified::Update { entries: entries.verify()? }
+                let entries = entries.verify()?;
+                if entries.is_empty() {
+                    return Err(StorageArrayPatchError::EmptyUpdate.into());
+                }
+                Self::Verified::Update { entries }
             },
             DecodedArrayPatchOperation::Remove(length) => Self::Verified::Remove {
                 length: StorageArrayLength::try_from(length as usize)?,
             },
         })
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StorageArrayPatchError {
+    #[error("entries must be non-empty for an update operation")]
+    EmptyUpdate,
 }
 
 pub use proto::account::DecodedStorageMapPatchEntries as StorageMapPatchEntries;
