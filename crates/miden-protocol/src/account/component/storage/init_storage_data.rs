@@ -205,8 +205,9 @@ impl InitStorageData {
     ///
     /// - `Word`: a fully-typed word value
     /// - `[Felt; 4]`: converted to a Word
-    /// - `Felt`: converted to `[0, 0, 0, felt]`
-    /// - `u32`, `u64`, `u8`, `u16`: converted to a Felt, then to `[0, 0, 0, felt]`
+    /// - `Felt`: converted to `[felt, 0, 0, 0]`
+    /// - `u32`, `u64`, `u8`, `u16`: converted to a string that is parsed against the slot's schema
+    ///   type (a felt-typed slot stores it as `[felt, 0, 0, 0]`)
     /// - `String` or `&str`: a parseable string value
     /// - `WordValue`: a word value (fully typed, atomic, or elements)
     pub fn insert_value<N, E>(

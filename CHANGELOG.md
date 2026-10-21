@@ -15,11 +15,14 @@
 
 ### Changes
 
+- [BREAKING] Moved the EIP-712 transaction-summary adapter from `miden::standards::auth::eip712_transaction_summary` to `miden::standards::auth::eip712::transaction_summary` and removed its public `compute_signature_key` procedure ([#4091](https://github.com/0xMiden/protocol/pull/4091)).
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
 - [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
 - [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
+- [BREAKING] `AccountComponentCode` no longer carries the account component metadata section of its package, leaving `AccountComponent` as the only holder of the metadata ([#4086](https://github.com/0xMiden/protocol/pull/4086)).
+- Introduced the `DoubleWord` newtype (8 `Felt`s) and used it internally to replace ad-hoc `[Felt; 8]` / `Vec<Felt>` representations ([#3319](https://github.com/0xMiden/protocol/pull/3319)).
 
 ### Fixes
 
@@ -125,6 +128,7 @@
 - [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
+- [BREAKING] Moved account component metadata from Rust into a `[package.metadata.account-component]` table in each component's `miden-project.toml`, embedding it into the compiled `.masp` package and removing the now-redundant `*_slot_schema` accessors ([#3587](https://github.com/0xMiden/protocol/pull/3587)).
 - [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name, and `account_builder` now takes `TokenName` / `TokenSymbol` / `AssetAmount` rather than `&str` / `Felt` ([#3525](https://github.com/0xMiden/protocol/pull/3525)).
 - [BREAKING] Updated `NoteScript::from_package` and `TransactionScript::from_package` to reject executable packages with the new `MastForestScriptError::ExecutablePackage`, so scripts are identified only by their `@note_script` / `@transaction_script` attribute ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
 - [BREAKING] Updated `AccountComponent::from_package` to take `Package` by value ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
