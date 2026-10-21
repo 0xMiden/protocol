@@ -564,7 +564,7 @@ impl TokenPolicyManager {
                 Some((_, root)) => {
                     let description = match schema {
                         StorageSlotSchema::Value(value) => value.description().cloned(),
-                        StorageSlotSchema::Map(_) => None,
+                        StorageSlotSchema::Map(_) | StorageSlotSchema::Array(_) => None,
                     };
                     StorageSlotSchema::Value(ValueSlotSchema::new(
                         description,
