@@ -7,7 +7,7 @@ pub enum StandardNoteAttachment {
     /// See [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) for details.
     NetworkAccountTarget,
     /// The attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
-    /// Carries the word `[amount, order_id, depth, 0]`. See
+    /// Carries the word `[amount, order_id, depth, surplus]`. See
     /// [`PswapNote`](crate::note::PswapNote) for details.
     PswapAttachment,
     /// The USDCx mint attachment carrying the attestation and deposit intent.

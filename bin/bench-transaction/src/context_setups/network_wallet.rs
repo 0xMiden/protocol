@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use miden_protocol::Word;
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteTag, NoteType};
@@ -273,7 +273,7 @@ pub fn tx_consume_pswap_note_network(
     // Predict the output notes: the P2ID payback for the creator and, on a partial fill, the
     // residual PSWAP note carrying the remainder.
     let (payback_note, remainder_pswap) =
-        pswap.execute(consumer_account.id(), Some(fill_asset), None)?;
+        pswap.execute(consumer_account.id(), Some(fill_asset), None, AssetAmount::ZERO)?;
     let mut expected_output_notes = vec![payback_note];
     if let Some(remainder) = remainder_pswap {
         expected_output_notes.push(RawOutputNote::Full(Note::from(remainder)));
@@ -284,7 +284,11 @@ pub fn tx_consume_pswap_note_network(
         .authenticated_input_note(pswap_note.id())
         .extend_note_args(BTreeMap::from([(
             pswap_note.id(),
-            PswapNote::create_fill_args(fill_amount, 0)?,
+            PswapNote::create_fill_args(
+                AssetAmount::new(fill_amount)?,
+                AssetAmount::ZERO,
+                AssetAmount::ZERO,
+            ),
         )]))
         .expected_output_notes(expected_output_notes)
         .build()
