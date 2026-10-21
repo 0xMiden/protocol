@@ -11,7 +11,8 @@ rust-version.workspace = true
 version.workspace      = true
 
 [lib]
-bench = false
+bench   = false
+doctest = false
 
 # The test vector generator.
 [[bin]]
@@ -62,6 +63,6 @@ tokio           = { features = ["macros", "rt", "sync"], workspace = true }
 miden-assembly             = { features = ["std"], workspace = true }
 miden-core-lib             = { workspace = true }
 miden-package-registry     = { features = ["resolver", "std"], workspace = true }
-miden-protocol             = { workspace = true }
+miden-protocol             = { features = ["std"], workspace = true }
 miden-protocol-build-utils = { workspace = true }
 miden-standards            = { workspace = true }

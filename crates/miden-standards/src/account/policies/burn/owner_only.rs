@@ -1,14 +1,14 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // OWNER-ONLY BURN POLICY
 // ================================================================================================
 
-account_component_code!(
-    OWNER_ONLY_BURN_POLICY_CODE,
+account_component_package!(
+    OWNER_ONLY_BURN_POLICY_PACKAGE,
     "miden-standards-faucets-policies-burn-owner-controlled-owner-only.masp"
 );
 
@@ -53,20 +53,23 @@ impl BurnOwnerOnly {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &OWNER_ONLY_BURN_POLICY_CODE
+        &OWNER_ONLY_BURN_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `owner_only` burn policy procedure.
     pub fn root() -> AccountProcedureRoot {
         *OWNER_ONLY_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        OWNER_ONLY_BURN_POLICY_PACKAGE.metadata.clone()
+    }
 }
 
 impl From<BurnOwnerOnly> for AccountComponent {
     fn from(_: BurnOwnerOnly) -> Self {
-        let metadata = AccountComponentMetadata::new(BurnOwnerOnly::NAME).with_description(
-            "`owner_only` burn policy (owner-controlled family) for fungible faucets",
-        );
+        let metadata = BurnOwnerOnly::component_metadata();
 
         AccountComponent::new(BurnOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` burn policy component should satisfy the requirements of a valid account component",

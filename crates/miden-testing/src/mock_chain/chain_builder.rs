@@ -485,7 +485,7 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet = NonFungibleFaucet::builder().name(name).symbol(symbol).build();
+        let faucet = NonFungibleFaucet::builder().name(name).symbol(symbol).build()?;
 
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
