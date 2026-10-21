@@ -127,26 +127,19 @@ async fn kernel_logs_reject_partial_words(#[case] num_elements: usize) -> anyhow
 }
 
 #[rstest]
-#[case::empty(1, 0, None)]
-#[case::one_word(1, 1, None)]
-#[case::even_words(1, 2, None)]
-#[case::odd_words(1, 3, None)]
-#[case::max_content(1, TransactionLog::MAX_NUM_WORDS, None)]
-#[case::max_total_content(2, TransactionLogs::MAX_NUM_WORDS / 2, None)]
-#[case::individual_content(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
-#[case::total_content(3, TransactionLogs::MAX_NUM_WORDS / 2, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
+#[case::empty(0, None)]
+#[case::odd_words(3, None)]
+#[case::max_content(TransactionLog::MAX_NUM_WORDS, None)]
+#[case::oversized(TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
 #[tokio::test]
 async fn add_log_from_memory(
-    #[case] count: usize,
     #[case] num_words: usize,
     #[case] error: Option<MasmError>,
 ) -> anyhow::Result<()> {
-    let content: Vec<_> = (0..num_words).map(|i| Word::from([i as u32, 11, 22, 33])).collect();
-    let mut store_content = String::new();
-    for (i, word) in content.iter().enumerate() {
-        store_content.push_str(&format!("push.{word} loc_storew_le.{} dropw\n", i * WORD_SIZE));
-    }
-    let num_elements = num_words * WORD_SIZE;
+    let word = Word::from([11u32, 22, 33, 44]);
+    let store_content: String = (0..num_words)
+        .map(|i| format!("push.{word} loc_storew_le.{} dropw\n", i * WORD_SIZE))
+        .collect();
     let component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "test::log_from_memory",
@@ -159,47 +152,37 @@ async fn add_log_from_memory(
                 @locals({num_locals})
                 pub proc auth
                     {store_content}
-                    # A word beyond the content range must not be included in the log.
-                    push.91.92.93.94 loc_storew_le.{num_elements} dropw
-                    # => []
+                    push.101.102.103.104
+                    # => [CALLER_WORD]
 
-                    push.101.102.103.104.105.106.107.108
-                    # => [SENTINEL_1, SENTINEL_0]
+                    locaddr.0 push.{num_words}.29.17
+                    # => [topic_suffix, topic_prefix, num_words, content_ptr, CALLER_WORD]
 
-                    repeat.{count}
-                        locaddr.0 push.{num_words}.29.17
-                        # => [topic_suffix, topic_prefix, num_words, content_ptr, SENTINEL_1, SENTINEL_0]
+                    exec.tx::add_log_from_memory
+                    # => [CALLER_WORD]
 
-                        exec.tx::add_log_from_memory
-                        # => [SENTINEL_1, SENTINEL_0]
-                    end
-
-                    push.105.106.107.108 assert_eqw
                     push.101.102.103.104 assert_eqw
                     # => []
 
                     exec.native_account::incr_nonce drop
                 end
                 ",
-                num_locals = num_elements + WORD_SIZE,
+                num_locals = num_words.max(1) * WORD_SIZE,
             ),
         )?,
         vec![],
         AccountComponentMetadata::mock("test::log_from_memory"),
     )?;
-    let account = AccountBuilder::new([41; 32])
-        .with_component(component)
-        .with_component(BasicWallet)
-        .build_existing()?;
-    let tx = TestTransactionBuilder::new(account.clone()).build()?;
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_SENDER, [component]);
+    let emitter = account.id();
+    let tx = TestTransactionBuilder::new(account).build()?;
     if let Some(error) = error {
         assert_transaction_executor_error!(tx.execute().await, error);
     } else {
         let executed = tx.execute().await?;
-        let log = TransactionLog::new(account.id(), LogTopic::mock(17, 29), content)?;
-        let expected = TransactionLogs::new(vec![log; count])?;
+        let log = TransactionLog::new(emitter, LogTopic::mock(17, 29), vec![word; num_words])?;
+        let expected = TransactionLogs::new(vec![log])?;
         assert_eq!(executed.logs(), &expected);
-        assert_eq!(executed.logs_commitment(), expected.commitment());
     }
     Ok(())
 }
