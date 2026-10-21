@@ -47,6 +47,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockTransaction, assert_transaction_executor_error};
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
+    FeeError,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
     NoteFailure,
@@ -1420,7 +1421,6 @@ async fn check_notes(
     Ok(NoteConsumptionChecker::new(&executor)
         .check_notes_consumability(
             network_account_id,
-            Some(AssetId::new_fungible(fee_faucet_id()?)),
             mock_tx.tx_inputs().block_header().block_num(),
             notes,
             mock_tx.tx_args().clone(),
@@ -1779,58 +1779,71 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
     Ok(())
 }
 
-/// A FEE_SPONSORSHIP note funded with an asset other than the one the account collects fees in is
-/// rejected before anything is executed, and the feature note it is bound to takes the blame for
-/// being left uncovered.
-///
-/// Without the check the pair would be tried and fail in the epilogue, which points at no note, so
-/// the blame would fall on the feature note heading the bundle and the sponsorship that actually
-/// carries the wrong asset would be reported as its collateral.
+/// A FEE_SPONSORSHIP note funded with an asset other than the one the account collects fees in
+/// fails fee collection, which points at no note. It is singled out by its asset and reported as
+/// [`FeeError::WrongFeeAsset`], and the rest of its bundle is retried without it: the feature note
+/// is consumed when its other sponsorships still cover its fee, and blamed for being left uncovered
+/// otherwise.
+#[rstest]
+#[case::only_wrong_sponsorship(false)]
+#[case::covered_by_the_rest(true)]
 #[tokio::test]
-async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> anyhow::Result<()> {
+async fn note_checker_drops_only_a_sponsorship_carrying_the_wrong_fee_asset(
+    #[case] covered_by_the_rest: bool,
+) -> anyhow::Result<()> {
+    let mut builder = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .num_feature_notes(2)
+        .sponsorship(Sponsorship::new(0, fee_asset(FEE_AMOUNT)?))
+        // the second feature note is sponsored in an asset the account does not collect fees in
+        .sponsorship(Sponsorship::new(1, other_asset(FEE_AMOUNT)?));
+    if covered_by_the_rest {
+        builder = builder.sponsorship(Sponsorship::new(1, fee_asset(FEE_AMOUNT)?));
+    }
     let Test {
         mock_chain,
         network_account,
         feature_notes,
         sponsorship_notes,
-    } = Test::builder()
-        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
-        .num_feature_notes(2)
-        .sponsorship(Sponsorship::new(0, fee_asset(FEE_AMOUNT)?))
-        // the second feature note is sponsored in an asset the account does not collect fees in
-        .sponsorship(Sponsorship::new(1, other_asset(FEE_AMOUNT)?))
-        .build()?;
+    } = builder.build()?;
+    let wrong_sponsorship = &sponsorship_notes[1];
 
-    let notes = vec![
-        feature_notes[0].clone(),
-        sponsorship_notes[0].clone(),
-        feature_notes[1].clone(),
-        sponsorship_notes[1].clone(),
-    ];
+    let notes = [feature_notes.as_slice(), sponsorship_notes.as_slice()].concat();
     let info = check_notes(&mock_chain, network_account.id(), notes).await?;
 
+    let mut expected_successful =
+        BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]);
+    if covered_by_the_rest {
+        expected_successful.extend([feature_notes[1].id(), sponsorship_notes[2].id()]);
+    }
     assert_eq!(
         info.successful().iter().map(|note| note.note().id()).collect::<BTreeSet<_>>(),
-        BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]),
-        "the intact pair should survive the wrongly funded sponsorship"
+        expected_successful,
     );
 
-    let rejected: Vec<_> = info.failed().iter().filter(|failed| failed.is_rejected()).collect();
-    assert_eq!(rejected.len(), 1, "only the wrongly funded sponsorship should be rejected");
+    let wrong_failure = info
+        .failed()
+        .iter()
+        .find(|failed| failed.note().id() == wrong_sponsorship.id())
+        .context("the wrongly funded sponsorship should fail")?;
     assert_matches!(
-        rejection_reason::<SponsorshipRejectionError>(&info, sponsorship_notes[1].id()),
-        SponsorshipRejectionError::WrongFeeAsset { expected, actual }
+        wrong_failure.failure(),
+        NoteFailure::Fee { reason: FeeError::WrongFeeAsset { expected, actual }, .. }
             if *expected == AssetId::new_fungible(fee_faucet_id()?)
                 && *actual == other_asset(FEE_AMOUNT)?.id()
     );
 
-    let blamed: Vec<_> = info.failed().iter().filter(|failed| failed.is_blamed()).collect();
-    assert_eq!(blamed.len(), 1, "the feature note left uncovered should be blamed");
-    assert_eq!(
-        blamed[0].note().id(),
-        feature_notes[1].id(),
-        "the blame should fall on the note left uncovered, not on the sponsorship"
-    );
+    if covered_by_the_rest {
+        assert_eq!(info.failed().len(), 1, "only the wrongly funded sponsorship should fail");
+    } else {
+        assert_eq!(info.failed().len(), 2, "the uncovered feature note should fail as well");
+        let feature_failure = info
+            .failed()
+            .iter()
+            .find(|failed| failed.note().id() == feature_notes[1].id())
+            .context("the uncovered feature note should fail")?;
+        assert!(feature_failure.is_blamed(), "the uncovered feature note should be blamed");
+    }
 
     Ok(())
 }

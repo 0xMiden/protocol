@@ -29,6 +29,18 @@ impl NoteBundle {
         &self.notes
     }
 
+    /// Returns the first FEE_SPONSORSHIP note bound to the feature note heading the bundle that
+    /// carries an asset other than `fee_asset_id`, together with that asset, or `None` if there is
+    /// none.
+    pub(super) fn find_wrong_fee_asset(&self, fee_asset_id: AssetId) -> Option<(NoteId, AssetId)> {
+        // The note heading the bundle is the feature note, or a sponsorship that can only be
+        // reclaimed, which pays no fee.
+        self.notes.iter().skip(1).find_map(|note| {
+            let actual = FeeSponsorshipNote::try_from(note).ok()?.asset().id();
+            (actual != fee_asset_id).then_some((note.id(), actual))
+        })
+    }
+
     /// Consumes the bundle reporting every note of it as failed: the note at `blamed_idx` with
     /// `failure`, and the rest as its collateral, since they cannot be consumed without it.
     ///
@@ -87,6 +99,18 @@ impl NoteBundles {
         self.0.remove(idx)
     }
 
+    /// Removes the note with `note_id` from the bundle at `idx`, keeping the rest of the bundle,
+    /// and returns the note, or `None` if the bundle does not hold it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `idx` is out of bounds.
+    pub(super) fn remove_note(&mut self, idx: usize, note_id: NoteId) -> Option<Note> {
+        let notes = &mut self.0[idx].notes;
+        let note_idx = notes.iter().position(|note| note.id() == note_id)?;
+        Some(notes.remove(note_idx))
+    }
+
     /// Removes and returns the bundle holding the note with `note_id`, or `None` if no bundle
     /// holds it.
     pub(super) fn remove_containing(&mut self, note_id: NoteId) -> Option<NoteBundle> {
@@ -108,23 +132,12 @@ pub(super) struct NoteBundler {
     native_account_id: AccountId,
     /// The reference block the notes are consumed at.
     block_ref: BlockNumber,
-    /// The asset the native account collects fees in, or `None` for an account that collects no
-    /// fees, in which case the asset of a sponsorship is not checked.
-    collected_fee_asset_id: Option<AssetId>,
 }
 
 impl NoteBundler {
     /// Returns a new [`NoteBundler`] for notes consumed by `native_account_id` at `block_ref`.
-    pub(super) fn new(
-        native_account_id: AccountId,
-        block_ref: BlockNumber,
-        collected_fee_asset_id: Option<AssetId>,
-    ) -> Self {
-        Self {
-            native_account_id,
-            block_ref,
-            collected_fee_asset_id,
-        }
+    pub(super) fn new(native_account_id: AccountId, block_ref: BlockNumber) -> Self {
+        Self { native_account_id, block_ref }
     }
 
     /// Groups `notes` into bundles that must be consumed together, and rejects the FEE_SPONSORSHIP
@@ -138,8 +151,6 @@ impl NoteBundler {
     /// A FEE_SPONSORSHIP note is rejected when:
     /// - its feature note is absent, and the native account cannot reclaim it.
     /// - its feature note is itself a FEE_SPONSORSHIP note.
-    /// - its feature note is present, and it carries an asset other than the one the native account
-    ///   collects fees in.
     ///
     /// The bundles keep the order of the notes heading them, and the sponsorships in a bundle keep
     /// their relative order.
@@ -199,19 +210,8 @@ impl NoteBundler {
                 })
             },
 
-            // return the feature note index and check that the provided sponsorship note pays fees
-            // using the expected asset
-            Some(feature_note_idx) => {
-                let actual = sponsorship.asset().id();
-
-                if let Some(expected) = self.collected_fee_asset_id
-                    && actual != expected
-                {
-                    return Err(SponsorshipRejectionError::WrongFeeAsset { expected, actual });
-                }
-
-                Ok(feature_note_idx)
-            },
+            // The feature note is present, so the sponsorship joins its bundle.
+            Some(feature_note_idx) => Ok(feature_note_idx),
         }
     }
 }

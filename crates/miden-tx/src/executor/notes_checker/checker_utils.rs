@@ -4,6 +4,7 @@ use core::error::Error;
 
 use miden_protocol::note::{Note, NoteId};
 
+use super::error::FeeError;
 use crate::TransactionExecutorError;
 
 // CONSTANTS
@@ -67,6 +68,13 @@ pub enum NoteFailure {
     Rejected {
         reason: Box<dyn Error + Send + Sync + 'static>,
     },
+    /// The account could not collect a fee from the note, which the failed execution was traced to.
+    Fee {
+        /// Why the fee could not be collected.
+        reason: FeeError,
+        /// The error the failing execution produced.
+        error: TransactionExecutorError,
+    },
 }
 
 /// Represents a failed note consumption.
@@ -114,7 +122,7 @@ impl FailedNote {
     /// otherwise.
     pub fn execution_error(&self) -> Option<&TransactionExecutorError> {
         match &self.failure {
-            NoteFailure::Blamed { error, .. } => Some(error),
+            NoteFailure::Blamed { error, .. } | NoteFailure::Fee { error, .. } => Some(error),
             NoteFailure::Collateral { .. } | NoteFailure::Rejected { .. } => None,
         }
     }
@@ -126,7 +134,9 @@ impl FailedNote {
     pub fn num_cycles(&self) -> Option<usize> {
         match &self.failure {
             NoteFailure::Blamed { num_cycles, .. } => *num_cycles,
-            NoteFailure::Collateral { .. } | NoteFailure::Rejected { .. } => None,
+            NoteFailure::Collateral { .. }
+            | NoteFailure::Rejected { .. }
+            | NoteFailure::Fee { .. } => None,
         }
     }
 }

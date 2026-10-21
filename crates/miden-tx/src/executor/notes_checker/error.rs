@@ -6,7 +6,7 @@ use miden_standards::note::ReclaimError;
 
 use super::checker_utils::NoteFailure;
 
-// SPONSORSHIP REJECTION
+// SPONSORSHIP REJECTION ERROR
 // ================================================================================================
 
 /// The reason a FEE_SPONSORSHIP note cannot be consumed, decided without executing it.
@@ -16,11 +16,6 @@ use super::checker_utils::NoteFailure;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SponsorshipRejectionError {
-    /// The sponsorship is funded with an asset other than the one the account collects fees in.
-    #[error(
-        "FEE_SPONSORSHIP note is funded with asset {actual} rather than the asset {expected} the account collects fees in"
-    )]
-    WrongFeeAsset { expected: AssetId, actual: AssetId },
     /// The feature note is absent, so the sponsorship can only be reclaimed, and the account cannot
     /// reclaim it. [`ReclaimError::ReclaimHeightNotReached`] is the only reason that may pass with
     /// time.
@@ -39,4 +34,22 @@ impl From<SponsorshipRejectionError> for NoteFailure {
     fn from(rejection: SponsorshipRejectionError) -> Self {
         NoteFailure::Rejected { reason: Box::new(rejection) }
     }
+}
+
+// FEE ERROR
+// ================================================================================================
+
+/// The reason the account could not collect a fee from a note, recovered from the error of the
+/// failed execution.
+///
+/// Reported as the reason of a [`NoteFailure::Fee`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum FeeError {
+    /// The FEE_SPONSORSHIP note is funded with an asset other than the one the account collects
+    /// fees in.
+    #[error(
+        "FEE_SPONSORSHIP note is funded with asset {actual} rather than the asset {expected} the account collects fees in"
+    )]
+    WrongFeeAsset { expected: AssetId, actual: AssetId },
 }
