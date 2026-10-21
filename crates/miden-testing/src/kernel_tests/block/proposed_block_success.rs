@@ -140,7 +140,7 @@ async fn proposed_block_aggregates_account_state_transition(
     chain.prove_next_block()?;
 
     // Create three transactions on the same account that build on top of each other.
-    let executed_tx0 = chain.create_authenticated_notes_tx(account1.id(), [note0.id()]).await?;
+    let executed_tx0 = chain.create_authenticated_notes_tx(account1.id(), [note0.clone()]).await?;
 
     account1.apply_patch(executed_tx0.account_patch())?;
     let executed_tx1 = chain.create_authenticated_notes_tx(account1.clone(), [note1.id()]).await?;

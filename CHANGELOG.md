@@ -1,10 +1,16 @@
 # Changelog
 
-## v1.0.0-rc.1 (TBD)
+## Unreleased
 
 ### Features
 
-- Added private PSWAP cancellation through a separate account using canonical recipient advice, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
+- Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
+- Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
+- Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
+- Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
+- Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
+- Added private PSWAP cancellation through a separate account using canonical recipient advice. An optional native fee reserve funds cancellation, follows partial fills, and returns in the final payback ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 
 ### Changes
 
@@ -12,15 +18,68 @@
 - [BREAKING] Let a partial PSWAP fill pay the creator above the order's price, as a full fill already can: note arguments are now `[action, account_fill, note_fill, surplus]` and the payback attachment records the surplus, so the owner can still rebuild the remainder ([#4040](https://github.com/0xMiden/protocol/issues/4040)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
+- Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
+- [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
+- Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
+- [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
+- Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
+
+### Fixes
+
+- `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
+- The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
+- The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
+
+## v0.17.0-pre.1 (2026-09-05)
+## v1.0.0-rc.1 (TBD)
+
+### Features
+
+- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+
+### Changes
+
+- Added canonical protobuf transport for transaction logs and their commitments, with private log contents retained in local execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
+- [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- [BREAKING] Made logs required when constructing transaction outputs, effects, summaries, and proven transactions; added `TransactionEffects::builder()`. Renamed reference-block summary helpers to `create_default_tx_summary` and `get_default_tx_summary_commitment`, and explicit-block helpers to `create_tx_summary` and `get_tx_summary_commitment` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+
+- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
+- Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
+- Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+- [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.
+- [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
+- [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification ([#4053](https://github.com/0xMiden/protocol/pull/4053)).
 - [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+- [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
+- [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
+- Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).
+- Keyed `bench-tx.json`'s per-note cycle counts by note label instead of note commitment, and added `total_cycles` to each scenario ([#3726](https://github.com/0xMiden/protocol/pull/3726)).
 
 ### Fixes
 
+- `SwapNote` and `PswapNote` builders now reject zero-amount offered or requested assets ([#4044](https://github.com/0xMiden/protocol/pull/4044)).
 - [BREAKING] `NoteConsumptionChecker::check_notes_consumability` now rejects input notes with duplicate nullifiers via the new `NoteCheckerError::TransactionInputs` variant. Removed `From<Vec<Note>> for InputNotes<InputNote>` and changed `TransactionInputs::set_input_notes` to take `InputNotes<InputNote>` ([#4005](https://github.com/0xMiden/protocol/pull/4005)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
+- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
+- [BREAKING] Replaced `TransactionInputs::new` and `TransactionInputs::try_from_parts` with `TransactionInputs::builder` ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
+- [BREAKING] Removed `TransactionInputs` and `ExecutedTransaction` serialization implementations ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
+- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
+- [BREAKING] `TransactionInputs` now stores the note scripts the executor resolved during execution ([#4030](https://github.com/0xMiden/protocol/pull/4030)).
+- [BREAKING] `TransactionInputs` now stores the signatures generated during execution, keyed by the new `SignatureKey` ([#4031](https://github.com/0xMiden/protocol/pull/4031)).
+- [BREAKING] `TransactionInputs` now stores the foreign accounts as `AccountInputs` instead of their code and slot names, and the executor no longer fetches foreign accounts the inputs already contain ([#4032](https://github.com/0xMiden/protocol/pull/4032)).
+- [BREAKING] The executor now adds lazy-loaded asset and storage map witnesses to the partial accounts in `TransactionInputs`, and `TransactionInputs::with_asset_witnesses` is replaced by `add_asset_witnesses` ([#4033](https://github.com/0xMiden/protocol/pull/4033)).
+- [BREAKING] `TransactionInputs` no longer stores the recorded advice inputs, since its typed lazy-loaded data is enough to re-execute and prove the transaction ([#4034](https://github.com/0xMiden/protocol/pull/4034)).
+- [BREAKING] `TransactionArgs` now stores output note recipients and signatures as typed data instead of in its advice inputs, and `TransactionArgs::from_parts` takes them as parameters ([#4048](https://github.com/0xMiden/protocol/pull/4048)).
+
+### Fixes
+
+- [BREAKING] Added `BoundSignature`, which binds a signature to its `SignatureKey` and replaces `Signature::to_encoded_signature` with an infallible encoding, so unrecoverable ECDSA signatures are rejected instead of causing a panic ([#4045](https://github.com/0xMiden/protocol/pull/4045)).
 
 ## v0.17.0 (2026-10-01)
 

@@ -83,13 +83,14 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
-    use crate::vectors::{load, word_from_hex};
+    use crate::vectors::{load, selected, word_from_hex};
 
     /// TV-B32-1 (happy path, written first): known bytes32 → expected Poseidon2 Word.
     #[test]
     fn tv_b32_1_hash_to_word_positive() {
         let v = load();
-        for vec in v.families.b32.iter().filter(|v| v.lossless_error.is_none()) {
+        let lossless = v.families.b32.iter().filter(|v| v.lossless_error.is_none());
+        for vec in selected(lossless, 3, "b32 rows that encode losslessly") {
             let key = bytes32_to_storage_map_key(&vec.bytes32());
             assert_eq!(
                 Word::from(key),

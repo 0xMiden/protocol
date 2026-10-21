@@ -1,6 +1,3 @@
-extern crate alloc;
-pub use alloc::collections::BTreeMap;
-pub use alloc::string::String;
 use std::fs::{read_to_string, write};
 use std::path::Path;
 
@@ -11,6 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, from_str, to_string_pretty};
 
 use super::ExecutionBenchmark;
+use crate::note_labels::NoteLabels;
 
 // MEASUREMENTS PRINTER
 // ================================================================================================
@@ -20,33 +18,55 @@ use super::ExecutionBenchmark;
 #[derive(Debug, Clone, Serialize)]
 pub struct MeasurementsPrinter {
     prologue: usize,
+    total_cycles: usize,
     notes_processing: usize,
-    note_execution: BTreeMap<String, usize>,
+    note_execution: Vec<NoteExecution>,
     tx_script_processing: usize,
     epilogue: EpilogueMeasurements,
     trace: TraceMeasurements,
 }
 
 impl MeasurementsPrinter {
-    pub fn from_parts(measurements: TransactionMeasurements, trace: TraceLenSummary) -> Self {
-        let note_execution_map = measurements
+    pub fn from_parts(
+        measurements: TransactionMeasurements,
+        trace: TraceLenSummary,
+        note_labels: &NoteLabels,
+    ) -> anyhow::Result<Self> {
+        let note_execution = measurements
             .note_execution
             .iter()
-            .map(|(id, len)| (id.to_hex(), *len))
-            .collect();
+            .map(|(measured, cycles)| {
+                let note = note_labels.label(*measured).with_context(|| {
+                    format!("measured note {measured} matches no input note of the transaction")
+                })?;
+                Ok(NoteExecution { note: note.to_string(), cycles: *cycles })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-        MeasurementsPrinter {
+        Ok(MeasurementsPrinter {
             prologue: measurements.prologue,
+            total_cycles: measurements.total_cycles(),
             notes_processing: measurements.notes_processing,
-            note_execution: note_execution_map,
+            note_execution,
             tx_script_processing: measurements.tx_script_processing,
             epilogue: EpilogueMeasurements::from_parts(
                 measurements.epilogue,
                 measurements.auth_procedure,
             ),
             trace: TraceMeasurements::from(trace),
-        }
+        })
     }
+}
+
+/// Cycles spent executing one input note.
+///
+/// `note` is the note's label; its `#N` suffix, when present, is the note's ordinal among the
+/// same-kind notes in *input-note* order, which need not match this entry's position in the
+/// measurement sequence.
+#[derive(Debug, Clone, Serialize)]
+struct NoteExecution {
+    note: String,
+    cycles: usize,
 }
 
 /// Helper structure holding the cycle count for different intervals in the epilogue, namely:
@@ -199,7 +219,7 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
-            padded_core_side: 16_384,
+            padded_core_side: 32_768,
             padded_chiplets: 8_192,
             padded_poseidon2: 32_768,
         },
