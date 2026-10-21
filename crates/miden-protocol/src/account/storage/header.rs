@@ -66,25 +66,15 @@ impl AccountStorageHeader {
         Ok(Self { slots })
     }
 
-    /// Returns a new instance of account storage header initialized with the provided slot tuples.
-    ///
-    /// This is a convenience method that converts tuples to [`StorageSlotHeader`]s.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The number of provided slots is greater than [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
-    /// - The slots are not sorted by [`StorageSlotId`].
+    /// Creates a header from slot names and contents, with the same checks as [`Self::new`].
     #[cfg(any(feature = "testing", test))]
     pub fn from_tuples(
-        slots: Vec<(StorageSlotName, StorageSlotType, Word)>,
+        slots: Vec<(StorageSlotName, StorageSlotHeaderContent)>,
     ) -> Result<Self, AccountError> {
         let slots = slots
             .into_iter()
-            .map(|(name, slot_type, value)| {
-                StorageSlotHeader::from_compact(name, slot_type, value, &BTreeMap::new())
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|(name, content)| StorageSlotHeader::new(name, content))
+            .collect();
 
         Self::new(slots)
     }
@@ -432,36 +422,50 @@ mod tests {
 
     use super::{AccountStorageHeader, StorageSlotHeaderContent};
     use crate::Word;
-    use crate::account::{AccountStorage, StorageSlotHeader, StorageSlotName, StorageSlotType};
+    use crate::account::{
+        AccountStorage,
+        StorageArray,
+        StorageSlot,
+        StorageSlotHeader,
+        StorageSlotName,
+    };
     use crate::errors::AccountError;
     use crate::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
     use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
-    fn test_from_account_storage() {
+    fn test_from_account_storage() -> anyhow::Result<()> {
         let storage_map = AccountStorage::mock_map();
+        let array_name = StorageSlotName::new("test::array")?;
+        let array = StorageArray::new(vec![Word::empty(); 3])?;
 
         // create new storage header from AccountStorage
         let mut slots = vec![
-            (MOCK_VALUE_SLOT0.clone(), StorageSlotType::Value, Word::from([1, 2, 3, 4u32])),
+            (
+                MOCK_VALUE_SLOT0.clone(),
+                StorageSlotHeaderContent::Value(Word::from([1, 2, 3, 4u32])),
+            ),
             (
                 MOCK_VALUE_SLOT1.clone(),
-                StorageSlotType::Value,
-                Word::from([
+                StorageSlotHeaderContent::Value(Word::from([
                     Felt::from(5_u32),
                     Felt::from(6_u32),
                     Felt::from(7_u32),
                     Felt::from(8_u32),
-                ]),
+                ])),
             ),
-            (MOCK_MAP_SLOT.clone(), StorageSlotType::Map, storage_map.root()),
+            (MOCK_MAP_SLOT.clone(), StorageSlotHeaderContent::Map(storage_map.root())),
+            (array_name.clone(), StorageSlotHeaderContent::Array(array.clone())),
         ];
         slots.sort_unstable_by_key(|(slot_name, ..)| slot_name.id());
 
-        let expected_header = AccountStorageHeader::from_tuples(slots).unwrap();
-        let account_storage = AccountStorage::mock();
+        let expected_header = AccountStorageHeader::from_tuples(slots)?;
+        let mut storage_slots = AccountStorage::mock().slots().to_vec();
+        storage_slots.push(StorageSlot::with_array(array_name, array));
+        let account_storage = AccountStorage::new(storage_slots)?;
 
-        assert_eq!(expected_header, AccountStorageHeader::from(&account_storage))
+        assert_eq!(expected_header, AccountStorageHeader::from(&account_storage));
+        Ok(())
     }
 
     #[test]

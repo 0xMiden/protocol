@@ -692,6 +692,7 @@ end
 # =================================================================================================
 
 #! Validates an encoded array slot type and returns its word count.
+#!
 #! Inputs:  [slot_type]
 #! Outputs: [num_words]
 pub proc array_length_from_type(slot_type: felt) -> u16
@@ -701,6 +702,7 @@ pub proc array_length_from_type(slot_type: felt) -> u16
 end
 
 #! Returns the active account's array commitment and length.
+#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [ROOT, num_words]
 pub proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
@@ -709,6 +711,7 @@ pub proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
 end
 
 #! Returns the native account's initial array commitment and length.
+#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [ROOT, num_words]
 pub proc get_initial_array_info(slot_id: StorageSlotId) -> (word, u16)
@@ -720,6 +723,7 @@ pub proc get_initial_array_info(slot_id: StorageSlotId) -> (word, u16)
 end
 
 #! Verifies and copies an array preimage into kernel memory.
+#!
 #! Inputs:  [ROOT, num_words, dst_ptr]
 #! Outputs: []
 pub proc read_array(root: word, num_words: u16, dst_ptr: ptr<word>)
@@ -734,6 +738,7 @@ pub proc read_array(root: word, num_words: u16, dst_ptr: ptr<word>)
 end
 
 #! Validates a new account's initial array before execution.
+#!
 #! Inputs:  [slot_idx, num_words]
 #! Outputs: []
 @locals(1024)
@@ -747,8 +752,10 @@ proc validate_initial_array(slot_idx: u8, num_words: u16)
 end
 
 #! Verifies an array preimage and stores its commitment.
+#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ROOT]
 #! Outputs: [num_words]
+#!
 #! Locals:
 #! - 0: slot pointer
 #! - 1: array length
