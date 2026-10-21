@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 
 use miden_core::Word;
 
-use crate::batch::BatchId;
 use crate::block::{
     BlockAccountUpdate,
     BlockNoteIndex,
@@ -205,7 +204,7 @@ impl BlockBody {
 
     /// Returns an iterator over the transaction headers of all batches in this block, in block
     /// order.
-    pub fn transaction_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
+    fn transaction_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
         self.transactions.iter().flat_map(OrderedTransactionHeaders::as_slice)
     }
 
@@ -219,17 +218,21 @@ impl BlockBody {
     }
 
     /// Returns an iterator over the [`BatchId`]s of the batches in this block, in block order.
-    pub fn batch_ids(&self) -> impl Iterator<Item = BatchId> + '_ {
+    #[cfg(any(feature = "testing", test))]
+    pub fn batch_ids(&self) -> impl Iterator<Item = crate::batch::BatchId> + '_ {
         self.transactions.iter().map(|batch| {
-            BatchId::from_ids(batch.as_slice().iter().map(|tx| (tx.id(), tx.account_id())))
+            crate::batch::BatchId::from_ids(
+                batch.as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
+            )
         })
     }
 
     /// Returns the sequential commitment to the batch IDs of this block.
     ///
     /// This is the `BATCHES_COMMITMENT` public input of the block kernel.
+    #[cfg(any(feature = "testing", test))]
     pub fn batches_commitment(&self) -> Word {
-        BatchId::compute_batches_commitment(self.batch_ids())
+        crate::batch::BatchId::compute_batches_commitment(self.batch_ids())
     }
 
     /// Returns an iterator over all [`OutputNote`]s created in this block.

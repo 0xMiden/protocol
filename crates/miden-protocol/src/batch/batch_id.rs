@@ -11,7 +11,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{Felt, Word};
 
 // BATCH ID
 // ================================================================================================
@@ -45,8 +45,9 @@ impl BatchId {
     ///
     /// This is the `BATCHES_COMMITMENT` public input of the block kernel. It commits to both the
     /// set of batches in a block and the order in which they appear.
+    #[cfg(any(feature = "testing", test))]
     pub fn compute_batches_commitment(batch_ids: impl IntoIterator<Item = BatchId>) -> Word {
-        Hasher::hash_elements(&Self::batch_ids_to_elements(batch_ids))
+        crate::Hasher::hash_elements(&Self::batch_ids_to_elements(batch_ids))
     }
 
     /// Returns the provided ordered batch IDs represented as a vector of field elements.
