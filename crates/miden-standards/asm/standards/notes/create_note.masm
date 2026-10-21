@@ -19,8 +19,7 @@ const ACTION_RECLAIM = 1
 const STORAGE_PTR = 0
 const OUTPUT_RECIPIENT_PTR = STORAGE_PTR
 const OUTPUT_ID_PTR = OUTPUT_RECIPIENT_PTR + WORD_NUM_ELEMENTS
-const OUTPUT_ASSET_PTR = OUTPUT_ID_PTR + WORD_NUM_ELEMENTS
-const INPUT_ASSETS_PTR = OUTPUT_ASSET_PTR + ASSET_SIZE
+const INPUT_ASSETS_PTR = OUTPUT_ID_PTR + WORD_NUM_ELEMENTS
 # A zero fee asset disables fee creation.
 const FEE_ASSET_PTR = INPUT_ASSETS_PTR + WORD_NUM_ELEMENTS
 const FEE_AMOUNT_PTR = FEE_ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
@@ -35,6 +34,8 @@ const NUM_STORAGE_ITEMS = RECLAIM_HEIGHT_PTR + 1 - STORAGE_PTR
 const PRIMARY_IDX_PTR = RECLAIM_HEIGHT_PTR + WORD_NUM_ELEMENTS
 const FEE_IDX_PTR = PRIMARY_IDX_PTR + 1
 const REMAINING_ASSETS_PTR = PRIMARY_IDX_PTR + WORD_NUM_ELEMENTS
+const ASSETS_CURSOR = 0
+const ASSETS_END = ASSETS_CURSOR + 1
 
 # "CREATEFE" separates these serials from other fee note derivations.
 const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
@@ -42,7 +43,7 @@ const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
 # ERRORS
 # =================================================================================================
 
-const ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS = "CREATE_NOTE storage must contain exactly 33 items"
+const ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS = "CREATE_NOTE storage must contain exactly 25 items"
 const ERR_CREATE_NOTE_INVALID_ACTION = "CREATE_NOTE expects create or reclaim with zero reserved arguments"
 const ERR_CREATE_NOTE_FUNDING_MISMATCH = "CREATE_NOTE assets do not match the committed funding"
 const ERR_CREATE_NOTE_OUTPUT_ALTERED = "CREATE_NOTE output differs from the committed note"
@@ -77,6 +78,7 @@ end
 #!
 #! Action 0 creates the output; action 1 reclaims the request. Reserved arguments must be zero.
 @note_script
+@locals(2)
 pub proc main(note_args: NoteArgs)
     movup.3 assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
     movup.2 assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
@@ -115,7 +117,7 @@ pub proc main(note_args: NoteArgs)
         movdn.15 dropw dropw dropw drop drop drop
         # => [note_idx, pad(12)]
 
-        dup mem_store.PRIMARY_IDX_PTR push.OUTPUT_ASSET_PTR exec.fund_output
+        mem_store.PRIMARY_IDX_PTR
 
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
@@ -135,7 +137,15 @@ pub proc main(note_args: NoteArgs)
         end
 
         push.REMAINING_ASSETS_PTR exec.active_note::remove_all_assets
-        assertz.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+        mul.ASSET_SIZE add.REMAINING_ASSETS_PTR loc_store.ASSETS_END
+        push.REMAINING_ASSETS_PTR loc_store.ASSETS_CURSOR
+        loc_load.ASSETS_CURSOR loc_load.ASSETS_END neq
+        while.true
+            mem_load.PRIMARY_IDX_PTR loc_load.ASSETS_CURSOR exec.asset::load
+            exec.output_note::add_asset
+            loc_load.ASSETS_CURSOR add.ASSET_SIZE dup loc_store.ASSETS_CURSOR
+            loc_load.ASSETS_END neq
+        end
 
         # Validate after all asset callbacks, then seal both outputs against later changes.
         mem_load.PRIMARY_IDX_PTR exec.output_note::compute_note_id

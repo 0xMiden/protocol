@@ -329,7 +329,7 @@ Consume reconstructed private paybacks and refunds with inclusion proofs; unauth
 
 ### CREATE_NOTE
 
-A private `CREATE_NOTE` request creates a committed output through a separate public account. The output may be public or private and must contain one fungible asset with no attachments. The script checks the output after asset callbacks and seals it.
+A private `CREATE_NOTE` request creates a committed output through a separate public account. The output may be public or private and can contain multiple fungible assets with no attachments. After removing the optional creation fee, the script transfers all remaining assets to the output, checks its committed ID after asset callbacks, and seals it.
 
 An optional native fee payment creates a sealed public `TX_FEE` note, separate from the output principal. The payment is paid in full without change; the executing account must verify that it covers the transaction fee. Fee serials distinguish concurrent requests against the same account.
 

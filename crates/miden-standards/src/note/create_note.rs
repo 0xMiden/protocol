@@ -1,4 +1,3 @@
-use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
@@ -32,7 +31,7 @@ static CREATE_NOTE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// A private request to create a committed output through a public account.
 ///
-/// Carries one fungible output asset and an optional native fee payment, paid in full through a
+/// Carries the output's fungible assets and an optional native fee payment, paid in full through a
 /// public TX_FEE note. Both outputs are sealed. The executing account must expose BasicWallet's
 /// `create_note` procedure and check that the fee covers the transaction.
 ///
@@ -49,7 +48,7 @@ pub struct CreateNote {
 
 impl CreateNote {
     /// Number of storage items, matching the CREATE_NOTE script.
-    pub const NUM_STORAGE_ITEMS: usize = 33;
+    pub const NUM_STORAGE_ITEMS: usize = 25;
 
     /// Creates a request for `output`, whose sender identifies the public executing account.
     ///
@@ -59,7 +58,7 @@ impl CreateNote {
     ///
     /// # Errors
     ///
-    /// Returns an error unless the output has one positive fungible asset, no attachments, and a
+    /// Returns an error unless the output has positive fungible assets, no attachments, and a
     /// separate public sender. Also rejects a zero fee, zero reclaim height, or asset overflow.
     pub fn new(
         sender: AccountId,
@@ -74,25 +73,28 @@ impl CreateNote {
                 "CREATE_NOTE requires a separate public executing account",
             ));
         }
-        if output.assets().num_assets() != 1 || output.attachments().num_attachments() != 0 {
-            return Err(NoteError::other(
-                "CREATE_NOTE requires one output asset and no attachments",
-            ));
+        if output.assets().num_assets() == 0 || output.attachments().num_attachments() != 0 {
+            return Err(NoteError::other("CREATE_NOTE requires output assets and no attachments"));
         }
-        let asset = output.assets().iter().next().expect("one asset checked");
-        let Some(principal) = asset.as_fungible() else {
-            return Err(NoteError::other("CREATE_NOTE requires a fungible output asset"));
-        };
-        if principal.amount().as_u64() == 0 || fee.is_some_and(|fee| fee.amount().as_u64() == 0) {
+        if output
+            .assets()
+            .iter()
+            .any(|asset| asset.as_fungible().is_none_or(|asset| asset.amount().as_u64() == 0))
+        {
+            return Err(NoteError::other("CREATE_NOTE requires positive fungible output assets"));
+        }
+        if fee.is_some_and(|fee| fee.amount().as_u64() == 0) {
             return Err(NoteError::other("CREATE_NOTE asset amounts must be positive"));
         }
         if reclaim_height.as_u32() == 0 {
             return Err(NoteError::other("CREATE_NOTE requires a nonzero reclaim height"));
         }
-        let mut input_assets = vec![*asset];
+        let mut input_assets = output.assets().iter().copied().collect::<Vec<_>>();
         if let Some(fee) = fee {
-            if fee.faucet_id() == principal.faucet_id() {
-                input_assets[0] = principal
+            if let Some(asset) = input_assets.iter_mut().find(|asset| asset.id() == fee.id()) {
+                *asset = asset
+                    .as_fungible()
+                    .expect("output assets were validated")
                     .add(fee)
                     .map_err(|e| {
                         NoteError::other_with_source("CREATE_NOTE asset amount overflow", e)
@@ -106,7 +108,6 @@ impl CreateNote {
         let mut items = Vec::with_capacity(Self::NUM_STORAGE_ITEMS);
         items.extend_from_slice(output.recipient().digest().as_elements());
         items.extend_from_slice(output.id().as_elements());
-        items.extend_from_slice(&asset.as_elements());
         items.extend_from_slice(input_assets.commitment().as_elements());
         items.extend_from_slice(&fee.map(|f| Asset::from(f).as_elements()).unwrap_or([ZERO; 8]));
         items.extend_from_slice(&[

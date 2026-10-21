@@ -20,6 +20,7 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    AccountIdBuilder,
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
@@ -46,6 +47,7 @@ fn setup(
     note_type: NoteType,
     native_principal: bool,
     fee_amount: Option<u64>,
+    extra_assets: usize,
 ) -> anyhow::Result<(MockChainBuilder, Account, Account, CreateNote)> {
     let mut builder = MockChain::builder();
     let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -62,12 +64,19 @@ fn setup(
     } else {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?
     };
+    let mut assets = vec![FungibleAsset::new(faucet, 100)?];
+    for index in 0..extra_assets {
+        let issuer = AccountIdBuilder::new()
+            .account_type(AccountType::Public)
+            .build_with_seed([100 + index as u8; 32]);
+        assets.push(FungibleAsset::new(issuer, 10)?);
+    }
     let output: Note = P2idNote::builder()
         .sender(passthrough.id())
         .target(sender.id())
         .serial_number(builder.rng_mut().draw_word())
         .note_type(note_type)
-        .asset(FungibleAsset::new(faucet, 100)?)
+        .assets(assets)
         .build()?
         .into();
     let fee = fee_amount.map(|amount| FungibleAsset::new(fee_faucet, amount)).transpose()?;
@@ -83,17 +92,22 @@ fn setup(
 }
 
 #[rstest]
-#[case::combined_funding(NoteType::Public, true, Some(50))]
-#[case::separate_funding(NoteType::Public, false, Some(50))]
-#[case::private_output(NoteType::Private, false, Some(50))]
-#[case::without_fee(NoteType::Public, false, None)]
+#[case::combined_funding(NoteType::Public, true, Some(50), 0)]
+#[case::separate_funding(NoteType::Public, false, Some(50), 0)]
+#[case::private_output(NoteType::Private, false, Some(50), 0)]
+#[case::without_fee(NoteType::Public, false, None, 0)]
+#[case::multiple_assets_combined_fee(NoteType::Public, true, Some(50), 1)]
+#[case::multiple_assets_separate_fee(NoteType::Private, false, Some(50), 1)]
+#[case::maximum_output_assets(NoteType::Public, true, Some(50), NoteAssets::MAX_NUM_ASSETS - 1)]
 #[tokio::test]
 async fn create_note_preserves_output_and_pays_fee(
     #[case] note_type: NoteType,
     #[case] native_principal: bool,
     #[case] fee_amount: Option<u64>,
+    #[case] extra_assets: usize,
 ) -> anyhow::Result<()> {
-    let (builder, _, passthrough, request) = setup(note_type, native_principal, fee_amount)?;
+    let (builder, _, passthrough, request) =
+        setup(note_type, native_principal, fee_amount, extra_assets)?;
     let chain = builder.build()?;
     let tx = chain
         .build_transaction(passthrough.id())
@@ -118,7 +132,7 @@ async fn create_note_preserves_output_and_pays_fee(
 
 #[tokio::test]
 async fn create_note_fee_ids_are_unique_within_transaction() -> anyhow::Result<()> {
-    let (mut builder, sender, passthrough, first) = setup(NoteType::Public, true, Some(50))?;
+    let (mut builder, sender, passthrough, first) = setup(NoteType::Public, true, Some(50), 0)?;
     let second_output = Note::new(
         first.output().assets().clone(),
         first.output().metadata().into_partial_metadata(),
@@ -154,7 +168,7 @@ async fn create_note_fee_ids_are_unique_within_transaction() -> anyhow::Result<(
 
 #[tokio::test]
 async fn create_note_rejects_other_consumers() -> anyhow::Result<()> {
-    let (builder, sender, _, request) = setup(NoteType::Public, false, Some(50))?;
+    let (builder, sender, _, request) = setup(NoteType::Public, false, Some(50), 0)?;
     let chain = builder.build()?;
     let result = chain
         .build_transaction(sender.id())
@@ -168,7 +182,7 @@ async fn create_note_rejects_other_consumers() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn create_note_rejects_changed_input_assets() -> anyhow::Result<()> {
-    let (mut builder, _, passthrough, request) = setup(NoteType::Public, true, Some(50))?;
+    let (mut builder, _, passthrough, request) = setup(NoteType::Public, true, Some(50), 0)?;
     let malformed = Note::new(
         NoteAssets::new(vec![FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 151)?.into()])?,
         request.note().metadata().into_partial_metadata(),
@@ -188,7 +202,7 @@ async fn create_note_rejects_changed_input_assets() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn create_note_rejects_fee_in_another_asset() -> anyhow::Result<()> {
-    let (mut builder, sender, passthrough, valid) = setup(NoteType::Public, false, None)?;
+    let (mut builder, sender, passthrough, valid) = setup(NoteType::Public, false, None, 0)?;
     let request = CreateNote::new(
         sender.id(),
         builder.rng_mut().draw_word(),
@@ -219,7 +233,7 @@ async fn create_note_reclaim(
     #[case] original_sender: bool,
     #[case] expected_error: Option<MasmError>,
 ) -> anyhow::Result<()> {
-    let (builder, sender, passthrough, request) = setup(NoteType::Public, true, Some(50))?;
+    let (builder, sender, passthrough, request) = setup(NoteType::Public, true, Some(50), 0)?;
     let mut chain = builder.build()?;
     if height_reached {
         chain.prove_next_block()?;
@@ -246,7 +260,7 @@ async fn create_note_reclaim(
 #[rstest]
 #[tokio::test]
 async fn create_note_seals_outputs(#[values(0, 1)] index: u32) -> anyhow::Result<()> {
-    let (builder, _, passthrough, request) = setup(NoteType::Public, false, Some(50))?;
+    let (builder, _, passthrough, request) = setup(NoteType::Public, false, Some(50), 0)?;
     let chain = builder.build()?;
     let script = CodeBuilder::default().compile_tx_script(format!(
         r#"
@@ -336,7 +350,7 @@ async fn create_note_checks_output_after_asset_callbacks() -> anyhow::Result<()>
 
 #[test]
 fn create_note_validates_request_shape() -> anyhow::Result<()> {
-    let (_, sender, passthrough, request) = setup(NoteType::Public, true, Some(50))?;
+    let (_, sender, passthrough, request) = setup(NoteType::Public, true, Some(50), 0)?;
     let make =
         |output, fee, height| CreateNote::new(sender.id(), Word::empty(), output, fee, height);
     assert!(make(request.output().clone(), request.fee(), BlockNumber::from(0)).is_err());
