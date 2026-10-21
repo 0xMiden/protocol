@@ -5,7 +5,6 @@ use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 
 pub mod eip712
-pub mod eip712_transaction_summary
 pub mod guardian
 pub mod multisig
 pub mod multisig_smart

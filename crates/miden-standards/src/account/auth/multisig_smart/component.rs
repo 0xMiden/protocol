@@ -1,12 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
@@ -31,11 +25,11 @@ use super::super::multisig::{
 };
 use super::ProcedurePolicy;
 use super::config::DelayedExecutionPolicy;
-use crate::account::account_component_code;
-use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
+use crate::account::account_component_package;
+use crate::account::auth::{Approver, ApproverSet};
 use crate::{StandardsDomainRegistry, procedure_root};
 
-account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
+account_component_package!(MULTISIG_SMART_PACKAGE, "miden-standards-auth-multisig-smart.masp");
 
 // The library path the component is compiled under (its project.toml `namespace`), which is what
 // procedure roots are exported under. This differs from [`AuthMultisigSmart::NAME`] by the
@@ -225,8 +219,8 @@ fn validate_proc_policies(
 /// # Security
 ///
 /// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
-/// [`AuthMultisig`], so a procedure with such a policy should seal the notes it creates for the
-/// reasons described there.
+/// [`AuthMultisig`](crate::account::auth::AuthMultisig), so a procedure with such a policy should
+/// seal the notes it creates for the reasons described there.
 ///
 /// Delayed execution verifies proposal signatures over the proposed transaction's commitment, and
 /// three properties follow from that which callers and operators must account for:
@@ -305,7 +299,7 @@ impl AuthMultisigSmart {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MULTISIG_SMART_CODE
+        &MULTISIG_SMART_PACKAGE.code
     }
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
@@ -422,52 +416,9 @@ impl AuthMultisigSmart {
         *MULTISIG_SMART_CANCEL_TRANSACTION_PROPOSAL
     }
 
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::threshold_config_slot_schema()
-    }
-
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_public_keys_slot_schema()
-    }
-
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_auth_scheme_slot_schema()
-    }
-
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::executed_transactions_slot_schema()
-    }
-
-    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::procedure_policies_slot().clone(),
-            StorageSlotSchema::map(
-                "Procedure policies",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn delay_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::delay_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Delay config: [min_delay, propose_expiration_delta, cancel_threshold, 0]",
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn tx_proposals_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::tx_proposals_slot().clone(),
-            StorageSlotSchema::map(
-                "Tx proposals: tx_summary_commitment => [unlock_block, proposal_block, min_cancel_sigs, 0]; a cancelled proposal keeps its record with unlock_block = u32::MAX",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        MULTISIG_SMART_PACKAGE.metadata.clone()
     }
 }
 
@@ -540,20 +491,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             StorageMap::default(),
         ));
 
-        let storage_schema = StorageSchema::new(vec![
-            AuthMultisigSmart::threshold_config_slot_schema(),
-            AuthMultisigSmart::approver_public_keys_slot_schema(),
-            AuthMultisigSmart::approver_auth_scheme_slot_schema(),
-            AuthMultisigSmart::executed_transactions_slot_schema(),
-            AuthMultisigSmart::procedure_policies_slot_schema(),
-            AuthMultisigSmart::delay_config_slot_schema(),
-            AuthMultisigSmart::tx_proposals_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME)
-            .with_description("Multisig smart authentication component")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthMultisigSmart::component_metadata();
 
         AccountComponent::new(AuthMultisigSmart::code().clone(), storage_slots, metadata).expect(
             "multisig smart component should satisfy the requirements of a valid account component",
