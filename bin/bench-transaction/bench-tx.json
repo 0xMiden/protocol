@@ -18,7 +18,7 @@
       "core_rows": 81952,
       "chiplets_rows": 11657,
       "poseidon2_permutation_rows": 55984,
-      "range_rows": 20711,
+      "range_rows": 20739,
       "chiplets_shape": {
         "hasher_rows": 8792,
         "bitwise_rows": 656,
@@ -47,7 +47,7 @@
       "core_rows": 14047,
       "chiplets_rows": 6001,
       "poseidon2_permutation_rows": 20240,
-      "range_rows": 2023,
+      "range_rows": 2031,
       "chiplets_shape": {
         "hasher_rows": 4336,
         "bitwise_rows": 848,
@@ -80,7 +80,7 @@
       "core_rows": 84540,
       "chiplets_rows": 13568,
       "poseidon2_permutation_rows": 56192,
-      "range_rows": 20283,
+      "range_rows": 20509,
       "chiplets_shape": {
         "hasher_rows": 10208,
         "bitwise_rows": 1032,
@@ -113,7 +113,7 @@
       "core_rows": 16635,
       "chiplets_rows": 7904,
       "poseidon2_permutation_rows": 20448,
-      "range_rows": 1451,
+      "range_rows": 1417,
       "chiplets_shape": {
         "hasher_rows": 5744,
         "bitwise_rows": 1224,
@@ -137,7 +137,7 @@
       "core_rows": 79936,
       "chiplets_rows": 10998,
       "poseidon2_permutation_rows": 53760,
-      "range_rows": 20379,
+      "range_rows": 20411,
       "chiplets_shape": {
         "hasher_rows": 8328,
         "bitwise_rows": 584,
@@ -161,7 +161,7 @@
       "core_rows": 12031,
       "chiplets_rows": 5334,
       "poseidon2_permutation_rows": 18000,
-      "range_rows": 1243,
+      "range_rows": 1261,
       "chiplets_shape": {
         "hasher_rows": 3864,
         "bitwise_rows": 776,
@@ -520,116 +520,116 @@
     }
   },
   "consume PSWAP note (full fill, network account)": {
-    "prologue": 4146,
-    "total_cycles": 26771,
-    "notes_processing": 7259,
+    "prologue": 4947,
+    "total_cycles": 29832,
+    "notes_processing": 8727,
     "note_execution": [
       {
         "note": "PSWAP",
-        "cycles": 7217
+        "cycles": 8685
       }
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15325,
+      "total": 16117,
       "auth_procedure": 10794
     },
     "trace": {
-      "core_rows": 26817,
-      "chiplets_rows": 11950,
-      "poseidon2_permutation_rows": 31968,
-      "range_rows": 2043,
+      "core_rows": 29878,
+      "chiplets_rows": 13965,
+      "poseidon2_permutation_rows": 35024,
+      "range_rows": 2167,
       "chiplets_shape": {
-        "hasher_rows": 8992,
-        "bitwise_rows": 1408,
-        "memory_rows": 1548,
+        "hasher_rows": 10344,
+        "bitwise_rows": 1912,
+        "memory_rows": 1707,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (partial fill, network account)": {
-    "prologue": 4146,
-    "total_cycles": 31079,
-    "notes_processing": 10235,
+    "prologue": 4947,
+    "total_cycles": 34140,
+    "notes_processing": 11703,
     "note_execution": [
       {
         "note": "PSWAP",
-        "cycles": 10193
+        "cycles": 11661
       }
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16657,
+      "total": 17449,
       "auth_procedure": 10998
     },
     "trace": {
-      "core_rows": 31125,
-      "chiplets_rows": 13845,
-      "poseidon2_permutation_rows": 33856,
-      "range_rows": 2197,
+      "core_rows": 34186,
+      "chiplets_rows": 15860,
+      "poseidon2_permutation_rows": 37008,
+      "range_rows": 2315,
       "chiplets_shape": {
-        "hasher_rows": 10304,
-        "bitwise_rows": 1800,
-        "memory_rows": 1739,
+        "hasher_rows": 11656,
+        "bitwise_rows": 2304,
+        "memory_rows": 1898,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (full fill, public payback, network account)": {
-    "prologue": 4146,
-    "total_cycles": 27400,
-    "notes_processing": 7888,
+    "prologue": 4947,
+    "total_cycles": 30562,
+    "notes_processing": 9457,
     "note_execution": [
       {
         "note": "PSWAP",
-        "cycles": 7846
+        "cycles": 9415
       }
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15325,
+      "total": 16117,
       "auth_procedure": 10794
     },
     "trace": {
-      "core_rows": 27446,
-      "chiplets_rows": 12127,
-      "poseidon2_permutation_rows": 32464,
-      "range_rows": 2071,
+      "core_rows": 30608,
+      "chiplets_rows": 14167,
+      "poseidon2_permutation_rows": 35520,
+      "range_rows": 2219,
       "chiplets_shape": {
-        "hasher_rows": 9120,
-        "bitwise_rows": 1432,
-        "memory_rows": 1573,
+        "hasher_rows": 10496,
+        "bitwise_rows": 1936,
+        "memory_rows": 1733,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (partial fill, public payback, network account)": {
-    "prologue": 4146,
-    "total_cycles": 31708,
-    "notes_processing": 10864,
+    "prologue": 4947,
+    "total_cycles": 34870,
+    "notes_processing": 12433,
     "note_execution": [
       {
         "note": "PSWAP",
-        "cycles": 10822
+        "cycles": 12391
       }
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16657,
+      "total": 17449,
       "auth_procedure": 10998
     },
     "trace": {
-      "core_rows": 31754,
-      "chiplets_rows": 14022,
-      "poseidon2_permutation_rows": 34304,
-      "range_rows": 2223,
+      "core_rows": 34916,
+      "chiplets_rows": 16062,
+      "poseidon2_permutation_rows": 37456,
+      "range_rows": 2345,
       "chiplets_shape": {
-        "hasher_rows": 10432,
-        "bitwise_rows": 1824,
-        "memory_rows": 1764,
+        "hasher_rows": 11808,
+        "bitwise_rows": 2328,
+        "memory_rows": 1924,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -665,29 +665,29 @@
     }
   },
   "consume MINT note (non-fungible faucet, network account)": {
-    "prologue": 6393,
-    "total_cycles": 40759,
-    "notes_processing": 12390,
+    "prologue": 5928,
+    "total_cycles": 38968,
+    "notes_processing": 12288,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 12348
+        "cycles": 12246
       }
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 21935,
-      "auth_procedure": 10630
+      "total": 20711,
+      "auth_procedure": 10558
     },
     "trace": {
-      "core_rows": 40805,
-      "chiplets_rows": 15695,
-      "poseidon2_permutation_rows": 31952,
-      "range_rows": 3399,
+      "core_rows": 39014,
+      "chiplets_rows": 15171,
+      "poseidon2_permutation_rows": 31744,
+      "range_rows": 3221,
       "chiplets_shape": {
-        "hasher_rows": 12048,
+        "hasher_rows": 11640,
         "bitwise_rows": 1176,
-        "memory_rows": 2469,
+        "memory_rows": 2353,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -1093,7 +1093,7 @@
       "core_rows": 17782,
       "chiplets_rows": 8034,
       "poseidon2_permutation_rows": 24112,
-      "range_rows": 1563,
+      "range_rows": 1561,
       "chiplets_shape": {
         "hasher_rows": 5944,
         "bitwise_rows": 1176,
