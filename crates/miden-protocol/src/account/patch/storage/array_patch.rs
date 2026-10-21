@@ -20,7 +20,10 @@ use crate::utils::serde::{
     Serializable,
 };
 
-/// Changes to an array slot.
+// STORAGE ARRAY PATCH
+// ================================================================================================
+
+/// The patch of a single array storage slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageArrayPatch {
     /// Creates the array, including zero words.
@@ -32,6 +35,17 @@ pub enum StorageArrayPatch {
 }
 
 impl StorageArrayPatch {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    const CREATE: u8 = 0;
+    const UPDATE: u8 = 1;
+    const REMOVE: u8 = 2;
+
+    // ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the length of the array this patch operates on.
     pub fn length(&self) -> StorageArrayLength {
         match self {
             Self::Create { array } => array.length(),
@@ -40,6 +54,7 @@ impl StorageArrayPatch {
         }
     }
 
+    /// Returns the [`StoragePatchOperation`] that this patch represents.
     pub fn patch_op(&self) -> StoragePatchOperation {
         match self {
             Self::Create { .. } => StoragePatchOperation::Create,
@@ -65,6 +80,12 @@ impl StorageArrayPatch {
             )
     }
 
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Merges `other` into `self`, with `other` taking precedence.
+    ///
+    /// Array lengths must match unless a removed slot is being recreated.
     pub(super) fn merge(
         &mut self,
         slot_name: &StorageSlotName,
@@ -111,23 +132,44 @@ impl StorageArrayPatch {
     }
 }
 
+// SERIALIZATION
+// ================================================================================================
+
 impl Serializable for StorageArrayPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u8(self.patch_op().as_u8());
         match self {
-            Self::Create { array } => target.write(array),
-            Self::Update { entries } => target.write(entries),
-            Self::Remove { length } => target.write(length),
+            Self::Create { array } => {
+                target.write_u8(Self::CREATE);
+                target.write(array);
+            },
+            Self::Update { entries } => {
+                target.write_u8(Self::UPDATE);
+                target.write(entries);
+            },
+            Self::Remove { length } => {
+                target.write_u8(Self::REMOVE);
+                target.write(length);
+            },
         }
+    }
+
+    fn get_size_hint(&self) -> usize {
+        let tag_size = 0u8.get_size_hint();
+        tag_size
+            + match self {
+                Self::Create { array } => array.get_size_hint(),
+                Self::Update { entries } => entries.get_size_hint(),
+                Self::Remove { length } => length.get_size_hint(),
+            }
     }
 }
 
 impl Deserializable for StorageArrayPatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
-            0 => Ok(Self::Create { array: source.read()? }),
-            1 => Ok(Self::Update { entries: source.read()? }),
-            2 => Ok(Self::Remove { length: source.read()? }),
+            Self::CREATE => Ok(Self::Create { array: source.read()? }),
+            Self::UPDATE => Ok(Self::Update { entries: source.read()? }),
+            Self::REMOVE => Ok(Self::Remove { length: source.read()? }),
             tag => Err(DeserializationError::InvalidValue(format!(
                 "unknown array patch operation {tag}"
             ))),
@@ -135,7 +177,12 @@ impl Deserializable for StorageArrayPatch {
     }
 }
 
-/// Sparse updates, including writes of zero words.
+// STORAGE ARRAY PATCH ENTRIES
+// ================================================================================================
+
+/// The changed words of an array, indexed by their positions in the array.
+///
+/// Zero words are retained because writing zero updates an element rather than removing it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageArrayPatchEntries {
     length: StorageArrayLength,
@@ -143,7 +190,11 @@ pub struct StorageArrayPatchEntries {
 }
 
 impl StorageArrayPatchEntries {
-    /// Checks that indices are unique and below `length`.
+    /// Creates sparse updates for an array of the given length.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an index is duplicated or is not less than `length`.
     pub fn new(
         length: StorageArrayLength,
         entries: impl IntoIterator<Item = (u16, Word)>,
@@ -161,6 +212,10 @@ impl StorageArrayPatchEntries {
     }
 
     /// Finds changed words between arrays of equal length.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the array lengths differ.
     pub fn between(
         initial: &StorageArray,
         final_array: &StorageArray,
@@ -182,19 +237,26 @@ impl StorageArrayPatchEntries {
         )
     }
 
+    /// Returns the length of the array these updates apply to.
     pub fn length(&self) -> StorageArrayLength {
         self.length
     }
 
+    /// Returns the changed entries in index order.
     pub fn as_map(&self) -> &BTreeMap<u16, Word> {
         &self.entries
     }
 
+    /// Returns `true` if there are no changed entries.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Applies updates to an array of the same length.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the array length differs from [`Self::length`].
     pub fn apply(&self, array: &StorageArray) -> Result<StorageArray, StorageArrayError> {
         if array.length() != self.length {
             return Err(StorageArrayError::LengthMismatch {
@@ -210,11 +272,20 @@ impl StorageArrayPatchEntries {
     }
 }
 
+// SERIALIZATION
+// ================================================================================================
+
 impl Serializable for StorageArrayPatchEntries {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(self.length);
         target.write_u16(self.entries.len() as u16);
         target.write_many(&self.entries);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.length.get_size_hint()
+            + 0u16.get_size_hint()
+            + self.entries.len() * (0u16.get_size_hint() + Word::SERIALIZED_SIZE)
     }
 }
 

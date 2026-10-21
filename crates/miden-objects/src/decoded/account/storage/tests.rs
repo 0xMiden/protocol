@@ -3,6 +3,7 @@ use alloc::vec;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
+use miden_protocol::account::StorageArrayError;
 use miden_protocol::errors::StorageSlotNameError;
 
 use crate::proto::account::StorageArray;
@@ -154,7 +155,7 @@ fn storage_array_rejects_invalid_lengths() -> anyhow::Result<()> {
         let wire = StorageArray {
             values: vec![Word::empty().into(); count],
         };
-        assert!(wire.decode_fields()?.verify().is_err());
+        assert_matches!(wire.decode_fields()?.verify(), Err(StorageArrayError::InvalidLength(actual)) if actual == count);
     }
     Ok(())
 }
