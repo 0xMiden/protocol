@@ -250,6 +250,6 @@ fn partial_smt_rejects_reconstruction_missing_node() {
     }];
     assert_partial_smt_decode_error(
         encoded,
-        "invalid value: inner node hash is inconsistent with parent",
+        "invalid value: reconstructed SMT root does not match expected root",
     );
 }

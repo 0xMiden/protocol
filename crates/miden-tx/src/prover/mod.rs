@@ -76,7 +76,7 @@ impl LocalTransactionProver {
 
     /// Returns the [`ExecutionOptions`] this prover uses.
     pub fn execution_options(&self) -> ExecutionOptions {
-        self.execution_options
+        self.execution_options.clone()
     }
 
     fn build_proven_transaction(
@@ -189,7 +189,7 @@ impl LocalTransactionProver {
         let processor = FastProcessor::new_with_options(
             stack_inputs,
             advice_inputs.into_advice_inputs(),
-            self.execution_options,
+            self.execution_options.clone(),
         )
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(prover.execution_options(), ExecutionOptions::default());
 
         let custom_options = ExecutionOptions::default().with_max_advice_size_bytes(1);
-        let prover = prover.with_execution_options(custom_options);
+        let prover = prover.with_execution_options(custom_options.clone());
         assert_eq!(prover.execution_options(), custom_options);
     }
 }

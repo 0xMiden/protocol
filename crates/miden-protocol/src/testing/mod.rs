@@ -5,6 +5,7 @@ use miden_core::deferred::{
     PrecompileWitness,
     PrecompileWitnessEntry,
     TRUE_DIGEST,
+    fold_deferred_root,
 };
 use miden_verifier::{ExecutionProof, PrecompileProof, PrecompileStatus, StarkProof, VmProof};
 
@@ -65,7 +66,7 @@ pub fn dummy_deferred_execution_proof() -> ExecutionProof {
     ExecutionProof::new(
         VmProof {
             proof: StarkProof::new(Vec::new(), PROTOCOL_PROOF_HASH),
-            precompile_root: witness.root_unchecked(),
+            precompile_root: fold_deferred_root(TRUE_DIGEST, TRUE_DIGEST),
         },
         PrecompileStatus::Deferred(witness),
     )
