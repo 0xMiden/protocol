@@ -6,7 +6,6 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountType};
 use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -312,7 +311,7 @@ async fn create_note_reclaim(#[case] original_sender: bool) -> anyhow::Result<()
 #[case::primary_output(0)]
 #[case::fee_output(1)]
 #[tokio::test]
-async fn create_note_allows_primary_attachments_and_seals_fee(
+async fn create_note_leaves_outputs_unsealed(
     #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
     #[case] index: u32,
 ) -> anyhow::Result<()> {
@@ -329,23 +328,25 @@ async fn create_note_allows_primary_attachments_and_seals_fee(
         end
     "#
     ))?;
-    let result = chain
+    let tx = chain
         .build_transaction(passthrough.id())
         .authenticated_input_notes([create_note.note().clone()])
         .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .tx_script(script)
         .build()?
         .execute()
-        .await;
-    if index == 1 {
-        assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
-    } else {
-        let tx = result?;
+        .await?;
+    let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, Word::empty());
+    assert_eq!(
+        tx.output_notes().get_note(index as usize).attachments(),
+        &attachment.clone().into()
+    );
+    if index == 0 {
         let expected = Note::with_attachments(
             create_note.output().assets().clone(),
             create_note.output().metadata().into_partial_metadata(),
             create_note.output().recipient().clone(),
-            NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, Word::empty()).into(),
+            attachment.into(),
         );
         assert_eq!(tx.output_notes().get_note(0).id(), expected.id());
     }

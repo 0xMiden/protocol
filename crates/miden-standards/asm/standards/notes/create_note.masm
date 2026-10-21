@@ -101,7 +101,7 @@ end
 # NOTE SCRIPT
 # =================================================================================================
 
-#! Creates an unsealed primary output and, when funded, a sealed public TX_FEE output.
+#! Creates a primary output and, when funded, a public TX_FEE output. Neither output is sealed.
 #!
 #! Consumers: the designated public account; the original sender may reclaim at any time.
 #!
@@ -174,7 +174,6 @@ pub proc main(note_args: NoteArgs)
             assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
             mem_load.FEE_IDX_PTR exec.output_note::get_attachments_commitment
             padw assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
-            mem_load.FEE_IDX_PTR exec.output_note::seal
         end
     end
 end
