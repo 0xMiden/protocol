@@ -19,7 +19,6 @@ use miden_protocol::note::{
     NoteAssets,
     NoteRecipient,
     NoteStorage,
-    NoteTag,
     NoteType,
     PartialNote,
     PartialNoteMetadata,
@@ -103,7 +102,7 @@ async fn passthrough_private_pswap_e2e(
         .storage(
             PswapNoteStorage::builder()
                 .min_requested_asset(requested)
-                .payback(PswapPayback::private(recipient, NoteTag::new(27)))
+                .payback(PswapPayback::private(recipient, PswapNote::PAYBACK_TAG))
                 .cancellation_fee(reserve)
                 .build(),
         )
