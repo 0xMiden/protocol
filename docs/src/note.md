@@ -321,15 +321,17 @@ PSWAP exchanges part or all of one fungible asset for another. Each fill creates
 
 - **Public paybacks:** the order stores the creator's account ID and fixed P2ID serial. The creator can reclaim an unspent order or remainder directly into its vault.
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
-- **Storage:** 11 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the creator ID and serial; private mode appends the recipient commitment and tag.
+- **Storage:** 14 elements for public paybacks or 13 for private paybacks. Both begin with the requested asset, minimum fill step, payback type, and optional cancellation fee asset. Public mode appends the creator ID and serial; private mode appends the recipient commitment and tag.
 
-Use a fresh P2ID serial for each order, independent of its PSWAP serial, and keep private recipient preimages secret. When reconstructing a payback or cancellation refund, include its complete on-chain attachment list.
+An optional native cancellation reserve travels unchanged into each remainder. A complete fill returns it in the final payback, combining amounts when the requested asset is native. Private cancellation pays the reserve in full through a sealed public TX_FEE; the executing account must check fee sufficiency. Public reclaim returns the reserve and principal to the creator's vault. The reserve never enters fill pricing.
+
+Use a fresh P2ID serial for each order, independent of its PSWAP serial, and keep private recipient preimages secret. When reconstructing a payback or cancellation refund, include its complete on-chain attachment list. Reconstruct paybacks with a reserve from the consumed PSWAP or remainder, whose remaining requested amount identifies a complete fill.
 
 Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
 ### CREATE_NOTE
 
-A private `CREATE_NOTE` request creates a committed output through a separate public account. The output may be public or private and must contain one fungible asset with no attachments. The script checks the output after asset callbacks and seals it.
+A private `CREATE_NOTE` request creates a committed output through a separate public account. The output may be public or private and can contain multiple fungible assets with no attachments. After removing the optional creation fee, the script transfers all remaining assets to the output, checks its committed ID after asset callbacks, and seals it.
 
 An optional native fee payment creates a sealed public `TX_FEE` note, separate from the output principal. The payment is paid in full without change; the executing account must verify that it covers the transaction fee. Fee serials distinguish concurrent requests against the same account.
 
