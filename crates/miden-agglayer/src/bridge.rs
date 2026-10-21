@@ -5,7 +5,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
-use miden_protocol::{DoubleWord, Hasher};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
@@ -19,6 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScriptRoot};
+use miden_protocol::{DoubleWord, Hasher};
 use miden_standards::account::access::{PausableManager, PausableStorage, RoleConfig};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::ConstantFeeManager;
