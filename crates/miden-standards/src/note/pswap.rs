@@ -92,20 +92,23 @@ impl PswapPayback {
 /// | 2      | Minimum requested amount      |
 /// | 3      | Minimum fill step             |
 /// | 4      | Payback note type             |
+/// | 5      | Cancellation fee faucet suffix |
+/// | 6      | Cancellation fee faucet prefix |
+/// | 7      | Cancellation fee amount       |
 ///
-/// Public paybacks append these fields (7 elements total):
-///
-/// | Offset | Field                         |
-/// |--------|-------------------------------|
-/// | 5      | Original creator suffix       |
-/// | 6      | Original creator prefix       |
-///
-/// Private paybacks append these fields (10 elements total):
+/// Public paybacks append these fields (10 elements total):
 ///
 /// | Offset | Field                         |
 /// |--------|-------------------------------|
-/// | 5..9   | P2ID recipient commitment     |
-/// | 9      | Discovery tag                 |
+/// | 8      | Original creator suffix       |
+/// | 9      | Original creator prefix       |
+///
+/// Private paybacks append these fields (13 elements total):
+///
+/// | Offset | Field                         |
+/// |--------|-------------------------------|
+/// | 8..12  | P2ID recipient commitment     |
+/// | 12     | Discovery tag                 |
 ///
 /// PSWAP visibility is independent of payback visibility. Every remainder preserves the payback
 /// configuration. The PSWAP's own discovery tag lives in its metadata.
@@ -118,23 +121,30 @@ pub struct PswapNoteStorage {
     /// is clamped to the remaining requested amount so that the final remainder can be filled.
     #[builder(default = AssetAmount::ZERO)]
     min_fill_step: AssetAmount,
+
+    /// Native fee reserve, preserved through partial fills and returned on a complete fill.
+    /// Private cancellation pays it in full; public reclaim returns it to the creator's vault.
+    cancellation_fee: Option<FungibleAsset>,
 }
 
 impl PswapNoteStorage {
     /// Exact storage length for orders producing private paybacks.
-    pub const PRIVATE_NUM_STORAGE_ITEMS: usize = 10;
+    pub const PRIVATE_NUM_STORAGE_ITEMS: usize = 13;
     /// Exact storage length for orders producing public paybacks.
-    pub const PUBLIC_NUM_STORAGE_ITEMS: usize = 7;
+    pub const PUBLIC_NUM_STORAGE_ITEMS: usize = 10;
 
     const REQUESTED_FAUCET_SUFFIX_IDX: usize = 0;
     const REQUESTED_FAUCET_PREFIX_IDX: usize = 1;
     const MIN_REQUESTED_AMOUNT_IDX: usize = 2;
     const MIN_FILL_STEP_IDX: usize = 3;
     const PAYBACK_NOTE_TYPE_IDX: usize = 4;
-    const PUBLIC_CREATOR_SUFFIX_IDX: usize = 5;
-    const PUBLIC_CREATOR_PREFIX_IDX: usize = 6;
-    const PRIVATE_RECIPIENT_RANGE: Range<usize> = 5..9;
-    const PRIVATE_TAG_IDX: usize = 9;
+    const CANCELLATION_FEE_SUFFIX_IDX: usize = 5;
+    const CANCELLATION_FEE_PREFIX_IDX: usize = 6;
+    const CANCELLATION_FEE_AMOUNT_IDX: usize = 7;
+    const PUBLIC_CREATOR_SUFFIX_IDX: usize = 8;
+    const PUBLIC_CREATOR_PREFIX_IDX: usize = 9;
+    const PRIVATE_RECIPIENT_RANGE: Range<usize> = 8..12;
+    const PRIVATE_TAG_IDX: usize = 12;
 
     /// Consumes the storage and returns a PSWAP recipient with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -180,6 +190,10 @@ impl PswapNoteStorage {
     pub fn min_fill_step(&self) -> AssetAmount {
         self.min_fill_step
     }
+
+    pub fn cancellation_fee(&self) -> Option<FungibleAsset> {
+        self.cancellation_fee
+    }
 }
 
 impl From<PswapNoteStorage> for NoteStorage {
@@ -191,6 +205,13 @@ impl From<PswapNoteStorage> for NoteStorage {
             Felt::from(storage.min_fill_step),
             Felt::from(storage.payback_note_type().as_u8()),
         ];
+        items.extend_from_slice(&storage.cancellation_fee.map_or([ZERO; 3], |fee| {
+            [
+                fee.faucet_id().suffix(),
+                fee.faucet_id().prefix().as_felt(),
+                fee.amount().into(),
+            ]
+        }));
         match storage.payback {
             PswapPayback::Public { creator_account_id } => {
                 items.extend_from_slice(&[
@@ -239,6 +260,27 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
                 .map_err(|e| NoteError::other_with_source("invalid requested asset", e))?;
         let min_fill_step = AssetAmount::new(items[Self::MIN_FILL_STEP_IDX].as_canonical_u64())
             .map_err(|e| NoteError::other_with_source("invalid minimum fill step", e))?;
+        let cancellation_fee = if items[Self::CANCELLATION_FEE_AMOUNT_IDX] == ZERO {
+            if items[Self::CANCELLATION_FEE_SUFFIX_IDX] != ZERO
+                || items[Self::CANCELLATION_FEE_PREFIX_IDX] != ZERO
+            {
+                return Err(NoteError::other("absent cancellation fee must have a zero faucet"));
+            }
+            None
+        } else {
+            let faucet = AccountId::try_from_elements(
+                items[Self::CANCELLATION_FEE_SUFFIX_IDX],
+                items[Self::CANCELLATION_FEE_PREFIX_IDX],
+            )
+            .map_err(|e| NoteError::other_with_source("invalid cancellation fee faucet", e))?;
+            Some(
+                FungibleAsset::new(
+                    faucet,
+                    items[Self::CANCELLATION_FEE_AMOUNT_IDX].as_canonical_u64(),
+                )
+                .map_err(|e| NoteError::other_with_source("invalid cancellation fee", e))?,
+            )
+        };
         let payback = match note_type {
             NoteType::Private => PswapPayback::Private {
                 recipient: Word::new(
@@ -263,6 +305,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             .min_requested_asset(min_requested_asset)
             .payback(payback)
             .min_fill_step(min_fill_step)
+            .maybe_cancellation_fee(cancellation_fee)
             .build())
     }
 }
@@ -350,8 +393,8 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// payback to the original creator (public paybacks) or a fixed private recipient. Orders with
 /// public paybacks are reclaimed when the stored creator account consumes them. Orders with
 /// private paybacks can be cancelled by any compatible account using [`Self::create_cancel_args`]
-/// and [`Self::cancellation_advice`]; all remaining assets are returned in a private P2ID to the
-/// committed recipient.
+/// and [`Self::cancellation_advice`]. The offered asset is refunded to the committed recipient;
+/// an optional native cancellation reserve funds a public TX_FEE note.
 /// Paybacks, remainders, and cancellation refunds are verified and sealed before the script
 /// returns. Later asset or attachment additions fail the transaction.
 ///
@@ -362,8 +405,8 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// not encode the target account. Consume reconstructed private paybacks as authenticated notes;
 /// unauthenticated consumption exposes their headers and links them to the consuming account.
 /// To avoid linking cancellation to the target, execute and prove locally through a public
-/// no-auth account. Fund its fee separately, for example with a private funding note consumed as
-/// an authenticated input in the same transaction.
+/// permissionless account. Fund a sufficient cancellation reserve when creating the order to
+/// cancel without publishing another funding note.
 ///
 /// The note can be consumed both in local transactions (where the consumer provides
 /// fill amounts via note_args) and in network transactions (where note_args default to
@@ -431,6 +474,14 @@ where
         if note.storage.min_requested_asset().amount() == AssetAmount::ZERO {
             return Err(NoteError::other("requested asset must be non-zero"));
         }
+        if note
+            .storage
+            .cancellation_fee
+            .is_some_and(|fee| fee.amount() == AssetAmount::ZERO)
+        {
+            return Err(NoteError::other("cancellation fee must be non-zero"));
+        }
+        PswapNote::note_assets(note.offered_asset, note.storage.cancellation_fee)?;
 
         // The VM uses the first PSWAP attachment; callbacks may append others with this scheme.
         if let Some(attachment) = note.attachments.find(PswapNote::PSWAP_ATTACHMENT_SCHEME) {
@@ -451,10 +502,8 @@ impl PswapNote {
     /// Cancel action discriminator; matches `ACTION_CANCEL` in `pswap.masm`.
     const ACTION_CANCEL_ID: Felt = ONE;
 
-    /// Expected number of assets of the PSWAP note.
-    ///
-    /// Must match `NUM_ASSETS` in `asm/standards/notes/pswap.masm`.
-    pub const NUM_ASSETS: usize = 1;
+    /// Maximum number of distinct assets: offered principal and optional native fee reserve.
+    pub const MAX_NUM_ASSETS: usize = 2;
 
     /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
     /// remainder PSWAP).
@@ -797,11 +846,13 @@ impl PswapNote {
     /// The sender is the account that filled the order. The returned note includes only the
     /// supplied PSWAP attachment. If callbacks added attachments, reconstruct the note with
     /// [`Note::with_attachments`] and the complete public attachment list before checking its ID.
+    /// For orders with a cancellation reserve, call this on the consumed PSWAP or remainder so
+    /// its remaining requested amount determines whether the payback returns the reserve.
     ///
     /// # Errors
     ///
     /// Returns an error if the order uses private paybacks or the attachment has an incorrect
-    /// order ID, depth, or fill amount.
+    /// order ID, depth, or fill amount, or a fee-funded order is not the immediate parent.
     pub fn public_payback_note(
         &self,
         consumer_account_id: AccountId,
@@ -831,6 +882,7 @@ impl PswapNote {
     /// The returned note includes only the supplied PSWAP attachment. If callbacks added
     /// attachments, use [`Note::with_attachments`] with the complete public attachment list.
     /// Verify the reconstructed ID and consume the payback as an authenticated note.
+    /// For orders with a cancellation reserve, call this on the consumed PSWAP or remainder.
     ///
     /// # Errors
     ///
@@ -838,6 +890,7 @@ impl PswapNote {
     /// - the order uses public paybacks.
     /// - the preimage does not match its recipient commitment.
     /// - the attachment has an incorrect order ID, depth, or fill amount.
+    /// - a fee-funded order is not the immediate parent of the payback.
     pub fn private_payback_note(
         &self,
         consumer_account_id: AccountId,
@@ -858,7 +911,12 @@ impl PswapNote {
         let fill_asset =
             FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(attachment.amount()))
                 .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?;
-        let assets = NoteAssets::new(vec![fill_asset.into()])?;
+        if self.storage.cancellation_fee.is_some() && self.rounds_since(attachment)? != 1 {
+            return Err(NoteError::other(
+                "reconstruct fee-funded paybacks from the consumed PSWAP or remainder",
+            ));
+        }
+        let assets = self.payback_assets(fill_asset)?;
 
         let metadata =
             PartialNoteMetadata::new(consumer_account_id, self.storage.payback_note_type())
@@ -922,7 +980,7 @@ impl PswapNote {
         };
         let recipient = new_storage.into_recipient(remainder_serial);
 
-        let assets = NoteAssets::new(vec![offered_asset.into()])?;
+        let assets = Self::note_assets(offered_asset, self.storage.cancellation_fee)?;
 
         let metadata =
             PartialNoteMetadata::new(consumer_account_id, self.note_type).with_tag(self.tag);
@@ -1033,6 +1091,32 @@ impl PswapNote {
         Ok(())
     }
 
+    fn note_assets(
+        principal: FungibleAsset,
+        cancellation_fee: Option<FungibleAsset>,
+    ) -> Result<NoteAssets, NoteError> {
+        let mut assets = vec![principal.into()];
+        if let Some(fee) = cancellation_fee {
+            if principal.faucet_id() == fee.faucet_id() {
+                assets[0] = principal
+                    .add(fee)
+                    .map_err(|e| NoteError::other_with_source("PSWAP asset amount overflow", e))?
+                    .into();
+            } else {
+                assets.push(fee.into());
+            }
+        }
+        NoteAssets::new(assets)
+    }
+
+    fn payback_assets(&self, asset: FungibleAsset) -> Result<NoteAssets, NoteError> {
+        let fee = self
+            .storage
+            .cancellation_fee
+            .filter(|_| asset.amount() >= self.storage.min_requested_asset.amount());
+        Self::note_assets(asset, fee)
+    }
+
     /// Builds an output without disclosing private recipient details to the filler.
     fn create_payback_note(
         &self,
@@ -1045,7 +1129,7 @@ impl PswapNote {
             self.order_id(),
             current_depth,
         )?;
-        let assets = NoteAssets::new(vec![payback_asset.into()])?;
+        let assets = self.payback_assets(payback_asset)?;
         let metadata =
             PartialNoteMetadata::new(consumer_account_id, self.storage.payback_note_type())
                 .with_tag(self.storage.payback_note_tag());
@@ -1123,10 +1207,9 @@ impl PswapNote {
 /// Converts a [`PswapNote`] into a protocol [`Note`], preserving its tag and attachments.
 impl From<PswapNote> for Note {
     fn from(pswap: PswapNote) -> Self {
+        let assets = PswapNote::note_assets(pswap.offered_asset, pswap.storage.cancellation_fee)
+            .expect("the builder validates principal and cancellation reserve");
         let recipient = pswap.storage.into_recipient(pswap.serial_number);
-
-        let assets = NoteAssets::new(vec![pswap.offered_asset.into()])
-            .expect("single fungible asset should be valid");
 
         let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(pswap.tag);
 
@@ -1145,16 +1228,34 @@ impl TryFrom<&Note> for PswapNote {
 
         let storage = PswapNoteStorage::try_from(note.recipient().storage().items())?;
 
-        if note.assets().num_assets() != Self::NUM_ASSETS {
-            return Err(NoteError::other("PSWAP note must have exactly one asset"));
-        }
-        let offered_asset = note
+        let mut assets = note
             .assets()
             .iter()
-            .next()
-            .expect("number of assets should have been validated")
-            .as_fungible()
-            .ok_or_else(|| NoteError::other("PSWAP note asset must be fungible"))?;
+            .map(|asset| {
+                asset
+                    .as_fungible()
+                    .ok_or_else(|| NoteError::other("PSWAP assets must be fungible"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(fee) = storage.cancellation_fee {
+            let index = assets
+                .iter()
+                .position(|asset| asset.faucet_id() == fee.faucet_id())
+                .ok_or_else(|| NoteError::other("PSWAP cancellation reserve is missing"))?;
+            let remaining = assets[index].sub(fee).map_err(|e| {
+                NoteError::other_with_source("PSWAP cancellation reserve is underfunded", e)
+            })?;
+            if remaining.amount() == AssetAmount::ZERO {
+                assets.remove(index);
+            } else {
+                assets[index] = remaining;
+            }
+        }
+        let [offered_asset] = assets.as_slice() else {
+            return Err(NoteError::other(
+                "PSWAP requires one offered asset besides its cancellation reserve",
+            ));
+        };
 
         PswapNote::builder()
             .sender(note.metadata().sender())
@@ -1162,7 +1263,7 @@ impl TryFrom<&Note> for PswapNote {
             .serial_number(note.recipient().serial_num())
             .note_type(note.metadata().note_type())
             .tag(note.metadata().tag())
-            .offered_asset(offered_asset)
+            .offered_asset(*offered_asset)
             .attachments(note.attachments().clone())
             .build()
     }
@@ -1382,15 +1483,17 @@ mod tests {
         assert!(result > 0, "Should produce non-zero output");
     }
 
-    #[test]
-    fn pswap_note_storage_roundtrip() {
+    #[rstest]
+    fn pswap_note_storage_roundtrip(#[values(false, true)] with_fee: bool) {
         let creator_id = dummy_creator_id();
         let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
+        let fee = with_fee.then(|| FungibleAsset::new(dummy_faucet_id(0xbb), 20).unwrap());
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
             .payback(PswapPayback::public(creator_id))
             .min_fill_step(AssetAmount::new(42).unwrap())
+            .maybe_cancellation_fee(fee)
             .build();
 
         let note_storage = NoteStorage::from(storage.clone());
@@ -1401,6 +1504,7 @@ mod tests {
         assert_eq!(parsed.payback(), &PswapPayback::public(creator_id));
         assert_eq!(parsed.min_requested_amount(), 500);
         assert_eq!(parsed.min_fill_step().as_u64(), 42);
+        assert_eq!(parsed.cancellation_fee(), fee);
     }
 
     #[test]

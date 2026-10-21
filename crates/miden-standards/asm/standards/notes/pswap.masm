@@ -7,22 +7,28 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 use miden::protocol::note
 use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
+use miden::protocol::tx
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::note as std_note
 use miden::standards::note::note_tag
 use miden::standards::notes::p2id
+use miden::standards::notes::tx_fee
 use miden::standards::wallets::basic as wallet
 
 # CONSTANTS
 # =================================================================================================
 
-const PRIVATE_NUM_STORAGE_ITEMS=10
-const PUBLIC_NUM_STORAGE_ITEMS=7
-const NUM_ASSETS = 1
+const PRIVATE_NUM_STORAGE_ITEMS=13
+const PUBLIC_NUM_STORAGE_ITEMS=10
+const MAX_NUM_ASSETS = 2
+# "PSWAPCAN" separates cancellation fee serials from other fee notes.
+const CANCELLATION_FEE_DOMAIN = 0x505357415043414E
 const MAX_U32=0x0000000100000000
 
 # Actions encoded in the note arguments. Public paybacks only accept ACTION_FILL, with
@@ -41,20 +47,23 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # Note storage is loaded at STORAGE_PTR by get_bounded_storage. Its layout depends on the
 # payback note type, independently of the PSWAP note's own visibility.
 #
-# Common fields (5 felts):
+# Common fields (8 felts):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount      [2]  : 1 felt
 # - min_fill_step             [3]  : 1 felt
 # - payback_note_type         [4]  : 1 felt
+# - cancellation_fee_suffix   [5]  : 1 felt
+# - cancellation_fee_prefix   [6]  : 1 felt
+# - cancellation_fee_amount   [7]  : 1 felt
 #
-# Public payback fields (7 felts total):
-# - creator_id_suffix         [5]  : 1 felt
-# - creator_id_prefix         [6]  : 1 felt
+# Public payback fields (10 felts total):
+# - creator_id_suffix         [8]  : 1 felt
+# - creator_id_prefix         [9]  : 1 felt
 #
-# Private payback fields (10 felts total):
-# - payback_recipient      [5..9)  : 4 felts
-# - payback_tag               [9]  : 1 felt
+# Private payback fields (13 felts total):
+# - payback_recipient     [8..12)  : 4 felts
+# - payback_tag              [12]  : 1 felt
 #
 # Where:
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
@@ -63,6 +72,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
 # - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
 # - payback_note_type: The NoteType used for the P2ID payback note (0 = private, 1 = public)
+# - cancellation_fee_{suffix,prefix,amount}: Native fee reserve; all zero when absent
 # - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
 # - payback_recipient: Digest of the fixed private P2ID recipient (Word); its preimage is
@@ -81,16 +91,19 @@ const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
 const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
 const MIN_FILL_STEP_ITEM = STORAGE_PTR + 3
 const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
-const PAYBACK_TAG_ITEM = STORAGE_PTR + 9
-const PUBLIC_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
-const PUBLIC_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
-const PRIVATE_RECIPIENT_0_ITEM = STORAGE_PTR + 5
+const CANCELLATION_FEE_SUFFIX_ITEM = STORAGE_PTR + 5
+const CANCELLATION_FEE_PREFIX_ITEM = STORAGE_PTR + 6
+const CANCELLATION_FEE_AMOUNT_ITEM = STORAGE_PTR + 7
+const PAYBACK_TAG_ITEM = STORAGE_PTR + 12
+const PUBLIC_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 8
+const PUBLIC_CREATOR_PREFIX_ITEM = STORAGE_PTR + 9
+const PRIVATE_RECIPIENT_0_ITEM = STORAGE_PTR + 8
 const PRIVATE_RECIPIENT_1_ITEM = PRIVATE_RECIPIENT_0_ITEM + 1
 const PRIVATE_RECIPIENT_2_ITEM = PRIVATE_RECIPIENT_0_ITEM + 2
 const PRIVATE_RECIPIENT_3_ITEM = PRIVATE_RECIPIENT_0_ITEM + 3
 
 # The storage length is retained for remainder creation.
-const STORAGE_LENGTH_PTR = 16
+const STORAGE_LENGTH_PTR = STORAGE_PTR + 4 * WORD_NUM_ELEMENTS
 
 # Local memory offsets
 # =================================================================================================
@@ -100,8 +113,19 @@ const CALC_FILL_AMOUNT = 0
 const CALC_FILL_REFERENCE = 1
 
 # Procedure locals of load_offered_asset
-const OFFERED_REMAINING_ASSET_PTR = 0
-const OFFERED_INITIAL_ASSET_PTR = 8
+const OFFERED_ASSETS_PTR = 0
+const OFFERED_SECOND_ASSET_PTR = OFFERED_ASSETS_PTR + ASSET_SIZE
+const OFFERED_AMOUNT_PTR = OFFERED_ASSETS_PTR + ASSET_VALUE_MEMORY_OFFSET
+const OFFERED_ASSET_COUNT = MAX_NUM_ASSETS * ASSET_SIZE
+const OFFERED_PRINCIPAL_PTR = OFFERED_ASSET_COUNT + 1
+
+# add_cancellation_fee_and_seal_output locals
+const EXPECTED_PRIMARY_PTR = 0
+const EXPECTED_FEE_PTR = EXPECTED_PRIMARY_PTR + ASSET_SIZE
+const EXPECTED_PRIMARY_AMOUNT = EXPECTED_PRIMARY_PTR + ASSET_VALUE_MEMORY_OFFSET
+const EXPECTED_FEE_AMOUNT = EXPECTED_FEE_PTR + ASSET_VALUE_MEMORY_OFFSET
+const EXPECTED_NOTE_IDX = EXPECTED_FEE_PTR + ASSET_SIZE
+const EXPECTED_ASSET_COUNT = EXPECTED_NOTE_IDX + 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -141,7 +165,9 @@ const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP storage length does not mat
 const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or private"
 const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
 const ERR_PSWAP_INVALID_PAYBACK_PREIMAGE="PSWAP cancellation preimage does not match the payback recipient"
-const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
+const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP requires one offered asset and an optional native cancellation reserve"
+const ERR_PSWAP_INVALID_CANCELLATION_FEE="PSWAP cancellation reserve is invalid or underfunded"
+const ERR_PSWAP_CANCELLATION_FEE_NOT_NATIVE="PSWAP cancellation reserve must use the native fee asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
 const ERR_PSWAP_OUTPUT_ALTERED="PSWAP output was altered before sealing"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
@@ -326,6 +352,18 @@ proc load_storage()
 
     assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
     # => []
+
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    if.true
+        mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+        exec.account_id::validate_structure
+        exec.load_cancellation_fee
+        exec.tx::get_fee_asset_id assert_eqw.err=ERR_PSWAP_CANCELLATION_FEE_NOT_NATIVE
+        dropw
+    else
+        mem_load.CANCELLATION_FEE_SUFFIX_ITEM assertz.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+        mem_load.CANCELLATION_FEE_PREFIX_ITEM assertz.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+    end
 end
 
 #! Returns creation arguments for the active order's public or private payback.
@@ -387,7 +425,7 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     dup exec.output_note::get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
-    movup.4 eq.NUM_ASSETS assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    movup.4 eq.1 assert.err=ERR_PSWAP_OUTPUT_ALTERED
     # => [ASSETS_COMMITMENT, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
     movup.4 movdn.8
@@ -398,6 +436,63 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
 
     exec.output_note::seal
     # => []
+end
+
+#! Returns the reserve encoded in storage; load_storage validates its native asset ID.
+proc load_cancellation_fee() -> Asset
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM
+    mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+    exec.fungible_asset::create
+end
+
+#! Adds the reserve to an already funded output and checks both assets after callbacks.
+@locals(18)
+proc add_cancellation_fee_and_seal_output(expected_asset: Asset, note_idx: u16)
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    if.true
+        locaddr.EXPECTED_PRIMARY_PTR exec.asset::store
+        loc_store.EXPECTED_NOTE_IDX
+        exec.load_cancellation_fee locaddr.EXPECTED_FEE_PTR exec.asset::store
+
+        loc_load.EXPECTED_NOTE_IDX locaddr.EXPECTED_FEE_PTR exec.asset::load
+        exec.output_note::add_asset
+
+        padw locaddr.EXPECTED_PRIMARY_PTR mem_loadw_le exec.asset::id_into_faucet_id
+        mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+        exec.account_id::eq
+        if.true
+            loc_load.EXPECTED_PRIMARY_AMOUNT loc_load.EXPECTED_FEE_AMOUNT add
+            dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+            loc_store.EXPECTED_PRIMARY_AMOUNT
+            push.1
+        else
+            push.2
+        end
+        loc_store.EXPECTED_ASSET_COUNT
+
+        loc_load.EXPECTED_ASSET_COUNT mul.ASSET_SIZE locaddr.EXPECTED_PRIMARY_PTR
+        exec.poseidon2::hash_elements
+        loc_load.EXPECTED_NOTE_IDX exec.output_note::get_assets_info
+        movup.4 loc_load.EXPECTED_ASSET_COUNT assert_eq.err=ERR_PSWAP_OUTPUT_ALTERED
+        assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+        loc_load.EXPECTED_NOTE_IDX exec.output_note::seal
+    else
+        exec.validate_and_seal_output_note
+    end
+end
+
+#! Pays the reserve in full. The account's authentication checks transaction fee sufficiency.
+proc pay_cancellation_fee()
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    if.true
+        exec.active_account::get_id exec.tx::get_num_output_notes push.CANCELLATION_FEE_DOMAIN
+        exec.tx::get_input_notes_commitment exec.poseidon2::merge
+        exec.tx_fee::create_output_note
+        dup exec.load_cancellation_fee exec.output_note::add_asset
+        dup exec.output_note::get_attachments_commitment
+        padw assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+        exec.load_cancellation_fee exec.validate_and_seal_output_note
+    end
 end
 
 # P2ID NOTE CREATION PROCEDURE
@@ -520,7 +615,13 @@ proc create_p2id_note(
     exec.fungible_asset::create
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
-    exec.validate_and_seal_output_note
+    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    mem_load.MIN_REQUESTED_AMOUNT_ITEM gte
+    if.true
+        exec.add_cancellation_fee_and_seal_output
+    else
+        exec.validate_and_seal_output_note
+    end
     # => []
 end
 
@@ -648,7 +749,7 @@ proc create_remainder_note(
     exec.fungible_asset::create
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
-    exec.validate_and_seal_output_note
+    exec.add_cancellation_fee_and_seal_output
     # => []
 end
 
@@ -673,7 +774,7 @@ proc authenticate_cancellation(recipient: NoteRecipient)
 end
 
 #! Returns the full remaining order balance in a private P2ID to its committed recipient.
-#! Does not add a fill attachment. Fees must be funded separately.
+#! Does not add a fill attachment. The reserve funds a separate TX_FEE output.
 #!
 #! Inputs:  [RECIPIENT, tag]
 #! Outputs: []
@@ -702,47 +803,58 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.validate_and_seal_output_note
+    exec.pay_cancellation_fee
     # => []
 end
 
-#! Loads the note's single offered asset, asserting it equals the amount the note was created with.
+#! Verifies the input assets and separates the offered principal from the cancellation reserve.
 #!
 #! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
-#! Panics if:
-#! - the note does not carry exactly one remaining asset.
-#! - the note was not created with exactly one asset.
-#! - the remaining offered asset differs from the asset the note was created with.
-#!
-@locals(16)
+@locals(18)
 proc load_offered_asset() -> Asset
-    locaddr.OFFERED_REMAINING_ASSET_PTR exec.active_note::remove_all_assets
-    # => [num_assets]
-
-    push.NUM_ASSETS eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
-    # => []
-
-    # initial assets are unaffected by removals; require exactly one
-    locaddr.OFFERED_INITIAL_ASSET_PTR exec.active_note::get_initial_assets
-    # => [num_initial_assets]
-
-    eq.NUM_ASSETS assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
-    # => []
-
-    locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE]
-
-    locaddr.OFFERED_INITIAL_ASSET_PTR exec.asset::load
-    # => [INITIAL_ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE]
-
-    # the remaining offered asset must equal the initial one
-    movupw.2 assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    exec.active_note::get_initial_assets_info
+    movup.4 dup neq.0 assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    dup lte.MAX_NUM_ASSETS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    loc_store.OFFERED_ASSET_COUNT
+    locaddr.OFFERED_ASSETS_PTR exec.active_note::remove_all_assets
+    loc_load.OFFERED_ASSET_COUNT assert_eq.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    loc_load.OFFERED_ASSET_COUNT mul.ASSET_SIZE locaddr.OFFERED_ASSETS_PTR
+    exec.poseidon2::hash_elements
     assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
-    # => []
 
-    locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE]
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    if.true
+        loc_load.OFFERED_ASSET_COUNT eq.1
+        if.true
+            padw locaddr.OFFERED_ASSETS_PTR mem_loadw_le
+            exec.tx::get_fee_asset_id assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+            loc_load.OFFERED_AMOUNT_PTR mem_load.CANCELLATION_FEE_AMOUNT_ITEM
+            dup.1 dup.1 gt assert.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+            sub loc_store.OFFERED_AMOUNT_PTR
+            locaddr.OFFERED_ASSETS_PTR
+        else
+            padw locaddr.OFFERED_ASSETS_PTR mem_loadw_le exec.asset::id_into_faucet_id
+            mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+            exec.account_id::eq
+            if.true
+                locaddr.OFFERED_SECOND_ASSET_PTR loc_store.OFFERED_PRINCIPAL_PTR
+                locaddr.OFFERED_ASSETS_PTR
+            else
+                locaddr.OFFERED_ASSETS_PTR loc_store.OFFERED_PRINCIPAL_PTR
+                locaddr.OFFERED_SECOND_ASSET_PTR
+            end
+            exec.asset::load exec.load_cancellation_fee
+            movupw.2 assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+            assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+            loc_load.OFFERED_PRINCIPAL_PTR
+        end
+    else
+        loc_load.OFFERED_ASSET_COUNT eq.1 assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+        locaddr.OFFERED_ASSETS_PTR
+    end
+    exec.asset::load
 end
 
 #! Reclaims a public-payback order into the original creator's vault.
@@ -764,6 +876,12 @@ proc handle_reclaim()
     # => [pad(16)]
 
     dropw dropw dropw dropw
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    if.true
+        exec.load_cancellation_fee
+        padw padw swapdw call.wallet::receive_asset
+        dropw dropw dropw dropw
+    end
     # => []
 end
 
