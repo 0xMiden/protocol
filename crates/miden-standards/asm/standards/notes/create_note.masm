@@ -1,5 +1,6 @@
-use {Asset, NoteArgs} from miden::protocol::types
+use {NoteArgs} from miden::protocol::types
 use miden::core::crypto::hashes::poseidon2
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
@@ -7,7 +8,6 @@ use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 use miden::protocol::output_note
 use miden::protocol::tx
-use miden::standards::note::note_reclaim
 use miden::standards::note::note_target
 use miden::standards::notes::tx_fee
 use miden::standards::wallets::basic as wallet
@@ -18,24 +18,24 @@ use miden::standards::wallets::basic as wallet
 const ACTION_RECLAIM = 1
 const STORAGE_PTR = 0
 const OUTPUT_RECIPIENT_PTR = STORAGE_PTR
-const OUTPUT_ID_PTR = OUTPUT_RECIPIENT_PTR + WORD_NUM_ELEMENTS
-const INPUT_ASSETS_PTR = OUTPUT_ID_PTR + WORD_NUM_ELEMENTS
-# A zero fee asset disables fee creation.
+const INPUT_ASSETS_PTR = OUTPUT_RECIPIENT_PTR + WORD_NUM_ELEMENTS
+# A zero fee asset disables the TX_FEE output.
 const FEE_ASSET_PTR = INPUT_ASSETS_PTR + WORD_NUM_ELEMENTS
 const FEE_AMOUNT_PTR = FEE_ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
 const TARGET_SUFFIX_PTR = FEE_ASSET_PTR + ASSET_SIZE
 const TARGET_PREFIX_PTR = TARGET_SUFFIX_PTR + 1
 const TAG_PTR = TARGET_PREFIX_PTR + 1
 const TYPE_PTR = TAG_PTR + 1
-const RECLAIM_HEIGHT_PTR = TYPE_PTR + 1
-const NUM_STORAGE_ITEMS = RECLAIM_HEIGHT_PTR + 1 - STORAGE_PTR
+const NUM_STORAGE_ITEMS = TYPE_PTR + 1 - STORAGE_PTR
 
-# Scratch memory starts after the padded final storage word.
-const PRIMARY_IDX_PTR = RECLAIM_HEIGHT_PTR + WORD_NUM_ELEMENTS
+const PRIMARY_IDX_PTR = STORAGE_PTR + NUM_STORAGE_ITEMS
 const FEE_IDX_PTR = PRIMARY_IDX_PTR + 1
-const REMAINING_ASSETS_PTR = PRIMARY_IDX_PTR + WORD_NUM_ELEMENTS
+const EXPECTED_ASSETS_PTR = PRIMARY_IDX_PTR + WORD_NUM_ELEMENTS
+const ASSETS_PTR = EXPECTED_ASSETS_PTR + WORD_NUM_ELEMENTS
 const ASSETS_CURSOR = 0
 const ASSETS_END = ASSETS_CURSOR + 1
+const ASSETS_WRITE_CURSOR = ASSETS_END + 1
+const FEE_FOUND = ASSETS_WRITE_CURSOR + 1
 
 # "CREATEFE" separates these serials from other fee note derivations.
 const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
@@ -43,40 +43,72 @@ const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
 # ERRORS
 # =================================================================================================
 
-const ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS = "CREATE_NOTE storage must contain exactly 25 items"
-const ERR_CREATE_NOTE_INVALID_ACTION = "CREATE_NOTE expects create or reclaim with zero reserved arguments"
-const ERR_CREATE_NOTE_FUNDING_MISMATCH = "CREATE_NOTE assets do not match the committed funding"
-const ERR_CREATE_NOTE_OUTPUT_ALTERED = "CREATE_NOTE output differs from the committed note"
-const ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE = "CREATE_NOTE fee must use the native fee asset"
+const ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS = "CREATE note storage must contain exactly 20 items"
+const ERR_CREATE_NOTE_INVALID_ACTION = "CREATE note expects create or reclaim with zero reserved arguments"
+const ERR_CREATE_NOTE_FUNDING_MISMATCH = "CREATE note assets do not match the committed funding"
+const ERR_CREATE_NOTE_OUTPUT_ALTERED = "CREATE note output assets differ from the expected funding"
+const ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE = "CREATE note fee must use the native fee asset"
 
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Moves a committed asset from the active input to an output.
+#! Removes and verifies the full input funding before any asset callbacks, then separates the fee.
 #!
-#! Inputs:  [asset_ptr, note_idx]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc fund_output(asset_ptr: ptr<Asset>, note_idx: u16)
-    exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
-    dupw.1 dupw.1 exec.active_note::remove_asset dropw
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
-    exec.output_note::add_asset
+#! Inputs:  []
+#! Outputs: [assets_end]
+@locals(4)
+proc prepare_output_assets() -> felt
+    exec.active_note::get_initial_assets_info
+    padw mem_loadw_le.INPUT_ASSETS_PTR assert_eqw.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+    push.ASSETS_PTR exec.active_note::remove_all_assets
+    dup movdn.2 assert_eq.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+    mul.ASSET_SIZE dup add.ASSETS_PTR loc_store.ASSETS_END
+    push.ASSETS_PTR exec.poseidon2::hash_elements
+    padw mem_loadw_le.INPUT_ASSETS_PTR assert_eqw.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+
+    push.ASSETS_PTR dup loc_store.ASSETS_CURSOR loc_store.ASSETS_WRITE_CURSOR
+    mem_load.FEE_AMOUNT_PTR eq.0 loc_store.FEE_FOUND
+    loc_load.ASSETS_CURSOR loc_load.ASSETS_END neq
+    while.true
+        padw loc_load.ASSETS_CURSOR mem_loadw_le
+        padw mem_loadw_le.FEE_ASSET_PTR exec.word::eq
+        if.true
+            push.1 loc_store.FEE_FOUND
+            loc_load.ASSETS_CURSOR add.ASSET_VALUE_MEMORY_OFFSET mem_load
+            mem_load.FEE_AMOUNT_PTR
+            dup.1 dup.1 gte assert.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+            sub
+            dup loc_load.ASSETS_CURSOR add.ASSET_VALUE_MEMORY_OFFSET mem_store
+            neq.0
+        else
+            push.1
+        end
+        # Omit a native asset used entirely for the fee, preserving the other assets' order.
+        if.true
+            loc_load.ASSETS_CURSOR exec.asset::load
+            loc_load.ASSETS_WRITE_CURSOR exec.asset::store
+            loc_load.ASSETS_WRITE_CURSOR add.ASSET_SIZE loc_store.ASSETS_WRITE_CURSOR
+        end
+        loc_load.ASSETS_CURSOR add.ASSET_SIZE dup loc_store.ASSETS_CURSOR
+        loc_load.ASSETS_END neq
+    end
+    loc_load.FEE_FOUND assert.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+    loc_load.ASSETS_WRITE_CURSOR sub.ASSETS_PTR push.ASSETS_PTR
+    exec.poseidon2::hash_elements mem_storew_le.EXPECTED_ASSETS_PTR dropw
+    loc_load.ASSETS_WRITE_CURSOR
 end
 
 # NOTE SCRIPT
 # =================================================================================================
 
-#! Creates one committed output and, when funded, a public TX_FEE output. Both are sealed.
+#! Creates an unsealed primary output and, when funded, a sealed public TX_FEE output.
 #!
-#! Consumers: the committed public account; the original sender may reclaim after its deadline.
+#! Consumers: the designated public account; the original sender may reclaim at any time.
 #!
 #! Inputs:  [action, pad(15)]
 #! Outputs: [pad(16)]
 #!
-#! Action 0 creates the output; action 1 reclaims the request. Reserved arguments must be zero.
+#! Action 0 creates the output; action 1 reclaims the CREATE note. Reserved arguments must be zero.
 @note_script
 @locals(2)
 pub proc main(note_args: NoteArgs)
@@ -84,61 +116,44 @@ pub proc main(note_args: NoteArgs)
     movup.2 assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
     swap assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
     dup u32lte.ACTION_RECLAIM assert.err=ERR_CREATE_NOTE_INVALID_ACTION
-    # => [action, pad(12)]
 
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     eq.NUM_STORAGE_ITEMS assert.err=ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS
-    # => [action, pad(12)]
 
     if.true
-        exec.active_note::get_sender mem_load.RECLAIM_HEIGHT_PTR
-        exec.note_reclaim::assert_reclaimable
+        exec.active_note::get_sender exec.note_target::assert_active_account_is_target_account
         exec.wallet::move_note_assets_to_account
     else
         mem_load.TARGET_PREFIX_PTR mem_load.TARGET_SUFFIX_PTR
         exec.note_target::assert_active_account_is_target_account
 
-        exec.active_note::get_initial_assets_info
-        # => [ASSETS_COMMITMENT, num_assets, pad(12)]
-
-        movup.4 drop
-        padw mem_loadw_le.INPUT_ASSETS_PTR assert_eqw.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
-
-        padw mem_loadw_le.OUTPUT_RECIPIENT_PTR
-        mem_load.TYPE_PTR mem_load.TAG_PTR
-        # => [tag, note_type, RECIPIENT, pad(12)]
-
-        push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-        # => [tag, note_type, RECIPIENT, pad(10), pad(12)]
-
-        call.wallet::create_note
-        # => [note_idx, pad(15), pad(12)]
-
-        movdn.15 dropw dropw dropw drop drop drop
-        # => [note_idx, pad(12)]
-
-        mem_store.PRIMARY_IDX_PTR
-
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
             padw mem_loadw_le.FEE_ASSET_PTR exec.tx::get_fee_asset_id
             assert_eqw.err=ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE
+        end
+        exec.prepare_output_assets loc_store.ASSETS_END
 
-            # Distinguish requests and output positions without disclosing private request IDs.
+        padw mem_loadw_le.OUTPUT_RECIPIENT_PTR
+        mem_load.TYPE_PTR mem_load.TAG_PTR
+        push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+        # => [tag, note_type, RECIPIENT, pad(10), pad(12)]
+
+        call.wallet::create_note
+        movdn.15 dropw dropw dropw drop drop drop
+        mem_store.PRIMARY_IDX_PTR
+
+        mem_load.FEE_AMOUNT_PTR neq.0
+        if.true
+            # Distinguish CREATE notes and output positions without disclosing private input IDs.
             exec.active_account::get_id exec.tx::get_num_output_notes push.CREATE_NOTE_FEE_DOMAIN
-            exec.tx::get_input_notes_commitment
-            # => [INPUT_NOTES_COMMITMENT, domain, note_idx, account_suffix, account_prefix, pad(12)]
-
-            exec.poseidon2::merge
-            # => [FEE_SERIAL, pad(12)]
-
+            exec.tx::get_input_notes_commitment exec.poseidon2::merge
             exec.tx_fee::create_output_note
-            dup mem_store.FEE_IDX_PTR push.FEE_ASSET_PTR exec.fund_output
+            dup mem_store.FEE_IDX_PTR push.FEE_ASSET_PTR exec.asset::load
+            exec.output_note::add_asset
         end
 
-        push.REMAINING_ASSETS_PTR exec.active_note::remove_all_assets
-        mul.ASSET_SIZE add.REMAINING_ASSETS_PTR loc_store.ASSETS_END
-        push.REMAINING_ASSETS_PTR loc_store.ASSETS_CURSOR
+        push.ASSETS_PTR loc_store.ASSETS_CURSOR
         loc_load.ASSETS_CURSOR loc_load.ASSETS_END neq
         while.true
             mem_load.PRIMARY_IDX_PTR loc_load.ASSETS_CURSOR exec.asset::load
@@ -147,20 +162,15 @@ pub proc main(note_args: NoteArgs)
             loc_load.ASSETS_END neq
         end
 
-        # Validate after all asset callbacks, then seal both outputs against later changes.
-        mem_load.PRIMARY_IDX_PTR exec.output_note::compute_note_id
-        padw mem_loadw_le.OUTPUT_ID_PTR assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
-        mem_load.PRIMARY_IDX_PTR exec.output_note::seal
+        mem_load.PRIMARY_IDX_PTR exec.output_note::get_assets_info
+        movup.4 drop
+        padw mem_loadw_le.EXPECTED_ASSETS_PTR assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
 
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
             mem_load.FEE_IDX_PTR exec.output_note::get_assets_info
             movup.4 eq.1 assert.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
-            # => [ASSETS_COMMITMENT, pad(12)]
-
             push.FEE_ASSET_PTR exec.asset::load exec.poseidon2::merge
-            # => [EXPECTED_ASSETS_COMMITMENT, ASSETS_COMMITMENT, pad(12)]
-
             assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
             mem_load.FEE_IDX_PTR exec.output_note::get_attachments_commitment
             padw assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED

@@ -331,13 +331,25 @@ Use a fresh P2ID serial for each order, independent of its PSWAP serial, and kee
 
 Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
-### CREATE_NOTE
+### CREATE note
 
-A private `CREATE_NOTE` request creates a committed output through a separate public account. The output may be public or private and can contain multiple fungible assets with no attachments. After removing the optional creation fee, the script transfers all remaining assets to the output, checks its committed ID after asset callbacks, and seals it.
+A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate sealed `TX_FEE` output. The payment is paid in full; the executing account checks fee sufficiency.
 
-An optional native fee payment creates a sealed public `TX_FEE` note, separate from the output principal. The payment is paid in full without change; the executing account must verify that it covers the transaction fee. Fee serials distinguish concurrent requests against the same account.
+Its NoteStorage contains 20 field elements:
 
-The sender can reclaim an unconsumed request at or after its chosen block height. Creation remains possible until the request is consumed. Use independent random serials for the request and output, consume the request as an authenticated input, and prove locally to keep its contents private.
+| Indices, inclusive | Field |
+|---|---|
+| `0..3` | Output recipient commitment: script, serial number, and output NoteStorage |
+| `4..7` | Input assets commitment, including creation fee funding |
+| `8..15` | Asset and amount for the TX_FEE output; all zeros disables that output |
+| `16` | Executing account ID suffix |
+| `17` | Executing account ID prefix |
+| `18` | Output tag |
+| `19` | Output type |
+
+The script verifies the funding, separates the creation fee, and transfers the remaining assets to the primary output. That output remains unsealed so the transaction script can add attachments. Its final note ID is not committed by the CREATE note. Public output recipient details are supplied as transaction advice.
+
+The sender can instead consume the CREATE note at any time to recover its assets. Either path consumes it permanently. Use independent random serials for the CREATE note and output, consume the CREATE note as an authenticated input, and prove locally to keep its contents private.
 
 ### Choosing the Right Note Type
 
@@ -345,7 +357,7 @@ The sender can reclaim an unconsumed request at or after its chosen block height
 - **Use P2IDE** when you need time-locks, escrow functionality, or reclaim capabilities
 - **Use SWAP** for atomic asset exchanges between parties
 - **Use PSWAP** for orders that can be filled partially
-- **Use CREATE_NOTE** to create a committed output through another account
+- **Use a CREATE note** to create an output through another account
 - **Create custom scripts** for specialized use cases not covered by standard types
 
 These standard note types provide a foundation for common operations while maintaining the flexibility to create custom note scripts for specialized requirements.

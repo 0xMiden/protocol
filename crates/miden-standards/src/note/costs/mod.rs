@@ -116,7 +116,8 @@ impl StandardNote {
     /// root, or `None` if the root does not match a priced standard note.
     ///
     /// TX_FEE is not priced: it is consumed by fee-collecting operators, not by network
-    /// accounts. CREATE_NOTE has no fixed price because its output and callbacks are configurable.
+    /// accounts. The CREATE note has no fixed price because its output and callbacks are
+    /// configurable.
     pub fn note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
         match StandardNote::from_script_root(root)? {
             StandardNote::P2ID => Some(NoteCost::of::<P2idNote>()),
@@ -143,7 +144,7 @@ impl StandardNote {
             },
             StandardNote::UPGRADE => Some(NoteCost::of::<UpgradeNote>()),
             StandardNote::FEE_SPONSORSHIP => Some(NoteCost::of::<FeeSponsorshipNote>()),
-            StandardNote::TX_FEE | StandardNote::CREATE_NOTE => None,
+            StandardNote::TX_FEE | StandardNote::CREATE => None,
         }
     }
 }
