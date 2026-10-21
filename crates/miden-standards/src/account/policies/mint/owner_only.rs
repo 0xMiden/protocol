@@ -1,14 +1,14 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // OWNER-ONLY MINT POLICY
 // ================================================================================================
 
-account_component_code!(
-    OWNER_ONLY_MINT_POLICY_CODE,
+account_component_package!(
+    OWNER_ONLY_MINT_POLICY_PACKAGE,
     "miden-standards-faucets-policies-mint-owner-controlled-owner-only.masp"
 );
 
@@ -53,20 +53,23 @@ impl MintOwnerOnly {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &OWNER_ONLY_MINT_POLICY_CODE
+        &OWNER_ONLY_MINT_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `owner_only` mint policy procedure.
     pub fn root() -> AccountProcedureRoot {
         *OWNER_ONLY_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        OWNER_ONLY_MINT_POLICY_PACKAGE.metadata.clone()
+    }
 }
 
 impl From<MintOwnerOnly> for AccountComponent {
     fn from(_: MintOwnerOnly) -> Self {
-        let metadata = AccountComponentMetadata::new(MintOwnerOnly::NAME).with_description(
-            "`owner_only` mint policy (owner-controlled family) for fungible faucets",
-        );
+        let metadata = MintOwnerOnly::component_metadata();
 
         AccountComponent::new(MintOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` mint policy component should satisfy the requirements of a valid account component",
