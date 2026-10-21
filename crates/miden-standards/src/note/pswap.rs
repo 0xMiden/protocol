@@ -402,8 +402,8 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 ///
 /// The owner must retain the payback [`P2idNoteRecipient`] preimage to reconstruct outputs with
 /// [`Self::private_payback_note`]. Use an independent random serial and a discovery tag that does
-/// not encode the target account. Consume reconstructed private paybacks as authenticated notes;
-/// unauthenticated consumption exposes their headers and links them to the consuming account.
+/// not encode the target account. Reconstruct paybacks from published fill attachments and
+/// consume them with inclusion proofs.
 /// To avoid linking cancellation to the target, execute and prove locally through a public
 /// permissionless account. Fund a sufficient cancellation reserve when creating the order to
 /// cancel without publishing another funding note.
@@ -691,11 +691,6 @@ impl PswapNote {
     ///
     /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
     /// `None` when the fill is at least `min_requested_amount` (full fill or over-fill).
-    /// The payback is [`RawOutputNote::Partial`] for private outputs and [`RawOutputNote::Full`]
-    /// for public outputs. The partial output contains the recipient commitment, assets, metadata,
-    /// and attachments needed to compute its ID and convert it to a proven private output with
-    /// [`RawOutputNote::into_output_note`]. The filler never needs the recipient preimage; the
-    /// owner supplies it later to [`Self::private_payback_note`] to reconstruct a consumable note.
     ///
     /// # Errors
     ///
