@@ -135,16 +135,16 @@ pub proc get_recipient_preimage(
     # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
     adv.push_mapval
+    adv.push_mapval
     # AS => [SERIAL_NUM, EMPTY_WORD]
 
-    # Consume the canonical padding to leave subsequent advice reads aligned.
-    padw adv_loadw padw adv_loadw
-    # => [EMPTY_WORD, SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
-
-    padw assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
+    padw adv_loadw
     # => [SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    dupw padw swapw exec.poseidon2::merge
+    padw dupw.1 
+        # => [SERIAL_NUM,  EMPTY_WORD, SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    exec.poseidon2::merge
     # => [RECOMPUTED_SERIAL_COMMITMENT, SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
     movupw.2 assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
