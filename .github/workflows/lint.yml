@@ -79,9 +79,22 @@ jobs:
 
   hooks-test:
     name: claude hooks pytest
-    runs-on: ubuntu-latest
+    # Pinned to the image that the ca-certificates version check below targets.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      # Node.js's bundled roots still trust the compromised eMudhra intermediates, so Node.js
+      # actions use the updated system CA bundle instead (https://emudhra.we-have-a-problem.com/).
+      NODE_OPTIONS: --use-openssl-ca
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
     steps:
+      - name: Update CA certificates
+        # 20260816ubuntu0.24.04.1 blacklists emSign ECC Root CA - G3 (LP: #2171507).
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ca-certificates
+          dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
+            ge 20260816ubuntu0.24.04.1
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
@@ -89,7 +102,31 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
+        run: |
+          # pip before 26.2.2 vendors a certifi that still includes emSign ECC Root CA - G3, which
+          # cross-signs the compromised eMudhra intermediates (https://emudhra.we-have-a-problem.com/),
+          # so upgrade pip through the system CA bundle only.
+          python - <<'PY'
+          import subprocess
+          import sys
+          from importlib.metadata import version
+          from pip._vendor.packaging.version import Version
+
+          if Version(version("pip")) < Version("26.2.2"):
+              tls_options = ["--cert", "/etc/ssl/certs/ca-certificates.crt"]
+              # pip 24.2+ adds its bundled roots to the system store unless legacy-certs is set.
+              if Version(version("pip")) >= Version("24.2"):
+                  tls_options.append("--use-deprecated=legacy-certs")
+              subprocess.run(
+                  [sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+                   "--upgrade", *tls_options, "pip>=26.2.2"],
+                  check=True,
+              )
+
+          if Version(version("pip")) < Version("26.2.2"):
+              raise SystemExit(f"pip >= 26.2.2 is required; found {version('pip')}")
+          PY
+          python -m pip install --disable-pip-version-check pytest
       - run: make hooks-test
 
   toml:
