@@ -1,6 +1,5 @@
 use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
-use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
 use miden_verifier::{ExecutionClaim, VerificationError, Verifier};
 
@@ -17,15 +16,16 @@ use crate::BatchVerifierError;
 ///
 /// # Warning
 ///
-/// The batch kernel binds only the batch's `INPUT_NOTES_COMMITMENT`. The batch note tree root and
-/// expiration are emitted as the empty word and zero, and input notes are not authenticated against
-/// the chain MMR. A successful [`verify`](BatchVerifier::verify) therefore attests that the kernel
-/// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced
-/// `batch.input_notes().commitment()`, but does **not** bind the batch's output notes, account
-/// updates, or expiration. The `BATCH_ID` and reference block commitment fed to the kernel are
-/// taken from the [`ProvenBatch`]'s own fields and are not recomputed from its transactions, so
-/// verification binds nothing that an entity constructing the [`ProvenBatch`] could not also forge.
-/// This verifier must not be relied on at a trust boundary.
+/// The batch kernel binds only the batch's `INPUT_NOTES_COMMITMENT`. Its expiration output is
+/// computed from unverified advice rather than from the transactions, the batch note tree root is
+/// emitted as the empty word, and input notes are not authenticated against the chain MMR. A
+/// successful [`verify`](BatchVerifier::verify) therefore attests that the kernel ran over the
+/// batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced `batch.input_notes().commitment()`,
+/// but does **not** bind the batch's output notes, account updates, or expiration. The `BATCH_ID`
+/// and reference block commitment fed to the kernel are taken from the [`ProvenBatch`]'s own fields
+/// and are not recomputed from its transactions, so verification binds nothing that an entity
+/// constructing the [`ProvenBatch`] could not also forge. This verifier must not be relied on at a
+/// trust boundary.
 ///
 /// The proof also does not cover the precompile claims of the batch's transactions.
 pub struct BatchVerifier {
@@ -63,12 +63,13 @@ impl BatchVerifier {
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
-        // The kernel binds the batch's INPUT_NOTES_COMMITMENT but not the batch note tree root or
-        // expiration, so those are passed as the empty word and zero.
+        // The kernel binds the batch's INPUT_NOTES_COMMITMENT but not the batch note tree root, so
+        // that is passed as the empty word. The expiration is the running minimum the kernel
+        // computes from (unverified) advice, which must equal the batch's claimed expiration.
         let stack_outputs = BatchOutputs::new(
             batch.input_notes().commitment(),
             Word::empty(),
-            BlockNumber::from(0u32),
+            batch.batch_expiration_block_num(),
         )
         .into_stack_outputs();
 

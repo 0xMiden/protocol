@@ -188,6 +188,9 @@ impl BatchKernel {
     /// duplicate notes), derives erasure by cross-referencing the two lists, and hashes the
     /// non-erased input notes in nullifier order to reproduce
     /// `ProposedBatch::input_notes().commitment()`.
+    ///
+    /// It also pushes each transaction's `expiration_block_num` onto the advice stack, from which
+    /// the kernel accumulates the batch-wide running minimum.
     fn build_advice_inputs(proposed_batch: &ProposedBatch) -> AdviceInputs {
         let mut map_entries: Vec<(Word, Vec<Felt>)> = Vec::new();
 
@@ -267,6 +270,16 @@ impl BatchKernel {
         }
         map_entries.push((*OUTPUT_NOTE_LIST_KEY, output_blob));
 
-        AdviceInputs::default().with_map(map_entries)
+        // Advice stack: each transaction's expiration_block_num, last transaction on top. The
+        // kernel walks the transactions from the last to the first and pops one per transaction,
+        // so each transaction pops its own expiration.
+        let expirations = proposed_batch
+            .transactions()
+            .iter()
+            .rev()
+            .map(|tx| Felt::from(tx.expiration_block_num()))
+            .collect();
+
+        AdviceInputs::default().with_map(map_entries).with_stack(expirations)
     }
 }

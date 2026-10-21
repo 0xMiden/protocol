@@ -1,5 +1,6 @@
 use {BlockCommitment, BlockNumber} from miden::protocol_utils::types
 use {BatchId, BatchNoteTreeRoot, InputNotesCommitment} from miden::batch_kernel::types
+use miden::batch_kernel::memory
 use miden::batch_kernel::prologue
 use miden::batch_kernel::note_tracker
 use miden::batch_kernel::epilogue
@@ -11,7 +12,8 @@ use miden::batch_kernel::epilogue
 #!
 #! A transaction batch groups a set of independently-proven transactions so they can later be
 #! aggregated into a block by the block kernel. This program validates the per-transaction data
-#! supplied via the advice provider, and computes the batch's `INPUT_NOTES_COMMITMENT`.
+#! supplied via the advice provider, and computes the batch's `INPUT_NOTES_COMMITMENT` and its
+#! effective `batch_expiration_block_num`.
 #!
 #! Validation is done recursively by "unhashing" the layers. Each layer of advice data is keyed
 #! by a hash from the previous layer's verification step, so once `BATCH_ID` is anchored to the
@@ -42,10 +44,13 @@ use miden::batch_kernel::epilogue
 #! - INPUT_NOTES_COMMITMENT is the nullifier-sorted sequential hash over the batch's input notes,
 #!   excluding notes created and consumed within the batch (i.e. post-erasure).
 #! - BATCH_NOTE_TREE_ROOT is emitted as the empty word (not yet computed).
-#! - batch_expiration_block_num is emitted as zero (not yet computed).
+#! - batch_expiration_block_num is the minimum of every transaction's `expiration_block_num`
+#!   (currently taken from the unverified advice stack, see the TODO below).
 #!
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
-#! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root) and batch_expiration_block_num.
+#! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root).
+#! TODO: derive batch_expiration_block_num from verified data rather than the unverified advice
+#!       stack (see `prologue::prepare_batch`).
 #! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.
 #! TODO: recursively verify each transaction's `ExecutionProof`.
 proc main(block_commitment: BlockCommitment, batch_id: BatchId, padding: [felt; 8]) -> (InputNotesCommitment, BatchNoteTreeRoot, BlockNumber, [felt; 7])
@@ -65,6 +70,10 @@ proc main(block_commitment: BlockCommitment, batch_id: BatchId, padding: [felt; 
     # => [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, pad(16)]
 
     swapdw dropw dropw
+    # => [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, pad(8)]
+
+    # Overwrite the zero cell following BATCH_NOTE_TREE_ROOT with batch_expiration_block_num.
+    exec.memory::get_batch_expiration_block_num swap.9 drop
     # => [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)]
 end
 

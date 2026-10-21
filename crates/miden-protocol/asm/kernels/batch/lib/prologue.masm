@@ -26,6 +26,9 @@ use {
 const INPUT_NOTE_LIST_KEY = word("miden::batch_kernel::input_note_list")
 const OUTPUT_NOTE_LIST_KEY = word("miden::batch_kernel::output_note_list")
 
+# Initial value of the `batch_expiration_block_num` running minimum (`u32::MAX`).
+const MAX_BLOCK_NUM = 0xFFFFFFFF
+
 # ERRORS
 # =================================================================================================
 
@@ -223,7 +226,8 @@ end
 #!   [`memory::NUM_TRANSACTIONS_PTR`].
 #! - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
-#!   per-tx offset.
+#!   per-tx offset. For each transaction, pops its `expiration_block_num` from the advice stack and
+#!   updates the running minimum in [`memory::BATCH_EXPIRATION_PTR`].
 #! - Note lists: loads the input-note list (sorted by nullifier) and the output-note list (sorted
 #!   by note id) from the advice map and asserts each is strictly sorted by its key. Their
 #!   integrity is established later, when the note tracker binds every entry to a verified
@@ -236,6 +240,7 @@ end
 #!     For each verified tx_id_i:
 #!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i,
 #!                    LOGS_COMMITMENT_i]
+#!   Advice stack: [expiration_block_num_{n-1}, ..., expiration_block_num_0]
 #!
 #! Outputs:
 #!   Operand stack: []
@@ -251,6 +256,9 @@ end
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
 #!       BLOCK_COMMITMENT.
 #! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
+#! TODO: assert each `expiration_block_num_i > reference_block_num`.
+#! TODO: derive each `expiration_block_num_i` from data committed-to in the verified transaction
+#!       header rather than from the unverified advice stack.
 pub proc prepare_batch(batch_id: BatchId)
     # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
     # ---------------------------------------------------------------------------------------------
@@ -282,7 +290,12 @@ pub proc prepare_batch(batch_id: BatchId)
 
     drop
 
-    # Layer 2: for each transaction, pipe + verify its header.
+    # Initialise batch_expiration_block_num to u32::MAX.
+    # ---------------------------------------------------------------------------------------------
+
+    push.MAX_BLOCK_NUM exec.memory::set_batch_expiration_block_num
+
+    # Layer 2: for each transaction, pipe + verify its header, accumulate the expiration minimum.
     # ---------------------------------------------------------------------------------------------
 
     exec.memory::get_num_transactions
@@ -317,6 +330,25 @@ pub proc prepare_batch(batch_id: BatchId)
         # => [end_ptr, tx_index]
 
         drop
+
+        # Accumulate the expiration running minimum from the advice stack.
+        # AS => [expiration, ...]
+        adv_push
+        # OS => [expiration, tx_index]
+        # AS => [...]
+
+        dup exec.memory::get_batch_expiration_block_num
+        # => [current_min, expiration, expiration, tx_index]
+
+        u32lt
+        # => [is_new_min, expiration, tx_index]
+
+        if.true
+            exec.memory::set_batch_expiration_block_num
+        else
+            drop
+        end
+        # => [tx_index]
 
         dup neq.0
         # => [should_loop, tx_index]

@@ -1,4 +1,4 @@
-use {Bool} from miden::protocol_utils::types
+use {BlockNumber, Bool} from miden::protocol_utils::types
 use {
     InputNoteEntry,
     OutputNoteEntry,
@@ -18,6 +18,8 @@ use {
 # | 0                 | NUM_TRANSACTIONS_PTR    | num_transactions (1 felt).                                           |
 # | 1                 | NUM_INPUT_NOTES_PTR     | number of entries in the nullifier-sorted input-note list.           |
 # | 2                 | NUM_OUTPUT_NOTES_PTR    | number of entries in the note-id-sorted output-note list.            |
+# | 3                 | BATCH_EXPIRATION_PTR    | batch_expiration_block_num: the running minimum of every             |
+# |                   |                         | transaction's expiration_block_num.                                  |
 # | 4..8196           | TX_TUPLES_PTR           | Layer 1 piped data: `[TX_ID, account_id_suffix, account_id_prefix,   |
 # |                   |                         | 0, 0]` per transaction (8 felts each, up to 1024 transactions).      |
 # | 8196..28676       | TX_HEADERS_PTR          | Layer 2 piped data: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,           |
@@ -45,6 +47,10 @@ pub const WORD_NUM_ELEMENTS = 4
 
 # Single-felt slot holding `num_transactions` after Layer 1 verification.
 const NUM_TRANSACTIONS_PTR = 0
+
+# Single-felt slot holding `batch_expiration_block_num`: the running minimum of every
+# transaction's `expiration_block_num`, initialised to `u32::MAX`.
+const BATCH_EXPIRATION_PTR = 3
 
 # NOTE LIST BOOKKEEPING
 # =================================================================================================
@@ -201,6 +207,25 @@ end
 #! Outputs: [num_transactions]
 pub proc get_num_transactions() -> u32
     mem_load.NUM_TRANSACTIONS_PTR
+end
+
+# BATCH EXPIRATION BLOCK NUM
+# =================================================================================================
+
+#! Stores `batch_expiration_block_num`.
+#!
+#! Inputs:  [batch_expiration_block_num]
+#! Outputs: []
+pub proc set_batch_expiration_block_num(batch_expiration_block_num: BlockNumber)
+    mem_store.BATCH_EXPIRATION_PTR
+end
+
+#! Returns `batch_expiration_block_num`.
+#!
+#! Inputs:  []
+#! Outputs: [batch_expiration_block_num]
+pub proc get_batch_expiration_block_num() -> BlockNumber
+    mem_load.BATCH_EXPIRATION_PTR
 end
 
 # TRANSACTION TUPLE / HEADER ACCESSORS

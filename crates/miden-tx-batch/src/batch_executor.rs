@@ -9,7 +9,6 @@ use miden_processor::{
     PrecompileWitness,
 };
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
-use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenBatchError;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{CoreLibrary, Word};
@@ -130,10 +129,12 @@ impl BatchExecutor {
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         // Reject if the kernel's outputs do not match the proposed batch, so drift is caught early.
+        // The expected expiration is the running minimum the proposed batch independently derives
+        // from its transactions.
         let expected_outputs = BatchOutputs::new(
             proposed_batch.input_notes().commitment(),
             Word::empty(),
-            BlockNumber::from(0u32),
+            proposed_batch.batch_expiration_block_num(),
         );
         if batch_outputs != expected_outputs {
             return Err(ProvenBatchError::BatchKernelOutputMismatch {
