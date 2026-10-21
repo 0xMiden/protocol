@@ -28,7 +28,7 @@ const TAG_PTR = TARGET_PREFIX_PTR + 1
 const TYPE_PTR = TAG_PTR + 1
 const NUM_STORAGE_ITEMS = TYPE_PTR + 1 - STORAGE_PTR
 
-# The asset buffer follows note storage; the storage loader's padding is no longer needed.
+# The asset data follows note storage; the storage loader's padding is no longer needed.
 const ASSETS_PTR = STORAGE_PTR + NUM_STORAGE_ITEMS
 
 const MAIN_FEE_NOTE_IDX_LOC = 0
@@ -77,7 +77,7 @@ pub proc main(note_args: NoteArgs)
 
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     eq.NUM_STORAGE_ITEMS assert.err=ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS
-    # => [action]
+    # => [action (1 = reclaim, 0 = create outputs)]
 
     if.true
         exec.active_note::get_sender exec.note_target::assert_active_account_is_target_account
@@ -88,6 +88,7 @@ pub proc main(note_args: NoteArgs)
         exec.note_target::assert_active_account_is_target_account
         # => []
 
+        # check that a specified creation fee uses the native fee asset
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
             padw mem_loadw_le.FEE_ASSET_PTR exec.tx::get_fee_asset_id
@@ -95,18 +96,21 @@ pub proc main(note_args: NoteArgs)
         end
         # => []
 
+        # verify and remove the input assets, then deduct the creation fee
         exec.remove_input_assets exec.prepare_output_assets
         # => [assets_end, EXPECTED_ASSETS_COMMITMENT]
 
         exec.create_primary_output
         # => [note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
+        # create and fund the TX_FEE note when a creation fee is specified
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
             exec.create_fee_output loc_store.MAIN_FEE_NOTE_IDX_LOC
         end
         # => [note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
+        # transfer the prepared assets into the primary output note
         push.ASSETS_PTR push.1
         while.true
             dup.1 dup.1 exec.asset::load
@@ -126,6 +130,7 @@ pub proc main(note_args: NoteArgs)
         assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
         # => []
 
+        # verify the fee note's funding and attachments after all asset callbacks
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
             loc_load.MAIN_FEE_NOTE_IDX_LOC exec.output_note::get_assets_info
@@ -176,14 +181,14 @@ proc remove_input_assets() -> ptr<Asset>
 end
 
 #! Validates the fungible assets in ASSETS_PTR and subtracts the fee stored in note storage.
-#! Compacts the buffer if the fee consumes an entire asset, preserving the remaining assets' order.
+#! Omits an asset used entirely for the fee, preserving the order of the remaining assets.
 #!
 #! Inputs:  [assets_end]
 #! Outputs: [output_assets_end, OUTPUT_ASSETS_COMMITMENT]
 #!
 #! Where:
-#! - assets_end and output_assets_end are the exclusive ends of the input and output asset buffers.
-#! - OUTPUT_ASSETS_COMMITMENT commits to the compacted buffer's assets.
+#! - assets_end and output_assets_end are the exclusive ends of the input and output asset lists.
+#! - OUTPUT_ASSETS_COMMITMENT commits to the remaining output assets.
 #!
 #! Panics if the fee is not covered or the output has no assets, NFTs, or zero fungible amounts.
 #!
@@ -211,20 +216,31 @@ proc prepare_output_assets(assets_end: ptr<Asset>) -> (ptr<Asset>, NoteAssetsCom
         if.true
             push.1 loc_store.PREPARE_OUTPUT_ASSETS_FEE_FOUND_LOC
             mem_load.FEE_AMOUNT_PTR
+            # => [fee_amount, amount, read_ptr, write_ptr, assets_end]
+
+            # require amount >= fee_amount before subtracting the fee
             dup.1 dup.1 gte assert.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
             sub
             # => [remaining_amount, read_ptr, write_ptr, assets_end]
 
-            dup dup.2 add.ASSET_VALUE_MEMORY_OFFSET mem_store
+            # store the remaining amount and keep a copy for the zero check
+            dup dup.2 add.ASSET_VALUE_MEMORY_OFFSET
+            # => [amount_ptr, remaining_amount, remaining_amount, read_ptr, write_ptr, assets_end]
+
+            mem_store
+            # => [remaining_amount, read_ptr, write_ptr, assets_end]
+
+            # omit the asset if the fee used its entire amount
             neq.0
             # => [keep_asset, read_ptr, write_ptr, assets_end]
         else
+            # assets that do not pay the fee are kept unchanged
             drop push.1
             # => [keep_asset = 1, read_ptr, write_ptr, assets_end]
         end
 
         if.true
-            # move assets only after a fee-only asset has left a gap in the buffer
+            # move later assets into the gap left by an asset used entirely for the fee
             dup.1 dup.1 neq
             if.true
                 dup exec.asset::load dup.9 exec.asset::store
@@ -260,7 +276,11 @@ end
 proc create_primary_output() -> u16
     # reserve a full call frame above the caller's stack
     padw padw push.0.0
+    # => [pad(10)]
+
     padw mem_loadw_le.OUTPUT_RECIPIENT_PTR
+    # => [RECIPIENT, pad(10)]
+
     mem_load.TYPE_PTR mem_load.TAG_PTR
     # => [tag, note_type, RECIPIENT, pad(10)]
 

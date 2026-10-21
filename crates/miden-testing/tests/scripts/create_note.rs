@@ -85,10 +85,9 @@ fn setup(
 
 #[rstest]
 #[case::combined_funding(NoteType::Public, true, Some(50), 0, None)]
-#[case::fee_before_output(NoteType::Public, false, Some(50), 0, Some(0))]
+#[case::fee_before_output(NoteType::Public, false, Some(50), 1, Some(0))]
 #[case::private_output(NoteType::Private, false, Some(50), 0, None)]
 #[case::without_fee(NoteType::Public, false, None, 0, None)]
-#[case::multiple_assets_combined_fee(NoteType::Public, true, Some(50), 1, None)]
 #[case::fee_between_outputs(NoteType::Private, false, Some(50), 1, Some(1))]
 #[case::maximum_output_assets(NoteType::Public, true, Some(50), NoteAssets::MAX_NUM_ASSETS - 1, None)]
 #[tokio::test]
@@ -372,11 +371,12 @@ async fn create_note_reclaim(#[case] original_sender: bool) -> anyhow::Result<()
 }
 
 #[rstest]
-#[case::primary_output(0)]
-#[case::fee_output(1)]
+#[case::public_primary(NoteType::Public, 0)]
+#[case::private_primary(NoteType::Private, 0)]
+#[case::fee_output(NoteType::Public, 1)]
 #[tokio::test]
 async fn create_note_leaves_outputs_unsealed(
-    #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
+    #[case] note_type: NoteType,
     #[case] index: u32,
 ) -> anyhow::Result<()> {
     let (builder, _, passthrough, create_note) = setup(note_type, false, Some(50), 0)?;
