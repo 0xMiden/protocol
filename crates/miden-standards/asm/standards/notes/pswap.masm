@@ -755,16 +755,15 @@ proc create_remainder_note(
     # => []
 end
 
-#! Verifies the canonical private P2ID recipient preimage independently of the executing account.
+#! Authorizes cancellation using the private P2ID recipient preimage.
 #!
 #! Inputs:  [EXPECTED_RECIPIENT]
 #! Outputs: []
 proc authenticate_cancellation(recipient: NoteRecipient)
+    # Knowledge of the secret serial authorizes cancellation; the target may be another account.
     exec.std_note::get_recipient_preimage
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    # Verifying the secret serial authorizes cancellation. Its value is unused afterward,
-    # but the public recipient commitments alone must not suffice to cancel an order.
     dropw procref.p2id::main assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => [STORAGE_COMMITMENT]
 
@@ -1278,7 +1277,7 @@ pub proc main(note_args: NoteArgs)
         # => [is_cancel, account_fill, note_fill]
 
         if.true
-            # Cancellation refunds the entire remainder and requires both fill amounts to be zero.
+            # Cancellation uses no fill amounts; require their canonical zero encoding.
             eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
             # => []
