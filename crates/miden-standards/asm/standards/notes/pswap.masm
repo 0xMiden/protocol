@@ -962,9 +962,9 @@ end
 #!
 #! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
 #! note_fill`:
-#! - `total_fill <= min_requested_amount`: the consumer takes a proportional share of the offered
+#! - `total_fill < min_requested_amount`: the consumer takes a proportional share of the offered
 #!   side, and a remainder note carries the unfilled balance.
-#! - `total_fill > min_requested_amount` (over-fill): the whole offered side is paid out and no
+#! - `total_fill >= min_requested_amount`: the whole offered side is paid out and no
 #!   remainder is created. The consumer takes the `account_fill` share; any `note_fill` share
 #!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
 #!   surplus requested tokens.

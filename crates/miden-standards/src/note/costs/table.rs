@@ -16,8 +16,8 @@ pub const SWAP_CONSUMPTION_CYCLES: u32 = 24102;
 /// payback 34140, full fill, public payback 30562, partial fill, public payback 34870 (maximum).
 pub const PSWAP_CONSUMPTION_CYCLES: u32 = 34870;
 
-/// Cycles of consuming a MINT note: fungible faucet 36675, non-fungible faucet 38968 (maximum).
-pub const MINT_CONSUMPTION_CYCLES: u32 = 38968;
+/// Cycles of consuming a MINT note: fungible faucet 36675, non-fungible faucet 40759 (maximum).
+pub const MINT_CONSUMPTION_CYCLES: u32 = 40759;
 
 /// Cycles of consuming a BURN note (single benchmarked path).
 pub const BURN_CONSUMPTION_CYCLES: u32 = 31081;

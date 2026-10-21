@@ -85,16 +85,16 @@ impl PswapPayback {
 ///
 /// Common fields:
 ///
-/// | Offset | Field                         |
-/// |--------|-------------------------------|
-/// | 0      | Requested faucet suffix       |
-/// | 1      | Requested faucet prefix       |
-/// | 2      | Minimum requested amount      |
-/// | 3      | Minimum fill step             |
-/// | 4      | Payback note type             |
+/// | Offset | Field                          |
+/// |--------|--------------------------------|
+/// | 0      | Requested faucet suffix        |
+/// | 1      | Requested faucet prefix        |
+/// | 2      | Minimum requested amount       |
+/// | 3      | Minimum fill step              |
+/// | 4      | Payback note type              |
 /// | 5      | Cancellation fee faucet suffix |
 /// | 6      | Cancellation fee faucet prefix |
-/// | 7      | Cancellation fee amount       |
+/// | 7      | Cancellation fee amount        |
 ///
 /// Public paybacks append these fields (10 elements total):
 ///
