@@ -1,7 +1,6 @@
 //! A [`DoubleWord`] type used in the Miden protocol and associated utilities.
 
 use alloc::vec::Vec;
-use core::mem::size_of;
 
 use crate::{Felt, Word, WordError};
 
@@ -10,8 +9,8 @@ use crate::{Felt, Word, WordError};
 
 /// A unit of data consisting of 8 field elements (a "double word").
 ///
-/// Conceptually this is two [`Word`]s: `word_lo` (elements 0..4) followed by `word_hi` (elements
-/// 4..8).
+/// Conceptually this is two [`Word`]s: the low word (elements 0..4) followed by the high word
+/// (elements 4..8).
 ///
 /// # Examples
 ///
@@ -24,27 +23,8 @@ use crate::{Felt, Word, WordError};
 /// assert_eq!(dword.lo(), lo);
 /// assert_eq!(dword.hi(), hi);
 /// ```
-#[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
-#[repr(C)]
-pub struct DoubleWord {
-    word_lo: Word,
-    word_hi: Word,
-}
-
-// Compile-time assertions to ensure `DoubleWord` has the same layout as `[Felt; 8]`. This is
-// relied upon in `as_elements_array`.
-const _: () = {
-    assert!(DoubleWord::NUM_ELEMENTS == 8, "DoubleWord::NUM_ELEMENTS is assumed to be 8");
-    assert!(size_of::<DoubleWord>() == DoubleWord::NUM_ELEMENTS * size_of::<Felt>());
-    assert!(core::mem::offset_of!(DoubleWord, word_lo) == 0);
-    assert!(core::mem::offset_of!(DoubleWord, word_hi) == Word::SERIALIZED_SIZE);
-};
-
-impl core::fmt::Debug for DoubleWord {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("DoubleWord").field(self.as_elements_array()).finish()
-    }
-}
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct DoubleWord([Felt; DoubleWord::NUM_ELEMENTS]);
 
 impl DoubleWord {
     /// The number of field elements in the double word.
@@ -52,42 +32,37 @@ impl DoubleWord {
 
     /// Creates a new [`DoubleWord`] from two [`Word`]s.
     pub const fn new(word_lo: Word, word_hi: Word) -> Self {
-        Self { word_lo, word_hi }
+        let [a, b, c, d] = word_lo.into_elements();
+        let [e, f, g, h] = word_hi.into_elements();
+        Self([a, b, c, d, e, f, g, h])
     }
 
     /// Returns the low word of this double word.
     pub const fn lo(&self) -> Word {
-        self.word_lo
+        let [a, b, c, d, ..] = self.0;
+        Word::new([a, b, c, d])
     }
 
     /// Returns the high word of this double word.
     pub const fn hi(&self) -> Word {
-        self.word_hi
+        let [.., e, f, g, h] = self.0;
+        Word::new([e, f, g, h])
     }
 
     /// Returns the two [`Word`]s of this double word as a tuple in the following format: `(low,
     /// high)`.
     pub fn into_tuple(self) -> (Word, Word) {
-        (self.word_lo, self.word_hi)
-    }
-
-    /// Returns the elements of this double word as an array reference.
-    ///
-    /// # Safety
-    /// This assumes the two [`Word`] fields of [`DoubleWord`] are laid out contiguously with no
-    /// padding, in the same order as `[Felt; 8]`.
-    fn as_elements_array(&self) -> &[Felt; Self::NUM_ELEMENTS] {
-        unsafe { &*(&self.word_lo as *const Word as *const [Felt; Self::NUM_ELEMENTS]) }
+        (self.lo(), self.hi())
     }
 
     /// Returns the double word as a slice of field elements.
     pub fn as_elements(&self) -> &[Felt] {
-        self.as_elements_array()
+        &self.0
     }
 
     /// Returns internal elements of this double word as a vector.
     pub fn to_vec(&self) -> Vec<Felt> {
-        self.as_elements().to_vec()
+        self.0.to_vec()
     }
 }
 
@@ -99,7 +74,7 @@ impl IntoIterator for DoubleWord {
     type IntoIter = <[Felt; 8] as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        <[Felt; DoubleWord::NUM_ELEMENTS]>::from(self).into_iter()
+        self.0.into_iter()
     }
 }
 
@@ -108,9 +83,7 @@ impl IntoIterator for DoubleWord {
 
 impl From<DoubleWord> for [Felt; DoubleWord::NUM_ELEMENTS] {
     fn from(value: DoubleWord) -> Self {
-        let [a, b, c, d] = value.word_lo.into_elements();
-        let [e, f, g, h] = value.word_hi.into_elements();
-        [a, b, c, d, e, f, g, h]
+        value.0
     }
 }
 
@@ -121,11 +94,9 @@ impl TryFrom<&[Felt]> for DoubleWord {
     type Error = WordError;
 
     fn try_from(value: &[Felt]) -> Result<Self, Self::Error> {
-        let [a, b, c, d, e, f, g, h]: [Felt; DoubleWord::NUM_ELEMENTS] =
-            value.try_into().map_err(|_| {
-                WordError::InvalidInputLength("elements", DoubleWord::NUM_ELEMENTS, value.len())
-            })?;
-        Ok(Self::new(Word::new([a, b, c, d]), Word::new([e, f, g, h])))
+        value.try_into().map(Self).map_err(|_| {
+            WordError::InvalidInputLength("elements", DoubleWord::NUM_ELEMENTS, value.len())
+        })
     }
 }
 
@@ -167,22 +138,11 @@ mod tests {
     }
 
     #[test]
-    fn dword_elements_array_layout() {
-        let dword = make_dword();
-        let elements = dword.as_elements();
-
-        let lo_ptr = core::ptr::addr_of!(dword.word_lo);
-        assert_eq!(elements.as_ptr() as *const Word, lo_ptr);
-
-        let hi_ptr = core::ptr::addr_of!(dword.word_hi);
-        assert_eq!(unsafe { elements.as_ptr().add(4) } as *const Word, hi_ptr);
-    }
-
-    #[test]
     fn dword_try_from_felt_slice_correct_length() {
         let elements: Vec<Felt> = (1..=8).map(felt).collect();
         let dword = DoubleWord::try_from(elements.as_slice()).unwrap();
-        assert_eq!(dword, make_dword());
+        assert_eq!(dword.lo(), make_lo());
+        assert_eq!(dword.hi(), make_hi());
     }
 
     #[rstest]
