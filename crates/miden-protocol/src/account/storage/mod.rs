@@ -109,6 +109,7 @@ impl AccountStorage {
     ///
     /// Returns an error if:
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
+    /// - The total payload exceeds [`Self::MAX_NUM_STORAGE_WORDS`].
     /// - There are multiple storage slots with the same [`StorageSlotName`].
     pub(super) fn from_components(
         components: Vec<AccountComponent>,
@@ -225,6 +226,10 @@ impl AccountStorage {
     }
 
     /// Returns the full array in the named slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slot does not exist or is not an array.
     pub fn get_array(&self, slot_name: &StorageSlotName) -> Result<&StorageArray, AccountError> {
         let slot = self.get(slot_name).ok_or_else(|| AccountError::StorageSlotNameNotFound {
             slot_name: slot_name.clone(),
@@ -238,7 +243,10 @@ impl AccountStorage {
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the provided delta to this account storage.
+    /// Applies the provided patch to this account storage.
+    ///
+    /// The final storage layout must satisfy the slot and word limits. If validation fails,
+    /// storage is left unchanged.
     ///
     /// # Errors
     ///
@@ -334,7 +342,13 @@ impl AccountStorage {
         Ok(())
     }
 
-    /// Replaces an array's words, preserving its fixed length.
+    /// Replaces an array's words, preserving its fixed length, and returns the previous array.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The slot does not exist or is not an array.
+    /// - The new array has a different length.
     pub fn set_array(
         &mut self,
         slot_name: &StorageSlotName,

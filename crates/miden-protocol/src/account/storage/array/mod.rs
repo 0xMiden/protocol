@@ -30,10 +30,20 @@ pub struct StorageArray {
 }
 
 impl StorageArray {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
     /// The maximum number of words in an array.
     pub const MAX_NUM_WORDS: usize = 256;
 
-    /// Creates an array of 1 to [`Self::MAX_NUM_WORDS`] words.
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates an array from the provided words, caching their commitment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the number of words is outside `1..=Self::MAX_NUM_WORDS`.
     pub fn new(values: Vec<Word>) -> Result<Self, StorageArrayError> {
         StorageArrayLength::try_from(values.len())?;
         let commitment = Hasher::hash_elements(Word::words_as_elements(&values));
@@ -44,6 +54,9 @@ impl StorageArray {
     pub fn empty(length: StorageArrayLength) -> Self {
         Self::new(vec![Word::empty(); length.as_usize()]).expect("validated array length")
     }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Returns the words in index order.
     pub fn values(&self) -> &[Word] {
@@ -66,6 +79,9 @@ impl StorageArray {
     }
 }
 
+// SEQUENTIAL COMMIT
+// ================================================================================================
+
 impl SequentialCommit for StorageArray {
     type Commitment = Word;
 
@@ -78,6 +94,9 @@ impl SequentialCommit for StorageArray {
     }
 }
 
+// SERIALIZATION
+// ================================================================================================
+
 impl Serializable for StorageArray {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(self.length());
@@ -85,7 +104,7 @@ impl Serializable for StorageArray {
     }
 
     fn get_size_hint(&self) -> usize {
-        2 + self.values.len() * Word::SERIALIZED_SIZE
+        self.length().get_size_hint() + self.values.len() * Word::SERIALIZED_SIZE
     }
 }
 
@@ -100,15 +119,17 @@ impl Deserializable for StorageArray {
 // STORAGE ARRAY LENGTH
 // ================================================================================================
 
-/// A validated storage array length, in words.
+/// A storage array length of 1 to [`StorageArray::MAX_NUM_WORDS`] words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StorageArrayLength(u16);
 
 impl StorageArrayLength {
+    /// Returns the number of words as a `u16`.
     pub fn as_u16(self) -> u16 {
         self.0
     }
 
+    /// Returns the number of words as a `usize`.
     pub fn as_usize(self) -> usize {
         usize::from(self.0)
     }
@@ -131,7 +152,7 @@ impl Serializable for StorageArrayLength {
     }
 
     fn get_size_hint(&self) -> usize {
-        2
+        self.0.get_size_hint()
     }
 }
 

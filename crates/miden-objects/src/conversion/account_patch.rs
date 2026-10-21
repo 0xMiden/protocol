@@ -17,13 +17,6 @@ use miden_protocol::account::{
 };
 
 use crate::proto;
-use crate::proto::account::storage_array_patch::Operation as ArrayPatchOperation;
-use crate::proto::account::{
-    StorageArrayPatch as ProtoStorageArrayPatch,
-    StorageArrayPatchEntries as ProtoStorageArrayPatchEntries,
-    StorageArrayPatchEntry as ProtoStorageArrayPatchEntry,
-};
-
 #[cfg(test)]
 mod tests;
 
@@ -67,26 +60,26 @@ impl From<&StorageValuePatch> for proto::account::StorageValuePatch {
     }
 }
 
-impl From<&StorageArrayPatch> for ProtoStorageArrayPatch {
+impl From<&StorageArrayPatch> for proto::account::StorageArrayPatch {
     fn from(patch: &StorageArrayPatch) -> Self {
+        use proto::account::storage_array_patch::Operation;
+
         let operation = match patch {
-            StorageArrayPatch::Create { array } => ArrayPatchOperation::Create(array.into()),
+            StorageArrayPatch::Create { array } => Operation::Create(array.into()),
             StorageArrayPatch::Update { entries } => {
-                ArrayPatchOperation::Update(ProtoStorageArrayPatchEntries {
+                Operation::Update(proto::account::StorageArrayPatchEntries {
                     length: u32::from(entries.length().as_u16()),
                     entries: entries
                         .as_map()
                         .iter()
-                        .map(|(index, value)| ProtoStorageArrayPatchEntry {
+                        .map(|(index, value)| proto::account::StorageArrayPatchEntry {
                             index: u32::from(*index),
                             value: Some(value.into()),
                         })
                         .collect(),
                 })
             },
-            StorageArrayPatch::Remove { length } => {
-                ArrayPatchOperation::Remove(u32::from(length.as_u16()))
-            },
+            StorageArrayPatch::Remove { length } => Operation::Remove(u32::from(length.as_u16())),
         };
         Self { operation: Some(operation) }
     }
