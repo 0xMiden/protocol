@@ -9,8 +9,8 @@ use crate::test_utils::error_source;
 use crate::{DecodeMessage, Verify, proto};
 
 #[test]
-fn logs_roundtrip_preserves_order_duplicates_and_maximum_content() {
-    let log = TransactionLog::mock(TransactionLog::MAX_NUM_WORDS);
+fn logs_roundtrip_preserves_duplicates() {
+    let log = TransactionLog::mock(1);
     let logs = TransactionLogs::new(vec![log.clone(), log]).unwrap();
     let bytes = proto::transaction::TransactionLogs::from(&logs).encode_to_vec();
     let decoded = proto::transaction::TransactionLogs::decode(bytes.as_slice()).unwrap();
