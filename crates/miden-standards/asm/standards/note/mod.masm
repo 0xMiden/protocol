@@ -144,7 +144,7 @@ pub proc get_recipient_preimage(
     padw assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
     # => [SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    dupw padw swapw exec.poseidon2::merge
+    padw dupw.1 exec.poseidon2::merge
     # => [RECOMPUTED_SERIAL_COMMITMENT, SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
     movupw.2 assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
