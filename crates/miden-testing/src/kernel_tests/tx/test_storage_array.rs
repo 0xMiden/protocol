@@ -21,9 +21,16 @@ use miden_protocol::account::{
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_IS_NOT_NATIVE,
     ERR_ACCOUNT_SETTING_VALUE_ITEM_ON_NON_VALUE_SLOT,
+    ERR_ACCOUNT_STORAGE_ARRAY_LENGTH_INVALID,
+    ERR_ACCOUNT_STORAGE_ARRAY_PREIMAGE_LENGTH,
     ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE,
+    ERR_ACCOUNT_STORAGE_SLOT_NOT_ARRAY,
 };
 use miden_protocol::transaction::TransactionVerifier;
+use miden_protocol::transaction::memory::{
+    ACCT_STORAGE_SLOT_NUM_ELEMENTS,
+    ACCT_STORAGE_SLOT_TYPE_OFFSET,
+};
 use miden_protocol::{Felt, Hasher, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -213,6 +220,7 @@ async fn storage_array_setter_rejects_malformed_preimages() -> anyhow::Result<()
     let mut corrupted = data.clone();
     corrupted[0] += Felt::ONE;
     for preimage in [data[..8].to_vec(), corrupted] {
+        let preimage_length_is_invalid = preimage.len() != data.len();
         let tx = TestTransactionBuilder::new(account.clone())
             .add_advice_map_entry(root, preimage)
             .build()?;
@@ -226,9 +234,17 @@ async fn storage_array_setter_rejects_malformed_preimages() -> anyhow::Result<()
             end
         "
         );
-        assert_execution_error!(tx.execute_code(&code).await, matches ExecutionError::OperationError {
-            err: OperationError::FailedAssertion { .. }, ..
-        });
+        if preimage_length_is_invalid {
+            assert_execution_error!(
+                tx.execute_code(&code).await,
+                ERR_ACCOUNT_STORAGE_ARRAY_PREIMAGE_LENGTH
+            );
+        } else {
+            // The core preimage pipe uses an unlabelled assertion for commitment equality.
+            assert_execution_error!(tx.execute_code(&code).await, matches ExecutionError::OperationError {
+                err: OperationError::FailedAssertion { err_code, .. }, ..
+            } if err_code == Felt::ZERO);
+        }
     }
     Ok(())
 }
@@ -256,10 +272,13 @@ async fn storage_array_creation_commits_untouched_zero_words(
 }
 
 #[rstest]
-#[case::read(false)]
-#[case::write(true)]
+#[case::read(None)]
+#[case::write(Some("set_array"))]
+#[case::initial_read(Some("get_initial_array"))]
 #[tokio::test]
-async fn storage_array_foreign_access(#[case] write: bool) -> anyhow::Result<()> {
+async fn storage_array_foreign_access(
+    #[case] native_procedure: Option<&str>,
+) -> anyhow::Result<()> {
     let array = StorageArray::new(vec![Word::from([7u32; 4]); 3])?;
     let id = array_slot().id();
     let slot = format!("{}.{}", id.prefix(), id.suffix());
@@ -269,8 +288,8 @@ async fn storage_array_foreign_access(#[case] write: bool) -> anyhow::Result<()>
         padw mem_loadw_le.1024 push.7.7.7.7 assert_eqw
     "
     );
-    if write {
-        body.push_str(&format!("push.1024 push.{slot} exec.native_account::set_array drop"));
+    if let Some(procedure) = native_procedure {
+        body.push_str(&format!("push.1024 push.{slot} exec.native_account::{procedure} drop"));
     }
     let component = array_component(&body, array)?;
     let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
@@ -304,7 +323,7 @@ async fn storage_array_foreign_access(#[case] write: bool) -> anyhow::Result<()>
         .foreign_accounts([inputs])
         .tx_script(script)
         .build()?;
-    if write {
+    if native_procedure.is_some() {
         assert_transaction_executor_error!(tx.execute().await, ERR_ACCOUNT_IS_NOT_NATIVE);
     } else {
         let executed = tx.execute().await?;
@@ -341,15 +360,26 @@ async fn storage_array_new_account_checks_initial_preimage_before_overwrite() ->
         .add_advice_map_entry(initial_root, vec![Felt::ONE; 12])
         .build()?;
     assert_transaction_executor_error!(tx.execute().await, matches ExecutionError::OperationError {
-        err: OperationError::FailedAssertion { .. }, ..
-    });
+        err: OperationError::FailedAssertion { err_code, .. }, ..
+    } if err_code == Felt::ZERO);
     Ok(())
 }
 
+#[rstest]
+#[case::at_limit(false)]
+#[case::over_limit(true)]
 #[tokio::test]
-async fn storage_array_payload_budget_is_enforced_in_kernel() -> anyhow::Result<()> {
+async fn storage_array_payload_budget_is_enforced_in_kernel(
+    #[case] overflow: bool,
+) -> anyhow::Result<()> {
     let tx = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let encoded_type = StorageSlotType::Array(StorageArrayLength::try_from(256)?).as_felt();
+    let num_slots = usize::from(tx.account().storage().num_slots());
+    // All unmodified slots contribute one word. Split the remaining budget between two arrays.
+    let first_length = 128;
+    let second_length = 256 - (num_slots - 2) - first_length + usize::from(overflow);
+    let first_type = StorageSlotType::Array(StorageArrayLength::try_from(first_length)?).as_felt();
+    let second_type =
+        StorageSlotType::Array(StorageArrayLength::try_from(second_length)?).as_felt();
     let code = format!(
         r"
         use miden::tx_kernel_core::account
@@ -357,14 +387,23 @@ async fn storage_array_payload_budget_is_enforced_in_kernel() -> anyhow::Result<
         use miden::tx_kernel_core::prologue
         begin
             exec.prologue::prepare_transaction
-            # The first slot alone consumes the budget; the other slots must make validation fail.
-            push.{encoded_type}
-            exec.memory::get_native_account_active_storage_slots_ptr add.1 mem_store
+            push.{first_type}
+            exec.memory::get_native_account_active_storage_slots_ptr add.{ACCT_STORAGE_SLOT_TYPE_OFFSET} mem_store
+            push.{second_type}
+            exec.memory::get_native_account_active_storage_slots_ptr
+            add.{ACCT_STORAGE_SLOT_NUM_ELEMENTS} add.{ACCT_STORAGE_SLOT_TYPE_OFFSET} mem_store
             exec.account::validate_storage
         end
     "
     );
-    assert_execution_error!(tx.execute_code(&code).await, ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE);
+    if overflow {
+        assert_execution_error!(
+            tx.execute_code(&code).await,
+            ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE
+        );
+    } else {
+        tx.execute_code(&code).await?;
+    }
     Ok(())
 }
 
@@ -428,8 +467,12 @@ async fn storage_array_repeated_delta_computation_matches_host() -> anyhow::Resu
     Ok(())
 }
 
+#[rstest]
+#[case::read("ACCOUNT_GET_ARRAY_INFO_OFFSET")]
+#[case::initial_read("ACCOUNT_GET_INITIAL_ARRAY_INFO_OFFSET")]
+#[case::write("ACCOUNT_SET_ARRAY_OFFSET")]
 #[tokio::test]
-async fn storage_array_syscall_requires_account_origin() -> anyhow::Result<()> {
+async fn storage_array_syscall_requires_account_origin(#[case] offset: &str) -> anyhow::Result<()> {
     let array = StorageArray::new(vec![Word::empty(); 3])?;
     let commitment = array.commitment();
     let id = array_slot().id();
@@ -439,10 +482,10 @@ async fn storage_array_syscall_requires_account_origin() -> anyhow::Result<()> {
         .build_existing()?;
     let script = CodeBuilder::default().compile_tx_script(format!(
         r"
-        use {{ACCOUNT_SET_ARRAY_OFFSET}} from miden::protocol::kernel_proc_offsets
+        use {{{offset}}} from miden::protocol::kernel_proc_offsets
         @transaction_script
         pub proc main
-            push.{commitment} push.{prefix}.{suffix} push.ACCOUNT_SET_ARRAY_OFFSET
+            push.{commitment} push.{prefix}.{suffix} push.{offset}
             push.0 movdn.7 padw padw swapdw
             syscall.exec_kernel_proc
         end
@@ -522,6 +565,30 @@ async fn storage_array_rejects_invalid_memory_ranges(
         assert_transaction_executor_error!(tx.execute().await, matches ExecutionError::OperationError {
             err: OperationError::NotU32Values { .. }, ..
         });
+    }
+    Ok(())
+}
+
+#[rstest]
+#[case::zero_length(2, true)]
+#[case::excessive_length(2 + (257u64 << 32), true)]
+#[case::wrong_tag(3 + (3u64 << 32), false)]
+#[tokio::test]
+async fn storage_array_kernel_rejects_invalid_type_encodings(
+    #[case] encoded_type: u64,
+    #[case] invalid_length: bool,
+) -> anyhow::Result<()> {
+    let tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let code = format!(
+        "use miden::tx_kernel_core::account begin push.{encoded_type} exec.account::array_length_from_type drop end"
+    );
+    if invalid_length {
+        assert_execution_error!(
+            tx.execute_code(&code).await,
+            ERR_ACCOUNT_STORAGE_ARRAY_LENGTH_INVALID
+        );
+    } else {
+        assert_execution_error!(tx.execute_code(&code).await, ERR_ACCOUNT_STORAGE_SLOT_NOT_ARRAY);
     }
     Ok(())
 }

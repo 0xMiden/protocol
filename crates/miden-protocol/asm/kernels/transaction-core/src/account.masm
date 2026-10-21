@@ -695,6 +695,8 @@ end
 #!
 #! Inputs:  [slot_type]
 #! Outputs: [num_words]
+#!
+#! Panics if the type tag is not an array or the length is outside 1..=MAX_STORAGE_ARRAY_WORDS.
 pub proc array_length_from_type(slot_type: felt) -> u16
     # the low 32 bits contain the type tag; the high 32 bits contain the array length
     u32split
@@ -713,6 +715,8 @@ end
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [ROOT, num_words]
+#!
+#! Panics if the slot is missing or its type is not a valid array type.
 pub proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
     exec.get_typed_item
     # => [ROOT, slot_type]
@@ -728,6 +732,8 @@ end
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [ROOT, num_words]
+#!
+#! Panics if the slot is missing or its type is not a valid array type.
 pub proc get_initial_array_info(slot_id: StorageSlotId) -> (word, u16)
     exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_initial_storage_slots_ptr
@@ -750,6 +756,13 @@ end
 #!
 #! Inputs:  [ROOT, num_words, dst_ptr]
 #! Outputs: []
+#!
+#! Where:
+#! - ROOT is the commitment to the array contents.
+#! - num_words is a validated array length.
+#! - dst_ptr is word-aligned and has room for num_words words.
+#!
+#! Panics if the advice preimage has the wrong length or does not match ROOT.
 pub proc read_array(root: word, num_words: u16, dst_ptr: ptr<word>)
     # load the preimage length and leave its elements on the advice stack
     adv.push_mapvaln adv_push
@@ -797,6 +810,10 @@ end
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ROOT]
 #! Outputs: [num_words]
+#!
+#! Panics if:
+#! - the slot is missing or its type is not a valid array type.
+#! - the advice preimage has the wrong length or does not match ROOT.
 #!
 #! Locals:
 #! - 0: slot pointer
@@ -1251,93 +1268,85 @@ end
 #! - any slot has a type that is not a supported storage slot type.
 #! - any slot's reserved element is not zero.
 #! - an array length is invalid or the storage word limit is exceeded.
-#!
-#! Locals:
-#! - 0: total storage words
-@locals(1)
 pub proc validate_storage()
-    # reset the word count before validating the slots
-    push.0 loc_store.0
-    # => []
-
-    exec.memory::get_native_num_storage_slots
-    # => [num_slots]
+    # every slot contributes at least one word; arrays add their remaining words below
+    exec.memory::get_native_num_storage_slots dup
+    # => [num_slots, total_words]
 
     # iterate over all slots from the last one down to slot 0, validating each slot's type and
     # reserved element and comparing each slot's ID against the previous slot's ID
     dup neq.0
-    # => [should_loop, num_slots]
+    # => [should_loop, num_slots, total_words]
 
     while.true
         # first iteration: remaining = num_slots, slot index = remaining - 1
-        # => [remaining]
+        # => [remaining, total_words]
 
         sub.1
-        # => [curr_slot_idx]
+        # => [curr_slot_idx, total_words]
 
         dup exec.get_native_storage_slot_type
-        # => [slot_type, curr_slot_idx]
+        # => [slot_type, curr_slot_idx, total_words]
 
         # values and map roots count as one word; arrays count as their full length
         dup eq.STORAGE_SLOT_TYPE_VALUE dup.1 eq.STORAGE_SLOT_TYPE_MAP or
-        # => [is_value_or_map, slot_type, curr_slot_idx]
+        # => [is_value_or_map, slot_type, curr_slot_idx, total_words]
 
         if.true
-            drop push.1
-            # => [num_words = 1, curr_slot_idx]
+            drop
+            # => [curr_slot_idx, total_words]
         else
             dup u32split swap drop eq.STORAGE_SLOT_TYPE_ARRAY
             assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
-            # => [slot_type, curr_slot_idx]
+            # => [slot_type, curr_slot_idx, total_words]
 
             exec.array_length_from_type
-            # => [num_words, curr_slot_idx]
+            # => [num_words, curr_slot_idx, total_words]
+
+            sub.1 movup.2 add swap
+            # => [curr_slot_idx, total_words']
         end
-        # => [num_words, curr_slot_idx]
-
-        # enforce the combined word limit, excluding entries inside maps
-        loc_load.0 add
-        # => [total_words, curr_slot_idx]
-
-        dup u32lte.MAX_ACCOUNT_STORAGE_WORDS assert.err=ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE
-        loc_store.0
-        # => [curr_slot_idx]
+        # => [curr_slot_idx, total_words]
 
         # assert the reserved element of the slot record is zero
         dup exec.get_native_slot_reserved eq.0
         assert.err=ERR_ACCOUNT_STORAGE_SLOT_RESERVED_ELEMENT_MUST_BE_ZERO
-        # => [curr_slot_idx]
+        # => [curr_slot_idx, total_words]
 
         # compare the slot's ID against the previous slot's ID, unless this is slot 0
         dup neq.0
-        # => [has_prev_slot, curr_slot_idx]
+        # => [has_prev_slot, curr_slot_idx, total_words]
 
         if.true
             dup exec.get_native_slot_id
-            # => [curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+            # => [curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx, total_words]
 
             # we are guaranteed to not underflow because curr_slot_idx is at least 1 in this branch
             dup.2 sub.1
-            # => [prev_slot_idx, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+            # => [prev_slot_idx, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx, total_words]
 
             exec.get_native_slot_id
-            # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+            # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx, total_words]
 
             # this effectively checks that slots are sorted _and_ unique, since duplicate slot IDs
             # are not less than each other
             exec.is_slot_id_lt
-            # => [is_prev_lt_curr, curr_slot_idx]
+            # => [is_prev_lt_curr, curr_slot_idx, total_words]
 
             assert.err=ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE
-            # => [curr_slot_idx]
+            # => [curr_slot_idx, total_words]
         end
 
         dup neq.0
-        # => [should_continue, curr_slot_idx]
+        # => [should_continue, curr_slot_idx, total_words]
     end
-    # => [curr_slot_idx]
+    # => [curr_slot_idx, total_words]
 
     drop
+    # => [total_words]
+
+    # at most MAX_NUM_STORAGE_SLOTS arrays of MAX_STORAGE_ARRAY_WORDS cannot overflow u32
+    u32lte.MAX_ACCOUNT_STORAGE_WORDS assert.err=ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE
     # => []
 end
 
