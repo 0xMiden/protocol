@@ -47,7 +47,7 @@ const MOCK_UTIL_PACKAGE_CODE: &str = "
         movdn.8
         # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-        exec.output_note::add_asset
+        exec.output_note::add_asset dropw dropw
         # => []
     end
 

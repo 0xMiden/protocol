@@ -1999,6 +1999,7 @@ pub proc main
     push.{asset_id}
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(15)]
     call.wallet::move_asset_to_note
+    dropw dropw
     # => [pad(16)]
 
     exec.::miden::core::sys::truncate_stack

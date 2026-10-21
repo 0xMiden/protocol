@@ -284,7 +284,7 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
 
             push.{asset_value}
             push.{asset_id}
-            exec.output_note::add_asset
+            exec.output_note::add_asset dropw dropw
         end
         "#,
         recipient = recipient,

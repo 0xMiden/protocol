@@ -396,7 +396,7 @@ pub proc mint_and_send(
     # Add the asset to the note.
     # ---------------------------------------------------------------------------------------------
 
-    exec.output_note::add_asset
+    exec.output_note::add_asset dropw dropw
     # => [note_idx]
 end
 

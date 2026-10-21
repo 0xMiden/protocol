@@ -157,7 +157,7 @@ pub proc unlock_and_send(destination_id: AccountId, faucet_id: AccountId)
     padw loc_loadw_le.UNLOCK_ASSET_ID_LOC
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    exec.output_note::add_asset
+    exec.output_note::add_asset dropw dropw
     # => []
 end
 

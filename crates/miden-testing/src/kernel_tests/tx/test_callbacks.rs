@@ -540,7 +540,7 @@ async fn test_blocked_account_cannot_add_asset_to_note(
 
             push.{asset_value}
             push.{asset_id}
-            exec.output_note::add_asset
+            exec.output_note::add_asset dropw dropw
         end
         "#,
         recipient = recipient,

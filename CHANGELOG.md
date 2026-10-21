@@ -15,10 +15,11 @@
 
 ### Changes
 
-- [BREAKING] Both PSWAP payback modes now use fixed P2ID recipients, with fill attachments distinguishing successive outputs ([#4074](https://github.com/0xMiden/protocol/pull/4074)).
+- [BREAKING] `output_note::add_asset` and `wallets::basic::move_asset_to_note` now return the transferred asset, excluding any existing output balance or callback additions ([#3939](https://github.com/0xMiden/protocol/issues/3939)).
+- [BREAKING] Both PSWAP payback modes now use fixed recipient hashes, with fill attachments distinguishing successive outputs ([#4074](https://github.com/0xMiden/protocol/pull/4074)).
 - [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
-- [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
+- [BREAKING] Changed PSWAP private payback notes to use a fixed recipient hash with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
 - [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries

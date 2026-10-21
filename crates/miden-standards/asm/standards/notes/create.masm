@@ -116,7 +116,7 @@ pub proc main(note_args: NoteArgs)
             dup.1 dup.1 exec.asset::load
             # => [ASSET_ID, ASSET_VALUE, note_idx, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
-            exec.output_note::add_asset
+            exec.output_note::add_asset dropw dropw
             # => [cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
             add.ASSET_SIZE dup dup.3 neq
@@ -307,6 +307,6 @@ proc create_fee_output() -> u16
     # => [SERIAL_NUM]
 
     exec.tx_fee::create_output_note
-    dup push.FEE_ASSET_PTR exec.asset::load exec.output_note::add_asset
+    dup push.FEE_ASSET_PTR exec.asset::load exec.output_note::add_asset dropw dropw
     # => [note_idx]
 end
