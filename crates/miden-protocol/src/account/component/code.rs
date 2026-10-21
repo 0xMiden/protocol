@@ -1,4 +1,4 @@
-use miden_mast_package::{Package, ProcedureExport};
+use miden_mast_package::{Package, ProcedureExport, SectionId};
 use miden_processor::mast::{MastForest, MastNodeExt};
 
 use crate::account::AccountProcedureRoot;
@@ -100,8 +100,13 @@ impl AsRef<Package> for AccountComponentCode {
 // ================================================================================================
 
 impl From<Package> for AccountComponentCode {
-    fn from(value: Package) -> Self {
-        Self(value)
+    /// Wraps `package` as component code, removing its
+    /// [`SectionId::ACCOUNT_COMPONENT_METADATA`] section if present.
+    fn from(mut package: Package) -> Self {
+        package
+            .sections
+            .retain(|section| section.id != SectionId::ACCOUNT_COMPONENT_METADATA);
+        Self(package)
     }
 }
 

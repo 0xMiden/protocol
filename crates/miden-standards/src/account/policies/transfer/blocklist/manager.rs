@@ -1,11 +1,11 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
-account_component_code!(
-    BLOCKLIST_MANAGER_CODE,
+account_component_package!(
+    BLOCKLIST_MANAGER_PACKAGE,
     "miden-standards-faucets-policies-transfer-blocklist-manager.masp"
 );
 
@@ -62,7 +62,7 @@ impl BlocklistManager {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BLOCKLIST_MANAGER_CODE
+        &BLOCKLIST_MANAGER_PACKAGE.code
     }
 
     /// Returns the procedure root of the `block_account` procedure exposed by this component.
@@ -81,10 +81,7 @@ impl BlocklistManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description(
-            "Authority-gated blocklist admin: wraps `blocklist::block_account` / \
-             `unblock_account` with the account-wide Authority component.",
-        )
+        BLOCKLIST_MANAGER_PACKAGE.metadata.clone()
     }
 }
 

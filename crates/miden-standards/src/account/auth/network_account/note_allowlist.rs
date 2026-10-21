@@ -1,6 +1,5 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
     AccountStorage,
     StorageMap,
@@ -75,18 +74,6 @@ impl NetworkAccountNoteAllowlist {
     /// Returns the allowed input-note script roots in this allowlist.
     pub fn into_allowed_script_roots(self) -> BTreeSet<NoteScriptRoot> {
         self.allowed_script_roots
-    }
-
-    /// Returns the schema entry for the allowlist slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::map(
-                "Allowed input note script roots",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
     }
 
     /// Consumes this allowlist and returns the [`StorageSlot`] suitable for inclusion in an
