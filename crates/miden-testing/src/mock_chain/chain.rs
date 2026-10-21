@@ -3,22 +3,17 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
-use miden_processor::serde::DeserializationError;
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
-    BlockAccountUpdate,
-    BlockBody,
     BlockHeader,
     BlockInputs,
     BlockNumber,
     BlockSignatures,
     Blockchain,
-    OutputNoteBatch,
     ProposedBlock,
     ProvenBlock,
     ValidatorConfig,
@@ -30,20 +25,19 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
-    OrderedTransactionHeaders,
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
     TransactionInputs,
 };
-use miden_protocol::vm::ExecutionProof;
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
-use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, MockTransactionBuilder};
+
+mod snapshot;
 
 // MOCK CHAIN
 // ================================================================================================
@@ -252,7 +246,6 @@ impl MockChain {
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_keys: Vec<SigningKey>,
         protocol_config: ProtocolConfig,
-        genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
             chain: Blockchain::default(),
@@ -273,20 +266,6 @@ impl MockChain {
         chain
             .apply_block(genesis_block)
             .context("failed to build account from builder")?;
-
-        // Update committed_notes with full note details for genesis notes.
-        // This is needed because apply_block only stores headers for private notes,
-        // but tests need full note details to create input notes.
-        for note in genesis_notes {
-            if let Some(MockChainNote::Private(_, _, _, inclusion_proof)) =
-                chain.committed_notes.get(&note.id())
-            {
-                chain.committed_notes.insert(
-                    note.id(),
-                    MockChainNote::Public(note.clone(), inclusion_proof.clone()),
-                );
-            }
-        }
 
         debug_assert_eq!(chain.blocks.len(), 1);
 
@@ -776,13 +755,13 @@ impl MockChain {
 
         let input_notes = InputNotes::new(input_notes)?;
 
-        Ok(TransactionInputs::new(
-            account.into(),
-            ref_block.clone(),
-            self.protocol_config.clone(),
-            partial_blockchain,
-            input_notes,
-        )?)
+        Ok(TransactionInputs::builder()
+            .account(account.into())
+            .block_header(ref_block.clone())
+            .protocol_config(self.protocol_config.clone())
+            .blockchain(partial_blockchain)
+            .input_notes(input_notes)
+            .build()?)
     }
 
     /// Returns a valid [`TransactionInputs`] for the specified entities.
@@ -1051,18 +1030,13 @@ impl MockChain {
                 OutputNote::Public(public_note) => {
                     self.committed_notes.insert(
                         public_note.id(),
-                        MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
+                        MockChainNote::Public(public_note.clone(), note_inclusion_proof),
                     );
                 },
                 OutputNote::Private(private_note) => {
                     self.committed_notes.insert(
                         private_note.id(),
-                        MockChainNote::Private(
-                            private_note.id(),
-                            *private_note.metadata(),
-                            private_note.attachments().clone(),
-                            note_inclusion_proof,
-                        ),
+                        MockChainNote::Private(private_note.clone(), note_inclusion_proof),
                     );
                 },
             }
@@ -1162,94 +1136,6 @@ impl Default for MockChain {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-fn read_blocks_with_unchecked_genesis<R: ByteReader>(
-    source: &mut R,
-) -> Result<Vec<ProvenBlock>, DeserializationError> {
-    let block_count = source.read_usize()?;
-    if block_count == 0 {
-        return Ok(Vec::new());
-    }
-
-    let mut blocks = vec![read_genesis_block_unchecked(source)?];
-    let remaining_blocks = source
-        .read_many_iter(block_count - 1)?
-        .collect::<Result<Vec<ProvenBlock>, _>>()?;
-    blocks.extend(remaining_blocks);
-
-    Ok(blocks)
-}
-
-fn read_genesis_block_unchecked<R: ByteReader>(
-    source: &mut R,
-) -> Result<ProvenBlock, DeserializationError> {
-    let header = BlockHeader::read_from(source)?;
-    if header.block_num() != BlockNumber::GENESIS {
-        return Err(DeserializationError::InvalidValue(format!(
-            "first mock chain block must be genesis, got block {}",
-            header.block_num()
-        )));
-    }
-
-    let body = BlockBody::new_unchecked(
-        Vec::<BlockAccountUpdate>::read_from(source)?,
-        Vec::<OutputNoteBatch>::read_from(source)?,
-        Vec::<Nullifier>::read_from(source)?,
-        OrderedTransactionHeaders::read_from(source)?,
-    );
-    let signatures = BlockSignatures::read_from(source)?;
-    let proof = ExecutionProof::read_from(source)?;
-
-    Ok(ProvenBlock::new_unchecked(header, body, signatures, proof))
-}
-
-impl Serializable for MockChain {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.chain.write_into(target);
-        self.blocks.write_into(target);
-        self.nullifier_tree.write_into(target);
-        self.account_tree.write_into(target);
-        self.pending_transactions.write_into(target);
-        self.committed_accounts.write_into(target);
-        self.committed_notes.write_into(target);
-        self.account_authenticators.write_into(target);
-        self.validator_secret_keys.write_into(target);
-        self.protocol_config.write_into(target);
-    }
-}
-
-impl Deserializable for MockChain {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let chain = Blockchain::read_from(source)?;
-        let blocks = read_blocks_with_unchecked_genesis(source)?;
-        let nullifier_tree = NullifierTree::read_from(source)?;
-        let account_tree = AccountTree::read_from(source)?;
-        let pending_transactions = Vec::<ProvenTransaction>::read_from(source)?;
-        let committed_accounts = BTreeMap::<AccountId, Account>::read_from(source)?;
-        let committed_notes = BTreeMap::<NoteId, MockChainNote>::read_from(source)?;
-        let account_authenticators =
-            BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
-        let secret_keys = Vec::<SigningKey>::read_from(source)?;
-        let protocol_config = ProtocolConfig::read_from(source)?;
-
-        Ok(Self {
-            chain,
-            blocks,
-            nullifier_tree,
-            account_tree,
-            pending_transactions,
-            pending_batches: Vec::new(),
-            committed_notes,
-            committed_accounts,
-            account_authenticators,
-            validator_secret_keys: secret_keys,
-            protocol_config,
-        })
-    }
-}
-
 // ACCOUNT STATE
 // ================================================================================================
 
@@ -1291,42 +1177,15 @@ impl PartialEq for AccountAuthenticator {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountAuthenticator {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.authenticator
-            .as_ref()
-            .map(|auth| {
-                auth.keys()
-                    .values()
-                    .map(|(secret_key, public_key)| (secret_key, public_key.as_ref().clone()))
-                    .collect::<Vec<_>>()
-            })
-            .write_into(target);
-    }
-}
-
-impl Deserializable for AccountAuthenticator {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let authenticator = Option::<Vec<(AuthSecretKey, PublicKey)>>::read_from(source)?;
-
-        let authenticator = authenticator.map(|keys| BasicAuthenticator::from_key_pairs(&keys));
-
-        Ok(Self { authenticator })
-    }
-}
-
 // MOCK TRANSACTION INPUT
 // ================================================================================================
 
 /// Account input accepted by [`MockChain::build_transaction`] and
 /// [`MockChain::get_foreign_account_inputs`].
 ///
-/// [`MockTransactionInput::AccountId`] resolves a committed public account from the chain, while
-/// [`MockTransactionInput::Account`] supplies caller-owned account state directly, including the
-/// state of a private account.
+/// [`MockTransactionInput::AccountId`] resolves a committed public account from the chain,
+/// while [`MockTransactionInput::Account`] supplies caller-owned account state directly,
+/// including the state of a private account.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MockTransactionInput {
@@ -1403,18 +1262,16 @@ mod tests {
     use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::errors::ValidatorConfigError;
-    use miden_protocol::note::{NoteType, PartialNote};
+    use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_protocol::transaction::RawOutputNote;
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_standards::account::wallets::BasicWallet;
     use miden_standards::note::P2idNote;
-    use miden_standards::tx_script::SendNotesTransactionScript;
-    use miden_tx::utils::serde::SliceReader;
 
     use super::*;
     use crate::Auth;
@@ -1446,23 +1303,6 @@ mod tests {
 
         assert!(update.details().is_private());
         assert!(chain.committed_account(account.id()).is_err());
-
-        Ok(())
-    }
-
-    #[test]
-    fn unchecked_genesis_deserialization_rejects_non_genesis_block() -> anyhow::Result<()> {
-        let mut chain = MockChain::new();
-        let block = chain.prove_next_block()?;
-        let bytes = vec![block].to_bytes();
-
-        let error = read_blocks_with_unchecked_genesis(&mut SliceReader::new(&bytes)).unwrap_err();
-
-        assert!(matches!(
-            error,
-            DeserializationError::InvalidValue(message)
-                if message == "first mock chain block must be genesis, got block 1"
-        ));
 
         Ok(())
     }
@@ -1656,33 +1496,14 @@ mod tests {
         let asset: Asset =
             FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?, 100)?.into();
         let mut builder = MockChain::builder();
-        let sender = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset])?;
         let target = builder.add_existing_wallet(Auth::IncrNonce)?;
-        let mut chain = builder.build()?;
-
-        // Genesis notes keep their details in the chain, so the private note is created by a
-        // transaction instead.
-        let note: Note = P2idNote::builder()
-            .sender(sender.id())
-            .target(target.id())
-            .assets([asset])
-            .note_type(NoteType::Private)
-            .serial_number(Word::from([1u32; 4]))
-            .build()?
-            .into();
-        let send_script = SendNotesTransactionScript::new(
-            &sender.code_interface(),
-            &[PartialNote::from(note.clone())],
+        let note = builder.add_p2id_note(
+            ACCOUNT_ID_SENDER.try_into()?,
+            target.id(),
+            &[asset],
+            NoteType::Private,
         )?;
-        let send_tx = chain
-            .build_transaction(sender.id())
-            .send_notes_script(&send_script)
-            .expected_output_note(RawOutputNote::Full(note.clone()))
-            .build()?
-            .execute()
-            .await?;
-        chain.add_pending_executed_transaction(&send_tx)?;
-        chain.prove_next_block()?;
+        let chain = builder.build()?;
 
         let consume_tx = chain
             .build_transaction(target.id())
@@ -1697,64 +1518,36 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn mock_chain_serialization() {
+    #[test]
+    fn mock_chain_serialization() -> anyhow::Result<()> {
         let mut builder = MockChain::builder();
+        let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+        builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+        let private_note: Note = P2idNote::builder()
+            .sender(account.id())
+            .target(account.id())
+            .assets([FungibleAsset::mock(1)])
+            .note_type(NoteType::Private)
+            .serial_number(Word::from([1u32; 4]))
+            .build()?
+            .into();
+        builder.add_output_note(RawOutputNote::Partial(private_note.into()));
+        let chain = builder.build()?;
 
-        let mut notes = vec![];
-        for i in 0..10 {
-            let account = builder
-                .add_account_from_builder(
-                    Auth::BasicAuth {
-                        auth_scheme: AuthScheme::Falcon512Poseidon2,
-                    },
-                    AccountBuilder::new([i; 32]).with_component(BasicWallet),
-                    AccountState::New,
-                )
-                .unwrap();
-            let note = builder
-                .add_p2id_note(
-                    ACCOUNT_ID_SENDER.try_into().unwrap(),
-                    account.id(),
-                    &[Asset::from(
-                        FungibleAsset::new(
-                            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into().unwrap(),
-                            1000u64,
-                        )
-                        .unwrap(),
-                    )],
-                    NoteType::Private,
-                )
-                .unwrap();
-            notes.push((account, note));
-        }
+        let restored = MockChain::try_from_bytes(&chain.to_bytes())?;
 
-        let mut chain = builder.build().unwrap();
-        for (account, note) in notes {
-            let tx = chain
-                .build_transaction(account)
-                .unauthenticated_input_note(note)
-                .build()
-                .unwrap()
-                .execute()
-                .await
-                .unwrap();
-            chain.add_pending_executed_transaction(&tx).unwrap();
-            chain.prove_next_block().unwrap();
-        }
-
-        let bytes = chain.to_bytes();
-
-        let deserialized = MockChain::read_from_bytes(&bytes).unwrap();
-
-        assert_eq!(chain.chain.as_mmr().peaks(), deserialized.chain.as_mmr().peaks());
-        assert_eq!(chain.blocks, deserialized.blocks);
-        assert_eq!(chain.nullifier_tree, deserialized.nullifier_tree);
-        assert_eq!(chain.account_tree, deserialized.account_tree);
-        assert_eq!(chain.pending_transactions, deserialized.pending_transactions);
-        assert_eq!(chain.committed_accounts, deserialized.committed_accounts);
-        assert_eq!(chain.committed_notes, deserialized.committed_notes);
-        assert_eq!(chain.account_authenticators, deserialized.account_authenticators);
+        assert_eq!(chain.chain.as_mmr().peaks(), restored.chain.as_mmr().peaks());
+        assert_eq!(chain.blocks, restored.blocks);
+        assert_eq!(chain.nullifier_tree, restored.nullifier_tree);
+        assert_eq!(chain.account_tree, restored.account_tree);
+        assert_eq!(chain.pending_transactions, restored.pending_transactions);
+        assert_eq!(chain.pending_batches, restored.pending_batches);
+        assert_eq!(chain.committed_accounts, restored.committed_accounts);
+        assert_eq!(chain.committed_notes, restored.committed_notes);
+        assert_eq!(chain.account_authenticators, restored.account_authenticators);
+        assert_eq!(chain.validator_secret_keys, restored.validator_secret_keys);
+        assert_eq!(chain.protocol_config, restored.protocol_config);
+        Ok(())
     }
 
     #[test]

@@ -108,3 +108,7 @@ pub const TX_GET_TX_SCRIPT_ROOT_OFFSET = 61
 # fee
 pub const TX_COMPUTE_FEE_OFFSET = 62
 pub const TX_GET_FEE_ASSET_ID_OFFSET = 63 # accessor
+
+# transaction logs
+pub const TX_ADD_LOG_OFFSET = 64
+pub const TX_GET_LOGS_COMMITMENT_OFFSET = 65

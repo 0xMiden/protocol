@@ -77,7 +77,7 @@ pub const DOM_UNPAUSER_ROLE: &str = "DOM_UNPAUSER";
 /// administrator — the owner-gated `BlocklistOwnerControlled` variant is the wrong identity and is
 /// not installed. Its admin is left unset → resolves to the built-in `ADMIN`, so Miden rotates
 /// or revokes the external entity through the allowlisted standard role-action note —
-/// no new rotation machinery. `BLK_MANAGER` is seeded role id 4.
+/// no new rotation machinery.
 pub const BLK_MANAGER_ROLE: &str = "BLK_MANAGER";
 
 /// Path of the attestation mint policy's `check_policy` procedure as the faucet component EXPORTS

@@ -1,14 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
@@ -25,13 +18,13 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::account_component_code;
+use crate::account::{account_component_package, metadata_without_slots};
 use crate::procedure_root;
 
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(AUTHORITY_CODE, "miden-standards-access-authority.masp");
+account_component_package!(AUTHORITY_PACKAGE, "miden-standards-access-authority.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -51,6 +44,13 @@ procedure_root!(
     AUTHORITY_UNFREEZE,
     AUTHORITY_LIBRARY_PATH,
     Authority::UNFREEZE_PROC_NAME,
+    Authority::code()
+);
+
+procedure_root!(
+    AUTHORITY_SET_PROCEDURE_ROLE,
+    AUTHORITY_LIBRARY_PATH,
+    Authority::SET_PROCEDURE_ROLE_PROC_NAME,
     Authority::code()
 );
 
@@ -171,11 +171,8 @@ pub enum Authority {
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
     /// installed on the account. the MASM helper calls into `rbac::assert_sender_has_role` and will
     /// fail to link otherwise.
-    ///
-    /// No procedure writes this map: it is populated at deployment, and the raw
-    /// [`AccountComponent::new`] route checks only the slot count. The MASM helper therefore holds
-    /// each mapped role to the canonical [`RoleSymbol`] encoding when it reads one, so a value this
-    /// map accepts on-chain is exactly one [`Self::try_from_storage`] can decode off-chain.
+    /// The map is seeded at deployment and can be changed later by `set_procedure_role`, which
+    /// also requires the sender to administer the procedure's current role.
     RbacControlled {
         procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     } = RBAC_CONTROLLED,
@@ -189,10 +186,12 @@ impl Authority {
     const FREEZE_PROC_NAME: &'static str = "freeze";
     /// Name of the owner-gated procedure that unfreezes the authority-gated surface.
     const UNFREEZE_PROC_NAME: &'static str = "unfreeze";
+    /// Name of the procedure that assigns a role to an authority-gated procedure.
+    const SET_PROCEDURE_ROLE_PROC_NAME: &'static str = "set_procedure_role";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &AUTHORITY_CODE
+        &AUTHORITY_PACKAGE.code
     }
 
     // PUBLIC ACCESSORS
@@ -216,6 +215,11 @@ impl Authority {
     /// procedures it bypasses the frozen flag so it can always be toggled.
     pub fn unfreeze_root() -> AccountProcedureRoot {
         *AUTHORITY_UNFREEZE
+    }
+
+    /// Returns the procedure root of `set_procedure_role`.
+    pub fn set_procedure_role_root() -> AccountProcedureRoot {
+        *AUTHORITY_SET_PROCEDURE_ROLE
     }
 
     /// Returns the [`StorageSlotName`] holding the authority configuration.
@@ -259,39 +263,16 @@ impl Authority {
     }
 
     /// Returns the [`AccountComponentMetadata`] for this configuration.
+    ///
+    /// The manifest declares the full storage schema, but only [`Authority::RbacControlled`]
+    /// installs the `procedure_roles` slot; the other authorities drop it from the schema.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
-        let mut slots = vec![(
-            AUTHORITY_SLOT_NAME.clone(),
-            StorageSlotSchema::value(
-                "Authority configuration",
-                [
-                    FeltSchema::u8("authority"),
-                    FeltSchema::u8("is_frozen"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )];
-
+        let metadata = AUTHORITY_PACKAGE.metadata.clone();
         if matches!(self, Authority::RbacControlled { .. }) {
-            slots.push((
-                AUTHORITY_PROCEDURE_ROLES_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Per-procedure role assignment (procedure root -> role symbol)",
-                    SchemaType::native_word(),
-                    SchemaType::role_symbol(),
-                ),
-            ));
+            return metadata;
         }
 
-        let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Account-wide authority shared by procedures that gate state-mutating \
-                 operations behind auth-only, owner-based, or RBAC role-based checks",
-            )
-            .with_storage_schema(storage_schema)
+        metadata_without_slots(metadata, &[Self::procedure_roles_slot()])
     }
 
     // PRIVATE HELPERS

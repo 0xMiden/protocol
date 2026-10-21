@@ -35,6 +35,7 @@ impl BuildUnchecked for TransactionHeader {
             self.final_state_commitment,
             input_notes,
             output_notes,
+            self.logs_commitment,
         )?;
         if header.id() != transmitted {
             return Err(TransactionHeaderBuildError::IdMismatch {
@@ -75,20 +76,22 @@ impl Verify for TxAccountUpdate {
 pub use proto::transaction::DecodedProvenTransaction as ProvenTransaction;
 
 /// Checks transaction construction invariants, but not its proof or input-note authentication.
-impl crate::BuildUnchecked for ProvenTransaction {
+impl BuildUnchecked for ProvenTransaction {
     type Output = miden_protocol::transaction::ProvenTransaction;
     type Error = VerificationError;
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         let inputs = self.input_notes.build_unchecked()?;
         let outputs = self.output_notes.verify()?;
+        let account_update = self.account_update.verify()?;
         Ok(Self::Output::new(
-            self.account_update.verify()?,
+            account_update,
             inputs,
             outputs,
             unwrap_infallible(self.reference_block_num.verify()),
             self.reference_block_commitment,
             unwrap_infallible(self.expiration_block_num.verify()),
             self.proof,
+            self.log_details.verify()?,
         )?)
     }
 }

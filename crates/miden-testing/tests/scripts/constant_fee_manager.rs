@@ -250,7 +250,7 @@ async fn set_note_fee_with_malformed_fee_asset_value_is_rejected(
 
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(set_note.clone())
         .build()?
         .execute()
         .await;
@@ -280,7 +280,7 @@ async fn set_note_fee_with_amount_over_max_is_rejected() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(set_note.clone())
         .build()?
         .execute()
         .await;

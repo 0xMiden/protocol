@@ -2,9 +2,10 @@ use std::env;
 use std::path::PathBuf;
 
 use prost::Message;
+use quote::quote;
 
 /// Schemas that are compiled but left out of the exported descriptor set.
-const UNEXPORTED_FILES: [&str; 2] = ["account_file.proto", "note_file.proto"];
+const UNEXPORTED_FILES: [&str; 3] = ["account_file.proto", "note_file.proto", "mock_chain.proto"];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=proto");
@@ -24,9 +25,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "partial_blockchain.proto",
         "transaction_inputs.proto",
         "transaction_effects.proto",
+        "transaction_witness.proto",
         "batch.proto",
         "account_file.proto",
         "note_file.proto",
+        "mock_chain.proto",
     ];
 
     let mut compiler = protox::Compiler::new([&proto_dir])?;
@@ -48,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for message in ["primitives.Felt", "primitives.Word", "primitives.ExecutionProof"] {
         prost.message_attribute(
             message,
-            quote::quote!(#[derive(::miden_protobuf::ProtoDecodeValue)]).to_string(),
+            quote!(#[derive(::miden_protobuf::ProtoDecodeValue)]).to_string(),
         );
     }
     miden_protobuf::build::configure_proto_decode_fields(
@@ -63,6 +66,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.ProvenBatch",
             ".transaction.ProposedBatch",
             ".transaction.ProvenTransaction",
+            ".transaction.LogTopic",
+            ".transaction.TransactionLog",
+            ".transaction.TransactionLogs",
+            ".transaction.TransactionLogDetails",
             ".blockchain.SignedBlock",
             ".blockchain.BlockBody",
             ".blockchain.OutputNoteBatch",
@@ -106,6 +113,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.TransactionHeader",
             ".transaction.TransactionEffects",
             ".transaction.TransactionEffectsV1",
+            ".transaction.TransactionWitness",
+            ".transaction.TransactionWitnessV1",
             ".transaction.PrivateOutputNote",
             ".transaction.InputNoteCommitment",
             ".note.NoteHeader",
@@ -120,7 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.AccountHeader",
             ".account.PrivateAccountUpdate",
             ".note.NoteInclusionProof",
-            ".transaction.ForeignAccountSlotName",
+            ".transaction.AccountInputs",
+            ".transaction.AuthSignature",
+            ".transaction.BoundSignature",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
@@ -171,37 +182,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".note_file.CommittedNote",
             ".note_file.NoteFile",
             ".note_file.NoteFileV1",
+            ".mock_chain.MockChain",
+            ".mock_chain.MockChainV1",
+            ".mock_chain.ProvenBlock",
+            ".mock_chain.AccountCommitment",
+            ".mock_chain.SpentNullifier",
+            ".mock_chain.MockChainNote",
+            ".mock_chain.AccountAuthenticator",
+            ".mock_chain.Authenticator",
         ],
     )?;
     prost.field_attribute(
         ".primitives.MastForest.encoded",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::UntrustedMastForest)])
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::UntrustedMastForest)])
             .to_string(),
     );
     prost.field_attribute(
         ".primitives.PublicKey.key.ecdsa_k256_keccak",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey
         >)])
         .to_string(),
     );
     prost.field_attribute(
         ".primitives.Signature.signature.ecdsa_k256_keccak",
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.AuthSignature.signature.ecdsa_k256_keccak",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature
         >)])
         .to_string(),
     );
     prost.field_attribute(
-        ".account_file.AuthSecretKey.key.ecdsa_k256_keccak",
+        ".transaction.AuthSignature.signature.falcon512_poseidon2",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::dsa::falcon512_poseidon2::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".account_file.AuthSecretKey.key.ecdsa_k256_keccak",
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey
         >)])
         .to_string(),
     );
     prost.field_attribute(
         ".account_file.AuthSecretKey.key.falcon512_poseidon2",
-        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey
         >)])
         .to_string(),

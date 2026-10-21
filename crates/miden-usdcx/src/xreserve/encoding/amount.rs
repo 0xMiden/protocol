@@ -26,8 +26,10 @@ use super::error::EncodingError;
 /// zero-extends the carried `AssetAmount` back into its uint256 field when the faucet rebuilds the
 /// signed message, which is lossless only at scale zero — at any other scale the remainder the
 /// reduction dropped is unrecoverable and the rebuilt digest stops matching what Circle signed.
-/// `constant_parity.rs` pins the value so a change fails a test rather than shipping a preimage
-/// that can never verify. `DEV-5` stays OPEN.
+/// Two tests keep this value at zero: the `tv_amt_*` tests below check the `amt` golden vectors
+/// (every accepted amount must come out of this conversion unchanged), and
+/// `tests/mint_scale_conformance.rs` mints through the real note path and checks that the minted
+/// amount equals the amount on the wire. `DEV-5` stays OPEN.
 pub(super) const DEPOSIT_SCALE_EXP: u32 = 0;
 
 /// uint256 → AssetAmount at [`DEPOSIT_SCALE_EXP`]: `y = floor(x / 10^DEPOSIT_SCALE_EXP)`, rejecting
@@ -49,14 +51,18 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::vectors::load;
+    use crate::vectors::{load, selected};
 
     /// TV-AMT-1 (happy path, written first): in-bound amounts reduce to themselves.
+    ///
+    /// The cap vector belongs to `tv_amt_2_cap_boundary_accept`, so this filter selects exactly the
+    /// one accept row below the cap.
     #[test]
     fn tv_amt_1_in_bound() {
         let v = load();
-        for vec in v.families.amt.iter().filter(|v| v.kind == "accept" && v.id != "amt-cap-accept")
-        {
+        let in_bound =
+            v.families.amt.iter().filter(|v| v.kind == "accept" && v.id != "amt-cap-accept");
+        for vec in selected(in_bound, 1, "amt accept rows below the cap") {
             let y = uint256_to_asset_amount(vec.amount())
                 .unwrap_or_else(|e| panic!("vector {}: must accept, got {e}", vec.id));
             assert_eq!(y, vec.expected_amount(), "vector {}: reduced amount", vec.id);

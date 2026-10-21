@@ -2,7 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
-use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
@@ -81,6 +80,10 @@ where
     /// retried as a unit.
     ///
     /// Returns a list of successfully consumed notes and a list of failed notes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`InputNotes`] cannot be created from the provided notes vector.
     pub async fn check_notes_consumability(
         &self,
         target_account_id: AccountId,
@@ -97,7 +100,8 @@ where
             StandardNote::from_script_root(note.script().root()).is_none()
         });
 
-        let notes = InputNotes::from(notes);
+        let notes = InputNotes::from_unauthenticated_notes(notes)
+            .map_err(NoteCheckerError::TransactionInputs)?;
         let tx_inputs = self
             .0
             .prepare_tx_inputs(target_account_id, block_ref, notes, tx_args)
@@ -196,7 +200,13 @@ where
         // further reduced.
         loop {
             // Execute the candidate notes.
-            tx_inputs.set_input_notes(candidate_notes.clone());
+            //
+            // We can safely use unchecked builder for the candidate notes here since the provided
+            // notes were already validated previously in the `check_notes_consumability` via the
+            // `from_unauthenticated_notes` constructor.
+            tx_inputs.set_input_notes(InputNotes::new_unchecked(
+                candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
+            ));
             match self.try_execute_notes(&mut tx_inputs).await {
                 Ok(cycle_counts) => {
                     // A full set of successful notes has been found.
@@ -276,7 +286,12 @@ where
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 
-                tx_inputs.set_input_notes(candidate_notes.clone());
+                // We can safely use unchecked builder for the candidate notes here since the
+                // provided notes were already validated previously in the
+                // `check_notes_consumability` via the `from_unauthenticated_notes` constructor.
+                tx_inputs.set_input_notes(InputNotes::new_unchecked(
+                    candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
+                ));
                 match self.try_execute_notes(&mut tx_inputs).await {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or
@@ -392,25 +407,29 @@ where
             .await
             .map_err(map_execution_error);
 
+        let (tx_progress, lazy_loaded_data) = host.into_notes_checker_parts();
+
+        // Set the lazy loaded from the execution as input for reexecution. This avoids lazy-loading
+        // data that was already loaded from the data store in the next potential run.
+        // This data is valid regardless of whether execution was successful or not.
+        lazy_loaded_data.add_to(tx_inputs).map_err(|source| {
+            TransactionCheckerError::TransactionPreparation(
+                TransactionExecutorError::InvalidTransactionInputs(source),
+            )
+        })?;
+
         match result {
-            Ok(execution_output) => {
-                let cycle_counts = host
-                    .tx_progress()
+            Ok(_execution_output) => {
+                let cycle_counts = tx_progress
                     .note_execution()
                     .iter()
                     .map(|(_, interval)| interval.len())
                     .collect();
 
-                // Set the advice inputs from the successful execution as advice inputs for
-                // reexecution. This avoids calls to the data store (to load data lazily) that have
-                // already been done as part of this execution.
-                let (_, advice_map, merkle_store) = execution_output.advice.into_parts();
-                let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
-                tx_inputs.set_advice_inputs(advice_inputs);
                 Ok(cycle_counts)
             },
             Err(error) => {
-                let notes = host.tx_progress().note_execution();
+                let notes = tx_progress.note_execution();
 
                 // Empty notes vector means that we didn't process the notes, so an error
                 // occurred.

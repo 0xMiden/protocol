@@ -46,7 +46,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::config::{RbacConfig, RbacConfigNote};
 use miden_standards::note::{P2idNote, P2idNoteStorage};
-use miden_testing::{MockChain, assert_transaction_executor_error};
+use miden_testing::{MockChain, MockTransactionNoteInput, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_usdcx::account::xreserve::{DOM_PAUSER_ROLE, DOM_UNPAUSER_ROLE, XReserveFaucetExtension};
 use miden_usdcx::note::xreserve_admin::XReserveSetAttesterNote;
@@ -256,18 +256,18 @@ fn committed(chain: &MockChain, id: AccountId) -> Result<Account> {
     Ok(chain.committed_account(id).context("fetching the committed account")?.clone())
 }
 
-/// Consumes a COMMITTED note (by id) with `account` as the executing/consuming account — the
+/// Consumes a COMMITTED note with `account` as the executing/consuming account — the
 /// faucet's seeded-admin-note, mint-note, and `receive_and_burn` consumes all ride this (the
 /// faucet is the native account, so no foreign attachment is needed; the burn flow fires no
 /// receive callback either).
 async fn consume_committed_note(
     chain: &MockChain,
     account: &Account,
-    note_id: NoteId,
+    note: impl Into<MockTransactionNoteInput>,
 ) -> std::result::Result<ExecutedTransaction, TransactionExecutorError> {
     chain
         .build_transaction(account.clone())
-        .authenticated_input_note(note_id)
+        .authenticated_input_note(note)
         .build()
         .expect("building the consume tx")
         .execute()
@@ -420,7 +420,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
                 .expect("building the seeded pause-revoked note"),
         ]
     })?;
-    let note_id = |i: usize| pf.seeded_notes[i].id();
+    let seeded_note = |i: usize| pf.seeded_notes[i].clone();
     let faucet_id = pf.faucet_id;
     let producer_id = pf.producer_id;
     // The arc's fund HOLDER (attested deposit recipient + burner) is the PRODUCER wallet: it is
@@ -474,7 +474,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // ── S3a — ADMIN: owner allowlists the attester; a stranger's attempt is rejected and leaves
     // the map unchanged.
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(0)).await;
+    let result = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(0)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
     assert_eq!(
         read_map_word(
@@ -485,7 +485,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         Word::from([0u32, 0, 0, 0]),
         "S3a: the rejected set_attester left the allowlist unchanged"
     );
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(1))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(1))
         .await
         .expect("S3a: the administrator's set_attester must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -501,9 +501,9 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
 
     // ── S3b — ADMIN: owner sets max_supply; a stranger's attempt is rejected.
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(2)).await;
+    let result = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(2)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(3))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(3))
         .await
         .expect("S3b: the administrator's set_max_supply must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -516,9 +516,9 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
 
     // ── S3c — ADMIN: owner sets the min-burn floor (the standard note targets the STOCK
     // `set_min_burn_amount`); a stranger's attempt is rejected.
-    let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(4)).await;
+    let result = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(4)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(5))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(5))
         .await
         .expect("S3c: the administrator's min-burn note must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -740,7 +740,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // ── S10 — PAUSE: DOM_PAUSER pauses; the halt is real on BOTH paths; the administrator has NO
     // path.
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(6))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(6))
         .await
         .expect("S10: the DOM_PAUSER pause must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -791,14 +791,14 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // S10c: the administrator has NO direct pause path. The stock manager IS installed, so the
     // rejection is the role assertion rather than a missing procedure: the procedure-role map
     // gates pause on the Domain pauser, which the administrator does not hold.
-    let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(7)).await;
+    let result = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(7)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
     // S10d: a second non-DOM_PAUSER pause attempt is rejected with the same exact role error.
-    let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(8)).await;
+    let result = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(8)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
 
     // ── S11 — UNPAUSE: DOM_UNPAUSER unpauses; BOTH paths resume.
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(9))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(9))
         .await
         .expect("S11: the DOM_UNPAUSER unpause must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -857,7 +857,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     // ── S12 — ROTATION: ADMIN grants a new pauser -> the new member can pause
     // (capability-proven against a REAL attested mint); revoke -> they cannot.
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(10))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(10))
         .await
         .expect("S12: the ADMIN grant must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -867,7 +867,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         Word::from([1u32, 0, 0, 0]),
         "S12: the new pauser's membership reads back"
     );
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(11))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(11))
         .await
         .expect("S12: the NEW pauser can pause");
     commit(&mut pf.mock_chain, &tx)?;
@@ -878,12 +878,12 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
     emit_note_with_attachments(&mut pf.mock_chain, producer_id, &note_m3).await?;
     let result = consume_committed_note(&pf.mock_chain, &faucet, note_m3.id()).await;
     assert_transaction_executor_error!(result, err_paused());
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(12))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(12))
         .await
         .expect("S12: DOM_UNPAUSER lifts the new pauser's pause");
     commit(&mut pf.mock_chain, &tx)?;
     let faucet = committed(&pf.mock_chain, faucet_id)?;
-    let tx = consume_committed_note(&pf.mock_chain, &faucet, note_id(13))
+    let tx = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(13))
         .await
         .expect("S12: the ADMIN revoke must succeed");
     commit(&mut pf.mock_chain, &tx)?;
@@ -893,7 +893,7 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
         Word::from([0u32, 0, 0, 0]),
         "S12: the revoked member's membership is cleared"
     );
-    let result = consume_committed_note(&pf.mock_chain, &faucet, note_id(14)).await;
+    let result = consume_committed_note(&pf.mock_chain, &faucet, seeded_note(14)).await;
     assert_transaction_executor_error!(result, err_sender_lacks_role());
     assert_eq!(
         read_is_paused(&faucet)?,

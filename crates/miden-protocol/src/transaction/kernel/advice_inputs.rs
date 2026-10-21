@@ -25,7 +25,7 @@ impl TransactionAdviceInputs {
     /// The created advice inputs will be populated with the data required for executing a
     /// transaction with the specified transaction inputs.
     pub fn new(tx_inputs: &TransactionInputs) -> Self {
-        let mut inputs = TransactionAdviceInputs(tx_inputs.advice_inputs().clone());
+        let mut inputs = TransactionAdviceInputs::default();
 
         inputs.build_stack(tx_inputs);
         inputs.add_protocol_config(tx_inputs.protocol_config());
@@ -66,6 +66,28 @@ impl TransactionAdviceInputs {
                 inputs.add_map_entry(storage_map.root(), map_entries);
             }
         }
+
+        inputs.add_foreign_accounts(tx_inputs.foreign_accounts().values());
+
+        // NOTE_SCRIPT_ROOT |-> [NOTE_SCRIPT_ELEMENTS]
+        inputs.extend_map(
+            tx_inputs
+                .note_scripts()
+                .iter()
+                .map(|(root, script)| (Word::from(*root), script.to_elements())),
+        );
+
+        // Recipient preimages, so that the host can build the full output notes.
+        for recipient in tx_inputs.tx_args().output_note_recipients() {
+            inputs.extend_map(recipient.to_advice_map_entries());
+        }
+
+        // SIGNATURE_KEY |-> [ENCODED_SIGNATURE]
+        inputs.extend_map(
+            tx_inputs.tx_args().signatures().iter().chain(tx_inputs.signatures()).map(
+                |signature| (signature.key().to_advice_map_key(), signature.to_encoded_signature()),
+            ),
+        );
 
         // The host reads the new code from this entry when the kernel initializes the upgrade.
         if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {
