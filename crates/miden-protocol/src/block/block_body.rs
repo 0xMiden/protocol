@@ -429,6 +429,29 @@ mod tests {
         Ok((vec![update], transactions))
     }
 
+    /// Returns a transaction header with no notes whose ID is determined by `seed`.
+    fn seeded_transaction_header(seed: u32) -> TransactionHeader {
+        transaction_header(
+            Word::from([seed, 0, 0, 0]),
+            Word::from([seed + 1, 0, 0, 0]),
+            InputNotes::default(),
+            vec![],
+        )
+        .unwrap()
+    }
+
+    /// Groups the seeded transaction headers into batches.
+    fn batches(seeds_by_batch: &[&[u32]]) -> Vec<OrderedTransactionHeaders> {
+        seeds_by_batch
+            .iter()
+            .map(|seeds| {
+                OrderedTransactionHeaders::new_unchecked(
+                    seeds.iter().copied().map(seeded_transaction_header).collect(),
+                )
+            })
+            .collect()
+    }
+
     #[rstest]
     #[case::new_account_matching_commitment(true, true)]
     #[case::existing_account_matching_commitment(false, true)]
@@ -665,29 +688,6 @@ mod tests {
         let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
 
         BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
-    }
-
-    /// Returns a transaction header with no notes whose ID is determined by `seed`.
-    fn seeded_transaction_header(seed: u32) -> TransactionHeader {
-        transaction_header(
-            Word::from([seed, 0, 0, 0]),
-            Word::from([seed + 1, 0, 0, 0]),
-            InputNotes::default(),
-            vec![],
-        )
-        .unwrap()
-    }
-
-    /// Groups the seeded transaction headers into batches.
-    fn batches(seeds_by_batch: &[&[u32]]) -> Vec<OrderedTransactionHeaders> {
-        seeds_by_batch
-            .iter()
-            .map(|seeds| {
-                OrderedTransactionHeaders::new_unchecked(
-                    seeds.iter().copied().map(seeded_transaction_header).collect(),
-                )
-            })
-            .collect()
     }
 
     #[test]

@@ -96,9 +96,6 @@ pub struct ProvenBlock {
     signatures: BlockSignatures,
 
     /// The execution proof of the block kernel over this block.
-    ///
-    /// The public inputs the proof attests to are derived from the block's own data, see
-    /// [`ProvenBlock::kernel_stack_inputs`].
     proof: ExecutionProof,
 }
 
