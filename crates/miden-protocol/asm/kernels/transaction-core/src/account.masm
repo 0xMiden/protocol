@@ -736,6 +736,8 @@ end
 #! Panics if the slot is missing or its type is not a valid array type.
 pub proc get_initial_array_info(slot_id: StorageSlotId) -> (word, u16)
     exec.memory::get_native_num_storage_slots
+    # => [num_storage_slots, slot_id_suffix, slot_id_prefix]
+
     exec.memory::get_native_account_initial_storage_slots_ptr
     # => [initial_storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 
@@ -823,6 +825,8 @@ end
 @locals(1032)
 pub proc set_array(slot_id: StorageSlotId, root: word) -> u16
     exec.memory::get_native_num_storage_slots
+    # => [num_storage_slots, slot_id_suffix, slot_id_prefix, ROOT]
+
     exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, ROOT]
 
