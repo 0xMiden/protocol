@@ -23,11 +23,11 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
+use crate::account::account_component_package;
 use crate::account::auth::{Approver, ApproverSet};
-use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
-account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
+account_component_package!(MULTISIG_SMART_PACKAGE, "miden-standards-auth-multisig-smart.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -161,7 +161,7 @@ impl AuthMultisigSmart {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MULTISIG_SMART_CODE
+        &MULTISIG_SMART_PACKAGE.code
     }
 
     /// Returns the procedure root of the `set_procedure_policy` account procedure.
@@ -197,7 +197,7 @@ impl AuthMultisigSmart {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        MULTISIG_SMART_PACKAGE.metadata.clone()
     }
 }
 

@@ -1,11 +1,11 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
-account_component_code!(
-    ALLOWLIST_MANAGER_CODE,
+account_component_package!(
+    ALLOWLIST_MANAGER_PACKAGE,
     "miden-standards-faucets-policies-transfer-allowlist-manager.masp"
 );
 
@@ -62,7 +62,7 @@ impl AllowlistManager {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &ALLOWLIST_MANAGER_CODE
+        &ALLOWLIST_MANAGER_PACKAGE.code
     }
 
     /// Returns the procedure root of the `allow_account` procedure exposed by this component.
@@ -81,7 +81,7 @@ impl AllowlistManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        ALLOWLIST_MANAGER_PACKAGE.metadata.clone()
     }
 }
 

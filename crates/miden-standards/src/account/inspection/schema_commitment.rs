@@ -24,13 +24,13 @@ use miden_protocol::account::{
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(
-    SCHEMA_COMMITMENT_CODE,
+account_component_package!(
+    SCHEMA_COMMITMENT_PACKAGE,
     "miden-standards-inspection-schema-commitment.masp"
 );
 
@@ -91,12 +91,12 @@ impl AccountSchemaCommitment {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &SCHEMA_COMMITMENT_CODE
+        &SCHEMA_COMMITMENT_PACKAGE.code
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        SCHEMA_COMMITMENT_PACKAGE.metadata.clone()
     }
 }
 

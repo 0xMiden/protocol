@@ -30,12 +30,12 @@ use super::{
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use crate::account::account_component_package;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::account::wallets::BasicWallet;
-use crate::account::{account_component_code, package_metadata};
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -104,8 +104,8 @@ impl TryFrom<u8> for AssetStatus {
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(
-    NON_FUNGIBLE_FAUCET_CODE,
+account_component_package!(
+    NON_FUNGIBLE_FAUCET_PACKAGE,
     "miden-standards-faucets-non-fungible-faucet.masp"
 );
 
@@ -288,7 +288,7 @@ impl NonFungibleFaucet {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &NON_FUNGIBLE_FAUCET_CODE
+        &NON_FUNGIBLE_FAUCET_PACKAGE.code
     }
 
     /// Returns the procedure root of the `mint_and_send` account procedure.
@@ -451,7 +451,7 @@ impl NonFungibleFaucet {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        NON_FUNGIBLE_FAUCET_PACKAGE.metadata.clone()
     }
 
     /// Returns the storage slots produced by this faucet (token symbol word + empty asset-status

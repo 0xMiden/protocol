@@ -18,13 +18,13 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::{account_component_code, metadata_without_slots, package_metadata};
+use crate::account::{account_component_package, metadata_without_slots};
 use crate::procedure_root;
 
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(AUTHORITY_CODE, "miden-standards-access-authority.masp");
+account_component_package!(AUTHORITY_PACKAGE, "miden-standards-access-authority.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -191,7 +191,7 @@ impl Authority {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &AUTHORITY_CODE
+        &AUTHORITY_PACKAGE.code
     }
 
     // PUBLIC ACCESSORS
@@ -267,7 +267,7 @@ impl Authority {
     /// The manifest declares the full storage schema, but only [`Authority::RbacControlled`]
     /// installs the `procedure_roles` slot; the other authorities drop it from the schema.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
-        let metadata = package_metadata(Self::code());
+        let metadata = AUTHORITY_PACKAGE.metadata.clone();
         if matches!(self, Authority::RbacControlled { .. }) {
             return metadata;
         }

@@ -16,9 +16,9 @@ use miden_protocol::account::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 
-account_component_code!(RBAC_CODE, "miden-standards-access-rbac.masp");
+account_component_package!(RBAC_PACKAGE, "miden-standards-access-rbac.masp");
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")
@@ -332,7 +332,7 @@ impl RoleBasedAccessControl {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &RBAC_CODE
+        &RBAC_PACKAGE.code
     }
 
     /// Returns the storage slot name for the per-role config map.
@@ -347,7 +347,7 @@ impl RoleBasedAccessControl {
 
     /// Returns the [`AccountComponentMetadata`] describing this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        RBAC_PACKAGE.metadata.clone()
     }
 }
 

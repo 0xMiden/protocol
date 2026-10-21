@@ -10,14 +10,14 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // MIN-BURN-AMOUNT BURN POLICY
 // ================================================================================================
 
-account_component_code!(
-    MIN_BURN_AMOUNT_BURN_POLICY_CODE,
+account_component_package!(
+    MIN_BURN_AMOUNT_BURN_POLICY_PACKAGE,
     "miden-standards-faucets-policies-burn-min-burn-amount.masp"
 );
 
@@ -90,7 +90,7 @@ impl MinBurnAmount {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MIN_BURN_AMOUNT_BURN_POLICY_CODE
+        &MIN_BURN_AMOUNT_BURN_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `check_policy` burn policy procedure.
@@ -131,7 +131,7 @@ impl MinBurnAmount {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        MIN_BURN_AMOUNT_BURN_POLICY_PACKAGE.metadata.clone()
     }
 }
 

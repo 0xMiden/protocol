@@ -8,7 +8,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 mod manager;
@@ -17,7 +17,7 @@ pub use manager::PausableManager;
 // IS_PAUSED STORAGE
 // ================================================================================================
 
-account_component_code!(PAUSABLE_CODE, "miden-standards-access-pausable.masp");
+account_component_package!(PAUSABLE_PACKAGE, "miden-standards-access-pausable.masp");
 
 static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::pausable::is_paused")
@@ -142,7 +142,7 @@ impl Pausable {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &PAUSABLE_CODE
+        &PAUSABLE_PACKAGE.code
     }
 
     /// Returns the procedure root of the `is_paused` call procedure exposed by this component.
@@ -152,7 +152,7 @@ impl Pausable {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        PAUSABLE_PACKAGE.metadata.clone()
     }
 }
 

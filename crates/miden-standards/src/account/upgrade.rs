@@ -1,13 +1,13 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // UPGRADE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(UPGRADE_MANAGER_CODE, "miden-standards-upgrade-manager.masp");
+account_component_package!(UPGRADE_MANAGER_PACKAGE, "miden-standards-upgrade-manager.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -56,7 +56,7 @@ impl UpgradeManager {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &UPGRADE_MANAGER_CODE
+        &UPGRADE_MANAGER_PACKAGE.code
     }
 
     /// Returns the procedure root of the `upgrade` procedure exposed by this component.
@@ -66,7 +66,7 @@ impl UpgradeManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        UPGRADE_MANAGER_PACKAGE.metadata.clone()
     }
 }
 

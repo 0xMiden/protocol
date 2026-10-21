@@ -3,15 +3,15 @@ use alloc::collections::BTreeSet;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
+use crate::account::account_component_package;
 use crate::account::policies::transfer::allowlist::AllowlistStorage;
-use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // BASIC ALLOWLIST TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(
-    BASIC_ALLOWLIST_TRANSFER_POLICY_CODE,
+account_component_package!(
+    BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE,
     "miden-standards-faucets-policies-transfer-basic-allowlist.masp"
 );
 
@@ -67,7 +67,7 @@ impl BasicAllowlist {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_ALLOWLIST_TRANSFER_POLICY_CODE
+        &BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE.code
     }
 
     /// Returns the MAST root of the basic allowlist transfer policy procedure.
@@ -77,7 +77,7 @@ impl BasicAllowlist {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE.metadata.clone()
     }
 }
 

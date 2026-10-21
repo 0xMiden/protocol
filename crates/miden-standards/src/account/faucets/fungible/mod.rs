@@ -28,12 +28,12 @@ use super::{
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use crate::account::account_component_package;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::TokenPolicyManager;
 use crate::account::wallets::BasicWallet;
-use crate::account::{account_component_code, package_metadata};
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -53,7 +53,7 @@ pub(crate) static TOKEN_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(FUNGIBLE_FAUCET_CODE, "miden-standards-faucets-fungible-faucet.masp");
+account_component_package!(FUNGIBLE_FAUCET_PACKAGE, "miden-standards-faucets-fungible-faucet.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -272,7 +272,7 @@ impl FungibleFaucet {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &FUNGIBLE_FAUCET_CODE
+        &FUNGIBLE_FAUCET_PACKAGE.code
     }
 
     /// Returns the procedure root of the `mint_and_send` account procedure.
@@ -355,7 +355,7 @@ impl FungibleFaucet {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+        FUNGIBLE_FAUCET_PACKAGE.metadata.clone()
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability
