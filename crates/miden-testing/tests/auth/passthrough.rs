@@ -12,7 +12,6 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
     Note,
@@ -28,7 +27,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
 };
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{ONE, Word};
 use miden_standards::account::auth::{
     AuthPassthrough,
@@ -63,6 +62,18 @@ fn native(amount: u64) -> FungibleAsset {
     FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into().unwrap(), amount).unwrap()
 }
 
+fn seal_output(index: u16) -> anyhow::Result<TransactionScript> {
+    Ok(CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        use miden::protocol::output_note
+        @transaction_script
+        pub proc main
+            push.{index} exec.output_note::seal
+        end
+    "#
+    ))?)
+}
+
 fn passthrough() -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([42; 32])
         .account_type(AccountType::Public)
@@ -71,7 +82,7 @@ fn passthrough() -> anyhow::Result<Account> {
         .build_existing()?)
 }
 
-/// Publishes a private request, fills or cancels its public order, then claims private paybacks.
+/// Publishes a CREATE note, fills or cancels its public PSWAP, then claims private paybacks.
 #[rstest]
 #[case::complete_fill(false, false)]
 #[case::cancel_from_reserve(true, false)]
@@ -111,12 +122,11 @@ async fn passthrough_private_pswap_e2e(
         .offered_asset(offered)
         .build()?;
     let order_note: Note = order.clone().into();
-    let request = CreateNote::new(
+    let create_note = CreateNote::new(
         owner.id(),
         builder.rng_mut().draw_word(),
         order_note.clone(),
         Some(native(50_000)),
-        BlockNumber::from(100),
     )?;
     let mut chain = builder.build()?;
     let (fee_args, fee_advice) = commit_fee_conversion_info(
@@ -124,15 +134,15 @@ async fn passthrough_private_pswap_e2e(
         Word::from([9u32, 10, 11, 12]),
     );
 
-    let requests = [request.note().clone()];
-    let partials = requests.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
+    let create_notes = [create_note.note().clone()];
+    let partials = create_notes.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
     let send = SendNotesTransactionScript::new(&owner.code_interface(), &partials)?;
     let publish = chain
         .build_transaction(owner.id())
         .send_notes_script(&send)
         .auth_args(fee_args)
         .add_advice_map_entry(fee_args, fee_advice.clone())
-        .expected_output_notes(requests.iter().cloned().map(RawOutputNote::Full).collect())
+        .expected_output_notes(create_notes.iter().cloned().map(RawOutputNote::Full).collect())
         .build()?
         .execute()
         .await?;
@@ -142,8 +152,8 @@ async fn passthrough_private_pswap_e2e(
 
     let creation = chain
         .build_transaction(account.id())
-        .authenticated_input_notes([request.note().clone()])
-        .extend_advice_inputs(AdviceInputs::default().with_map(request.output_advice()))
+        .authenticated_input_notes([create_note.note().clone()])
+        .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .auth_args(AuthPassthrough::auth_args(1))
         .build()?
         .execute()
@@ -220,13 +230,7 @@ async fn passthrough_private_pswap_e2e(
                 .asset(native(50_000))
                 .build()?
                 .into();
-            let funding = CreateNote::new(
-                owner.id(),
-                Word::from([24u32, 25, 26, 27]),
-                fee,
-                None,
-                BlockNumber::from(100),
-            )?;
+            let funding = CreateNote::new(owner.id(), Word::from([24u32, 25, 26, 27]), fee, None)?;
             let send = SendNotesTransactionScript::new(
                 &owner.code_interface(),
                 &[PartialNote::from(funding.note().clone())],
@@ -247,7 +251,7 @@ async fn passthrough_private_pswap_e2e(
             advice = advice.with_map(funding.output_advice());
             fee_note_index = 2;
         }
-        let cancel = chain
+        let mut cancel = chain
             .build_transaction(account.id())
             .authenticated_input_notes(inputs)
             .extend_advice_inputs(advice)
@@ -255,10 +259,11 @@ async fn passthrough_private_pswap_e2e(
                 current_note.id(),
                 PswapNote::create_cancel_args(),
             )]))
-            .auth_args(AuthPassthrough::auth_args(fee_note_index))
-            .build()?
-            .execute()
-            .await?;
+            .auth_args(AuthPassthrough::auth_args(fee_note_index));
+        if additional_fee {
+            cancel = cancel.tx_script(seal_output(fee_note_index)?);
+        }
+        let cancel = cancel.build()?.execute().await?;
         let refund = current.refund_note(account.id(), recipient)?;
         assert!(cancel.output_notes().iter().any(|note| note.id() == refund.id()));
         assert_eq!(cancel.final_account().to_commitment(), account.to_commitment());
@@ -481,20 +486,15 @@ async fn passthrough_rejects_invalid_fee_outputs(
         .with_tag(TxFeeNote::TAG),
         recipient,
     );
-    let request = CreateNote::new(
-        owner.id(),
-        builder.rng_mut().draw_word(),
-        output,
-        None,
-        BlockNumber::from(100),
-    )?;
-    builder.add_output_note(RawOutputNote::Full(request.note().clone()));
+    let create_note = CreateNote::new(owner.id(), builder.rng_mut().draw_word(), output, None)?;
+    builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
     let chain = builder.build()?;
     let result = chain
         .build_transaction(account.id())
-        .authenticated_input_notes([request.note().clone()])
-        .extend_advice_inputs(AdviceInputs::default().with_map(request.output_advice()))
+        .authenticated_input_notes([create_note.note().clone()])
+        .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .auth_args(AuthPassthrough::auth_args(0))
+        .tx_script(seal_output(0)?)
         .build()?
         .execute()
         .await;
@@ -544,14 +544,14 @@ async fn passthrough_rejects_an_existing_balance() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Independent requests can use the same account state and reference block without fee ID clashes.
+/// Independent CREATE notes can use the same account state without fee ID clashes.
 #[tokio::test]
 async fn passthrough_concurrent_creations_share_account_state() -> anyhow::Result<()> {
     let mut builder = MockChain::builder().verification_base_fee(500);
     let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
     let account = passthrough()?;
     builder.add_account(account.clone())?;
-    let mut requests = Vec::new();
+    let mut create_notes = Vec::new();
     for _ in 0..2 {
         let output: Note = P2idNote::builder()
             .sender(account.id())
@@ -561,29 +561,28 @@ async fn passthrough_concurrent_creations_share_account_state() -> anyhow::Resul
             .asset(native(100))
             .build()?
             .into();
-        let request = CreateNote::new(
+        let create_note = CreateNote::new(
             owner.id(),
             builder.rng_mut().draw_word(),
             output,
             Some(native(50_000)),
-            BlockNumber::from(100),
         )?;
-        builder.add_output_note(RawOutputNote::Full(request.note().clone()));
-        requests.push(request);
+        builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
+        create_notes.push(create_note);
     }
     let mut chain = builder.build()?;
     let mut transactions = Vec::new();
-    for request in &requests {
+    for create_note in &create_notes {
         let tx = chain
             .build_transaction(account.id())
-            .authenticated_input_notes([request.note().clone()])
-            .extend_advice_inputs(AdviceInputs::default().with_map(request.output_advice()))
+            .authenticated_input_notes([create_note.note().clone()])
+            .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
             .auth_args(AuthPassthrough::auth_args(1))
             .build()?
             .execute()
             .await?;
         assert_eq!(tx.final_account().to_commitment(), account.to_commitment());
-        assert_eq!(tx.output_notes().get_note(0).id(), request.output().id());
+        assert_eq!(tx.output_notes().get_note(0).id(), create_note.output().id());
         transactions.push(tx);
     }
     assert_ne!(
