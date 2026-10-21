@@ -1,4 +1,13 @@
+use core::num::TryFromIntError;
+
 use miden_protobuf::unwrap_infallible;
+use miden_protocol::Word;
+use miden_protocol::account::{
+    StorageArrayLength,
+    StorageArrayPatch as ProtocolStorageArrayPatch,
+    StorageArrayPatchEntries as ProtocolStorageArrayPatchEntries,
+};
+use miden_protocol::errors::AccountError;
 pub use proto::account::{
     DecodedAccountVaultPatchEntry as AccountVaultPatchEntry,
     DecodedStorageArrayPatch as StorageArrayPatch,
@@ -7,13 +16,14 @@ pub use proto::account::{
 };
 
 use crate::decoded::VerificationError;
+use crate::proto::account::storage_array_patch::DecodedOperation as DecodedArrayPatchOperation;
 use crate::{Verify, proto};
 
 #[cfg(test)]
 mod tests;
 
 impl Verify for AccountVaultPatchEntry {
-    type Verified = (miden_protocol::asset::AssetId, miden_protocol::Word);
+    type Verified = (miden_protocol::asset::AssetId, Word);
     type Error = miden_protocol::errors::AssetError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok((self.asset_id.try_into()?, self.value))
@@ -64,41 +74,39 @@ impl Verify for PrivateAccountUpdate {
 }
 
 impl Verify for StorageArrayPatchEntry {
-    type Verified = (u16, miden_protocol::Word);
-    type Error = core::num::TryFromIntError;
+    type Verified = (u16, Word);
+    type Error = TryFromIntError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok((u16::try_from(self.index)?, self.value))
     }
 }
 
 impl Verify for StorageArrayPatchEntries {
-    type Verified = miden_protocol::account::StorageArrayPatchEntries;
+    type Verified = ProtocolStorageArrayPatchEntries;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let length = miden_protocol::account::StorageArrayLength::try_from(self.length as usize)?;
+        let length = StorageArrayLength::try_from(self.length as usize)?;
         let entries = Self::Verified::new(length, self.entries.verify()?)?;
         if entries.is_empty() {
-            return Err(miden_protocol::errors::AccountError::other(
-                "array update must contain at least one entry",
-            )
-            .into());
+            return Err(AccountError::other("array update must contain at least one entry").into());
         }
         Ok(entries)
     }
 }
 
 impl Verify for StorageArrayPatch {
-    type Verified = miden_protocol::account::StorageArrayPatch;
+    type Verified = ProtocolStorageArrayPatch;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        use proto::account::storage_array_patch::DecodedOperation;
         Ok(match self.operation {
-            DecodedOperation::Create(array) => Self::Verified::Create { array: array.verify()? },
-            DecodedOperation::Update(entries) => {
+            DecodedArrayPatchOperation::Create(array) => {
+                Self::Verified::Create { array: array.verify()? }
+            },
+            DecodedArrayPatchOperation::Update(entries) => {
                 Self::Verified::Update { entries: entries.verify()? }
             },
-            DecodedOperation::Remove(length) => Self::Verified::Remove {
-                length: miden_protocol::account::StorageArrayLength::try_from(length as usize)?,
+            DecodedArrayPatchOperation::Remove(length) => Self::Verified::Remove {
+                length: StorageArrayLength::try_from(length as usize)?,
             },
         })
     }

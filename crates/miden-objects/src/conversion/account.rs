@@ -22,6 +22,7 @@ use miden_protocol::asset::PartialVault;
 use miden_protocol::block::account_tree::AccountWitness;
 
 use crate::proto;
+use crate::proto::account::StorageArray as ProtoStorageArray;
 
 #[cfg(test)]
 mod tests;
@@ -106,7 +107,7 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
 // STORAGE ARRAY
 // ================================================================================================
 
-impl From<&StorageArray> for proto::account::StorageArray {
+impl From<&StorageArray> for ProtoStorageArray {
     fn from(array: &StorageArray) -> Self {
         Self {
             values: array.values().iter().map(Into::into).collect(),

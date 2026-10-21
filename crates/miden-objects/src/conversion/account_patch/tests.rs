@@ -17,6 +17,7 @@ use miden_protocol::account::{
 use prost::Message;
 
 use crate::decoded::account::test_utils::account_patch;
+use crate::proto::account::AccountStoragePatch as ProtoAccountStoragePatch;
 use crate::{DecodeMessage, Verify, proto};
 
 #[test]
@@ -83,7 +84,7 @@ fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
         ("miden::test::slot::4", true),
         ("miden::test::slot::2", false),
     ];
-    let message = proto::account::AccountStoragePatch::from(&storage_patch);
+    let message = ProtoAccountStoragePatch::from(&storage_patch);
 
     assert_eq!(
         message
@@ -138,9 +139,9 @@ fn storage_value_patch_nested_in_account_storage_patch_roundtrips() {
         (StorageSlotName::mock(3), StorageSlotPatch::Value(StorageValuePatch::Remove)),
     ])
     .unwrap();
-    let message = proto::account::AccountStoragePatch::from(&patch);
+    let message = ProtoAccountStoragePatch::from(&patch);
     let encoded = message.encode_to_vec();
-    let decoded = proto::account::AccountStoragePatch::decode(encoded.as_slice()).unwrap();
+    let decoded = ProtoAccountStoragePatch::decode(encoded.as_slice()).unwrap();
 
     assert_eq!(decoded.decode_fields().unwrap().verify().unwrap(), patch);
 }
@@ -152,6 +153,7 @@ fn storage_array_patch_oneof_roundtrips_all_operations() -> anyhow::Result<()> {
         array.length(),
         [(0, Word::empty()), (2, Word::from([9u32; 4]))],
     )?;
+
     for patch in [
         StorageArrayPatch::Create { array: array.clone() },
         StorageArrayPatch::Update { entries: update },
@@ -161,9 +163,11 @@ fn storage_array_patch_oneof_roundtrips_all_operations() -> anyhow::Result<()> {
             StorageSlotName::mock(1),
             StorageSlotPatch::Array(patch),
         )])?;
-        let bytes = proto::account::AccountStoragePatch::from(&storage).encode_to_vec();
-        let wire = proto::account::AccountStoragePatch::decode(bytes.as_slice())?;
-        assert_eq!(wire.decode_fields()?.verify()?, storage);
+        let bytes = ProtoAccountStoragePatch::from(&storage).encode_to_vec();
+        let message = ProtoAccountStoragePatch::decode(bytes.as_slice())?;
+        let decoded = message.decode_fields()?.verify()?;
+        assert_eq!(decoded, storage);
     }
+
     Ok(())
 }

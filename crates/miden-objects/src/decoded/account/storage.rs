@@ -1,3 +1,8 @@
+use miden_protocol::account::{
+    StorageArray as ProtocolStorageArray,
+    StorageArrayError,
+    StorageSlotHeaderContent,
+};
 pub use proto::account::{
     DecodedStorageArray as StorageArray,
     DecodedStorageSlotId as StorageSlotId,
@@ -33,7 +38,6 @@ impl Verify for AccountStorageHeaderStorageSlot {
     type Verified = miden_protocol::account::StorageSlotHeader;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        use miden_protocol::account::StorageSlotHeaderContent;
         use proto::account::account_storage_header::storage_slot::DecodedContent;
 
         let name = miden_protocol::account::StorageSlotName::new(self.slot_name)?;
@@ -58,8 +62,8 @@ impl Verify for AccountStorageHeader {
 }
 
 impl Verify for StorageArray {
-    type Verified = miden_protocol::account::StorageArray;
-    type Error = miden_protocol::account::StorageArrayError;
+    type Verified = ProtocolStorageArray;
+    type Error = StorageArrayError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Self::Verified::new(self.values.into_inner())
     }
