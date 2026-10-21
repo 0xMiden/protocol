@@ -120,7 +120,7 @@ async fn passthrough_private_pswap_e2e(
         Word::from([9u32, 10, 11, 12]),
     );
 
-    let requests = vec![request.note().clone()];
+    let requests = [request.note().clone()];
     let partials = requests.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
     let send = SendNotesTransactionScript::new(&owner.code_interface(), &partials)?;
     let publish = chain
