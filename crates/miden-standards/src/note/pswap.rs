@@ -46,20 +46,21 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // PSWAP NOTE STORAGE
 // ================================================================================================
 
-/// P2ID payback configuration for a PSWAP order.
+/// Payback note configuration for a `PSWAP` note.
 ///
-/// Both modes use a fixed P2ID recipient for every fill. Use a fresh serial for each order,
-/// independent of the PSWAP serial. Private paybacks store only the commitment; the owner must
-/// keep the recipient preimage secret. Use [`PswapNote::PAYBACK_TAG`] for shared discovery without
-/// identifying the owner. Fill attachments distinguish successive paybacks.
+/// Both modes use a fixed recipient hash for every fill. Private payback notes can use any note
+/// script; only the recipient hash is stored in the `PSWAP` note. Use a fresh payback note serial
+/// number for each order, independent of the `PSWAP` note serial number, and keep the private
+/// recipient preimage secret. Use [`PswapNote::PAYBACK_TAG`] for shared discovery without
+/// identifying the owner. Fill attachments distinguish successive payback notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PswapPayback {
-    /// Public P2ID paybacks to the original creator, who can also reclaim the order.
+    /// Public `P2ID` payback notes to the original creator, who can also reclaim the order.
     Public {
         recipient: P2idNoteRecipient,
         tag: NoteTag,
     },
-    /// Private P2ID paybacks to a fixed recipient commitment, with an explicit discovery tag.
+    /// Private payback notes to a fixed recipient hash, with an explicit discovery tag.
     Private { recipient: Word, tag: NoteTag },
 }
 
@@ -69,8 +70,9 @@ impl PswapPayback {
         Self::Public { recipient, tag }
     }
 
-    /// Builds a private payback configuration from a canonical P2ID recipient preimage.
+    /// Builds a private payback configuration for a `P2ID` note.
     /// Only its commitment is stored in the order; the owner retains the preimage.
+    /// For other note scripts, use `PswapPayback::Private` with their recipient hash.
     pub fn private(recipient: P2idNoteRecipient, tag: NoteTag) -> Self {
         Self::Private { recipient: recipient.digest(), tag }
     }
@@ -112,7 +114,7 @@ impl PswapPayback {
 ///
 /// | Offset | Field                         |
 /// |--------|-------------------------------|
-/// | 9..13  | P2ID recipient commitment     |
+/// | 9..13  | Recipient hash                |
 ///
 /// PSWAP visibility is independent of payback visibility. Every remainder preserves the payback
 /// configuration. The PSWAP's own discovery tag lives in its metadata.
@@ -403,20 +405,21 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 ///
 /// A PSWAP note allows a creator to offer one fungible asset in exchange for another.
 /// Unlike a regular SWAP note, consumers may fill it partially — the unfilled portion
-/// is re-created as a remainder note with an updated serial number. Every fill sends a P2ID
-/// payback to the original creator (public paybacks) or a fixed private recipient. Orders with
-/// public paybacks are reclaimed when the stored creator account consumes them. Orders with
-/// private paybacks can be cancelled by any compatible account using [`Self::create_cancel_args`]
-/// and [`Self::cancellation_advice`]. The offered asset is refunded to the committed recipient;
-/// an optional native cancellation reserve funds a public TX_FEE note.
+/// is re-created as a remainder note with an updated serial number. Every fill creates a payback
+/// note at the fixed recipient hash. Public payback notes use the `P2ID` note script; private
+/// payback notes can use any note script. Orders with public payback notes are reclaimed when
+/// the stored creator account consumes them. Private cancellation currently requires a `P2ID`
+/// note recipient and uses [`Self::create_cancel_args`] and [`Self::cancellation_advice`].
+/// The offered asset goes to a private refund note at the committed recipient hash. An optional
+/// native cancellation reserve funds a public `TX_FEE` note.
 /// Paybacks, remainders, and cancellation refunds are verified and sealed before the script
 /// returns. Later asset or attachment additions fail the transaction.
 ///
 /// # Privacy
 ///
-/// The owner must retain the payback [`P2idNoteRecipient`] preimage to reconstruct outputs with
-/// [`Self::private_payback_note`]. Use an independent random serial and a discovery tag that does
-/// not encode the target account. Reconstruct paybacks from published fill attachments and
+/// Retain the private payback note's recipient preimage to reconstruct outputs. For `P2ID` notes,
+/// use [`Self::private_payback_note`]. Use an independent random serial and a discovery tag that
+/// does not identify the owner. Reconstruct payback notes from published fill attachments and
 /// consume them with inclusion proofs.
 /// To avoid linking cancellation to the target, execute and prove locally through a public
 /// permissionless account. Fund a sufficient cancellation reserve when creating the order to
@@ -522,8 +525,7 @@ impl PswapNote {
     /// Maximum number of distinct assets: offered principal and optional native fee reserve.
     pub const MAX_NUM_ASSETS: usize = 2;
 
-    /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
-    /// remainder PSWAP).
+    /// Attachment scheme stamped on payback notes and remainder `PSWAP` notes.
     pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
         StandardNoteAttachment::PswapAttachment.attachment_scheme();
 
@@ -1271,8 +1273,8 @@ impl NoteConsumptionCost for PswapNote {
         PSWAP_CONSUMPTION_CYCLES
     }
 
-    /// Filling a PSWAP note creates its public or private P2ID payback and, on a
-    /// partial fill, the residual PSWAP note carrying the unfilled remainder.
+    /// Typical output scripts: a `P2ID` payback note and a remainder `PSWAP` note.
+    /// Private payback notes may use a different script.
     fn created_notes() -> Vec<NoteScriptRoot> {
         vec![P2idNote::script_root(), PswapNote::script_root()]
     }
