@@ -195,6 +195,7 @@ Transaction procedures manage transaction-level operations including note creati
 | `update_expiration_block_delta` | Updates the expiration delta.<br/><br/>**Inputs:** `[block_height_delta]`<br/>**Outputs:** `[]`                                                                                                                | Any     |
 | `compute_fee`                   | Computes the fee required for the current transaction.<br/><br/>**Inputs:** `[num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]`<br/>**Outputs:** `[fee_amount]`                                                                                                    | Any     |
 | `get_fee_asset_id`              | Returns the ID of the asset that fees are paid in.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[FEE_ASSET_ID]`                                                                                                 | Any     |
+| `add_log`                       | Emits a transaction log from the active authenticated account. The advice map must contain the content under its commitment.<br/><br/>**Inputs:** `[topic_suffix, topic_prefix, CONTENT_COMMITMENT]`<br/>**Outputs:** `[]` | Account |
 | `add_log_from_memory`           | Emits a transaction log from content in memory, computing its commitment and inserting the content into the advice map.<br/><br/>**Inputs:** `[topic_suffix, topic_prefix, num_words, content_ptr]`<br/>**Outputs:** `[]` | Account |
 
 ### Foreign procedure invocation and expiration

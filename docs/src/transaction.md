@@ -179,9 +179,6 @@ same padded elements to the advice map.
 The kernel checks the content and uses the active account as emitter. Note and transaction scripts
 must call an account procedure to emit logs.
 
-For content in memory, [`tx::add_log_from_memory`](protocol_library.md#transaction-procedures-midenprotocoltx)
-handles hashing and advice-map insertion before emitting the log.
-
 Individual transaction log commitments are hashed in emission order; `TransactionLogs` defines the
 commitment preimage. The kernel caches the aggregate until another log is appended. The aggregate
 commitment is bound to transaction outputs, IDs, and proofs.

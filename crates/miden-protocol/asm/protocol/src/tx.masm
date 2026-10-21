@@ -460,6 +460,11 @@ end
 #! Inputs:  [topic_suffix, topic_prefix, CONTENT_COMMITMENT]
 #! Outputs: []
 #!
+#! Panics if:
+#! - the caller is not an authenticated account procedure.
+#! - the transaction log count or content size exceeds its limit.
+#! - the content does not consist of complete words or does not match CONTENT_COMMITMENT.
+#!
 #! Invocation: exec
 pub proc add_log(topic: LogTopic, content_commitment: word)
     # Align the six inputs to two words so padding can be moved beneath them together.
