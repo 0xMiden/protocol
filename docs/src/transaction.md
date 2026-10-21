@@ -207,5 +207,4 @@ debug output. Remote provers and validators that decrypt execution witnesses can
 
 A transaction allows up to 64 transaction logs, with at most 64 content words per log and 64 content
 words shared across all logs, excluding metadata. For example, 64 one-word logs or two 32-word logs
-fill the transaction's content budget. Transaction logs alone do not make an otherwise empty
-transaction valid.
+fill the transaction's content budget.
