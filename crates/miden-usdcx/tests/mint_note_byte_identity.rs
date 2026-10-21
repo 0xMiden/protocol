@@ -21,8 +21,8 @@
 //! dropped pad felt, a different serial derivation — flips one of them RED and names which.
 //!
 //! These anchors include the MINT script. Updating the asset-transfer return values changes its
-//! script root, recipient, note ID, nullifier, and serialized digest. Attachment data and serialized
-//! lengths are unchanged.
+//! script root, recipient, note ID, nullifier, and serialized digest. Attachment data and
+//! serialized lengths are unchanged.
 //!
 //! The vector payload is used verbatim except for `remoteToken`, which is spliced to a
 //! deterministic PUBLIC faucet id: the routing attachment can only bind a public network account,
