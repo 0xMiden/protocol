@@ -50,19 +50,23 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// Both modes use a fixed P2ID recipient for every fill. Use a fresh serial for each order,
 /// independent of the PSWAP serial. Private paybacks store only the commitment; the owner must
-/// keep the recipient preimage secret. Fill attachments distinguish successive paybacks.
+/// keep the recipient preimage secret. Use [`PswapNote::PAYBACK_TAG`] for shared discovery without
+/// identifying the owner. Fill attachments distinguish successive paybacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PswapPayback {
     /// Public P2ID paybacks to the original creator, who can also reclaim the order.
-    Public { recipient: P2idNoteRecipient },
+    Public {
+        recipient: P2idNoteRecipient,
+        tag: NoteTag,
+    },
     /// Private P2ID paybacks to a fixed recipient commitment, with an explicit discovery tag.
     Private { recipient: Word, tag: NoteTag },
 }
 
 impl PswapPayback {
     /// Builds a public payback configuration for the original order creator.
-    pub fn public(recipient: P2idNoteRecipient) -> Self {
-        Self::Public { recipient }
+    pub fn public(recipient: P2idNoteRecipient, tag: NoteTag) -> Self {
+        Self::Public { recipient, tag }
     }
 
     /// Builds a private payback configuration from a canonical P2ID recipient preimage.
@@ -94,21 +98,21 @@ impl PswapPayback {
 /// | 5      | Cancellation fee faucet suffix |
 /// | 6      | Cancellation fee faucet prefix |
 /// | 7      | Cancellation fee amount        |
+/// | 8      | Payback discovery tag          |
 ///
-/// Public paybacks append these fields (14 elements total):
+/// Public paybacks append these fields (15 elements total):
 ///
 /// | Offset | Field                         |
 /// |--------|-------------------------------|
-/// | 8      | Original creator suffix       |
-/// | 9      | Original creator prefix       |
-/// | 10..14 | Fixed P2ID serial number       |
+/// | 9      | Original creator suffix       |
+/// | 10     | Original creator prefix       |
+/// | 11..15 | Fixed P2ID serial number       |
 ///
 /// Private paybacks append these fields (13 elements total):
 ///
 /// | Offset | Field                         |
 /// |--------|-------------------------------|
-/// | 8..12  | P2ID recipient commitment     |
-/// | 12     | Discovery tag                 |
+/// | 9..13  | P2ID recipient commitment     |
 ///
 /// PSWAP visibility is independent of payback visibility. Every remainder preserves the payback
 /// configuration. The PSWAP's own discovery tag lives in its metadata.
@@ -131,7 +135,7 @@ impl PswapNoteStorage {
     /// Exact storage length for orders producing private paybacks.
     pub const PRIVATE_NUM_STORAGE_ITEMS: usize = 13;
     /// Exact storage length for orders producing public paybacks.
-    pub const PUBLIC_NUM_STORAGE_ITEMS: usize = 14;
+    pub const PUBLIC_NUM_STORAGE_ITEMS: usize = 15;
 
     const REQUESTED_FAUCET_SUFFIX_IDX: usize = 0;
     const REQUESTED_FAUCET_PREFIX_IDX: usize = 1;
@@ -141,11 +145,11 @@ impl PswapNoteStorage {
     const CANCELLATION_FEE_SUFFIX_IDX: usize = 5;
     const CANCELLATION_FEE_PREFIX_IDX: usize = 6;
     const CANCELLATION_FEE_AMOUNT_IDX: usize = 7;
-    const PUBLIC_CREATOR_SUFFIX_IDX: usize = 8;
-    const PUBLIC_CREATOR_PREFIX_IDX: usize = 9;
-    const PUBLIC_SERIAL_RANGE: Range<usize> = 10..14;
-    const PRIVATE_RECIPIENT_RANGE: Range<usize> = 8..12;
-    const PRIVATE_TAG_IDX: usize = 12;
+    const PUBLIC_CREATOR_SUFFIX_IDX: usize = 9;
+    const PUBLIC_CREATOR_PREFIX_IDX: usize = 10;
+    const PUBLIC_SERIAL_RANGE: Range<usize> = 11..15;
+    const PRIVATE_RECIPIENT_RANGE: Range<usize> = 9..13;
+    const PAYBACK_TAG_IDX: usize = 8;
 
     /// Consumes the storage and returns a PSWAP recipient with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -162,13 +166,10 @@ impl PswapNoteStorage {
         &self.payback
     }
 
-    /// Returns the public creator's account tag or the explicitly supplied private tag.
+    /// Returns the configured payback discovery tag.
     pub fn payback_note_tag(&self) -> NoteTag {
         match self.payback {
-            PswapPayback::Public { recipient } => {
-                NoteTag::with_account_target(recipient.storage().target())
-            },
-            PswapPayback::Private { tag, .. } => tag,
+            PswapPayback::Public { tag, .. } | PswapPayback::Private { tag, .. } => tag,
         }
     }
 
@@ -213,15 +214,15 @@ impl From<PswapNoteStorage> for NoteStorage {
                 fee.amount().into(),
             ]
         }));
+        items.push(Felt::from(storage.payback_note_tag()));
         match storage.payback {
-            PswapPayback::Public { recipient } => {
+            PswapPayback::Public { recipient, .. } => {
                 let target = recipient.storage().target();
                 items.extend_from_slice(&[target.suffix(), target.prefix().as_felt()]);
                 items.extend_from_slice(recipient.serial_number().as_elements());
             },
-            PswapPayback::Private { recipient, tag } => {
+            PswapPayback::Private { recipient, .. } => {
                 items.extend_from_slice(recipient.as_elements());
-                items.push(Felt::from(tag));
             },
         }
         NoteStorage::new(items).expect("PSWAP storage fits within the storage limit")
@@ -281,6 +282,10 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
                 .map_err(|e| NoteError::other_with_source("invalid cancellation fee", e))?,
             )
         };
+        let tag = NoteTag::new(
+            u32::try_from(items[Self::PAYBACK_TAG_IDX].as_canonical_u64())
+                .map_err(|_| NoteError::other("payback tag exceeds u32"))?,
+        );
         let payback = match note_type {
             NoteType::Private => PswapPayback::Private {
                 recipient: Word::new(
@@ -288,12 +293,10 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
                         .try_into()
                         .expect("length already checked"),
                 ),
-                tag: NoteTag::new(
-                    u32::try_from(items[Self::PRIVATE_TAG_IDX].as_canonical_u64())
-                        .map_err(|_| NoteError::other("payback tag exceeds u32"))?,
-                ),
+                tag,
             },
             NoteType::Public => PswapPayback::Public {
+                tag,
                 recipient: P2idNoteRecipient::new(
                     P2idNoteStorage::new(
                         AccountId::try_from_elements(
@@ -413,8 +416,8 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 ///
 /// The owner must retain the payback [`P2idNoteRecipient`] preimage to reconstruct outputs with
 /// [`Self::private_payback_note`]. Use an independent random serial and a discovery tag that does
-/// not encode the target account. Consume reconstructed private paybacks as authenticated notes;
-/// unauthenticated consumption exposes their headers and links them to the consuming account.
+/// not encode the target account. Reconstruct paybacks from published fill attachments and
+/// consume them with inclusion proofs.
 /// To avoid linking cancellation to the target, execute and prove locally through a public
 /// permissionless account. Fund a sufficient cancellation reserve when creating the order to
 /// cancel without publishing another funding note.
@@ -512,6 +515,9 @@ impl PswapNote {
 
     /// Cancel action discriminator; matches `ACTION_CANCEL` in `pswap.masm`.
     const ACTION_CANCEL_ID: Felt = ONE;
+
+    /// Shared discovery tag for PSWAP paybacks and cancellation refunds ("PSWP").
+    pub const PAYBACK_TAG: NoteTag = NoteTag::new(u32::from_be_bytes(*b"PSWP"));
 
     /// Maximum number of distinct assets: offered principal and optional native fee reserve.
     pub const MAX_NUM_ASSETS: usize = 2;
@@ -702,11 +708,6 @@ impl PswapNote {
     ///
     /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
     /// `None` when the fill is at least `min_requested_amount` (full fill or over-fill).
-    /// The payback is [`RawOutputNote::Partial`] for private outputs and [`RawOutputNote::Full`]
-    /// for public outputs. The partial output contains the recipient commitment, assets, metadata,
-    /// and attachments needed to compute its ID and convert it to a proven private output with
-    /// [`RawOutputNote::into_output_note`]. The filler never needs the recipient preimage; the
-    /// owner supplies it later to [`Self::private_payback_note`] to reconstruct a consumable note.
     ///
     /// # Errors
     ///
@@ -869,7 +870,7 @@ impl PswapNote {
         consumer_account_id: AccountId,
         attachment: &PswapNoteAttachment,
     ) -> Result<Note, NoteError> {
-        let PswapPayback::Public { recipient } = self.storage.payback else {
+        let PswapPayback::Public { recipient, .. } = self.storage.payback else {
             return Err(NoteError::other("public payback reconstruction requires public paybacks"));
         };
         self.rounds_since(attachment)?;
@@ -1139,7 +1140,7 @@ impl PswapNote {
             PswapPayback::Private { recipient, .. } => {
                 RawOutputNote::Partial(PartialNote::new(metadata, recipient, assets, attachments))
             },
-            PswapPayback::Public { recipient } => RawOutputNote::Full(Note::with_attachments(
+            PswapPayback::Public { recipient, .. } => RawOutputNote::Full(Note::with_attachments(
                 assets,
                 metadata,
                 recipient.into(),
@@ -1296,10 +1297,10 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     fn public_payback(target: AccountId) -> PswapPayback {
-        PswapPayback::public(P2idNoteRecipient::new(
-            P2idNoteStorage::new(target),
-            Word::from([91u32, 92, 93, 94]),
-        ))
+        PswapPayback::public(
+            P2idNoteRecipient::new(P2idNoteStorage::new(target), Word::from([91u32, 92, 93, 94])),
+            NoteTag::new(27),
+        )
     }
 
     fn dummy_faucet_id(byte: u8) -> AccountId {

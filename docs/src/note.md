@@ -321,7 +321,9 @@ PSWAP exchanges part or all of one fungible asset for another. Each fill creates
 
 - **Public paybacks:** the order stores the creator's account ID and fixed P2ID serial. The creator can reclaim an unspent order or remainder directly into its vault.
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
-- **Storage:** 14 elements for public paybacks or 13 for private paybacks. Both begin with the requested asset, minimum fill step, payback type, and optional cancellation fee asset. Public mode appends the creator ID and serial; private mode appends the recipient commitment and tag.
+- **Storage:** 15 elements for public paybacks or 13 for private paybacks. Both begin with the requested asset, minimum fill step, payback type, optional cancellation fee asset, and explicit payback tag. Public mode appends the creator ID and serial; private mode appends the recipient commitment.
+
+Use `PswapNote::PAYBACK_TAG` as a shared discovery tag for paybacks and refunds without identifying the owner. Both modes also accept custom tags.
 
 An optional native cancellation reserve travels unchanged into each remainder. A complete fill returns it in the final payback, combining amounts when the requested asset is native. Private cancellation pays the reserve in full through a sealed public TX_FEE; the executing account must check fee sufficiency. Public reclaim returns the reserve and principal to the creator's vault. The reserve never enters fill pricing.
 

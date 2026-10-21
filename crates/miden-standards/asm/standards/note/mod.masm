@@ -137,6 +137,7 @@ pub proc get_recipient_preimage(
     adv.push_mapval
     # AS => [SERIAL_NUM, EMPTY_WORD]
 
+    # Consume the canonical padding to leave subsequent advice reads aligned.
     padw adv_loadw padw adv_loadw
     # => [EMPTY_WORD, SERIAL_NUM, SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
