@@ -5,7 +5,6 @@
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -140,34 +139,6 @@ impl TokenBaseUriConfig {
     /// Returns whether the token base URI can be updated through `set_token_base_uri`.
     pub(super) fn is_mutable(&self) -> bool {
         self.is_mutable
-    }
-
-    /// Returns the storage slot schema entries for the mutability config and the token base URI.
-    pub(super) fn storage_schema() -> Vec<(StorageSlotName, StorageSlotSchema)> {
-        let mut entries = vec![(
-            mutability_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Non-fungible faucet mutability config",
-                [
-                    FeltSchema::bool("is_token_base_uri_mutable"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )];
-
-        for (i, slot) in TOKEN_BASE_URI_SLOTS.iter().enumerate() {
-            entries.push((
-                slot.clone(),
-                StorageSlotSchema::value(
-                    alloc::format!("Token base URI chunk {i}"),
-                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
-                ),
-            ));
-        }
-
-        entries
     }
 
     /// Consumes `self` and returns the storage slots for the mutability config and the token base

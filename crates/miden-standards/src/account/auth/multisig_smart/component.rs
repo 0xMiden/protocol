@@ -1,13 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
@@ -30,11 +24,11 @@ use super::super::multisig::{
 };
 use super::ProcedurePolicy;
 use super::spending_limits::SpendingLimitsPolicy;
-use crate::account::account_component_code;
-use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
+use crate::account::account_component_package;
+use crate::account::auth::{Approver, ApproverSet};
 use crate::procedure_root;
 
-account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
+account_component_package!(MULTISIG_SMART_PACKAGE, "miden-standards-auth-multisig-smart.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -223,8 +217,8 @@ fn validate_proc_policies(
 /// # Security
 ///
 /// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
-/// [`AuthMultisig`], so a procedure with such a policy should seal the notes it creates for the
-/// reasons described there.
+/// [`AuthMultisig`](crate::account::auth::AuthMultisig), so a procedure with such a policy should
+/// seal the notes it creates for the reasons described there.
 ///
 /// The spending limits configured through [`SpendingLimitsPolicy`] are only as strong as the
 /// policies on the procedures that can weaken them. `update_spending_limits_policy` lengthens the
@@ -252,7 +246,7 @@ impl AuthMultisigSmart {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &MULTISIG_SMART_CODE
+        &MULTISIG_SMART_PACKAGE.code
     }
 
     /// Returns the procedure root of the `set_procedure_policy` account procedure.
@@ -326,74 +320,9 @@ impl AuthMultisigSmart {
         &SPENDING_TRACKERS_SLOT_NAME
     }
 
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::threshold_config_slot_schema()
-    }
-
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_public_keys_slot_schema()
-    }
-
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_auth_scheme_slot_schema()
-    }
-
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::executed_transactions_slot_schema()
-    }
-
-    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::procedure_policies_slot().clone(),
-            StorageSlotSchema::map(
-                "Procedure policies",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn spending_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::spending_config_slot().clone(),
-            StorageSlotSchema::value("Spending limits configuration", SchemaType::native_word()),
-        )
-    }
-
-    pub fn spending_oracle_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::spending_oracle_slot().clone(),
-            StorageSlotSchema::value("Spending limits price oracle", SchemaType::native_word()),
-        )
-    }
-
-    pub fn spending_base_asset_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::spending_base_asset_slot().clone(),
-            StorageSlotSchema::value("Spending limits base asset", SchemaType::native_word()),
-        )
-    }
-
-    pub fn spending_limits_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::spending_limits_slot().clone(),
-            StorageSlotSchema::map(
-                "Spending limits",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn spending_trackers_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::spending_trackers_slot().clone(),
-            StorageSlotSchema::map(
-                "Spending limit trackers",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        MULTISIG_SMART_PACKAGE.metadata.clone()
     }
 }
 
@@ -471,23 +400,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             StorageMap::default(),
         ));
 
-        let storage_schema = StorageSchema::new(vec![
-            AuthMultisigSmart::threshold_config_slot_schema(),
-            AuthMultisigSmart::approver_public_keys_slot_schema(),
-            AuthMultisigSmart::approver_auth_scheme_slot_schema(),
-            AuthMultisigSmart::executed_transactions_slot_schema(),
-            AuthMultisigSmart::procedure_policies_slot_schema(),
-            AuthMultisigSmart::spending_config_slot_schema(),
-            AuthMultisigSmart::spending_oracle_slot_schema(),
-            AuthMultisigSmart::spending_base_asset_slot_schema(),
-            AuthMultisigSmart::spending_limits_slot_schema(),
-            AuthMultisigSmart::spending_trackers_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME)
-            .with_description("Multisig smart authentication component")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthMultisigSmart::component_metadata();
 
         AccountComponent::new(AuthMultisigSmart::code().clone(), storage_slots, metadata).expect(
             "multisig smart component should satisfy the requirements of a valid account component",
