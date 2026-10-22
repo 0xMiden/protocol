@@ -27,6 +27,8 @@ use miden::standards::wallets::basic as wallet
 const PRIVATE_NUM_STORAGE_ITEMS=13
 const PUBLIC_NUM_STORAGE_ITEMS=10
 const MAX_NUM_ASSETS = 2
+# P2ID payback storage is [target_id_suffix, target_id_prefix].
+const P2ID_NUM_STORAGE_ITEMS = 2
 # "PSWAPCAN" separates cancellation fee serials from other fee notes.
 const CANCELLATION_FEE_DOMAIN = 0x505357415043414E
 const MAX_U32=0x0000000100000000
@@ -109,6 +111,11 @@ const STORAGE_LENGTH_PTR = STORAGE_PTR + 4 * WORD_NUM_ELEMENTS
 
 # Local memory offsets
 # =================================================================================================
+
+# pipe_target_preimage locals (eight elements including storage padding)
+const TARGET_PREIMAGE_PTR = 0
+const TARGET_PREIMAGE_SUFFIX_LOC = TARGET_PREIMAGE_PTR
+const TARGET_PREIMAGE_PREFIX_LOC = TARGET_PREIMAGE_PTR + 1
 
 # calculate_output_amount locals
 const CALC_FILL_AMOUNT = 0
@@ -903,6 +910,33 @@ proc create_remainder_note(
     # => []
 end
 
+#! Recovers and validates the target account ID from a P2ID storage commitment.
+#!
+#! Inputs:  [STORAGE_COMMITMENT]
+#! Outputs: [target_id_suffix, target_id_prefix]
+#!
+#! Panics if:
+#! - the advice map does not contain the two-item storage preimage.
+#! - the storage preimage does not match its commitment.
+#! - the target account ID has an invalid structure.
+#!
+#! Invocation: exec
+@locals(8)
+proc pipe_target_preimage(storage_commitment: word) -> AccountId
+    # The storage loader writes eight elements, including padding for the two storage items.
+    locaddr.TARGET_PREIMAGE_PTR movdn.4 push.P2ID_NUM_STORAGE_ITEMS movdn.4
+    # => [STORAGE_COMMITMENT, num_storage_items, storage_ptr]
+
+    exec.active_note::write_storage_to_memory
+    # => []
+
+    loc_load.TARGET_PREIMAGE_PREFIX_LOC loc_load.TARGET_PREIMAGE_SUFFIX_LOC
+    # => [target_id_suffix, target_id_prefix]
+
+    dup.1 dup.1 exec.account_id::validate_structure
+    # => [target_id_suffix, target_id_prefix]
+end
+
 #! Authorizes cancellation using the private P2ID recipient preimage.
 #!
 #! Inputs:  [EXPECTED_RECIPIENT]
@@ -915,7 +949,7 @@ proc authenticate_cancellation(recipient: NoteRecipient)
     dropw procref.p2id::main assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_PREIMAGE
     # => [STORAGE_COMMITMENT]
 
-    exec.p2id::pipe_target_preimage
+    exec.pipe_target_preimage
     # => [target_id_suffix, target_id_prefix]
 
     drop drop
