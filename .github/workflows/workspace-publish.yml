@@ -15,25 +15,21 @@ env:
 jobs:
   publish:
     if: ${{ github.repository_owner == '0xMiden' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: release # Optional: for enhanced security
     permissions:
       contents: read
       id-token: write # Required for OIDC token exchange
 
     steps:
-      # Remove once the runner images ship the eMudhra distrust (https://emudhra.we-have-a-problem.com/).
-      - &update-ca-certificates
-        name: Update CA certificates
-        if: runner.os == 'Linux'
-        shell: bash
+      # Remove (and unpin runs-on) once the runner image ships the eMudhra distrust
+      # (https://emudhra.we-have-a-problem.com/).
+      - name: Update CA certificates
         run: |
-          set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ca-certificates
-          ubuntu_version="$(awk -F= '$1 == "VERSION_ID" {gsub(/"/, "", $2); print $2}' /etc/os-release)"
           dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
-            ge "20260816ubuntu0.${ubuntu_version}.1"
+            ge 20260816ubuntu0.24.04.1
 
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -73,13 +69,18 @@ jobs:
   upload-artifacts:
     name: upload pre-built miden-protocol library artifacts
     if: ${{ github.repository_owner == '0xMiden' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
-      - *update-ca-certificates
+      - name: Update CA certificates
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ca-certificates
+          dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
+            ge 20260816ubuntu0.24.04.1
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
