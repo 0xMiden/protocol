@@ -30,9 +30,8 @@ static CREATE_NOTE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// A private CREATE note that funds an output and an optional public TX_FEE note.
 ///
-/// Outputs remain unsealed; the creator is expected to build the transaction locally. The public
-/// account must expose BasicWallet's `create_note`. Transaction admission policy determines
-/// whether the supplied fee is sufficient.
+/// The creator builds and proves the transaction locally and checks its final outputs. Outputs
+/// remain unsealed. The public account must expose BasicWallet's `create_note`.
 ///
 /// The CREATE note and output use independent random serial numbers. Authenticated consumption
 /// omits the CREATE note's header from the proven transaction. The sender can reclaim an unspent
@@ -46,13 +45,13 @@ pub struct CreateNote {
 
 impl CreateNote {
     /// Number of storage items, matching the CREATE note script.
-    pub const NUM_STORAGE_ITEMS: usize = 20;
+    pub const NUM_STORAGE_ITEMS: usize = 16;
 
     /// Creates a CREATE note for `output`, whose sender identifies the public executing account.
     ///
-    /// `fee` must use the chain's native fee asset, checked at execution. Quote it before funding
-    /// the CREATE note; there is no fee change output. Output attachments must be added by the
-    /// transaction script. The sender's account must expose `receive_asset` to reclaim.
+    /// The caller selects the chain's native fee asset and quotes the fee before funding the CREATE
+    /// note; there is no fee change output. Output attachments must be added by the transaction
+    /// script. The sender's account must expose `receive_asset` to reclaim.
     ///
     /// # Errors
     ///
@@ -103,7 +102,6 @@ impl CreateNote {
         let input_assets = NoteAssets::new(input_assets)?;
         let mut items = Vec::with_capacity(Self::NUM_STORAGE_ITEMS);
         items.extend_from_slice(output.recipient().digest().as_elements());
-        items.extend_from_slice(input_assets.commitment().as_elements());
         items.extend_from_slice(&fee.map(|f| Asset::from(f).as_elements()).unwrap_or([ZERO; 8]));
         items.extend_from_slice(&[
             target.suffix(),

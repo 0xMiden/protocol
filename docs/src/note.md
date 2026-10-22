@@ -333,21 +333,20 @@ Consume reconstructed private paybacks and refunds with inclusion proofs; unauth
 
 ### CREATE note
 
-A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate `TX_FEE` output. The payment is paid in full; transaction admission policy determines whether it is sufficient.
+A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional payment for a separate `TX_FEE` output. The creator selects the native fee asset and amount, which is paid in full.
 
-Its NoteStorage contains 20 field elements:
+Its NoteStorage contains 16 field elements:
 
 | Indices, inclusive | Field |
 |---|---|
 | `0..3` | Output recipient commitment: script, serial number, and output NoteStorage |
-| `4..7` | Input assets commitment, including creation fee funding |
-| `8..15` | Asset and amount for the TX_FEE output; all zeros disables that output |
-| `16` | Executing account ID suffix |
-| `17` | Executing account ID prefix |
-| `18` | Output tag |
-| `19` | Output type |
+| `4..11` | Asset and amount for the TX_FEE output; all zeros disables that output |
+| `12` | Executing account ID suffix |
+| `13` | Executing account ID prefix |
+| `14` | Output tag |
+| `15` | Output type |
 
-The script verifies the funding, separates the creation fee, and transfers the remaining assets to the primary output. Both outputs remain unsealed. This assumes the creator constructs the transaction locally and controls later changes, such as adding attachments to the primary output. Sealing would protect outputs from changes by an untrusted transaction constructor. The script does not verify the constructor's identity; anyone with the private witness can execute it. The final note ID is not committed by the CREATE note. Public output recipient details are supplied as transaction advice.
+The script removes the creation fee from the input note and transfers the remaining assets to the primary output. The kernel rejects a fee that is missing or exceeds the available balance. Both outputs remain unsealed, and the script does not check their assets after callbacks. The creator builds and proves the transaction locally, adds any output attachments, and checks the final outputs. The script does not verify the constructor's identity; anyone with the private witness can execute it. The final note ID is not committed by the CREATE note. Public output recipient details are supplied as transaction advice.
 
 The sender can instead consume the CREATE note at any time to recover its assets. Either path consumes it permanently. Use independent random serials for the CREATE note and output, consume the CREATE note as an authenticated input, and prove locally to keep its contents private.
 
