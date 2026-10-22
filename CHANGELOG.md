@@ -13,10 +13,10 @@
 - Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
 - Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
 - Added private PSWAP cancellation through a separate account using canonical recipient advice. An optional native fee reserve funds cancellation, follows partial fills, and returns in the final payback ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Exposed the kernel's fungible value merge through `miden::protocol::asset::merge_fungible_values` and `miden::standards::assets::fungible_asset::merge` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 
 ### Changes
 
-- [BREAKING] `output_note::add_asset` and `wallets::basic::move_asset_to_note` now return the transferred asset, excluding any existing output balance or callback additions ([#3939](https://github.com/0xMiden/protocol/issues/3939)).
 - [BREAKING] Both PSWAP payback modes now use fixed recipient hashes, with fill attachments distinguishing successive outputs ([#4074](https://github.com/0xMiden/protocol/pull/4074)).
 - [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).

@@ -141,7 +141,7 @@ proc process_notes()
             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
 
             call.basic_wallet::move_asset_to_note
-            # => [ASSET_ID, ASSET_VALUE, pad(8), assets_left, notes_left, pad(16)]
+            # => [pad(16), assets_left, notes_left, pad(16)]
 
             dropw dropw dropw dropw
             # => [assets_left, notes_left, pad(16)]

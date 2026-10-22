@@ -363,7 +363,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
             push.{ASSET_1_VALUE}
             push.{ASSET_1_KEY}
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
             # => []
 
             # create output note 2
@@ -376,7 +376,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             dup
             push.{ASSET_2_VALUE}
             push.{ASSET_2_KEY}
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
             # => [note_idx]
 
             # Store attachment words to memory
@@ -502,9 +502,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(15)]
 
             call.output_note::add_asset
-            push.{ASSET_ID} assert_eqw
-            push.{ASSET_VALUE} assert_eqw
-            # => [pad(16)]
+            # => [pad(15)]
 
             # truncate the stack
             exec.sys::truncate_stack
@@ -572,31 +570,23 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             push.{ASSET_VALUE}
             push.{ASSET_ID}
             exec.output_note::add_asset
-            push.{ASSET_ID} assert_eqw
-            push.{ASSET_VALUE} assert_eqw
             # => [note_idx]
 
             dup
             push.{ASSET2_VALUE}
             push.{ASSET2_KEY}
             exec.output_note::add_asset
-            push.{ASSET2_KEY} assert_eqw
-            push.{ASSET2_VALUE} assert_eqw
             # => [note_idx]
 
             dup
             push.{ASSET3_VALUE}
             push.{ASSET3_KEY}
             exec.output_note::add_asset
-            push.{ASSET3_KEY} assert_eqw
-            push.{ASSET3_VALUE} assert_eqw
             # => [note_idx]
 
             push.{ASSET4_VALUE}
             push.{ASSET4_KEY}
             exec.output_note::add_asset
-            push.{ASSET4_KEY} assert_eqw
-            push.{ASSET4_VALUE} assert_eqw
             # => []
 
             # truncate the stack
@@ -706,12 +696,12 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             push.{ASSET_ID}
             # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
             # => [note_idx]
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
             # => []
         end
         ",
@@ -763,7 +753,7 @@ async fn test_add_assets_around_max_per_note(
             add_assets_code.push_str("dup\n");
         }
         add_assets_code.push_str(&format!(
-            "push.{ASSET_VALUE}\npush.{ASSET_ID}\nexec.output_note::add_asset dropw dropw\n",
+            "push.{ASSET_VALUE}\npush.{ASSET_ID}\nexec.output_note::add_asset\n",
             ASSET_ID = asset.to_id_word(),
             ASSET_VALUE = asset.to_value_word(),
         ));
@@ -984,8 +974,6 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             push.{ASSET_0_VALUE}
             push.{ASSET_0_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            push.{ASSET_0_KEY} assert_eqw
-            push.{ASSET_0_VALUE} assert_eqw
             # => [note_idx]
 
             # get the assets hash and assets number of the note having only asset_0
@@ -1016,8 +1004,6 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             push.{ASSET_1_VALUE}
             push.{ASSET_1_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            push.{ASSET_1_KEY} assert_eqw
-            push.{ASSET_1_VALUE} assert_eqw
             # => [note_idx]
 
             # get the assets hash and assets number of the note having asset_0 and asset_1
@@ -2200,7 +2186,7 @@ async fn test_private_output_sealed_by_note_script(
             # => [ASSET_ID, ASSET_VALUE, note_index = 0]
 
             call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [ASSET_ID, ASSET_VALUE, pad(8)]",
+            # => [pad(16)]",
             asset_value = added_asset.to_value_word(),
             asset_id = added_asset.to_id_word(),
         ),
@@ -2286,7 +2272,6 @@ fn create_output_note(note: &Note) -> String {
             push.{ASSET_ID}
             # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw dropw
             # => [note_idx]
         ",
             ASSET_ID = asset.to_id_word(),

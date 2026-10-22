@@ -69,7 +69,7 @@ procedure_root!(
 /// of this component are:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
-///   it to the output note with the specified index, returning the transferred asset.
+///   it to the output note with the specified index.
 /// - `create_note`, which can be used to create a new output note and return its index.
 ///
 /// All methods require authentication. Thus, this component must be combined with a component
@@ -143,7 +143,7 @@ impl From<BasicWallet> for AccountComponent {
 /// The basic wallet interface exposes three procedures:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
-///   it to the output note with the specified index, returning the transferred asset.
+///   it to the output note with the specified index.
 /// - `create_note`, which can be used to create an output note.
 ///
 /// All methods require authentication, which is provided by an [`AuthSingleSig`] component
