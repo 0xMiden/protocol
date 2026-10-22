@@ -86,7 +86,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # The remainder PSWAP note's own tag is copied from the active note's
 # metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
 #
-# Shared note-storage buffer, initialized and validated by load_storage before use.
+# Global memory address where load_storage loads and validates the note storage.
 const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
