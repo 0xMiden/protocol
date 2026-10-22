@@ -46,8 +46,8 @@ static TX_FEE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// account's own code must move them out. The note is completely unopinionated about which assets
 /// are used to pay the fee.
 ///
-/// TX_FEE notes are always [public](NoteType::Public), carry no storage and no attachments, and
-/// are tagged with the unique [`TxFeeNote::TAG`].
+/// This type produces [public](NoteType::Public) notes with no storage or attachments, tagged with
+/// the unique [`TxFeeNote::TAG`]. The note script also permits attachments added during execution.
 ///
 /// Construct one with the [builder](TxFeeNote::builder), which requires at least one asset.
 /// Convert a `TxFeeNote` into a protocol [`Note`] infallibly via `Note::from`.

@@ -26,6 +26,7 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
+    NoteAttachmentScheme,
     NoteAttachments,
     NoteId,
     NoteRecipient,
@@ -41,7 +42,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, RawOutputNotes};
 use miden_protocol::{Felt, ONE, Word, ZERO};
-use miden_standards::account::auth::NoAuth;
+use miden_standards::account::auth::{AuthTxFeeCollector, NoAuth};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -1602,6 +1603,107 @@ async fn pswap_cancellation_reserve_lifecycle(
         .build()?
         .execute()
         .await?;
+    Ok(())
+}
+
+/// A native issuer's callback may append an attachment to the cancellation fee without making
+/// the public TX_FEE note unusable by the fee collector.
+#[tokio::test]
+async fn pswap_cancellation_fee_with_callback_attachment_can_be_collected() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let collector = builder.add_account_from_builder(
+        Auth::TxFeeCollector { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        Account::builder([75; 32])
+            .account_type(AccountType::Public)
+            .with_component(BasicWallet),
+        AccountState::Exists,
+    )?;
+    let code = CodeBuilder::default().compile_component_code(
+        "tests::pswap_fee_callback",
+        r#"
+        use miden::protocol::output_note
+        @account_procedure
+        pub proc on_before_asset_added_to_note
+            dropw dropw
+            # => [note_idx, pad(7)]
+
+            # The cancellation fee is output 1; the collector later forwards it to output 0.
+            dup eq.1
+            if.true
+                push.4.3.2.1 push.99 exec.output_note::add_word_attachment
+            else
+                drop
+            end
+        end
+        "#,
+    )?;
+    let root = code
+        .as_package()
+        .get_procedure_root_by_path("tests::pswap_fee_callback::on_before_asset_added_to_note")
+        .unwrap();
+    let router = Account::builder([76; 32])
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_component(AccountComponent::new(
+            code,
+            AssetCallbacks::new().on_before_asset_added_to_note(root).into_storage_slots(),
+            AccountComponentMetadata::new("tests::pswap_fee_callback"),
+        )?)
+        .build_existing()?;
+    builder.add_account(router.clone())?;
+    let fee = FungibleAsset::new(router.id(), 20)?;
+    builder = builder.fee_faucet_id(router.id());
+    let recipient =
+        P2idNoteRecipient::new(P2idNoteStorage::new(owner.id()), builder.rng_mut().draw_word());
+    let pswap = PswapNote::builder()
+        .sender(router.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .min_requested_asset(FungibleAsset::new(
+                    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?,
+                    50,
+                )?)
+                .payback(PswapPayback::private(recipient, NoteTag::new(27)))
+                .cancellation_fee(fee)
+                .build(),
+        )
+        .serial_number(builder.rng_mut().draw_word())
+        .note_type(NoteType::Public)
+        .offered_asset(FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 100)?)
+        .build()?;
+    let note: Note = pswap.clone().into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mut chain = builder.build()?;
+    let cancel = chain
+        .build_transaction(router.id())
+        .authenticated_input_note(note.clone())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
+        .extend_advice_inputs(
+            AdviceInputs::default().with_map(pswap.cancellation_advice(recipient)?),
+        )
+        .build()?
+        .execute()
+        .await?;
+    let fee_note = cancel.output_notes().get_note(1);
+    assert_eq!(fee_note.metadata().tag(), TxFeeNote::TAG);
+    assert_eq!(fee_note.assets(), &NoteAssets::new(vec![fee.into()])?);
+    let attachment =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, Word::from([1u32, 2, 3, 4]));
+    assert_eq!(fee_note.attachments(), &attachment.into());
+    chain.add_pending_executed_transaction(&cancel)?;
+    chain.prove_next_block()?;
+    let collected = chain
+        .build_transaction(collector.id())
+        .authenticated_input_note(fee_note.id())
+        .foreign_accounts([chain.get_foreign_account_inputs(router.id())?])
+        .auth_args(AuthTxFeeCollector::auth_args(owner.id(), NoteType::Public))
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(collected.output_notes().get_note(0).assets(), fee_note.assets());
+    assert_eq!(collected.final_account().to_commitment(), collector.to_commitment());
     Ok(())
 }
 
