@@ -79,8 +79,9 @@ const WINDOW_BLOCKS: u32 = 16;
 /// The spending limit, denominated in the USDCX-like base asset.
 const SPENDING_LIMIT: u64 = 100_000;
 
-/// Blocks a transaction stays includable after reading the oracle.
-const MAX_ORACLE_BLOCK_AGE: u16 = 32;
+/// Blocks a transaction stays includable after reading the oracle. Below `WINDOW_BLOCKS`, so the
+/// oracle bound is visible next to the window bound.
+const MAX_ORACLE_BLOCK_AGE: u16 = 8;
 
 /// Rate the test oracle quotes for every pair: 3000 base units per unit of the source asset.
 const ORACLE_RATE: u64 = 3_000;
@@ -592,9 +593,11 @@ async fn an_older_reference_block_does_not_release_budget() -> anyhow::Result<()
 async fn a_disabled_policy_does_not_meter() -> anyhow::Result<()> {
     let mut h = Harness::new(None, Some(FIXED_RATE_PROVIDER))?;
 
-    h.send(fungible(usdcx(), 500_000)).await?;
+    let tx = h.send(fungible(usdcx(), 500_000)).await?;
 
     assert_eq!(h.tracker(), Word::empty());
+    // Nothing bound the expiration either.
+    assert_eq!(tx.expiration_block_num(), BlockNumber::from(u32::MAX));
     Ok(())
 }
 
@@ -692,6 +695,46 @@ async fn reading_the_oracle_tightens_the_expiration() -> anyhow::Result<()> {
     let tx = h.send(fungible(eth(), 1)).await?;
 
     assert_eq!(tx.expiration_block_num(), reference_block + u32::from(MAX_ORACLE_BLOCK_AGE));
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_policy_binds_the_expiration_to_the_window() -> anyhow::Result<()> {
+    let mut h = Harness::with_policy()?;
+    let reference_block = h.latest_block();
+
+    // The base asset reads no oracle, so the window is the only bound.
+    let tx = h.send(fungible(usdcx(), 1)).await?;
+
+    assert_eq!(tx.expiration_block_num(), reference_block + WINDOW_BLOCKS);
+    Ok(())
+}
+
+/// A past window with no spend in it looks fresh to the tracker. Referencing a block inside it does
+/// open a fresh budget, but the transaction expires one window after that block, so it can no
+/// longer be included once the chain has moved on.
+#[tokio::test]
+async fn an_idle_window_cannot_be_reopened_with_an_old_reference_block() -> anyhow::Result<()> {
+    let mut h = Harness::with_policy()?;
+
+    h.send(fungible(usdcx(), 60_000)).await?;
+
+    // Leave the next window idle and stand two windows past it.
+    let idle_window_block = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    h.chain.prove_until_block(idle_window_block + 2 * WINDOW_BLOCKS)?;
+
+    let salt = h.next_salt();
+    let tx = h
+        .run_send_notes(
+            vec![fungible(usdcx(), 60_000)],
+            salt,
+            &[0, 1],
+            Some(BlockNumber::from(idle_window_block)),
+        )
+        .await??;
+
+    assert_eq!(tx.expiration_block_num(), BlockNumber::from(idle_window_block + WINDOW_BLOCKS));
+    assert!(tx.expiration_block_num() < h.latest_block(), "the transaction must be expired");
     Ok(())
 }
 

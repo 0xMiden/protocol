@@ -120,6 +120,10 @@ impl SpendingBudget {
 /// budget over its limit fails regardless of how many approvers signed it; the policy never
 /// changes the signature threshold.
 ///
+/// While the policy is enabled every transaction of the account expires `window_blocks` blocks
+/// after its reference block, capped at the kernel's maximum delta, so a budget cannot be reopened
+/// by referencing a block in an idle window.
+///
 /// An asset that is neither the base asset nor priced by the oracle falls to the
 /// [`UncoveredAssetPolicy`]. Non-fungible assets are not metered.
 ///

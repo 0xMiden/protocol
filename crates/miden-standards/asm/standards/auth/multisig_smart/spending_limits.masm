@@ -21,6 +21,10 @@ use miden::standards::oracle::price_oracle
 # needs, it only decides whether the transaction is allowed at all. Non-fungible assets are outside
 # the policy.
 #
+# Window binding: while the policy is enabled, every transaction expires `window_blocks` blocks (at
+# most 65535) after its reference block. A reference block is therefore at most one window old at
+# inclusion, so an idle window cannot be reopened later by pointing an older reference block at it.
+#
 # Faulty oracle: an oracle without a rate makes the asset fall to the policy and an unavailable one
 # fails the foreign call, so under `reject` every non-base asset stops until governance acts. The
 # intended response is to unset the oracle with `update_spending_oracle`: the base asset keeps being
@@ -299,13 +303,18 @@ end
 #! it into the base asset and charges the budget; an asset the budget cannot charge falls to the
 #! uncovered-asset policy. Non-fungible assets are skipped.
 #!
-#! A no-op when the policy is disabled (`window_blocks == 0`) or the transaction creates no output
-#! notes.
+#! A no-op when the policy is disabled (`window_blocks == 0`). With the policy enabled the
+#! transaction's expiration is bound to the window even when it creates no output notes.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
+#! Side effects:
+#! - Tightens the transaction expiration delta to `min(window_blocks, 65535)`, so the reference
+#!   block is at most one window old at inclusion and an idle window cannot be reopened later.
+#!
 #! Panics if:
+#! - `window_blocks` is not a valid `u32` field element (`ERR_WINDOW_BLOCKS_NOT_U32`).
 #! - an asset is not covered by the budget and the policy is UNCOVERED_ASSET_REJECT
 #!   (`ERR_UNCOVERED_ASSET_REJECTED`).
 #! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
@@ -324,6 +333,14 @@ pub proc enforce_spending_limits()
         drop drop drop
         # => []
     else
+        u32assert.err=ERR_WINDOW_BLOCKS_NOT_U32
+        # => [window_blocks, uncovered_asset_policy, config_generation]
+
+        # ----- Bind the transaction to its window: a reference block more than one window old is
+        # expired at inclusion, so an idle window cannot be reopened with it. -----
+        dup push.MAX_EXPIRATION_BLOCK_DELTA u32min exec.tx::update_expiration_block_delta
+        # => [window_blocks, uncovered_asset_policy, config_generation]
+
         exec.current_window_index
         # => [window_index, uncovered_asset_policy, config_generation]
 
@@ -452,17 +469,12 @@ end
 #! Outputs: [window_index]
 #!
 #! Where:
-#! - window_blocks is the configured window length in blocks; it must be non-zero.
+#! - window_blocks is the configured window length in blocks; the caller asserts it is a non-zero
+#!   `u32`.
 #! - window_index is floor(reference_block_num / window_blocks).
-#!
-#! Panics if:
-#! - `window_blocks` is not a valid `u32` field element (`ERR_WINDOW_BLOCKS_NOT_U32`).
 #!
 #! Invocation: exec
 proc current_window_index(window_blocks: u32) -> u32
-    u32assert.err=ERR_WINDOW_BLOCKS_NOT_U32
-    # => [window_blocks]
-
     exec.tx::get_reference_block_number
     # => [reference_block_num, window_blocks]
 
