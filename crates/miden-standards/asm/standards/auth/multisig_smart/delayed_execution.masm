@@ -357,10 +357,8 @@ end
 #! Computes the unlock block for the current proposal.
 #!
 #! The unlock block counts from the latest block the proposal transaction can be included in,
-#! `proposal_block + propose_expiration_delta`, not from the reference block itself. The proposer
-#! picks the reference block and could pick a stale one; anchoring on the worst-case inclusion
-#! block guarantees that execution comes at least `min_delay` blocks after the proposal is on
-#! chain, whatever reference block was chosen.
+#! `proposal_block + propose_expiration_delta`, so execution comes at least `min_delay` blocks
+#! after the proposal is on chain whatever reference block the proposer picked.
 #!
 #! Inputs:  []
 #! Outputs: [unlock_block, proposal_block]
@@ -531,9 +529,8 @@ end
 #! signatures are over the same commitment that is verified again at execution, so they already
 #! count towards that threshold.
 #!
-#! The proposal is written with `min_cancel_sigs` set to the configured `cancel_threshold`, read
-#! from the initial state, so the proposer has no say in how many approvers it takes to cancel; the
-#! current (proposal) transaction is given the configured `propose_expiration_delta`.
+#! The proposal is written with `min_cancel_sigs` set to the configured `cancel_threshold`, and
+#! the current (proposal) transaction is given the configured `propose_expiration_delta`.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
@@ -599,11 +596,9 @@ end
 #!
 #! Cancelling is final. The record stays in the map: the commitment can neither be re-proposed nor
 #! executed through the timelock, and it cannot be cancelled again, so the proposal signatures over
-#! it, which are public and replayable, are spent for good. Deleting the record instead would let a
-#! single approver re-propose the same commitment right after every cancellation, and its execution
-#! signatures would stay usable until the approval expiration its own signers chose. Approvers who
-#! do want the action re-sign it with a new salt. Immediate execution is unaffected: a transaction
-#! with enough signatures for it runs whatever the record says, and clears the record.
+#! it, which are public and replayable, are spent for good. Approvers who do want the action re-sign
+#! it with a new salt. Immediate execution is unaffected: a transaction with enough signatures for it
+#! runs whatever the record says, and clears the record.
 #!
 #! Cancelling is a different intent from proposing, so it must not be satisfiable with the proposal
 #! signatures. Those are public once the propose transaction lands and are also valid for execution;
