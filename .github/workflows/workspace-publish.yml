@@ -111,3 +111,27 @@ jobs:
         run: |
           set -e
           gh release upload ${RELEASE_TAG} miden-tx-kernel.masp miden-protocol.masp miden-standards.masp miden-standards-components.tar.gz --clobber
+
+  # Fill the GitHub release page with the `.changelog/<tag>/` entries.
+  release-notes:
+    name: set release notes from the changelog entries
+    if: ${{ github.repository_owner == '0xMiden' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      # Built in a step without `GH_TOKEN`, so no entry content can read the token.
+      - name: Build release notes
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: ./scripts/release-notes.sh "${RELEASE_TAG}" > notes.md
+      - name: Set release notes
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${RELEASE_TAG}" --notes-file notes.md

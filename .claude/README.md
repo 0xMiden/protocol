@@ -49,7 +49,7 @@ Hooks in `settings.json` enforce quality at the commit, push, and PR boundaries:
   `post_commit_review` can't undo a commit already made, so it halts the
   agent until the finding is fixed and the commit amended.
 - `post_pr_create_changelog` - classifies the diff and either requires a
-  CHANGELOG entry or applies the `no changelog` label.
+  `.changelog/unreleased/<PR>.md` entry or applies the `no changelog` label.
 
 ## Contents
 

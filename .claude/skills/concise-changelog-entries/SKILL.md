@@ -1,6 +1,6 @@
 ---
 name: concise-changelog-entries
-description: Keep CHANGELOG.md entries to a single concise sentence. Use when adding or editing entries in CHANGELOG.md.
+description: Keep changelog entries (`.changelog/unreleased/<PR>.md`) to a single concise sentence. Use when adding or editing changelog entries.
 ---
 
 # Concise CHANGELOG Entries
