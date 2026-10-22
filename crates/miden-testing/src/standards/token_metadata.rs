@@ -26,7 +26,7 @@ use miden_standards::account::faucets::{
     Description,
     ExternalLink,
     FungibleFaucet,
-    LogoURI,
+    LogoUri,
     TokenMetadata,
     TokenName,
 };
@@ -70,7 +70,7 @@ fn network_faucet_metadata(
     };
     let (logo_uri, is_logo_uri_mutable) = match logo_uri {
         Some((words, mutable)) => {
-            (Some(LogoURI::try_from_words(&words).expect("valid logo_uri words")), mutable)
+            (Some(LogoUri::try_from_words(&words).expect("valid logo_uri words")), mutable)
         },
         None => (None, false),
     };

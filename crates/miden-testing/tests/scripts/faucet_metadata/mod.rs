@@ -35,7 +35,7 @@ use miden_standards::account::faucets::{
     Description,
     ExternalLink,
     FungibleFaucet,
-    LogoURI,
+    LogoUri,
     TokenMetadata,
     TokenName,
 };
@@ -240,7 +240,7 @@ async fn set_logo_uri_fails_when_immutable() -> anyhow::Result<()> {
     builder.add_account(faucet.clone())?;
     let mock_chain = builder.build()?;
 
-    let logo_uri = LogoURI::new("https://example.com/nope.png")?;
+    let logo_uri = LogoUri::new("https://example.com/nope.png")?;
     let note = config_note(owner, faucet.id(), FaucetMetadataConfig::SetLogoUri { logo_uri }, 5)?;
 
     let result = mock_chain

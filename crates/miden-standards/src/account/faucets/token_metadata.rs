@@ -200,9 +200,9 @@ impl Description {
 
 /// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogoURI(FixedWidthString<7>);
+pub struct LogoUri(FixedWidthString<7>);
 
-impl LogoURI {
+impl LogoUri {
     /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
     pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
@@ -269,7 +269,7 @@ impl ExternalLink {
 pub struct TokenMetadata {
     name: TokenName,
     description: Option<Description>,
-    logo_uri: Option<LogoURI>,
+    logo_uri: Option<LogoUri>,
     external_link: Option<ExternalLink>,
     is_description_mutable: bool,
     is_logo_uri_mutable: bool,
@@ -310,7 +310,7 @@ impl TokenMetadata {
     }
 
     /// Sets the logo URI and its mutability flag together.
-    pub fn with_logo_uri(mut self, logo_uri: LogoURI, mutable: bool) -> Self {
+    pub fn with_logo_uri(mut self, logo_uri: LogoUri, mutable: bool) -> Self {
         self.logo_uri = Some(logo_uri);
         self.is_logo_uri_mutable = mutable;
         self
@@ -355,7 +355,7 @@ impl TokenMetadata {
     }
 
     /// Returns the logo URI if set.
-    pub fn logo_uri(&self) -> Option<&LogoURI> {
+    pub fn logo_uri(&self) -> Option<&LogoUri> {
         self.logo_uri.as_ref()
     }
 
@@ -490,7 +490,7 @@ impl TokenMetadata {
         };
 
         let logo_words = read_slots(&LOGO_URI_SLOTS)?;
-        let logo_uri = LogoURI::try_from_words(&logo_words).map_err(|err| {
+        let logo_uri = LogoUri::try_from_words(&logo_words).map_err(|err| {
             TokenMetadataError::InvalidStringField { field: "logo_uri", source: err }
         })?;
         let logo_uri = if logo_uri.as_str().is_empty() {
@@ -565,7 +565,7 @@ impl TokenMetadata {
 
         let logo_uri = self
             .logo_uri
-            .unwrap_or_else(|| LogoURI::new("").expect("empty logo URI should be valid"));
+            .unwrap_or_else(|| LogoUri::new("").expect("empty logo URI should be valid"));
         for (i, word) in logo_uri.to_words().iter().enumerate() {
             slots.push(StorageSlot::with_value(TokenMetadata::logo_uri_slot(i).clone(), *word));
         }

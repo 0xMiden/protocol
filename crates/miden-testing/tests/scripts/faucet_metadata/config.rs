@@ -11,7 +11,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
-use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
+use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoUri};
 use miden_standards::errors::standards::{
     ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
@@ -113,7 +113,7 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let description = Description::new("dispatched through the config note")?;
-    let logo_uri = LogoURI::new("https://example.com/dispatched.png")?;
+    let logo_uri = LogoUri::new("https://example.com/dispatched.png")?;
     let external_link = ExternalLink::new("https://example.com/dispatched")?;
 
     let notes = [

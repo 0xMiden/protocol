@@ -22,7 +22,7 @@ use super::{
     Description,
     ExternalLink,
     FungibleFaucetError,
-    LogoURI,
+    LogoUri,
     TokenMetadata,
     TokenMetadataError,
     TokenName,
@@ -152,7 +152,7 @@ impl FungibleFaucet {
     /// ```
     /// # use miden_protocol::asset::{AssetAmount, TokenSymbol};
     /// # use miden_standards::account::faucets::FungibleFaucet;
-    /// # use miden_standards::account::faucets::{Description, LogoURI, TokenName};
+    /// # use miden_standards::account::faucets::{Description, LogoUri, TokenName};
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let faucet = FungibleFaucet::builder()
     ///     .name(TokenName::new("My Token")?)
@@ -161,7 +161,7 @@ impl FungibleFaucet {
     ///     .max_supply(AssetAmount::from(1_000_000u32))
     ///     .token_supply(AssetAmount::from(100u32))
     ///     .description(Description::new("A test token")?)
-    ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
+    ///     .logo_uri(LogoUri::new("https://example.com/logo.png")?)
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -179,7 +179,7 @@ impl FungibleFaucet {
         max_supply: AssetAmount,
         #[builder(default)] token_supply: AssetAmount,
         description: Option<Description>,
-        logo_uri: Option<LogoURI>,
+        logo_uri: Option<LogoUri>,
         external_link: Option<ExternalLink>,
         #[builder(default)] is_description_mutable: bool,
         #[builder(default)] is_logo_uri_mutable: bool,
@@ -344,7 +344,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the optional logo URI.
-    pub fn logo_uri(&self) -> Option<&LogoURI> {
+    pub fn logo_uri(&self) -> Option<&LogoUri> {
         self.metadata.logo_uri()
     }
 

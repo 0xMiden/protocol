@@ -23,7 +23,7 @@ use miden_protocol::{Felt, Hasher, Word};
 use super::{
     Description,
     ExternalLink,
-    LogoURI,
+    LogoUri,
     NonFungibleFaucetError,
     TokenMetadata,
     TokenMetadataError,
@@ -233,7 +233,7 @@ impl NonFungibleFaucet {
         name: TokenName,
         symbol: TokenSymbol,
         description: Option<Description>,
-        logo_uri: Option<LogoURI>,
+        logo_uri: Option<LogoUri>,
         contract_uri: Option<ExternalLink>,
         token_base_uri: Option<TokenBaseUri>,
         #[builder(default)] is_description_mutable: bool,
@@ -359,7 +359,7 @@ impl NonFungibleFaucet {
     }
 
     /// Returns the optional logo URI.
-    pub fn logo_uri(&self) -> Option<&LogoURI> {
+    pub fn logo_uri(&self) -> Option<&LogoUri> {
         self.metadata.logo_uri()
     }
 

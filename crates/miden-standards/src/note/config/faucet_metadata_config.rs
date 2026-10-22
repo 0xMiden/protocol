@@ -22,7 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-use crate::account::faucets::{Description, ExternalLink, LogoURI};
+use crate::account::faucets::{Description, ExternalLink, LogoUri};
 use crate::note::costs::{FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 use crate::note::{NetworkAccountTarget, NumStorageItems};
 
@@ -73,7 +73,7 @@ pub enum FaucetMetadataConfig {
     /// Set the token description. Requires the description to be configured as mutable.
     SetDescription { description: Description },
     /// Set the token logo URI. Requires the logo URI to be configured as mutable.
-    SetLogoUri { logo_uri: LogoURI },
+    SetLogoUri { logo_uri: LogoUri },
     /// Set the token external link. Requires the external link to be configured as mutable.
     SetExternalLink { external_link: ExternalLink },
 }
@@ -416,7 +416,7 @@ mod tests {
     /// Every string action carries the same layout, differing only in the variant.
     #[test]
     fn string_action_variants() {
-        let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
+        let logo_uri = LogoUri::new("https://example.com/logo.png").unwrap();
         let storage = NoteStorage::from(FaucetMetadataConfig::SetLogoUri { logo_uri });
         assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_LOGO_URI));
 
