@@ -55,14 +55,14 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// identifying the owner. Fill attachments distinguish successive payback notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PswapPayback {
+    /// Private payback notes to a fixed recipient hash, with an explicit discovery tag.
+    Private { recipient: Word, tag: NoteTag },
     /// Public `P2ID` payback notes to the original creator, who can also reclaim the order.
     /// Stores the recipient preimage needed to construct each public output.
     Public {
         recipient: P2idNoteRecipient,
         tag: NoteTag,
     },
-    /// Private payback notes to a fixed recipient hash, with an explicit discovery tag.
-    Private { recipient: Word, tag: NoteTag },
 }
 
 impl PswapPayback {
@@ -445,6 +445,10 @@ pub struct PswapNote {
 
     offered_asset: FungibleAsset,
 
+    // Preserve input asset order because it contributes to the note ID.
+    #[builder(skip)]
+    assets: NoteAssets,
+
     /// Defaults to the discovery tag for this script and asset pair.
     #[builder(default = PswapNote::create_tag(note_type, &offered_asset, storage.min_requested_asset()))]
     tag: NoteTag,
@@ -474,11 +478,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the offered and requested assets have the same faucet ID, if either of
-    /// them is zero, or if the first [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment is
-    /// malformed.
+    /// Returns an error if:
+    /// - the offered and requested assets have the same faucet ID or either amount is zero.
+    /// - the cancellation fee is zero or overflows when merged with the offered asset.
+    /// - the first [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment is malformed.
     pub fn build(self) -> Result<PswapNote, NoteError> {
-        let note = self.build_internal();
+        let mut note = self.build_internal();
 
         if note.offered_asset.faucet_id() == note.storage.requested_faucet_id() {
             return Err(NoteError::other(
@@ -499,7 +504,7 @@ where
         {
             return Err(NoteError::other("cancellation fee must be non-zero"));
         }
-        PswapNote::note_assets(note.offered_asset, note.storage.cancellation_fee)?;
+        note.assets = PswapNote::note_assets(note.offered_asset, note.storage.cancellation_fee)?;
 
         // The VM uses the first PSWAP attachment; callbacks may append others with this scheme.
         if let Some(attachment) = note.attachments.find(PswapNote::PSWAP_ATTACHMENT_SCHEME) {
@@ -1204,13 +1209,11 @@ impl PswapNote {
 /// Converts a [`PswapNote`] into a protocol [`Note`], preserving its tag and attachments.
 impl From<PswapNote> for Note {
     fn from(pswap: PswapNote) -> Self {
-        let assets = PswapNote::note_assets(pswap.offered_asset, pswap.storage.cancellation_fee)
-            .expect("the builder validates principal and cancellation reserve");
         let recipient = pswap.storage.into_recipient(pswap.serial_number);
 
         let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(pswap.tag);
 
-        Note::with_attachments(assets, metadata, recipient, pswap.attachments)
+        Note::with_attachments(pswap.assets, metadata, recipient, pswap.attachments)
     }
 }
 
@@ -1254,7 +1257,7 @@ impl TryFrom<&Note> for PswapNote {
             ));
         };
 
-        PswapNote::builder()
+        let mut pswap = PswapNote::builder()
             .sender(note.metadata().sender())
             .storage(storage)
             .serial_number(note.recipient().serial_num())
@@ -1262,7 +1265,9 @@ impl TryFrom<&Note> for PswapNote {
             .tag(note.metadata().tag())
             .offered_asset(*offered_asset)
             .attachments(note.attachments().clone())
-            .build()
+            .build()?;
+        pswap.assets = note.assets().clone();
+        Ok(pswap)
     }
 }
 
