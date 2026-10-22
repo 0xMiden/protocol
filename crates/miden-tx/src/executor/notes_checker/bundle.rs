@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::iter;
 
 use miden_protocol::account::AccountId;
+use miden_protocol::asset::AssetAmount;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteId};
 use miden_standards::note::FeeSponsorshipNote;
@@ -13,11 +14,11 @@ use super::error::SponsorshipRejectionError;
 // SPONSORSHIP INPUT
 // ================================================================================================
 
-/// A FEE_SPONSORSHIP input note, parsed once.
+/// A FEE_SPONSORSHIP input note, together with the amount of the fee asset it carries.
 #[derive(Debug, Clone)]
 pub(super) struct SponsorshipInput {
     note: Note,
-    sponsorship: FeeSponsorshipNote,
+    amount: AssetAmount,
 }
 
 impl SponsorshipInput {
@@ -26,9 +27,9 @@ impl SponsorshipInput {
         &self.note
     }
 
-    /// Returns the note parsed as a FEE_SPONSORSHIP note.
-    pub(super) fn sponsorship(&self) -> &FeeSponsorshipNote {
-        &self.sponsorship
+    /// Returns the amount of the fee asset the note carries.
+    pub(super) fn amount(&self) -> AssetAmount {
+        self.amount
     }
 }
 
@@ -198,7 +199,7 @@ impl NoteBundler {
             let Some(sponsorship) = sponsorship else { continue };
             let input = SponsorshipInput {
                 note: note.clone(),
-                sponsorship: sponsorship.clone(),
+                amount: sponsorship.asset().amount(),
             };
 
             match note_indices.get(&sponsorship.feature_note_id()).copied() {

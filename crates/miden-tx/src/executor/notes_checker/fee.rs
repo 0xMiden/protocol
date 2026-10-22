@@ -67,9 +67,9 @@ pub(super) fn fee_error(
 
     // A total above the maximum asset amount could not have been collected into the account vault
     // in the first place, so the execution would have failed for another reason.
-    let provided = sponsorships.iter().try_fold(AssetAmount::ZERO, |total, sponsorship| {
-        (total + sponsorship.sponsorship().asset().amount()).ok()
-    })?;
+    let provided = sponsorships
+        .iter()
+        .try_fold(AssetAmount::ZERO, |total, sponsorship| (total + sponsorship.amount()).ok())?;
 
     Some(FeeError::FeeNotCovered {
         feature_note_id: feature_note.id(),
