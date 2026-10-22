@@ -10,6 +10,7 @@ use {APPROVER_SCHEME_ID_SLOT} from miden::standards::auth::multisig
 use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
+use {TX_PROPOSALS_SLOT} from miden::standards::auth::multisig_smart::delayed_execution
 
 pub mod delayed_execution
 
@@ -32,7 +33,7 @@ const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::multisig_smart::pr
 # approvers, so at most that many signatures verify. A called procedure contributes it for an
 # execution path its policy does not allow, which closes that path through the ordinary threshold
 # maximum without any extra flag.
-const UNREACHABLE_THRESHOLD = MAX_NUM_APPROVERS + 1
+pub const UNREACHABLE_THRESHOLD = MAX_NUM_APPROVERS + 1
 
 # NOTE RESTRICTIONS
 # =================================================================================================
@@ -540,7 +541,7 @@ pub proc auth_tx(
             # ------ Immediate execution: drop a proposal for this transaction, if any ------
             # The executed-transactions set already prevents re-execution; this only keeps the
             # proposals map free of entries that can never be consumed.
-            dupw exec.delayed_execution::remove_tx_proposal_if_present
+            dupw push.TX_PROPOSALS_SLOT[0..2] exec.delayed_execution::remove_tx_proposal_if_present
             # => [TX_SUMMARY_COMMITMENT]
         else
             dup loc_load.AUTH_TX_DELAYED_THRESHOLD_LOC
@@ -554,8 +555,8 @@ pub proc auth_tx(
                 # => [TX_SUMMARY_COMMITMENT]
 
                 # ------ Delayed execution: enforce the timelock and consume the proposal ------
-                dupw loc_load.AUTH_TX_APPROVAL_EXPIRATION_LOC
-                # => [approval_expiration_block_num, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+                dupw loc_load.AUTH_TX_APPROVAL_EXPIRATION_LOC push.TX_PROPOSALS_SLOT[0..2]
+                # => [proposals_slot_id, approval_expiration_block_num, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
 
                 exec.delayed_execution::consume_tx_proposal
                 # => [TX_SUMMARY_COMMITMENT]
@@ -669,7 +670,7 @@ end
 #! - transaction_threshold is the effective minimum number of signatures required on this path.
 #!
 #! Invocation: exec
-proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
+pub proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
     dup.1 eq.0
     # => [is_policy_zero, default_threshold, policy_threshold]
 
@@ -686,7 +687,7 @@ end
 #! Outputs: [threshold_or_unreachable]
 #!
 #! Invocation: exec
-proc unreachable_if_zero(threshold: SignatureThreshold) -> SignatureThreshold
+pub proc unreachable_if_zero(threshold: SignatureThreshold) -> SignatureThreshold
     push.UNREACHABLE_THRESHOLD
     # => [unreachable_threshold, threshold]
 
