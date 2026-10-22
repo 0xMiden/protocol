@@ -2170,6 +2170,141 @@ async fn test_multisig_smart_cancel_threshold_above_shrunk_approver_set_stays_ca
     Ok(())
 }
 
+/// The cancellation quorum is the greater of the configured `cancel_threshold` and the number of
+/// approvers that signed the proposal. On a five-approver account with a floor of 2, a proposal
+/// signed by three approvers cannot be vetoed by the other two, while a single-signature proposal
+/// still needs the floor of two to cancel.
+#[tokio::test]
+async fn test_multisig_smart_cancel_quorum_is_at_least_the_proposal_signatures()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+        2,
+        &public_keys,
+        100,
+        vec![],
+        DelayedExecutionPolicy::new(TEST_MIN_DELAY, TEST_PROPOSE_EXPIRATION_DELTA, 2)?,
+    )?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // Three approvers propose: the quorum rises to three.
+    let majority_commitment = Word::from([Felt::from(771u32); 4]);
+    let propose_block = mock_chain.latest_block_header().block_num();
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        majority_commitment,
+        MultisigAuthArgs::new(propose_block, salt(772)),
+        &[0, 1, 2],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("propose tx should succeed");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // The two other approvers meet the floor but not the proposal's quorum.
+    let minority_cancel = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        majority_commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(773)),
+        &[3, 4],
+        &public_keys,
+        &authenticators,
+    )
+    .await?;
+    assert_transaction_executor_error!(minority_cancel, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
+
+    // Three approvers do cancel it, and the record carries the raised quorum.
+    let cancel_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        majority_commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(774)),
+        &[2, 3, 4],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("three approvers should be able to cancel");
+    multisig_account.apply_patch(cancel_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&cancel_tx)?;
+    mock_chain.prove_next_block()?;
+    let stored = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(majority_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    assert_eq!(
+        stored,
+        Word::from([
+            AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK.as_u32(),
+            propose_block.as_u32(),
+            3,
+            0
+        ]),
+        "the cancelled record must carry the quorum raised by the three proposal signatures"
+    );
+
+    // A single-signature proposal keeps the floor: one other approver is not enough, two are.
+    let single_commitment = Word::from([Felt::from(775u32); 4]);
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        single_commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(776)),
+        &[0],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("propose tx should succeed");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let below_floor = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        single_commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(777)),
+        &[1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?;
+    assert_transaction_executor_error!(below_floor, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
+
+    execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        single_commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(778)),
+        &[1, 2],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("the configured floor of two should cancel a single-signature proposal");
+
+    Ok(())
+}
+
 /// Proposal signatures must not double as cancellation signatures. They are public once the propose
 /// transaction lands (and also authorize execution), so if `cancel_transaction_proposal` accepted
 /// them anyone could replay them to veto any proposal. Cancelling verifies signatures over the
@@ -2259,10 +2394,10 @@ async fn test_multisig_smart_proposal_signatures_cannot_cancel() -> anyhow::Resu
         Word::from([
             AuthMultisigSmart::CANCELLED_UNLOCK_BLOCK.as_u32(),
             propose_block.as_u32(),
-            1,
+            2,
             0
         ]),
-        "a valid cancel must leave a cancelled record"
+        "a valid cancel must leave a cancelled record carrying the two proposal signatures"
     );
 
     Ok(())

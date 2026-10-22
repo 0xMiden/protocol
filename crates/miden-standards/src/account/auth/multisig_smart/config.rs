@@ -8,13 +8,14 @@ use miden_protocol::errors::AccountError;
 /// proposer cannot shorten it by referencing a stale block: the proposal unlocks at
 /// `reference_block + propose_expiration_delta + min_delay`.
 ///
-/// `cancel_threshold` is the number of approver signatures it takes to cancel a proposal. It is
-/// recorded on each proposal when it is proposed, so the proposer has no say in it and a later
-/// policy update leaves existing proposals as they were; when a proposal is cancelled it is capped
-/// by the approvers that still exist. A low value lets a single approver veto any proposal, a high
-/// one makes vetoing a coordinated act. It may not exceed the number of approvers, which
-/// [`AuthMultisigSmart::new`](super::AuthMultisigSmart::new) and the on-chain policy update
-/// enforce.
+/// `cancel_threshold` is the floor of the cancellation quorum. A proposal records
+/// `max(cancel_threshold, number of approvers that signed it)` when it is proposed, so a
+/// cancellation never costs fewer approvers than consented to the proposal, and a later policy
+/// update leaves existing proposals as they were; when a proposal is cancelled the recorded quorum
+/// is capped by the approvers that still exist. A low floor lets a single approver veto a
+/// single-signature proposal, a high one makes vetoing a coordinated act. It may not exceed the
+/// number of approvers, which [`AuthMultisigSmart::new`](super::AuthMultisigSmart::new) and the
+/// on-chain policy update enforce.
 ///
 /// All fields must be non-zero.
 ///

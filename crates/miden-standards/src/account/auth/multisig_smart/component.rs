@@ -244,9 +244,15 @@ fn validate_proc_policies(
 /// - Cancelling requires its own signatures. They are verified over
 ///   [`AuthMultisigSmart::cancel_signing_message`], which is domain-separated from the proposed
 ///   commitment, so the public proposal signatures cannot be replayed to cancel a proposal; only
-///   approvers who sign the cancel message can veto it. How many must sign is the
-///   [`DelayedExecutionPolicy`] `cancel_threshold` in force when the proposal was recorded, capped
-///   by the current approver count; the proposer can neither raise nor lower it.
+///   approvers who sign the cancel message can veto it. How many must sign is the greater of the
+///   [`DelayedExecutionPolicy`] `cancel_threshold` in force when the proposal was recorded and the
+///   number of approvers that signed the proposal, capped by the current approver count: proposers
+///   can only raise the quorum with real approver signatures, never lower it below the floor, and a
+///   group smaller than the proposers cannot veto them. Signatures do not distinguish the immediate
+///   from the delayed path, so a signing round meant for immediate execution that stalls above the
+///   delayed threshold can be proposed by whoever holds the signatures, and once the signers
+///   outnumber the rest nobody can veto it; approvers who want a transaction to run immediately or
+///   not at all sign it without an approval expiration, which closes the delayed path.
 ///
 /// - A proposal cannot block execution. The path is chosen from the verified signatures, so a
 ///   transaction carrying enough signatures for immediate execution runs whether or not someone

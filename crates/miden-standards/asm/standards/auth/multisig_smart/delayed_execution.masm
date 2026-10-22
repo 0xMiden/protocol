@@ -75,10 +75,11 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #!   be included in and the reference block of the matching execute transaction.
 #! - propose_expiration_delta bounds how many blocks after its reference block a proposal
 #!   transaction stays includable; the unlock block counts from that bound.
-#! - cancel_threshold is the number of approver signatures a cancellation needs. It is recorded on
-#!   each proposal at propose time, so changing it here affects only later proposals, and it is
-#!   capped by the current approver count when a proposal is cancelled, so shrinking the approver
-#!   set below it never makes a proposal uncancellable.
+#! - cancel_threshold is the minimum number of approver signatures a cancellation needs. A proposal
+#!   records `max(cancel_threshold, signatures that proposed it)` at propose time, so changing it
+#!   here affects only later proposals, and the recorded value is capped by the current approver
+#!   count when a proposal is cancelled, so shrinking the approver set below it never makes a
+#!   proposal uncancellable.
 #!
 #! Panics if:
 #! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
@@ -155,8 +156,7 @@ end
 #!   be included in and the reference block of the matching execute transaction.
 #! - propose_expiration_delta bounds how many blocks after its reference block a proposal
 #!   transaction stays includable; the unlock block counts from that bound.
-#! - cancel_threshold is the number of approver signatures recorded on new proposals as their
-#!   cancellation quorum.
+#! - cancel_threshold is the floor of the cancellation quorum recorded on new proposals.
 #!
 #! Invocation: exec
 proc get_delay_config() -> (u32, u16, SignatureThreshold)
@@ -532,8 +532,11 @@ end
 #! signatures are over the same commitment that is verified again at execution, so they already
 #! count towards that threshold.
 #!
-#! The proposal is written with `min_cancel_sigs` set to the configured `cancel_threshold`, and
-#! the current (proposal) transaction is given the configured `propose_expiration_delta`.
+#! The proposal is written with `min_cancel_sigs` set to the greater of the configured
+#! `cancel_threshold` and the number of verified signatures: a cancellation must cost at least as
+#! many approvers as consented to the proposal, so a group smaller than the proposers cannot veto
+#! them, and never fewer than the configured floor. The current (proposal) transaction is given the
+#! configured `propose_expiration_delta`.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
@@ -558,19 +561,21 @@ pub proc propose_transaction(tx_summary_commitment: word)
     exec.multisig::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
-    # => [TX_SUMMARY_COMMITMENT]
+    dup neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     # ---- Bound the proposal transaction's validity window. ----
     exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    # ---- Write the proposal with min_cancel_sigs = cancel_threshold. ----
-    exec.get_cancel_threshold
-    # => [cancel_threshold, TX_SUMMARY_COMMITMENT]
+    # ---- Write the proposal with min_cancel_sigs = max(cancel_threshold, num_verified_signatures). ----
+    # Cancelling must cost at least as many approvers as consented to the proposal, so a group
+    # smaller than the proposers cannot veto them; the configured threshold is the floor.
+    exec.get_cancel_threshold u32max
+    # => [min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
     exec.compute_unlock_block
-    # => [unlock_block, proposal_block, cancel_threshold, TX_SUMMARY_COMMITMENT]
+    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
     exec.write_tx_proposal
     # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
@@ -593,8 +598,9 @@ end
 #!
 #! Verifies the cancellation signatures over the cancel message for `TX_SUMMARY_COMMITMENT` (see
 #! `cancel_signing_message`) and requires at least the proposal's `min_cancel_sigs` valid
-#! signatures (the `cancel_threshold` configured when it was proposed), capped by the current
-#! number of approvers, then marks the proposal cancelled by setting its unlock block to
+#! signatures (the greater of the `cancel_threshold` configured when it was proposed and the number
+#! of approvers that proposed it), capped by the current number of approvers, then marks the
+#! proposal cancelled by setting its unlock block to
 #! `CANCELLED_UNLOCK_BLOCK`.
 #!
 #! Cancelling is final. The record stays in the map: the commitment can neither be re-proposed nor
