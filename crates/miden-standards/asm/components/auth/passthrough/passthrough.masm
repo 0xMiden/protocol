@@ -24,6 +24,10 @@ const ERR_PASSTHROUGH_VAULT_NOT_EMPTY = "passthrough account vault must be empty
 #! Outputs: [pad(16)]
 #!
 #! Authentication arguments are unused.
+#!
+#! Panics if:
+#! - the account state changed or a code upgrade is pending.
+#! - the account vault is not empty.
 @auth_script
 pub proc auth_passthrough(auth_args: AuthArgs)
     dropw

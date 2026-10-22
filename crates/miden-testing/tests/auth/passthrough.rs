@@ -194,8 +194,7 @@ async fn passthrough_private_pswap_e2e(
         let mut inputs = vec![current_note.clone()];
         let mut fee_note_index = 1;
         if additional_fee {
-            // Authentication permits execution even when the reserve is below the fee.
-            // Admission policy must decide whether to process this transaction.
+            // A small reserve does not change authentication's account-state checks.
             let underfunded = chain
                 .build_transaction(account.id())
                 .authenticated_input_note(current_note.clone())
@@ -369,12 +368,14 @@ async fn passthrough_rejects_storage_changes_and_pending_upgrades(
             push.1.2.3.4 push.SLOT[0..2]
             # => [slot_id_suffix, slot_id_prefix, VALUE, pad(16)]
             exec.native_account::set_item dropw
+            # => [pad(16)]
         end
         @account_procedure
         pub proc change_code
             padw swapw
             # => [NEW_CODE_COMMITMENT, EMPTY_STORAGE_UPGRADE, pad(12)]
             exec.native_account::upgrade
+            # => [pad(12)]
         end
     "#,
     )?;
@@ -503,7 +504,11 @@ async fn passthrough_allows_fee_attachments_after_transaction_script() -> anyhow
         use miden::protocol::output_note
         @transaction_script
         pub proc main
-            push.1 push.0.0.0.0 push.99 exec.output_note::add_word_attachment
+            push.1 push.0.0.0.0 push.99
+            # => [scheme, ATTACHMENT, fee_note_idx]
+
+            exec.output_note::add_word_attachment
+            # => []
         end
     "#,
     )?;
