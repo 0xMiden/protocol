@@ -84,7 +84,7 @@ fn add_fee_funded_network_non_fungible_faucet(
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new(TOKEN_SYMBOL)?)
         .symbol(TokenSymbol::new(TOKEN_SYMBOL)?)
-        .build();
+        .build()?;
 
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())

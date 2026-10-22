@@ -12,10 +12,7 @@ use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
-    SchemaType,
     StorageSchema,
-    StorageSlotSchema,
-    WordSchema,
 };
 use miden_protocol::account::{
     Account,
@@ -27,13 +24,13 @@ use miden_protocol::account::{
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 
 // CONSTANTS
 // ================================================================================================
 
-account_component_code!(
-    SCHEMA_COMMITMENT_CODE,
+account_component_package!(
+    SCHEMA_COMMITMENT_PACKAGE,
     "miden-standards-inspection-schema-commitment.masp"
 );
 
@@ -65,7 +62,8 @@ pub struct AccountSchemaCommitment {
 impl AccountSchemaCommitment {
     /// Name of the component is set to match the path of the corresponding module in the standards
     /// library.
-    const NAME: &str = "miden::standards::inspection::storage_schema";
+    pub const NAME: &str = "miden::standards::inspection::storage_schema";
+
     /// Creates a new [`AccountSchemaCommitment`] component from storage schemas.
     ///
     /// The input schemas are merged into a single schema before the final commitment is computed.
@@ -93,23 +91,12 @@ impl AccountSchemaCommitment {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &SCHEMA_COMMITMENT_CODE
+        &SCHEMA_COMMITMENT_PACKAGE.code
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([(
-            Self::schema_commitment_slot().clone(),
-            StorageSlotSchema::value(
-                "Commitment to the storage schema of an account",
-                WordSchema::new_simple(SchemaType::native_word()),
-            ),
-        )])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Component exposing the account storage schema commitment")
-            .with_storage_schema(storage_schema)
+        SCHEMA_COMMITMENT_PACKAGE.metadata.clone()
     }
 }
 

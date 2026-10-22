@@ -1,12 +1,6 @@
 use alloc::vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -16,13 +10,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // PRICE ORACLE
 // ================================================================================================
 
-account_component_code!(PRICE_ORACLE_CODE, "miden-standards-oracle-price-oracle.masp");
+account_component_package!(PRICE_ORACLE_PACKAGE, "miden-standards-oracle-price-oracle.masp");
 
 /// MASL library namespace used for procedure-root lookups. Distinct from [`PriceOracle::NAME`],
 /// which mirrors the standards-side MASM module path.
@@ -80,7 +74,7 @@ impl PriceOracle {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &PRICE_ORACLE_CODE
+        &PRICE_ORACLE_PACKAGE.code
     }
 
     /// Returns the procedure root of the `get_conversion_rate` account procedure.
@@ -103,25 +97,9 @@ impl PriceOracle {
         self.rate_provider
     }
 
-    /// Returns the storage slot schema for the active rate provider slot.
-    pub fn active_rate_provider_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::active_rate_provider_slot().clone(),
-            StorageSlotSchema::value(
-                "Procedure root of the active rate provider",
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([Self::active_rate_provider_slot_schema()])
-            .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Reports the conversion rate between two assets")
-            .with_storage_schema(storage_schema)
+        PRICE_ORACLE_PACKAGE.metadata.clone()
     }
 }
 

@@ -11,13 +11,15 @@ use miden_protocol::account::{
     AccountId,
     AccountType,
     AssetCallbackFlag,
+    StorageSlot,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
-use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenName};
+use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenBaseUri, TokenName};
 use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
@@ -34,8 +36,13 @@ use miden_standards::errors::standards::{
     ERR_NFT_ALREADY_ISSUED,
     ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE,
     ERR_SENDER_NOT_OWNER,
+    ERR_TOKEN_BASE_URI_CANNOT_BE_CLEARED,
+    ERR_TOKEN_BASE_URI_NOT_MUTABLE,
+    ERR_TOKEN_METADATA_IS_PRIVATE,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
+use miden_standards::testing::note::NoteBuilder;
+use miden_standards::utils::FixedWidthString;
 use miden_testing::{
     AccountState,
     Auth,
@@ -68,8 +75,20 @@ fn build_nft_faucet_with_type(
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new(symbol)?)
         .symbol(TokenSymbol::new(symbol)?)
-        .build();
+        .build()?;
 
+    build_nft_faucet_from_component(builder, faucet.into(), owner, mint_policy, account_type)
+}
+
+/// Builds an existing NFT faucet account around `faucet`, with allow-all burn and transfer
+/// policies and an owner-controlled authority.
+fn build_nft_faucet_from_component(
+    builder: &mut MockChainBuilder,
+    faucet: AccountComponent,
+    owner: AccountId,
+    mint_policy: MintPolicy,
+    account_type: AccountType,
+) -> anyhow::Result<Account> {
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(mint_policy)
         .active_burn_policy(BurnPolicy::allow_all())
@@ -661,7 +680,7 @@ fn build_nft_faucet_with_blocklist(
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new([55u8; 32])
         .account_type(AccountType::Public)
@@ -745,6 +764,10 @@ async fn nft_public_getters() -> anyhow::Result<()> {
             call.::miden::standards::faucets::non_fungible::get_symbol
             push.{expected_symbol}
             assert_eq.err=\"expected token symbol to be EC\"
+
+            # the token base URI is immutable by default
+            call.::miden::standards::faucets::non_fungible::token_base_uri::is_token_base_uri_mutable
+            eq.0 assert.err=\"expected token base URI to be immutable\"
         end
     "
     );
@@ -759,6 +782,189 @@ async fn nft_public_getters() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+// TOKEN BASE URI
+// ================================================================================================
+
+/// The token base URI the faucets built by [`public_faucet_component`] are created with.
+const INITIAL_TOKEN_BASE_URI: &str = "ipfs://bafy-initial/";
+
+/// The token base URI the setter tests try to set, distinct from [`INITIAL_TOKEN_BASE_URI`] so a
+/// successful update is observable.
+const NEW_TOKEN_BASE_URI: &str = "ipfs://bafy-moved/";
+
+/// Builds the component of a faucet with public token metadata.
+fn public_faucet_component(is_token_base_uri_mutable: bool) -> AccountComponent {
+    NonFungibleFaucet::builder()
+        .name(TokenName::new("EC").unwrap())
+        .symbol(TokenSymbol::new("EC").unwrap())
+        .token_base_uri(TokenBaseUri::new(INITIAL_TOKEN_BASE_URI).unwrap())
+        .is_token_base_uri_mutable(is_token_base_uri_mutable)
+        .build()
+        .expect("faucet with public token metadata should be valid")
+        .into()
+}
+
+/// Builds the component of a faucet with private token metadata whose token base URI is
+/// nonetheless flagged mutable. The builder rejects this configuration, so the storage is patched
+/// directly to check that the setter rejects it on its own.
+fn private_faucet_component_flagged_mutable() -> AccountComponent {
+    let faucet = NonFungibleFaucet::builder()
+        .name(TokenName::new("EC").unwrap())
+        .symbol(TokenSymbol::new("EC").unwrap())
+        .build()
+        .expect("faucet with private token metadata should be valid");
+
+    let storage_slots = faucet
+        .into_storage_slots()
+        .into_iter()
+        .map(|slot| {
+            if slot.name() == NonFungibleFaucet::mutability_config_slot() {
+                StorageSlot::with_value(slot.name().clone(), Word::from([1u32, 0, 0, 0]))
+            } else {
+                slot
+            }
+        })
+        .collect();
+
+    AccountComponent::new(
+        NonFungibleFaucet::code().clone(),
+        storage_slots,
+        NonFungibleFaucet::component_metadata(),
+    )
+    .expect("faucet component should be valid")
+}
+
+/// Builds a transaction in which `faucet` consumes a note from `sender` that calls
+/// `set_token_base_uri` with `new_token_base_uri`, provided in the advice map under its
+/// commitment.
+fn build_set_token_base_uri_tx(
+    mock_chain: &MockChain,
+    faucet: &Account,
+    sender: AccountId,
+    new_token_base_uri: &str,
+) -> anyhow::Result<MockTransaction> {
+    let elements: Vec<Felt> = FixedWidthString::<7>::new(new_token_base_uri)?
+        .to_words()
+        .iter()
+        .flat_map(Word::as_elements)
+        .copied()
+        .collect();
+    let commitment = Hasher::hash_elements(&elements);
+
+    let note_script = CodeBuilder::default().compile_note_script(format!(
+        "
+        @note_script
+        pub proc main
+            dropw push.{commitment}
+            # => [TOKEN_BASE_URI_HASH, pad(16)]
+
+            call.::miden::standards::faucets::non_fungible::token_base_uri::set_token_base_uri
+            # => [pad(20)]
+
+            dropw
+        end
+        "
+    ))?;
+
+    let mut rng = RandomCoin::new([Felt::from(17u32); 4].into());
+    let note = NoteBuilder::new(sender, &mut rng)
+        .note_type(NoteType::Private)
+        .script(note_script)
+        .build()?;
+
+    mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(note)
+        .add_advice_map_entry(commitment, elements)
+        .build()
+}
+
+/// The owner can update a mutable token base URI.
+#[tokio::test]
+async fn nft_set_token_base_uri_succeeds() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([14; 32]);
+    let faucet = build_nft_faucet_from_component(
+        &mut builder,
+        public_faucet_component(true),
+        owner,
+        MintPolicy::allow_all(),
+        AccountType::Public,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let executed = build_set_token_base_uri_tx(&mock_chain, &faucet, owner, NEW_TOKEN_BASE_URI)?
+        .execute()
+        .await?;
+
+    let mut updated_faucet = faucet.clone();
+    updated_faucet.apply_patch(executed.account_patch())?;
+
+    assert_eq!(
+        NonFungibleFaucet::try_from(&updated_faucet)?.token_base_uri(),
+        Some(&TokenBaseUri::new(NEW_TOKEN_BASE_URI)?)
+    );
+
+    Ok(())
+}
+
+/// `set_token_base_uri` requires a mutable token base URI and an authorized sender, and cannot
+/// switch the token base URI between empty and non-empty.
+#[rstest::rstest]
+#[case::immutable(
+    public_faucet_component(false),
+    true,
+    NEW_TOKEN_BASE_URI,
+    ERR_TOKEN_BASE_URI_NOT_MUTABLE
+)]
+#[case::sender_not_owner(
+    public_faucet_component(true),
+    false,
+    NEW_TOKEN_BASE_URI,
+    ERR_SENDER_NOT_OWNER
+)]
+#[case::private_token_metadata(
+    private_faucet_component_flagged_mutable(),
+    true,
+    NEW_TOKEN_BASE_URI,
+    ERR_TOKEN_METADATA_IS_PRIVATE
+)]
+#[case::clearing(public_faucet_component(true), true, "", ERR_TOKEN_BASE_URI_CANNOT_BE_CLEARED)]
+#[tokio::test]
+async fn nft_set_token_base_uri_fails(
+    #[case] faucet_component: AccountComponent,
+    #[case] sent_by_owner: bool,
+    #[case] new_token_base_uri: &str,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([14; 32]);
+    let stranger = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([15; 32]);
+    let faucet = build_nft_faucet_from_component(
+        &mut builder,
+        faucet_component,
+        owner,
+        MintPolicy::allow_all(),
+        AccountType::Public,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let sender = if sent_by_owner { owner } else { stranger };
+    let result = build_set_token_base_uri_tx(&mock_chain, &faucet, sender, new_token_base_uri)?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }

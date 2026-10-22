@@ -1,12 +1,7 @@
 use alloc::collections::BTreeSet;
 use alloc::vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -22,7 +17,7 @@ use super::{
     NetworkAccountTxScriptAllowlist,
     SponsorshipPolicy,
 };
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::account::fees::FeePolicyManager;
 use crate::account::wallets::BasicWallet;
 use crate::note::config::NetworkAccountConfigNote;
@@ -30,7 +25,10 @@ use crate::note::{FeeSponsorshipNote, P2idNote};
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
-account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
+account_component_package!(
+    NETWORK_ACCOUNT_AUTH_PACKAGE,
+    "miden-standards-auth-network-account.masp"
+);
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -312,7 +310,7 @@ impl AuthNetworkAccount {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &NETWORK_ACCOUNT_AUTH_CODE
+        &NETWORK_ACCOUNT_AUTH_PACKAGE.code
     }
 
     /// Returns the [`NetworkAccountNoteAllowlist`] of this component.
@@ -389,19 +387,9 @@ impl AuthNetworkAccount {
         NetworkAccountNoteAllowlist::slot_name()
     }
 
-    /// Returns the storage slot schema for the note-script allowlist slot.
-    pub fn allowed_note_scripts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        NetworkAccountNoteAllowlist::slot_schema()
-    }
-
     /// Returns the storage slot holding the allowlist of allowed transaction script roots.
     pub fn allowed_tx_scripts_slot() -> &'static StorageSlotName {
         NetworkAccountTxScriptAllowlist::slot_name()
-    }
-
-    /// Returns the storage slot schema for the tx-script allowlist slot.
-    pub fn allowed_tx_scripts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        NetworkAccountTxScriptAllowlist::slot_schema()
     }
 
     /// Returns the storage slot holding the sponsorship policy.
@@ -409,28 +397,9 @@ impl AuthNetworkAccount {
         SponsorshipPolicy::slot_name()
     }
 
-    /// Returns the storage slot schema for the sponsorship policy slot.
-    pub fn sponsorship_policy_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        SponsorshipPolicy::slot_schema()
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let mut slot_schemas = vec![
-            NetworkAccountNoteAllowlist::slot_schema(),
-            NetworkAccountTxScriptAllowlist::slot_schema(),
-            SponsorshipPolicy::slot_schema(),
-        ];
-        slot_schemas.extend(FeePolicyManager::slot_schemas());
-        let storage_schema =
-            StorageSchema::new(slot_schemas).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Authentication component that restricts input notes and transaction scripts to \
-                 fixed allowlists of script roots",
-            )
-            .with_storage_schema(storage_schema)
+        NETWORK_ACCOUNT_AUTH_PACKAGE.metadata.clone()
     }
 }
 

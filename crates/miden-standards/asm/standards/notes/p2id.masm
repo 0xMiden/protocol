@@ -1,4 +1,5 @@
 use {AccountId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::standards::note::note_target
@@ -13,7 +14,7 @@ const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 2 n
 # =================================================================================================
 
 # The number of storage items of a P2ID note.
-const NUM_STORAGE_ITEMS = 2
+pub const NUM_STORAGE_ITEMS = 2
 
 const STORAGE_PTR = 0
 const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR
@@ -86,7 +87,7 @@ end
 #! - target_id_suffix is the suffix felt of the target account ID.
 #! - target_id_prefix is the prefix felt of the target account ID.
 #! - tag is the note tag to be included in the note.
-#! - note_type is the storage type of the note (1 = public, 2 = private).
+#! - note_type is the public or private visibility of the note.
 #! - SERIAL_NUM is the serial number of the note (4 elements).
 #! - RECIPIENT is the computed recipient digest of the note (4 elements).
 #!
@@ -164,4 +165,31 @@ pub proc create_output_note(
 
     movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
+end
+
+#! Recovers and validates the target account ID from a P2ID storage commitment.
+#!
+#! Inputs:  [STORAGE_COMMITMENT]
+#! Outputs: [target_id_suffix, target_id_prefix]
+#!
+#! Panics if:
+#! - the advice map does not contain the two-item storage preimage.
+#! - the storage preimage does not match its commitment.
+#! - the target account ID has an invalid structure.
+#!
+#! Invocation: exec
+@locals(8)
+pub proc pipe_target_preimage(storage_commitment: word) -> AccountId
+    # The storage loader writes eight elements, including padding for the two storage items.
+    locaddr.STORAGE_PTR movdn.4 push.NUM_STORAGE_ITEMS movdn.4
+    # => [STORAGE_COMMITMENT, num_storage_items, storage_ptr]
+
+    exec.active_note::write_storage_to_memory
+    # => []
+
+    loc_load.TARGET_ACCOUNT_ID_PREFIX_PTR loc_load.TARGET_ACCOUNT_ID_SUFFIX_PTR
+    # => [target_id_suffix, target_id_prefix]
+
+    dup.1 dup.1 exec.account_id::validate_structure
+    # => [target_id_suffix, target_id_prefix]
 end

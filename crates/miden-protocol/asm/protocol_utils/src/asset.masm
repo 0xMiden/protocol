@@ -309,7 +309,7 @@ pub proc fungible_value_into_amount_unchecked(asset_value: AssetValue) -> AssetA
     # => [balance]
 end
 
-#! Merges two fungible assets.
+#! Merges two fungible asset values.
 #!
 #! WARNING: This procedure assumes the assets have been validated.
 #!
@@ -317,8 +317,8 @@ end
 #! Outputs: [MERGED_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_VALUE_{0, 1} are the assets to merge.
-#! - MERGED_ASSET_VALUE is the merged asset.
+#! - ASSET_VALUE_{0, 1} are the fungible asset values to merge.
+#! - MERGED_ASSET_VALUE is the merged fungible asset value.
 #!
 #! Panics if:
 #! - adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
