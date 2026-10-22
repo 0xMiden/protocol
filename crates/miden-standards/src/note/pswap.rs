@@ -54,10 +54,10 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// the recipient preimage private.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PswapPayback {
-    /// Public P2ID paybacks to the original creator, who can also reclaim the order.
-    Public { creator_account_id: AccountId },
     /// Private P2ID paybacks to a fixed recipient commitment, with an explicit discovery tag.
     Private { recipient: Word, tag: NoteTag },
+    /// Public P2ID paybacks to the original creator, who can also reclaim the order.
+    Public { creator_account_id: AccountId },
 }
 
 impl PswapPayback {

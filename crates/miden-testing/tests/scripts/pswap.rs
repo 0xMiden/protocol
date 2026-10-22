@@ -2779,13 +2779,8 @@ async fn pswap_chained_partial_fills_test(
         total_eth_from_bob += fill_amount;
         current_offered = remaining_offered;
         current_requested = remaining_requested;
-        // Remainder serial: [0] + 1 (matching MASM LE orientation)
-        current_serial = Word::from([
-            current_serial[0] + ONE,
-            current_serial[1],
-            current_serial[2],
-            current_serial[3],
-        ]);
+        // Match the remainder serial derived by the note script.
+        current_serial[3] += ONE;
     }
 
     // Verify conservation
