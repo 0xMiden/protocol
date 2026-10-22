@@ -150,7 +150,7 @@ pub proc main(note_args: NoteArgs)
         assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
         # => []
 
-        # verify the fee note's funding and attachments after all asset callbacks
+        # verify the fee note's funding after all asset callbacks
         mem_load.FEE_AMOUNT_PTR neq.0
         if.true
             loc_load.MAIN_FEE_NOTE_IDX_LOC exec.output_note::get_assets_info
@@ -159,10 +159,6 @@ pub proc main(note_args: NoteArgs)
 
             push.FEE_ASSET_PTR exec.asset::load exec.poseidon2::merge
             assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
-            # => []
-
-            loc_load.MAIN_FEE_NOTE_IDX_LOC exec.output_note::get_attachments_commitment
-            padw assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
             # => []
         end
     end

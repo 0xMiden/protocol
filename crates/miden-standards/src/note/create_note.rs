@@ -31,7 +31,8 @@ static CREATE_NOTE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// A private CREATE note that funds an output and an optional public TX_FEE note.
 ///
 /// Outputs remain unsealed; the creator is expected to build the transaction locally. The public
-/// account must expose BasicWallet's `create_note` and check the fee output during authentication.
+/// account must expose BasicWallet's `create_note`. Transaction admission policy determines
+/// whether the supplied fee is sufficient.
 ///
 /// The CREATE note and output use independent random serial numbers. Authenticated consumption
 /// omits the CREATE note's header from the proven transaction. The sender can reclaim an unspent

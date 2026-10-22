@@ -333,7 +333,7 @@ Consume reconstructed private paybacks and refunds with inclusion proofs; unauth
 
 ### CREATE note
 
-A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate `TX_FEE` output. The payment is paid in full; the executing account checks the final fee output during authentication.
+A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate `TX_FEE` output. The payment is paid in full; transaction admission policy determines whether it is sufficient.
 
 Its NoteStorage contains 20 field elements:
 
