@@ -82,6 +82,8 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 #
 # The remainder PSWAP note's own tag is copied from the active note's
 # metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
+#
+# Shared note-storage buffer. Procedures using it declare it as a memory parameter.
 const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
@@ -127,6 +129,9 @@ const EXPECTED_PRIMARY_AMOUNT = EXPECTED_PRIMARY_PTR + ASSET_VALUE_MEMORY_OFFSET
 const EXPECTED_FEE_AMOUNT = EXPECTED_FEE_PTR + ASSET_VALUE_MEMORY_OFFSET
 const EXPECTED_NOTE_IDX = EXPECTED_FEE_PTR + ASSET_SIZE
 const EXPECTED_ASSET_COUNT = EXPECTED_NOTE_IDX + 1
+
+# pay_cancellation_fee locals
+const PAY_CANCELLATION_FEE_PTR = 0
 
 # create_payback_note locals
 const PAYBACK_NOTE_IDX = 0
@@ -300,6 +305,10 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Memory outputs:
+#! - STORAGE_PTR: the active note storage, validated for the selected payback type.
+#! - STORAGE_LENGTH_PTR: the number of storage elements written at STORAGE_PTR.
 proc load_storage()
     push.PUBLIC_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
@@ -354,17 +363,31 @@ proc load_storage()
     assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
     # => []
 
+    # Check whether the PSWAP has a prepaid cancellation fee and validate its native asset.
     mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    # => [has_cancellation_fee]
+
     if.true
         mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+        # => [fee_faucet_suffix, fee_faucet_prefix]
+
         exec.account_id::validate_structure
+        # => []
+
         exec.load_cancellation_fee
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
         exec.tx::get_fee_asset_id assert_eqw.err=ERR_PSWAP_CANCELLATION_FEE_NOT_NATIVE
+        # => [FEE_ASSET_VALUE]
+
         dropw
+        # => []
     else
         mem_load.CANCELLATION_FEE_SUFFIX_ITEM assertz.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
         mem_load.CANCELLATION_FEE_PREFIX_ITEM assertz.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+        # => []
     end
+    # => []
 end
 
 #! Returns creation arguments for the active order's public or private payback.
@@ -373,6 +396,9 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [tag, note_type, RECIPIENT]
+#!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
 proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     mem_load.PAYBACK_NOTE_TYPE_ITEM
     # => [payback_note_type]
@@ -441,64 +467,163 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
 end
 
 #! Returns the cancellation reserve asset.
+#!
+#! Inputs:  []
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE]
+#!
+#! Memory inputs:
+#! - CANCELLATION_FEE_AMOUNT_ITEM: a nonzero reserve amount in the STORAGE_PTR buffer.
+#! - CANCELLATION_FEE_PREFIX_ITEM and CANCELLATION_FEE_SUFFIX_ITEM: its faucet ID.
 proc load_cancellation_fee() -> Asset
     mem_load.CANCELLATION_FEE_AMOUNT_ITEM
     mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+    # => [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
+
     exec.fungible_asset::create
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
 end
 
 #! Adds the reserve to an already funded output and checks both assets after callbacks.
+#! A zero fee amount skips adding the reserve. Matching faucets merge into one asset.
+#!
+#! Inputs:  [fee_faucet_suffix, fee_faucet_prefix, fee_amount,
+#!           EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+#! Outputs: []
 @locals(18)
-proc add_cancellation_fee_and_seal_output(expected_asset: Asset, note_idx: u16)
-    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+proc add_cancellation_fee_and_seal_output(
+    fee_faucet: AccountId,
+    fee_amount: AssetAmount,
+    expected_asset: Asset,
+    note_idx: u16
+)
+    dup.2 neq.0
+    # => [has_cancellation_fee, fee_faucet_suffix, fee_faucet_prefix, fee_amount,
+    #     EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
     if.true
+        exec.fungible_asset::create
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
+        locaddr.EXPECTED_FEE_PTR exec.asset::store
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
         locaddr.EXPECTED_PRIMARY_PTR exec.asset::store
+        # => [note_idx]
+
         loc_store.EXPECTED_NOTE_IDX
-        exec.load_cancellation_fee locaddr.EXPECTED_FEE_PTR exec.asset::store
+        # => []
 
         loc_load.EXPECTED_NOTE_IDX locaddr.EXPECTED_FEE_PTR exec.asset::load
-        exec.output_note::add_asset dropw dropw
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
+        exec.output_note::add_asset dropw dropw
+        # => []
+
+        # Mirror the output's merging of fungible assets from the same faucet.
         padw locaddr.EXPECTED_PRIMARY_PTR mem_loadw_le exec.asset::id_into_faucet_id
-        mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+        # => [primary_faucet_suffix, primary_faucet_prefix]
+
+        padw locaddr.EXPECTED_FEE_PTR mem_loadw_le exec.asset::id_into_faucet_id
+        # => [fee_faucet_suffix, fee_faucet_prefix, primary_faucet_suffix, primary_faucet_prefix]
+
         exec.account_id::eq
+        # => [is_same_faucet]
+
         if.true
             loc_load.EXPECTED_PRIMARY_AMOUNT loc_load.EXPECTED_FEE_AMOUNT add
+            # => [combined_amount]
+
             dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+            # => [combined_amount]
+
             loc_store.EXPECTED_PRIMARY_AMOUNT
             push.1
+            # => [expected_asset_count = 1]
         else
             push.2
+            # => [expected_asset_count = 2]
         end
+        # => [expected_asset_count]
+
         loc_store.EXPECTED_ASSET_COUNT
+        # => []
 
         loc_load.EXPECTED_ASSET_COUNT mul.ASSET_SIZE locaddr.EXPECTED_PRIMARY_PTR
+        # => [expected_assets_ptr, num_elements]
+
         exec.poseidon2::hash_elements
+        # => [EXPECTED_ASSETS_COMMITMENT]
+
         loc_load.EXPECTED_NOTE_IDX exec.output_note::get_assets_info
+        # => [ASSETS_COMMITMENT, num_assets, EXPECTED_ASSETS_COMMITMENT]
+
         movup.4 loc_load.EXPECTED_ASSET_COUNT assert_eq.err=ERR_PSWAP_OUTPUT_ALTERED
+        # => [ASSETS_COMMITMENT, EXPECTED_ASSETS_COMMITMENT]
+
         assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+        # => []
+
         loc_load.EXPECTED_NOTE_IDX exec.output_note::seal
+        # => []
     else
+        drop drop drop
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
         exec.validate_and_seal_output_note
+        # => []
     end
+    # => []
 end
 
 #! Pays the reserve in full. The account's authentication checks transaction fee sufficiency.
-proc pay_cancellation_fee()
-    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+#! A zero fee amount creates no output.
+#!
+#! Inputs:  [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
+#! Outputs: []
+@locals(8)
+proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
+    dup.2 neq.0
+    # => [has_cancellation_fee, fee_faucet_suffix, fee_faucet_prefix, fee_amount]
+
     if.true
+        exec.fungible_asset::create
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
+        locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::store
+        # => []
+
+        # Derive a fee-note serial from this account, output position, and input-note set.
         exec.active_account::get_id exec.tx::get_num_output_notes push.CANCELLATION_FEE_DOMAIN
+        # => [domain, note_idx, account_suffix, account_prefix]
+
         exec.tx::get_input_notes_commitment
         # => [INPUT_NOTES_COMMITMENT, domain, note_idx, account_suffix, account_prefix]
+
         exec.poseidon2::merge
+        # => [SERIAL_NUM]
+
         exec.tx_fee::create_output_note
-        dup exec.load_cancellation_fee exec.output_note::add_asset
-        # => [ASSET_ID, ASSET_VALUE, note_idx]
+        # => [note_idx]
+
+        dup locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::load
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, note_idx]
+
+        exec.output_note::add_asset
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
         dup.8 exec.output_note::get_attachments_commitment
+        # => [ATTACHMENTS_COMMITMENT, FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
         padw assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
         exec.validate_and_seal_output_note
+        # => []
+    else
+        drop drop drop
+        # => []
     end
+    # => []
 end
 
 # PAYBACK NOTE CREATION PROCEDURE
@@ -508,6 +633,9 @@ end
 #!
 #! Inputs:  [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
+#!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
 @locals(5)
 # PAYBACK_NOTE_IDX                : note_idx
 # PAYBACK_REQUESTED_FAUCET_SUFFIX : faucet_suffix
@@ -641,6 +769,11 @@ proc create_payback_note(
     loc_load.PAYBACK_AMT_ACCOUNT_FILL loc_load.PAYBACK_AMT_NOTE_FILL add
     mem_load.MIN_REQUESTED_AMOUNT_ITEM gte
     if.true
+        mem_load.CANCELLATION_FEE_AMOUNT_ITEM
+        mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+        # => [fee_faucet_suffix, fee_faucet_prefix, fee_amount,
+        #     EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
         exec.add_cancellation_fee_and_seal_output
     else
         exec.validate_and_seal_output_note
@@ -663,6 +796,11 @@ end
 #!           remaining_requested, note_type, tag]
 #! Outputs: []
 #!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
+#! - STORAGE_LENGTH_PTR: the number of elements in that buffer.
+#! Memory outputs:
+#! - MIN_REQUESTED_AMOUNT_ITEM: replaced with the remainder's requested amount on a partial fill.
 @locals(5)
 # REMAINDER_NOTE_IDX             : note_idx
 # REMAINDER_OFFERED_FAUCET_SUFFIX : offered_faucet_suffix
@@ -763,6 +901,11 @@ proc create_remainder_note(
     loc_load.REMAINDER_NOTE_IDX movdn.8
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM
+    mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+    # => [fee_faucet_suffix, fee_faucet_prefix, fee_amount,
+    #     EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
     exec.add_cancellation_fee_and_seal_output
     # => []
 end
@@ -791,6 +934,10 @@ end
 #!
 #! Inputs:  [RECIPIENT, tag]
 #! Outputs: []
+#!
+#! Memory inputs:
+#! - CANCELLATION_FEE_AMOUNT_ITEM, CANCELLATION_FEE_PREFIX_ITEM, and
+#!   CANCELLATION_FEE_SUFFIX_ITEM: the reserve in STORAGE_PTR, validated by load_storage.
 proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     push.NOTE_TYPE_PRIVATE movup.5
     # => [tag, private_type, RECIPIENT]
@@ -811,6 +958,12 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.validate_and_seal_output_note
+    # => []
+
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM
+    mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+    # => [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
+
     exec.pay_cancellation_fee
     # => []
 end
@@ -820,6 +973,9 @@ end
 #! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
+#! Memory inputs:
+#! - CANCELLATION_FEE_AMOUNT_ITEM, CANCELLATION_FEE_PREFIX_ITEM, and
+#!   CANCELLATION_FEE_SUFFIX_ITEM: the reserve in STORAGE_PTR, validated by load_storage.
 @locals(18)
 proc load_offered_asset() -> Asset
     exec.active_note::get_initial_assets_info
@@ -872,6 +1028,9 @@ end
 #! Inputs:  []
 #! Outputs: []
 #!
+#! Memory inputs:
+#! - CANCELLATION_FEE_AMOUNT_ITEM, CANCELLATION_FEE_PREFIX_ITEM, and
+#!   CANCELLATION_FEE_SUFFIX_ITEM: the reserve in STORAGE_PTR, validated by load_storage.
 proc handle_reclaim()
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE]
@@ -988,6 +1147,11 @@ end
 #! Inputs:  [account_fill_amount, note_fill_amount]
 #! Outputs: []
 #!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
+#! - STORAGE_LENGTH_PTR: the number of elements in that buffer.
+#! Memory outputs:
+#! - MIN_REQUESTED_AMOUNT_ITEM: replaced with the remainder's requested amount on a partial fill.
 @locals(10)
 # EXEC_AMT_OFFERED                : amt_offered
 # EXEC_AMT_MIN_REQUESTED          : amt_min_requested
@@ -1220,6 +1384,12 @@ end
 #!
 #! Inputs:  [account_fill, note_fill]
 #! Outputs: []
+#!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
+#! - STORAGE_LENGTH_PTR: the number of elements in that buffer.
+#! Memory outputs:
+#! - MIN_REQUESTED_AMOUNT_ITEM: replaced with the remainder's requested amount on a partial fill.
 proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     dup.1 eq.0 dup.1 eq.0 and
     # => [both_zero, account_fill, note_fill]
@@ -1245,6 +1415,10 @@ end
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Private cancellation requires create_note; public reclaim requires receive_asset.
 #! Consumers: any compatible account may fill or prove a private cancellation preimage.
+#!
+#! Memory scratch space:
+#! - STORAGE_PTR and STORAGE_LENGTH_PTR: initialized by load_storage for this execution;
+#!   create_remainder_note updates MIN_REQUESTED_AMOUNT_ITEM on a partial fill.
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
