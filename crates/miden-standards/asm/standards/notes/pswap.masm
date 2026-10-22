@@ -523,7 +523,7 @@ proc add_cancellation_fee_and_seal_output(
         loc_load.EXPECTED_NOTE_IDX locaddr.EXPECTED_FEE_PTR exec.asset::load
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
-        exec.output_note::add_asset dropw dropw
+        exec.output_note::add_asset
         # => []
 
         # Mirror the output's merging of fungible assets from the same faucet.
@@ -616,12 +616,15 @@ proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, note_idx]
 
         exec.output_note::add_asset
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+        # => [note_idx]
 
-        dup.8 exec.output_note::get_attachments_commitment
-        # => [ATTACHMENTS_COMMITMENT, FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+        dup exec.output_note::get_attachments_commitment
+        # => [ATTACHMENTS_COMMITMENT, note_idx]
 
         padw assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+        # => [note_idx]
+
+        locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::load
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
         exec.validate_and_seal_output_note
@@ -697,7 +700,7 @@ proc create_payback_note(
     exec.output_note::add_word_attachment
     # => []
 
-    # move the account-funded part of the fill into the payback note
+    # Move account_fill_amount from the consumer's vault to the payback note (if > 0)
     loc_load.PAYBACK_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
 
@@ -716,21 +719,14 @@ proc create_payback_note(
         # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         call.wallet::move_asset_to_note
-        # => [ASSET_ID, ASSET_VALUE, pad(8)]
+        # => [pad(16)]
 
-        loc_load.PAYBACK_AMT_ACCOUNT_FILL
-        loc_load.PAYBACK_REQUESTED_FAUCET_PREFIX loc_load.PAYBACK_REQUESTED_FAUCET_SUFFIX
-        exec.fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
-
-        movupw.2 assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
-        assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
-        dropw dropw
+        dropw dropw dropw dropw
         # => []
     end
     # => []
 
-    # add the note-funded part of the fill directly to the payback note
+    # Add note_fill_amount directly to the payback note (no vault debit, if > 0)
     loc_load.PAYBACK_AMT_NOTE_FILL neq.0
     # => [has_note_fill]
 
@@ -748,15 +744,6 @@ proc create_payback_note(
         # => [ASSET_ID, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
-        # => [ASSET_ID, ASSET_VALUE]
-
-        loc_load.PAYBACK_AMT_NOTE_FILL
-        loc_load.PAYBACK_REQUESTED_FAUCET_PREFIX loc_load.PAYBACK_REQUESTED_FAUCET_SUFFIX
-        exec.fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE]
-
-        movupw.2 assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
-        assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
         # => []
     end
     # => []
@@ -903,10 +890,19 @@ proc create_remainder_note(
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
-    # => [ASSET_ID, ASSET_VALUE]
+    # => []
 
-    loc_load.REMAINDER_NOTE_IDX movdn.8
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    loc_load.REMAINDER_NOTE_IDX
+    # => [note_idx]
+
+    loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
+    # => [remainder_amount, note_idx]
+
+    loc_load.REMAINDER_OFFERED_FAUCET_PREFIX loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
+    # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
+
+    exec.fungible_asset::create
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     mem_load.CANCELLATION_FEE_AMOUNT_ITEM
     mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
@@ -985,11 +981,16 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
-    dup exec.load_offered_asset
-    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+    exec.load_offered_asset
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+    repeat.9
+        dup.8
+    end
+    # => [ASSET_ID, ASSET_VALUE, note_idx, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.validate_and_seal_output_note
     # => []

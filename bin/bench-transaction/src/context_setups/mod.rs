@@ -308,8 +308,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(21)]
 
             call.basic_wallet::move_asset_to_note
-            dropw dropw
-            # => [pad(22)]
+            # => [pad(30)]
 
             # truncate the stack
             exec.sys::truncate_stack

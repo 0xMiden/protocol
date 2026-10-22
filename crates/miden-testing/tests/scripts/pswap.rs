@@ -358,7 +358,7 @@ async fn pswap_rejects_later_output_mutation(
                 # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
                 call.wallet::move_asset_to_note
-                # => [ASSET_ID, ASSET_VALUE, pad(8)]
+                # => [pad(16)]
 
                 dropw dropw dropw dropw
                 # => []
@@ -410,7 +410,7 @@ async fn pswap_checks_output_before_sealing(
              # => [EXTRA_ASSET_ID, EXTRA_ASSET_VALUE, note_idx, pad(7)]
 
              call.wallet::move_asset_to_note
-             # => [ASSET_ID, ASSET_VALUE, pad(8)]
+             # => [pad(16)]
 
              dropw dropw dropw dropw",
             extra.to_value_word(),
@@ -424,7 +424,7 @@ async fn pswap_checks_output_before_sealing(
              # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
              call.wallet::move_asset_to_note
-             # => [ASSET_ID, ASSET_VALUE, pad(8)]
+             # => [pad(16)]
 
              dropw dropw dropw dropw",
         ),

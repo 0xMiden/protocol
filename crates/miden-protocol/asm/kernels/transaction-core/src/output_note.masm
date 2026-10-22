@@ -235,10 +235,9 @@ pub proc get_attachments_commitment(note_index: u16) -> NoteAttachmentsCommitmen
 end
 
 #! Adds the asset to the note specified by the index.
-#! Returns the asset added by this call, excluding any existing balance or callback additions.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
 #!
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to add.
@@ -251,7 +250,7 @@ end
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
 #! - the output note is sealed, including by the asset callback.
-pub proc add_asset(asset: Asset, note_idx: u16) -> Asset
+pub proc add_asset(asset: Asset, note_idx: u16)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, note_idx]
@@ -277,29 +276,24 @@ pub proc add_asset(asset: Asset, note_idx: u16) -> Asset
     movup.8 exec.memory::get_output_note_ptr
     # Check after the callback, which can itself seal the note.
     dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
-    movdn.8
-    # => [ASSET_ID, ASSET_VALUE, note_ptr]
+    dup
+    # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]
 
-    # retain the added asset and note pointer for the return value and event
-    repeat.9
-        dup.8
-    end
-    # => [ASSET_ID, ASSET_VALUE, note_ptr, ASSET_ID, ASSET_VALUE, note_ptr]
+    movdn.9 movdn.9
+    # => [ASSET_ID, ASSET_VALUE, note_ptr, note_ptr]
 
+    # add the asset to the note
     exec.add_asset_raw
-    # => [ASSET_ID, ASSET_VALUE, note_ptr]
-
-    movup.8
-    # => [note_ptr, ASSET_ID, ASSET_VALUE]
+    # => [note_ptr]
 
     # emit event to signal that a new asset was added to the note
     emit.NOTE_AFTER_ADD_ASSET_EVENT
-    # => [note_ptr, ASSET_ID, ASSET_VALUE]
+    # => [note_ptr]
 
     # update the assets commitment dirty flag to signal that the current assets commitment is not
     # valid anymore
     push.1 swap exec.memory::set_output_note_dirty_flag
-    # => [ASSET_ID, ASSET_VALUE]
+    # => []
 end
 
 #! Adds an attachment to the note specified by the index. Attachments are append-only.

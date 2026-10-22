@@ -291,7 +291,7 @@ pub proc mint_and_send(
     exec.faucet::mint
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
-    exec.output_note::add_asset dropw dropw
+    exec.output_note::add_asset
     # => [note_idx, pad(15)]
 end
 

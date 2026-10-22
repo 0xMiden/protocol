@@ -293,7 +293,7 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
 
             push.{asset_value}
             push.{asset_id}
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
         end
         "#,
         recipient = recipient,

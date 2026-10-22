@@ -139,7 +139,7 @@ pub proc main(args: NoteArgs)
 
     # move asset to the note
     call.wallet::move_asset_to_note
-    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+    # => [pad(16)]
 
     dropw dropw
     # => [pad(8)]
