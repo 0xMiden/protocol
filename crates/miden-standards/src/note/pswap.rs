@@ -54,35 +54,49 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// recipient preimage secret. Use [`PswapNote::PAYBACK_TAG`] for shared discovery without
 /// identifying the owner. Fill attachments distinguish successive payback notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PswapPayback {
-    /// Private payback notes to a fixed recipient hash, with an explicit discovery tag.
-    Private { recipient: Word, tag: NoteTag },
-    /// Public `P2ID` payback notes to the original creator, who can also reclaim the order.
-    /// Stores the recipient preimage needed to construct each public output.
-    Public {
-        recipient: P2idNoteRecipient,
-        tag: NoteTag,
-    },
+pub struct PswapPayback {
+    recipient: Word,
+    public_recipient: Option<P2idNoteRecipient>,
+    tag: NoteTag,
 }
 
 impl PswapPayback {
-    /// Builds a public payback configuration for the original order creator.
-    pub fn public(recipient: P2idNoteRecipient, tag: NoteTag) -> Self {
-        Self::Public { recipient, tag }
+    /// Builds a payback configuration for a `P2ID` note.
+    /// Retains the recipient preimage only for public paybacks.
+    pub fn new(recipient: P2idNoteRecipient, note_type: NoteType, tag: NoteTag) -> Self {
+        Self {
+            recipient: recipient.digest(),
+            public_recipient: (note_type == NoteType::Public).then_some(recipient),
+            tag,
+        }
     }
 
-    /// Builds a private payback configuration for a `P2ID` note.
-    /// Only its commitment is stored in the order; the owner retains the preimage.
-    /// For other note scripts, use `PswapPayback::Private` with their recipient hash.
-    pub fn private(recipient: P2idNoteRecipient, tag: NoteTag) -> Self {
-        Self::Private { recipient: recipient.digest(), tag }
+    /// Builds a private payback configuration from a recipient hash, for any note script.
+    pub fn private(recipient: Word, tag: NoteTag) -> Self {
+        Self { recipient, public_recipient: None, tag }
+    }
+
+    /// Returns the fixed recipient hash used by every payback.
+    pub fn recipient(&self) -> Word {
+        self.recipient
+    }
+
+    /// Returns the recipient preimage for public paybacks, or `None` for private paybacks.
+    pub fn public_recipient(&self) -> Option<P2idNoteRecipient> {
+        self.public_recipient
+    }
+
+    /// Returns the payback discovery tag.
+    pub fn tag(&self) -> NoteTag {
+        self.tag
     }
 
     /// Returns the visibility of every payback in this order.
     pub fn note_type(&self) -> NoteType {
-        match self {
-            Self::Private { .. } => NoteType::Private,
-            Self::Public { .. } => NoteType::Public,
+        if self.public_recipient.is_some() {
+            NoteType::Public
+        } else {
+            NoteType::Private
         }
     }
 }
@@ -171,9 +185,7 @@ impl PswapNoteStorage {
 
     /// Returns the configured payback discovery tag.
     pub fn payback_note_tag(&self) -> NoteTag {
-        match self.payback {
-            PswapPayback::Public { tag, .. } | PswapPayback::Private { tag, .. } => tag,
-        }
+        self.payback.tag()
     }
 
     /// Returns the visibility of the payback notes.
@@ -218,15 +230,12 @@ impl From<PswapNoteStorage> for NoteStorage {
             ]
         }));
         items.push(Felt::from(storage.payback_note_tag()));
-        match storage.payback {
-            PswapPayback::Public { recipient, .. } => {
-                let target = recipient.storage().target();
-                items.extend_from_slice(&[target.suffix(), target.prefix().as_felt()]);
-                items.extend_from_slice(recipient.serial_number().as_elements());
-            },
-            PswapPayback::Private { recipient, .. } => {
-                items.extend_from_slice(recipient.as_elements());
-            },
+        if let Some(recipient) = storage.payback.public_recipient() {
+            let target = recipient.storage().target();
+            items.extend_from_slice(&[target.suffix(), target.prefix().as_felt()]);
+            items.extend_from_slice(recipient.serial_number().as_elements());
+        } else {
+            items.extend_from_slice(storage.payback.recipient().as_elements());
         }
         NoteStorage::new(items).expect("PSWAP storage fits within the storage limit")
     }
@@ -290,17 +299,16 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
                 .map_err(|_| NoteError::other("payback tag exceeds u32"))?,
         );
         let payback = match note_type {
-            NoteType::Private => PswapPayback::Private {
-                recipient: Word::new(
+            NoteType::Private => PswapPayback::private(
+                Word::new(
                     items[Self::PRIVATE_RECIPIENT_RANGE]
                         .try_into()
                         .expect("length already checked"),
                 ),
                 tag,
-            },
-            NoteType::Public => PswapPayback::Public {
-                tag,
-                recipient: P2idNoteRecipient::new(
+            ),
+            NoteType::Public => PswapPayback::new(
+                P2idNoteRecipient::new(
                     P2idNoteStorage::new(
                         AccountId::try_from_elements(
                             items[Self::PUBLIC_CREATOR_SUFFIX_IDX],
@@ -316,7 +324,9 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
                             .expect("length already checked"),
                     ),
                 ),
-            },
+                NoteType::Public,
+                tag,
+            ),
         };
         Ok(Self::builder()
             .min_requested_asset(min_requested_asset)
@@ -878,7 +888,7 @@ impl PswapNote {
         consumer_account_id: AccountId,
         attachment: &PswapNoteAttachment,
     ) -> Result<Note, NoteError> {
-        let PswapPayback::Public { recipient, .. } = self.storage.payback else {
+        let Some(recipient) = self.storage.payback.public_recipient() else {
             return Err(NoteError::other("public payback reconstruction requires public paybacks"));
         };
         self.payback_note_with_recipient(consumer_account_id, attachment, recipient.into())
@@ -1091,10 +1101,10 @@ impl PswapNote {
         &self,
         recipient: P2idNoteRecipient,
     ) -> Result<(), NoteError> {
-        let PswapPayback::Private { recipient: expected, .. } = self.storage.payback else {
+        if self.storage.payback.note_type() != NoteType::Private {
             return Err(NoteError::other("recipient preimage is only used for private paybacks"));
-        };
-        if recipient.digest() != expected {
+        }
+        if recipient.digest() != self.storage.payback.recipient() {
             return Err(NoteError::other("payback recipient does not match the order"));
         }
         Ok(())
@@ -1143,14 +1153,17 @@ impl PswapNote {
             PartialNoteMetadata::new(consumer_account_id, self.storage.payback_note_type())
                 .with_tag(self.storage.payback_note_tag());
         let attachments = NoteAttachments::from(attachment);
-        Ok(match self.storage.payback {
-            PswapPayback::Private { recipient, .. } => {
-                RawOutputNote::Partial(PartialNote::new(metadata, recipient, assets, attachments))
-            },
-            PswapPayback::Public { recipient, .. } => RawOutputNote::Full(Note::with_attachments(
+        Ok(match self.storage.payback.public_recipient() {
+            Some(recipient) => RawOutputNote::Full(Note::with_attachments(
                 assets,
                 metadata,
                 recipient.into(),
+                attachments,
+            )),
+            None => RawOutputNote::Partial(PartialNote::new(
+                metadata,
+                self.storage.payback.recipient(),
+                assets,
                 attachments,
             )),
         })
@@ -1304,8 +1317,9 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     fn public_payback(target: AccountId) -> PswapPayback {
-        PswapPayback::public(
+        PswapPayback::new(
             P2idNoteRecipient::new(P2idNoteStorage::new(target), Word::from([91u32, 92, 93, 94])),
+            NoteType::Public,
             NoteTag::new(27),
         )
     }
@@ -1473,24 +1487,53 @@ mod tests {
     }
 
     #[rstest]
-    fn pswap_note_storage_roundtrip(#[values(false, true)] with_fee: bool) {
+    fn pswap_note_storage_roundtrip(
+        #[values(false, true)] with_fee: bool,
+        #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
+    ) {
         let creator_id = dummy_creator_id();
         let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
         let fee = with_fee.then(|| FungibleAsset::new(dummy_faucet_id(0xbb), 20).unwrap());
+        let recipient = P2idNoteRecipient::new(
+            P2idNoteStorage::new(creator_id),
+            Word::from([91u32, 92, 93, 94]),
+        );
+        let tag = NoteTag::new(27);
+        let payback = PswapPayback::new(recipient, payback_type, tag);
 
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
-            .payback(public_payback(creator_id))
+            .payback(payback)
             .min_fill_step(AssetAmount::new(42).unwrap())
             .maybe_cancellation_fee(fee)
             .build();
 
         let note_storage = NoteStorage::from(storage.clone());
-        assert_eq!(note_storage.num_items(), PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS as u16);
+        match payback_type {
+            NoteType::Private => {
+                assert_eq!(note_storage.num_items(), 13);
+                assert_eq!(&note_storage.items()[9..], recipient.digest().as_elements());
+                assert_eq!(payback.public_recipient(), None);
+                assert_eq!(payback, PswapPayback::private(recipient.digest(), tag));
+            },
+            NoteType::Public => {
+                assert_eq!(note_storage.num_items(), 15);
+                assert_eq!(
+                    &note_storage.items()[9..11],
+                    &[creator_id.suffix(), creator_id.prefix().as_felt()]
+                );
+                assert_eq!(&note_storage.items()[11..], recipient.serial_number().as_elements());
+                assert_eq!(payback.public_recipient(), Some(recipient));
+            },
+        }
+        assert_eq!(note_storage.items()[8], Felt::from(tag));
 
         let parsed = PswapNoteStorage::try_from(note_storage.items()).unwrap();
 
-        assert_eq!(parsed.payback(), &public_payback(creator_id));
+        assert_eq!(parsed, storage);
+        assert_eq!(parsed.payback().recipient(), recipient.digest());
+        assert_eq!(parsed.payback_note_type(), payback_type);
+        assert_eq!(parsed.payback_note_tag(), tag);
         assert_eq!(parsed.min_requested_amount(), 500);
         assert_eq!(parsed.min_fill_step().as_u64(), 42);
         assert_eq!(parsed.cancellation_fee(), fee);
@@ -1589,7 +1632,7 @@ mod tests {
             P2idNoteRecipient::new(P2idNoteStorage::new(dummy_creator_id()), Word::empty());
         for payback in [
             public_payback(dummy_creator_id()),
-            PswapPayback::private(private_recipient, NoteTag::default()),
+            PswapPayback::new(private_recipient, NoteType::Private, NoteTag::default()),
         ] {
             pswap.storage.payback = payback;
             for (account_fill, note_fill) in [
@@ -1612,7 +1655,7 @@ mod tests {
         let (mut pswap, _) = build_pswap_note(offered, requested, dummy_creator_id());
         let serial = Word::from([1u32, 2, 3, 4]);
         let recipient = P2idNoteRecipient::new(P2idNoteStorage::new(dummy_creator_id()), serial);
-        pswap.storage.payback = PswapPayback::private(recipient, NoteTag::default());
+        pswap.storage.payback = PswapPayback::private(recipient.digest(), NoteTag::default());
         let attachment = PswapNoteAttachment::new(requested.amount(), pswap.order_id(), 1);
         let consumer = dummy_consumer_id();
 

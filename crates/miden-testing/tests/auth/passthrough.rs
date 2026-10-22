@@ -98,7 +98,7 @@ async fn passthrough_private_pswap_e2e(
         .storage(
             PswapNoteStorage::builder()
                 .min_requested_asset(requested)
-                .payback(PswapPayback::private(recipient, PswapNote::PAYBACK_TAG))
+                .payback(PswapPayback::new(recipient, NoteType::Private, PswapNote::PAYBACK_TAG))
                 .cancellation_fee(reserve)
                 .build(),
         )
