@@ -1,21 +1,17 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::account::policies::transfer::allowlist::AllowlistStorage;
 use crate::procedure_root;
 
 // BASIC ALLOWLIST TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(
-    BASIC_ALLOWLIST_TRANSFER_POLICY_CODE,
+account_component_package!(
+    BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE,
     "miden-standards-faucets-policies-transfer-basic-allowlist.masp"
 );
 
@@ -71,12 +67,17 @@ impl BasicAllowlist {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_ALLOWLIST_TRANSFER_POLICY_CODE
+        &BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE.code
     }
 
     /// Returns the MAST root of the basic allowlist transfer policy procedure.
     pub fn root() -> AccountProcedureRoot {
         *BASIC_ALLOWLIST_TRANSFER_POLICY_ROOT
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE.metadata.clone()
     }
 }
 
@@ -88,15 +89,7 @@ impl From<AllowlistStorage> for BasicAllowlist {
 
 impl From<BasicAllowlist> for AccountComponent {
     fn from(allowlist: BasicAllowlist) -> Self {
-        let storage_schema = StorageSchema::new([AllowlistStorage::allowed_accounts_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(BasicAllowlist::NAME)
-            .with_description(
-                "Basic allowlist transfer policy: predicate procedure plus the `allowed_accounts` \
-                 storage map it reads",
-            )
-            .with_storage_schema(storage_schema);
+        let metadata = BasicAllowlist::component_metadata();
 
         AccountComponent::new(BasicAllowlist::code().clone(), vec![allowlist.0.into_slot()], metadata)
             .expect(

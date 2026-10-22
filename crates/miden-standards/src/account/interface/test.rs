@@ -1,8 +1,8 @@
 use assert_matches::assert_matches;
 use miden_protocol::Word;
-use miden_protocol::account::AccountBuilder;
 use miden_protocol::account::auth::{self, AuthSecretKey, PublicKeyCommitment};
-use miden_protocol::asset::NonFungibleAsset;
+use miden_protocol::account::{AccountBuilder, AccountComponent};
+use miden_protocol::asset::{AssetAmount, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::NoteType;
@@ -17,6 +17,7 @@ use crate::account::auth::{
     AuthTxFeeCollector,
     NoAuth,
 };
+use crate::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::wallets::BasicWallet;
 use crate::note::SwapNote;
@@ -103,6 +104,67 @@ fn test_custom_component_holds_the_non_standard_procedures() {
     for proc_root in NoAuth::code().procedure_roots() {
         assert!(!custom_procedures.contains(&proc_root));
     }
+}
+
+// FAUCET COMPONENT IDENTIFICATION TESTS
+// ================================================================================================
+
+fn fungible_faucet_component() -> AccountComponent {
+    FungibleFaucet::builder()
+        .name(TokenName::new("POL").unwrap())
+        .symbol(TokenSymbol::new("POL").unwrap())
+        .decimals(8)
+        .max_supply(AssetAmount::from(1_000u32))
+        .build()
+        .unwrap()
+        .into()
+}
+
+fn non_fungible_faucet_component() -> AccountComponent {
+    NonFungibleFaucet::builder()
+        .name(TokenName::new("EC").unwrap())
+        .symbol(TokenSymbol::new("EC").unwrap())
+        .build()
+        .unwrap()
+        .into()
+}
+
+/// Each faucet is reported as its own standard component and not as the other one, even though
+/// both export the shared token metadata procedures, and none of its procedures are reported as
+/// custom.
+#[rstest::rstest]
+#[case::fungible(
+    fungible_faucet_component(),
+    AccountComponentInterface::FungibleFaucet,
+    AccountComponentInterface::NonFungibleFaucet
+)]
+#[case::non_fungible(
+    non_fungible_faucet_component(),
+    AccountComponentInterface::NonFungibleFaucet,
+    AccountComponentInterface::FungibleFaucet
+)]
+fn test_account_interface_identifies_faucet(
+    #[case] faucet: AccountComponent,
+    #[case] expected: AccountComponentInterface,
+    #[case] other: AccountComponentInterface,
+) {
+    let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
+    let faucet_account = AccountBuilder::new(mock_seed)
+        .with_component(NoAuth)
+        .with_component(faucet)
+        .build_existing()
+        .expect("failed to create faucet account");
+
+    let interface = AccountInterface::from_account(&faucet_account);
+
+    assert!(interface.components().contains(&expected));
+    assert!(!interface.components().contains(&other));
+    assert!(
+        !interface
+            .components()
+            .iter()
+            .any(|component| matches!(component, AccountComponentInterface::Custom(_)))
+    );
 }
 
 // AUTH COMPONENT IDENTIFICATION TESTS

@@ -601,10 +601,10 @@ fn extensive_schema_metadata_and_init_toml_example() {
         description = "Owner public key"
         type = "miden::standards::auth::pub_key"
 
-        # simple felt-typed word slot (parsed as felt, stored as [0,0,0,<felt>])
+        # simple felt-typed word slot (parsed as felt, stored as [<felt>,0,0,0])
         [[storage.slots]]
         name = "demo::protocol_version"
-        description = "Protocol version stored as u8 in the last felt"
+        description = "Protocol version stored as u8 in the first felt"
         type = "u8"
 
         # word slot with an overridable default

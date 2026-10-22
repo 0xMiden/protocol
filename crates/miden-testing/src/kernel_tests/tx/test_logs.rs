@@ -59,12 +59,12 @@ use crate::{
 const EMIT_LOG_PROC: &str = "test::transaction_logs::emit_log";
 
 #[rstest]
-#[case::max_count(TransactionLogs::MAX_COUNT, 0, None)]
+#[case::max_count(TransactionLogs::MAX_COUNT, 1, None)]
 #[case::count(TransactionLogs::MAX_COUNT + 1, 0, Some(tx_kernel::ERR_TX_LOG_COUNT_EXCEEDED))]
 #[case::max_content(1, TransactionLog::MAX_NUM_WORDS, None)]
-#[case::max_total_content(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS, TransactionLog::MAX_NUM_WORDS, None)]
+#[case::max_total_content(2, TransactionLogs::MAX_NUM_WORDS / 2, None)]
 #[case::individual_content(1, TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
-#[case::total_content(TransactionLogs::MAX_NUM_WORDS / TransactionLog::MAX_NUM_WORDS + 1, TransactionLog::MAX_NUM_WORDS, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
+#[case::total_content(2, TransactionLogs::MAX_NUM_WORDS / 2 + 1, Some(tx_kernel::ERR_TX_LOG_TOTAL_CONTENT_TOO_LARGE))]
 #[tokio::test]
 async fn kernel_enforces_log_limits(
     #[case] count: usize,
@@ -123,6 +123,67 @@ async fn kernel_logs_reject_partial_words(#[case] num_elements: usize) -> anyhow
         tx.execute_code(&code).await,
         tx_kernel::ERR_TX_LOG_CONTENT_NOT_WORD_ALIGNED
     );
+    Ok(())
+}
+
+#[rstest]
+#[case::empty(0, None)]
+#[case::odd_words(3, None)]
+#[case::max_content(TransactionLog::MAX_NUM_WORDS, None)]
+#[case::oversized(TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
+#[tokio::test]
+async fn add_log_from_memory(
+    #[case] num_words: usize,
+    #[case] error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let word = Word::from([11u32, 22, 33, 44]);
+    let store_content: String = (0..num_words)
+        .map(|i| format!("push.{word} loc_storew_le.{} dropw\n", i * WORD_SIZE))
+        .collect();
+    let component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "test::log_from_memory",
+            format!(
+                r"
+                use miden::protocol::tx
+                use miden::protocol::native_account
+
+                @auth_script
+                @locals({num_locals})
+                pub proc auth
+                    {store_content}
+                    push.101.102.103.104
+                    # => [CALLER_WORD]
+
+                    locaddr.0 push.{num_words}.29.17
+                    # => [topic_suffix, topic_prefix, num_words, content_ptr, CALLER_WORD]
+
+                    exec.tx::add_log_from_memory
+                    # => [CALLER_WORD]
+
+                    push.101.102.103.104 assert_eqw
+                    # => []
+
+                    exec.native_account::incr_nonce drop
+                end
+                ",
+                num_locals = num_words.max(1) * WORD_SIZE,
+            ),
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("test::log_from_memory"),
+    )?;
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_SENDER, [component]);
+    let emitter = account.id();
+    let tx = TestTransactionBuilder::new(account).build()?;
+    if let Some(error) = error {
+        assert_transaction_executor_error!(tx.execute().await, error);
+    } else {
+        let executed = tx.execute().await?;
+        let log = TransactionLog::new(emitter, LogTopic::mock(17, 29), vec![word; num_words])?;
+        let expected = TransactionLogs::new(vec![log])?;
+        assert_eq!(executed.logs(), &expected);
+    }
     Ok(())
 }
 
@@ -230,7 +291,8 @@ async fn kernel_log_commitments_match_rust_and_invalidate_cache(
     let mut entries = Vec::new();
     let mut builder = TestTransactionBuilder::new(account.clone());
     let mut code = String::from("exec.tx::get_logs_commitment padw assert_eqw\n");
-    for num_words in [0usize, 1, 2, 3, TransactionLog::MAX_NUM_WORDS] {
+    // Leave room for the empty, one-word, and odd/even content cases before filling the budget.
+    for num_words in [0usize, 1, 2, 3, TransactionLogs::MAX_NUM_WORDS - 6] {
         let content = (0..num_words).map(|i| Word::from([i as u32 + 1; 4])).collect();
         let entry = TransactionLog::new(account.id(), topic, content)?;
         let content_commitment = entry.content_commitment();

@@ -29,6 +29,7 @@ mod proven_block;
 pub use proven_block::ProvenBlock;
 
 pub mod account_tree;
+pub mod code_tree;
 pub mod nullifier_tree;
 
 mod smt_backend;

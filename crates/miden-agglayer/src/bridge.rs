@@ -5,6 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
+use miden_protocol::DoubleWord;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
@@ -568,9 +569,9 @@ impl AggLayerBridge {
         Self::assert_bridge_account(bridge_account)?;
 
         // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
-        let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
-        let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
-        let ger_hash = Poseidon2::merge(&[ger_lower, ger_upper]);
+        let ger_words = DoubleWord::try_from(ger.to_elements().as_slice())
+            .expect("exit root should contain 8 felts");
+        let ger_hash = Poseidon2::merge(&[ger_words.lo(), ger_words.hi()]);
 
         // Get the value stored by the GER hash. If this GER was registered, the value would be
         // equal to [1, 0, 0, 0]
@@ -615,11 +616,8 @@ impl AggLayerBridge {
             .get_item(root_hi_slot)
             .expect("should be able to read LET root hi");
 
-        let mut root = Vec::with_capacity(8);
-        root.extend(root_lo.to_vec());
-        root.extend(root_hi.to_vec());
-
-        Ok(root)
+        let dword = DoubleWord::new(root_lo, root_hi);
+        Ok(dword.to_vec())
     }
 
     /// Returns the AggLayer network ID stored in the bridge account.
@@ -864,9 +862,53 @@ pub enum AgglayerBridgeError {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let package = agglayer_bridge_component_package();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge")
-        .with_description("Bridge component for AggLayer");
+    let metadata = AccountComponentMetadata::try_from(&package)
+        .expect("shipped bridge package should declare account component metadata");
 
     AccountComponent::new(package, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use miden_protocol::account::component::{InitStorageData, StorageValueName};
+
+    use super::*;
+    use crate::agglayer_bridge_component_package;
+
+    /// Checks that instantiating the bridge package from its storage schema yields the same storage
+    /// slots as the Rust [`AggLayerBridge`] component, so the manifest and the Rust code cannot
+    /// drift apart.
+    #[test]
+    fn bridge_package_schema_matches_rust_component() {
+        let network_id = 7u32;
+
+        let mut init_storage_data = InitStorageData::default();
+        let network_id_name = StorageValueName::from_slot_name_with_suffix(
+            AggLayerBridge::network_id_slot_name(),
+            "network_id",
+        )
+        .unwrap();
+        init_storage_data.insert_value(network_id_name, network_id.to_string()).unwrap();
+
+        let from_package =
+            AccountComponent::from_package(agglayer_bridge_component_package(), &init_storage_data)
+                .unwrap();
+        let from_rust = AccountComponent::from(AggLayerBridge::new(network_id));
+
+        // The schema yields slots in slot ID order, so compare them independent of order.
+        let by_name = |component: &AccountComponent| -> BTreeMap<StorageSlotName, StorageSlot> {
+            component
+                .storage_slots()
+                .iter()
+                .map(|slot| (slot.name().clone(), slot.clone()))
+                .collect()
+        };
+        assert_eq!(by_name(&from_package), by_name(&from_rust));
+    }
 }

@@ -1,13 +1,16 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // CODE INSPECTION
 // ================================================================================================
 
-account_component_code!(CODE_INSPECTION_CODE, "miden-standards-inspection-code-inspection.masp");
+account_component_package!(
+    CODE_INSPECTION_PACKAGE,
+    "miden-standards-inspection-code-inspection.masp"
+);
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -90,7 +93,7 @@ impl CodeInspection {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &CODE_INSPECTION_CODE
+        &CODE_INSPECTION_PACKAGE.code
     }
 
     /// Returns the procedure root of the `has_procedure` procedure.
@@ -115,8 +118,7 @@ impl CodeInspection {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Read-only introspection over the account's own code")
+        CODE_INSPECTION_PACKAGE.metadata.clone()
     }
 }
 
