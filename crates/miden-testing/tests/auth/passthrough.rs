@@ -16,11 +16,10 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteRecipient,
-    NoteStorage,
+    NoteAttachment,
+    NoteAttachmentScheme,
     NoteType,
     PartialNote,
-    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -38,8 +37,6 @@ use miden_standards::account::auth::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_PASSTHROUGH_FEE_NOTE,
-    ERR_PASSTHROUGH_INSUFFICIENT_FEE,
     ERR_PASSTHROUGH_STATE_CHANGED,
     ERR_PASSTHROUGH_VAULT_NOT_EMPTY,
 };
@@ -142,7 +139,6 @@ async fn passthrough_private_pswap_e2e(
         .build_transaction(account.id())
         .authenticated_input_notes([create_note.note().clone()])
         .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
-        .auth_args(AuthPassthrough::auth_args(1))
         .build()?
         .execute()
         .await?;
@@ -198,7 +194,9 @@ async fn passthrough_private_pswap_e2e(
         let mut inputs = vec![current_note.clone()];
         let mut fee_note_index = 1;
         if additional_fee {
-            let result = chain
+            // Authentication permits execution even when the reserve is below the fee.
+            // Admission policy must decide whether to process this transaction.
+            let underfunded = chain
                 .build_transaction(account.id())
                 .authenticated_input_note(current_note.clone())
                 .extend_advice_inputs(advice.clone())
@@ -206,11 +204,11 @@ async fn passthrough_private_pswap_e2e(
                     current_note.id(),
                     PswapNote::create_cancel_args(),
                 )]))
-                .auth_args(AuthPassthrough::auth_args(fee_note_index))
                 .build()?
                 .execute()
-                .await;
-            assert_transaction_executor_error!(result, ERR_PASSTHROUGH_INSUFFICIENT_FEE);
+                .await?;
+            assert_eq!(underfunded.final_account().to_commitment(), account.to_commitment());
+            assert!(reserve.amount() < underfunded.compute_fee());
 
             let fee: Note = TxFeeNote::builder()
                 .sender(account.id())
@@ -247,7 +245,6 @@ async fn passthrough_private_pswap_e2e(
                 current_note.id(),
                 PswapNote::create_cancel_args(),
             )]))
-            .auth_args(AuthPassthrough::auth_args(fee_note_index))
             .build()?
             .execute()
             .await?;
@@ -436,60 +433,56 @@ async fn passthrough_rejects_storage_changes_and_pending_upgrades(
     Ok(())
 }
 
+/// Fee admission is independent of the account invariants checked by authentication.
 #[rstest]
-#[case::private_fee(true, false, false)]
-#[case::wrong_script(false, true, false)]
-#[case::wrong_asset(false, false, true)]
+#[case::missing(None)]
+#[case::insufficient(Some(1))]
+#[case::sufficient(Some(50_000))]
 #[tokio::test]
-async fn passthrough_rejects_invalid_fee_outputs(
-    #[case] private: bool,
-    #[case] wrong_script: bool,
-    #[case] wrong_asset: bool,
+async fn passthrough_auth_does_not_enforce_fee_funding(
+    #[case] fee_amount: Option<u64>,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder().verification_base_fee(500);
     let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
     let account = passthrough()?;
     builder.add_account(account.clone())?;
-    let recipient = if wrong_script {
-        P2idNoteStorage::new(owner.id()).into_recipient(builder.rng_mut().draw_word())
-    } else {
-        NoteRecipient::new(
-            builder.rng_mut().draw_word(),
-            TxFeeNote::script(),
-            NoteStorage::default(),
-        )
-    };
-    let asset = if wrong_asset {
-        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 50_000)?
-    } else {
-        native(50_000)
-    };
-    let output = Note::new(
-        NoteAssets::new(vec![asset.into()])?,
-        PartialNoteMetadata::new(
-            account.id(),
-            if private { NoteType::Private } else { NoteType::Public },
-        )
-        .with_tag(TxFeeNote::TAG),
-        recipient,
-    );
-    let create_note = CreateNote::new(owner.id(), builder.rng_mut().draw_word(), output, None)?;
+    let output: Note = P2idNote::builder()
+        .sender(account.id())
+        .target(owner.id())
+        .serial_number(builder.rng_mut().draw_word())
+        .note_type(NoteType::Public)
+        .asset(native(100))
+        .build()?
+        .into();
+    let create_note =
+        CreateNote::new(owner.id(), builder.rng_mut().draw_word(), output, fee_amount.map(native))?;
     builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
     let chain = builder.build()?;
-    let result = chain
+    let tx = chain
         .build_transaction(account.id())
         .authenticated_input_notes([create_note.note().clone()])
         .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
-        .auth_args(AuthPassthrough::auth_args(0))
         .build()?
         .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_PASSTHROUGH_FEE_NOTE);
+        .await?;
+    assert_eq!(tx.final_account().to_commitment(), account.to_commitment());
+    assert_eq!(tx.output_notes().get_note(0).id(), create_note.output().id());
+    assert_eq!(tx.output_notes().num_notes(), if fee_amount.is_some() { 2 } else { 1 });
+    if let Some(amount) = fee_amount {
+        assert_eq!(
+            tx.output_notes().get_note(1).assets(),
+            &NoteAssets::new(vec![native(amount).into()])?,
+        );
+    }
+    assert_eq!(
+        native(fee_amount.unwrap_or(0)).amount() >= tx.compute_fee(),
+        fee_amount == Some(50_000),
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn passthrough_checks_fee_after_transaction_script() -> anyhow::Result<()> {
+async fn passthrough_allows_fee_attachments_after_transaction_script() -> anyhow::Result<()> {
     let account = passthrough()?;
     let mut builder = MockChain::builder().verification_base_fee(500);
     let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -514,16 +507,21 @@ async fn passthrough_checks_fee_after_transaction_script() -> anyhow::Result<()>
         end
     "#,
     )?;
-    let result = chain
+    let tx = chain
         .build_transaction(account.id())
         .authenticated_input_notes([create_note.note().clone()])
         .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
         .tx_script(script)
-        .auth_args(AuthPassthrough::auth_args(1))
         .build()?
         .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_PASSTHROUGH_FEE_NOTE);
+        .await?;
+    assert_eq!(tx.final_account().to_commitment(), account.to_commitment());
+    let fee_note = tx.output_notes().get_note(1);
+    assert_eq!(fee_note.assets(), &NoteAssets::new(vec![native(50_000).into()])?);
+    assert_eq!(
+        fee_note.attachments(),
+        &NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, Word::empty()).into(),
+    );
     Ok(())
 }
 
@@ -576,7 +574,6 @@ async fn passthrough_concurrent_creations_share_account_state() -> anyhow::Resul
             .build_transaction(account.id())
             .authenticated_input_notes([create_note.note().clone()])
             .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
-            .auth_args(AuthPassthrough::auth_args(1))
             .build()?
             .execute()
             .await?;

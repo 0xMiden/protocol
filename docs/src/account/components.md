@@ -13,7 +13,7 @@ As an example, consider a typical wallet account, capable of holding a user's as
 
 Combine `AuthPassthrough` with `BasicWallet` in a public account for permissionless transactions. The vault must stay empty and account state must remain unchanged, including pending upgrades. Deployment increments the nonce once. Input scripts must constrain their outputs; a plain P2ID transfer does not protect funds sent to this account.
 
-`AuthPassthrough::auth_args` selects a public `TX_FEE` output containing enough native fee assets for the entire transaction. Authentication checks the final output after the transaction script, so it need not be sealed. It must still contain exactly one native asset and no attachments. The component creates no fee note. No fee output is required on chains with zero fees.
+Authentication arguments are unused. The component neither creates fee outputs nor checks their funding. Note scripts can supply public `TX_FEE` outputs, and transaction admission policy must decide whether the supplied fee is sufficient. Passthrough execution itself can succeed with missing or insufficient fees.
 
 To create a public PSWAP with private paybacks:
 
@@ -21,7 +21,7 @@ To create a public PSWAP with private paybacks:
 2. Consume the authenticated CREATE note through the passthrough account, producing the PSWAP and fee note. The passthrough account appears as the PSWAP sender.
 3. Partial fills preserve the reserve in the remainder; a complete fill returns it in the final private payback. The owner can cancel through passthrough using the secret recipient preimage. The PSWAP itself funds the TX_FEE, so cancellation consumes only the order or remainder. Reconstruct private paybacks and refunds and consume them with inclusion proofs.
 
-If the reserve is insufficient, publish a private CREATE note committing to a TX_FEE that covers the whole cancellation transaction. Consume it alongside the PSWAP and select its fee output in the authentication arguments. This fallback takes two transactions; passthrough does not sum separate fee outputs.
+If the reserve is insufficient, publish a private CREATE note committing to an additional TX_FEE and consume it alongside the PSWAP. Size this additional fee according to the batch builder's admission policy. Publishing and consuming the funding note takes two transactions.
 
 Execute and prove locally to keep private inputs confidential. The proven creation transaction omits the CREATE note's header, removing the direct ledger link to its owner. Amounts, timing, and information shared outside the protocol can still correlate them.
 

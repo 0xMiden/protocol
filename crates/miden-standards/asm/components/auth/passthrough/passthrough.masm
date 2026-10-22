@@ -1,102 +1,44 @@
 use {AuthArgs} from miden::standards::types
 use miden::protocol::active_account
-use miden::protocol::asset
 use miden::protocol::native_account
-use miden::protocol::note
-use {NOTE_TYPE_PUBLIC} from miden::protocol::note
-use miden::protocol::output_note
-use miden::protocol::tx
-use miden::standards::assets::fungible_asset
-use miden::standards::fee
-use miden::standards::note as std_note
-use miden::standards::notes::tx_fee
-use {TX_FEE_NOTE_TAG} from miden::standards::notes::tx_fee
 
 # CONSTANTS
 # =================================================================================================
 
 # Same empty vault root as the transaction kernel's EMPTY_SMT_ROOT.
 const EMPTY_VAULT_ROOT = [3975378004049472045, 2532873049833957132, 2640800763532531478, 11158234471980764993]
-# Estimated cycles for the remaining fee-note checks. apply_cycle_margins adds the epilogue cost.
-const POST_FEE_CYCLES = 4096
-const FEE_NOTE_IDX = 0
-const FEE_ASSET = 4
-const REQUIRED_FEE = 12
 
 # ERRORS
 # =================================================================================================
 
 const ERR_PASSTHROUGH_STATE_CHANGED = "passthrough account state must remain unchanged"
 const ERR_PASSTHROUGH_VAULT_NOT_EMPTY = "passthrough account vault must be empty"
-const ERR_PASSTHROUGH_AUTH_ARGS = "passthrough auth expects a fee note index and zero reserved arguments"
-const ERR_PASSTHROUGH_FEE_NOTE = "passthrough requires a public native TX_FEE note"
-const ERR_PASSTHROUGH_INSUFFICIENT_FEE = "passthrough fee note does not cover the transaction"
 
 # AUTHENTICATION
 # =================================================================================================
 
 #! Authorizes a permissionless transaction only when the account remains unchanged and empty.
 #! On deployment only, increments the nonce after checking the same state invariants.
+#! Fee funding and sufficiency are left to transaction admission policy.
 #!
-#! Inputs:  [fee_note_idx, pad(15)]
+#! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! fee_note_idx selects a public TX_FEE output. Reserved arguments must be zero.
-#! Authentication runs after the transaction script, so the selected output need not be sealed.
-#! The index is ignored on chains with zero fees.
+#! Authentication arguments are unused.
 @auth_script
-@locals(13)
 pub proc auth_passthrough(auth_args: AuthArgs)
-    loc_store.FEE_NOTE_IDX
-    assertz.err=ERR_PASSTHROUGH_AUTH_ARGS
-    assertz.err=ERR_PASSTHROUGH_AUTH_ARGS
-    assertz.err=ERR_PASSTHROUGH_AUTH_ARGS
+    dropw
+    # => [pad(16)]
 
     # Check state before the deployment nonce increment.
     exec.native_account::has_state_changed assertz.err=ERR_PASSTHROUGH_STATE_CHANGED
     exec.active_account::get_vault_root push.EMPTY_VAULT_ROOT
     assert_eqw.err=ERR_PASSTHROUGH_VAULT_NOT_EMPTY
+    # => [pad(16)]
 
     exec.active_account::get_nonce eq.0
     if.true
         exec.native_account::incr_nonce drop
     end
-
-    push.POST_FEE_CYCLES exec.fee::apply_cycle_margins
-    padw movup.4 exec.tx::compute_fee
-    # => [required_fee, pad(12)]
-
-    dup loc_store.REQUIRED_FEE neq.0
-    if.true
-        loc_load.FEE_NOTE_IDX exec.output_note::get_metadata
-        # => [METADATA, pad(12)]
-
-        dupw exec.note::metadata_into_note_type eq.NOTE_TYPE_PUBLIC
-        assert.err=ERR_PASSTHROUGH_FEE_NOTE
-        exec.note::metadata_into_tag eq.TX_FEE_NOTE_TAG assert.err=ERR_PASSTHROUGH_FEE_NOTE
-
-        loc_load.FEE_NOTE_IDX exec.std_note::output_note_get_recipient_preimage
-        # => [SCRIPT_ROOT, STORAGE_COMMITMENT, pad(12)]
-
-        procref.tx_fee::main assert_eqw.err=ERR_PASSTHROUGH_FEE_NOTE
-        padw assert_eqw.err=ERR_PASSTHROUGH_FEE_NOTE
-
-        loc_load.FEE_NOTE_IDX exec.output_note::get_attachments_commitment
-        padw assert_eqw.err=ERR_PASSTHROUGH_FEE_NOTE
-
-        loc_load.FEE_NOTE_IDX exec.output_note::get_assets_info
-        # => [ASSETS_COMMITMENT, num_assets, pad(12)]
-
-        dropw eq.1 assert.err=ERR_PASSTHROUGH_FEE_NOTE
-        loc_load.FEE_NOTE_IDX locaddr.FEE_ASSET exec.output_note::get_assets drop
-        locaddr.FEE_ASSET exec.asset::load
-        # => [ASSET_ID, ASSET_VALUE, pad(12)]
-
-        exec.tx::get_fee_asset_id assert_eqw.err=ERR_PASSTHROUGH_FEE_NOTE
-        exec.fungible_asset::value_into_amount_unchecked
-        loc_load.REQUIRED_FEE swap
-        # => [paid_fee, required_fee, pad(12)]
-
-        lte assert.err=ERR_PASSTHROUGH_INSUFFICIENT_FEE
-    end
+    # => [pad(16)]
 end
