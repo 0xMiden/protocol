@@ -19,7 +19,6 @@ const ERR_PASSTHROUGH_VAULT_NOT_EMPTY = "passthrough account vault must be empty
 
 #! Authorizes a permissionless transaction only when the account remains unchanged and empty.
 #! On deployment only, increments the nonce after checking the same state invariants.
-#! Fee funding and sufficiency are left to transaction admission policy.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
 #! Outputs: [pad(16)]

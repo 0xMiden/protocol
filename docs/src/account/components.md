@@ -11,9 +11,9 @@ As an example, consider a typical wallet account, capable of holding a user's as
 
 ## Passthrough account
 
-Combine `AuthPassthrough` with `BasicWallet` in a public account for permissionless transactions. The vault must stay empty and account state must remain unchanged, including pending upgrades. Deployment increments the nonce once. Input scripts must constrain their outputs; a plain P2ID transfer does not protect funds sent to this account.
+Combine `AuthPassthrough` with `BasicWallet` in a public account for permissionless transactions. The vault must stay empty and account state must remain unchanged, including pending upgrades. Deployment increments the nonce once. Anyone with the input witnesses can execute against this account. Public notes must enforce their spending conditions; a public P2ID transfer does not protect funds sent to this account. Private CREATE notes assume the creator keeps the witness private and checks the transaction locally.
 
-Authentication arguments are unused. The component neither creates fee outputs nor checks their funding. Note scripts can supply public `TX_FEE` outputs, and transaction admission policy must decide whether the supplied fee is sufficient. Passthrough execution itself can succeed with missing or insufficient fees.
+Authentication arguments are unused. The component neither creates fee outputs nor checks their funding. Note scripts can supply public `TX_FEE` outputs.
 
 To create a public PSWAP with private paybacks:
 

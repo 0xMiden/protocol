@@ -8,12 +8,12 @@ account_component_package!(PASSTHROUGH_PACKAGE, "miden-standards-auth-passthroug
 /// Permissionless authentication for a stateless passthrough account.
 ///
 /// Transactions must preserve the account state and leave the vault empty. Deployment alone
-/// increments the nonce once. Anyone with the input witnesses can execute against a public
-/// account, so input note scripts must constrain their outputs; plain P2ID funding is unsuitable.
+/// increments the nonce once. Anyone with the input witnesses can execute against this account.
+/// Public notes must enforce their spending conditions. Private CREATE notes assume the creator
+/// keeps the witness private and checks the transaction locally.
 ///
 /// Authentication arguments are unused. This component neither creates fee outputs nor checks
-/// their funding. [`CreateNote`](crate::note::CreateNote) can supply a fee note; transaction
-/// admission policy is responsible for deciding whether the supplied fee is sufficient.
+/// their funding. [`CreateNote`](crate::note::CreateNote) can supply a fee note.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AuthPassthrough;
 
