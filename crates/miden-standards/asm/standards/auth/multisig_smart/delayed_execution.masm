@@ -159,7 +159,7 @@ end
 #!   cancellation quorum.
 #!
 #! Invocation: exec
-proc get_initial_delay_config() -> (u32, u16, SignatureThreshold)
+proc get_delay_config() -> (u32, u16, SignatureThreshold)
     push.DELAY_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
@@ -176,8 +176,8 @@ end
 #! Outputs: [propose_expiration_delta]
 #!
 #! Invocation: exec
-proc get_initial_propose_expiration_delta() -> u16
-    exec.get_initial_delay_config
+proc get_propose_expiration_delta() -> u16
+    exec.get_delay_config
     # => [min_delay, propose_expiration_delta, cancel_threshold]
 
     drop swap drop
@@ -190,8 +190,8 @@ end
 #! Outputs: [cancel_threshold]
 #!
 #! Invocation: exec
-proc get_initial_cancel_threshold() -> SignatureThreshold
-    exec.get_initial_delay_config
+proc get_cancel_threshold() -> SignatureThreshold
+    exec.get_delay_config
     # => [min_delay, propose_expiration_delta, cancel_threshold]
 
     drop drop
@@ -376,7 +376,7 @@ proc compute_unlock_block() -> (BlockNumber, BlockNumber)
     exec.tx::get_reference_block_number
     # => [proposal_block]
 
-    dup exec.get_initial_delay_config
+    dup exec.get_delay_config
     # => [min_delay, propose_expiration_delta, cancel_threshold, proposal_block, proposal_block]
 
     movup.2 drop
@@ -559,11 +559,11 @@ pub proc propose_transaction(tx_summary_commitment: word)
     # => [TX_SUMMARY_COMMITMENT]
 
     # ---- Bound the proposal transaction's validity window. ----
-    exec.get_initial_propose_expiration_delta exec.tx::update_expiration_block_delta
+    exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     # ---- Write the proposal with min_cancel_sigs = cancel_threshold. ----
-    exec.get_initial_cancel_threshold
+    exec.get_cancel_threshold
     # => [cancel_threshold, TX_SUMMARY_COMMITMENT]
 
     exec.compute_unlock_block
