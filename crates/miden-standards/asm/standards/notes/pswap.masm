@@ -1056,10 +1056,6 @@ end
 #!
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Public reclaim requires receive_asset. Consumers: any compatible account may fill.
-#!
-#! Memory scratch space:
-#! - STORAGE_PTR and STORAGE_LENGTH_PTR: initialized by load_storage for this execution;
-#!   create_remainder_note updates MIN_REQUESTED_AMOUNT_ITEM on a partial fill.
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
