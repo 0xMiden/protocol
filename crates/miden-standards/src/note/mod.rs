@@ -27,7 +27,7 @@ mod burn;
 pub use burn::BurnNote;
 
 mod create_note;
-pub use create_note::CreateNote;
+pub use create_note::{CreateNote, CreateNoteStorage};
 
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
