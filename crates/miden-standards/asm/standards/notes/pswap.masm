@@ -562,7 +562,7 @@ proc add_cancellation_fee_and_seal_output(
     # => []
 end
 
-#! Pays the reserve in full. The account's authentication checks transaction fee sufficiency.
+#! Pays the reserve in full without checking transaction fee sufficiency.
 #! A zero fee amount creates no output.
 #!
 #! Inputs:  [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
@@ -594,14 +594,6 @@ proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, note_idx]
 
         exec.output_note::add_asset
-        # => [note_idx]
-
-        # Passthrough authentication requires an attachment-free TX_FEE note. Check after
-        # callbacks, which can append attachments before the output is sealed.
-        dup exec.output_note::get_attachments_commitment
-        # => [ATTACHMENTS_COMMITMENT, note_idx]
-
-        padw assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
         # => [note_idx]
 
         locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::load
