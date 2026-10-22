@@ -195,7 +195,6 @@ pub proc set_procedure_policy(policy: ProcedurePolicy, proc_root: AccountProcedu
     # ----- Reject the delay actions: a propose/cancel transaction takes the dispatch branch of
     # `auth_tx` that never consults procedure policies, so a policy on these roots would be accepted
     # but silently ignored. -----
-    # `eqw` leaves both words on the stack, so the pushed root is dropped after each comparison.
     procref.delayed_execution::propose_transaction eqw
     # => [is_propose, PROPOSE_ROOT, PROC_ROOT]
 
