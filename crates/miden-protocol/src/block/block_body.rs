@@ -210,14 +210,15 @@ impl BlockBody {
 
     /// Returns the commitment of all transactions included in this block.
     ///
-    /// This is a sequential hash over the ID and account ID of all transactions in block order.
+    /// This is a sequential hash over the tx ID and account ID of all transactions in block order.
     pub fn transaction_commitment(&self) -> Word {
         OrderedTransactionHeaders::compute_commitment(
             self.transaction_headers().map(|tx| (tx.id(), tx.account_id())),
         )
     }
 
-    /// Returns an iterator over the [`BatchId`]s of the batches in this block, in block order.
+    /// Returns an iterator over the [`BatchId`](crate::batch::BatchId)s of the batches in this\
+    /// block, in block order.
     #[cfg(any(feature = "testing", test))]
     pub fn batch_ids(&self) -> impl Iterator<Item = crate::batch::BatchId> + '_ {
         self.transactions.iter().map(|batch| {
