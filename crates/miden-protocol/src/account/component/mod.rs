@@ -262,6 +262,10 @@ mod tests {
 
         // Verify the component was created correctly
         assert_eq!(component.storage_size(), 0);
+        assert!(
+            AccountComponentMetadata::try_from(component.component_code().as_package()).is_err(),
+            "component code should not carry the metadata section"
+        );
 
         // Test without metadata - should fail
         let result = AccountComponent::from_package(package, &init_data);

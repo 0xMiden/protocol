@@ -1,13 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -35,7 +28,7 @@ use super::{
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
@@ -57,13 +50,10 @@ pub(crate) static TOKEN_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|
         .expect("storage slot name should be valid")
 });
 
-/// Schema type string for the token symbol field in the token config slot.
-const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symbol";
-
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(FUNGIBLE_FAUCET_CODE, "miden-standards-faucets-fungible-faucet.masp");
+account_component_package!(FUNGIBLE_FAUCET_PACKAGE, "miden-standards-faucets-fungible-faucet.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
@@ -282,7 +272,7 @@ impl FungibleFaucet {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &FUNGIBLE_FAUCET_CODE
+        &FUNGIBLE_FAUCET_PACKAGE.code
     }
 
     /// Returns the procedure root of the `mint_and_send` account procedure.
@@ -363,36 +353,9 @@ impl FungibleFaucet {
         self.metadata.external_link()
     }
 
-    /// Returns the storage slot schema for the token config slot.
-    pub fn token_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let token_symbol_type = SchemaType::new(TOKEN_SYMBOL_TYPE).expect("valid type");
-        (
-            Self::token_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Token config",
-                [
-                    FeltSchema::felt("token_supply").with_default(Felt::ZERO),
-                    FeltSchema::felt("max_supply"),
-                    FeltSchema::u8("decimals"),
-                    FeltSchema::new_typed(token_symbol_type, "symbol"),
-                ],
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let mut schema_entries = vec![Self::token_config_slot_schema()];
-        schema_entries.extend(TokenMetadata::storage_schema());
-
-        let storage_schema =
-            StorageSchema::new(schema_entries).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Fungible faucet component bundling minting, burning, and token metadata",
-            )
-            .with_storage_schema(storage_schema)
+        FUNGIBLE_FAUCET_PACKAGE.metadata.clone()
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability

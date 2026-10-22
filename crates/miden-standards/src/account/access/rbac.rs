@@ -2,13 +2,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -22,9 +16,9 @@ use miden_protocol::account::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 
-account_component_code!(RBAC_CODE, "miden-standards-access-rbac.masp");
+account_component_package!(RBAC_PACKAGE, "miden-standards-access-rbac.masp");
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")
@@ -338,7 +332,7 @@ impl RoleBasedAccessControl {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &RBAC_CODE
+        &RBAC_PACKAGE.code
     }
 
     /// Returns the storage slot name for the per-role config map.
@@ -351,41 +345,9 @@ impl RoleBasedAccessControl {
         &ROLE_MEMBERSHIP_SLOT_NAME
     }
 
-    /// Returns the schema entry for the per-role config map.
-    pub fn role_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::role_config_slot().clone(),
-            StorageSlotSchema::map(
-                "Per-role RBAC configuration (member count and delegated admin role)",
-                SchemaType::role_symbol(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    /// Returns the schema entry for the per-role membership map.
-    pub fn role_membership_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::role_membership_slot().clone(),
-            StorageSlotSchema::map(
-                "Role membership flag indexed by role symbol and account ID",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] describing this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![
-            Self::role_config_slot_schema(),
-            Self::role_membership_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Role-based access control component")
-            .with_storage_schema(storage_schema)
+        RBAC_PACKAGE.metadata.clone()
     }
 }
 
@@ -509,6 +471,7 @@ pub enum RoleBasedAccessControlError {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::component::InitStorageData;
     use miden_protocol::account::{AccountType, StorageSlotContent};
 
     use super::*;
@@ -649,6 +612,44 @@ mod tests {
             config.get(&role_config_key(&pauser_role)),
             Word::from([Felt::ONE, manager_symbol, Felt::ZERO, Felt::ZERO]),
         );
+
+        Ok(())
+    }
+
+    /// Checks that the storage the Rust component installs conforms to the component's storage
+    /// schema, so the map key and value types in the manifest match the layout read by the MASM.
+    #[test]
+    fn installed_storage_conforms_to_the_storage_schema() -> anyhow::Result<()> {
+        let manager_role = RoleSymbol::new("DOM_MANAGER")?;
+        let component: AccountComponent = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(test_admin(1)))
+            .role(
+                RoleConfig::new(manager_role.clone())
+                    .with_member(test_admin(2))
+                    .with_admin(manager_role),
+            )
+            .build()?
+            .into();
+
+        // Feed the installed map entries back through the schema, which validates every key and
+        // value against its declared type.
+        let mut init_storage_data = InitStorageData::default();
+        for slot_name in [
+            RoleBasedAccessControl::role_config_slot(),
+            RoleBasedAccessControl::role_membership_slot(),
+        ] {
+            for (key, value) in find_map(&component, slot_name).entries() {
+                init_storage_data.insert_map_entry(slot_name.clone(), Word::from(*key), *value)?;
+            }
+        }
+        let schema_slots = RoleBasedAccessControl::component_metadata()
+            .storage_schema()
+            .build_storage_slots(&init_storage_data)?;
+
+        let by_name = |slots: &[StorageSlot]| -> BTreeMap<StorageSlotName, StorageSlot> {
+            slots.iter().map(|slot| (slot.name().clone(), slot.clone())).collect()
+        };
+        assert_eq!(by_name(&schema_slots), by_name(component.storage_slots()));
 
         Ok(())
     }
