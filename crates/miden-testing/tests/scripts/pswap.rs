@@ -1557,8 +1557,15 @@ async fn pswap_cancellation_reserve_lifecycle(
             let refund = current.refund_note(router.id(), recipient)?;
             assert_eq!(tx.output_notes().num_notes(), 2);
             assert_output_note(tx.output_notes(), refund.id());
-            assert_eq!(tx.output_notes().get_note(1).metadata().tag(), TxFeeNote::TAG);
-            assert_eq!(tx.output_notes().get_note(1).assets(), &NoteAssets::new(vec![fee.into()])?);
+            let mut fee_serial = current.serial_number();
+            fee_serial[2] += ONE;
+            let fee_note: Note = TxFeeNote::builder()
+                .sender(router.id())
+                .asset(fee)
+                .serial_number(fee_serial)
+                .build()?
+                .into();
+            assert_output_note(tx.output_notes(), fee_note.id());
             assert_eq!(tx.account_patch().vault().num_assets(), 0);
             claims.push(refund);
         } else {
