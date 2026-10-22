@@ -73,6 +73,8 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 #
 # The remainder PSWAP note's own tag is copied from the active note's
 # metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
+#
+# Shared note-storage buffer. Procedures using it declare it as a memory parameter.
 const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
@@ -270,6 +272,10 @@ end
 #!
 #! Inputs: []
 #! Outputs: []
+#!
+#! Memory outputs:
+#! - STORAGE_PTR: the active note storage, validated for the selected payback type.
+#! - STORAGE_LENGTH_PTR: the number of storage elements written at STORAGE_PTR.
 proc load_storage()
     push.PRIVATE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
@@ -331,6 +337,9 @@ end
 #!
 #! Inputs: []
 #! Outputs: [tag, note_type, RECIPIENT]
+#!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
 proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     mem_load.PAYBACK_NOTE_TYPE_ITEM
     # => [payback_note_type]
@@ -403,6 +412,9 @@ end
 #! Prepares and creates the public or private payback.
 #! Inputs: [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
+#!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
 @locals(5)
 # P2ID_NOTE_IDX                : note_idx
 # P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
@@ -536,6 +548,11 @@ end
 #!           remaining_requested, note_type, tag]
 #! Outputs: []
 #!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
+#! - STORAGE_LENGTH_PTR: the number of elements in that buffer.
+#! Memory outputs:
+#! - MIN_REQUESTED_AMOUNT_ITEM: replaced with the remainder's requested amount on a partial fill.
 @locals(5)
 # REMAINDER_NOTE_IDX              : note_idx
 # REMAINDER_OFFERED_FAUCET_SUFFIX : offered_faucet_suffix
@@ -806,6 +823,11 @@ end
 #! Inputs: [account_fill_amount, note_fill_amount]
 #! Outputs: []
 #!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
+#! - STORAGE_LENGTH_PTR: the number of elements in that buffer.
+#! Memory outputs:
+#! - MIN_REQUESTED_AMOUNT_ITEM: replaced with the remainder's requested amount on a partial fill.
 @locals(10)
 # EXEC_AMT_OFFERED                : amt_offered
 # EXEC_AMT_MIN_REQUESTED          : amt_min_requested
@@ -1032,6 +1054,12 @@ end
 #!
 #! Inputs: [account_fill, note_fill]
 #! Outputs: []
+#!
+#! Memory inputs:
+#! - STORAGE_PTR: the active order storage initialized and validated by load_storage.
+#! - STORAGE_LENGTH_PTR: the number of elements in that buffer.
+#! Memory outputs:
+#! - MIN_REQUESTED_AMOUNT_ITEM: replaced with the remainder's requested amount on a partial fill.
 proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     dup.1 eq.0 dup.1 eq.0 and
     # => [both_zero, account_fill, note_fill]
@@ -1055,6 +1083,10 @@ end
 #!
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Public reclaim requires receive_asset. Consumers: any compatible account may fill.
+#!
+#! Memory scratch space:
+#! - STORAGE_PTR and STORAGE_LENGTH_PTR: initialized by load_storage for this execution;
+#!   create_remainder_note updates MIN_REQUESTED_AMOUNT_ITEM on a partial fill.
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
