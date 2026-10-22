@@ -48,10 +48,9 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_BASE_ASSET_NOT_FUNGIBLE,
-    ERR_MAX_ORACLE_BLOCK_AGE_WITHOUT_ORACLE,
     ERR_MAX_ORACLE_BLOCK_AGE_ZERO,
     ERR_SPENDING_LIMIT_EXCEEDED,
-    ERR_SPENDING_LIMIT_REQUIRES_BASE_ASSET,
+    ERR_SPENDING_LIMIT_REQUIRES_ORACLE,
     ERR_UNPRICED_ASSET_POLICY_INVALID,
     ERR_UNPRICED_ASSET_REJECTED,
 };
@@ -153,21 +152,17 @@ fn nonzero(value: u64) -> NonZeroU64 {
     NonZeroU64::new(value).expect("non-zero")
 }
 
-/// The budget: `SPENDING_LIMIT` USDCX per window, priced through the given oracle account when
-/// there is one.
-fn budget(oracle: Option<AccountId>) -> SpendingBudget {
-    let budget = SpendingBudget::new(AssetId::new_fungible(usdcx()), nonzero(SPENDING_LIMIT))
-        .expect("budget should be valid");
-    match oracle {
-        Some(oracle) => budget.with_oracle(SpendingOracle::new(
-            oracle,
-            NonZeroU16::new(MAX_ORACLE_BLOCK_AGE).unwrap(),
-        )),
-        None => budget,
-    }
+/// The budget: `SPENDING_LIMIT` USDCX per window, priced through the given oracle account.
+fn budget(oracle: AccountId) -> SpendingBudget {
+    SpendingBudget::new(
+        AssetId::new_fungible(usdcx()),
+        nonzero(SPENDING_LIMIT),
+        SpendingOracle::new(oracle, NonZeroU16::new(MAX_ORACLE_BLOCK_AGE).unwrap()),
+    )
+    .expect("budget should be valid")
 }
 
-fn policy(oracle: Option<AccountId>, unpriced: UnpricedAssetPolicy) -> SpendingLimitsPolicy {
+fn policy(oracle: AccountId, unpriced: UnpricedAssetPolicy) -> SpendingLimitsPolicy {
     SpendingLimitsPolicy::new(NonZeroU32::new(WINDOW_BLOCKS).unwrap(), budget(oracle))
         .with_unpriced_assets(unpriced)
 }
@@ -238,27 +233,25 @@ struct Harness {
     account: Account,
     public_keys: Vec<PublicKey>,
     authenticators: Vec<BasicAuthenticator>,
-    /// The oracle account, passed as a foreign account input to every transaction while set.
-    oracle: Option<Account>,
+    oracle: Account,
+    /// Whether transactions carry the oracle account as a foreign account input.
+    with_oracle_inputs: bool,
     salt_seed: u8,
 }
 
 impl Harness {
-    /// A 2-of-2 multisig, next to an oracle account dispatching to the named rate provider when one
-    /// is given. With an unpriced-asset policy given, the account gets the spending-limit policy
-    /// with a USDCX budget, priced through that oracle if any; without one, spending limits are
-    /// disabled.
-    fn new(unpriced: Option<UnpricedAssetPolicy>, provider: Option<&str>) -> anyhow::Result<Self> {
+    /// A 2-of-2 multisig next to an oracle account dispatching to the named rate provider. With an
+    /// unpriced-asset policy given, the account gets the spending-limit policy with a USDCX budget
+    /// priced through that oracle; without one, spending limits are disabled.
+    fn new(unpriced: Option<UnpricedAssetPolicy>, provider: &str) -> anyhow::Result<Self> {
         let (_secret_keys, _schemes, public_keys, authenticators) =
             setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
 
-        let oracle = provider.map(oracle_account).transpose()?;
-        let policy = unpriced.map(|unpriced| policy(oracle.as_ref().map(Account::id), unpriced));
+        let oracle = oracle_account(provider)?;
+        let policy = unpriced.map(|unpriced| policy(oracle.id(), unpriced));
         let account = multisig_account(2, &public_keys, policy)?;
 
-        let mut accounts = vec![account.clone()];
-        accounts.extend(oracle.clone());
-        let chain = MockChainBuilder::with_accounts(accounts)?.build()?;
+        let chain = MockChainBuilder::with_accounts([account.clone(), oracle.clone()])?.build()?;
 
         Ok(Self {
             chain,
@@ -266,6 +259,7 @@ impl Harness {
             public_keys,
             authenticators,
             oracle,
+            with_oracle_inputs: true,
             salt_seed: 1,
         })
     }
@@ -273,12 +267,7 @@ impl Harness {
     /// The default setup: the policy enabled with `reject` for unpriced assets and an oracle that
     /// prices every pair at `ORACLE_RATE`.
     fn with_policy() -> anyhow::Result<Self> {
-        Self::new(Some(UnpricedAssetPolicy::Reject), Some(FIXED_RATE_PROVIDER))
-    }
-
-    /// The policy enabled with the given unpriced-asset policy and no oracle at all.
-    fn without_oracle(unpriced: UnpricedAssetPolicy) -> anyhow::Result<Self> {
-        Self::new(Some(unpriced), None)
+        Self::new(Some(UnpricedAssetPolicy::Reject), FIXED_RATE_PROVIDER)
     }
 
     fn next_salt(&mut self) -> Word {
@@ -305,22 +294,15 @@ impl Harness {
             .into())
     }
 
-    /// Adds the oracle account to the transaction inputs while the harness has one.
+    /// Adds the oracle account to the transaction inputs unless the test dropped it.
     fn with_foreign_inputs<'a>(
         &self,
         builder: MockTransactionBuilder<'a>,
     ) -> anyhow::Result<MockTransactionBuilder<'a>> {
-        match &self.oracle {
-            Some(oracle) => {
-                Ok(builder
-                    .foreign_accounts([self.chain.get_foreign_account_inputs(oracle.id())?]))
-            },
-            None => Ok(builder),
+        if !self.with_oracle_inputs {
+            return Ok(builder);
         }
-    }
-
-    fn oracle_id(&self) -> AccountId {
-        self.oracle.as_ref().expect("harness should have an oracle").id()
+        Ok(builder.foreign_accounts([self.chain.get_foreign_account_inputs(self.oracle.id())?]))
     }
 
     /// Sends all `assets` in one P2ID note, both approvers signing.
@@ -588,7 +570,7 @@ async fn an_older_reference_block_does_not_release_budget() -> anyhow::Result<()
 
 #[tokio::test]
 async fn a_disabled_policy_does_not_meter() -> anyhow::Result<()> {
-    let mut h = Harness::new(None, Some(FIXED_RATE_PROVIDER))?;
+    let mut h = Harness::new(None, FIXED_RATE_PROVIDER)?;
 
     let tx = h.send(fungible(usdcx(), 500_000)).await?;
 
@@ -601,7 +583,7 @@ async fn a_disabled_policy_does_not_meter() -> anyhow::Result<()> {
 #[tokio::test]
 async fn non_fungible_assets_are_not_metered() -> anyhow::Result<()> {
     // `reject` for unpriced assets and no price for the NFT: the send still goes through.
-    let mut h = Harness::new(Some(UnpricedAssetPolicy::Reject), Some(UNPRICED_PROVIDER))?;
+    let mut h = Harness::new(Some(UnpricedAssetPolicy::Reject), UNPRICED_PROVIDER)?;
 
     h.send(nft()).await?;
 
@@ -627,7 +609,7 @@ async fn spending_limits_leave_the_signature_threshold_unchanged() -> anyhow::Re
 async fn the_base_asset_is_charged_one_to_one_without_the_oracle() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
     // Drop the oracle from the transaction inputs: the base asset must not need it.
-    h.oracle = None;
+    h.with_oracle_inputs = false;
     let block = h.latest_block();
 
     h.send(fungible(usdcx(), 60_000)).await?;
@@ -667,7 +649,7 @@ async fn the_budget_accumulates_across_assets() -> anyhow::Result<()> {
 async fn an_unpriced_asset_falls_to_the_policy(
     #[case] unpriced: UnpricedAssetPolicy,
 ) -> anyhow::Result<()> {
-    let mut h = Harness::new(Some(unpriced), Some(UNPRICED_PROVIDER))?;
+    let mut h = Harness::new(Some(unpriced), UNPRICED_PROVIDER)?;
 
     let result = h.send_signed(fungible(eth(), 10), &[0, 1], None).await?;
 
@@ -738,60 +720,11 @@ async fn an_idle_window_cannot_be_reopened_with_an_old_reference_block() -> anyh
 #[tokio::test]
 async fn a_priced_spend_without_the_oracle_account_fails() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
-    h.oracle = None;
+    h.with_oracle_inputs = false;
 
     let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
 
     assert!(result.is_err(), "the foreign call must fail without the oracle inputs");
-    Ok(())
-}
-
-#[rstest]
-#[case::reject(UnpricedAssetPolicy::Reject)]
-#[case::allow(UnpricedAssetPolicy::Allow)]
-#[tokio::test]
-async fn without_an_oracle_only_the_base_asset_is_priced(
-    #[case] unpriced: UnpricedAssetPolicy,
-) -> anyhow::Result<()> {
-    let mut h = Harness::without_oracle(unpriced)?;
-    let block = h.latest_block();
-
-    // The base asset is charged one to one with no foreign inputs at all.
-    h.send(fungible(usdcx(), 60_000)).await?;
-    assert_eq!(h.tracker(), tracker_word(60_000, block, 0));
-
-    // Everything else is unpriced and falls to the policy.
-    let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
-    match unpriced {
-        UnpricedAssetPolicy::Reject => {
-            assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
-        },
-        UnpricedAssetPolicy::Allow => {
-            result?;
-            assert_eq!(h.tracker()[0], Felt::new_unchecked(60_000));
-        },
-        _ => unreachable!("the policy has two variants"),
-    }
-    Ok(())
-}
-
-/// The response to a faulty oracle: unset it. The base asset stays under the limit, with its
-/// running total intact, and other assets fall to the policy.
-#[tokio::test]
-async fn unsetting_the_oracle_keeps_the_base_asset_under_the_limit() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-
-    h.send(fungible(eth(), 10)).await?;
-    assert_eq!(h.tracker()[0], Felt::new_unchecked(10 * ORACLE_RATE));
-
-    h.configure(&unset_oracle_script(0)).await??;
-    h.oracle = None;
-
-    let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
-    assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
-
-    h.send(fungible(usdcx(), 60_000)).await?;
-    assert_eq!(h.tracker()[0], Felt::new_unchecked(10 * ORACLE_RATE + 60_000));
     Ok(())
 }
 
@@ -828,30 +761,10 @@ fn update_policy_script(window_blocks: u32, unpriced_policy: u32) -> String {
 }
 
 fn update_oracle_script(oracle_id: AccountId, max_block_age: u32, base_asset: AssetId) -> String {
-    update_oracle_script_raw(
-        oracle_id.prefix().as_felt(),
-        oracle_id.suffix(),
-        max_block_age,
-        Word::from(base_asset),
-    )
+    update_oracle_script_raw(oracle_id, max_block_age, Word::from(base_asset))
 }
 
-/// Unsets the oracle, keeping USDCX as the base asset.
-fn unset_oracle_script(max_block_age: u32) -> String {
-    update_oracle_script_raw(
-        Felt::from(0u32),
-        Felt::from(0u32),
-        max_block_age,
-        Word::from(AssetId::new_fungible(usdcx())),
-    )
-}
-
-fn update_oracle_script_raw(
-    prefix: Felt,
-    suffix: Felt,
-    max_block_age: u32,
-    base_asset: Word,
-) -> String {
+fn update_oracle_script_raw(oracle_id: AccountId, max_block_age: u32, base_asset: Word) -> String {
     format!(
         "
         @transaction_script
@@ -863,7 +776,9 @@ fn update_oracle_script_raw(
             call.::miden::standards::components::auth::multisig_smart::update_spending_oracle
             drop drop drop dropw
         end
-        "
+        ",
+        prefix = oracle_id.prefix().as_felt(),
+        suffix = oracle_id.suffix(),
     )
 }
 
@@ -920,7 +835,7 @@ async fn update_spending_limits_policy_rejects_an_invalid_unpriced_policy() -> a
 #[tokio::test]
 async fn update_spending_oracle_rejects_a_zero_block_age() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
-    let oracle = h.oracle_id();
+    let oracle = h.oracle.id();
 
     let result = h
         .configure(&update_oracle_script(oracle, 0, AssetId::new_fungible(usdcx())))
@@ -933,12 +848,11 @@ async fn update_spending_oracle_rejects_a_zero_block_age() -> anyhow::Result<()>
 #[tokio::test]
 async fn update_spending_oracle_rejects_a_non_fungible_base_asset() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
-    let oracle = h.oracle_id();
+    let oracle = h.oracle.id();
 
     let result = h
         .configure(&update_oracle_script_raw(
-            oracle.prefix().as_felt(),
-            oracle.suffix(),
+            oracle,
             MAX_ORACLE_BLOCK_AGE.into(),
             nft().to_id_word(),
         ))
@@ -949,22 +863,12 @@ async fn update_spending_oracle_rejects_a_non_fungible_base_asset() -> anyhow::R
 }
 
 #[tokio::test]
-async fn unsetting_the_oracle_requires_a_zero_block_age() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-
-    let result = h.configure(&unset_oracle_script(MAX_ORACLE_BLOCK_AGE.into())).await?;
-
-    assert_transaction_executor_error!(result, ERR_MAX_ORACLE_BLOCK_AGE_WITHOUT_ORACLE);
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_limit_cannot_be_set_without_a_base_asset() -> anyhow::Result<()> {
-    // No policy: the base asset slot is empty.
-    let mut h = Harness::new(None, Some(FIXED_RATE_PROVIDER))?;
+async fn a_limit_cannot_be_set_without_an_oracle() -> anyhow::Result<()> {
+    // No policy: the oracle slot is empty.
+    let mut h = Harness::new(None, FIXED_RATE_PROVIDER)?;
 
     let result = h.configure(&set_limit_script(100_000)).await?;
-    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_REQUIRES_BASE_ASSET);
+    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_REQUIRES_ORACLE);
 
     // Clearing never needs one.
     h.configure(&set_limit_script(0)).await??;

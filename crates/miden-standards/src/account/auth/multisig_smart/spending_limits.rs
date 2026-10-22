@@ -65,20 +65,23 @@ impl SpendingOracle {
 /// The spending budget: one limit denominated in `base_asset`.
 ///
 /// The base asset is charged one to one. Any other fungible asset is charged at the rate the
-/// oracle quotes for it, and falls to the [`UnpricedAssetPolicy`] when there is no oracle or the
-/// oracle has no rate for it. A budget without an oracle therefore bounds the base asset alone and
-/// needs no foreign account inputs.
+/// oracle quotes for it, and falls to the [`UnpricedAssetPolicy`] when the oracle has no rate for
+/// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpendingBudget {
     base_asset: AssetId,
     limit: NonZeroU64,
-    oracle: Option<SpendingOracle>,
+    oracle: SpendingOracle,
 }
 
 impl SpendingBudget {
-    /// Creates a budget without an oracle after validating that the base asset is fungible and the
-    /// limit fits a fungible asset amount.
-    pub fn new(base_asset: AssetId, limit: NonZeroU64) -> Result<Self, AccountError> {
+    /// Creates a budget after validating that the base asset is fungible and the limit fits a
+    /// fungible asset amount.
+    pub fn new(
+        base_asset: AssetId,
+        limit: NonZeroU64,
+        oracle: SpendingOracle,
+    ) -> Result<Self, AccountError> {
         if !base_asset.composition().is_fungible() {
             return Err(AccountError::other("spending limit base asset must be fungible"));
         }
@@ -87,13 +90,7 @@ impl SpendingBudget {
                 "spending limit exceeds the maximum fungible asset amount",
             ));
         }
-        Ok(Self { base_asset, limit, oracle: None })
-    }
-
-    /// Prices non-base assets through the given oracle.
-    pub fn with_oracle(mut self, oracle: SpendingOracle) -> Self {
-        self.oracle = Some(oracle);
-        self
+        Ok(Self { base_asset, limit, oracle })
     }
 
     pub const fn base_asset(&self) -> AssetId {
@@ -104,8 +101,8 @@ impl SpendingBudget {
         self.limit
     }
 
-    pub const fn oracle(&self) -> Option<&SpendingOracle> {
-        self.oracle.as_ref()
+    pub const fn oracle(&self) -> SpendingOracle {
+        self.oracle
     }
 }
 
@@ -129,12 +126,10 @@ impl SpendingBudget {
 ///
 /// # Faulty oracle
 ///
-/// An oracle without a rate for an asset makes that asset fall to the policy, and an unavailable
-/// oracle fails the transaction, so under [`UnpricedAssetPolicy::Reject`] every non-base asset
-/// stops until governance acts. The intended response is to unset the oracle through
-/// `update_spending_oracle`: the base asset keeps being charged under the limit and everything
-/// else falls to the policy. Switching to another oracle, or to [`UnpricedAssetPolicy::Allow`],
-/// is only needed to move other assets.
+/// The base asset is priced without reading the oracle, so a faulty oracle never blocks it. Other
+/// assets stop under [`UnpricedAssetPolicy::Reject`] until governance points the budget at another
+/// oracle through `update_spending_oracle` or disables the limits through
+/// `update_spending_limits_policy`.
 ///
 /// # Security
 ///
@@ -188,18 +183,15 @@ impl SpendingLimitsPolicy {
         Word::from([self.window_blocks.get(), self.unpriced_assets.as_u32(), 0, 0])
     }
 
-    /// `[oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0]`, or the empty word without
-    /// an oracle.
+    /// `[oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0]`.
     pub(super) fn oracle_word(&self) -> Word {
-        match &self.budget.oracle {
-            Some(oracle) => Word::from([
-                oracle.id.suffix(),
-                oracle.id.prefix().as_felt(),
-                Felt::from(u32::from(oracle.max_block_age.get())),
-                ZERO,
-            ]),
-            None => Word::empty(),
-        }
+        let oracle = self.budget.oracle;
+        Word::from([
+            oracle.id.suffix(),
+            oracle.id.prefix().as_felt(),
+            Felt::from(u32::from(oracle.max_block_age.get())),
+            ZERO,
+        ])
     }
 
     /// The base asset id as a word.
@@ -242,8 +234,12 @@ mod tests {
         AssetId::new_fungible(faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1))
     }
 
+    fn oracle() -> SpendingOracle {
+        SpendingOracle::new(faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET), NonZeroU16::new(32).unwrap())
+    }
+
     fn budget() -> SpendingBudget {
-        SpendingBudget::new(usdcx(), NonZeroU64::new(100_000).unwrap()).unwrap()
+        SpendingBudget::new(usdcx(), NonZeroU64::new(100_000).unwrap(), oracle()).unwrap()
     }
 
     #[test]
@@ -258,10 +254,8 @@ mod tests {
 
     #[test]
     fn budget_words_match_the_masm_layout() {
-        let oracle = faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET);
-        let budget =
-            budget().with_oracle(SpendingOracle::new(oracle, NonZeroU16::new(32).unwrap()));
-        let policy = SpendingLimitsPolicy::new(window(), budget);
+        let oracle = oracle().id();
+        let policy = SpendingLimitsPolicy::new(window(), budget());
 
         assert_eq!(
             policy.oracle_word(),
@@ -272,18 +266,9 @@ mod tests {
     }
 
     #[test]
-    fn a_budget_without_an_oracle_leaves_the_oracle_word_empty() {
-        let policy = SpendingLimitsPolicy::new(window(), budget());
-
-        assert_eq!(policy.oracle_word(), Word::empty());
-        assert_eq!(policy.base_asset_word(), Word::from(usdcx()));
-        assert_eq!(policy.limit_word(), Word::from([100_000u32, 0, 0, 0]));
-    }
-
-    #[test]
     fn a_limit_above_the_max_amount_is_rejected() {
         let too_large = NonZeroU64::new(FungibleAsset::MAX_AMOUNT.as_u64() + 1).unwrap();
-        let err = SpendingBudget::new(usdcx(), too_large).unwrap_err();
+        let err = SpendingBudget::new(usdcx(), too_large, oracle()).unwrap_err();
         assert!(err.to_string().contains("maximum fungible asset amount"));
     }
 
@@ -292,6 +277,7 @@ mod tests {
         let err = SpendingBudget::new(
             NonFungibleAsset::mock(&[1, 2, 3]).id(),
             NonZeroU64::new(1).unwrap(),
+            oracle(),
         )
         .unwrap_err();
         assert!(err.to_string().contains("must be fungible"));

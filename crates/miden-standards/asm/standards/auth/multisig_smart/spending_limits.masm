@@ -17,22 +17,19 @@ use miden::standards::oracle::price_oracle
 #
 # Every fungible asset a transaction sends out through an output note is priced into the base asset
 # and charged to the account's budget. The base asset is charged one to one; any other asset is
-# priced through the configured oracle and, without an oracle or without a rate for it, falls to
-# the unpriced-asset policy. The budget resets at fixed window boundaries derived from the
-# reference block number. A transaction that would push the budget over its limit fails regardless
-# of how many approvers signed it. The policy never changes how many signatures a transaction
-# needs, it only decides whether the transaction is allowed at all. Non-fungible assets are outside
-# the policy.
+# priced through the configured oracle and, without a rate for it, falls to the unpriced-asset
+# policy. The budget resets at fixed window boundaries derived from the reference block number. A
+# transaction that would push the budget over its limit fails regardless of how many approvers
+# signed it. The policy never changes how many signatures a transaction needs, it only decides
+# whether the transaction is allowed at all. Non-fungible assets are outside the policy.
 #
 # Window binding: while the policy is enabled, every transaction expires `window_blocks` blocks (at
 # most 65535) after its reference block. A reference block is therefore at most one window old at
 # inclusion, so an idle window cannot be reopened later by pointing an older reference block at it.
 #
-# Faulty oracle: an oracle without a rate makes the asset fall to the policy and an unavailable one
-# fails the foreign call, so under `reject` every non-base asset stops until governance acts. The
-# intended response is to unset the oracle with `update_spending_oracle`: the base asset keeps being
-# charged under the limit and everything else falls to the policy. Switching to another oracle, or
-# to `allow`, is only needed to move other assets.
+# Faulty oracle: the base asset is priced without reading the oracle, so a faulty oracle never
+# blocks it. Other assets stop under `reject` until governance points the budget at another oracle
+# with `update_spending_oracle` or disables the limits with `update_spending_limits_policy`.
 
 # TYPE ALIASES
 # =================================================================================================
@@ -53,8 +50,7 @@ const SPENDING_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::spend
 
 # [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0]
 # The price oracle account non-base assets are priced through, and how many blocks after the
-# reference block a transaction that read it stays includable. An all-zero word means no oracle:
-# only the base asset is priced.
+# reference block a transaction that read it stays includable.
 const SPENDING_ORACLE_SLOT = word("miden::standards::auth::multisig_smart::spending_oracle")
 
 # [BASE_ASSET_ID]
@@ -81,9 +77,8 @@ const ERR_UNPRICED_ASSET_POLICY_INVALID = "unpriced_asset_policy must be 0 or 1"
 const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32 = "max_oracle_block_age must be u32"
 const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16 = "max_oracle_block_age must be u16"
 const ERR_MAX_ORACLE_BLOCK_AGE_ZERO = "max_oracle_block_age must be non-zero"
-const ERR_MAX_ORACLE_BLOCK_AGE_WITHOUT_ORACLE = "max_oracle_block_age must be zero without an oracle"
 const ERR_BASE_ASSET_NOT_FUNGIBLE = "spending limit base asset must be fungible"
-const ERR_SPENDING_LIMIT_REQUIRES_BASE_ASSET = "spending limit requires a configured base asset"
+const ERR_SPENDING_LIMIT_REQUIRES_ORACLE = "spending limit requires a configured oracle"
 const ERR_UNPRICED_ASSET_REJECTED = "spent asset is not priced into the budget and the policy rejects it"
 const ERR_SPENDING_LIMIT_EXCEEDED = "spending limit exceeded for the current window"
 
@@ -162,29 +157,23 @@ end
 #! changes what every converted amount means, so this procedure should carry a policy at least as
 #! strong as the account wants its budget to be.
 #!
-#! A zero oracle id unsets the oracle: the base asset keeps being charged one to one and every other
-#! asset falls to the unpriced-asset policy. This is the intended response to a faulty oracle, as
-#! it keeps the limit on the base asset in force.
-#!
 #! Inputs:  [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, BASE_ASSET_ID]
 #! Outputs: []
 #!
 #! Where:
-#! - oracle_id_{suffix, prefix} identify the account exposing `price_oracle::get_conversion_rate`,
-#!   or are both zero for no oracle.
+#! - oracle_id_{suffix, prefix} identify the account exposing `price_oracle::get_conversion_rate`.
 #! - max_oracle_block_age is how many blocks after its reference block a transaction that read the
 #!   oracle stays includable, applied through `tx::update_expiration_block_delta` after every read.
 #!   Foreign state is not revalidated at inclusion, so this is what keeps an executor from reading a
-#!   price at an arbitrarily old block. It must be zero when no oracle is set.
+#!   price at an arbitrarily old block.
 #! - BASE_ASSET_ID is the asset the budget is denominated in.
 #!
 #! Panics if:
 #! - `BASE_ASSET_ID` is not a fungible asset id (`ERR_BASE_ASSET_NOT_FUNGIBLE`).
-#! - an oracle is set and `max_oracle_block_age` is not a valid `u32` field element
-#!   (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32`), is zero (`ERR_MAX_ORACLE_BLOCK_AGE_ZERO`) or exceeds the
-#!   `u16` range `tx::update_expiration_block_delta` accepts (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16`).
-#! - no oracle is set and `max_oracle_block_age` is not zero
-#!   (`ERR_MAX_ORACLE_BLOCK_AGE_WITHOUT_ORACLE`).
+#! - `max_oracle_block_age` is not a valid `u32` field element (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32`).
+#! - `max_oracle_block_age` is zero (`ERR_MAX_ORACLE_BLOCK_AGE_ZERO`).
+#! - `max_oracle_block_age` exceeds the `u16` range `tx::update_expiration_block_delta` accepts
+#!   (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16`).
 #!
 #! Invocation: call
 @account_procedure
@@ -199,22 +188,12 @@ pub proc update_spending_oracle(oracle_id: AccountId, max_oracle_block_age: u16,
     assert.err=ERR_BASE_ASSET_NOT_FUNGIBLE
     # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
 
-    exec.account_id::testz
-    # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0,
-    #     BASE_ASSET_ID]
+    movup.2
+    # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0, BASE_ASSET_ID]
 
-    movup.3 swap
-    # => [is_oracle_unset, max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0,
-    #     BASE_ASSET_ID]
-
-    if.true
-        # ----- No oracle: the block-age bound has nothing to bound. -----
-        dup eq.0 assert.err=ERR_MAX_ORACLE_BLOCK_AGE_WITHOUT_ORACLE
-    else
-        u32assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32
-        dup eq.0 assertz.err=ERR_MAX_ORACLE_BLOCK_AGE_ZERO
-        dup u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16
-    end
+    u32assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32
+    dup eq.0 assertz.err=ERR_MAX_ORACLE_BLOCK_AGE_ZERO
+    dup u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16
     # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0, BASE_ASSET_ID]
 
     movdn.2
@@ -239,8 +218,9 @@ end
 #! a policy at least as strong as the account wants its spending limit to be. Left unpolicied, the
 #! default threshold suffices to lift it.
 #!
-#! A non-zero limit needs a base asset, set through `update_spending_oracle`, to give it a unit. A
-#! zero limit clears the budget, after which every fungible asset falls to the unpriced-asset
+#! A non-zero limit needs `update_spending_oracle` to have been called first: without an oracle
+#! every priced spend would fail its foreign call, locking the account out of all non-base assets.
+#! A zero limit clears the budget, after which every fungible asset falls to the unpriced-asset
 #! policy. Changing the limit does not touch the running total: a lowered limit applies to what was
 #! already spent in the current window.
 #!
@@ -251,7 +231,7 @@ end
 #! - limit is the maximum amount, in the base asset, that may leave the account per window.
 #!
 #! Panics if:
-#! - `limit` is non-zero and no base asset is configured (`ERR_SPENDING_LIMIT_REQUIRES_BASE_ASSET`).
+#! - `limit` is non-zero and no oracle is configured (`ERR_SPENDING_LIMIT_REQUIRES_ORACLE`).
 #!
 #! Invocation: call
 @account_procedure
@@ -260,13 +240,13 @@ pub proc set_spending_limit(limit: AssetAmount)
     # => [is_update, limit]
 
     if.true
-        push.SPENDING_BASE_ASSET_SLOT[0..2] exec.active_account::get_item
-        # => [BASE_ASSET_ID, limit]
+        push.SPENDING_ORACLE_SLOT[0..2] exec.active_account::get_item
+        # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, limit]
 
-        exec.word::eqz
-        # => [is_base_asset_unset, limit]
+        exec.account_id::testz
+        # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, limit]
 
-        assertz.err=ERR_SPENDING_LIMIT_REQUIRES_BASE_ASSET
+        assertz.err=ERR_SPENDING_LIMIT_REQUIRES_ORACLE dropw
         # => [limit]
     end
 
@@ -591,12 +571,12 @@ end
 
 #! Converts an amount of an asset into the base asset through the configured price oracle.
 #!
-#! The base asset itself converts one to one without a foreign call. Without an oracle every other
-#! asset is unpriced. With one, the asset is priced by `price_oracle::get_conversion_rate` on the
-#! oracle account, read at the transaction reference block. Right after the read the transaction's
-#! expiration delta is tightened to `max_oracle_block_age`, so the reference block the price came
-#! from cannot be older than that at inclusion. The rate is used only when the provider could price
-#! the pair (`last_updated != 0`); the provider's own staleness rule is what makes it zero otherwise.
+#! The base asset itself converts one to one without a foreign call. Any other asset is priced by
+#! `price_oracle::get_conversion_rate` on the oracle account, read at the transaction reference
+#! block. Right after the read the transaction's expiration delta is tightened to
+#! `max_oracle_block_age`, so the reference block the price came from cannot be older than that at
+#! inclusion. The rate is used only when the provider could price the pair (`last_updated != 0`);
+#! the provider's own staleness rule is what makes it zero otherwise.
 #!
 #! Inputs:  [ASSET_ID, amount]
 #! Outputs: [is_priced, converted_amount]
@@ -641,44 +621,31 @@ proc convert_to_base_asset(asset_id: AssetId, amount: AssetAmount) -> (Bool, Ass
         # => [oracle_id_suffix, oracle_id_prefix, ASSET_ID, BASE_ASSET_ID, max_oracle_block_age,
         #     amount]
 
-        exec.account_id::testz
-        # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, ASSET_ID, BASE_ASSET_ID,
-        #     max_oracle_block_age, amount]
+        # ----- get_conversion_rate(SOURCE = ASSET_ID, TARGET = BASE_ASSET_ID) on the oracle. -----
+        exec.price_oracle::get_foreign_conversion_rate
+        # => [last_updated, num, den, max_oracle_block_age, amount]
+
+        # ----- Bound the age of the oracle state just read, in blocks. The kernel keeps the minimum
+        # of all deltas set, so this can only tighten what the approval expiration set. -----
+        movup.3 exec.tx::update_expiration_block_delta
+        # => [last_updated, num, den, amount]
+
+        # ----- A zero last_updated means the provider does not price the pair. -----
+        eq.0
+        # => [is_unpriced, num, den, amount]
 
         if.true
-            # ----- No oracle: nothing but the base asset can be priced. -----
-            drop drop dropw dropw drop drop
+            drop drop drop
             # => []
 
             push.0.0
             # => [is_priced = 0, converted_amount = 0]
         else
-            # ----- get_conversion_rate(SOURCE = ASSET_ID, TARGET = BASE_ASSET_ID) on the oracle. -----
-            exec.price_oracle::get_foreign_conversion_rate
-            # => [last_updated, num, den, max_oracle_block_age, amount]
+            movup.2 exec.fee::convert_amount
+            # => [converted_amount]
 
-            # ----- Bound the age of the oracle state just read, in blocks. The kernel keeps the
-            # minimum of all deltas set, so this can only tighten what the approval expiration set. -----
-            movup.3 exec.tx::update_expiration_block_delta
-            # => [last_updated, num, den, amount]
-
-            # ----- A zero last_updated means the provider does not price the pair. -----
-            eq.0
-            # => [is_unpriced, num, den, amount]
-
-            if.true
-                drop drop drop
-                # => []
-
-                push.0.0
-                # => [is_priced = 0, converted_amount = 0]
-            else
-                movup.2 exec.fee::convert_amount
-                # => [converted_amount]
-
-                push.1
-                # => [is_priced = 1, converted_amount]
-            end
+            push.1
+            # => [is_priced = 1, converted_amount]
         end
     end
 end
