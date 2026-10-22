@@ -62,6 +62,7 @@ impl TransactionVerifier {
             transaction.account_update().final_state_commitment(),
             transaction.account_update().account_patch_commitment(),
             transaction.output_notes().commitment(),
+            transaction.code_patch().commitment(),
             transaction.expiration_block_num(),
             transaction.log_details().commitment(),
         );

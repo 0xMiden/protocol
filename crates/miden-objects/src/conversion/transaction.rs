@@ -1,3 +1,4 @@
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     InputNoteCommitment,
     OutputNote,
@@ -73,6 +74,22 @@ impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
     }
 }
 
+// CODE PATCH
+// ================================================================================================
+
+impl From<&CodePatch> for proto::transaction::CodePatch {
+    fn from(value: &CodePatch) -> Self {
+        Self {
+            created_procedures: value
+                .created_procedures()
+                .map(|root| root.as_word().into())
+                .collect(),
+            dependencies: value.dependencies().map(|root| root.as_word().into()).collect(),
+            mast: Some(value.mast().as_ref().into()),
+        }
+    }
+}
+
 // PROVEN TRANSACTION
 // ================================================================================================
 
@@ -87,6 +104,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
             expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
             log_details: Some(value.log_details().into()),
+            code_patch: Some(value.code_patch().into()),
         }
     }
 }
@@ -141,6 +159,7 @@ impl From<&TransactionHeader> for proto::transaction::TransactionHeader {
         Self {
             transaction_id: Some(header.id().into()),
             logs_commitment: Some(header.logs_commitment().into()),
+            code_patch_commitment: Some(header.code_patch_commitment().as_word().into()),
             account_id: Some(header.account_id().into()),
             initial_state_commitment: Some(header.initial_state_commitment().into()),
             final_state_commitment: Some(header.final_state_commitment().into()),

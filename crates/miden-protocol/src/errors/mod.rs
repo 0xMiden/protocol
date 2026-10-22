@@ -41,7 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::code_tree::CodePatch;
+use crate::block::code_tree::{CodePatch, CodePatchCommitment};
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::code::ProcedureRoot;
 use crate::note::{
@@ -1068,14 +1068,21 @@ pub enum TransactionOutputError {
         "output notes commitment {expected} from kernel does not match computed commitment {actual}"
     )]
     OutputNotesCommitmentInconsistent { expected: Word, actual: Word },
-    #[error("transaction kernel output stack is invalid: {0}")]
-    OutputStackInvalid(String),
+    #[error(
+        "code patch commitment {expected} from kernel does not match computed commitment {actual}"
+    )]
+    CodePatchCommitmentInconsistent {
+        expected: CodePatchCommitment,
+        actual: CodePatchCommitment,
+    },
     #[error(
         "total number of output notes is {0} which exceeds the maximum of {MAX_OUTPUT_NOTES_PER_TX}"
     )]
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
+    #[error("failed to process logs expiration commitment: {0}")]
+    LogsExpirationCommitment(Box<str>),
 }
 
 // OUTPUT NOTE ERROR

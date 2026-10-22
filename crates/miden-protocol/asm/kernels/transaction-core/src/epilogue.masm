@@ -1,4 +1,3 @@
-use {BlockNumber} from miden::protocol_utils::types
 use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
@@ -262,22 +261,24 @@ end
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
 #! - applies a pending code upgrade of the native account.
-#! - computes the output notes commitment and transaction logs commitment.
+#! - computes the output notes commitment and the hash of the transaction logs commitment and
+#!   expiration block number.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
 #!
 #! Inputs:  []
 #! Outputs: [
-#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+#!   CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT
 #! ]
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
-#! - tx_expiration_block_num is the transaction expiration block number.
-#! - LOGS_COMMITMENT is the commitment to all transaction logs, including those emitted during
-#!   authentication.
+#! - CODE_PATCH_COMMITMENT is the commitment to the code patch of the transaction.
+#! - LOGS_EXPIRATION_COMMITMENT is the hash of the commitment to all transaction logs, including
+#!   those emitted during authentication, and the word [tx_expiration_block_num, 0, 0, 0].
 #!
 #! Locals:
 #! - 0..4: OUTPUT_NOTES_COMMITMENT
@@ -292,7 +293,7 @@ end
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
 @locals(8)
-pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, BlockNumber)
+pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitment)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
 
@@ -403,15 +404,29 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, BlockNum
 
     # ------ Build output stack ------
 
-    # Place the logs commitment below the account update commitment.
-    exec.tx::get_logs_commitment swapw
-    # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT]
+    push.0.0.0 exec.memory::get_expiration_block_num
+    # => [EXPIRATION_WORD, ACCOUNT_UPDATE_COMMITMENT]
 
-    # place the expiration block number below the two commitment words
-    exec.memory::get_expiration_block_num movdn.8
-    # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num]
+    exec.tx::get_logs_commitment
+    # => [LOGS_COMMITMENT, EXPIRATION_WORD, ACCOUNT_UPDATE_COMMITMENT]
+
+    # insert into advice map LOGS_EXPIRATION_COMMITMENT: (LOGS_COMMITMENT, EXPIRATION_WORD),
+    # where LOGS_EXPIRATION_COMMITMENT = hash(LOGS_COMMITMENT || EXPIRATION_WORD)
+    adv.insert_hdword
+    # => [LOGS_COMMITMENT, EXPIRATION_WORD, ACCOUNT_UPDATE_COMMITMENT]
+
+    exec.poseidon2::merge
+    # => [LOGS_EXPIRATION_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT]
+
+    # TODO(#4006): compute the code patch commitment and insert the code patch into the advice map.
+    padw
+    # => [CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT]
+
+    # place the account update commitment above the code patch commitment
+    movupw.2
+    # => [ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT]
 
     # load output notes commitment from local
     padw loc_loadw_le.0
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT]
 end

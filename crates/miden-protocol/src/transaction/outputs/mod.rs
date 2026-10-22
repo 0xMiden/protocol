@@ -3,6 +3,7 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
+use crate::block::code_tree::CodePatch;
 use crate::transaction::{TransactionKernel, TransactionLogDetails, TransactionLogs};
 use crate::vm::StackOutputs;
 
@@ -40,7 +41,10 @@ pub struct TransactionOutputs {
     output_notes: RawOutputNotes,
     /// Defines up to which block the transaction is considered valid.
     expiration_block_num: BlockNumber,
+    /// The logs that the transaction emitted.
     logs: TransactionLogs,
+    /// The procedures the transaction adds to the code tree and the procedures it depends on.
+    code_patch: CodePatch,
 }
 
 impl TransactionOutputs {
@@ -55,11 +59,13 @@ impl TransactionOutputs {
     /// output stack.
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
-    /// The index of the item at which the expiration block height is stored on the output stack.
-    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 12;
+    /// The element index starting from which the code patch commitment word is stored on the
+    /// output stack.
+    pub const CODE_PATCH_COMMITMENT_WORD_IDX: usize = 8;
 
-    /// The first stack element of the transaction logs commitment.
-    pub const LOGS_COMMITMENT_WORD_IDX: usize = 8;
+    /// The element index starting from which the logs expiration commitment word is stored on the
+    /// output stack.
+    pub const LOGS_EXPIRATION_COMMITMENT_WORD_IDX: usize = 12;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -71,6 +77,7 @@ impl TransactionOutputs {
         output_notes: RawOutputNotes,
         expiration_block_num: BlockNumber,
         logs: TransactionLogs,
+        code_patch: CodePatch,
     ) -> Self {
         Self {
             account,
@@ -78,6 +85,7 @@ impl TransactionOutputs {
             output_notes,
             expiration_block_num,
             logs,
+            code_patch,
         }
     }
 
@@ -114,6 +122,11 @@ impl TransactionOutputs {
         self.expiration_block_num
     }
 
+    /// Returns the code patch of the transaction.
+    pub fn code_patch(&self) -> &CodePatch {
+        &self.code_patch
+    }
+
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 
@@ -123,21 +136,23 @@ impl TransactionOutputs {
             self.account.to_commitment(),
             self.account_patch_commitment,
             self.output_notes.commitment(),
+            self.code_patch.commitment(),
             self.expiration_block_num,
             self.logs.commitment(),
         )
     }
 
-    /// Consumes self and returns the final account header, output notes, and submitted log details.
+    /// Consumes self and returns the final account header, output notes, submitted log details and
+    /// code patch.
     ///
     /// The log details contain complete logs for a public native account and only their
     /// commitment for a private native account.
-    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes, TransactionLogDetails) {
+    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes, TransactionLogDetails, CodePatch) {
         let log_details = if self.account.id().is_public() {
             TransactionLogDetails::Public(self.logs)
         } else {
             TransactionLogDetails::Private(self.logs.commitment())
         };
-        (self.account, self.output_notes, log_details)
+        (self.account, self.output_notes, log_details, self.code_patch)
     }
 }

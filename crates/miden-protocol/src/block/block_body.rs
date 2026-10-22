@@ -320,6 +320,7 @@ mod tests {
     use crate::Word;
     use crate::account::{Account, AccountId, AccountPatch, AccountType, AccountUpdateDetails};
     use crate::block::BlockAccountUpdate;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::{BlockAccountUpdateError, BlockBodyError, TransactionHeaderError};
     use crate::note::{Note, NoteHeader};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -352,6 +353,7 @@ mod tests {
             input_notes,
             output_notes,
             Default::default(),
+            CodePatch::default().commitment(),
         )
     }
 
@@ -386,6 +388,7 @@ mod tests {
             InputNotes::default(),
             vec![],
             Word::empty(),
+            CodePatch::default().commitment(),
         )?]);
 
         Ok((vec![update], transactions))
