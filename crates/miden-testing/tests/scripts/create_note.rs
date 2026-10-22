@@ -345,6 +345,42 @@ async fn create_note_rejects_fee_in_another_asset() -> anyhow::Result<()> {
 }
 
 #[rstest]
+#[case::missing(0)]
+#[case::insufficient(49)]
+#[tokio::test]
+async fn create_note_rejects_underfunded_fee(#[case] available_fee: u64) -> anyhow::Result<()> {
+    let (mut builder, _, passthrough, valid) = setup(NoteType::Public, false, Some(50), 0)?;
+    let mut assets = valid.output().assets().clone().into_vec();
+    if available_fee != 0 {
+        assets.push(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, available_fee)?.into());
+    }
+    let assets = NoteAssets::new(assets)?;
+    let mut storage = valid.note().storage().items().to_vec();
+    // Keep the input commitment valid so execution reaches the fee deduction checks.
+    storage[4..8].copy_from_slice(assets.commitment().as_elements());
+    let input = Note::new(
+        assets,
+        valid.note().metadata().into_partial_metadata(),
+        NoteRecipient::new(
+            valid.note().serial_num(),
+            CreateNote::script(),
+            NoteStorage::new(storage)?,
+        ),
+    );
+    builder.add_output_note(RawOutputNote::Full(input.clone()));
+    let chain = builder.build()?;
+    let result = chain
+        .build_transaction(passthrough.id())
+        .authenticated_input_notes([input])
+        .extend_advice_inputs(AdviceInputs::default().with_map(valid.output_advice()))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FUNDING_MISMATCH);
+    Ok(())
+}
+
+#[rstest]
 #[case::creator(true)]
 #[case::other_account(false)]
 #[tokio::test]

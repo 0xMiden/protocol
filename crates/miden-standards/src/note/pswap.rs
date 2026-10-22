@@ -56,6 +56,7 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PswapPayback {
     /// Public `P2ID` payback notes to the original creator, who can also reclaim the order.
+    /// Stores the recipient preimage needed to construct each public output.
     Public {
         recipient: P2idNoteRecipient,
         tag: NoteTag,
