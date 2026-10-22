@@ -419,21 +419,15 @@ where
                         break;
                     },
                     Err(error) => {
-                        // This combination failed, so the whole bundle is rejected. Blame the note
-                        // the executor pointed at, when it pointed at one of the bundle's notes;
-                        // an epilogue failure blames no particular note, so it falls to the note
-                        // heading the bundle, the one the rest of the bundle is bound to.
-                        // A failure to collect the bundle's fee is reported with the fee details,
-                        // since the bundle is the only one this execution added.
-                        let fee_error = match &error {
-                            TransactionCheckerError::EpilogueExecution { error, .. } => {
-                                bundle.fee_error(error)
-                            },
-                            _ => None,
-                        };
-                        let (blamed_idx, num_cycles) = match &error {
+                        // This combination failed, so the whole bundle is rejected. Decide which
+                        // note of the bundle takes the failure and how it is reported; the rest
+                        // of the bundle is reported as its collateral.
+                        let (blamed_idx, failure) = match error {
+                            // A note failed while executing: blame it, when it is one of the
+                            // bundle's notes rather than one of the already accepted ones.
                             TransactionCheckerError::NoteExecution {
                                 failed_note_index,
+                                error,
                                 failed_note_cycle_count,
                                 ..
                             } => (
@@ -441,28 +435,45 @@ where
                                     .checked_sub(successful_notes.len())
                                     .filter(|idx| *idx < bundle_notes.len())
                                     .unwrap_or(0),
-                                *failed_note_cycle_count,
+                                NoteFailure::Blamed {
+                                    error,
+                                    num_cycles: failed_note_cycle_count,
+                                },
                             ),
-                            _ => (0, None),
+                            // The epilogue failed, which points at no particular note: blame the
+                            // feature note, the one the rest of the bundle is bound to.
+                            TransactionCheckerError::EpilogueExecution { error, .. } => {
+                                let failure = match bundle.fee_error(&error) {
+                                    // The account could not collect the bundle's fee, which this
+                                    // bundle alone is responsible for, since it is the only one
+                                    // this execution added: report it with the fee details.
+                                    Some(reason) => {
+                                        let reason = self
+                                            .with_required_fee(
+                                                reason,
+                                                account_id,
+                                                block_ref,
+                                                &bundle_notes[0],
+                                            )
+                                            .await;
+                                        NoteFailure::Fee { reason, error }
+                                    },
+                                    // The epilogue failed for another reason.
+                                    None => NoteFailure::Blamed { error, num_cycles: None },
+                                };
+                                (0, failure)
+                            },
+                            // The prologue failed, or the transaction inputs could not be
+                            // prepared: no note ran, so blame the feature note.
+                            other => {
+                                (0, NoteFailure::Blamed { error: other.into(), num_cycles: None })
+                            },
                         };
 
                         // Record every note of the bundle (overwriting previous failures for the
                         // relevant notes), so the reported notes always account for all inputs.
                         // Only the blamed note owns the error; the rest failed with its bundle.
-                        let failure = match fee_error {
-                            Some(reason) => {
-                                let feature_note =
-                                    bundle.notes().next().expect("a bundle holds a note");
-                                let reason = self
-                                    .with_required_fee(reason, account_id, block_ref, feature_note)
-                                    .await;
-                                NoteFailure::Fee { reason, error: error.into() }
-                            },
-                            None => NoteFailure::Blamed { error: error.into(), num_cycles },
-                        };
-                        let failed_bundle = bundle.failed_notes(blamed_idx, failure);
-
-                        for failed_note in failed_bundle {
+                        for failed_note in bundle.failed_notes(blamed_idx, failure) {
                             failed_note_index.insert(failed_note.note().id(), failed_note);
                         }
                     },
