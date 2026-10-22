@@ -76,8 +76,8 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
 # - fixed_payback_serial: Serial number of the fixed public P2ID recipient (Word)
-# - payback_recipient: Digest of the fixed private P2ID recipient (Word); its preimage is
-#   retained by the owner and supplied privately for cancellation
+# - payback_recipient: Digest of the fixed private recipient (Word). Filling supports any
+#   script; cancellation requires a P2ID preimage retained by the owner and supplied privately.
 # - payback_tag: Explicit discovery tag for payback notes (NoteTag as Felt, fits in u32)
 #
 # The remainder PSWAP note's own tag is copied from the active note's
