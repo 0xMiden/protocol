@@ -19,7 +19,7 @@
 //! | `faucets::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_external_uri_mutable, is_max_supply_mutable]` |
 //! | `faucets::token_description_0..=6` | description (7 Words, max 195 bytes) |
 //! | `faucets::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
-//! | `faucets::external_link_0..=6` | external URI (7 Words, max 195 bytes) |
+//! | `faucets::external_uri_0..=6` | external URI (7 Words, max 195 bytes) |
 //!
 //! Layout sync: the same layout is defined in MASM at `asm/standards/faucets/mod.masm`.
 //! Any change to slot names must be applied in both Rust and MASM.
@@ -94,22 +94,15 @@ static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
 });
 
 /// External URI (7 Words), split across 7 slots.
-static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static EXTERNAL_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::faucets::external_link_0")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_1")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_2")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_3")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_4")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_5")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_6")
-            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_6").expect("valid slot name"),
     ]
 });
 
@@ -398,8 +391,8 @@ impl TokenMetadata {
     }
 
     /// Returns the [`StorageSlotName`] for an external URI chunk by index (0..=6).
-    pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
-        &EXTERNAL_LINK_SLOTS[index]
+    pub fn external_uri_slot(index: usize) -> &'static StorageSlotName {
+        &EXTERNAL_URI_SLOTS[index]
     }
 
     // STORAGE
@@ -499,7 +492,7 @@ impl TokenMetadata {
             Some(logo_uri)
         };
 
-        let external_uri_words = read_slots(&EXTERNAL_LINK_SLOTS)?;
+        let external_uri_words = read_slots(&EXTERNAL_URI_SLOTS)?;
         let external_uri = ExternalUri::try_from_words(&external_uri_words).map_err(|err| {
             TokenMetadataError::InvalidStringField { field: "external_uri", source: err }
         })?;
@@ -574,8 +567,7 @@ impl TokenMetadata {
             .external_uri
             .unwrap_or_else(|| ExternalUri::new("").expect("empty external URI should be valid"));
         for (i, word) in external_uri.to_words().iter().enumerate() {
-            slots
-                .push(StorageSlot::with_value(TokenMetadata::external_link_slot(i).clone(), *word));
+            slots.push(StorageSlot::with_value(TokenMetadata::external_uri_slot(i).clone(), *word));
         }
 
         slots

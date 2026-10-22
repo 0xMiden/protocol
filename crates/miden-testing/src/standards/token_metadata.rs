@@ -850,7 +850,7 @@ async fn set_external_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
     test_field_setter_owner_succeeds(
         "set_external_uri",
         external_uri_config(initial_field_data(), true),
-        TokenMetadata::external_link_slot,
+        TokenMetadata::external_uri_slot,
     )
     .await
 }
