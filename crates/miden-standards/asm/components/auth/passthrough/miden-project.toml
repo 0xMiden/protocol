@@ -11,3 +11,8 @@ path      = "passthrough.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Permissionless stateless passthrough authentication"
+name        = "miden::standards::auth::passthrough"
+version     = "1.0.0"

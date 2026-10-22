@@ -1,9 +1,9 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 
-account_component_code!(PASSTHROUGH_CODE, "miden-standards-auth-passthrough.masp");
+account_component_package!(PASSTHROUGH_PACKAGE, "miden-standards-auth-passthrough.masp");
 
 /// Permissionless authentication for a stateless passthrough account.
 ///
@@ -28,13 +28,12 @@ impl AuthPassthrough {
 
     /// Returns the compiled component code.
     pub fn code() -> &'static AccountComponentCode {
-        &PASSTHROUGH_CODE
+        &PASSTHROUGH_PACKAGE.code
     }
 
     /// Returns the component metadata.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Permissionless stateless passthrough authentication")
+        PASSTHROUGH_PACKAGE.metadata.clone()
     }
 }
 

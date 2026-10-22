@@ -32,11 +32,17 @@ pub proc auth_passthrough(auth_args: AuthArgs)
 
     # Check state before the deployment nonce increment.
     exec.native_account::has_state_changed assertz.err=ERR_PASSTHROUGH_STATE_CHANGED
+    # => [pad(16)]
+
     exec.active_account::get_vault_root push.EMPTY_VAULT_ROOT
+    # => [EMPTY_VAULT_ROOT, VAULT_ROOT, pad(16)]
+
     assert_eqw.err=ERR_PASSTHROUGH_VAULT_NOT_EMPTY
     # => [pad(16)]
 
     exec.active_account::get_nonce eq.0
+    # => [is_new_account, pad(16)]
+
     if.true
         exec.native_account::incr_nonce drop
     end
