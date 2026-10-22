@@ -11,7 +11,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
-use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoUri};
+use miden_standards::account::faucets::{Description, ExternalUri, FungibleFaucet, LogoUri};
 use miden_standards::errors::standards::{
     ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
@@ -100,7 +100,7 @@ async fn set_max_supply_dispatch() -> anyhow::Result<()> {
 }
 
 /// Variants `1`, `2` and `3` dispatch to `set_description`, `set_logo_uri` and
-/// `set_external_link`, each writing its own field.
+/// `set_external_uri`, each writing its own field.
 ///
 /// The three run against the same faucet in sequence, so a variant wired to the wrong setter shows
 /// up as a field that did not change — or as one that changed twice.
@@ -114,7 +114,7 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
 
     let description = Description::new("dispatched through the config note")?;
     let logo_uri = LogoUri::new("https://example.com/dispatched.png")?;
-    let external_link = ExternalLink::new("https://example.com/dispatched")?;
+    let external_uri = ExternalUri::new("https://example.com/dispatched")?;
 
     let notes = [
         config_note(
@@ -132,7 +132,7 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
         config_note(
             owner,
             faucet.id(),
-            FaucetMetadataConfig::SetExternalLink { external_link: external_link.clone() },
+            FaucetMetadataConfig::SetExternalUri { external_uri: external_uri.clone() },
             4,
         )?,
     ];
@@ -145,7 +145,7 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
     let metadata = metadata(&updated)?;
     assert_eq!(metadata.description(), Some(&description));
     assert_eq!(metadata.logo_uri(), Some(&logo_uri));
-    assert_eq!(metadata.external_link(), Some(&external_link));
+    assert_eq!(metadata.external_uri(), Some(&external_uri));
 
     Ok(())
 }

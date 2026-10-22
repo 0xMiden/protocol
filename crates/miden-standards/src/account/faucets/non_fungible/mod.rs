@@ -22,7 +22,7 @@ use miden_protocol::{Felt, Hasher, Word};
 
 use super::{
     Description,
-    ExternalLink,
+    ExternalUri,
     LogoUri,
     NonFungibleFaucetError,
     TokenMetadata,
@@ -217,7 +217,7 @@ impl NonFungibleFaucet {
     ///
     /// Required setters: [`name`], [`symbol`]. Optional string fields default to `None`;
     /// mutability flags default to `false`. The collection metadata pointer is named
-    /// `contract_uri` (it reuses the shared `external_link` storage). Setting [`token_base_uri`]
+    /// `contract_uri` (it reuses the shared `external_uri` storage). Setting [`token_base_uri`]
     /// makes the faucet's token metadata public.
     ///
     /// # Errors
@@ -234,7 +234,7 @@ impl NonFungibleFaucet {
         symbol: TokenSymbol,
         description: Option<Description>,
         logo_uri: Option<LogoUri>,
-        contract_uri: Option<ExternalLink>,
+        contract_uri: Option<ExternalUri>,
         token_base_uri: Option<TokenBaseUri>,
         #[builder(default)] is_description_mutable: bool,
         #[builder(default)] is_logo_uri_mutable: bool,
@@ -253,9 +253,9 @@ impl NonFungibleFaucet {
             metadata = metadata.with_logo_uri_mutable(is_logo_uri_mutable);
         }
         if let Some(link) = contract_uri {
-            metadata = metadata.with_external_link(link, is_contract_uri_mutable);
+            metadata = metadata.with_external_uri(link, is_contract_uri_mutable);
         } else {
-            metadata = metadata.with_external_link_mutable(is_contract_uri_mutable);
+            metadata = metadata.with_external_uri_mutable(is_contract_uri_mutable);
         }
 
         let token_base_uri = TokenBaseUriConfig::new(token_base_uri, is_token_base_uri_mutable)?;
@@ -364,9 +364,9 @@ impl NonFungibleFaucet {
     }
 
     /// Returns the optional collection metadata pointer (`contract_uri`, stored in the shared
-    /// `external_link` slot).
-    pub fn contract_uri(&self) -> Option<&ExternalLink> {
-        self.metadata.external_link()
+    /// `external_uri` slot).
+    pub fn contract_uri(&self) -> Option<&ExternalUri> {
+        self.metadata.external_uri()
     }
 
     /// Returns the base URI of the public token metadata, or `None` if the faucet's token

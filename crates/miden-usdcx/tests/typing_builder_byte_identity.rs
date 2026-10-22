@@ -152,7 +152,8 @@ fn crate_root_account_carries_the_policed_asset_callback_flag() {
 /// `max_supply`, so the deployed `set_max_supply` admin function stays operable. This is the
 /// POSITIVE lock that replaces the removed `ImmutableMaxSupply` runtime reject — a constructor that
 /// built the faucet immutable would flip the flag felt and fail here. The `mutability_config` word
-/// layout is `[is_desc, is_logo, is_extlink, is_max_supply]`, so the max-supply flag is element 3.
+/// layout is `[is_desc, is_logo, is_external_uri, is_max_supply]`, so the max-supply flag is
+/// element 3.
 #[test]
 fn crate_root_faucet_max_supply_is_mutable_by_construction() {
     const MUTABILITY_CONFIG_SLOT: &str = "miden::standards::faucets::mutability_config";
