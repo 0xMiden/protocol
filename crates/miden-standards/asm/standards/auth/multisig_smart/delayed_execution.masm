@@ -428,12 +428,15 @@ end
 
 #! Asserts that a proposal entry exists and that its unlock block has been reached.
 #!
+#! The entry is not looked up here: the caller resolves it by the transaction's commitment (see
+#! `remove_tx_proposal`) and passes its fields in, so the proposal is read only once.
+#!
 #! Inputs:  [unlock_block, proposal_block, min_cancel_sigs]
 #! Outputs: []
 #!
 #! Where:
-#! - unlock_block, proposal_block and min_cancel_sigs are a proposal entry's fields, as
-#!   returned by `remove_tx_proposal`; an all-zero entry means no proposal exists.
+#! - unlock_block, proposal_block and min_cancel_sigs are the fields of the proposal entry the
+#!   caller resolved; an all-zero entry means no proposal exists.
 #!
 #! Panics if:
 #! - the entry is empty, i.e. no proposal exists (`ERR_TX_NOT_PROPOSED`).
