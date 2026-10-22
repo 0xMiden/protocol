@@ -28,7 +28,7 @@ const STRING_END_PTR = STORAGE_PTR + 32
 const VARIANT_SET_MAX_SUPPLY = 0
 const VARIANT_SET_DESCRIPTION = 1
 const VARIANT_SET_LOGO_URI = 2
-const VARIANT_SET_EXTERNAL_LINK = 3
+const VARIANT_SET_EXTERNAL_URI = 3
 
 # Expected note storage item count per action.
 const NUM_ITEMS_SET_MAX_SUPPLY = 2
@@ -63,7 +63,7 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! - `0` SetMaxSupply:    `[0, new_max_supply]`.
 #! - `1` SetDescription:  `[1, 0, 0, 0, description(28)]`.
 #! - `2` SetLogoUri:      `[2, 0, 0, 0, logo_uri(28)]`.
-#! - `3` SetExternalLink: `[3, 0, 0, 0, external_link(28)]`.
+#! - `3` SetExternalUri: `[3, 0, 0, 0, external_uri(28)]`.
 #!
 #! The three string setters take the Poseidon2 commitment of their new value on the operand stack
 #! and read the preimage from the advice map. This script commits to the payload `get_bounded_storage` wrote
@@ -74,7 +74,7 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! (`assert_authorized`); this script only loads the arguments and calls them.
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_link}` for the string
+#! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_uri}` for the string
 #!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
 #!   the `Authority` and `Pausable` companion components.
 #!
@@ -140,11 +140,11 @@ pub proc main(args: NoteArgs)
 
                 exec.execute_set_logo_uri
             else
-                eq.VARIANT_SET_EXTERNAL_LINK
+                eq.VARIANT_SET_EXTERNAL_URI
                 assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT
                 # => [num_storage_items]
 
-                exec.execute_set_external_link
+                exec.execute_set_external_uri
             end
         end
     end
@@ -276,22 +276,22 @@ proc execute_set_logo_uri(num_storage_items: u32)
     # => []
 end
 
-#! Executes the SetExternalLink action: sets the faucet's token external link.
+#! Executes the SetExternalUri action: sets the faucet's token external URI.
 #!
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_SET_STRING.
-#! - the external link mutability flag is not set, or the account is paused (per
-#!   `faucets::set_external_link`).
+#! - the external URI mutability flag is not set, or the account is paused (per
+#!   `faucets::set_external_uri`).
 #!
 #! Invocation: exec
-proc execute_set_external_link(num_storage_items: u32)
+proc execute_set_external_uri(num_storage_items: u32)
     exec.prepare_string_call
-    # => [EXTERNAL_LINK_COMMITMENT, pad(12)]
+    # => [EXTERNAL_URI_COMMITMENT, pad(12)]
 
-    call.faucets::set_external_link
+    call.faucets::set_external_uri
     # => [pad(16)]
 
     # truncate the called procedure's output window, restoring the base stack
