@@ -109,17 +109,20 @@ fn first_attachment_word(attachments: &NoteAttachments) -> Word {
 }
 
 fn public_payback(target: AccountId) -> PswapPayback {
-    PswapPayback::public(
+    PswapPayback::new(
         P2idNoteRecipient::new(P2idNoteStorage::new(target), Word::from([91u32, 92, 93, 94])),
+        NoteType::Public,
         NoteTag::new(27),
     )
 }
 
 fn public_target(storage: &PswapNoteStorage) -> AccountId {
-    let PswapPayback::Public { recipient, .. } = storage.payback() else {
-        panic!("expected a public payback")
-    };
-    recipient.storage().target()
+    storage
+        .payback()
+        .public_recipient()
+        .expect("expected a public payback")
+        .storage()
+        .target()
 }
 
 /// Builds a PSWAP with the supplied payback configuration and registers it on the chain.
@@ -158,13 +161,11 @@ fn setup_storage_test(payback_type: NoteType) -> anyhow::Result<(MockChain, Acco
         Auth::IncrNonce,
         [FungibleAsset::new(requested.id(), 25)?.into()],
     )?;
-    let payback = match payback_type {
-        NoteType::Public => public_payback(creator),
-        NoteType::Private => PswapPayback::private(
-            P2idNoteRecipient::new(P2idNoteStorage::new(creator), builder.rng_mut().draw_word()),
-            NoteTag::default(),
-        ),
-    };
+    let payback = PswapPayback::new(
+        P2idNoteRecipient::new(P2idNoteStorage::new(creator), builder.rng_mut().draw_word()),
+        payback_type,
+        NoteTag::new(27),
+    );
     let (_, note) = build_pswap_note(
         &mut builder,
         creator,
@@ -305,16 +306,11 @@ async fn pswap_rejects_later_output_mutation(
             FungibleAsset::new(requested.id(), 26)?.into(),
         ],
     )?;
-    let payback = match payback_type {
-        NoteType::Public => public_payback(alice.id()),
-        NoteType::Private => {
-            let recipient = P2idNoteRecipient::new(
-                P2idNoteStorage::new(alice.id()),
-                builder.rng_mut().draw_word(),
-            );
-            PswapPayback::private(recipient, NoteTag::new(0))
-        },
-    };
+    let payback = PswapPayback::new(
+        P2idNoteRecipient::new(P2idNoteStorage::new(alice.id()), builder.rng_mut().draw_word()),
+        payback_type,
+        NoteTag::new(27),
+    );
     let (_, note) = build_pswap_note(
         &mut builder,
         alice.id(),
@@ -494,10 +490,7 @@ async fn pswap_checks_output_before_sealing(
     builder.add_account(filler.clone())?;
     let payback_recipient =
         P2idNoteRecipient::new(P2idNoteStorage::new(alice.id()), builder.rng_mut().draw_word());
-    let payback = match payback_type {
-        NoteType::Public => public_payback(alice.id()),
-        NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-    };
+    let payback = PswapPayback::new(payback_recipient, payback_type, NoteTag::new(27));
     let pswap = PswapNote::builder()
         .sender(alice.id())
         .storage(
@@ -646,10 +639,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     let payback_storage = P2idNoteStorage::new(alice.id());
     let payback_serial = rng.draw_word();
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
-    let payback = match payback_note_type {
-        NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-        NoteType::Public => PswapPayback::public(payback_recipient, NoteTag::new(27)),
-    };
+    let payback = PswapPayback::new(payback_recipient, payback_note_type, NoteTag::new(27));
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .payback(payback)
@@ -1348,7 +1338,7 @@ fn build_private_pswap_note(
         offered,
         requested,
         NoteType::Public,
-        PswapPayback::private(recipient, NoteTag::new(1234)),
+        PswapPayback::new(recipient, NoteType::Private, NoteTag::new(1234)),
     )?;
     Ok((pswap, note, recipient))
 }
@@ -1475,10 +1465,7 @@ async fn pswap_cancellation_reserve_lifecycle(
     builder.add_account(router.clone())?;
     let recipient =
         P2idNoteRecipient::new(P2idNoteStorage::new(owner.id()), builder.rng_mut().draw_word());
-    let payback = match payback_type {
-        NoteType::Private => PswapPayback::private(recipient, NoteTag::new(27)),
-        NoteType::Public => public_payback(owner.id()),
-    };
+    let payback = PswapPayback::new(recipient, payback_type, NoteTag::new(27));
     let mut current = PswapNote::builder()
         .sender(router.id())
         .storage(
@@ -1667,7 +1654,7 @@ async fn pswap_cancellation_fee_with_callback_attachment_can_be_collected() -> a
                     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?,
                     50,
                 )?)
-                .payback(PswapPayback::private(recipient, NoteTag::new(27)))
+                .payback(PswapPayback::new(recipient, NoteType::Private, NoteTag::new(27)))
                 .cancellation_fee(fee)
                 .build(),
         )
@@ -3094,10 +3081,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments(
     let payback_serial = builder.rng_mut().draw_word();
     let payback_storage = P2idNoteStorage::new(alice.id());
     let payback_recipient = P2idNoteRecipient::new(payback_storage, payback_serial);
-    let payback = match payback_type {
-        NoteType::Private => PswapPayback::private(payback_recipient, NoteTag::new(0)),
-        NoteType::Public => PswapPayback::public(payback_recipient, NoteTag::new(27)),
-    };
+    let payback = PswapPayback::new(payback_recipient, payback_type, NoteTag::new(27));
     let original_pswap = PswapNote::builder()
         .sender(alice.id())
         .storage(

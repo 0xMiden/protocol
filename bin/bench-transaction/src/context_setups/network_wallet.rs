@@ -241,16 +241,11 @@ pub fn tx_consume_pswap_note_network(
 
     let payback_serial = builder.rng_mut().draw_word();
     let payback_storage = P2idNoteStorage::new(creator_account.id());
-    let payback = match payback_note_type {
-        NoteType::Private => PswapPayback::private(
-            P2idNoteRecipient::new(payback_storage, payback_serial),
-            PswapNote::PAYBACK_TAG,
-        ),
-        NoteType::Public => PswapPayback::public(
-            P2idNoteRecipient::new(payback_storage, payback_serial),
-            PswapNote::PAYBACK_TAG,
-        ),
-    };
+    let payback = PswapPayback::new(
+        P2idNoteRecipient::new(payback_storage, payback_serial),
+        payback_note_type,
+        PswapNote::PAYBACK_TAG,
+    );
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .payback(payback)
