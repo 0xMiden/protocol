@@ -1780,16 +1780,15 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
 }
 
 /// A FEE_SPONSORSHIP note funded with an asset other than the one the account collects fees in
-/// fails fee collection, which points at no note. It is singled out by its asset and reported as
-/// [`FeeError::WrongFeeAsset`], and the rest of its bundle is retried without it: the feature note
-/// is consumed when its other sponsorships still cover its fee, and blamed for being left uncovered
-/// otherwise.
+/// fails fee collection, which points at no note, so its whole bundle fails: the feature note is
+/// reported as [`FeeError::WrongFeeAsset`] and its sponsorships as collateral of it - even when the
+/// other sponsorships would cover the fee on their own - while an intact pair alongside survives.
 #[rstest]
 #[case::only_wrong_sponsorship(false)]
-#[case::covered_by_the_rest(true)]
+#[case::with_a_covering_sponsorship(true)]
 #[tokio::test]
-async fn note_checker_drops_only_a_sponsorship_carrying_the_wrong_fee_asset(
-    #[case] covered_by_the_rest: bool,
+async fn note_checker_fails_the_bundle_of_a_sponsorship_carrying_the_wrong_fee_asset(
+    #[case] with_a_covering_sponsorship: bool,
 ) -> anyhow::Result<()> {
     let mut builder = Test::builder()
         .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
@@ -1797,7 +1796,7 @@ async fn note_checker_drops_only_a_sponsorship_carrying_the_wrong_fee_asset(
         .sponsorship(Sponsorship::new(0, fee_asset(FEE_AMOUNT)?))
         // the second feature note is sponsored in an asset the account does not collect fees in
         .sponsorship(Sponsorship::new(1, other_asset(FEE_AMOUNT)?));
-    if covered_by_the_rest {
+    if with_a_covering_sponsorship {
         builder = builder.sponsorship(Sponsorship::new(1, fee_asset(FEE_AMOUNT)?));
     }
     let Test {
@@ -1806,43 +1805,38 @@ async fn note_checker_drops_only_a_sponsorship_carrying_the_wrong_fee_asset(
         feature_notes,
         sponsorship_notes,
     } = builder.build()?;
-    let wrong_sponsorship = &sponsorship_notes[1];
 
     let notes = [feature_notes.as_slice(), sponsorship_notes.as_slice()].concat();
     let info = check_notes(&mock_chain, network_account.id(), notes).await?;
 
-    let mut expected_successful =
-        BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]);
-    if covered_by_the_rest {
-        expected_successful.extend([feature_notes[1].id(), sponsorship_notes[2].id()]);
-    }
     assert_eq!(
         info.successful().iter().map(|note| note.note().id()).collect::<BTreeSet<_>>(),
-        expected_successful,
+        BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]),
+        "the intact pair should survive the wrongly funded bundle"
     );
 
-    let wrong_failure = info
+    let feature_failure = info
         .failed()
         .iter()
-        .find(|failed| failed.note().id() == wrong_sponsorship.id())
-        .context("the wrongly funded sponsorship should fail")?;
+        .find(|failed| failed.note().id() == feature_notes[1].id())
+        .context("the feature note of the wrongly funded bundle should fail")?;
     assert_matches!(
-        wrong_failure.failure(),
-        NoteFailure::Fee { reason: FeeError::WrongFeeAsset { expected, actual }, .. }
-            if *expected == AssetId::new_fungible(fee_faucet_id()?)
-                && *actual == other_asset(FEE_AMOUNT)?.id()
+        feature_failure.failure(),
+        NoteFailure::Fee { reason: FeeError::WrongFeeAsset, .. }
     );
 
-    if covered_by_the_rest {
-        assert_eq!(info.failed().len(), 1, "only the wrongly funded sponsorship should fail");
-    } else {
-        assert_eq!(info.failed().len(), 2, "the uncovered feature note should fail as well");
-        let feature_failure = info
+    let bound_sponsorships = &sponsorship_notes[1..];
+    assert_eq!(info.failed().len(), 1 + bound_sponsorships.len(), "only the bundle should fail");
+    for sponsorship in bound_sponsorships {
+        let failure = info
             .failed()
             .iter()
-            .find(|failed| failed.note().id() == feature_notes[1].id())
-            .context("the uncovered feature note should fail")?;
-        assert!(feature_failure.is_blamed(), "the uncovered feature note should be blamed");
+            .find(|failed| failed.note().id() == sponsorship.id())
+            .context("every sponsorship of the bundle should fail")?;
+        assert_matches!(
+            failure.failure(),
+            NoteFailure::Collateral { blamed_by } if *blamed_by == feature_notes[1].id()
+        );
     }
 
     Ok(())

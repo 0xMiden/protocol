@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 
-use miden_protocol::asset::AssetId;
 use miden_protocol::note::NoteId;
 use miden_standards::note::ReclaimError;
 
@@ -46,10 +45,10 @@ impl From<SponsorshipRejectionError> for NoteFailure {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FeeError {
-    /// The FEE_SPONSORSHIP note is funded with an asset other than the one the account collects
-    /// fees in.
+    /// A FEE_SPONSORSHIP note bound to the feature note is funded with an asset other than the one
+    /// the account collects fees in.
     #[error(
-        "FEE_SPONSORSHIP note is funded with asset {actual} rather than the asset {expected} the account collects fees in"
+        "a FEE_SPONSORSHIP note bound to the feature note is funded with an asset other than the one the account collects fees in"
     )]
-    WrongFeeAsset { expected: AssetId, actual: AssetId },
+    WrongFeeAsset,
 }

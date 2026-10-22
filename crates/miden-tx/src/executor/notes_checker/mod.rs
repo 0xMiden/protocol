@@ -3,9 +3,8 @@ use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
 use miden_protocol::account::AccountId;
-use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteId};
+use miden_protocol::note::Note;
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -13,7 +12,6 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
-use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::errors::standards::ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET;
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
@@ -27,7 +25,7 @@ mod bundle;
 mod checker_utils;
 mod error;
 
-use bundle::{NoteBundle, NoteBundler, NoteBundles};
+use bundle::{NoteBundler, NoteBundles};
 pub use checker_utils::{
     FailedNote,
     MAX_NUM_CHECKER_NOTES,
@@ -91,8 +89,8 @@ where
     /// reclaim, and one naming another FEE_SPONSORSHIP note as its feature note.
     ///
     /// A sponsorship carrying an asset other than the one the account collects fees in fails fee
-    /// collection. It is then reported as [`NoteFailure::Fee`], and the rest of its bundle is
-    /// retried without it.
+    /// collection, which takes its whole bundle down: the feature note is then reported as
+    /// [`NoteFailure::Fee`].
     ///
     /// # Errors
     ///
@@ -300,10 +298,6 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        // The asset the account collects fees in, to tell which sponsorship of a bundle failed fee
-        // collection for carrying another one.
-        let fee_asset_id =
-            FeePolicyManager::fee_asset_id_from_storage(tx_inputs.account().storage().header());
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();
@@ -346,30 +340,6 @@ where
                         break;
                     },
                     Err(error) => {
-                        // A sponsorship carrying another asset than the account collects fees in
-                        // fails fee collection, which names no note. Remove the first such
-                        // sponsorship of the bundle and retry the rest of the bundle in the next
-                        // round
-                        if let Some((sponsorship_id, expected, actual)) =
-                            wrong_fee_asset_sponsorship(&error, &bundle, fee_asset_id)
-                        {
-                            let sponsorship = remaining_bundles
-                                .remove_note(idx, sponsorship_id)
-                                .expect("the bundle holds the sponsorship found in it");
-                            failed_note_index.insert(
-                                sponsorship_id,
-                                FailedNote::new(
-                                    sponsorship,
-                                    NoteFailure::Fee {
-                                        reason: FeeError::WrongFeeAsset { expected, actual },
-                                        error: error.into(),
-                                    },
-                                ),
-                            );
-                            extended = true;
-                            continue;
-                        }
-
                         // This combination failed, so the whole bundle is rejected. Blame the note
                         // the executor pointed at, when it pointed at one of the bundle's notes;
                         // an epilogue failure blames no particular note, so it falls to the note
@@ -392,10 +362,17 @@ where
                         // Record every note of the bundle (overwriting previous failures for the
                         // relevant notes), so the reported notes always account for all inputs.
                         // Only the blamed note owns the error; the rest failed with its bundle.
-                        let failed_bundle = bundle.failed_notes(
-                            blamed_idx,
-                            NoteFailure::Blamed { error: error.into(), num_cycles },
-                        );
+                        // A sponsorship carrying another asset than the account collects fees in
+                        // fails fee collection, which is reported with that reason.
+                        let failure = if is_wrong_fee_asset(&error) {
+                            NoteFailure::Fee {
+                                reason: FeeError::WrongFeeAsset,
+                                error: error.into(),
+                            }
+                        } else {
+                            NoteFailure::Blamed { error: error.into(), num_cycles }
+                        };
+                        let failed_bundle = bundle.failed_notes(blamed_idx, failure);
 
                         for failed_note in failed_bundle {
                             failed_note_index.insert(failed_note.note().id(), failed_note);
@@ -553,27 +530,14 @@ pub(super) fn handle_epilogue_error(
     }
 }
 
-/// Returns the sponsorship of `bundle` the failed execution `error` is traced to when it failed fee
-/// collection for carrying an asset other than `fee_asset_id`, together with the expected and the
-/// actual asset, or `None` if the execution failed for another reason.
-fn wrong_fee_asset_sponsorship(
-    error: &TransactionCheckerError,
-    bundle: &NoteBundle,
-    fee_asset_id: Option<AssetId>,
-) -> Option<(NoteId, AssetId, AssetId)> {
-    let TransactionCheckerError::EpilogueExecution {
-        error: TransactionExecutorError::TransactionProgramExecutionFailed(execution_error),
-        ..
-    } = error
-    else {
-        return None;
-    };
-    if !ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET.matches_execution_error(execution_error) {
-        return None;
-    }
-
-    let expected = fee_asset_id?;
-    let (sponsorship_id, actual) = bundle.find_wrong_fee_asset(expected)?;
-
-    Some((sponsorship_id, expected, actual))
+/// Returns `true` if the failed execution `error` failed fee collection because a FEE_SPONSORSHIP
+/// note carried an asset other than the one the account collects fees in.
+fn is_wrong_fee_asset(error: &TransactionCheckerError) -> bool {
+    matches!(
+        error,
+        TransactionCheckerError::EpilogueExecution {
+            error: TransactionExecutorError::TransactionProgramExecutionFailed(execution_error),
+            ..
+        } if ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET.matches_execution_error(execution_error)
+    )
 }

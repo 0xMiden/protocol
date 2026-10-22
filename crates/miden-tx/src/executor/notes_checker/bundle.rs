@@ -2,7 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteId};
 use miden_standards::note::FeeSponsorshipNote;
@@ -27,18 +26,6 @@ impl NoteBundle {
     /// Returns the notes forming the bundle.
     pub(super) fn notes(&self) -> &[Note] {
         &self.notes
-    }
-
-    /// Returns the first FEE_SPONSORSHIP note bound to the feature note heading the bundle that
-    /// carries an asset other than `fee_asset_id`, together with that asset, or `None` if there is
-    /// none.
-    pub(super) fn find_wrong_fee_asset(&self, fee_asset_id: AssetId) -> Option<(NoteId, AssetId)> {
-        // The note heading the bundle is the feature note, or a sponsorship that can only be
-        // reclaimed, which pays no fee.
-        self.notes.iter().skip(1).find_map(|note| {
-            let actual = FeeSponsorshipNote::try_from(note).ok()?.asset().id();
-            (actual != fee_asset_id).then_some((note.id(), actual))
-        })
     }
 
     /// Consumes the bundle reporting every note of it as failed: the note at `blamed_idx` with
@@ -97,18 +84,6 @@ impl NoteBundles {
     /// Panics if the `idx` is out of bounds.
     pub(super) fn remove(&mut self, idx: usize) -> NoteBundle {
         self.0.remove(idx)
-    }
-
-    /// Removes the note with `note_id` from the bundle at `idx`, keeping the rest of the bundle,
-    /// and returns the note, or `None` if the bundle does not hold it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `idx` is out of bounds.
-    pub(super) fn remove_note(&mut self, idx: usize, note_id: NoteId) -> Option<Note> {
-        let notes = &mut self.0[idx].notes;
-        let note_idx = notes.iter().position(|note| note.id() == note_id)?;
-        Some(notes.remove(note_idx))
     }
 
     /// Removes and returns the bundle holding the note with `note_id`, or `None` if no bundle
