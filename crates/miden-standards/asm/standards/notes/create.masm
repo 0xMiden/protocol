@@ -50,7 +50,7 @@ const ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS = "CREATE note output must contain f
 # NOTE SCRIPT
 # =================================================================================================
 
-#! Creates a primary output and, when funded, a public TX_FEE output. Neither output is sealed.
+#! Creates a primary output note and, when funded, a public TX_FEE note. Neither note is sealed.
 #! Checks both outputs after all asset callbacks have run.
 #!
 #! Consumers: the designated public account; the original sender may reclaim at any time.
@@ -125,7 +125,7 @@ pub proc main(note_args: NoteArgs)
         drop swap drop
         # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
 
-        # check funding after callbacks from both outputs have finished
+        # asset callbacks can add assets; check funding after all callbacks have finished
         exec.output_note::get_assets_info movup.4 drop
         assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
         # => []
@@ -151,8 +151,8 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Removes the committed funding into ASSETS_PTR before any output can invoke asset callbacks.
-#! Checks both the original funding and the remaining assets, which earlier inputs may have changed.
+#! Removes the CREATE note's assets and writes them to memory starting at ASSETS_PTR.
+#! Checks the initial and remaining assets before any output can invoke asset callbacks.
 #!
 #! Inputs:  []
 #! Outputs: [assets_end]
