@@ -813,7 +813,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
 }
 
 /// Dedicated regression test for the attachment word layout shared between
-/// `create_p2id_note` / `create_remainder_note` in pswap.masm and
+/// `create_payback_note` / `create_remainder_note` in pswap.masm and
 /// `create_payback_note` / `create_remainder_pswap_note` in pswap.rs.
 ///
 /// Both sides agree on:
@@ -2160,7 +2160,7 @@ async fn pswap_note_min_fill_step_test(
     Ok(())
 }
 
-/// Regression test for the `note_idx` stack-layout bug in `create_p2id_note`'s
+/// Regression test for the `note_idx` stack-layout bug in `create_payback_note`'s
 /// `has_account_fill` branch.
 ///
 /// The buggy frame setup left three stray zeros between `ASSET_VALUE` and the
@@ -2232,7 +2232,7 @@ async fn pswap_account_fill_payback_not_first_output_note_test() -> anyhow::Resu
     assert_eq!(
         dummy_out.assets().num_assets(),
         0,
-        "SPAWN dummy should be empty; non-empty means `create_p2id_note` \
+        "SPAWN dummy should be empty; non-empty means `create_payback_note` \
          wrote its asset to the wrong output note_idx",
     );
 

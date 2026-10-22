@@ -71,7 +71,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 #   (AccountIdPrefix as Felt)
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
 # - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
-# - payback_note_type: The NoteType used for the P2ID payback note (0 = private, 1 = public)
+# - payback_note_type: The NoteType used for the payback note (0 = private, 1 = public)
 # - cancellation_fee_{suffix,prefix,amount}: Native fee reserve; all zero when absent
 # - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
@@ -1085,7 +1085,7 @@ end
 
 #! Returns the PSWAP order_id, taken from the active note's serial[1].
 #!
-#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Private paybacks use
+#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Paybacks use
 #! an independent fixed serial; their attachments carry this order ID.
 #!
 #! Inputs:  []
@@ -1155,7 +1155,7 @@ end
 
 #! Executes the partially-fillable swap.
 #!
-#! Sends offered tokens to consumer, requested tokens to the configured P2ID recipient,
+#! Sends offered tokens to consumer, requested tokens to the configured payback recipient,
 #! and creates a remainder note if partially filled.
 #!
 #! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
@@ -1289,7 +1289,7 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note carrying the requested asset to the configured recipient. The note's
+    # Create a payback note carrying the requested asset to the configured recipient. The note's
     # assets are derived from the requested fill amounts (`account_fill +
     # note_fill`), not from `total_payout` (which is the offered asset owed to
     # the consumer). All-zero fill arguments select the requested amount in `fill`.
@@ -1423,7 +1423,7 @@ proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     # => []
 end
 
-#! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
+#! Partially-fillable swap with public P2ID paybacks or private paybacks to a fixed recipient.
 #!
 #! NOTE_ARGS are [action, account_fill, note_fill, reserved].
 #! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.

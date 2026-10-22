@@ -148,11 +148,11 @@ impl PswapNoteStorage {
     const CANCELLATION_FEE_SUFFIX_IDX: usize = 5;
     const CANCELLATION_FEE_PREFIX_IDX: usize = 6;
     const CANCELLATION_FEE_AMOUNT_IDX: usize = 7;
+    const PAYBACK_TAG_IDX: usize = 8;
     const PUBLIC_CREATOR_SUFFIX_IDX: usize = 9;
     const PUBLIC_CREATOR_PREFIX_IDX: usize = 10;
     const PUBLIC_SERIAL_RANGE: Range<usize> = 11..15;
     const PRIVATE_RECIPIENT_RANGE: Range<usize> = 9..13;
-    const PAYBACK_TAG_IDX: usize = 8;
 
     /// Consumes the storage and returns a PSWAP recipient with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -881,7 +881,6 @@ impl PswapNote {
         let PswapPayback::Public { recipient, .. } = self.storage.payback else {
             return Err(NoteError::other("public payback reconstruction requires public paybacks"));
         };
-        self.rounds_since(attachment)?;
         self.payback_note_with_recipient(consumer_account_id, attachment, recipient.into())
     }
 
@@ -908,7 +907,6 @@ impl PswapNote {
         recipient: P2idNoteRecipient,
     ) -> Result<Note, NoteError> {
         self.validate_private_payback_recipient(recipient)?;
-        self.rounds_since(attachment)?;
         self.payback_note_with_recipient(consumer_account_id, attachment, recipient.into())
     }
 
@@ -918,10 +916,11 @@ impl PswapNote {
         attachment: &PswapNoteAttachment,
         recipient: NoteRecipient,
     ) -> Result<Note, NoteError> {
+        let rounds = self.rounds_since(attachment)?;
         let fill_asset =
             FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(attachment.amount()))
                 .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?;
-        if self.storage.cancellation_fee.is_some() && self.rounds_since(attachment)? != 1 {
+        if self.storage.cancellation_fee.is_some() && rounds != 1 {
             return Err(NoteError::other(
                 "reconstruct fee-funded paybacks from the consumed PSWAP or remainder",
             ));
