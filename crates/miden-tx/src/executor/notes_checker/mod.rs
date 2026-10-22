@@ -161,16 +161,13 @@ where
             return Ok(consumption_status);
         }
 
-        // Keep the note to explain an epilogue failure with, since the inputs take it over.
-        let checked_note = note.note().clone();
-
         // Prepare transaction inputs.
         let mut tx_inputs = self
             .tx_executor
             .prepare_tx_inputs(
                 target_account_id,
                 block_ref,
-                InputNotes::new_unchecked(vec![note]),
+                InputNotes::new_unchecked(vec![note.clone()]),
                 tx_args,
             )
             .await
@@ -201,7 +198,7 @@ where
                         .handle_epilogue_error(
                             target_account_id,
                             block_ref,
-                            &checked_note,
+                            note.note(),
                             epilogue_error,
                         )
                         .await),
@@ -246,8 +243,7 @@ where
         }
     }
 
-    /// Sets the fee the account charges for `feature_note` on a [`FeeError::FeeNotCovered`], which
-    /// costs one extra execution and so is only done on this failure path.
+    /// Sets the fee the account charges for `feature_note` on a [`FeeError::FeeNotCovered`].
     async fn with_required_fee(
         &self,
         fee_error: FeeError,

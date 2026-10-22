@@ -72,3 +72,14 @@ pub enum FeeError {
         required: Option<AssetAmount>,
     },
 }
+
+impl FeeError {
+    /// Sets the fee the account charges for the feature note of a [`FeeError::FeeNotCovered`],
+    /// leaving any other error unchanged.
+    pub(super) fn with_required_fee(mut self, required_fee: Option<AssetAmount>) -> Self {
+        if let FeeError::FeeNotCovered { required, .. } = &mut self {
+            *required = required_fee;
+        }
+        self
+    }
+}

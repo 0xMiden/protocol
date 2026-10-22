@@ -16,17 +16,6 @@ use super::bundle::{NoteBundle, SponsorshipInput};
 use super::error::FeeError;
 use crate::TransactionExecutorError;
 
-impl FeeError {
-    /// Sets the fee the account charges for the feature note of a [`FeeError::FeeNotCovered`],
-    /// leaving any other error unchanged.
-    pub(super) fn with_required_fee(mut self, required_fee: Option<AssetAmount>) -> Self {
-        if let FeeError::FeeNotCovered { required, .. } = &mut self {
-            *required = required_fee;
-        }
-        self
-    }
-}
-
 impl NoteBundle {
     /// Returns the fee error the failed execution of this bundle reports, or `None` if the
     /// execution failed for another reason or the bundle collects no fee.
