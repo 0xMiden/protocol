@@ -4,13 +4,21 @@ use std::vec::Vec;
 
 use anyhow::Context;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::batch::BatchNoteTree;
+use miden_protocol::batch::{BatchNoteTree, ProvenBatch};
 use miden_protocol::block::account_tree::AccountTree;
-use miden_protocol::block::{BlockInputs, BlockNoteIndex, BlockNoteTree, ProposedBlock};
+use miden_protocol::block::{
+    BlockInputs,
+    BlockKernel,
+    BlockNoteIndex,
+    BlockNoteTree,
+    ProposedBlock,
+};
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::note::{Note, NoteType};
-use miden_protocol::transaction::InputNoteCommitment;
+use miden_protocol::transaction::{InputNoteCommitment, TransactionHeader};
 use miden_standards::note::P2idNote;
+use rstest::rstest;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
 use crate::utils::create_p2any_note;
@@ -417,6 +425,80 @@ async fn proven_block_succeeds_with_empty_batches() -> anyhow::Result<()> {
         chain.blockchain().peaks().hash_peaks()
     );
     assert_eq!(proven_block.header().block_num(), latest_block_header.block_num() + 1);
+
+    Ok(())
+}
+
+/// Tests that a proven block preserves the grouping of its transactions into batches, so that the
+/// block kernel's public inputs can be derived from the block's own data.
+///
+/// Each batch grouping lists the indices of the transactions in each batch.
+#[rstest]
+#[case::single_tx_batches(vec![vec![0], vec![1], vec![2]])]
+#[case::multi_tx_batch_first(vec![vec![0, 1], vec![2]])]
+#[case::multi_tx_batch_last(vec![vec![2], vec![0, 1]])]
+#[case::single_batch(vec![vec![1, 0, 2]])]
+#[tokio::test]
+async fn proven_block_preserves_batch_grouping(
+    #[case] batch_groupings: Vec<Vec<usize>>,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let mut notes = Vec::new();
+    let mut accounts = Vec::new();
+    for _ in 0..3 {
+        let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+        notes.push(builder.add_p2any_note(
+            account.id(),
+            NoteType::Public,
+            [FungibleAsset::mock(100)],
+        )?);
+        accounts.push(account);
+    }
+    let chain = builder.build()?;
+
+    let mut txs = Vec::new();
+    for (account, note) in accounts.iter().zip(&notes) {
+        txs.push(chain.create_authenticated_notes_proven_tx(account.id(), [note.id()]).await?);
+    }
+
+    let batches = batch_groupings
+        .iter()
+        .map(|tx_indices| {
+            chain.create_batch(tx_indices.iter().map(|tx_index| txs[*tx_index].clone()).collect())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let block_inputs = chain.get_block_inputs(&batches)?;
+    let proposed_block =
+        ProposedBlock::new(block_inputs, batches.clone()).context("failed to propose block")?;
+
+    let (expected_stack_inputs, _) = BlockKernel::prepare_inputs(&proposed_block);
+    let expected_batches_commitment = proposed_block.batches().to_commitment();
+
+    let proven_block = chain.prove_block(proposed_block)?;
+    let body = proven_block.body();
+
+    // The transactions of each batch are kept separately and in order.
+    let tx_ids_by_batch = body
+        .transactions()
+        .iter()
+        .map(|batch| batch.as_slice().iter().map(TransactionHeader::id).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let expected_tx_ids_by_batch = batch_groupings
+        .iter()
+        .map(|tx_indices| tx_indices.iter().map(|tx_index| txs[*tx_index].id()).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    assert_eq!(tx_ids_by_batch, expected_tx_ids_by_batch);
+
+    // The batch IDs and the block kernel's public inputs are derivable from the proven block.
+    assert_eq!(
+        body.batch_ids().collect::<Vec<_>>(),
+        batches.iter().map(ProvenBatch::id).collect::<Vec<_>>()
+    );
+    assert_eq!(body.batches_commitment(), expected_batches_commitment);
+    assert_eq!(proven_block.kernel_stack_inputs(), expected_stack_inputs);
+
+    // The transaction commitment is computed over the flattened transactions.
+    assert_eq!(body.transaction_commitment(), proven_block.header().tx_commitment());
 
     Ok(())
 }

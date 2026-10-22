@@ -6,7 +6,6 @@ use assert_matches::assert_matches;
 use miden_protocol::Word;
 use miden_protocol::block::{BlockBody, BlockNumber};
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
-use miden_protocol::transaction::OrderedTransactionHeaders;
 
 use crate::decoded::blockchain::test_utils::block_header_with_scheduled_upgrade;
 use crate::decoded::protocol_config::test_utils::dummy_protocol_config;
@@ -46,18 +45,11 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
         SignedBlockError,
         ValidatorConfig,
     };
-    use miden_protocol::transaction::OrderedTransactionHeaders;
 
     use crate::{BuildUnchecked, VerifyWith};
 
     fn header_for(num: u32, previous: Word, keys: ValidatorConfig) -> BlockHeader {
-        let body = BlockBody::new(
-            vec![],
-            vec![],
-            vec![],
-            OrderedTransactionHeaders::new_unchecked(vec![]),
-        )
-        .unwrap();
+        let body = BlockBody::new(vec![], vec![], vec![], vec![]).unwrap();
         BlockHeader::new(
             previous,
             num.into(),
@@ -77,9 +69,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let (child_signers, child_keys) = ValidatorConfig::random_with_signers(1);
     let parent = header_for(0, Word::empty(), parent_keys.clone());
     let header = header_for(1, parent.commitment(), child_keys.clone());
-    let body =
-        BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
-            .unwrap();
+    let body = BlockBody::new(vec![], vec![], vec![], vec![]).unwrap();
     let block = SignedBlock::new(
         header.clone(),
         body.clone(),
@@ -145,9 +135,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
 
 #[test]
 fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
-    let expected =
-        BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
-            .unwrap();
+    let expected = BlockBody::new(vec![], vec![], vec![], vec![]).unwrap();
 
     assert_eq!(
         proto::blockchain::BlockBody::default()

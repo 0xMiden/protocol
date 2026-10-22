@@ -13,7 +13,7 @@ use crate::block::{
 };
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote};
+use crate::transaction::{OrderedTransactionHeaders, OutputNote, TransactionHeader};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -43,9 +43,9 @@ pub struct BlockBody {
     /// Nullifiers created by the transactions in this block through the consumption of notes.
     created_nullifiers: Vec<Nullifier>,
 
-    /// The aggregated and flattened transaction headers of all batches in the order in which they
-    /// appeared in the proposed block.
-    transactions: OrderedTransactionHeaders,
+    /// The transaction headers of each batch, in the order in which the batches appeared in the
+    /// proposed block.
+    transactions: Vec<OrderedTransactionHeaders>,
 }
 
 impl BlockBody {
@@ -69,8 +69,15 @@ impl BlockBody {
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
-        transactions: OrderedTransactionHeaders,
+        transactions: Vec<OrderedTransactionHeaders>,
     ) -> Result<Self, BlockBodyError> {
+        if transactions.len() > MAX_BATCHES_PER_BLOCK {
+            return Err(BlockBodyError::TooManyTransactionBatches(transactions.len()));
+        }
+        if let Some(batch_index) = transactions.iter().position(|batch| batch.as_slice().is_empty())
+        {
+            return Err(BlockBodyError::EmptyTransactionBatch { batch_index });
+        }
         if output_note_batches.len() > MAX_BATCHES_PER_BLOCK {
             return Err(BlockBodyError::TooManyOutputNoteBatches(output_note_batches.len()));
         }
@@ -81,7 +88,10 @@ impl BlockBody {
             return Err(BlockBodyError::TooManyNullifiers(created_nullifiers.len()));
         }
 
-        let new_account_ids: BTreeSet<_> = transactions.created_account_ids().collect();
+        let new_account_ids: BTreeSet<_> = transactions
+            .iter()
+            .flat_map(OrderedTransactionHeaders::created_account_ids)
+            .collect();
 
         let mut account_ids = BTreeSet::new();
         for update in &updated_accounts {
@@ -134,7 +144,7 @@ impl BlockBody {
         }
 
         let mut transaction_ids = BTreeSet::new();
-        for transaction in transactions.as_slice() {
+        for transaction in transactions.iter().flat_map(OrderedTransactionHeaders::as_slice) {
             if !transaction_ids.insert(transaction.id()) {
                 return Err(BlockBodyError::DuplicateTransaction(transaction.id()));
             }
@@ -158,7 +168,7 @@ impl BlockBody {
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
-        transactions: OrderedTransactionHeaders,
+        transactions: Vec<OrderedTransactionHeaders>,
     ) -> Self {
         Self {
             updated_accounts,
@@ -186,14 +196,44 @@ impl BlockBody {
         &self.created_nullifiers
     }
 
-    /// Returns the [`OrderedTransactionHeaders`] of all transactions included in this block.
-    pub fn transactions(&self) -> &OrderedTransactionHeaders {
+    /// Returns the [`OrderedTransactionHeaders`] of each batch included in this block, in the
+    /// order in which the batches appear in the block.
+    pub fn transactions(&self) -> &[OrderedTransactionHeaders] {
         &self.transactions
     }
 
+    /// Returns an iterator over the transaction headers of all batches in this block, in block
+    /// order.
+    fn transaction_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
+        self.transactions.iter().flat_map(OrderedTransactionHeaders::as_slice)
+    }
+
     /// Returns the commitment of all transactions included in this block.
+    ///
+    /// This is a sequential hash over the tx ID and account ID of all transactions in block order.
     pub fn transaction_commitment(&self) -> Word {
-        self.transactions.commitment()
+        OrderedTransactionHeaders::compute_commitment(
+            self.transaction_headers().map(|tx| (tx.id(), tx.account_id())),
+        )
+    }
+
+    /// Returns an iterator over the [`BatchId`](crate::batch::BatchId)s of the batches in this\
+    /// block, in block order.
+    #[cfg(any(feature = "testing", test))]
+    pub fn batch_ids(&self) -> impl Iterator<Item = crate::batch::BatchId> + '_ {
+        self.transactions.iter().map(|batch| {
+            crate::batch::BatchId::from_ids(
+                batch.as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
+            )
+        })
+    }
+
+    /// Returns the sequential commitment to the batch IDs of this block.
+    ///
+    /// This is the `BATCHES_COMMITMENT` public input of the block kernel.
+    #[cfg(any(feature = "testing", test))]
+    pub fn batches_commitment(&self) -> Word {
+        crate::batch::BatchId::compute_batches_commitment(self.batch_ids())
     }
 
     /// Returns an iterator over all [`OutputNote`]s created in this block.
@@ -237,7 +277,7 @@ impl BlockBody {
         Vec<BlockAccountUpdate>,
         Vec<OutputNoteBatch>,
         Vec<Nullifier>,
-        OrderedTransactionHeaders,
+        Vec<OrderedTransactionHeaders>,
     ) {
         (
             self.updated_accounts,
@@ -271,7 +311,7 @@ impl From<ProposedBlock> for BlockBody {
             })
             .collect();
         let created_nullifiers = created_nullifiers.keys().copied().collect::<Vec<_>>();
-        // Aggregate the verified transactions of all batches.
+        // Keep the verified transactions of each batch.
         let transactions = batches.into_transactions();
         Self {
             updated_accounts,
@@ -300,7 +340,7 @@ impl Deserializable for BlockBody {
             Vec::read_from(source)?,
             Vec::read_from(source)?,
             Vec::read_from(source)?,
-            OrderedTransactionHeaders::read_from(source)?,
+            Vec::read_from(source)?,
         )
         .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
@@ -317,8 +357,8 @@ mod tests {
     use rstest::rstest;
 
     use super::BlockBody;
-    use crate::Word;
     use crate::account::{Account, AccountId, AccountPatch, AccountType, AccountUpdateDetails};
+    use crate::batch::BatchId;
     use crate::block::BlockAccountUpdate;
     use crate::errors::{BlockAccountUpdateError, BlockBodyError, TransactionHeaderError};
     use crate::note::{Note, NoteHeader};
@@ -334,6 +374,7 @@ mod tests {
         TransactionHeader,
     };
     use crate::utils::serde::{Deserializable, Serializable};
+    use crate::{MAX_BATCHES_PER_BLOCK, Word};
 
     fn account_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
@@ -373,22 +414,46 @@ mod tests {
         account: &Account,
         initial_state_commitment: Word,
         final_state_commitment: Word,
-    ) -> anyhow::Result<(Vec<BlockAccountUpdate>, OrderedTransactionHeaders)> {
+    ) -> anyhow::Result<(Vec<BlockAccountUpdate>, Vec<OrderedTransactionHeaders>)> {
         let update = BlockAccountUpdate::new(
             account.id(),
             final_state_commitment,
             AccountUpdateDetails::Public(AccountPatch::try_from(account.clone())?),
         )?;
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![TransactionHeader::new(
-            account.id(),
-            initial_state_commitment,
-            final_state_commitment,
-            InputNotes::default(),
-            vec![],
-            Word::empty(),
-        )?]);
+        let transactions =
+            vec![OrderedTransactionHeaders::new_unchecked(vec![TransactionHeader::new(
+                account.id(),
+                initial_state_commitment,
+                final_state_commitment,
+                InputNotes::default(),
+                vec![],
+                Word::empty(),
+            )?])];
 
         Ok((vec![update], transactions))
+    }
+
+    /// Returns a transaction header with no notes whose ID is determined by `seed`.
+    fn seeded_transaction_header(seed: u32) -> TransactionHeader {
+        transaction_header(
+            Word::from([seed, 0, 0, 0]),
+            Word::from([seed + 1, 0, 0, 0]),
+            InputNotes::default(),
+            vec![],
+        )
+        .unwrap()
+    }
+
+    /// Groups the seeded transaction headers into batches.
+    fn batches(seeds_by_batch: &[&[u32]]) -> Vec<OrderedTransactionHeaders> {
+        seeds_by_batch
+            .iter()
+            .map(|seeds| {
+                OrderedTransactionHeaders::new_unchecked(
+                    seeds.iter().copied().map(seeded_transaction_header).collect(),
+                )
+            })
+            .collect()
     }
 
     #[rstest]
@@ -461,7 +526,7 @@ mod tests {
         } else {
             vec![note.nullifier()]
         };
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+        let transactions = vec![OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(
                 Word::from([1_u32, 2, 3, 4]),
                 Word::from([5_u32, 6, 7, 8]),
@@ -469,7 +534,7 @@ mod tests {
                 vec![],
             )
             .unwrap(),
-        ]);
+        ])];
 
         BlockBody::new(vec![], vec![], created_nullifiers, transactions).unwrap();
     }
@@ -489,7 +554,7 @@ mod tests {
         } else {
             vec![]
         };
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+        let transactions = vec![OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(
                 Word::from([1_u32, 2, 3, 4]),
                 Word::from([5_u32, 6, 7, 8]),
@@ -497,7 +562,7 @@ mod tests {
                 transaction_output_notes,
             )
             .unwrap(),
-        ]);
+        ])];
 
         BlockBody::new(vec![], output_notes, vec![], transactions).unwrap();
     }
@@ -510,7 +575,7 @@ mod tests {
             input_note.nullifier(),
             Some(*input_note.header()),
         );
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+        let transactions = vec![OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(
                 Word::from([1_u32, 2, 3, 4]),
                 Word::from([5_u32, 6, 7, 8]),
@@ -518,7 +583,7 @@ mod tests {
                 vec![*output_note.header()],
             )
             .unwrap(),
-        ]);
+        ])];
 
         BlockBody::new(
             vec![],
@@ -533,7 +598,7 @@ mod tests {
     fn rejects_duplicate_supplied_nullifier() {
         let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
         let nullifier = note.nullifier();
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![]);
+        let transactions = vec![];
 
         let result = BlockBody::new(vec![], vec![], vec![nullifier, nullifier], transactions);
 
@@ -547,7 +612,7 @@ mod tests {
     fn rejects_duplicate_supplied_output_note() {
         let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
         let output_note = into_output_note(note.clone());
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![]);
+        let transactions = vec![];
 
         let result = BlockBody::new(
             vec![],
@@ -567,7 +632,7 @@ mod tests {
         let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
         let input =
             InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+        let transactions = vec![OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(
                 Word::from([1_u32, 2, 3, 4]),
                 Word::from([5_u32, 6, 7, 8]),
@@ -582,7 +647,7 @@ mod tests {
                 vec![*note.header()],
             )
             .unwrap(),
-        ]);
+        ])];
 
         BlockBody::new(
             vec![],
@@ -596,7 +661,7 @@ mod tests {
     #[test]
     fn deserialization_accepts_output_notes_mismatch() {
         let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+        let transactions = vec![OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(
                 Word::from([1_u32, 2, 3, 4]),
                 Word::from([5_u32, 6, 7, 8]),
@@ -604,7 +669,7 @@ mod tests {
                 vec![*note.header()],
             )
             .unwrap(),
-        ]);
+        ])];
         let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
 
         BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
@@ -615,7 +680,7 @@ mod tests {
         let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
         let input =
             InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+        let transactions = vec![OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(
                 Word::from([1_u32, 2, 3, 4]),
                 Word::from([5_u32, 6, 7, 8]),
@@ -623,9 +688,80 @@ mod tests {
                 vec![],
             )
             .unwrap(),
-        ]);
+        ])];
         let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
 
         BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
+    }
+
+    #[test]
+    fn rejects_empty_transaction_batch() {
+        let mut transactions = batches(&[&[1]]);
+        transactions.push(OrderedTransactionHeaders::new_unchecked(vec![]));
+
+        let result = BlockBody::new(vec![], vec![], vec![], transactions);
+
+        assert_matches!(result, Err(BlockBodyError::EmptyTransactionBatch { batch_index: 1 }));
+    }
+
+    #[test]
+    fn rejects_too_many_transaction_batches() {
+        let transactions =
+            vec![OrderedTransactionHeaders::new_unchecked(vec![]); MAX_BATCHES_PER_BLOCK + 1];
+
+        let result = BlockBody::new(vec![], vec![], vec![], transactions);
+
+        assert_matches!(
+            result,
+            Err(BlockBodyError::TooManyTransactionBatches(count))
+                if count == MAX_BATCHES_PER_BLOCK + 1
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_transaction_across_batches() {
+        let transactions = batches(&[&[1], &[1]]);
+
+        let result = BlockBody::new(vec![], vec![], vec![], transactions);
+
+        assert_matches!(
+            result,
+            Err(BlockBodyError::DuplicateTransaction(transaction_id))
+                if transaction_id == seeded_transaction_header(1).id()
+        );
+    }
+
+    /// Regrouping the same transactions into different batches keeps the transaction commitment
+    /// but changes the batches commitment.
+    #[test]
+    fn batch_grouping_determines_batches_commitment() {
+        let body_a = BlockBody::new(vec![], vec![], vec![], batches(&[&[1, 3], &[5]])).unwrap();
+        let body_b = BlockBody::new(vec![], vec![], vec![], batches(&[&[1], &[3, 5]])).unwrap();
+
+        assert_eq!(body_a.transaction_commitment(), body_b.transaction_commitment());
+        assert_ne!(body_a.batches_commitment(), body_b.batches_commitment());
+
+        let expected_batch_ids = body_a
+            .transactions()
+            .iter()
+            .map(|batch| {
+                BatchId::from_ids(batch.as_slice().iter().map(|tx| (tx.id(), tx.account_id())))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(body_a.batch_ids().collect::<Vec<_>>(), expected_batch_ids);
+        assert_eq!(
+            body_a.batches_commitment(),
+            BatchId::compute_batches_commitment(expected_batch_ids)
+        );
+    }
+
+    #[test]
+    fn serialization_preserves_batch_grouping() {
+        let body = BlockBody::new(vec![], vec![], vec![], batches(&[&[1, 3], &[5]])).unwrap();
+
+        let deserialized = BlockBody::read_from_bytes(&body.to_bytes()).unwrap();
+
+        assert_eq!(deserialized, body);
+        assert_eq!(deserialized.batches_commitment(), body.batches_commitment());
     }
 }

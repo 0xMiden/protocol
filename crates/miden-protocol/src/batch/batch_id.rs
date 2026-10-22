@@ -1,6 +1,7 @@
+use alloc::vec::Vec;
+
 use miden_crypto_derive::WordWrapper;
 
-use crate::Word;
 use crate::account::AccountId;
 use crate::transaction::{OrderedTransactionHeaders, ProvenTransaction, TransactionId};
 use crate::utils::serde::{
@@ -10,6 +11,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{Felt, Word};
 
 // BATCH ID
 // ================================================================================================
@@ -37,6 +39,25 @@ impl BatchId {
         // A batch ID commits to the set of transaction it contains which is the same computation as
         // in OrderedTransactionHeaders, so it is reused.
         Self(OrderedTransactionHeaders::compute_commitment(iter))
+    }
+
+    /// Computes the sequential commitment to the provided ordered batch IDs.
+    ///
+    /// This is the `BATCHES_COMMITMENT` public input of the block kernel. It commits to both the
+    /// set of batches in a block and the order in which they appear.
+    #[cfg(any(feature = "testing", test))]
+    pub fn compute_batches_commitment(batch_ids: impl IntoIterator<Item = BatchId>) -> Word {
+        crate::Hasher::hash_elements(&Self::batch_ids_to_elements(batch_ids))
+    }
+
+    /// Returns the provided ordered batch IDs represented as a vector of field elements.
+    pub(crate) fn batch_ids_to_elements(batch_ids: impl IntoIterator<Item = BatchId>) -> Vec<Felt> {
+        let mut elements = Vec::new();
+        for batch_id in batch_ids {
+            elements.extend_from_slice(batch_id.as_word().as_elements());
+        }
+
+        elements
     }
 }
 

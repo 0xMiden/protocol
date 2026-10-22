@@ -182,7 +182,7 @@ impl SignedBlock {
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), SignedBlockError> {
         let header_tx_commitment = self.header.tx_commitment();
-        let body_tx_commitment = self.body.transactions().commitment();
+        let body_tx_commitment = self.body.transaction_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(SignedBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
         } else {
@@ -239,15 +239,9 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::OrderedTransactionHeaders;
 
     fn empty_body() -> BlockBody {
-        BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        )
+        BlockBody::new_unchecked(Vec::new(), Vec::new(), Vec::new(), Vec::new())
     }
 
     fn block_one(

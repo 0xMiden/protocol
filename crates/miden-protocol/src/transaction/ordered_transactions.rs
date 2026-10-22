@@ -14,19 +14,18 @@ use crate::{Felt, Hasher, Word};
 // ORDERED TRANSACTION HEADERS
 // ================================================================================================
 
-/// The ordered set of transaction headers in a [`ProvenBatch`](crate::batch::ProvenBatch) or
-/// [`ProvenBlock`](crate::block::ProvenBlock).
+/// The ordered set of transaction headers in a [`ProvenBatch`](crate::batch::ProvenBatch).
 ///
-/// This is a newtype wrapper representing either:
-/// - the set of transactions in a **batch**,
-/// - or the flattened sets of transactions of each proven batch in a **block**.
+/// This is a newtype wrapper representing the set of transactions in a single **batch**. A block
+/// keeps the transactions of each of its batches as a separate [`OrderedTransactionHeaders`], see
+/// [`BlockBody::transactions`](crate::block::BlockBody::transactions).
 ///
 /// This type cannot be constructed directly, but can be retrieved through:
 /// - [`ProposedBatch::transaction_headers`](crate::batch::ProposedBatch::transaction_headers),
-/// - [`OrderedBatches::into_transactions`](crate::batch::OrderedBatches::into_transactions).
+/// - [`ProvenBatch::transactions`](crate::batch::ProvenBatch::transactions).
 ///
 /// The rationale for this requirement is that it allows a client to cheaply validate the
-/// correctness of the transactions in a proven block returned by a remote prover.
+/// correctness of the transactions in a proven batch returned by a remote prover.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderedTransactionHeaders(Vec<TransactionHeader>);
 

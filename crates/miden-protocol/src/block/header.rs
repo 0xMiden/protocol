@@ -413,16 +413,10 @@ impl BlockHeader {
         validator_config: ValidatorConfig,
     ) -> Self {
         use crate::block::{BlockBody, FeeParameters};
-        use crate::transaction::OrderedTransactionHeaders;
 
-        let body = BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        );
+        let body = BlockBody::new_unchecked(Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let note_root = body.compute_block_note_tree().root();
-        let tx_commitment = body.transactions().commitment();
+        let tx_commitment = body.transaction_commitment();
 
         BlockHeader::new(
             prev_block_commitment,
