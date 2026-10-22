@@ -612,7 +612,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             swapw dropw
             push.{ASSET_VALUE} push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [ASSET_ID, ASSET_VALUE, pad(8)]
+            # => [pad(16)]
 
             # clear the stack
             dropw dropw dropw dropw

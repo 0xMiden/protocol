@@ -3,6 +3,9 @@ use {AccountId, Asset, AssetId, AssetValue, AssetClass, AssetMetadata, AssetComp
 # ERRORS
 # =================================================================================================
 
+const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED =
+    "adding the fungible asset to the vault would exceed the max amount"
+
 const ERR_VAULT_ASSET_METADATA_NOT_U32 = "asset metadata is not a u32"
 
 const ERR_VAULT_ASSET_METADATA_UNKNOWN_VERSION = "unknown asset ID version"
@@ -304,4 +307,40 @@ end
 pub proc fungible_value_into_amount_unchecked(asset_value: AssetValue) -> AssetAmount
     movdn.3 drop drop drop
     # => [balance]
+end
+
+#! Merges two fungible assets.
+#!
+#! WARNING: This procedure assumes the assets have been validated.
+#!
+#! Inputs:  [ASSET_VALUE_0, ASSET_VALUE_1]
+#! Outputs: [MERGED_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE_{0, 1} are the assets to merge.
+#! - MERGED_ASSET_VALUE is the merged asset.
+#!
+#! Panics if:
+#! - adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
+pub proc merge_fungible_values(asset_value_0: AssetValue, asset_value_1: AssetValue) -> AssetValue
+    # extract amounts from assets
+    exec.fungible_value_into_amount_unchecked movdn.4 exec.fungible_value_into_amount_unchecked
+    # => [amount_1, amount_0]
+
+    # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - amount_0
+    # this is the amount that can at most be added to amount_0 still have a valid asset
+    dup push.FUNGIBLE_ASSET_MAX_AMOUNT dup.3 sub
+    # => [max_add_amount, amount_1, amount_1, amount_0]
+
+    # assert it is safe to add the amounts together, i.e. amount_1 <= max_add_amount
+    lte assert.err=ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED
+    # => [amount_1, amount_0]
+
+    # add the amounts
+    add
+    # => [merged_amount]
+
+    # reconstruct the asset value
+    push.0.0.0 movup.3
+    # => [MERGED_ASSET_VALUE]
 end

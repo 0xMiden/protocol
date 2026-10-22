@@ -217,10 +217,9 @@ pub proc get_attachments_commitment(note_index: u16) -> NoteAttachmentsCommitmen
 end
 
 #! Adds the asset to the note specified by the index.
-#! Returns the asset added by this call, excluding any existing balance or callback additions.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx]
-#! Outputs: [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
@@ -233,7 +232,7 @@ end
 #! - the active account is not the native account.
 #!
 #! Invocation: exec
-pub proc add_asset(asset: Asset, note_idx: u16) -> Asset
+pub proc add_asset(asset: Asset, note_idx: u16)
     push.OUTPUT_NOTE_ADD_ASSET_OFFSET
     # => [offset, ASSET_ID, ASSET_VALUE, note_idx]
 
@@ -244,11 +243,11 @@ pub proc add_asset(asset: Asset, note_idx: u16) -> Asset
     # => [offset, ASSET_ID, ASSET_VALUE, note_idx, pad(6)]
 
     syscall.exec_kernel_proc
-    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+    # => [pad(16)]
 
     # remove excess PADs from the stack
-    swapdw dropw dropw
-    # => [ASSET_ID, ASSET_VALUE]
+    dropw dropw dropw dropw
+    # => []
 end
 
 #! Adds an attachment to the note specified by the note index.

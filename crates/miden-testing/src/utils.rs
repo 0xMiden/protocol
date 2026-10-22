@@ -310,7 +310,6 @@ fn note_script_that_creates_notes<'note>(
                   push.{ASSET_ID}
                   # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
                   call.::miden::standards::wallets::basic::move_asset_to_note
-                  dropw dropw
                   # => [note_idx]
                 ",
                 ASSET_ID = asset.to_id_word(),

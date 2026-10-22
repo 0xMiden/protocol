@@ -79,7 +79,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
             # => []
 
             exec.epilogue::finalize_transaction
@@ -201,7 +201,6 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         push.{ASSET_VALUE}
         push.{ASSET_ID}
         call.::miden::standards::wallets::basic::move_asset_to_note
-        dropw dropw
         # => []
         ",
             recipient = note.recipient().digest(),

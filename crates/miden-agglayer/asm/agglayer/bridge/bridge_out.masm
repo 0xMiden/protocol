@@ -678,7 +678,7 @@ proc create_burn_note(asset: Asset)
     exec.asset::load
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    exec.output_note::add_asset dropw dropw
+    exec.output_note::add_asset
     # => []
 end
 
