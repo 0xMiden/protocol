@@ -91,10 +91,7 @@ const ERR_SPENDING_LIMIT_EXCEEDED = "spending limit exceeded for the current win
 # =================================================================================================
 
 const ENFORCE_NOTE_ASSETS_LOC = 0
-const ENFORCE_ASSET_PTR_LOC = ENFORCE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
-const ENFORCE_WINDOW_INDEX_LOC = ENFORCE_ASSET_PTR_LOC + 1
-const ENFORCE_UNPRICED_POLICY_LOC = ENFORCE_WINDOW_INDEX_LOC + 1
-const ENFORCE_GENERATION_LOC = ENFORCE_UNPRICED_POLICY_LOC + 1
+const ENFORCE_TOTAL_LOC = ENFORCE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
 
 # CONFIGURATION
 # =================================================================================================
@@ -289,9 +286,10 @@ end
 #! Charges every fungible asset this transaction sends out to the spending budget and fails the
 #! transaction if the budget is exceeded.
 #!
-#! Iterates every output note and every asset in it. For each fungible asset, `meter_asset` prices
-#! it into the base asset and charges the budget; an asset the budget cannot price falls to the
-#! unpriced-asset policy. Non-fungible assets are skipped.
+#! Iterates every output note and every asset in it, pricing each fungible asset into the base asset
+#! with `price_asset` and summing the results; an asset the budget cannot price falls to the
+#! unpriced-asset policy and non-fungible assets are skipped. The sum is charged to the budget once,
+#! so the tracker is read and written once per transaction.
 #!
 #! A no-op when the policy is disabled (`window_blocks == 0`). With the policy enabled the
 #! transaction's expiration is bound to the window even when it creates no output notes.
@@ -302,6 +300,7 @@ end
 #! Side effects:
 #! - Tightens the transaction expiration delta to `min(window_blocks, 65535)`, so the reference
 #!   block is at most one window old at inclusion and an idle window cannot be reopened later.
+#! - Writes SPENDING_TRACKER_SLOT when a fungible asset was priced into the budget.
 #!
 #! Panics if:
 #! - `window_blocks` is not a valid `u32` field element (`ERR_WINDOW_BLOCKS_NOT_U32`).
@@ -311,7 +310,7 @@ end
 #! - the oracle call fails (see `tx::execute_foreign_procedure`).
 #!
 #! Invocation: exec
-@locals(132)
+@locals(129)
 pub proc enforce_spending_limits()
     exec.get_initial_spending_config
     # => [window_blocks, unpriced_asset_policy, config_generation]
@@ -334,77 +333,99 @@ pub proc enforce_spending_limits()
         exec.current_window_index
         # => [window_index, unpriced_asset_policy, config_generation]
 
-        loc_store.ENFORCE_WINDOW_INDEX_LOC
-        loc_store.ENFORCE_UNPRICED_POLICY_LOC
-        loc_store.ENFORCE_GENERATION_LOC
-        # => []
+        exec.get_initial_spending_limit
+        # => [limit, window_index, unpriced_asset_policy, config_generation]
+
+        push.0 loc_store.ENFORCE_TOTAL_LOC
+        # => [limit, window_index, unpriced_asset_policy, config_generation]
 
         exec.tx::get_num_output_notes
-        # => [num_output_notes]
+        # => [num_output_notes, limit, window_index, unpriced_asset_policy, config_generation]
 
         dup neq.0
-        # => [has_notes, num_output_notes]
+        # => [has_notes, num_output_notes, limit, window_index, unpriced_asset_policy,
+        #     config_generation]
 
         while.true
-            # => [note_count]
+            # => [note_count, limit, window_index, unpriced_asset_policy, config_generation]
 
             sub.1
-            # => [note_index]
+            # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
 
             dup locaddr.ENFORCE_NOTE_ASSETS_LOC
-            # => [assets_ptr, note_index, note_index]
-
-            dup loc_store.ENFORCE_ASSET_PTR_LOC
-            # => [assets_ptr, note_index, note_index]
+            # => [assets_ptr, note_index, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
 
             exec.output_note::get_assets
-            # => [num_assets, note_index]
+            # => [num_assets, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
 
             dup neq.0
-            # => [has_assets, num_assets, note_index]
+            # => [has_assets, num_assets, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
 
             while.true
-                # => [num_assets, note_index]
+                # => [asset_count, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
 
                 sub.1
-                # => [remaining_assets, note_index]
+                # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
 
-                loc_load.ENFORCE_GENERATION_LOC
-                loc_load.ENFORCE_UNPRICED_POLICY_LOC
-                loc_load.ENFORCE_WINDOW_INDEX_LOC
-                # => [window_index, unpriced_asset_policy, config_generation, remaining_assets,
-                #     note_index]
+                dup.4 dup.3
+                # => [limit, unpriced_asset_policy, asset_idx, note_index, limit, window_index,
+                #     unpriced_asset_policy, config_generation]
 
-                loc_load.ENFORCE_ASSET_PTR_LOC
-                # => [asset_ptr, window_index, unpriced_asset_policy, config_generation,
-                #     remaining_assets, note_index]
-
-                dup add.ASSET_SIZE loc_store.ENFORCE_ASSET_PTR_LOC
-                # => [asset_ptr, window_index, unpriced_asset_policy, config_generation,
-                #     remaining_assets, note_index]
+                dup.2 mul.ASSET_SIZE locaddr.ENFORCE_NOTE_ASSETS_LOC add
+                # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+                #     window_index, unpriced_asset_policy, config_generation]
 
                 exec.asset::load
-                # => [ASSET_ID, ASSET_VALUE, window_index, unpriced_asset_policy,
-                #     config_generation, remaining_assets, note_index]
+                # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index,
+                #     limit, window_index, unpriced_asset_policy, config_generation]
 
-                exec.meter_asset
-                # => [remaining_assets, note_index]
+                exec.price_asset
+                # => [converted_amount, asset_idx, note_index, limit, window_index,
+                #     unpriced_asset_policy, config_generation]
+
+                loc_load.ENFORCE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
+                loc_store.ENFORCE_TOTAL_LOC
+                # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
 
                 dup neq.0
-                # => [has_assets, remaining_assets, note_index]
+                # => [has_assets, asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
             end
-            # => [remaining_assets, note_index]
+            # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
 
             drop
-            # => [note_index]
+            # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
 
             dup neq.0
-            # => [has_notes, note_index]
+            # => [has_notes, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
         end
-        # => [note_index]
+        # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
 
-        drop
-        # => []
+        drop movup.2 drop
+        # => [limit, window_index, config_generation]
+
+        # ----- Charge the sum once. Nothing to write when no asset was priced into the budget. -----
+        loc_load.ENFORCE_TOTAL_LOC
+        # => [total, limit, window_index, config_generation]
+
+        dup neq.0
+        # => [is_charged, total, limit, window_index, config_generation]
+
+        if.true
+            exec.charge_budget
+            # => []
+        else
+            drop drop drop drop
+            # => []
+        end
     end
 end
 
@@ -472,123 +493,100 @@ proc current_window_index(window_blocks: u32) -> u32
     # => [window_index]
 end
 
-#! Charges one asset to the spending budget.
+#! Prices one asset into the base asset for the spending budget.
 #!
-#! Only fungible assets are metered. A non-fungible asset has no amount to budget and is dropped
-#! here unmetered; moving one is governed by the procedure policies alone, exactly as if the
-#! spending-limit policy were disabled for it.
+#! Only fungible assets are metered. A non-fungible asset has no amount to budget and prices to
+#! zero; moving one is governed by the procedure policies alone, exactly as if the spending-limit
+#! policy were disabled for it.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, window_index, unpriced_asset_policy, config_generation]
-#! Outputs: []
+#! Inputs:  [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy]
+#! Outputs: [converted_amount]
 #!
 #! Where:
 #! - ASSET_ID and ASSET_VALUE are the asset leaving the account.
-#! - window_index, unpriced_asset_policy and config_generation are the policy state loaded by
-#!   `enforce_spending_limits`.
+#! - limit and unpriced_asset_policy are the budget state loaded by `enforce_spending_limits`.
+#! - converted_amount is the asset's amount in the base asset, or 0 when it is not priced.
 #!
-#! Side effects, panics: see `meter_fungible_asset`.
+#! Side effects, panics: see `price_fungible_asset`.
 #!
 #! Invocation: exec
-proc meter_asset(
+proc price_asset(
     asset_id: AssetId,
     asset_value: AssetValue,
-    window_index: u32,
-    unpriced_asset_policy: UnpricedAssetPolicy,
-    config_generation: felt
-)
+    limit: AssetAmount,
+    unpriced_asset_policy: UnpricedAssetPolicy
+) -> AssetAmount
     dupw exec.asset::id_into_composition
-    # => [composition, ASSET_ID, ASSET_VALUE, window_index, unpriced_asset_policy,
-    #     config_generation]
+    # => [composition, ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy]
 
     eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible, ASSET_ID, ASSET_VALUE, window_index, unpriced_asset_policy,
-    #     config_generation]
+    # => [is_fungible, ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy]
 
     if.true
         swapw exec.asset::fungible_value_into_amount_unchecked
-        # => [amount, ASSET_ID, window_index, unpriced_asset_policy, config_generation]
+        # => [amount, ASSET_ID, limit, unpriced_asset_policy]
 
-        exec.meter_fungible_asset
-        # => []
+        exec.price_fungible_asset
+        # => [converted_amount]
     else
         # Non-fungible: outside the policy.
-        dropw dropw drop drop drop
+        dropw dropw drop drop
         # => []
+
+        push.0
+        # => [converted_amount = 0]
     end
 end
 
-#! Prices a fungible amount into the base asset and charges it to the spending budget.
+#! Prices a fungible amount into the base asset for the spending budget.
 #!
 #! The asset is priced when the budget is configured and it is either the base asset or one the
-#! oracle has a rate for; an unpriced asset falls to the unpriced-asset policy.
+#! oracle has a rate for; an unpriced asset falls to the unpriced-asset policy and prices to zero.
 #!
-#! Inputs:  [amount, ASSET_ID, window_index, unpriced_asset_policy, config_generation]
-#! Outputs: []
+#! Inputs:  [amount, ASSET_ID, limit, unpriced_asset_policy]
+#! Outputs: [converted_amount]
 #!
 #! Side effects:
-#! - Writes SPENDING_TRACKER_SLOT when the asset was charged.
 #! - Tightens the transaction expiration delta when the oracle was read (`convert_to_base_asset`).
 #!
 #! Panics if:
 #! - the asset is unpriced and the policy is UNPRICED_ASSET_REJECT
 #!   (`ERR_UNPRICED_ASSET_REJECTED`).
-#! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
 #!
 #! Invocation: exec
-proc meter_fungible_asset(
+proc price_fungible_asset(
     amount: AssetAmount,
     asset_id: AssetId,
-    window_index: u32,
-    unpriced_asset_policy: UnpricedAssetPolicy,
-    config_generation: felt
-)
-    exec.get_initial_spending_limit
-    # => [limit, amount, ASSET_ID, window_index, unpriced_asset_policy, config_generation]
-
-    dup neq.0
-    # => [is_configured, limit, amount, ASSET_ID, window_index, unpriced_asset_policy,
-    #     config_generation]
+    limit: AssetAmount,
+    unpriced_asset_policy: UnpricedAssetPolicy
+) -> AssetAmount
+    movup.5 dup neq.0
+    # => [is_configured, limit, amount, ASSET_ID, unpriced_asset_policy]
 
     if.true
-        movdn.5 movdn.4
-        # => [ASSET_ID, amount, limit, window_index, unpriced_asset_policy, config_generation]
+        drop movdn.4
+        # => [ASSET_ID, amount, unpriced_asset_policy]
 
         exec.convert_to_base_asset
-        # => [is_priced, converted_amount, limit, window_index, unpriced_asset_policy,
-        #     config_generation]
+        # => [is_priced, converted_amount, unpriced_asset_policy]
 
-        if.true
-            movup.3 movdn.4
-            # => [converted_amount, limit, window_index, config_generation, unpriced_asset_policy]
-
-            exec.charge_budget
-            # => [unpriced_asset_policy]
-
-            push.1
-            # => [is_charged = 1, unpriced_asset_policy]
-        else
-            # The oracle has no rate for the asset.
-            drop drop drop swap drop
-            # => [unpriced_asset_policy]
-
-            push.0
-            # => [is_charged = 0, unpriced_asset_policy]
-        end
+        movup.2 swap
+        # => [is_priced, unpriced_asset_policy, converted_amount]
     else
-        # No budget is configured, so nothing can be charged.
-        drop drop dropw drop swap drop
+        # No budget is configured, so nothing can be priced into it.
+        drop drop dropw
         # => [unpriced_asset_policy]
 
-        push.0
-        # => [is_charged = 0, unpriced_asset_policy]
+        push.0 swap push.0
+        # => [is_priced = 0, unpriced_asset_policy, converted_amount = 0]
     end
-    # => [is_charged, unpriced_asset_policy]
+    # => [is_priced, unpriced_asset_policy, converted_amount]
 
     swap eq.UNPRICED_ASSET_REJECT not or
-    # => [is_allowed]
+    # => [is_allowed, converted_amount]
 
     assert.err=ERR_UNPRICED_ASSET_REJECTED
-    # => []
+    # => [converted_amount]
 end
 
 #! Converts an amount of an asset into the base asset through the configured price oracle.
