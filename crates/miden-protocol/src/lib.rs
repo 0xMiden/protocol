@@ -11,6 +11,7 @@ pub mod address;
 pub mod asset;
 pub mod batch;
 pub mod block;
+pub mod code;
 mod domain_registry;
 pub mod errors;
 pub mod note;
@@ -19,6 +20,7 @@ mod protocol;
 pub mod protocol_config;
 pub(crate) mod script;
 pub mod transaction;
+pub mod types;
 
 #[cfg(any(feature = "testing", test))]
 pub mod testing;
@@ -39,6 +41,7 @@ pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};
 pub use protocol::ProtocolLib;
 pub use script::MastForestScriptError;
+pub use types::DoubleWord;
 
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};

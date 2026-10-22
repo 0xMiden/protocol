@@ -35,7 +35,6 @@
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -401,55 +400,6 @@ impl TokenMetadata {
     /// Returns the [`StorageSlotName`] for an external link chunk by index (0..=6).
     pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
         &EXTERNAL_LINK_SLOTS[index]
-    }
-
-    /// Returns the storage slot schema entries describing the token metadata layout
-    /// (name chunks, mutability config, description, logo URI, external link).
-    ///
-    /// Embedding components should call this and extend their own schema with the result.
-    pub fn storage_schema() -> Vec<(StorageSlotName, StorageSlotSchema)> {
-        let mut entries: Vec<(StorageSlotName, StorageSlotSchema)> = Vec::new();
-
-        for (i, slot) in NAME_SLOTS.iter().enumerate() {
-            entries.push((
-                slot.clone(),
-                StorageSlotSchema::value(
-                    alloc::format!("Name chunk {i}"),
-                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
-                ),
-            ));
-        }
-
-        entries.push((
-            MUTABILITY_CONFIG_SLOT.clone(),
-            StorageSlotSchema::value(
-                "Mutability config",
-                [
-                    FeltSchema::bool("is_description_mutable"),
-                    FeltSchema::bool("is_logo_uri_mutable"),
-                    FeltSchema::bool("is_external_link_mutable"),
-                    FeltSchema::bool("is_max_supply_mutable"),
-                ],
-            ),
-        ));
-
-        for (label, slots) in [
-            ("Description", DESCRIPTION_SLOTS.as_slice()),
-            ("Logo URI", LOGO_URI_SLOTS.as_slice()),
-            ("External link", EXTERNAL_LINK_SLOTS.as_slice()),
-        ] {
-            for (i, slot) in slots.iter().enumerate() {
-                entries.push((
-                    slot.clone(),
-                    StorageSlotSchema::value(
-                        alloc::format!("{label} chunk {i}"),
-                        core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
-                    ),
-                ));
-            }
-        }
-
-        entries
     }
 
     // STORAGE

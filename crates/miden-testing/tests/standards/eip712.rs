@@ -285,19 +285,20 @@ async fn verify_transaction_summary_signature(
 ) -> Result<(), ExecError> {
     let witness = encode_signature(public_key, signature);
     let public_key_commitment = public_key.to_commitment();
+    let advice_map_key = Word::from([9u32; 4]);
     let script = format!(
         r#"
-            use miden::standards::auth::eip712_transaction_summary
+            use miden::standards::auth::eip712
 
             begin
-                push.9.9.9.9 adv.push_mapval dropw
+                push.{advice_map_key} adv.push_mapval dropw
                 push.{tx_summary_hash}
                 push.{public_key_commitment}
-                exec.eip712_transaction_summary::verify
+                exec.eip712::transaction_summary::verify
             end
         "#
     );
-    let advice = AdviceInputs::default().with_map([(Word::from([9u32; 4]), witness)]);
+    let advice = AdviceInputs::default().with_map([(advice_map_key, witness)]);
 
     CodeExecutor::with_default_host()
         .extend_advice_inputs(advice)

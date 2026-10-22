@@ -1,6 +1,5 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
     AccountStorage,
     StorageMap,
@@ -71,18 +70,6 @@ impl NetworkAccountTxScriptAllowlist {
     /// Consumes this allowlist and returns the allowed transaction script roots.
     pub fn into_allowed_script_roots(self) -> BTreeSet<TransactionScriptRoot> {
         self.allowed_script_roots
-    }
-
-    /// Returns the schema entry for the allowlist slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::map(
-                "Allowed transaction script roots",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
     }
 
     /// Extends the set of allowed tx script roots.
