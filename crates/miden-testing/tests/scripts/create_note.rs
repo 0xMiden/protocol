@@ -1,19 +1,22 @@
 use std::collections::BTreeMap;
 
 use miden_processor::advice::AdviceInputs;
+use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountType};
 use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::errors::tx_kernel::{
+    ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
+    ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
     NoteRecipient,
-    NoteStorage,
     NoteType,
-    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -21,16 +24,9 @@ use miden_protocol::testing::account_id::{
     AccountIdBuilder,
 };
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::{
-    ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE,
-    ERR_CREATE_NOTE_FUNDING_MISMATCH,
-    ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS,
-    ERR_CREATE_NOTE_OUTPUT_ALTERED,
-    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT,
-};
+use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT;
 use miden_standards::note::{CreateNote, P2idNote, TxFeeNote};
 use miden_testing::{
     AccountState,
@@ -106,17 +102,8 @@ async fn create_note_preserves_output_and_pays_fee(
         let fee = assets.pop().unwrap();
         assets.insert(index, fee);
         let assets = NoteAssets::new(assets)?;
-        let mut storage = input.storage().items().to_vec();
-        storage[4..8].copy_from_slice(assets.commitment().as_elements());
-        input = Note::new(
-            assets,
-            input.metadata().into_partial_metadata(),
-            NoteRecipient::new(
-                input.serial_num(),
-                CreateNote::script(),
-                NoteStorage::new(storage)?,
-            ),
-        );
+        input =
+            Note::new(assets, input.metadata().into_partial_metadata(), input.recipient().clone());
         builder.add_output_note(RawOutputNote::Full(input.clone()));
     }
     let chain = builder.build()?;
@@ -186,164 +173,6 @@ async fn create_note_rejects_other_consumers() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn create_note_rejects_changed_input_assets() -> anyhow::Result<()> {
-    let (mut builder, _, passthrough, create_note) = setup(NoteType::Public, true, Some(50), 0)?;
-    let malformed = Note::new(
-        NoteAssets::new(vec![FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 151)?.into()])?,
-        create_note.note().metadata().into_partial_metadata(),
-        create_note.note().recipient().clone(),
-    );
-    builder.add_output_note(RawOutputNote::Full(malformed.clone()));
-    let chain = builder.build()?;
-    let result = chain
-        .build_transaction(passthrough.id())
-        .authenticated_input_notes([malformed])
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FUNDING_MISMATCH);
-    Ok(())
-}
-
-#[rstest]
-#[case::empty_output(None, false)]
-#[case::fee_only(None, true)]
-#[case::nft(Some(NonFungibleAsset::mock(&[1, 2, 3, 4])), false)]
-#[case::zero_amount(Some(FungibleAsset::mock(0)), false)]
-#[tokio::test]
-async fn create_note_rejects_unsupported_output_assets(
-    #[case] output_asset: Option<Asset>,
-    #[case] fee_only: bool,
-) -> anyhow::Result<()> {
-    let (mut builder, _, passthrough, template) = setup(NoteType::Public, true, Some(50), 0)?;
-    let assets = NoteAssets::new(if fee_only {
-        vec![template.fee().unwrap().into()]
-    } else {
-        output_asset.into_iter().collect()
-    })?;
-    let mut storage = template.note().storage().items().to_vec();
-    storage[4..8].copy_from_slice(assets.commitment().as_elements());
-    if !fee_only {
-        storage[8..16].fill(ZERO);
-    }
-    let note = Note::new(
-        assets,
-        template.note().metadata().into_partial_metadata(),
-        NoteRecipient::new(
-            builder.rng_mut().draw_word(),
-            CreateNote::script(),
-            NoteStorage::new(storage)?,
-        ),
-    );
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
-    let chain = builder.build()?;
-    let result = chain
-        .build_transaction(passthrough.id())
-        .authenticated_input_notes([note])
-        .extend_advice_inputs(AdviceInputs::default().with_map(template.output_advice()))
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS);
-    Ok(())
-}
-
-#[tokio::test]
-async fn create_note_rejects_funding_removed_by_an_earlier_input() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let drained = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1)?;
-    let code = CodeBuilder::default().compile_component_code(
-        "tests::create_note_drain",
-        format!(
-            r#"
-        use miden::protocol::input_note
-        use miden::protocol::native_account
-        @account_procedure
-        pub proc drain
-            push.1 push.{value} push.{id}
-            exec.input_note::remove_asset dropw
-            push.{value} push.{id}
-            exec.native_account::add_asset dropw
-        end
-        "#,
-            value = drained.to_value_word(),
-            id = drained.to_id_word()
-        ),
-    )?;
-    let drain = AccountComponent::new(
-        code,
-        vec![],
-        AccountComponentMetadata::new("tests::create_note_drain"),
-    )?;
-    let helper_script = CodeBuilder::default()
-        .with_dynamically_linked_package(drain.component_code())?
-        .compile_note_script(
-            r#"
-        @note_script
-        pub proc main
-            call.::tests::create_note_drain::drain
-        end
-        "#,
-        )?;
-    let account = builder.add_account_from_builder(
-        Auth::IncrNonce,
-        AccountBuilder::new([43; 32])
-            .account_type(AccountType::Public)
-            .with_component(BasicWallet)
-            .with_component(drain),
-        AccountState::Exists,
-    )?;
-    let output: Note = P2idNote::builder()
-        .sender(account.id())
-        .target(sender.id())
-        .serial_number(builder.rng_mut().draw_word())
-        .asset(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 100)?)
-        .build()?
-        .into();
-    let create_note = CreateNote::new(sender.id(), builder.rng_mut().draw_word(), output, None)?;
-    let helper = Note::new(
-        NoteAssets::default(),
-        PartialNoteMetadata::new(sender.id(), NoteType::Private),
-        NoteRecipient::new(builder.rng_mut().draw_word(), helper_script, NoteStorage::default()),
-    );
-    builder.add_output_note(RawOutputNote::Full(helper.clone()));
-    builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
-    let chain = builder.build()?;
-    let result = chain
-        .build_transaction(account.id())
-        .authenticated_input_notes([helper, create_note.note().clone()])
-        .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FUNDING_MISMATCH);
-    Ok(())
-}
-
-#[tokio::test]
-async fn create_note_rejects_fee_in_another_asset() -> anyhow::Result<()> {
-    let (mut builder, sender, passthrough, valid) = setup(NoteType::Public, false, None, 0)?;
-    let create_note = CreateNote::new(
-        sender.id(),
-        builder.rng_mut().draw_word(),
-        valid.output().clone(),
-        Some(FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 50)?),
-    )?;
-    builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
-    let chain = builder.build()?;
-    let result = chain
-        .build_transaction(passthrough.id())
-        .authenticated_input_notes([create_note.note().clone()])
-        .extend_advice_inputs(AdviceInputs::default().with_map(create_note.output_advice()))
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE);
-    Ok(())
-}
-
 #[rstest]
 #[case::missing(0)]
 #[case::insufficient(49)]
@@ -355,17 +184,10 @@ async fn create_note_rejects_underfunded_fee(#[case] available_fee: u64) -> anyh
         assets.push(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, available_fee)?.into());
     }
     let assets = NoteAssets::new(assets)?;
-    let mut storage = valid.note().storage().items().to_vec();
-    // Keep the input commitment valid so execution reaches the fee deduction checks.
-    storage[4..8].copy_from_slice(assets.commitment().as_elements());
     let input = Note::new(
         assets,
         valid.note().metadata().into_partial_metadata(),
-        NoteRecipient::new(
-            valid.note().serial_num(),
-            CreateNote::script(),
-            NoteStorage::new(storage)?,
-        ),
+        valid.note().recipient().clone(),
     );
     builder.add_output_note(RawOutputNote::Full(input.clone()));
     let chain = builder.build()?;
@@ -376,7 +198,12 @@ async fn create_note_rejects_underfunded_fee(#[case] available_fee: u64) -> anyh
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_CREATE_NOTE_FUNDING_MISMATCH);
+    let expected_error = if available_fee == 0 {
+        ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND
+    } else {
+        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    };
+    assert_transaction_executor_error!(result, expected_error);
     Ok(())
 }
 
@@ -457,7 +284,7 @@ async fn create_note_leaves_outputs_unsealed(
 #[case::attachment(false)]
 #[case::asset_change(true)]
 #[tokio::test]
-async fn create_note_checks_assets_after_callbacks(
+async fn create_note_allows_callback_changes(
     #[case] change_assets: bool,
     #[values(false, true)] fee_output: bool,
 ) -> anyhow::Result<()> {
@@ -467,7 +294,8 @@ async fn create_note_checks_assets_after_callbacks(
     let attachment_word = Word::from([1u32, 2, 3, 4]);
     let callback_body = if change_assets {
         format!(
-            "push.{} push.{} exec.output_note::add_asset",
+            "push.{} push.{} dupw.1 dupw.1 exec.native_account::remove_asset dropw \
+             exec.output_note::add_asset",
             extra_asset.to_value_word(),
             extra_asset.to_id_word(),
         )
@@ -479,6 +307,7 @@ async fn create_note_checks_assets_after_callbacks(
         "tests::create_note_callback",
         format!(
             r#"
+        use miden::protocol::native_account
         use miden::protocol::output_note
         @account_procedure
         pub proc on_before_asset_added_to_note
@@ -502,16 +331,22 @@ async fn create_note_checks_assets_after_callbacks(
         Auth::IncrNonce,
         AccountBuilder::new([91; 32])
             .account_type(AccountType::Public)
+            .with_assets([extra_asset.into()])
             .with_component(BasicWallet)
             .with_component(callback),
         AccountState::Exists,
     )?;
+    let mut output_assets = vec![FungibleAsset::new(account.id(), 100)?];
+    if change_assets && !fee_output {
+        // Fund this asset first so the callback increases an existing balance.
+        output_assets.insert(0, extra_asset);
+    }
     let output: Note = P2idNote::builder()
         .sender(account.id())
         .target(sender.id())
         .serial_number(builder.rng_mut().draw_word())
         .note_type(NoteType::Public)
-        .asset(FungibleAsset::new(account.id(), 100)?)
+        .assets(output_assets)
         .build()?
         .into();
     let fee = fee_output.then_some(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 50)?);
@@ -525,27 +360,31 @@ async fn create_note_checks_assets_after_callbacks(
         .build()?
         .execute()
         .await;
-    if change_assets {
-        assert_transaction_executor_error!(result, ERR_CREATE_NOTE_OUTPUT_ALTERED);
-        return Ok(());
-    }
     let tx = result?;
-    let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, attachment_word);
-    if let Some(fee) = fee {
+    let index = usize::from(fee_output);
+    let actual = tx.output_notes().get_note(index);
+    let expected_assets = if let Some(fee) = fee {
         assert_eq!(tx.output_notes().get_note(0).id(), create_note.output().id());
-        let fee_note = tx.output_notes().get_note(1);
-        assert_eq!(fee_note.metadata().tag(), TxFeeNote::TAG);
-        assert_eq!(fee_note.assets(), &NoteAssets::new(vec![fee.into()])?);
-        assert_eq!(fee_note.attachments(), &attachment.into());
-        return Ok(());
+        assert_eq!(actual.metadata().tag(), TxFeeNote::TAG);
+        vec![if change_assets {
+            fee.add(extra_asset)?.into()
+        } else {
+            fee.into()
+        }]
+    } else {
+        let mut assets = create_note.output().assets().clone().into_vec();
+        if change_assets {
+            assets[0] = extra_asset.add(extra_asset)?.into();
+        }
+        assets
+    };
+    if change_assets {
+        assert!(actual.attachments().is_empty());
+    } else {
+        let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, attachment_word);
+        assert_eq!(actual.attachments(), &attachment.into());
     }
-    let expected = Note::with_attachments(
-        create_note.output().assets().clone(),
-        create_note.output().metadata().into_partial_metadata(),
-        create_note.output().recipient().clone(),
-        attachment.into(),
-    );
-    assert_eq!(tx.output_notes().get_note(0).id(), expected.id());
+    assert_eq!(actual.assets(), &NoteAssets::new(expected_assets)?);
     Ok(())
 }
 
@@ -574,6 +413,14 @@ fn create_note_validates_funding() -> anyhow::Result<()> {
         output.recipient().clone(),
     );
     assert!(make(empty, create_note.fee()).is_err());
+    for asset in [NonFungibleAsset::mock(&[1, 2, 3, 4]), FungibleAsset::mock(0)] {
+        let unsupported = Note::new(
+            NoteAssets::new(vec![asset])?,
+            output.metadata().into_partial_metadata(),
+            output.recipient().clone(),
+        );
+        assert!(make(unsupported, create_note.fee()).is_err());
+    }
     let maximal: Note = P2idNote::builder()
         .sender(passthrough.id())
         .target(sender.id())
