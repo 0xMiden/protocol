@@ -5,17 +5,17 @@ use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::errors::AccountError;
 use miden_protocol::{Felt, Word, ZERO};
 
-// UNCOVERED ASSET POLICY
+// UNPRICED ASSET POLICY
 // ================================================================================================
 
-/// How a fungible asset the spending budget did not charge is treated.
+/// How a fungible asset the budget cannot price is treated.
 ///
-/// An asset is covered when the budget is configured and the asset is either the base asset or one
-/// the oracle priced into it. Anything else falls to this policy.
+/// An asset is priced when the budget is configured and it is either the base asset or one the
+/// oracle has a rate for. Anything else falls to this policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
 #[non_exhaustive]
-pub enum UncoveredAssetPolicy {
+pub enum UnpricedAssetPolicy {
     /// The asset is not metered.
     Allow = 0,
     /// The transaction fails.
@@ -23,7 +23,7 @@ pub enum UncoveredAssetPolicy {
     Reject = 1,
 }
 
-impl UncoveredAssetPolicy {
+impl UnpricedAssetPolicy {
     /// Returns the value the MASM policy stores and compares against.
     pub const fn as_u32(self) -> u32 {
         self as u32
@@ -65,7 +65,7 @@ impl SpendingOracle {
 /// The spending budget: one limit denominated in `base_asset`.
 ///
 /// The base asset is charged one to one. Any other fungible asset is charged at the rate the
-/// oracle quotes for it, and falls to the [`UncoveredAssetPolicy`] when there is no oracle or the
+/// oracle quotes for it, and falls to the [`UnpricedAssetPolicy`] when there is no oracle or the
 /// oracle has no rate for it. A budget without an oracle therefore bounds the base asset alone and
 /// needs no foreign account inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,15 +125,15 @@ impl SpendingBudget {
 /// by referencing a block in an idle window.
 ///
 /// An asset that is neither the base asset nor priced by the oracle falls to the
-/// [`UncoveredAssetPolicy`]. Non-fungible assets are not metered.
+/// [`UnpricedAssetPolicy`]. Non-fungible assets are not metered.
 ///
 /// # Faulty oracle
 ///
 /// An oracle without a rate for an asset makes that asset fall to the policy, and an unavailable
-/// oracle fails the transaction, so under [`UncoveredAssetPolicy::Reject`] every non-base asset
+/// oracle fails the transaction, so under [`UnpricedAssetPolicy::Reject`] every non-base asset
 /// stops until governance acts. The intended response is to unset the oracle through
 /// `update_spending_oracle`: the base asset keeps being charged under the limit and everything
-/// else falls to the policy. Switching to another oracle, or to [`UncoveredAssetPolicy::Allow`],
+/// else falls to the policy. Switching to another oracle, or to [`UnpricedAssetPolicy::Allow`],
 /// is only needed to move other assets.
 ///
 /// # Security
@@ -147,24 +147,24 @@ impl SpendingBudget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpendingLimitsPolicy {
     window_blocks: NonZeroU32,
-    uncovered_assets: UncoveredAssetPolicy,
+    unpriced_assets: UnpricedAssetPolicy,
     budget: SpendingBudget,
 }
 
 impl SpendingLimitsPolicy {
     /// Creates a policy with the given window length and budget and the default
-    /// [`UncoveredAssetPolicy`].
+    /// [`UnpricedAssetPolicy`].
     pub fn new(window_blocks: NonZeroU32, budget: SpendingBudget) -> Self {
         Self {
             window_blocks,
-            uncovered_assets: UncoveredAssetPolicy::default(),
+            unpriced_assets: UnpricedAssetPolicy::default(),
             budget,
         }
     }
 
-    /// Sets how assets the budget does not charge are treated.
-    pub fn with_uncovered_assets(mut self, policy: UncoveredAssetPolicy) -> Self {
-        self.uncovered_assets = policy;
+    /// Sets how assets the budget cannot price are treated.
+    pub fn with_unpriced_assets(mut self, policy: UnpricedAssetPolicy) -> Self {
+        self.unpriced_assets = policy;
         self
     }
 
@@ -172,8 +172,8 @@ impl SpendingLimitsPolicy {
         self.window_blocks
     }
 
-    pub const fn uncovered_assets(&self) -> UncoveredAssetPolicy {
-        self.uncovered_assets
+    pub const fn unpriced_assets(&self) -> UnpricedAssetPolicy {
+        self.unpriced_assets
     }
 
     pub const fn budget(&self) -> &SpendingBudget {
@@ -183,9 +183,9 @@ impl SpendingLimitsPolicy {
     // STORAGE ENCODING
     // --------------------------------------------------------------------------------------------
 
-    /// `[window_blocks, uncovered_asset_policy, config_generation = 0, 0]`.
+    /// `[window_blocks, unpriced_asset_policy, config_generation = 0, 0]`.
     pub(super) fn config_word(&self) -> Word {
-        Word::from([self.window_blocks.get(), self.uncovered_assets.as_u32(), 0, 0])
+        Word::from([self.window_blocks.get(), self.unpriced_assets.as_u32(), 0, 0])
     }
 
     /// `[oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0]`, or the empty word without
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn config_word_encodes_window_and_policy() {
         let policy = SpendingLimitsPolicy::new(window(), budget())
-            .with_uncovered_assets(UncoveredAssetPolicy::Allow);
+            .with_unpriced_assets(UnpricedAssetPolicy::Allow);
         assert_eq!(policy.config_word(), Word::from([32_768u32, 0, 0, 0]));
 
         let policy = SpendingLimitsPolicy::new(window(), budget());

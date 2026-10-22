@@ -12,5 +12,5 @@ pub use spending_limits::{
     SpendingBudget,
     SpendingLimitsPolicy,
     SpendingOracle,
-    UncoveredAssetPolicy,
+    UnpricedAssetPolicy,
 };

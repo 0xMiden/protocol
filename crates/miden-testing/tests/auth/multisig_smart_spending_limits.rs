@@ -34,7 +34,7 @@ use miden_standards::account::auth::multisig_smart::{
     SpendingBudget,
     SpendingLimitsPolicy,
     SpendingOracle,
-    UncoveredAssetPolicy,
+    UnpricedAssetPolicy,
 };
 use miden_standards::account::auth::{
     Approver,
@@ -52,8 +52,8 @@ use miden_standards::errors::standards::{
     ERR_MAX_ORACLE_BLOCK_AGE_ZERO,
     ERR_SPENDING_LIMIT_EXCEEDED,
     ERR_SPENDING_LIMIT_REQUIRES_BASE_ASSET,
-    ERR_UNCOVERED_ASSET_POLICY_INVALID,
-    ERR_UNCOVERED_ASSET_REJECTED,
+    ERR_UNPRICED_ASSET_POLICY_INVALID,
+    ERR_UNPRICED_ASSET_REJECTED,
 };
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -167,9 +167,9 @@ fn budget(oracle: Option<AccountId>) -> SpendingBudget {
     }
 }
 
-fn policy(oracle: Option<AccountId>, uncovered: UncoveredAssetPolicy) -> SpendingLimitsPolicy {
+fn policy(oracle: Option<AccountId>, unpriced: UnpricedAssetPolicy) -> SpendingLimitsPolicy {
     SpendingLimitsPolicy::new(NonZeroU32::new(WINDOW_BLOCKS).unwrap(), budget(oracle))
-        .with_uncovered_assets(uncovered)
+        .with_unpriced_assets(unpriced)
 }
 
 fn rate_providers_code() -> anyhow::Result<AccountComponentCode> {
@@ -245,18 +245,15 @@ struct Harness {
 
 impl Harness {
     /// A 2-of-2 multisig, next to an oracle account dispatching to the named rate provider when one
-    /// is given. With an uncovered-asset policy given, the account gets the spending-limit policy
+    /// is given. With an unpriced-asset policy given, the account gets the spending-limit policy
     /// with a USDCX budget, priced through that oracle if any; without one, spending limits are
     /// disabled.
-    fn new(
-        uncovered: Option<UncoveredAssetPolicy>,
-        provider: Option<&str>,
-    ) -> anyhow::Result<Self> {
+    fn new(unpriced: Option<UnpricedAssetPolicy>, provider: Option<&str>) -> anyhow::Result<Self> {
         let (_secret_keys, _schemes, public_keys, authenticators) =
             setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
 
         let oracle = provider.map(oracle_account).transpose()?;
-        let policy = uncovered.map(|uncovered| policy(oracle.as_ref().map(Account::id), uncovered));
+        let policy = unpriced.map(|unpriced| policy(oracle.as_ref().map(Account::id), unpriced));
         let account = multisig_account(2, &public_keys, policy)?;
 
         let mut accounts = vec![account.clone()];
@@ -273,15 +270,15 @@ impl Harness {
         })
     }
 
-    /// The default setup: the policy enabled with `reject` for uncovered assets and an oracle that
+    /// The default setup: the policy enabled with `reject` for unpriced assets and an oracle that
     /// prices every pair at `ORACLE_RATE`.
     fn with_policy() -> anyhow::Result<Self> {
-        Self::new(Some(UncoveredAssetPolicy::Reject), Some(FIXED_RATE_PROVIDER))
+        Self::new(Some(UnpricedAssetPolicy::Reject), Some(FIXED_RATE_PROVIDER))
     }
 
-    /// The policy enabled with the given uncovered-asset policy and no oracle at all.
-    fn without_oracle(uncovered: UncoveredAssetPolicy) -> anyhow::Result<Self> {
-        Self::new(Some(uncovered), None)
+    /// The policy enabled with the given unpriced-asset policy and no oracle at all.
+    fn without_oracle(unpriced: UnpricedAssetPolicy) -> anyhow::Result<Self> {
+        Self::new(Some(unpriced), None)
     }
 
     fn next_salt(&mut self) -> Word {
@@ -603,8 +600,8 @@ async fn a_disabled_policy_does_not_meter() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn non_fungible_assets_are_not_metered() -> anyhow::Result<()> {
-    // `reject` for uncovered assets and no price for the NFT: the send still goes through.
-    let mut h = Harness::new(Some(UncoveredAssetPolicy::Reject), Some(UNPRICED_PROVIDER))?;
+    // `reject` for unpriced assets and no price for the NFT: the send still goes through.
+    let mut h = Harness::new(Some(UnpricedAssetPolicy::Reject), Some(UNPRICED_PROVIDER))?;
 
     h.send(nft()).await?;
 
@@ -664,21 +661,21 @@ async fn the_budget_accumulates_across_assets() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[case::reject(UncoveredAssetPolicy::Reject)]
-#[case::allow(UncoveredAssetPolicy::Allow)]
+#[case::reject(UnpricedAssetPolicy::Reject)]
+#[case::allow(UnpricedAssetPolicy::Allow)]
 #[tokio::test]
 async fn an_unpriced_asset_falls_to_the_policy(
-    #[case] uncovered: UncoveredAssetPolicy,
+    #[case] unpriced: UnpricedAssetPolicy,
 ) -> anyhow::Result<()> {
-    let mut h = Harness::new(Some(uncovered), Some(UNPRICED_PROVIDER))?;
+    let mut h = Harness::new(Some(unpriced), Some(UNPRICED_PROVIDER))?;
 
     let result = h.send_signed(fungible(eth(), 10), &[0, 1], None).await?;
 
-    match uncovered {
-        UncoveredAssetPolicy::Reject => {
-            assert_transaction_executor_error!(result, ERR_UNCOVERED_ASSET_REJECTED);
+    match unpriced {
+        UnpricedAssetPolicy::Reject => {
+            assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
         },
-        UncoveredAssetPolicy::Allow => {
+        UnpricedAssetPolicy::Allow => {
             result?;
             assert_eq!(h.tracker(), Word::empty());
         },
@@ -750,13 +747,13 @@ async fn a_priced_spend_without_the_oracle_account_fails() -> anyhow::Result<()>
 }
 
 #[rstest]
-#[case::reject(UncoveredAssetPolicy::Reject)]
-#[case::allow(UncoveredAssetPolicy::Allow)]
+#[case::reject(UnpricedAssetPolicy::Reject)]
+#[case::allow(UnpricedAssetPolicy::Allow)]
 #[tokio::test]
 async fn without_an_oracle_only_the_base_asset_is_priced(
-    #[case] uncovered: UncoveredAssetPolicy,
+    #[case] unpriced: UnpricedAssetPolicy,
 ) -> anyhow::Result<()> {
-    let mut h = Harness::without_oracle(uncovered)?;
+    let mut h = Harness::without_oracle(unpriced)?;
     let block = h.latest_block();
 
     // The base asset is charged one to one with no foreign inputs at all.
@@ -765,11 +762,11 @@ async fn without_an_oracle_only_the_base_asset_is_priced(
 
     // Everything else is unpriced and falls to the policy.
     let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
-    match uncovered {
-        UncoveredAssetPolicy::Reject => {
-            assert_transaction_executor_error!(result, ERR_UNCOVERED_ASSET_REJECTED);
+    match unpriced {
+        UnpricedAssetPolicy::Reject => {
+            assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
         },
-        UncoveredAssetPolicy::Allow => {
+        UnpricedAssetPolicy::Allow => {
             result?;
             assert_eq!(h.tracker()[0], Felt::new_unchecked(60_000));
         },
@@ -791,7 +788,7 @@ async fn unsetting_the_oracle_keeps_the_base_asset_under_the_limit() -> anyhow::
     h.oracle = None;
 
     let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
-    assert_transaction_executor_error!(result, ERR_UNCOVERED_ASSET_REJECTED);
+    assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
 
     h.send(fungible(usdcx(), 60_000)).await?;
     assert_eq!(h.tracker()[0], Felt::new_unchecked(10 * ORACLE_RATE + 60_000));
@@ -816,12 +813,12 @@ fn set_limit_script(limit: u64) -> String {
     )
 }
 
-fn update_policy_script(window_blocks: u32, uncovered_policy: u32) -> String {
+fn update_policy_script(window_blocks: u32, unpriced_policy: u32) -> String {
     format!(
         "
         @transaction_script
         pub proc main
-            push.{uncovered_policy}
+            push.{unpriced_policy}
             push.{window_blocks}
             call.::miden::standards::components::auth::multisig_smart::update_spending_limits_policy
             drop drop
@@ -881,11 +878,11 @@ async fn set_spending_limit_writes_and_clears_the_slot() -> anyhow::Result<()> {
     let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
-    // A cleared limit leaves every fungible asset uncovered, the base asset included.
+    // A cleared limit leaves every fungible asset unpriced, the base asset included.
     h.configure(&set_limit_script(0)).await??;
     assert_eq!(h.limit(), Word::empty());
     let result = h.send_signed(fungible(usdcx(), 1), &[0, 1], None).await?;
-    assert_transaction_executor_error!(result, ERR_UNCOVERED_ASSET_REJECTED);
+    assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
     Ok(())
 }
 
@@ -896,13 +893,13 @@ async fn changing_the_window_length_resets_the_tracker() -> anyhow::Result<()> {
     h.send(fungible(usdcx(), 60_000)).await?;
 
     // Re-saving the same window length keeps the running total.
-    h.configure(&update_policy_script(WINDOW_BLOCKS, UncoveredAssetPolicy::Reject.as_u32()))
+    h.configure(&update_policy_script(WINDOW_BLOCKS, UnpricedAssetPolicy::Reject.as_u32()))
         .await??;
     let result = h.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
     // A different window length bumps the generation and the total starts over.
-    h.configure(&update_policy_script(WINDOW_BLOCKS * 2, UncoveredAssetPolicy::Reject.as_u32()))
+    h.configure(&update_policy_script(WINDOW_BLOCKS * 2, UnpricedAssetPolicy::Reject.as_u32()))
         .await??;
     h.send(fungible(usdcx(), 50_000)).await?;
     assert_eq!(h.tracker()[0], Felt::new_unchecked(50_000));
@@ -911,12 +908,12 @@ async fn changing_the_window_length_resets_the_tracker() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn update_spending_limits_policy_rejects_an_invalid_uncovered_policy() -> anyhow::Result<()> {
+async fn update_spending_limits_policy_rejects_an_invalid_unpriced_policy() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
 
     let result = h.configure(&update_policy_script(WINDOW_BLOCKS, 2)).await?;
 
-    assert_transaction_executor_error!(result, ERR_UNCOVERED_ASSET_POLICY_INVALID);
+    assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_POLICY_INVALID);
     Ok(())
 }
 
@@ -1078,7 +1075,7 @@ async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow
 #[tokio::test]
 async fn disabling_and_re_enabling_the_policy_bumps_the_generation_twice() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
-    let reject = UncoveredAssetPolicy::Reject.as_u32();
+    let reject = UnpricedAssetPolicy::Reject.as_u32();
 
     h.send(fungible(usdcx(), 60_000)).await?;
     assert_eq!(h.config()[2], Felt::from(0u32));

@@ -51,10 +51,10 @@ type        = { key = "word", value = "word" }
 [[package.metadata.account-component.storage.slots]]
 description = "Spending limits configuration"
 name        = "miden::standards::auth::multisig_smart::spending_config"
-# Word layout: [window_blocks, uncovered_asset_policy, config_generation, 0]
+# Word layout: [window_blocks, unpriced_asset_policy, config_generation, 0]
 type = [
   { name = "window_blocks", type = "u32" },
-  { name = "uncovered_asset_policy", type = "u8" },
+  { name = "unpriced_asset_policy", type = "u8" },
   { name = "config_generation", type = "felt" },
   { type = "void" },
 ]
