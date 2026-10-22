@@ -1,12 +1,15 @@
 use miden::core::word
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::asset
-use {ASSET_SIZE, COMPOSITION_FUNGIBLE, FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
+use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::protocol::asset
 use {MAX_ASSETS_PER_NOTE} from miden::protocol::constants
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use {AccountId, AssetAmount, AssetId, AssetValue, Bool} from miden::protocol::types
+use miden::standards::assets::fungible_asset
 use miden::standards::fee
 use miden::standards::oracle::price_oracle
 
@@ -70,9 +73,6 @@ const UNPRICED_ASSET_POLICY_MAX = UNPRICED_ASSET_REJECT
 # Scratch area for the assets of one output note.
 const NOTE_ASSETS_NUM_ELEMENTS = MAX_ASSETS_PER_NOTE * ASSET_SIZE
 
-# Largest delta `tx::update_expiration_block_delta` accepts (u16).
-const MAX_EXPIRATION_BLOCK_DELTA = 65535
-
 # ERRORS
 # =================================================================================================
 
@@ -95,14 +95,6 @@ const ENFORCE_ASSET_PTR_LOC = ENFORCE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
 const ENFORCE_WINDOW_INDEX_LOC = ENFORCE_ASSET_PTR_LOC + 1
 const ENFORCE_UNPRICED_POLICY_LOC = ENFORCE_WINDOW_INDEX_LOC + 1
 const ENFORCE_GENERATION_LOC = ENFORCE_UNPRICED_POLICY_LOC + 1
-
-# LOCAL ADDRESSES (convert_to_base_asset)
-# =================================================================================================
-
-const CONVERT_AMOUNT_LOC = 0
-const CONVERT_MAX_BLOCK_AGE_LOC = 1
-const CONVERT_ORACLE_ID_SUFFIX_LOC = 2
-const CONVERT_ORACLE_ID_PREFIX_LOC = 3
 
 # CONFIGURATION
 # =================================================================================================
@@ -150,12 +142,7 @@ pub proc update_spending_limits_policy(window_blocks: u32, unpriced_asset_policy
     swap drop
     # => [old_window_blocks, old_generation, window_blocks, unpriced_asset_policy]
 
-    dup.2 neq
-    # => [is_new_window_length, old_generation, window_blocks, unpriced_asset_policy]
-
-    if.true
-        add.1
-    end
+    dup.2 neq add
     # => [config_generation, window_blocks, unpriced_asset_policy]
 
     movdn.2 push.0 movdn.3
@@ -205,24 +192,23 @@ end
 #! Invocation: call
 @account_procedure
 pub proc update_spending_oracle(oracle_id: AccountId, max_oracle_block_age: u16, base_asset_id: AssetId)
-    # ----- A budget in a non-fungible unit would be meaningless. -----
-    movdn.6 movdn.6 movdn.6
-    # => [BASE_ASSET_ID, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age]
+    push.0 movdn.3
+    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
 
-    dupw exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
-    # => [is_fungible, BASE_ASSET_ID, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age]
+    # ----- A budget in a non-fungible unit would be meaningless. -----
+    dupw.1 exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
 
     assert.err=ERR_BASE_ASSET_NOT_FUNGIBLE
-    # => [BASE_ASSET_ID, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age]
+    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
 
-    movdn.6 movdn.6 movdn.6 movdn.6
-    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, BASE_ASSET_ID]
+    exec.account_id::testz
+    # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0,
+    #     BASE_ASSET_ID]
 
-    movup.2
-    # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, BASE_ASSET_ID]
-
-    dup.1 eq.0 dup.3 eq.0 and
-    # => [is_oracle_unset, max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, BASE_ASSET_ID]
+    movup.3 swap
+    # => [is_oracle_unset, max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0,
+    #     BASE_ASSET_ID]
 
     if.true
         # ----- No oracle: the block-age bound has nothing to bound. -----
@@ -232,9 +218,9 @@ pub proc update_spending_oracle(oracle_id: AccountId, max_oracle_block_age: u16,
         dup eq.0 assertz.err=ERR_MAX_ORACLE_BLOCK_AGE_ZERO
         dup u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16
     end
-    # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, BASE_ASSET_ID]
+    # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0, BASE_ASSET_ID]
 
-    movdn.2 push.0 movdn.3
+    movdn.2
     # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
 
     push.SPENDING_ORACLE_SLOT[0..2]
@@ -632,87 +618,63 @@ end
 #! - the converted amount overflows a fungible asset amount (`fee::convert_amount`).
 #!
 #! Invocation: exec
-@locals(4)
 proc convert_to_base_asset(asset_id: AssetId, amount: AssetAmount) -> (Bool, AssetAmount)
-    movup.4 loc_store.CONVERT_AMOUNT_LOC
-    # => [ASSET_ID]
-
     push.SPENDING_BASE_ASSET_SLOT[0..2] exec.native_account::get_initial_item
-    # => [BASE_ASSET_ID, ASSET_ID]
+    # => [BASE_ASSET_ID, ASSET_ID, amount]
 
     dupw.1 dupw.1 exec.word::eq
-    # => [is_base_asset, BASE_ASSET_ID, ASSET_ID]
+    # => [is_base_asset, BASE_ASSET_ID, ASSET_ID, amount]
 
     if.true
         dropw dropw
-        # => []
+        # => [amount]
 
-        push.1 loc_load.CONVERT_AMOUNT_LOC swap
+        push.1
         # => [is_priced = 1, converted_amount = amount]
     else
+        swapw
+        # => [ASSET_ID, BASE_ASSET_ID, amount]
+
         push.SPENDING_ORACLE_SLOT[0..2] exec.native_account::get_initial_item
-        # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID, ASSET_ID]
+        # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, ASSET_ID, BASE_ASSET_ID,
+        #     amount]
 
-        movup.3 drop movup.2 loc_store.CONVERT_MAX_BLOCK_AGE_LOC
-        # => [oracle_id_suffix, oracle_id_prefix, BASE_ASSET_ID, ASSET_ID]
+        movup.3 drop movup.2 movdn.10
+        # => [oracle_id_suffix, oracle_id_prefix, ASSET_ID, BASE_ASSET_ID, max_oracle_block_age,
+        #     amount]
 
-        dup eq.0 dup.2 eq.0 and
-        # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, BASE_ASSET_ID, ASSET_ID]
+        exec.account_id::testz
+        # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, ASSET_ID, BASE_ASSET_ID,
+        #     max_oracle_block_age, amount]
 
         if.true
             # ----- No oracle: nothing but the base asset can be priced. -----
-            drop drop dropw dropw
+            drop drop dropw dropw drop drop
             # => []
 
             push.0.0
             # => [is_priced = 0, converted_amount = 0]
         else
-            loc_store.CONVERT_ORACLE_ID_SUFFIX_LOC loc_store.CONVERT_ORACLE_ID_PREFIX_LOC
-            # => [BASE_ASSET_ID, ASSET_ID]
-
-            # ----- Call the oracle: get_conversion_rate(SOURCE = ASSET_ID, TARGET = BASE_ASSET_ID). -----
-            # The foreign procedure takes two words; the rest of its 16-element frame is padding.
-            padw padw
-            # => [pad(8), BASE_ASSET_ID, ASSET_ID]
-
-            swapdw
-            # => [BASE_ASSET_ID, ASSET_ID, pad(8)]
-
-            swapw
-            # => [ASSET_ID, BASE_ASSET_ID, pad(8)]
-
-            procref.price_oracle::get_conversion_rate
-            # => [GET_CONVERSION_RATE_ROOT, ASSET_ID, BASE_ASSET_ID, pad(8)]
-
-            loc_load.CONVERT_ORACLE_ID_PREFIX_LOC loc_load.CONVERT_ORACLE_ID_SUFFIX_LOC
-            # => [oracle_id_suffix, oracle_id_prefix, GET_CONVERSION_RATE_ROOT, ASSET_ID,
-            #     BASE_ASSET_ID, pad(8)]
-
-            exec.tx::execute_foreign_procedure
-            # => [last_updated, num, den, pad(13)]
-
-            swapw.3 dropw dropw dropw movup.3 drop
-            # => [last_updated, num, den]
+            # ----- get_conversion_rate(SOURCE = ASSET_ID, TARGET = BASE_ASSET_ID) on the oracle. -----
+            exec.price_oracle::get_foreign_conversion_rate
+            # => [last_updated, num, den, max_oracle_block_age, amount]
 
             # ----- Bound the age of the oracle state just read, in blocks. The kernel keeps the
             # minimum of all deltas set, so this can only tighten what the approval expiration set. -----
-            loc_load.CONVERT_MAX_BLOCK_AGE_LOC exec.tx::update_expiration_block_delta
-            # => [last_updated, num, den]
+            movup.3 exec.tx::update_expiration_block_delta
+            # => [last_updated, num, den, amount]
 
-            # ----- A zero last_updated means the provider could not, or would not, price the pair. -----
+            # ----- A zero last_updated means the provider does not price the pair. -----
             eq.0
-            # => [is_unpriced, num, den]
+            # => [is_unpriced, num, den, amount]
 
             if.true
-                drop drop
+                drop drop drop
                 # => []
 
                 push.0.0
                 # => [is_priced = 0, converted_amount = 0]
             else
-                loc_load.CONVERT_AMOUNT_LOC movdn.2
-                # => [num, den, amount]
-
                 movup.2 exec.fee::convert_amount
                 # => [converted_amount]
 
@@ -746,20 +708,8 @@ proc charge_budget(amount: AssetAmount, limit: AssetAmount, window_index: u32, c
     exec.load_window_spend
     # => [spent, effective_window_index, amount, limit, config_generation]
 
-    movup.2 add
-    # => [total, effective_window_index, limit, config_generation]
-
-    # Both operands are at most FUNGIBLE_ASSET_MAX_AMOUNT and 2 * FUNGIBLE_ASSET_MAX_AMOUNT is
-    # p - 1, so the sum cannot wrap the field. Saturate it so the stored total keeps the next
-    # charge's sum inside the same bound.
-    push.FUNGIBLE_ASSET_MAX_AMOUNT swap
-    # => [total, fungible_asset_max_amount, effective_window_index, limit, config_generation]
-
-    dup dup.2 lt
-    # => [is_below_max, total, fungible_asset_max_amount, effective_window_index, limit,
-    #     config_generation]
-
-    cdrop
+    # Saturate so the stored total keeps the next charge's sum inside the amount bound.
+    movup.2 exec.fungible_asset::saturating_add_amount
     # => [total, effective_window_index, limit, config_generation]
 
     # ----- Assert total <= limit. -----
@@ -787,19 +737,19 @@ end
 #! the budget is not reset, so the rollback buys nothing, and a client building against a slightly
 #! stale reference block still goes through.
 #!
-#! Inputs:  [window_index, config_generation]
+#! Inputs:  [window_index, current_config_generation]
 #! Outputs: [spent, effective_window_index]
 #!
 #! Invocation: exec
-proc load_window_spend(window_index: u32, config_generation: felt) -> (AssetAmount, u32)
+proc load_window_spend(window_index: u32, current_config_generation: felt) -> (AssetAmount, u32)
     push.SPENDING_TRACKER_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, window_index, config_generation]
+    # => [slot_suffix, slot_prefix, window_index, current_config_generation]
 
     exec.active_account::get_item
-    # => [spent, tracked_window_index, tracked_generation, 0, window_index, config_generation]
+    # => [spent, tracked_window_index, tracked_generation, 0, window_index, current_config_generation]
 
     movup.3 drop
-    # => [spent, tracked_window_index, tracked_generation, window_index, config_generation]
+    # => [spent, tracked_window_index, tracked_generation, window_index, current_config_generation]
 
     movup.2 movup.4 eq
     # => [is_current_generation, spent, tracked_window_index, window_index]
@@ -808,7 +758,7 @@ proc load_window_spend(window_index: u32, config_generation: felt) -> (AssetAmou
         swap
         # => [tracked_window_index, spent, window_index]
 
-        dup dup.3 lt
+        dup dup.3 u32lt
         # => [is_earlier_window, tracked_window_index, spent, window_index]
 
         if.true

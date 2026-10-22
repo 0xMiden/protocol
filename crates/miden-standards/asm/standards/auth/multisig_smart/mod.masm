@@ -423,10 +423,9 @@ end
 #! enforcement and spending limits. The following sections will be added:
 #! - Amount-Based Thresholds: `spending_limits::enforce_spending_limits` will additionally return a
 #!   spending-derived threshold, combined via `u32max` with `policy_threshold` before the final
-#!   `compute_tx_threshold` fallback, and a `spending_requires_delay` flag for the delayed path.
+#!   `compute_tx_threshold` fallback.
 #! - TimelockedAccount: after signature verification, assert the execute-path vs.
-#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
-#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
+#!   `policy_requires_delay` consistency (restoring `ERR_EXECUTE_PATH_MISMATCH`), then call
 #!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
 #!   propose/cancel/execute state.
 @locals(2)

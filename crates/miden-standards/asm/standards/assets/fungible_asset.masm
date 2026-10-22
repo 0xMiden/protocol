@@ -207,6 +207,33 @@ pub proc value_into_amount(asset_value: AssetValue) -> AssetAmount
     # => [amount]
 end
 
+#! Adds two fungible asset amounts, saturating at the maximum fungible asset amount.
+#!
+#! Both inputs are at most MAX_AMOUNT and 2 * MAX_AMOUNT is p - 1, so the field addition cannot
+#! wrap; the result is clamped so a running total stays a valid amount.
+#!
+#! Inputs:  [a, b]
+#! Outputs: [sum]
+#!
+#! Where:
+#! - a and b are fungible asset amounts, each at most MAX_AMOUNT.
+#! - sum is min(a + b, MAX_AMOUNT).
+#!
+#! Invocation: exec
+pub proc saturating_add_amount(a: AssetAmount, b: AssetAmount) -> AssetAmount
+    add
+    # => [sum]
+
+    push.MAX_AMOUNT swap
+    # => [sum, max_amount]
+
+    dup dup.2 lt
+    # => [is_below_max, sum, max_amount]
+
+    cdrop
+    # => [sum]
+end
+
 #! Validates that a fungible asset is well formed.
 #!
 #! This mirrors the kernel's fungible asset validation, except for the asset ID's account ID, whose
