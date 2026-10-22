@@ -123,10 +123,7 @@ const CALC_FILL_REFERENCE = 1
 
 # Procedure locals of load_offered_asset
 const OFFERED_ASSETS_PTR = 0
-const OFFERED_SECOND_ASSET_PTR = OFFERED_ASSETS_PTR + ASSET_SIZE
-const OFFERED_AMOUNT_PTR = OFFERED_ASSETS_PTR + ASSET_VALUE_MEMORY_OFFSET
 const OFFERED_ASSET_COUNT = MAX_NUM_ASSETS * ASSET_SIZE
-const OFFERED_PRINCIPAL_PTR = OFFERED_ASSET_COUNT + 1
 
 # add_cancellation_fee_and_seal_output locals
 const EXPECTED_PRIMARY_PTR = 0
@@ -972,11 +969,82 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     # => []
 end
 
+#! Loads the sole input asset and subtracts any cancellation reserve from its amount.
+#! The reserve fields at STORAGE_PTR must already be validated. If a reserve is present,
+#! the asset must be the native fee asset and leave a positive offered principal.
+#!
+#! Inputs:  [asset_ptr]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+proc load_single_offered_asset(asset_ptr: ptr<Asset>) -> Asset
+    exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE]
+
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
+    # => [has_cancellation_fee, ASSET_ID, ASSET_VALUE]
+
+    if.true
+        dupw exec.tx::get_fee_asset_id assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+        # => [ASSET_ID, ASSET_VALUE]
+
+        movup.4 mem_load.CANCELLATION_FEE_AMOUNT_ITEM
+        # => [fee_amount, combined_amount, ASSET_ID, value_padding(3)]
+
+        dup.1 dup.1 gt assert.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+        # => [fee_amount, combined_amount, ASSET_ID, value_padding(3)]
+
+        sub movdn.4
+        # => [ASSET_ID, ASSET_VALUE]
+    end
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Loads the offered principal from two input assets after checking the separate reserve.
+#! The assets must be stored consecutively at assets_ptr, and the reserve fields at STORAGE_PTR
+#! must already be validated.
+#!
+#! Inputs:  [assets_ptr]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+proc load_offered_asset_with_separate_fee(assets_ptr: ptr<Asset>) -> Asset
+    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0 assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    # => [assets_ptr]
+
+    dup add.ASSET_SIZE swap
+    # => [first_asset_ptr, second_asset_ptr]
+
+    padw dup.4 mem_loadw_le exec.asset::id_into_faucet_id
+    # => [first_faucet_suffix, first_faucet_prefix, first_asset_ptr, second_asset_ptr]
+
+    mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
+    # => [fee_faucet_suffix, fee_faucet_prefix, first_faucet_suffix, first_faucet_prefix,
+    #     first_asset_ptr, second_asset_ptr]
+
+    exec.account_id::eq
+    # => [is_fee_first, first_asset_ptr, second_asset_ptr]
+
+    if.false
+        swap
+        # => [fee_asset_ptr, principal_ptr]
+    end
+    # => [fee_asset_ptr, principal_ptr]
+
+    exec.asset::load exec.load_cancellation_fee
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, ACTUAL_FEE_ID, ACTUAL_FEE_VALUE, principal_ptr]
+
+    movupw.2 assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+    # => [FEE_ASSET_VALUE, ACTUAL_FEE_VALUE, principal_ptr]
+
+    assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+    # => [principal_ptr]
+
+    exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
 #! Verifies the input assets and separates the offered principal from the cancellation reserve.
 #!
 #! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
-@locals(18)
+@locals(17)
 proc load_offered_asset() -> Asset
     exec.active_note::get_initial_assets_info
     # => [INITIAL_ASSETS_COMMITMENT, num_initial_assets]
@@ -1003,79 +1071,19 @@ proc load_offered_asset() -> Asset
     assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     # => []
 
-    mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0
-    # => [has_cancellation_fee]
+    locaddr.OFFERED_ASSETS_PTR
+    # => [assets_ptr]
+
+    loc_load.OFFERED_ASSET_COUNT eq.NUM_ASSETS
+    # => [is_single_asset, assets_ptr]
 
     if.true
-        loc_load.OFFERED_ASSET_COUNT eq.NUM_ASSETS
-        # => [is_combined_asset]
-
-        if.true
-            padw locaddr.OFFERED_ASSETS_PTR mem_loadw_le
-            # => [ASSET_ID]
-
-            exec.tx::get_fee_asset_id assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-            # => []
-
-            loc_load.OFFERED_AMOUNT_PTR mem_load.CANCELLATION_FEE_AMOUNT_ITEM
-            # => [fee_amount, combined_amount]
-
-            dup.1 dup.1 gt assert.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-            # => [fee_amount, combined_amount]
-
-            sub loc_store.OFFERED_AMOUNT_PTR
-            # => []
-
-            locaddr.OFFERED_ASSETS_PTR
-            # => [principal_ptr]
-        else
-            padw locaddr.OFFERED_ASSETS_PTR mem_loadw_le exec.asset::id_into_faucet_id
-            # => [first_faucet_suffix, first_faucet_prefix]
-
-            mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
-            # => [fee_faucet_suffix, fee_faucet_prefix, first_faucet_suffix, first_faucet_prefix]
-
-            exec.account_id::eq
-            # => [is_fee_first]
-
-            if.true
-                locaddr.OFFERED_SECOND_ASSET_PTR loc_store.OFFERED_PRINCIPAL_PTR
-                # => []
-
-                locaddr.OFFERED_ASSETS_PTR
-                # => [fee_asset_ptr]
-            else
-                locaddr.OFFERED_ASSETS_PTR loc_store.OFFERED_PRINCIPAL_PTR
-                # => []
-
-                locaddr.OFFERED_SECOND_ASSET_PTR
-                # => [fee_asset_ptr]
-            end
-            # => [fee_asset_ptr]
-
-            exec.asset::load exec.load_cancellation_fee
-            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, ACTUAL_FEE_ID, ACTUAL_FEE_VALUE]
-
-            movupw.2 assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-            # => [FEE_ASSET_VALUE, ACTUAL_FEE_VALUE]
-
-            assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-            # => []
-
-            loc_load.OFFERED_PRINCIPAL_PTR
-            # => [principal_ptr]
-        end
-        # => [principal_ptr]
+        exec.load_single_offered_asset
+        # => [ASSET_ID, ASSET_VALUE]
     else
-        loc_load.OFFERED_ASSET_COUNT eq.NUM_ASSETS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
-        # => []
-
-        locaddr.OFFERED_ASSETS_PTR
-        # => [principal_ptr]
+        exec.load_offered_asset_with_separate_fee
+        # => [ASSET_ID, ASSET_VALUE]
     end
-    # => [principal_ptr]
-
-    exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
 end
 

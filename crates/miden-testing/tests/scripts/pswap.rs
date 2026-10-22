@@ -1433,14 +1433,16 @@ async fn pswap_private_cancel_through_no_auth(
 }
 
 #[rstest]
-#[case::separate_reserve(false, false)]
-#[case::native_offered(true, false)]
-#[case::native_requested(false, true)]
+#[case::separate_reserve(false, false, false)]
+#[case::separate_reserve_first(false, false, true)]
+#[case::native_offered(true, false, false)]
+#[case::native_requested(false, true, false)]
 #[tokio::test]
 async fn pswap_cancellation_reserve_lifecycle(
     #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
     #[case] native_offered: bool,
     #[case] native_requested: bool,
+    #[case] reserve_first: bool,
     #[values(false, true)] cancel: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1484,13 +1486,28 @@ async fn pswap_cancellation_reserve_lifecycle(
         .note_type(NoteType::Public)
         .offered_asset(FungibleAsset::new(offered_id, 100)?)
         .build()?;
-    let note: Note = current.clone().into();
-    assert_eq!(Note::from(PswapNote::try_from(&note)?).id(), note.id());
-    builder.add_output_note(RawOutputNote::Full(note));
+    let mut initial_note: Note = current.clone().into();
+    assert_eq!(Note::from(PswapNote::try_from(&initial_note)?).id(), initial_note.id());
+    if reserve_first {
+        // The builder puts the principal first; input notes may use either asset order.
+        let mut assets = initial_note.assets().clone().into_vec();
+        assets.reverse();
+        initial_note = Note::with_attachments(
+            NoteAssets::new(assets)?,
+            *initial_note.metadata().partial_metadata(),
+            initial_note.recipient().clone(),
+            initial_note.attachments().clone(),
+        );
+    }
+    builder.add_output_note(RawOutputNote::Full(initial_note.clone()));
     let mut chain = builder.build()?;
     let mut claims = Vec::new();
     for depth in 1..=if cancel { 1 } else { 2 } {
-        let note: Note = current.clone().into();
+        let note = if depth == 1 {
+            initial_note.clone()
+        } else {
+            current.clone().into()
+        };
         let fill = FungibleAsset::new(requested_id, 25)?;
         let (payback, remainder) = current.execute(filler.id(), Some(fill), None)?;
         let tx = chain
