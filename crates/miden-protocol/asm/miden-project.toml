@@ -12,7 +12,7 @@ members = [
 version = "1.0.0-rc.1"
 
 [workspace.dependencies]
-miden-core           = { linkage = "dynamic", version = "1.0" }
+miden-core           = { linkage = "dynamic", version = "1.0.0-rc.0" }
 miden-protocol-utils = { linkage = "static", path = "protocol_utils", version = "1.0.0-rc.1" }
 miden-tx-kernel      = { linkage = "dynamic", path = "kernels/transaction", version = "1.0.0-rc.1" }
 miden-tx-kernel-core = { linkage = "static", path = "kernels/transaction-core", version = "1.0.0-rc.1" }
