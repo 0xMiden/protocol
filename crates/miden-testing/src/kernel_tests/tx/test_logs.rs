@@ -126,6 +126,67 @@ async fn kernel_logs_reject_partial_words(#[case] num_elements: usize) -> anyhow
     Ok(())
 }
 
+#[rstest]
+#[case::empty(0, None)]
+#[case::odd_words(3, None)]
+#[case::max_content(TransactionLog::MAX_NUM_WORDS, None)]
+#[case::oversized(TransactionLog::MAX_NUM_WORDS + 1, Some(tx_kernel::ERR_TX_LOG_CONTENT_TOO_LARGE))]
+#[tokio::test]
+async fn add_log_from_memory(
+    #[case] num_words: usize,
+    #[case] error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let word = Word::from([11u32, 22, 33, 44]);
+    let store_content: String = (0..num_words)
+        .map(|i| format!("push.{word} loc_storew_le.{} dropw\n", i * WORD_SIZE))
+        .collect();
+    let component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "test::log_from_memory",
+            format!(
+                r"
+                use miden::protocol::tx
+                use miden::protocol::native_account
+
+                @auth_script
+                @locals({num_locals})
+                pub proc auth
+                    {store_content}
+                    push.101.102.103.104
+                    # => [CALLER_WORD]
+
+                    locaddr.0 push.{num_words}.29.17
+                    # => [topic_suffix, topic_prefix, num_words, content_ptr, CALLER_WORD]
+
+                    exec.tx::add_log_from_memory
+                    # => [CALLER_WORD]
+
+                    push.101.102.103.104 assert_eqw
+                    # => []
+
+                    exec.native_account::incr_nonce drop
+                end
+                ",
+                num_locals = num_words.max(1) * WORD_SIZE,
+            ),
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("test::log_from_memory"),
+    )?;
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_SENDER, [component]);
+    let emitter = account.id();
+    let tx = TestTransactionBuilder::new(account).build()?;
+    if let Some(error) = error {
+        assert_transaction_executor_error!(tx.execute().await, error);
+    } else {
+        let executed = tx.execute().await?;
+        let log = TransactionLog::new(emitter, LogTopic::mock(17, 29), vec![word; num_words])?;
+        let expected = TransactionLogs::new(vec![log])?;
+        assert_eq!(executed.logs(), &expected);
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn transaction_scripts_cannot_log_directly() -> anyhow::Result<()> {
     let script = CodeBuilder::default().compile_tx_script(
