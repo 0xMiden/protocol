@@ -8,7 +8,7 @@ pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT} from miden::protocol::asset
 # RE-EXPORTS
 # ================================================================================================
 
-pub use {fungible_value_into_amount_unchecked as value_into_amount_unchecked} from miden::protocol::asset
+pub use {fungible_value_into_amount_unchecked as value_into_amount_unchecked, merge_fungible_values as merge} from miden::protocol::asset
 
 # ERRORS
 # ================================================================================================
