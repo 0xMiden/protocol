@@ -17,6 +17,11 @@ on:
 permissions:
     contents: read
 
+# Node actions must use the updated system CA bundle.
+env:
+    NODE_OPTIONS: --use-openssl-ca
+    SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+
 jobs:
     no-std:
         if: >-
@@ -29,6 +34,17 @@ jobs:
         name: build for no-std
         runs-on: ubuntu-latest
         steps:
+            - &update-ca-certificates
+              name: Update CA certificates
+              if: runner.os == 'Linux'
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends ca-certificates
+                  ubuntu_version="$(awk -F= '$1 == "VERSION_ID" {gsub(/"/, "", $2); print $2}' /etc/os-release)"
+                  dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
+                    ge "20260816ubuntu0.${ubuntu_version}.1"
             - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
               with:
                   persist-credentials: false
@@ -57,6 +73,7 @@ jobs:
       name: check all feature combinations
       runs-on: warp-ubuntu-latest-x64-8x
       steps:
+        - *update-ca-certificates
         - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
           with:
             persist-credentials: false
@@ -87,6 +104,7 @@ jobs:
       name: Check benchmarks compilation
       runs-on: ubuntu-latest
       steps:
+        - *update-ca-certificates
         - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
           with:
             persist-credentials: false
