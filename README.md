@@ -23,7 +23,7 @@ If you want to join the technical discussion or learn more about the project, pl
 
 ## Status and features
 
-Miden is still in an early stage. See the [changelog](CHANGELOG.md) for release notes.
+Miden is still in an early stage. See the [GitHub releases](https://github.com/0xMiden/protocol/releases) for release notes.
 We expect to keep making changes (including breaking changes) to all components.
 
 ### Feature highlights
