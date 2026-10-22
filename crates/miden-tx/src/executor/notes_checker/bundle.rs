@@ -196,7 +196,9 @@ impl NoteBundler {
 
         let mut rejected = Vec::new();
         for (idx, (note, sponsorship)) in notes.iter().zip(parsed.iter()).enumerate() {
+            // iterate over the sponsorship notes -- feature notes have already formed bundles above
             let Some(sponsorship) = sponsorship else { continue };
+
             let input = SponsorshipInput {
                 note: note.clone(),
                 amount: sponsorship.asset().amount(),
