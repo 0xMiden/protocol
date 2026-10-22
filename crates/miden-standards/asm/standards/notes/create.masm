@@ -20,7 +20,7 @@ const ACTION_RECLAIM = 1
 const STORAGE_PTR = 0
 const OUTPUT_RECIPIENT_PTR = STORAGE_PTR
 const INPUT_ASSETS_PTR = OUTPUT_RECIPIENT_PTR + WORD_NUM_ELEMENTS
-# A zero fee asset disables the TX_FEE output.
+# A zero fee amount disables the TX_FEE output.
 const FEE_ASSET_PTR = INPUT_ASSETS_PTR + WORD_NUM_ELEMENTS
 const FEE_AMOUNT_PTR = FEE_ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
 const TARGET_SUFFIX_PTR = FEE_ASSET_PTR + ASSET_SIZE
@@ -34,8 +34,7 @@ const MAIN_FEE_NOTE_IDX_LOC = 0
 const MAIN_ASSETS_LOC = 4
 const REMOVE_ASSETS_PTR_LOC = 0
 const REMOVE_EXPECTED_COMMITMENT_LOC = 4
-const PREPARE_OUTPUT_ASSETS_FEE_FOUND_LOC = 0
-const PREPARE_OUTPUT_ASSETS_PTR_LOC = 1
+const PREPARE_OUTPUT_ASSETS_PTR_LOC = 0
 const PREPARE_OUTPUT_FEE_ASSET_LOC = 4
 const PREPARE_OUTPUT_FEE_AMOUNT_LOC = PREPARE_OUTPUT_FEE_ASSET_LOC + ASSET_VALUE_MEMORY_OFFSET
 const CREATE_FEE_ASSET_LOC = 0
@@ -71,7 +70,7 @@ const ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS = "CREATE note output must contain f
 #! - the executing account is not authorized for the selected action.
 #! - the committed funding is missing or the fee asset is not native.
 #! - the primary output is empty or contains anything other than nonzero fungible assets.
-#! - an asset callback changes the expected output funding or adds a fee note attachment.
+#! - an asset callback changes the expected output funding.
 @note_script
 @locals(132)
 pub proc main(note_args: NoteArgs)
@@ -94,14 +93,6 @@ pub proc main(note_args: NoteArgs)
         exec.note_target::assert_active_account_is_target_account
         # => []
 
-        # check that a specified creation fee uses the native fee asset
-        mem_load.FEE_AMOUNT_PTR neq.0
-        if.true
-            padw mem_loadw_le.FEE_ASSET_PTR exec.tx::get_fee_asset_id
-            assert_eqw.err=ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE
-        end
-        # => []
-
         # verify and remove the input assets, then deduct the creation fee
         padw mem_loadw_le.INPUT_ASSETS_PTR locaddr.MAIN_ASSETS_LOC
         # => [assets_ptr, INPUT_ASSETS_COMMITMENT]
@@ -122,45 +113,36 @@ pub proc main(note_args: NoteArgs)
         exec.create_primary_output
         # => [note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
-        # create and fund the TX_FEE note when a creation fee is specified
         mem_load.FEE_AMOUNT_PTR neq.0
+        # => [has_fee, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+
         if.true
             push.FEE_ASSET_PTR exec.asset::load
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+
             exec.create_fee_output loc_store.MAIN_FEE_NOTE_IDX_LOC
-        end
-        # => [note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+            # => [note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
-        # transfer the prepared assets into the primary output note
-        locaddr.MAIN_ASSETS_LOC push.1
-        while.true
-            dup.1 dup.1 exec.asset::load
-            # => [ASSET_ID, ASSET_VALUE, note_idx, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+            locaddr.MAIN_ASSETS_LOC exec.fund_primary_output
+            # => []
 
-            exec.output_note::add_asset
-            # => [cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
-
-            add.ASSET_SIZE dup dup.3 neq
-            # => [has_more_assets, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
-        end
-        drop swap drop
-        # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
-
-        # asset callbacks can add assets; check funding after all callbacks have finished
-        exec.output_note::get_assets_info movup.4 drop
-        assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
-        # => []
-
-        # verify the fee note's funding after all asset callbacks
-        mem_load.FEE_AMOUNT_PTR neq.0
-        if.true
+            # Primary-output callbacks may also alter the fee output; validate it last.
             loc_load.MAIN_FEE_NOTE_IDX_LOC exec.output_note::get_assets_info
+            # => [FEE_ASSETS_COMMITMENT, num_assets]
+
             movup.4 eq.1 assert.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
             # => [FEE_ASSETS_COMMITMENT]
 
             push.FEE_ASSET_PTR exec.asset::load exec.poseidon2::merge
+            # => [EXPECTED_FEE_ASSETS_COMMITMENT, FEE_ASSETS_COMMITMENT]
+
             assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
             # => []
+        else
+            locaddr.MAIN_ASSETS_LOC exec.fund_primary_output
+            # => []
         end
+        # => []
     end
 end
 
@@ -231,7 +213,6 @@ proc prepare_output_assets(
     movdn.8 locaddr.PREPARE_OUTPUT_FEE_ASSET_LOC exec.asset::store
     # => [assets_end]
 
-    loc_load.PREPARE_OUTPUT_FEE_AMOUNT_LOC eq.0 loc_store.PREPARE_OUTPUT_ASSETS_FEE_FOUND_LOC
     loc_load.PREPARE_OUTPUT_ASSETS_PTR_LOC dup dup dup.3 neq
     # => [has_more_assets, read_ptr, write_ptr, assets_end]
 
@@ -250,8 +231,8 @@ proc prepare_output_assets(
         # => [is_fee_asset, amount, read_ptr, write_ptr, assets_end]
 
         if.true
-            push.1 loc_store.PREPARE_OUTPUT_ASSETS_FEE_FOUND_LOC
             loc_load.PREPARE_OUTPUT_FEE_AMOUNT_LOC
+            push.0 loc_store.PREPARE_OUTPUT_FEE_AMOUNT_LOC
             # => [fee_amount, amount, read_ptr, write_ptr, assets_end]
 
             # require amount >= fee_amount before subtracting the fee
@@ -277,10 +258,9 @@ proc prepare_output_assets(
 
         if.true
             # move later assets into the gap left by an asset used entirely for the fee
-            dup.1 dup.1 neq
-            if.true
-                dup exec.asset::load dup.9 exec.asset::store
-            end
+            dup exec.asset::load dup.9 exec.asset::store
+            # => [read_ptr, write_ptr, assets_end]
+
             swap add.ASSET_SIZE swap
             # => [read_ptr, write_ptr, assets_end]
         end
@@ -291,7 +271,8 @@ proc prepare_output_assets(
     drop swap drop
     # => [output_assets_end]
 
-    loc_load.PREPARE_OUTPUT_ASSETS_FEE_FOUND_LOC assert.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
+    # A nonzero remaining fee means its asset was missing from the input.
+    loc_load.PREPARE_OUTPUT_FEE_AMOUNT_LOC assertz.err=ERR_CREATE_NOTE_FUNDING_MISMATCH
     dup loc_load.PREPARE_OUTPUT_ASSETS_PTR_LOC neq assert.err=ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS
     # => [output_assets_end]
 
@@ -299,6 +280,44 @@ proc prepare_output_assets(
     loc_load.PREPARE_OUTPUT_ASSETS_PTR_LOC exec.poseidon2::hash_elements
     movup.4
     # => [output_assets_end, OUTPUT_ASSETS_COMMITMENT]
+end
+
+#! Funds the primary output from the prepared asset buffer and verifies it after callbacks.
+#! The range [assets_ptr, assets_end) must contain at least one validated asset.
+#!
+#! Inputs:  [assets_ptr, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+#! Outputs: []
+#!
+#! Panics if an asset callback changes the expected output funding.
+#!
+#! Invocation: exec
+proc fund_primary_output(
+    assets_ptr: ptr<Asset>,
+    note_idx: u16,
+    assets_end: ptr<Asset>,
+    expected_assets_commitment: NoteAssetsCommitment
+)
+    push.1
+    # => [has_more_assets, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+
+    while.true
+        dup.1 dup.1 exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, note_idx, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+
+        exec.output_note::add_asset
+        # => [cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+
+        add.ASSET_SIZE dup dup.3 neq
+        # => [has_more_assets, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
+    end
+    drop swap drop
+    # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
+
+    exec.output_note::get_assets_info movup.4 drop
+    # => [ASSETS_COMMITMENT, EXPECTED_ASSETS_COMMITMENT]
+
+    assert_eqw.err=ERR_CREATE_NOTE_OUTPUT_ALTERED
+    # => []
 end
 
 #! Creates the primary output using the supplied recipient hash, tag, and type.
@@ -330,18 +349,33 @@ end
 #! Where:
 #! - note_idx is the index of the created fee note.
 #!
+#! Panics if the supplied asset is not the native fee asset.
+#!
 #! Invocation: exec
 @locals(8)
 proc create_fee_output(fee_asset: Asset) -> u16
+    dupw exec.tx::get_fee_asset_id assert_eqw.err=ERR_CREATE_NOTE_FEE_ASSET_NOT_NATIVE
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
     locaddr.CREATE_FEE_ASSET_LOC exec.asset::store
     # => []
 
     # distinguish input sets and output positions without disclosing private input IDs
     exec.active_account::get_id exec.tx::get_num_output_notes push.CREATE_NOTE_FEE_DOMAIN
-    exec.tx::get_input_notes_commitment exec.poseidon2::merge
+    # => [domain, note_idx, account_suffix, account_prefix]
+
+    exec.tx::get_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, domain, note_idx, account_suffix, account_prefix]
+
+    exec.poseidon2::merge
     # => [SERIAL_NUM]
 
     exec.tx_fee::create_output_note
-    dup locaddr.CREATE_FEE_ASSET_LOC exec.asset::load exec.output_note::add_asset
+    # => [note_idx]
+
+    dup locaddr.CREATE_FEE_ASSET_LOC exec.asset::load
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, note_idx]
+
+    exec.output_note::add_asset
     # => [note_idx]
 end
