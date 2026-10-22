@@ -325,7 +325,7 @@ PSWAP exchanges part or all of one fungible asset for another. Each fill creates
 
 Use `PswapNote::PAYBACK_TAG` as a shared discovery tag for paybacks and refunds without identifying the owner. Both modes also accept custom tags.
 
-An optional native cancellation reserve travels unchanged into each remainder. A complete fill returns it in the final payback, combining amounts when the requested asset is native. Private cancellation pays the reserve in full through a sealed public TX_FEE; the executing account must check fee sufficiency. Public reclaim returns the reserve and principal to the creator's vault. The reserve never enters fill pricing.
+An optional native cancellation reserve travels unchanged into each remainder. A complete fill returns it in the final payback, combining amounts when the requested asset is native. Private cancellation pays the reserve in full through a sealed public TX_FEE; transaction admission policy determines whether the fee is sufficient. Public reclaim returns the reserve and principal to the creator's vault. The reserve never enters fill pricing.
 
 Use a fresh P2ID serial for each order, independent of its PSWAP serial, and keep private recipient preimages secret. When reconstructing a payback or cancellation refund, include its complete on-chain attachment list. Reconstruct paybacks with a reserve from the consumed PSWAP or remainder, whose remaining requested amount identifies a complete fill.
 
@@ -333,7 +333,7 @@ Consume reconstructed private paybacks and refunds with inclusion proofs; unauth
 
 ### CREATE note
 
-A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate `TX_FEE` output. The payment is paid in full; the executing account checks the final fee output during authentication.
+A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional native payment for a separate `TX_FEE` output. The payment is paid in full; transaction admission policy determines whether it is sufficient.
 
 Its NoteStorage contains 20 field elements:
 

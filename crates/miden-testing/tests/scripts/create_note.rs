@@ -423,6 +423,7 @@ async fn create_note_leaves_outputs_unsealed(
 #[tokio::test]
 async fn create_note_checks_assets_after_callbacks(
     #[case] change_assets: bool,
+    #[values(false, true)] fee_output: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -437,6 +438,7 @@ async fn create_note_checks_assets_after_callbacks(
     } else {
         format!("push.{attachment_word} push.99 exec.output_note::add_word_attachment")
     };
+    let select_output = if fee_output { "drop push.1" } else { "" };
     let code = CodeBuilder::default().compile_component_code(
         "tests::create_note_callback",
         format!(
@@ -445,6 +447,7 @@ async fn create_note_checks_assets_after_callbacks(
         @account_procedure
         pub proc on_before_asset_added_to_note
             dropw dropw
+            {select_output}
             {callback_body}
         end
         "#
@@ -475,7 +478,8 @@ async fn create_note_checks_assets_after_callbacks(
         .asset(FungibleAsset::new(account.id(), 100)?)
         .build()?
         .into();
-    let create_note = CreateNote::new(sender.id(), builder.rng_mut().draw_word(), output, None)?;
+    let fee = fee_output.then_some(FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 50)?);
+    let create_note = CreateNote::new(sender.id(), builder.rng_mut().draw_word(), output, fee)?;
     builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
     let chain = builder.build()?;
     let result = chain
@@ -490,11 +494,20 @@ async fn create_note_checks_assets_after_callbacks(
         return Ok(());
     }
     let tx = result?;
+    let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, attachment_word);
+    if let Some(fee) = fee {
+        assert_eq!(tx.output_notes().get_note(0).id(), create_note.output().id());
+        let fee_note = tx.output_notes().get_note(1);
+        assert_eq!(fee_note.metadata().tag(), TxFeeNote::TAG);
+        assert_eq!(fee_note.assets(), &NoteAssets::new(vec![fee.into()])?);
+        assert_eq!(fee_note.attachments(), &attachment.into());
+        return Ok(());
+    }
     let expected = Note::with_attachments(
         create_note.output().assets().clone(),
         create_note.output().metadata().into_partial_metadata(),
         create_note.output().recipient().clone(),
-        NoteAttachment::with_word(NoteAttachmentScheme::new(99)?, attachment_word).into(),
+        attachment.into(),
     );
     assert_eq!(tx.output_notes().get_note(0).id(), expected.id());
     Ok(())
