@@ -22,6 +22,7 @@ jobs:
       id-token: write # Required for OIDC token exchange
 
     steps:
+      # Remove once the runner images ship the eMudhra distrust (https://emudhra.we-have-a-problem.com/).
       - &update-ca-certificates
         name: Update CA certificates
         if: runner.os == 'Linux'
@@ -33,6 +34,7 @@ jobs:
           ubuntu_version="$(awk -F= '$1 == "VERSION_ID" {gsub(/"/, "", $2); print $2}' /etc/os-release)"
           dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
             ge "20260816ubuntu0.${ubuntu_version}.1"
+
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

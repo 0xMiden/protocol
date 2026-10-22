@@ -17,6 +17,7 @@ jobs:
       contents: read
 
     steps:
+      # Remove once the runner images ship the eMudhra distrust (https://emudhra.we-have-a-problem.com/).
       - name: Update CA certificates
         if: runner.os == 'Linux'
         shell: bash
@@ -27,6 +28,7 @@ jobs:
           ubuntu_version="$(awk -F= '$1 == "VERSION_ID" {gsub(/"/, "", $2); print $2}' /etc/os-release)"
           dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
             ge "20260816ubuntu0.${ubuntu_version}.1"
+
       - name: Send repository_dispatch to aggregator
         uses: peter-evans/repository-dispatch@a628c95fd17070f003ea24579a56e6bc89b25766
         with:
