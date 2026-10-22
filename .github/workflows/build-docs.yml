@@ -35,8 +35,6 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          # 24.22.1 is the first Node 24 release whose roots distrust the compromised eMudhra CAs
-          # (https://emudhra.we-have-a-problem.com/).
           node-version: "^24.22.1"
           cache: "npm"
           cache-dependency-path: docs/package-lock.json
