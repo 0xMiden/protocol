@@ -1500,6 +1500,8 @@ async fn pswap_cancellation_reserve_lifecycle(
             initial_note.attachments().clone(),
         );
     }
+    current = PswapNote::try_from(&initial_note)?;
+    assert_eq!(Note::from(current.clone()).id(), initial_note.id());
     builder.add_output_note(RawOutputNote::Full(initial_note.clone()));
     let mut chain = builder.build()?;
     let mut claims = Vec::new();

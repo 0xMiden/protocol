@@ -116,7 +116,6 @@ const CALC_FILL_REFERENCE = 1
 
 # Procedure locals of load_offered_asset
 const OFFERED_ASSETS_PTR = 0
-const OFFERED_ASSET_COUNT = MAX_NUM_ASSETS * ASSET_SIZE
 
 # add_cancellation_fee_and_seal_output locals
 const EXPECTED_PRIMARY_PTR = 0
@@ -553,7 +552,7 @@ proc add_cancellation_fee_and_seal_output(
     # => []
 end
 
-#! Pays the reserve in full without checking transaction fee sufficiency.
+#! Pays the cancellation reserve into a sealed TX_FEE note.
 #! A zero fee amount creates no output.
 #!
 #! Inputs:  [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
@@ -1002,7 +1001,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
-@locals(17)
+@locals(16)
 proc load_offered_asset() -> Asset
     exec.active_note::get_initial_assets_info
     # => [INITIAL_ASSETS_COMMITMENT, num_initial_assets]
@@ -1011,28 +1010,25 @@ proc load_offered_asset() -> Asset
     dup lte.MAX_NUM_ASSETS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => [num_initial_assets, INITIAL_ASSETS_COMMITMENT]
 
-    loc_store.OFFERED_ASSET_COUNT
-    # => [INITIAL_ASSETS_COMMITMENT]
+    dup movdn.5
+    # => [num_initial_assets, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
     locaddr.OFFERED_ASSETS_PTR exec.active_note::remove_all_assets
-    # => [num_assets, INITIAL_ASSETS_COMMITMENT]
+    # => [num_assets, num_initial_assets, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
-    loc_load.OFFERED_ASSET_COUNT assert_eq.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
-    # => [INITIAL_ASSETS_COMMITMENT]
+    assert_eq.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    # => [INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
-    loc_load.OFFERED_ASSET_COUNT mul.ASSET_SIZE locaddr.OFFERED_ASSETS_PTR
-    # => [assets_ptr, num_elements, INITIAL_ASSETS_COMMITMENT]
+    dup.4 mul.ASSET_SIZE locaddr.OFFERED_ASSETS_PTR
+    # => [assets_ptr, num_elements, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
     exec.poseidon2::hash_elements
-    # => [ASSETS_COMMITMENT, INITIAL_ASSETS_COMMITMENT]
+    # => [ASSETS_COMMITMENT, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
     assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
-    # => []
+    # => [num_initial_assets]
 
-    locaddr.OFFERED_ASSETS_PTR
-    # => [assets_ptr]
-
-    loc_load.OFFERED_ASSET_COUNT eq.NUM_ASSETS
+    locaddr.OFFERED_ASSETS_PTR swap eq.NUM_ASSETS
     # => [is_single_asset, assets_ptr]
 
     if.true
