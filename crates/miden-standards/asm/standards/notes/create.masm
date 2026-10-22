@@ -30,7 +30,7 @@ const TAG_PTR = TARGET_PREFIX_PTR + 1
 const TYPE_PTR = TAG_PTR + 1
 const NUM_STORAGE_ITEMS = TYPE_PTR + 1 - STORAGE_PTR
 
-# Local memory offsets. The asset buffer holds MAX_ASSETS_PER_NOTE * ASSET_SIZE elements.
+# Local memory offsets. The asset array holds MAX_ASSETS_PER_NOTE * ASSET_SIZE elements.
 const PRIMARY_ASSETS_LOC = 0
 const CREATE_FEE_ASSET_LOC = 0
 
