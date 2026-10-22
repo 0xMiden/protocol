@@ -146,6 +146,9 @@ impl<const N: usize> FixedWidthString<N> {
 /// Error type for [`FixedWidthString`] construction and decoding.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum FixedWidthStringError {
+    /// String is empty, but the wrapper type requires a non-empty value.
+    #[error("string must not be empty")]
+    Empty,
     /// String exceeds the maximum capacity for this word width.
     #[error("string must be at most {max} bytes, got {actual}")]
     TooLong { actual: usize, max: usize },

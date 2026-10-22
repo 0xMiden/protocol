@@ -1,12 +1,6 @@
 use alloc::collections::BTreeMap;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -21,14 +15,14 @@ use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::account_component_code;
+use crate::account::account_component_package;
 use crate::procedure_root;
 
 // BASIC CONSTANT FEE POLICY
 // ================================================================================================
 
-account_component_code!(
-    BASIC_CONSTANT_FEE_POLICY_CODE,
+account_component_package!(
+    BASIC_CONSTANT_FEE_POLICY_PACKAGE,
     "miden-standards-fees-policies-basic-constant-fee.masp"
 );
 
@@ -152,7 +146,7 @@ impl BasicConstantFeePolicy {
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
-        &BASIC_CONSTANT_FEE_POLICY_CODE
+        &BASIC_CONSTANT_FEE_POLICY_PACKAGE.code
     }
 
     /// Returns the procedure root of the `compute_note_fee` fee policy procedure.
@@ -172,21 +166,7 @@ impl BasicConstantFeePolicy {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([(
-            Self::fee_schedule_slot_name().clone(),
-            StorageSlotSchema::map(
-                "Fee charged per note script root",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "`basic_constant_fee` fee policy charging a constant per-note-script fee",
-            )
-            .with_storage_schema(storage_schema)
+        BASIC_CONSTANT_FEE_POLICY_PACKAGE.metadata.clone()
     }
 }
 

@@ -1,7 +1,6 @@
 use alloc::collections::BTreeSet;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::utils::sync::LazyLock;
@@ -67,18 +66,6 @@ impl BlocklistStorage {
     /// Storage slot name for the blocked-accounts map.
     pub fn blocked_accounts_slot() -> &'static StorageSlotName {
         &BLOCKED_ACCOUNTS_SLOT_NAME
-    }
-
-    /// Schema entry for the blocked-accounts map slot (documentation / tooling).
-    pub fn blocked_accounts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::blocked_accounts_slot().clone(),
-            StorageSlotSchema::map(
-                "Per-account blocked flag; zero word is not blocked, [1,0,0,0] is blocked",
-                SchemaType::native_word(),
-                SchemaType::bool(),
-            ),
-        )
     }
 
     /// Builds the initial `blocked_accounts` [`StorageMap`] from the captured set, marking each
