@@ -1,5 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::iter;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -9,35 +10,74 @@ use miden_standards::note::FeeSponsorshipNote;
 use super::checker_utils::{FailedNote, NoteFailure};
 use super::error::SponsorshipRejectionError;
 
+// SPONSORSHIP INPUT
+// ================================================================================================
+
+/// A FEE_SPONSORSHIP input note, parsed once.
+#[derive(Debug, Clone)]
+pub(super) struct SponsorshipInput {
+    note: Note,
+    sponsorship: FeeSponsorshipNote,
+}
+
+impl SponsorshipInput {
+    /// Returns the input note.
+    pub(super) fn note(&self) -> &Note {
+        &self.note
+    }
+
+    /// Returns the note parsed as a FEE_SPONSORSHIP note.
+    pub(super) fn sponsorship(&self) -> &FeeSponsorshipNote {
+        &self.sponsorship
+    }
+}
+
 // NOTE BUNDLE
 // ================================================================================================
 
-/// A group of input notes that has to be tested for consumability as a unit, such as a feature note
-/// and the notes which sponsor it.
-///
-/// The note heading the bundle comes first: a feature note, or a FEE_SPONSORSHIP note whose feature
-/// note is absent.
+/// A group of input notes that has to be tested for consumability as a unit.
 #[derive(Debug, Clone)]
-pub(super) struct NoteBundle {
-    notes: Vec<Note>,
+pub(super) enum NoteBundle {
+    /// A note other than FEE_SPONSORSHIP, and the FEE_SPONSORSHIP notes that fund its fee.
+    Feature {
+        feature_note: Note,
+        sponsorships: Vec<SponsorshipInput>,
+    },
+    /// A FEE_SPONSORSHIP note whose feature note is not an input, so it can only be reclaimed.
+    Reclaim(SponsorshipInput),
 }
 
 impl NoteBundle {
-    /// Returns the notes forming the bundle.
-    pub(super) fn notes(&self) -> &[Note] {
-        &self.notes
+    /// Returns the notes forming the bundle, the feature note first.
+    pub(super) fn notes(&self) -> impl Iterator<Item = &Note> {
+        let (first, sponsorships) = match self {
+            Self::Feature { feature_note, sponsorships } => (feature_note, sponsorships.as_slice()),
+            Self::Reclaim(sponsorship) => (sponsorship.note(), [].as_slice()),
+        };
+        iter::once(first).chain(sponsorships.iter().map(SponsorshipInput::note))
     }
 
-    /// Consumes the bundle reporting every note of it as failed: the note at `blamed_idx` with
-    /// `failure`, and the rest as its collateral, since they cannot be consumed without it.
+    /// Consumes the bundle, returning its notes in the same order as [`Self::notes`].
+    pub(super) fn into_notes(self) -> Vec<Note> {
+        match self {
+            Self::Feature { feature_note, sponsorships } => iter::once(feature_note)
+                .chain(sponsorships.into_iter().map(|sponsorship| sponsorship.note))
+                .collect(),
+            Self::Reclaim(sponsorship) => vec![sponsorship.note],
+        }
+    }
+
+    /// Consumes the bundle reporting every note of it as failed: the note at `blamed_idx` of
+    /// [`Self::notes`] with `failure`, and the rest as its collateral, since they cannot be
+    /// consumed without it.
     ///
     /// # Panics
     ///
     /// Panics if the `blamed_idx` is out of bounds.
     pub(super) fn failed_notes(self, blamed_idx: usize, failure: NoteFailure) -> Vec<FailedNote> {
-        let blamed_note = self.notes[blamed_idx].clone();
-        let mut failed_notes: Vec<FailedNote> = self
-            .notes
+        let notes = self.into_notes();
+        let blamed_note = notes[blamed_idx].clone();
+        let mut failed_notes: Vec<FailedNote> = notes
             .into_iter()
             .map(|note| {
                 FailedNote::new(note, NoteFailure::Collateral { blamed_by: blamed_note.id() })
@@ -69,12 +109,12 @@ impl NoteBundles {
 
     /// Returns the notes of all bundles, bundle by bundle.
     pub(super) fn to_notes(&self) -> Vec<Note> {
-        self.0.iter().flat_map(|bundle| bundle.notes().iter().cloned()).collect()
+        self.0.iter().flat_map(|bundle| bundle.notes().cloned()).collect()
     }
 
     /// Consumes the bundles, returning their notes in the same order as [`Self::to_notes`].
     pub(super) fn into_notes(self) -> Vec<Note> {
-        self.0.into_iter().flat_map(|bundle| bundle.notes).collect()
+        self.0.into_iter().flat_map(NoteBundle::into_notes).collect()
     }
 
     /// Removes and returns the bundle at `idx`.
@@ -92,7 +132,7 @@ impl NoteBundles {
         let idx = self
             .0
             .iter()
-            .position(|bundle| bundle.notes().iter().any(|note| note.id() == note_id))?;
+            .position(|bundle| bundle.notes().any(|note| note.id() == note_id))?;
         Some(self.0.remove(idx))
     }
 }
@@ -132,61 +172,61 @@ impl NoteBundler {
     pub(super) fn bundle(&self, notes: &[Note]) -> (NoteBundles, Vec<FailedNote>) {
         let note_indices: BTreeMap<NoteId, usize> =
             notes.iter().enumerate().map(|(idx, note)| (note.id(), idx)).collect();
-        let mut rejected = Vec::new();
+        // Parse every note once, telling the sponsorships apart from the feature notes.
+        let parsed: Vec<Option<FeeSponsorshipNote>> =
+            notes.iter().map(|note| FeeSponsorshipNote::try_from(note).ok()).collect();
 
         // Each bundle is keyed by the index of the note heading it, which keeps the bundles in the
-        // caller's order.
-        let mut bundles: BTreeMap<usize, Vec<Note>> = BTreeMap::new();
-        for (idx, note) in notes.iter().enumerate() {
-            match FeeSponsorshipNote::try_from(note) {
-                // A feature note heads its bundle, whichever side of its sponsorships it arrives
-                // on.
-                Err(_) => bundles.entry(idx).or_default().insert(0, note.clone()),
-                Ok(sponsorship) => {
-                    match self.get_feature_index_by_sponsor(&sponsorship, idx, notes, &note_indices)
-                    {
-                        Ok(feature_note_idx) => {
-                            bundles.entry(feature_note_idx).or_default().push(note.clone())
-                        },
-                        Err(reason) => {
-                            rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)))
-                        },
-                    }
+        // caller's order. Every feature note heads a bundle, so the sponsorships placed below find
+        // the bundle of their feature note whichever side of it they arrive on.
+        let mut bundles: BTreeMap<usize, NoteBundle> = notes
+            .iter()
+            .zip(&parsed)
+            .enumerate()
+            .filter(|(_, (_, sponsorship))| sponsorship.is_none())
+            .map(|(idx, (note, _))| {
+                let bundle = NoteBundle::Feature {
+                    feature_note: note.clone(),
+                    sponsorships: Vec::new(),
+                };
+                (idx, bundle)
+            })
+            .collect();
+
+        let mut rejected = Vec::new();
+        for (idx, (note, sponsorship)) in notes.iter().zip(parsed.iter()).enumerate() {
+            let Some(sponsorship) = sponsorship else { continue };
+            let input = SponsorshipInput {
+                note: note.clone(),
+                sponsorship: sponsorship.clone(),
+            };
+
+            match note_indices.get(&sponsorship.feature_note_id()).copied() {
+                // The feature note is absent, so the sponsorship can only be reclaimed, on its own.
+                None => match sponsorship.check_reclaim(self.native_account_id, self.block_ref) {
+                    Ok(()) => {
+                        bundles.insert(idx, NoteBundle::Reclaim(input));
+                    },
+                    Err(err) => rejected.push(FailedNote::new(
+                        input.note,
+                        NoteFailure::from(SponsorshipRejectionError::NotReclaimable(err)),
+                    )),
+                },
+                // The note named as the feature note is itself a sponsorship.
+                Some(feature_note_idx) if parsed[feature_note_idx].is_some() => {
+                    let reason = SponsorshipRejectionError::FeatureNoteIsSponsorship {
+                        feature_note_id: sponsorship.feature_note_id(),
+                    };
+                    rejected.push(FailedNote::new(input.note, NoteFailure::from(reason)));
+                },
+                // The feature note is present, so the sponsorship joins its bundle.
+                Some(feature_note_idx) => match bundles.get_mut(&feature_note_idx) {
+                    Some(NoteBundle::Feature { sponsorships, .. }) => sponsorships.push(input),
+                    _ => unreachable!("every feature note heads a feature bundle"),
                 },
             }
         }
 
-        let bundles = bundles.into_values().map(|notes| NoteBundle { notes }).collect();
-        (NoteBundles(bundles), rejected)
-    }
-
-    /// Returns the index of the feature note which FEE_SPONSORSHIP note at `idx` in `notes` joins,
-    /// or the reason why it cannot be consumed.
-    fn get_feature_index_by_sponsor(
-        &self,
-        sponsorship: &FeeSponsorshipNote,
-        idx: usize,
-        notes: &[Note],
-        note_indices: &BTreeMap<NoteId, usize>,
-    ) -> Result<usize, SponsorshipRejectionError> {
-        match note_indices.get(&sponsorship.feature_note_id()).copied() {
-            // The feature note is absent, so the sponsorship can only be reclaimed, on its own.
-            None => sponsorship
-                .check_reclaim(self.native_account_id, self.block_ref)
-                .map(|()| idx)
-                .map_err(SponsorshipRejectionError::NotReclaimable),
-
-            // obtained index points to another sponsorship note
-            Some(feature_note_idx)
-                if FeeSponsorshipNote::try_from(&notes[feature_note_idx]).is_ok() =>
-            {
-                Err(SponsorshipRejectionError::FeatureNoteIsSponsorship {
-                    feature_note_id: sponsorship.feature_note_id(),
-                })
-            },
-
-            // The feature note is present, so the sponsorship joins its bundle.
-            Some(feature_note_idx) => Ok(feature_note_idx),
-        }
+        (NoteBundles(bundles.into_values().collect()), rejected)
     }
 }
