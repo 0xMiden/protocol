@@ -66,10 +66,6 @@ const ERR_CREATE_NOTE_INVALID_OUTPUT_ASSETS = "CREATE note output must contain f
 #!
 #! Action 0 creates the output; action 1 reclaims the CREATE note. Reserved arguments must be zero.
 #!
-#! Memory scratch space:
-#! - STORAGE_PTR: NUM_STORAGE_ITEMS elements loaded from the active note by this procedure.
-#!   Helpers receive storage values as stack arguments; the asset working buffer is local.
-#!
 #! Panics if:
 #! - the action, reserved arguments, or storage length is invalid.
 #! - the executing account is not authorized for the selected action.
@@ -140,7 +136,7 @@ pub proc main(note_args: NoteArgs)
             dup.1 dup.1 exec.asset::load
             # => [ASSET_ID, ASSET_VALUE, note_idx, cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
-            exec.output_note::add_asset dropw dropw
+            exec.output_note::add_asset
             # => [cursor, note_idx, assets_end, EXPECTED_ASSETS_COMMITMENT]
 
             add.ASSET_SIZE dup dup.3 neq
@@ -186,8 +182,6 @@ end
 #! - assets_end is the first address after the removed assets.
 #! - EXPECTED_ASSETS_COMMITMENT is the funding commitment from note storage.
 #!
-#! Memory outputs: [assets_ptr, assets_end) contains the removed assets.
-#!
 #! Panics if the initial or remaining assets differ from the commitment in note storage.
 #!
 #! Invocation: exec
@@ -218,6 +212,7 @@ end
 
 #! Validates the fungible assets in the caller-provided buffer and subtracts the supplied fee.
 #! Omits an asset used entirely for the fee, preserving the order of the remaining assets.
+#! Compacts the input range [assets_ptr, assets_end) in place to [assets_ptr, output_assets_end).
 #!
 #! Inputs:  [assets_ptr, assets_end, FEE_ASSET_ID, FEE_ASSET_VALUE]
 #! Outputs: [output_assets_end, OUTPUT_ASSETS_COMMITMENT]
@@ -226,9 +221,6 @@ end
 #! - assets_end and output_assets_end are the exclusive ends of the input and output asset lists.
 #! - OUTPUT_ASSETS_COMMITMENT commits to the remaining output assets.
 #! - FEE_ASSET_ID and FEE_ASSET_VALUE encode the fee, or are both zero for no fee.
-#!
-#! Memory inputs: [assets_ptr, assets_end) contains the removed input assets.
-#! Memory outputs: [assets_ptr, output_assets_end) contains the compacted output assets.
 #!
 #! Panics if the fee is not covered or the output has no assets, NFTs, or zero fungible amounts.
 #!
@@ -354,6 +346,6 @@ proc create_fee_output(fee_asset: Asset) -> u16
     # => [SERIAL_NUM]
 
     exec.tx_fee::create_output_note
-    dup locaddr.CREATE_FEE_ASSET_LOC exec.asset::load exec.output_note::add_asset dropw dropw
+    dup locaddr.CREATE_FEE_ASSET_LOC exec.asset::load exec.output_note::add_asset
     # => [note_idx]
 end

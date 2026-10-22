@@ -430,7 +430,7 @@ async fn create_note_checks_assets_after_callbacks(
     let attachment_word = Word::from([1u32, 2, 3, 4]);
     let callback_body = if change_assets {
         format!(
-            "push.{} push.{} exec.output_note::add_asset dropw dropw",
+            "push.{} push.{} exec.output_note::add_asset",
             extra_asset.to_value_word(),
             extra_asset.to_id_word(),
         )
