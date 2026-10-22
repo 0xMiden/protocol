@@ -813,7 +813,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
 }
 
 /// Dedicated regression test for the attachment word layout shared between
-/// `create_p2id_note` / `create_remainder_note` in pswap.masm and
+/// `create_payback_note` / `create_remainder_note` in pswap.masm and
 /// `create_payback_note` / `create_remainder_pswap_note` in pswap.rs.
 ///
 /// Both sides agree on:
@@ -1505,6 +1505,8 @@ async fn pswap_cancellation_reserve_lifecycle(
             initial_note.attachments().clone(),
         );
     }
+    current = PswapNote::try_from(&initial_note)?;
+    assert_eq!(Note::from(current.clone()).id(), initial_note.id());
     builder.add_output_note(RawOutputNote::Full(initial_note.clone()));
     let mut chain = builder.build()?;
     let mut claims = Vec::new();
@@ -2158,7 +2160,7 @@ async fn pswap_note_min_fill_step_test(
     Ok(())
 }
 
-/// Regression test for the `note_idx` stack-layout bug in `create_p2id_note`'s
+/// Regression test for the `note_idx` stack-layout bug in `create_payback_note`'s
 /// `has_account_fill` branch.
 ///
 /// The buggy frame setup left three stray zeros between `ASSET_VALUE` and the
@@ -2230,7 +2232,7 @@ async fn pswap_account_fill_payback_not_first_output_note_test() -> anyhow::Resu
     assert_eq!(
         dummy_out.assets().num_assets(),
         0,
-        "SPAWN dummy should be empty; non-empty means `create_p2id_note` \
+        "SPAWN dummy should be empty; non-empty means `create_payback_note` \
          wrote its asset to the wrong output note_idx",
     );
 
@@ -2791,13 +2793,8 @@ async fn pswap_chained_partial_fills_test(
         total_eth_from_bob += fill_amount;
         current_offered = remaining_offered;
         current_requested = remaining_requested;
-        // Remainder serial: [0] + 1 (matching MASM LE orientation)
-        current_serial = Word::from([
-            current_serial[0] + ONE,
-            current_serial[1],
-            current_serial[2],
-            current_serial[3],
-        ]);
+        // Match the remainder serial derived by the note script.
+        current_serial[3] += ONE;
     }
 
     // Verify conservation

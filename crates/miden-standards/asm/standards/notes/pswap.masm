@@ -71,7 +71,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 #   (AccountIdPrefix as Felt)
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
 # - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
-# - payback_note_type: The NoteType used for the P2ID payback note (0 = private, 1 = public)
+# - payback_note_type: The NoteType used for the payback note (0 = private, 1 = public)
 # - cancellation_fee_{suffix,prefix,amount}: Native fee reserve; all zero when absent
 # - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
@@ -117,7 +117,6 @@ const CALC_FILL_REFERENCE = 1
 
 # Procedure locals of load_offered_asset
 const OFFERED_ASSETS_PTR = 0
-const OFFERED_ASSET_COUNT = MAX_NUM_ASSETS * ASSET_SIZE
 
 # add_cancellation_fee_and_seal_output locals
 const EXPECTED_PRIMARY_PTR = 0
@@ -555,7 +554,7 @@ proc add_cancellation_fee_and_seal_output(
     # => []
 end
 
-#! Pays the reserve in full without checking transaction fee sufficiency.
+#! Pays the cancellation reserve into a sealed TX_FEE note.
 #! A zero fee amount creates no output.
 #!
 #! Inputs:  [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
@@ -1005,7 +1004,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
-@locals(17)
+@locals(16)
 proc load_offered_asset() -> Asset
     exec.active_note::get_initial_assets_info
     # => [INITIAL_ASSETS_COMMITMENT, num_initial_assets]
@@ -1014,28 +1013,25 @@ proc load_offered_asset() -> Asset
     dup lte.MAX_NUM_ASSETS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => [num_initial_assets, INITIAL_ASSETS_COMMITMENT]
 
-    loc_store.OFFERED_ASSET_COUNT
-    # => [INITIAL_ASSETS_COMMITMENT]
+    dup movdn.5
+    # => [num_initial_assets, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
     locaddr.OFFERED_ASSETS_PTR exec.active_note::remove_all_assets
-    # => [num_assets, INITIAL_ASSETS_COMMITMENT]
+    # => [num_assets, num_initial_assets, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
-    loc_load.OFFERED_ASSET_COUNT assert_eq.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
-    # => [INITIAL_ASSETS_COMMITMENT]
+    assert_eq.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    # => [INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
-    loc_load.OFFERED_ASSET_COUNT mul.ASSET_SIZE locaddr.OFFERED_ASSETS_PTR
-    # => [assets_ptr, num_elements, INITIAL_ASSETS_COMMITMENT]
+    dup.4 mul.ASSET_SIZE locaddr.OFFERED_ASSETS_PTR
+    # => [assets_ptr, num_elements, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
     exec.poseidon2::hash_elements
-    # => [ASSETS_COMMITMENT, INITIAL_ASSETS_COMMITMENT]
+    # => [ASSETS_COMMITMENT, INITIAL_ASSETS_COMMITMENT, num_initial_assets]
 
     assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
-    # => []
+    # => [num_initial_assets]
 
-    locaddr.OFFERED_ASSETS_PTR
-    # => [assets_ptr]
-
-    loc_load.OFFERED_ASSET_COUNT eq.NUM_ASSETS
+    locaddr.OFFERED_ASSETS_PTR swap eq.NUM_ASSETS
     # => [is_single_asset, assets_ptr]
 
     if.true
@@ -1089,7 +1085,7 @@ end
 
 #! Returns the PSWAP order_id, taken from the active note's serial[1].
 #!
-#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Private paybacks use
+#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Paybacks use
 #! an independent fixed serial; their attachments carry this order ID.
 #!
 #! Inputs:  []
@@ -1159,7 +1155,7 @@ end
 
 #! Executes the partially-fillable swap.
 #!
-#! Sends offered tokens to consumer, requested tokens to the configured P2ID recipient,
+#! Sends offered tokens to consumer, requested tokens to the configured payback recipient,
 #! and creates a remainder note if partially filled.
 #!
 #! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
@@ -1293,7 +1289,7 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note carrying the requested asset to the configured recipient. The note's
+    # Create a payback note carrying the requested asset to the configured recipient. The note's
     # assets are derived from the requested fill amounts (`account_fill +
     # note_fill`), not from `total_payout` (which is the offered asset owed to
     # the consumer). All-zero fill arguments select the requested amount in `fill`.
@@ -1427,7 +1423,7 @@ proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     # => []
 end
 
-#! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
+#! Partially-fillable swap with public P2ID paybacks or private paybacks to a fixed recipient.
 #!
 #! NOTE_ARGS are [action, account_fill, note_fill, reserved].
 #! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.

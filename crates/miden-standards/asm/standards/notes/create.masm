@@ -15,7 +15,10 @@ use miden::standards::wallets::basic as wallet
 # =================================================================================================
 
 const ACTION_RECLAIM = 1
-# The note storage buffer is initialized and read only by main.
+# Global memory address at which main loads the note storage.
+# Storage layout (16 elements):
+# [OUTPUT_RECIPIENT(4), FEE_ASSET_ID(4), FEE_ASSET_VALUE(4),
+#  target_suffix, target_prefix, output_tag, output_type]
 const STORAGE_PTR = 0
 const OUTPUT_RECIPIENT_PTR = STORAGE_PTR
 # A zero fee amount disables the TX_FEE output.

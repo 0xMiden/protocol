@@ -27,7 +27,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT;
-use miden_standards::note::{CreateNote, P2idNote, TxFeeNote};
+use miden_standards::note::{CreateNote, CreateNoteStorage, P2idNote, TxFeeNote};
 use miden_testing::{
     AccountState,
     Auth,
@@ -75,6 +75,13 @@ fn setup(
         .into();
     let fee = fee_amount.map(|amount| FungibleAsset::new(fee_faucet, amount)).transpose()?;
     let create_note = CreateNote::new(sender.id(), builder.rng_mut().draw_word(), output, fee)?;
+    let storage = CreateNoteStorage::try_from(create_note.note().storage().items())?;
+    assert_eq!(&storage, create_note.storage());
+    assert_eq!(storage.target(), passthrough.id());
+    assert_eq!(storage.output_recipient(), create_note.output().recipient().digest());
+    assert_eq!(storage.output_tag(), create_note.output().metadata().tag());
+    assert_eq!(storage.output_type(), note_type);
+    assert_eq!(storage.fee(), fee);
     builder.add_output_note(RawOutputNote::Full(create_note.note().clone()));
     Ok((builder, sender, passthrough, create_note))
 }
@@ -432,5 +439,28 @@ fn create_note_validates_funding() -> anyhow::Result<()> {
         .build()?
         .into();
     assert!(make(maximal, create_note.fee()).is_err());
+    Ok(())
+}
+
+#[test]
+fn create_note_storage_rejects_invalid_fields() -> anyhow::Result<()> {
+    let (_, _, _, note) = setup(NoteType::Public, false, Some(50), 0)?;
+    let items = note.note().storage().items();
+    for length in [0, CreateNoteStorage::NUM_ITEMS - 1, CreateNoteStorage::NUM_ITEMS + 1] {
+        let mut malformed = items.to_vec();
+        malformed.resize(length, miden_protocol::ZERO);
+        assert!(CreateNoteStorage::try_from(malformed.as_slice()).is_err());
+    }
+    // Invalid fee padding, account ID, tag, and note type must not be truncated or ignored.
+    for (index, value) in [
+        (9, miden_protocol::ONE),
+        (12, miden_protocol::ONE),
+        (14, miden_protocol::Felt::from(u32::MAX) + miden_protocol::ONE),
+        (15, miden_protocol::Felt::from(256u32)),
+    ] {
+        let mut malformed = items.to_vec();
+        malformed[index] = value;
+        assert!(CreateNoteStorage::try_from(malformed.as_slice()).is_err());
+    }
     Ok(())
 }
