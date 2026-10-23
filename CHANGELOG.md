@@ -34,7 +34,6 @@
 - The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
 
 ## v0.17.0-pre.1 (2026-09-05)
-## v1.0.0-rc.1 (TBD)
 
 ### Features
 
@@ -56,6 +55,9 @@
 - [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
 - [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
+- [BREAKING] `NoteConsumptionChecker` now rejects unconsumable `FEE_SPONSORSHIP` notes without executing them and drops a failing note together with its sponsorships, reporting a bundle whose sponsorship carries the wrong fee asset as `NoteFailure::Fee`; renamed `FailedNote::error` to `execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+- Added `FeeSponsorshipNote::check_reclaim`, and `StandardNote::is_consumable` now decides a lone `FEE_SPONSORSHIP` note by its reclaim rules ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+- `MasmError` and the `miden_standards::errors::standards` error constants are now available without the `testing` feature, so code can recognize why a standards procedure failed ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
@@ -80,9 +82,6 @@
 - [BREAKING] The executor now adds lazy-loaded asset and storage map witnesses to the partial accounts in `TransactionInputs`, and `TransactionInputs::with_asset_witnesses` is replaced by `add_asset_witnesses` ([#4033](https://github.com/0xMiden/protocol/pull/4033)).
 - [BREAKING] `TransactionInputs` no longer stores the recorded advice inputs, since its typed lazy-loaded data is enough to re-execute and prove the transaction ([#4034](https://github.com/0xMiden/protocol/pull/4034)).
 - [BREAKING] `TransactionArgs` now stores output note recipients and signatures as typed data instead of in its advice inputs, and `TransactionArgs::from_parts` takes them as parameters ([#4048](https://github.com/0xMiden/protocol/pull/4048)).
-
-### Fixes
-
 - [BREAKING] Added `BoundSignature`, which binds a signature to its `SignatureKey` and replaces `Signature::to_encoded_signature` with an infallible encoding, so unrecoverable ECDSA signatures are rejected instead of causing a panic ([#4045](https://github.com/0xMiden/protocol/pull/4045)).
 
 ## v0.17.0 (2026-10-01)
