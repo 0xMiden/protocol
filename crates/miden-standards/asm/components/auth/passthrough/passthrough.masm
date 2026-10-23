@@ -1,0 +1,53 @@
+use {AuthArgs} from miden::standards::types
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# =================================================================================================
+
+# Same empty vault root as the transaction kernel's EMPTY_SMT_ROOT.
+const EMPTY_VAULT_ROOT = [3975378004049472045, 2532873049833957132, 2640800763532531478, 11158234471980764993]
+
+# ERRORS
+# =================================================================================================
+
+const ERR_PASSTHROUGH_STATE_CHANGED = "passthrough account state must remain unchanged"
+const ERR_PASSTHROUGH_VAULT_NOT_EMPTY = "passthrough account vault must be empty"
+
+# AUTHENTICATION
+# =================================================================================================
+
+#! Authorizes a permissionless transaction only when the account remains unchanged and empty.
+#! On deployment only, increments the nonce after checking the same state invariants.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Authentication arguments are unused.
+#!
+#! Panics if:
+#! - the account state changed or a code upgrade is pending.
+#! - the account vault is not empty.
+@auth_script
+pub proc auth_passthrough(auth_args: AuthArgs)
+    dropw
+    # => [pad(16)]
+
+    # Check state before the deployment nonce increment.
+    exec.native_account::has_state_changed assertz.err=ERR_PASSTHROUGH_STATE_CHANGED
+    # => [pad(16)]
+
+    exec.active_account::get_vault_root push.EMPTY_VAULT_ROOT
+    # => [EMPTY_VAULT_ROOT, VAULT_ROOT, pad(16)]
+
+    assert_eqw.err=ERR_PASSTHROUGH_VAULT_NOT_EMPTY
+    # => [pad(16)]
+
+    exec.active_account::get_nonce eq.0
+    # => [is_new_account, pad(16)]
+
+    if.true
+        exec.native_account::incr_nonce drop
+    end
+    # => [pad(16)]
+end

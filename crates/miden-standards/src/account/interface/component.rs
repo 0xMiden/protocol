@@ -59,6 +59,12 @@ pub enum AccountComponentInterface {
     /// account before fee payment.
     AuthNetworkAccount,
     /// Exposes procedures from the
+    /// [`AuthPassthrough`][crate::account::auth::AuthPassthrough] module.
+    ///
+    /// This permissionless authentication scheme requires unchanged account state and an empty
+    /// vault. Deployment alone increments the nonce once.
+    AuthPassthrough,
+    /// Exposes procedures from the
     /// [`AuthTxFeeCollector`][crate::account::auth::AuthTxFeeCollector] module.
     ///
     /// This authentication scheme forwards the single asset of every consumed note into one P2ID
@@ -98,6 +104,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
+            AccountComponentInterface::AuthPassthrough => "Passthrough Auth".to_string(),
             AccountComponentInterface::AuthTxFeeCollector => "Tx Fee Collector Auth".to_string(),
             AccountComponentInterface::CustomAuth(proc_root) => {
                 format!("Custom Auth({})", shortened_mast_root(proc_root))
@@ -120,6 +127,7 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
+                | AccountComponentInterface::AuthPassthrough
                 | AccountComponentInterface::AuthTxFeeCollector
                 | AccountComponentInterface::CustomAuth(_)
         )
