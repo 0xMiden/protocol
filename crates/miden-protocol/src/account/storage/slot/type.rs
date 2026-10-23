@@ -31,6 +31,7 @@ impl StorageSlotType {
     const MAP_TYPE: u8 = 1;
     const ARRAY_TYPE: u8 = 2;
 
+    /// Encodes the type tag in the low 32 bits and the array length, if any, in the upper 32 bits.
     pub fn as_felt(&self) -> Felt {
         match self {
             Self::Value => Felt::from(Self::VALUE_TYPE),
@@ -78,9 +79,11 @@ impl TryFrom<Felt> for StorageSlotType {
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
         let encoded = value.as_canonical_u64();
         match (encoded as u32, encoded >> 32) {
-            (0, 0) => Ok(Self::Value),
-            (1, 0) => Ok(Self::Map),
-            (2, length) => Ok(Self::Array(StorageArrayLength::try_from(length as usize)?)),
+            (tag, 0) if tag == u32::from(Self::VALUE_TYPE) => Ok(Self::Value),
+            (tag, 0) if tag == u32::from(Self::MAP_TYPE) => Ok(Self::Map),
+            (tag, length) if tag == u32::from(Self::ARRAY_TYPE) => {
+                Ok(Self::Array(StorageArrayLength::try_from(length as usize)?))
+            },
             _ => Err(AccountError::other("invalid storage slot type")),
         }
     }
