@@ -20,6 +20,7 @@
 
 ### Changes
 
+- Simplified PSWAP action handling and output validation.
 - [BREAKING] Both PSWAP payback modes now use fixed recipient hashes, with fill attachments distinguishing successive outputs ([#4074](https://github.com/0xMiden/protocol/pull/4074)).
 - [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).

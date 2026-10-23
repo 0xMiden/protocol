@@ -1,5 +1,5 @@
 use {Uint64} from miden::standards::types
-use {AccountId, Asset, AssetAmount, Bool, NoteArgs, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
+use {AccountId, Asset, AssetAmount, NoteArgs, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
@@ -121,12 +121,6 @@ const OFFERED_ASSETS_PTR = 0
 # add_cancellation_fee_and_seal_output locals
 const EXPECTED_PRIMARY_PTR = 0
 const EXPECTED_FEE_PTR = EXPECTED_PRIMARY_PTR + ASSET_SIZE
-const EXPECTED_PRIMARY_VALUE_PTR = EXPECTED_PRIMARY_PTR + ASSET_VALUE_MEMORY_OFFSET
-const EXPECTED_FEE_VALUE_PTR = EXPECTED_FEE_PTR + ASSET_VALUE_MEMORY_OFFSET
-const EXPECTED_NOTE_IDX = EXPECTED_FEE_PTR + ASSET_SIZE
-
-# pay_cancellation_fee locals
-const PAY_CANCELLATION_FEE_PTR = 0
 
 # create_payback_note locals
 const PAYBACK_NOTE_IDX = 0
@@ -419,6 +413,50 @@ proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     # => [tag, note_type, RECIPIENT]
 end
 
+#! Creates an output through the consuming account's wallet procedure.
+#!
+#! Inputs:  [tag, note_type, RECIPIENT]
+#! Outputs: [note_idx]
+proc create_output_note(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    call.wallet::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx]
+end
+
+#! Funds an output while retaining the expected asset for validation after callbacks.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx]
+#! Outputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+proc add_asset_and_preserve_expected(expected_asset: Asset, note_idx: u16) -> (Asset, u16)
+    repeat.9
+        dup.8
+    end
+    # => [ASSET_ID, ASSET_VALUE, note_idx, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+end
+
+#! Adds the PSWAP fill attachment before any asset callback can append attachments.
+#!
+#! Inputs:  [amount, note_idx]
+#! Outputs: []
+proc add_fill_attachment(amount: AssetAmount, note_idx: u16)
+    push.0 exec.get_current_depth exec.get_order_id
+    # => [order_id, depth, 0, amount, note_idx]
+
+    movup.3 push.PSWAP_ATTACHMENT_SCHEME
+    # => [scheme, amount, order_id, depth, 0, note_idx]
+
+    exec.output_note::add_word_attachment
+    # => []
+end
+
 # OUTPUT NOTE VALIDATION AND SEALING
 # =================================================================================================
 
@@ -436,13 +474,23 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     exec.poseidon2::merge
     # => [EXPECTED_ASSETS_COMMITMENT, note_idx]
 
-    movup.4
-    # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
+    push.NUM_ASSETS movdn.4
+    # => [EXPECTED_ASSETS_COMMITMENT, expected_asset_count, note_idx]
 
-    dup exec.output_note::get_assets_info
-    # => [ASSETS_COMMITMENT, num_assets, note_idx, EXPECTED_ASSETS_COMMITMENT]
+    exec.validate_and_seal_assets
+    # => []
+end
 
-    movup.4 eq.NUM_ASSETS assert.err=ERR_PSWAP_OUTPUT_ALTERED
+#! Checks the output's asset count and commitment after callbacks, then seals it.
+#!
+#! Inputs:  [EXPECTED_ASSETS_COMMITMENT, expected_asset_count, note_idx]
+#! Outputs: []
+proc validate_and_seal_assets(expected_commitment: word, expected_count: u8, note_idx: u16)
+    movup.5 dup exec.output_note::get_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, note_idx,
+    #     EXPECTED_ASSETS_COMMITMENT, expected_asset_count]
+
+    movup.4 movup.10 assert_eq.err=ERR_PSWAP_OUTPUT_ALTERED
     # => [ASSETS_COMMITMENT, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
     movup.4 movdn.8
@@ -474,7 +522,7 @@ end
 #!
 #! Inputs:  [FEE_ASSET_ID, FEE_ASSET_VALUE, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 #! Outputs: []
-@locals(17)
+@locals(16)
 proc add_cancellation_fee_and_seal_output(
     fee_asset: Asset,
     expected_asset: Asset,
@@ -491,58 +539,16 @@ proc add_cancellation_fee_and_seal_output(
         locaddr.EXPECTED_PRIMARY_PTR exec.asset::store
         # => [note_idx]
 
-        loc_store.EXPECTED_NOTE_IDX
-        # => []
-
-        loc_load.EXPECTED_NOTE_IDX locaddr.EXPECTED_FEE_PTR exec.asset::load
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+        dup locaddr.EXPECTED_FEE_PTR exec.asset::load
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, note_idx]
 
         exec.output_note::add_asset
-        # => []
+        # => [note_idx]
 
-        # Mirror the output's merging of fungible assets from the same faucet.
-        padw locaddr.EXPECTED_PRIMARY_PTR mem_loadw_le exec.asset::id_into_faucet_id
-        # => [primary_faucet_suffix, primary_faucet_prefix]
+        locaddr.EXPECTED_PRIMARY_PTR exec.commit_assets_with_fee
+        # => [EXPECTED_ASSETS_COMMITMENT, expected_asset_count, note_idx]
 
-        padw locaddr.EXPECTED_FEE_PTR mem_loadw_le exec.asset::id_into_faucet_id
-        # => [fee_faucet_suffix, fee_faucet_prefix, primary_faucet_suffix, primary_faucet_prefix]
-
-        exec.account_id::eq
-        # => [is_same_faucet]
-
-        if.true
-            padw loc_loadw_le.EXPECTED_PRIMARY_VALUE_PTR
-            padw loc_loadw_le.EXPECTED_FEE_VALUE_PTR
-            # => [FEE_ASSET_VALUE, PRIMARY_ASSET_VALUE]
-
-            exec.fungible_asset::merge
-            # => [COMBINED_ASSET_VALUE]
-
-            loc_storew_le.EXPECTED_PRIMARY_VALUE_PTR dropw
-            push.NUM_ASSETS
-            # => [expected_asset_count = 1]
-        else
-            push.MAX_NUM_ASSETS
-            # => [expected_asset_count = 2]
-        end
-        # => [expected_asset_count]
-
-        dup mul.ASSET_SIZE locaddr.EXPECTED_PRIMARY_PTR
-        # => [expected_assets_ptr, num_elements, expected_asset_count]
-
-        exec.poseidon2::hash_elements
-        # => [EXPECTED_ASSETS_COMMITMENT, expected_asset_count]
-
-        loc_load.EXPECTED_NOTE_IDX exec.output_note::get_assets_info
-        # => [ASSETS_COMMITMENT, num_assets, EXPECTED_ASSETS_COMMITMENT, expected_asset_count]
-
-        movup.4 movup.9 assert_eq.err=ERR_PSWAP_OUTPUT_ALTERED
-        # => [ASSETS_COMMITMENT, EXPECTED_ASSETS_COMMITMENT]
-
-        assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
-        # => []
-
-        loc_load.EXPECTED_NOTE_IDX exec.output_note::seal
+        exec.validate_and_seal_assets
         # => []
     else
         dropw dropw
@@ -554,12 +560,53 @@ proc add_cancellation_fee_and_seal_output(
     # => []
 end
 
+#! Commits the expected primary asset and fee stored consecutively at assets_ptr.
+#! Merges matching fungible assets in place, using the same order as output-note funding.
+#! Both assets must be valid, and the fee amount must be nonzero.
+#!
+#! Inputs:  [assets_ptr]
+#! Outputs: [ASSETS_COMMITMENT, num_assets]
+proc commit_assets_with_fee(assets_ptr: ptr<Asset>) -> (word, u8)
+    padw dup.4 mem_loadw_le exec.asset::id_into_faucet_id
+    # => [primary_suffix, primary_prefix, assets_ptr]
+
+    padw dup.6 add.ASSET_SIZE mem_loadw_le exec.asset::id_into_faucet_id
+    # => [fee_suffix, fee_prefix, primary_suffix, primary_prefix, assets_ptr]
+
+    exec.account_id::eq
+    # => [same_faucet, assets_ptr]
+
+    if.true
+        padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+        # => [PRIMARY_VALUE, assets_ptr]
+
+        padw dup.8 add.ASSET_SIZE add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+        # => [FEE_VALUE, PRIMARY_VALUE, assets_ptr]
+
+        exec.fungible_asset::merge
+        # => [COMBINED_VALUE, assets_ptr]
+
+        dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
+        push.NUM_ASSETS
+        # => [num_assets = 1, assets_ptr]
+    else
+        push.MAX_NUM_ASSETS
+        # => [num_assets = 2, assets_ptr]
+    end
+    # => [num_assets, assets_ptr]
+
+    dup mul.ASSET_SIZE movup.2
+    # => [assets_ptr, num_elements, num_assets]
+
+    exec.poseidon2::hash_elements
+    # => [ASSETS_COMMITMENT, num_assets]
+end
+
 #! Pays the cancellation reserve into a sealed TX_FEE note.
 #! A zero fee amount creates no output.
 #!
 #! Inputs:  [fee_faucet_suffix, fee_faucet_prefix, fee_amount]
 #! Outputs: []
-@locals(8)
 proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
     dup.2 neq.0
     # => [has_cancellation_fee, fee_faucet_suffix, fee_faucet_prefix, fee_amount]
@@ -568,27 +615,21 @@ proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
         exec.fungible_asset::create
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
 
-        locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::store
-        # => []
-
         # Remainders increment serial[3]; paybacks use an independent fixed recipient.
         # Increment serial[2] for the cancellation fee, preserving the remainder's serial[3].
         exec.active_note::get_serial_number
-        # => [s0, s1, s2, s3]
+        # => [s0, s1, s2, s3, FEE_ASSET_ID, FEE_ASSET_VALUE]
 
         movup.2 add.1 movdn.2
-        # => [s0, s1, s2+1, s3]
+        # => [s0, s1, s2+1, s3, FEE_ASSET_ID, FEE_ASSET_VALUE]
 
         exec.tx_fee::create_output_note
-        # => [note_idx]
+        # => [note_idx, FEE_ASSET_ID, FEE_ASSET_VALUE]
 
-        dup locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::load
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx, note_idx]
+        movdn.8
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
-        exec.output_note::add_asset
-        # => [note_idx]
-
-        locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::load
+        exec.add_asset_and_preserve_expected
         # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
 
         exec.validate_and_seal_output_note
@@ -627,13 +668,7 @@ proc create_payback_note(
     exec.prepare_payback
     # => [tag, note_type, RECIPIENT]
 
-    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-    # => [tag, note_type, RECIPIENT, pad(10)]
-
-    call.wallet::create_note
-    # => [note_idx, pad(15)]
-
-    movdn.15 dropw dropw dropw drop drop drop
+    exec.create_output_note
     # => [note_idx]
 
     loc_store.PAYBACK_NOTE_IDX
@@ -643,22 +678,10 @@ proc create_payback_note(
     loc_load.PAYBACK_NOTE_IDX
     # => [note_idx]
 
-    push.0
-    # => [0, note_idx]
-
-    exec.get_current_depth
-    # => [depth, 0, note_idx]
-
-    exec.get_order_id
-    # => [order_id, depth, 0, note_idx]
-
     loc_load.PAYBACK_AMT_ACCOUNT_FILL loc_load.PAYBACK_AMT_NOTE_FILL add
-    # => [total_fill, order_id, depth, 0, note_idx]
+    # => [total_fill, note_idx]
 
-    push.PSWAP_ATTACHMENT_SCHEME
-    # => [PSWAP_ATTACHMENT_SCHEME, total_fill, order_id, depth, 0, note_idx]
-
-    exec.output_note::add_word_attachment
+    exec.add_fill_attachment
     # => []
 
     # Move account_fill_amount from the consumer's vault to the payback note (if > 0)
@@ -721,22 +744,17 @@ proc create_payback_note(
     exec.fungible_asset::create
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
+    exec.load_cancellation_fee
+    movup.4
+    # => [fee_amount, FEE_ASSET_ID, fee_padding(3),
+    #     EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
+    # A partial fill keeps the reserve in the remainder; a full fill returns it in the payback.
     loc_load.PAYBACK_AMT_ACCOUNT_FILL loc_load.PAYBACK_AMT_NOTE_FILL add
-    # => [total_fill, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+    mem_load.MIN_REQUESTED_AMOUNT_ITEM gte mul movdn.4
+    # => [FEE_ASSET_ID, FEE_VALUE_FOR_FILL, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
-    mem_load.MIN_REQUESTED_AMOUNT_ITEM gte
-    # => [is_full_fill, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
-
-    if.true
-        exec.load_cancellation_fee
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
-
-        exec.add_cancellation_fee_and_seal_output
-        # => []
-    else
-        exec.validate_and_seal_output_note
-        # => []
-    end
+    exec.add_cancellation_fee_and_seal_output
     # => []
 end
 
@@ -800,36 +818,16 @@ proc create_remainder_note(
     movup.4 movup.5
     # => [tag, note_type, RECIPIENT]
 
-    # Note creation must originate from the account context, so route through the account's
-    # `create_note` procedure. Pad the stack for the `call` convention.
-    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-    # => [tag, note_type, RECIPIENT, pad(10)]
-
-    call.wallet::create_note
-    # => [note_idx, pad(15)]
-
-    movdn.15 dropw dropw dropw drop drop drop
+    exec.create_output_note
     # => [note_idx]
 
     dup loc_store.REMAINDER_NOTE_IDX
     # => [note_idx]
 
-    push.0
-    # => [0, note_idx]
-
-    exec.get_current_depth
-    # => [depth, 0, note_idx]
-
-    exec.get_order_id
-    # => [order_id, depth, 0, note_idx]
-
     loc_load.REMAINDER_AMT_PAYOUT
-    # => [amt_payout, order_id, depth, 0, note_idx]
+    # => [amt_payout, note_idx]
 
-    push.PSWAP_ATTACHMENT_SCHEME
-    # => [PSWAP_ATTACHMENT_SCHEME, amt_payout, order_id, depth, 0, note_idx]
-
-    exec.output_note::add_word_attachment
+    exec.add_fill_attachment
     # => []
 
     # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.
@@ -848,19 +846,7 @@ proc create_remainder_note(
     exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    exec.output_note::add_asset
-    # => []
-
-    loc_load.REMAINDER_NOTE_IDX
-    # => [note_idx]
-
-    loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
-    # => [remainder_amount, note_idx]
-
-    loc_load.REMAINDER_OFFERED_FAUCET_PREFIX loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
-    # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
-
-    exec.fungible_asset::create
+    exec.add_asset_and_preserve_expected
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.load_cancellation_fee
@@ -898,24 +884,13 @@ proc refund_private(recipient: NoteRecipient, tag: NoteTag)
     push.NOTE_TYPE_PRIVATE movup.5
     # => [tag, private_type, RECIPIENT]
 
-    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-    # => [tag, private_type, RECIPIENT, pad(10)]
-
-    call.wallet::create_note
-    # => [note_idx, pad(15)]
-
-    movdn.15 dropw dropw dropw drop drop drop
+    exec.create_output_note
     # => [note_idx]
 
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    repeat.9
-        dup.8
-    end
-    # => [ASSET_ID, ASSET_VALUE, note_idx, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
-
-    exec.output_note::add_asset
+    exec.add_asset_and_preserve_expected
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     exec.validate_and_seal_output_note
@@ -1377,15 +1352,6 @@ end
 # ACTION SELECTION
 # =================================================================================================
 
-#! Returns whether the executing account is the public payback's creator.
-proc is_consumer_creator(creator_id: AccountId) -> Bool
-    exec.active_account::get_id
-    # => [account_suffix, account_prefix, creator_suffix, creator_prefix]
-
-    exec.account_id::eq
-    # => [is_creator]
-end
-
 #! Validates the note arguments and returns the action followed by the two fill amounts.
 #! The reserved element must be zero, and the action must be ACTION_FILL or ACTION_CANCEL.
 #!
@@ -1413,13 +1379,76 @@ proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     dup.1 eq.0 dup.1 eq.0 and
     # => [both_zero, account_fill, note_fill]
 
-    if.true
-        drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
-        # => [account_fill, note_fill]
-    end
+    mem_load.MIN_REQUESTED_AMOUNT_ITEM swap
+    # => [both_zero, min_requested, account_fill, note_fill]
+
+    cdrop
     # => [account_fill, note_fill]
 
     exec.execute_pswap
+    # => []
+end
+
+#! Reclaims a public-payback order for its creator, or fills it for another account.
+#!
+#! Inputs:  [action, account_fill, note_fill]
+#! Outputs: []
+proc execute_with_public_payback(action: u32, account_fill: AssetAmount, note_fill: AssetAmount)
+    # Public paybacks only accept the fill action. The original creator reclaims the
+    # order; other accounts fill it.
+    eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
+    # => [account_fill, note_fill]
+
+    mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
+    # => [creator_suffix, creator_prefix, account_fill, note_fill]
+
+    exec.active_account::get_id exec.account_id::eq
+    # => [is_creator, account_fill, note_fill]
+
+    if.true
+        drop drop
+        # => []
+
+        exec.handle_reclaim
+        # => []
+    else
+        exec.fill
+        # => []
+    end
+    # => []
+end
+
+#! Cancels a private-payback order with its recipient preimage, or fills it.
+#! The action has already been validated by parse_note_args.
+#!
+#! Inputs:  [action, account_fill, note_fill]
+#! Outputs: []
+proc execute_with_private_payback(action: u32, account_fill: AssetAmount, note_fill: AssetAmount)
+    eq.ACTION_CANCEL
+    # => [is_cancel, account_fill, note_fill]
+
+    if.true
+        # Cancellation uses no fill amounts; require their canonical zero encoding.
+        eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+        eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+        # => []
+
+        exec.prepare_payback
+        # => [tag, private_type, RECIPIENT]
+
+        swap drop movdn.4
+        # => [RECIPIENT, tag]
+
+        dupw
+        exec.authenticate_cancellation
+        # => [RECIPIENT, tag]
+
+        exec.refund_private
+        # => []
+    else
+        exec.fill
+        # => []
+    end
     # => []
 end
 
@@ -1446,55 +1475,9 @@ pub proc main(note_args: NoteArgs)
     # => [payback_note_type, action, account_fill, note_fill]
 
     if.true
-        # Public paybacks only accept the fill action. The original creator reclaims the
-        # order; other accounts fill it.
-        eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
-        # => [account_fill, note_fill]
-
-        mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
-        # => [creator_suffix, creator_prefix, account_fill, note_fill]
-
-        exec.is_consumer_creator
-        # => [is_creator, account_fill, note_fill]
-
-        if.true
-            drop drop
-            # => []
-
-            exec.handle_reclaim
-            # => []
-        else
-            exec.fill
-            # => []
-        end
-        # => []
+        exec.execute_with_public_payback
     else
-        eq.ACTION_CANCEL
-        # => [is_cancel, account_fill, note_fill]
-
-        if.true
-            # Cancellation uses no fill amounts; require their canonical zero encoding.
-            eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
-            eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
-            # => []
-
-            exec.prepare_payback
-            # => [tag, private_type, RECIPIENT]
-
-            swap drop movdn.4
-            # => [RECIPIENT, tag]
-
-            dupw
-            exec.authenticate_cancellation
-            # => [RECIPIENT, tag]
-
-            exec.refund_private
-            # => []
-        else
-            exec.fill
-            # => []
-        end
-        # => []
+        exec.execute_with_private_payback
     end
     # => []
 end
