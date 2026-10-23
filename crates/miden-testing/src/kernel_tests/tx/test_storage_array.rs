@@ -26,11 +26,11 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_STORAGE_PAYLOAD_TOO_LARGE,
     ERR_ACCOUNT_STORAGE_SLOT_NOT_ARRAY,
 };
-use miden_protocol::transaction::TransactionVerifier;
 use miden_protocol::transaction::memory::{
     ACCT_STORAGE_SLOT_NUM_ELEMENTS,
     ACCT_STORAGE_SLOT_TYPE_OFFSET,
 };
+use miden_protocol::transaction::{TransactionScript, TransactionVerifier};
 use miden_protocol::{Felt, Hasher, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -44,6 +44,9 @@ use crate::{
     assert_execution_error,
     assert_transaction_executor_error,
 };
+
+// HELPERS
+// ================================================================================================
 
 fn array_slot() -> StorageSlotName {
     StorageSlotName::new("test::arrays::values").unwrap()
@@ -79,6 +82,27 @@ fn array_component(body: &str, array: StorageArray) -> anyhow::Result<AccountCom
     )?)
 }
 
+fn array_account_builder(seed: u8, component: AccountComponent) -> AccountBuilder {
+    AccountBuilder::new([seed; 32])
+        .with_components(Auth::IncrNonce)
+        .with_component(component)
+}
+
+fn array_script(component: &AccountComponent) -> anyhow::Result<TransactionScript> {
+    let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
+    Ok(CodeBuilder::default().compile_tx_script(format!(
+        r"
+        @transaction_script
+        pub proc main
+            call.{root}
+        end
+        "
+    ))?)
+}
+
+// TESTS
+// ================================================================================================
+
 #[rstest]
 #[case::one_word(1)]
 #[case::odd_length(3)]
@@ -93,35 +117,36 @@ async fn storage_array_read_write_and_sparse_patch(#[case] length: usize) -> any
         r"
         # A deeper stack word and buffer sentinels must survive all wrappers.
         push.101.102.103.104
+        # => [SENTINEL]
+
         push.77 mem_store.1020 push.88 mem_store.{end_ptr}
         push.{slot} exec.active_account::get_array_length eq.{length} assert
         push.1024 push.{slot} exec.active_account::get_array eq.{length} assert
         padw mem_loadw_le.1024 push.1.1.1.1 assert_eqw
+        # => [SENTINEL]
+
+        # Zero the first word and write the array back.
         padw mem_storew_le.1024 dropw
         push.1024 push.{slot} exec.native_account::set_array eq.{length} assert
+        # => [SENTINEL]
+
+        # Initial reads still return the transaction-start state.
         push.4096 push.{slot} exec.native_account::get_initial_array eq.{length} assert
         padw mem_loadw_le.4096 push.1.1.1.1 assert_eqw
+        # => [SENTINEL]
+
         push.1024 push.{slot} exec.active_account::get_array eq.{length} assert
         padw mem_loadw_le.1024 padw assert_eqw
         mem_load.1020 eq.77 assert mem_load.{end_ptr} eq.88 assert
         push.101.102.103.104 assert_eqw
+        # => []
     "
     );
     let component = array_component(&body, initial.clone())?;
-    let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
-    let account = AccountBuilder::new([37; 32])
+    let script = array_script(&component)?;
+    let account = array_account_builder(37, component)
         .account_type(AccountType::Public)
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
         .build_existing()?;
-    let script = CodeBuilder::default().compile_tx_script(format!(
-        r"
-        @transaction_script
-        pub proc main
-            call.{root}
-        end
-    "
-    ))?;
     let executed = TestTransactionBuilder::new(account.clone())
         .tx_script(script)
         .build()?
@@ -148,18 +173,17 @@ async fn storage_array_restored_words_are_omitted() -> anyhow::Result<()> {
         push.1024 push.{slot} exec.active_account::get_array drop
         padw mem_storew_le.1024 dropw
         push.1024 push.{slot} exec.native_account::set_array drop
+        # => []
+
+        # Restoring the original word should remove it from the final patch.
         push.1.1.1.1 mem_storew_le.1024 dropw
         push.1024 push.{slot} exec.native_account::set_array drop
+        # => []
     "
     );
     let component = array_component(&body, initial)?;
-    let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
-    let account = AccountBuilder::new([38; 32])
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build_existing()?;
-    let script = CodeBuilder::default()
-        .compile_tx_script(format!(r"@transaction_script pub proc main call.{root} end"))?;
+    let script = array_script(&component)?;
+    let account = array_account_builder(38, component).build_existing()?;
     let executed = TestTransactionBuilder::new(account)
         .tx_script(script)
         .build()?
@@ -177,19 +201,18 @@ async fn prove_storage_array_update() -> anyhow::Result<()> {
     let body = format!(
         r"
         push.1024 push.{slot} exec.active_account::get_array drop
+        # => []
+
         push.4.3.2.1 mem_storew_le.1028 dropw
         push.1024 push.{slot} exec.native_account::set_array drop
+        # => []
     "
     );
     let component = array_component(&body, initial)?;
-    let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
-    let account = AccountBuilder::new([39; 32])
+    let script = array_script(&component)?;
+    let account = array_account_builder(39, component)
         .account_type(AccountType::Public)
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
         .build_existing()?;
-    let script = CodeBuilder::default()
-        .compile_tx_script(format!(r"@transaction_script pub proc main call.{root} end"))?;
     let executed = TestTransactionBuilder::new(account)
         .tx_script(script)
         .build()?
@@ -211,10 +234,7 @@ async fn storage_array_setter_rejects_malformed_preimages() -> anyhow::Result<()
     let id = array_slot().id();
     let slot = format!("{}.{}", id.prefix(), id.suffix());
     let component = array_component("push.0 drop", initial)?;
-    let account = AccountBuilder::new([40; 32])
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build_existing()?;
+    let account = array_account_builder(40, component).build_existing()?;
     let data = vec![Felt::ONE; 12];
     let root = Hasher::hash_elements(&data);
     let mut corrupted = data.clone();
@@ -230,7 +250,10 @@ async fn storage_array_setter_rejects_malformed_preimages() -> anyhow::Result<()
             use miden::tx_kernel_core::prologue
             begin
                 exec.prologue::prepare_transaction
+                # => []
+
                 push.{root} push.{slot} exec.account::set_array drop
+                # => []
             end
         "
         );
@@ -250,6 +273,37 @@ async fn storage_array_setter_rejects_malformed_preimages() -> anyhow::Result<()
 }
 
 #[rstest]
+#[case::wrong_length(8)]
+#[case::wrong_commitment(12)]
+#[tokio::test]
+async fn storage_array_read_rejects_malformed_preimages(
+    #[case] num_elements: usize,
+) -> anyhow::Result<()> {
+    let array = StorageArray::new(vec![Word::empty(); 3])?;
+    let commitment = array.commitment();
+    let id = array_slot().id();
+    let component = array_component(
+        &format!(
+            "push.1024 push.{}.{} exec.active_account::get_array drop",
+            id.prefix(),
+            id.suffix()
+        ),
+        array,
+    )?;
+    let script = array_script(&component)?;
+    let account = array_account_builder(50, component).build_existing()?;
+    let tx = TestTransactionBuilder::new(account)
+        .tx_script(script)
+        .add_advice_map_entry(commitment, vec![Felt::ONE; num_elements])
+        .build()?;
+
+    assert_transaction_executor_error!(tx.execute().await, matches ExecutionError::OperationError {
+        err: OperationError::FailedAssertion { err_code, .. }, ..
+    } if err_code == Felt::ZERO);
+    Ok(())
+}
+
+#[rstest]
 #[case::odd_length(3)]
 #[case::max_length(256)]
 #[tokio::test]
@@ -258,11 +312,7 @@ async fn storage_array_creation_commits_untouched_zero_words(
 ) -> anyhow::Result<()> {
     let array = StorageArray::new(vec![Word::empty(); length])?;
     let component = array_component("push.0 drop", array.clone())?;
-    let account = AccountBuilder::new([42; 32])
-        .account_type(AccountType::Public)
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build()?;
+    let account = array_account_builder(42, component).account_type(AccountType::Public).build()?;
     let executed = TestTransactionBuilder::new(account).build()?.execute().await?;
     assert_eq!(
         executed.account_patch().storage().get(&array_slot()),
@@ -286,6 +336,7 @@ async fn storage_array_foreign_access(
         r"
         push.1024 push.{slot} exec.active_account::get_array eq.3 assert
         padw mem_loadw_le.1024 push.7.7.7.7 assert_eqw
+        # => []
     "
     );
     if let Some(procedure) = native_procedure {
@@ -293,10 +344,7 @@ async fn storage_array_foreign_access(
     }
     let component = array_component(&body, array)?;
     let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
-    let foreign = AccountBuilder::new([43; 32])
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build_existing()?;
+    let foreign = array_account_builder(43, component).build_existing()?;
     let native = AccountBuilder::new([44; 32])
         .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
@@ -312,7 +360,13 @@ async fn storage_array_foreign_access(
         pub proc main
             padw padw push.0.0
             push.{root} push.{prefix}.{suffix}
-            exec.tx::execute_foreign_procedure exec.sys::truncate_stack
+            # => [account_suffix, account_prefix, PROC_ROOT, pad(10)]
+
+            exec.tx::execute_foreign_procedure
+            # => [pad(16)]
+
+            exec.sys::truncate_stack
+            # => []
         end
     ",
         prefix = foreign.id().prefix().as_felt(),
@@ -348,13 +402,8 @@ async fn storage_array_new_account_checks_initial_preimage_before_overwrite() ->
         ),
         array,
     )?;
-    let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
-    let account = AccountBuilder::new([45; 32])
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build()?;
-    let script = CodeBuilder::default()
-        .compile_tx_script(format!("@transaction_script pub proc main call.{root} end"))?;
+    let script = array_script(&component)?;
+    let account = array_account_builder(45, component).build()?;
     let tx = TestTransactionBuilder::new(account)
         .tx_script(script)
         .add_advice_map_entry(initial_root, vec![Felt::ONE; 12])
@@ -387,12 +436,19 @@ async fn storage_array_payload_budget_is_enforced_in_kernel(
         use miden::tx_kernel_core::prologue
         begin
             exec.prologue::prepare_transaction
+            # => []
+
             push.{first_type}
             exec.memory::get_native_account_active_storage_slots_ptr add.{ACCT_STORAGE_SLOT_TYPE_OFFSET} mem_store
+            # => []
+
             push.{second_type}
             exec.memory::get_native_account_active_storage_slots_ptr
             add.{ACCT_STORAGE_SLOT_NUM_ELEMENTS} add.{ACCT_STORAGE_SLOT_TYPE_OFFSET} mem_store
+            # => []
+
             exec.account::validate_storage
+            # => []
         end
     "
     );
@@ -422,15 +478,25 @@ async fn storage_array_repeated_delta_computation_matches_host() -> anyhow::Resu
         @auth_script
         pub proc auth
             exec.native_account::incr_nonce drop
+            # => [AUTH_ARGS]
+
             push.1.1.1.1 mem_storew_le.1024 dropw
             push.1024 push.{slot} exec.native_account::set_array drop
             exec.native_account::compute_delta_commitment dropw
+            # => [AUTH_ARGS]
+
             # Restore one index and change another before computing the signing summary.
             padw mem_storew_le.1024 dropw
             push.2.2.2.2 mem_storew_le.1028 dropw
             push.1024 push.{slot} exec.native_account::set_array drop
+            # => [AUTH_ARGS]
+
             dropw padw push.0.0
+            # => [user_params(6)]
+
             exec.::miden::standards::auth::get_default_tx_summary_commitment
+            # => [TX_SUMMARY_COMMITMENT]
+
             emit.AUTH_UNAUTHORIZED_EVENT
             push.0 assert
         end
@@ -486,7 +552,11 @@ async fn storage_array_syscall_requires_account_origin(#[case] offset: &str) -> 
         @transaction_script
         pub proc main
             push.{commitment} push.{prefix}.{suffix} push.{offset}
+            # => [offset, slot_id_suffix, slot_id_prefix, ROOT]
+
             push.0 movdn.7 padw padw swapdw
+            # => [offset, slot_id_suffix, slot_id_prefix, ROOT, pad(9)]
+
             syscall.exec_kernel_proc
         end
     ",
@@ -516,7 +586,10 @@ async fn storage_array_cannot_be_changed_through_value_setter() -> anyhow::Resul
         use miden::tx_kernel_core::prologue
         begin
             exec.prologue::prepare_transaction
+            # => []
+
             padw push.{prefix}.{suffix} exec.account::set_item dropw
+            # => []
         end
     ",
         prefix = id.prefix(),
@@ -549,13 +622,8 @@ async fn storage_array_rejects_invalid_memory_ranges(
         &format!("push.{ptr} push.{}.{} exec.{procedure} drop", id.prefix(), id.suffix()),
         array,
     )?;
-    let root = component.get_procedure_root_by_path("test::arrays::exercise").unwrap();
-    let account = AccountBuilder::new([49; 32])
-        .with_components(Auth::IncrNonce)
-        .with_component(component)
-        .build_existing()?;
-    let script = CodeBuilder::default()
-        .compile_tx_script(format!(r"@transaction_script pub proc main call.{root} end"))?;
+    let script = array_script(&component)?;
+    let account = array_account_builder(49, component).build_existing()?;
     let tx = TestTransactionBuilder::new(account).tx_script(script).build()?;
     if !ptr.is_multiple_of(Word::NUM_ELEMENTS as u64) {
         assert_transaction_executor_error!(tx.execute().await, matches ExecutionError::MemoryError {

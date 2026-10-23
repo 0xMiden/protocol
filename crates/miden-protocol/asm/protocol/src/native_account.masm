@@ -11,9 +11,9 @@ use {
 use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_CODE_UPGRADE_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET, ACCOUNT_GET_INITIAL_ARRAY_INFO_OFFSET, ACCOUNT_SET_ARRAY_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::core::crypto::hashes::poseidon2
-use miden::core::mem
 use miden::core::word
 use miden::protocol::active_account
+use miden::protocol_utils::mem
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -503,7 +503,7 @@ pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> wor
 end
 
 #! Replaces the native account array from caller memory.
-#! `src_ptr` must be word-aligned and contain the full array. Its length stays fixed.
+#! `src_ptr` must be word-aligned and contain the full array. The length is fixed at account creation.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, src_ptr]
 #! Outputs: [num_words]
@@ -576,58 +576,26 @@ end
 #! - the caller is not a native account procedure.
 #! - the preimage or destination range is invalid.
 #!
-#! Locals:
-#! - 0: dst_ptr
-#! - 1: num_words
-#!
 #! Invocation: exec
-@locals(2)
 pub proc get_initial_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
-    movup.2 loc_store.0
-    # => [slot_id_suffix, slot_id_prefix]
-
     push.0 movdn.2 push.ACCOUNT_GET_INITIAL_ARRAY_INFO_OFFSET
-    # => [offset, slot_id_suffix, slot_id_prefix, 0]
+    # => [offset, slot_id_suffix, slot_id_prefix, 0, dst_ptr]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13), dst_ptr]
 
     syscall.exec_kernel_proc
-    # => [ROOT, num_words, pad(11)]
+    # => [ROOT, num_words, pad(11), dst_ptr]
 
     # clean the stack
     swapdw dropw dropw
     repeat.3
         movup.5 drop
     end
-    # => [ROOT, num_words]
+    # => [ROOT, num_words, dst_ptr]
 
-    # save the length and require exactly four advice elements per word
-    dup.4 loc_store.1
-    adv.push_mapvaln adv_push
-    # => [num_elements, ROOT, num_words]
-
-    loc_load.1 mul.4 assert_eq
-    # => [ROOT, num_words]
-
-    # check that both ends of the destination range fit in u32
-    loc_load.0 dup u32assert drop
-    dup.5 mul.4 dup.1 add u32assert
-    # => [end_ptr, dst_ptr, ROOT, num_words]
-
-    drop
-    # => [dst_ptr, ROOT, num_words]
-
-    movup.5
-    # => [num_words, dst_ptr, ROOT]
-
-    # copy the initial array and verify its commitment
-    exec.mem::pipe_preimage_to_memory
-    # => [end_ptr]
-
-    drop
-    loc_load.1
+    exec.mem::pipe_words_preimage_to_memory
     # => [num_words]
 end
 

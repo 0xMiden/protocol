@@ -3,6 +3,45 @@ use miden::core::crypto::hashes::poseidon2
 
 use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 
+#! Copies a word array from the advice map into memory and verifies its commitment.
+#!
+#! Inputs:  [COMMITMENT, num_words, dst_ptr]
+#! Outputs: [num_words]
+#!
+#! Panics if:
+#! - the advice preimage is missing, has the wrong length, or does not match COMMITMENT.
+#! - dst_ptr is not word-aligned or the destination range does not fit in u32.
+#!
+#! Invocation: exec
+pub proc pipe_words_preimage_to_memory(commitment: word, num_words: u32, dst_ptr: ptr<word>) -> u32
+    # require exactly four advice elements per word
+    adv.push_mapvaln adv_push
+    # => [num_elements, COMMITMENT, num_words, dst_ptr]
+
+    dup.5 mul.WORD_NUM_ELEMENTS assert_eq
+    # => [COMMITMENT, num_words, dst_ptr]
+
+    # check that both ends of the destination range fit in u32
+    movup.5 u32assert
+    # => [dst_ptr, COMMITMENT, num_words]
+
+    dup.5 mul.WORD_NUM_ELEMENTS dup.1 add u32assert drop
+    # => [dst_ptr, COMMITMENT, num_words]
+
+    movup.5
+    # => [num_words, dst_ptr, COMMITMENT]
+
+    # retain the length while copying the array and verifying its commitment
+    dup movdn.6
+    # => [num_words, dst_ptr, COMMITMENT, num_words]
+
+    exec.mem::pipe_preimage_to_memory
+    # => [end_ptr, num_words]
+
+    drop
+    # => [num_words]
+end
+
 #! Writes `num_elements` elements from the advice stack to memory starting at `dest_ptr` and returns
 #! their commitment.
 #!
