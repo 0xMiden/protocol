@@ -321,11 +321,13 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 
 - **Public paybacks:** the order stores the original creator's account ID. Each fill creates a public P2ID for that creator, using the consumed PSWAP serial with its first element incremented. The creator can reclaim an unspent order or remainder directly into its vault.
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
-- **Storage:** 7 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
+- **Storage:** 10 elements for public paybacks or 13 for private paybacks. Common fields contain the requested asset, minimum fill step, payback type, and optional cancellation fee asset. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
 
-When reconstructing a private payback, include its complete on-chain attachment list.
+An optional native cancellation reserve travels unchanged into each remainder. A complete fill returns it in the final payback, combining amounts when the requested asset is native. Private cancellation pays the reserve in full through a sealed public TX_FEE. Public reclaim returns the reserve and principal to the creator's vault. The reserve never enters fill pricing.
 
-Consume reconstructed private paybacks with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Orders with private paybacks can be filled but do not yet support cancellation.
+When reconstructing a private payback or cancellation refund, include its complete on-chain attachment list. Reconstruct paybacks with a reserve from the consumed PSWAP or remainder, whose remaining requested amount identifies a complete fill.
+
+Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
 ### Choosing the Right Note Type
 

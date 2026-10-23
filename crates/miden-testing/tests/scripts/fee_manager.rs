@@ -135,7 +135,7 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
             timeframe: u32,
             priority: u32
         ) -> Asset
-            exec.note::get_recipient_preimage
+            exec.note::get_recipient_preimage dropw
             # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
             #     timeframe, priority, pad(2)]
 

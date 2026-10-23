@@ -11,11 +11,15 @@
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
 - Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
 - Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
+- Added private PSWAP cancellation through a separate account using canonical recipient advice. An optional native fee reserve funds cancellation, follows partial fills, and returns in the final payback ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Exposed the kernel's fungible value merge through `miden::protocol::asset::merge_fungible_values` and `miden::standards::assets::fungible_asset::merge` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - Added `CodeTree`, `PartialCodeTree`, `CodeWitness` and `ProcedureRoot` to prove presence or absence of procedure roots in the blockchain ([#4062](https://github.com/0xMiden/protocol/pull/4062)).
 - [BREAKING] Added `NonFungibleFaucet` to `StandardAccountComponent` and `AccountComponentInterface`, so `AccountInterface::from_account` recognizes NFT faucets instead of reporting their procedures as custom ([#4036](https://github.com/0xMiden/protocol/issues/4036)).
 
 ### Changes
 
+- [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
 - [BREAKING] Moved the EIP-712 transaction-summary adapter from `miden::standards::auth::eip712_transaction_summary` to `miden::standards::auth::eip712::transaction_summary` and removed its public `compute_signature_key` procedure ([#4091](https://github.com/0xMiden/protocol/pull/4091)).
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).

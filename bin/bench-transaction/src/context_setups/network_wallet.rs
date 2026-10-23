@@ -215,6 +215,7 @@ pub fn tx_consume_pswap_note_network(
 ) -> Result<MockTransaction> {
     const OFFERED_AMOUNT: u64 = 100;
     const REQUESTED_AMOUNT: u64 = 50;
+    const CANCELLATION_FEE_AMOUNT: u64 = 20_000;
 
     let offered_asset =
         FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?, OFFERED_AMOUNT)?;
@@ -252,6 +253,10 @@ pub fn tx_consume_pswap_note_network(
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .payback(payback)
+        .cancellation_fee(FungibleAsset::new(
+            ACCOUNT_ID_FEE_FAUCET.try_into()?,
+            CANCELLATION_FEE_AMOUNT,
+        )?)
         .build();
     let pswap = PswapNote::builder()
         .sender(creator_account.id())
@@ -279,7 +284,7 @@ pub fn tx_consume_pswap_note_network(
         .authenticated_input_note(pswap_note.id())
         .extend_note_args(BTreeMap::from([(
             pswap_note.id(),
-            PswapNote::create_args(fill_amount, 0)?,
+            PswapNote::create_fill_args(fill_amount, 0)?,
         )]))
         .expected_output_notes(expected_output_notes)
         .build()
