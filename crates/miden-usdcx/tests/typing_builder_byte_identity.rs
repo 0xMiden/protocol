@@ -29,12 +29,12 @@ const TOKEN_SUPPLY: u64 = 0;
 // construction paths deterministic. These commitments include the mint policy code and the fee
 // schedule keyed by note script roots.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([3925502348054997114, 28902944725523692, 4493719723540324027, 2022909370097610992])";
+    "Word([2300114894893991591, 412108252937152534, 1403857843642319025, 4931190529297028569])";
 const GOLDEN_CODE_COMMITMENT: &str =
     "Word([7439826862540888083, 7673499852265629326, 3283911463496934535, 2874339947983127198])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([2528195645635820938, 280638226972682255, 5965313566648477623, 8228980973934369771])";
-const GOLDEN_ACCOUNT_ID: &str = "0x7d08a8ae656c12b101525cef60ec7d";
+    "Word([347282162530789061, 8143108043693096682, 7502317845195962297, 3004289030205535930])";
+const GOLDEN_ACCOUNT_ID: &str = "0x08b305eec8ccb0715f438fd01ce011";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

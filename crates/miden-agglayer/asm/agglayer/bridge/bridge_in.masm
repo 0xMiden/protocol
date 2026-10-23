@@ -37,14 +37,6 @@ const ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH = "claim leaf destination netw
 # Claim Nullifier Flag
 const IS_CLAIMED_FLAG = ONE_WORD
 
-# Generic Felt-sequence Eidos chaining word for a claim-nullifier preimage.
-const CLAIM_NULLIFIER_INIT_CV = [
-    13503953893947607553,
-    11912009168875159554,
-    11170449401267093504,
-    6620516959492505600
-]
-
 # Storage slots
 # -------------------------------------------------------------------------------------------------
 
@@ -692,7 +684,7 @@ proc set_and_check_claimed(leaf_index: u32, source_bridge_network: NetworkId)
     movup.7 movup.7
     # => [leaf_index, source_bridge_network, 0, 0, 0, 0, 0, 0]
 
-    push.CLAIM_NULLIFIER_INIT_CV
+    push.2 exec.eidos::init_chaining_word
     exec.eidos::compress_double_word
     # => [NULLIFIER]
 

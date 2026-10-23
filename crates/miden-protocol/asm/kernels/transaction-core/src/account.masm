@@ -34,14 +34,6 @@ use {
 # Re-exported for testing purposes.
 pub use {validate as validate_id} from miden::protocol_utils::account_id
 
-# Generic Felt-sequence Eidos chaining word for 16-Felt account preimages.
-const EIDOS_INIT_CV_16 = [
-    13503953893947607553,
-    11912009168875159568,
-    11170449401267093504,
-    6620516959492505600
-]
-
 # ERRORS
 # =================================================================================================
 
@@ -324,13 +316,13 @@ pub proc compute_commitment() -> Commitment
 
     # prepare the stack for computing the account commitment
     exec.memory::get_active_account_data_ptr
-    push.EIDOS_INIT_CV_16 padw padw
+    push.16 exec.eidos::init_chaining_word padw padw
     # => [BLOCK_LO, BLOCK_HI, CV, account_data_ptr]
 
     # stream account data and compute sequential hash. We perform two `mem_stream` operations
     # because the account data consists of exactly 4 words.
-    mem_stream compress
-    mem_stream compress
+    mem_stream exec.eidos::compress
+    mem_stream exec.eidos::compress
     # => [BLOCK_LO, BLOCK_HI, CV, account_data_ptr']
 
     # extract account commitment
@@ -1025,8 +1017,9 @@ end
 pub proc validate_seed()
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
-    # Initialize the 16-Felt Eidos chain and place the code commitment in the high block word.
-    push.EIDOS_INIT_CV_16 exec.memory::get_account_code_commitment
+    # initialize the 16-Felt Eidos chain and place the code commitment in the high block word
+    push.16 exec.eidos::init_chaining_word
+    exec.memory::get_account_code_commitment
     # => [CODE_COMMITMENT, CV]
 
     # push the advice map key at which the seed is located
@@ -1039,7 +1032,7 @@ pub proc validate_seed()
     # => [SEED, CODE_COMMITMENT, CV]
 
     # compress the first block (SEED, CODE_COMMITMENT)
-    compress
+    exec.eidos::compress
     # => [BLOCK_LO, BLOCK_HI, CV]
 
     # discard the block words while retaining the chaining word
@@ -1050,7 +1043,7 @@ pub proc validate_seed()
     padw exec.memory::get_account_storage_commitment
     # => [STORAGE_COMMITMENT, EMPTY_WORD, CV]
 
-    compress
+    exec.eidos::compress
     exec.eidos::digest
     # => [DIGEST]
     # => [digest0, digest1, digest2, digest3]

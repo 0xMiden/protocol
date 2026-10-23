@@ -162,7 +162,7 @@ end
 #! Inputs:  [BLOCK_LO, BLOCK_HI, CV, ...]
 #! Outputs: [CV', ...]
 proc compress_commitment_body_block(block_lo: word, block_hi: word, cv: word) -> word
-    compress dropw dropw
+    exec.eidos::compress dropw dropw
     mem_load.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
     add.1
     mem_store.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
@@ -218,7 +218,7 @@ pub proc compute_patch_commitment() -> Commitment
     # => [patch_version, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CV]
     # => [METADATA, EMPTY_WORD, CV]
 
-    compress dropw dropw
+    exec.eidos::compress dropw dropw
     # => [CV]
 
     # save the metadata chaining word for a later check
@@ -294,7 +294,7 @@ pub proc compute_delta_commitment() -> Commitment
     # => [delta_version, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CV]
     # => [METADATA, EMPTY_WORD, CV]
 
-    compress dropw dropw
+    exec.eidos::compress dropw dropw
     # => [CV]
 
     # save the metadata chaining word for a later check
@@ -554,7 +554,7 @@ proc commit_map_slot_patch(slot_idx: u8, cv: word) -> word
             loc_load.4 add.1 loc_store.4
             # => [KEY, NEW_VALUE, CV]
 
-            compress dropw dropw
+            exec.eidos::compress dropw dropw
             # => [CV]
         else
             # discard the key and init and new value words loaded from the map
@@ -599,7 +599,7 @@ proc commit_map_slot_patch(slot_idx: u8, cv: word) -> word
         loc_load.1 loc_load.0 exec.get_storage_slot_patch_op push.DOMAIN_MAP
         # => [[domain_map, patch_op, slot_id_suffix, slot_id_prefix], [num_changed_entries, 0, 0, 0], CV]
 
-        compress dropw dropw
+        exec.eidos::compress dropw dropw
         # => [CV]
     end
 end
@@ -677,7 +677,7 @@ proc commit_asset_delta(cv: word) -> word
                 loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
                 # => [ASSET_ID, DELTA_ASSET_VALUE, CV]
 
-                compress dropw dropw
+                exec.eidos::compress dropw dropw
                 # => [CV]
             else
                 loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
@@ -779,7 +779,7 @@ proc commit_asset_count_trailer(delta_op: u8, num_assets: u32, cv: word) -> word
         padw swapw
         # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CV]
 
-        compress dropw dropw
+        exec.eidos::compress dropw dropw
         # => [CV]
     else
         # discard delta_op and num_assets
@@ -837,7 +837,7 @@ proc commit_asset_patch(cv: word) -> word
             dropw swapw
             # => [ASSET_ID, FINAL_ASSET_VALUE, CV]
 
-            compress dropw dropw
+            exec.eidos::compress dropw dropw
             # => [CV]
         else
             # discard the values loaded from the map
@@ -870,7 +870,7 @@ proc commit_asset_patch(cv: word) -> word
         push.DOMAIN_ASSET
         # => [[domain, num_changed_assets, 0, 0], EMPTY_WORD, CV]
 
-        compress dropw dropw
+        exec.eidos::compress dropw dropw
         # => [CV]
     end
 end
