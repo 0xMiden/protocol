@@ -1,0 +1,196 @@
+use {Asset, NoteArgs, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
+use miden::core::crypto::hashes::poseidon2
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::asset
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use miden::protocol::output_note
+use miden::protocol::tx
+use miden::standards::note::note_target
+use miden::standards::notes::tx_fee
+use miden::standards::wallets::basic as wallet
+
+# CONSTANTS
+# =================================================================================================
+
+const ACTION_RECLAIM = 1
+# Global memory address at which main loads the note storage.
+# Storage layout (16 elements):
+# [OUTPUT_RECIPIENT(4), FEE_ASSET_ID(4), FEE_ASSET_VALUE(4),
+#  target_suffix, target_prefix, output_tag, output_type]
+const STORAGE_PTR = 0
+const OUTPUT_RECIPIENT_PTR = STORAGE_PTR
+# A zero fee amount disables the TX_FEE output.
+const FEE_ASSET_PTR = OUTPUT_RECIPIENT_PTR + WORD_NUM_ELEMENTS
+const FEE_AMOUNT_PTR = FEE_ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
+const TARGET_SUFFIX_PTR = FEE_ASSET_PTR + ASSET_SIZE
+const TARGET_PREFIX_PTR = TARGET_SUFFIX_PTR + 1
+const TAG_PTR = TARGET_PREFIX_PTR + 1
+const TYPE_PTR = TAG_PTR + 1
+const NUM_STORAGE_ITEMS = TYPE_PTR + 1 - STORAGE_PTR
+
+# Local memory offsets. The asset array holds MAX_ASSETS_PER_NOTE * ASSET_SIZE elements.
+const PRIMARY_ASSETS_LOC = 0
+const CREATE_FEE_ASSET_LOC = 0
+
+# "CREATEFE" separates these serials from other fee note derivations.
+const CREATE_NOTE_FEE_DOMAIN = 0x4352454154454645
+
+# ERRORS
+# =================================================================================================
+
+const ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS = "CREATE note storage must contain exactly 16 items"
+const ERR_CREATE_NOTE_INVALID_ACTION = "CREATE note expects create or reclaim with zero reserved arguments"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! Creates a primary output note and, when funded, a public TX_FEE note. Neither note is sealed.
+#! The creator builds and proves the transaction locally and checks its final outputs.
+#!
+#! Consumers: the designated public account; the original sender may reclaim at any time.
+#!
+#! Inputs:  [action, reserved(3)]
+#! Outputs: []
+#!
+#! Action 0 creates the output; action 1 reclaims the CREATE note. Reserved arguments must be zero.
+#!
+#! Panics if:
+#! - the action, reserved arguments, or storage length is invalid.
+#! - the executing account is not authorized for the selected action.
+#! - the note does not hold enough of the specified fee asset.
+@note_script
+pub proc main(note_args: NoteArgs)
+    movup.3 assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
+    movup.2 assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
+    swap assertz.err=ERR_CREATE_NOTE_INVALID_ACTION
+    dup u32lte.ACTION_RECLAIM assert.err=ERR_CREATE_NOTE_INVALID_ACTION
+    # => [action]
+
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    eq.NUM_STORAGE_ITEMS assert.err=ERR_CREATE_NOTE_WRONG_NUMBER_OF_STORAGE_ITEMS
+    # => [action (1 = reclaim, 0 = create outputs)]
+
+    if.true
+        exec.active_note::get_sender exec.note_target::assert_active_account_is_target_account
+        exec.wallet::move_note_assets_to_account
+        # => []
+    else
+        mem_load.TARGET_PREFIX_PTR mem_load.TARGET_SUFFIX_PTR
+        exec.note_target::assert_active_account_is_target_account
+        # => []
+
+        padw mem_loadw_le.OUTPUT_RECIPIENT_PTR
+        mem_load.TYPE_PTR mem_load.TAG_PTR
+        # => [tag, note_type, RECIPIENT]
+
+        exec.create_primary_output
+        # => [note_idx]
+
+        mem_load.FEE_AMOUNT_PTR neq.0
+        # => [has_fee, note_idx]
+
+        if.true
+            push.FEE_ASSET_PTR exec.asset::load
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+            exec.create_fee_output
+            # => [note_idx]
+        end
+
+        exec.fund_primary_output
+        # => []
+    end
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Transfers all assets remaining in the CREATE note to the primary output.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: []
+#!
+#! Invocation: exec
+@locals(128)
+proc fund_primary_output(note_idx: u16)
+    locaddr.PRIMARY_ASSETS_LOC exec.active_note::remove_all_assets
+    # => [num_assets, note_idx]
+
+    mul.ASSET_SIZE locaddr.PRIMARY_ASSETS_LOC add locaddr.PRIMARY_ASSETS_LOC
+    # => [cursor, assets_end, note_idx]
+
+    dup dup.2 neq
+    # => [has_more_assets, cursor, assets_end, note_idx]
+
+    while.true
+        dup.2 dup.1 exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, note_idx, cursor, assets_end, note_idx]
+
+        exec.output_note::add_asset
+        # => [cursor, assets_end, note_idx]
+
+        add.ASSET_SIZE dup dup.2 neq
+        # => [has_more_assets, cursor, assets_end, note_idx]
+    end
+    drop drop drop
+    # => []
+end
+
+#! Creates the primary output using the supplied recipient hash, tag, and type.
+#!
+#! Inputs:  [tag, note_type, RECIPIENT]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - note_idx is the index of the created output note.
+#!
+#! Invocation: exec
+proc create_primary_output(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
+    # Reserve a full call frame above the caller's stack.
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    call.wallet::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx]
+end
+
+#! Removes the supplied fee from the CREATE note and funds a public TX_FEE output.
+#!
+#! Inputs:  [FEE_ASSET_ID, FEE_ASSET_VALUE]
+#! Outputs: []
+#!
+#! Panics if the note does not hold enough of the supplied fee asset.
+#!
+#! Invocation: exec
+@locals(8)
+proc create_fee_output(fee_asset: Asset)
+    dupw.1 dupw.1 exec.active_note::remove_asset dropw
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
+    locaddr.CREATE_FEE_ASSET_LOC exec.asset::store
+    # => []
+
+    # distinguish input sets and output positions without disclosing private input IDs
+    exec.active_account::get_id exec.tx::get_num_output_notes push.CREATE_NOTE_FEE_DOMAIN
+    # => [domain, note_idx, account_suffix, account_prefix]
+
+    exec.tx::get_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, domain, note_idx, account_suffix, account_prefix]
+
+    exec.poseidon2::merge
+    # => [SERIAL_NUM]
+
+    exec.tx_fee::create_output_note
+    # => [note_idx]
+
+    locaddr.CREATE_FEE_ASSET_LOC exec.asset::load
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => []
+end

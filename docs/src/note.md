@@ -331,12 +331,32 @@ Use a fresh payback serial for each order, independent of its PSWAP serial, and 
 
 Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
+### CREATE note
+
+A private CREATE note creates a public or private output through a designated public account. It holds the output's fungible assets and an optional payment for a separate `TX_FEE` output. The creator selects the native fee asset and amount, which is paid in full.
+
+`CreateNoteStorage` defines its 16 storage elements:
+
+| Indices, inclusive | Field |
+|---|---|
+| `0..3` | Output recipient commitment: script, serial number, and output NoteStorage |
+| `4..11` | Asset and amount for the TX_FEE output; all zeros disables that output |
+| `12` | Executing account ID suffix |
+| `13` | Executing account ID prefix |
+| `14` | Output tag |
+| `15` | Output type |
+
+The script removes the creation fee from the input note and transfers the remaining assets to the primary output. The kernel rejects a fee that is missing or exceeds the available balance. Both outputs remain unsealed, and the script does not check their assets after callbacks. The creator builds and proves the transaction locally, adds any output attachments, and checks the final outputs. The script does not verify the constructor's identity; anyone with the private witness can execute it. The final note ID is not committed by the CREATE note. Public output recipient details are supplied as transaction advice.
+
+The sender can instead consume the CREATE note at any time to recover its assets. Either path consumes it permanently. Use independent random serials for the CREATE note and output, consume the CREATE note as an authenticated input, and prove locally to keep its contents private.
+
 ### Choosing the Right Note Type
 
 - **Use P2ID** for simple, direct payments to known accounts
 - **Use P2IDE** when you need time-locks, escrow functionality, or reclaim capabilities
 - **Use SWAP** for atomic asset exchanges between parties
 - **Use PSWAP** for orders that can be filled partially
+- **Use a CREATE note** to create an output through another account
 - **Create custom scripts** for specialized use cases not covered by standard types
 
 These standard note types provide a foundation for common operations while maintaining the flexibility to create custom note scripts for specialized requirements.
