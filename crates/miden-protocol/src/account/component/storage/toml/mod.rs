@@ -8,6 +8,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::super::{
+    ArraySlotSchema,
     FeltSchema,
     MapSlotSchema,
     StorageSchema,
@@ -17,9 +18,10 @@ use super::super::{
     WordSchema,
     WordValue,
 };
-use crate::account::StorageSlotName;
+use super::schema::parse_storage_value_with_schema;
 use crate::account::component::storage::type_registry::SCHEMA_TYPE_REGISTRY;
 use crate::account::component::{AccountComponentMetadata, SchemaType};
+use crate::account::{StorageArrayLength, StorageSlotName};
 use crate::errors::ComponentMetadataError;
 
 mod init_storage_data;
@@ -84,13 +86,7 @@ impl AccountComponentMetadata {
 // ACCOUNT STORAGE SCHEMA SERIALIZATION
 // ================================================================================================
 
-/// Raw TOML storage schema:
-///
-/// - `[[storage.slots]]` for both value and map slots.
-///
-/// Slot kind is inferred by the shape of the `type` field:
-/// - `type = "..."` or `type = [ ... ]` => value slot
-/// - `type = { ... }` => map slot
+/// TOML storage schema, with each slot declared in `[[storage.slots]]`.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawStorageSchema {
@@ -98,18 +94,24 @@ struct RawStorageSchema {
     slots: Vec<RawStorageSlotSchema>,
 }
 
-/// Storage slot type descriptor.
-///
-/// This field accepts either:
-/// - a type identifier (e.g. `"word"`, `"u16"`, `"miden::standards::auth::pub_key"`) for simple
-///   word slots,
-/// - an array of 4 [`FeltSchema`] descriptors for composite word slots, or
-/// - a table `{ key = ..., value = ... }` for map slots.
+/// A TOML slot type:
+/// - A type name such as `"word"` or `"u16"` for a simple value.
+/// - Four [`FeltSchema`] descriptors for a composite value.
+/// - `{ key = ..., value = ... }` for a map.
+/// - `{ element = ..., length = N }` for an array.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 enum RawSlotType {
     Word(RawWordType),
     Map(RawMapType),
+    Array(RawArrayType),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RawArrayType {
+    element: RawWordType,
+    length: usize,
 }
 
 /// A word type descriptor.
@@ -118,6 +120,15 @@ enum RawSlotType {
 enum RawWordType {
     TypeIdentifier(SchemaType),
     FeltSchemaArray(Vec<FeltSchema>),
+}
+
+impl From<&WordSchema> for RawWordType {
+    fn from(schema: &WordSchema) -> Self {
+        match schema {
+            WordSchema::Simple { r#type, .. } => Self::TypeIdentifier(r#type.clone()),
+            WordSchema::Composite { value } => Self::FeltSchemaArray(value.to_vec()),
+        }
+    }
 }
 
 /// A map type descriptor.
@@ -167,9 +178,7 @@ impl<'de> Deserialize<'de> for StorageSchema {
 // ACCOUNT STORAGE SCHEMA SERDE HELPERS
 // ================================================================================================
 
-/// Raw storage slot schemas contain the raw representation that can get deserialized from TOML.
-/// Specifically, it expresses the different combination of fields that expose the different types
-/// of slots.
+/// A TOML storage slot.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawStorageSlotSchema {
@@ -178,24 +187,17 @@ struct RawStorageSlotSchema {
     name: String,
     #[serde(default)]
     description: Option<String>,
-    /// Slot type descriptor.
-    ///
-    /// - If `type = { ... }`, this is a map slot.
-    /// - If `type = [ ... ]`, this is a composite word slot whose schema is described by 4
-    ///   [`FeltSchema`] descriptors.
-    /// - Otherwise, if `type = "..."`, this is a simple word slot whose value is supplied at
-    ///   instantiation time unless `default-value` is set (or the type is `void`).
+    /// Slot kind and element types.
     #[serde(rename = "type")]
     r#type: RawSlotType,
     /// The (overridable) default value for a simple word slot.
     #[serde(default)]
     default_value: Option<WordValue>,
-    /// Default map entries.
-    ///
-    /// These entries must be fully-specified values. If the map should be populated at
-    /// instantiation time, omit `default-values` and provide entries via init storage data.
+    /// Default map entries, overridden or extended by initialization data.
     #[serde(default)]
     default_values: Option<Vec<RawMapEntrySchema>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    default_elements: Option<Vec<WordValue>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -213,6 +215,22 @@ impl RawStorageSlotSchema {
         match schema {
             StorageSlotSchema::Value(schema) => Self::from_value_slot(slot_name, schema),
             StorageSlotSchema::Map(schema) => Self::from_map_slot(slot_name, schema),
+            StorageSlotSchema::Array(schema) => Self {
+                name: slot_name.as_str().to_string(),
+                description: schema.description().cloned(),
+                r#type: RawSlotType::Array(RawArrayType {
+                    element: schema.element().into(),
+                    length: schema.length().as_usize(),
+                }),
+                default_value: None,
+                default_values: None,
+                default_elements: schema.default_values().map(|values| {
+                    values
+                        .iter()
+                        .map(|word| WordValue::from_word(&schema.element().word_type(), *word))
+                        .collect()
+                }),
+            },
         }
     }
 
@@ -234,6 +252,7 @@ impl RawStorageSlotSchema {
             r#type,
             default_value,
             default_values: None,
+            default_elements: None,
         }
     }
 
@@ -248,22 +267,16 @@ impl RawStorageSlotSchema {
                 .collect()
         });
 
-        let key_type = match schema.key_schema() {
-            WordSchema::Simple { r#type, .. } => RawWordType::TypeIdentifier(r#type.clone()),
-            WordSchema::Composite { value } => RawWordType::FeltSchemaArray(value.to_vec()),
-        };
-
-        let value_type = match schema.value_schema() {
-            WordSchema::Simple { r#type, .. } => RawWordType::TypeIdentifier(r#type.clone()),
-            WordSchema::Composite { value } => RawWordType::FeltSchemaArray(value.to_vec()),
-        };
-
         Self {
             name: slot_name.as_str().to_string(),
             description: schema.description().cloned(),
-            r#type: RawSlotType::Map(RawMapType { key: key_type, value: value_type }),
+            r#type: RawSlotType::Map(RawMapType {
+                key: schema.key_schema().into(),
+                value: schema.value_schema().into(),
+            }),
             default_value: None,
             default_values,
+            default_elements: None,
         }
     }
 
@@ -280,6 +293,7 @@ impl RawStorageSlotSchema {
             r#type,
             default_value,
             default_values,
+            default_elements,
         } = self;
 
         let slot_name_raw = name;
@@ -300,7 +314,40 @@ impl RawStorageSlotSchema {
             ));
         }
 
+        if default_elements.is_some() && !matches!(&r#type, RawSlotType::Array(_)) {
+            return Err(ComponentMetadataError::InvalidSchema(
+                "default-elements requires an array slot".into(),
+            ));
+        }
         match r#type {
+            RawSlotType::Array(array_type) => {
+                if default_value.is_some() || default_values.is_some() {
+                    return Err(ComponentMetadataError::InvalidSchema(
+                        "array slots use default-elements".into(),
+                    ));
+                }
+                let length = StorageArrayLength::try_from(array_type.length)?;
+                let element = Self::parse_word_schema(array_type.element, "type.element")?;
+                let defaults = default_elements
+                    .map(|values| {
+                        values
+                            .iter()
+                            .map(|value| {
+                                parse_storage_value_with_schema(&element, value, &slot_prefix)
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()?;
+                Ok((
+                    slot_name,
+                    StorageSlotSchema::Array(ArraySlotSchema::new(
+                        description,
+                        length,
+                        element,
+                        defaults,
+                    )?),
+                ))
+            },
             RawSlotType::Map(map_type) => {
                 if default_value.is_some() {
                     return Err(ComponentMetadataError::InvalidSchema(
@@ -432,11 +479,9 @@ impl RawStorageSlotSchema {
         let mut map = BTreeMap::new();
 
         let parse = |schema: &WordSchema, raw: &WordValue, label: &str| {
-            super::schema::parse_storage_value_with_schema(schema, raw, slot_prefix).map_err(
-                |err| {
-                    ComponentMetadataError::InvalidSchema(format!("invalid map `{label}`: {err}"))
-                },
-            )
+            parse_storage_value_with_schema(schema, raw, slot_prefix).map_err(|err| {
+                ComponentMetadataError::InvalidSchema(format!("invalid map `{label}`: {err}"))
+            })
         };
 
         for (index, entry) in entries.into_iter().enumerate() {

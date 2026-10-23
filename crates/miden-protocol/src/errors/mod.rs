@@ -91,6 +91,8 @@ pub mod protocol {
 
 #[derive(Debug, Error)]
 pub enum ComponentMetadataError {
+    #[error(transparent)]
+    InvalidStorageArray(#[from] StorageArrayError),
     #[error("storage slot name `{0}` is duplicate")]
     DuplicateSlotName(StorageSlotName),
     #[error("storage init value name `{0}` is duplicate")]

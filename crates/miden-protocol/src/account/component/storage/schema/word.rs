@@ -152,9 +152,8 @@ impl WordSchema {
 
     /// Builds a [`Word`] from the provided initialization data according to this schema.
     ///
-    /// For simple schemas, expects a direct slot value (not map or field entries).
-    /// For composite schemas, either parses a single value or builds the word from individual
-    /// felt entries.
+    /// Simple schemas take a slot value; composite schemas also accept individual fields.
+    /// Rejects map and array entries.
     pub(crate) fn try_build_word(
         &self,
         init_storage_data: &InitStorageData,
@@ -164,10 +163,12 @@ impl WordSchema {
         let slot_value = init_storage_data.slot_value_entry(slot_name);
         let has_fields = init_storage_data.has_field_entries_for_slot(slot_name);
 
-        if init_storage_data.map_entries(slot_name).is_some() {
+        if init_storage_data.map_entries(slot_name).is_some()
+            || init_storage_data.array_values(slot_name).is_some()
+        {
             return Err(ComponentMetadataError::InvalidInitStorageValue(
                 slot_prefix,
-                "expected a value, got a map".into(),
+                "expected a value, got a collection".into(),
             ));
         }
 

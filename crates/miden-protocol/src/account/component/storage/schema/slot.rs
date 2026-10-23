@@ -3,7 +3,7 @@ use alloc::string::String;
 
 use super::super::type_registry::{SchemaRequirement, SchemaType};
 use super::super::{InitStorageData, StorageValueName};
-use super::{MapSlotSchema, ValueSlotSchema, WordSchema};
+use super::{ArraySlotSchema, MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageSlot, StorageSlotName};
 use crate::errors::ComponentMetadataError;
 use crate::utils::serde::{
@@ -17,13 +17,13 @@ use crate::utils::serde::{
 // STORAGE SLOT SCHEMA
 // ================================================================================================
 
-/// Describes the schema for a storage slot.
-/// Can describe either a value slot, or a map slot.
+/// A value, map, or array slot schema.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageSlotSchema {
     Value(ValueSlotSchema),
     Map(MapSlotSchema),
+    Array(ArraySlotSchema),
 }
 
 impl StorageSlotSchema {
@@ -59,7 +59,7 @@ impl StorageSlotSchema {
             StorageSlotSchema::Value(slot) => {
                 slot.collect_init_value_requirements(slot_name, requirements)
             },
-            StorageSlotSchema::Map(_) => Ok(()),
+            StorageSlotSchema::Map(_) | StorageSlotSchema::Array(_) => Ok(()),
         }
     }
 
@@ -79,16 +79,20 @@ impl StorageSlotSchema {
                 let storage_map = slot.try_build_map(init_storage_data, slot_name)?;
                 Ok(StorageSlot::with_map(slot_name.clone(), storage_map))
             },
+            StorageSlotSchema::Array(slot) => {
+                let array = slot.try_build_array(init_storage_data, slot_name)?;
+                Ok(StorageSlot::with_array(slot_name.clone(), array))
+            },
         }
     }
 
     pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         match self {
-            StorageSlotSchema::Value(slot) => slot.validate()?,
-            StorageSlotSchema::Map(slot) => slot.validate()?,
+            StorageSlotSchema::Value(slot) => slot.validate(),
+            StorageSlotSchema::Map(slot) => slot.validate(),
+            // ArraySlotSchema validates at construction and cannot be mutated.
+            StorageSlotSchema::Array(_) => Ok(()),
         }
-
-        Ok(())
     }
 
     pub(super) fn write_into_with_optional_defaults<W: ByteWriter>(
@@ -103,6 +107,10 @@ impl StorageSlotSchema {
             },
             StorageSlotSchema::Map(slot) => {
                 target.write_u8(1u8);
+                slot.write_into_with_optional_defaults(target, include_defaults);
+            },
+            StorageSlotSchema::Array(slot) => {
+                target.write_u8(2u8);
                 slot.write_into_with_optional_defaults(target, include_defaults);
             },
         }
@@ -121,6 +129,7 @@ impl Deserializable for StorageSlotSchema {
         match variant_tag {
             0 => Ok(StorageSlotSchema::Value(ValueSlotSchema::read_from(source)?)),
             1 => Ok(StorageSlotSchema::Map(MapSlotSchema::read_from(source)?)),
+            2 => Ok(StorageSlotSchema::Array(ArraySlotSchema::read_from(source)?)),
             _ => Err(DeserializationError::InvalidValue(format!(
                 "unknown variant tag '{variant_tag}' for StorageSlotSchema"
             ))),

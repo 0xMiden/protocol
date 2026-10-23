@@ -19,19 +19,22 @@ impl InitStorageData {
     ///
     /// ```toml
     /// # Value entry (string)
-    /// "slot::name" = "0x1234"
+    /// "slot::value" = "0x1234"
     ///
     /// # Value entry (4-element word)
-    /// "slot::name" = ["0", "0", "0", "100"]
+    /// "slot::word" = ["0", "0", "0", "100"]
     ///
-    /// # Nested table (flattened to slot::name.field)
-    /// ["slot::name"]
-    /// field = "value"
+    /// # Array of words
+    /// "slot::array" = { array = [["1", "2", "3", "4"], ["5", "6", "7", "8"]] }
     ///
     /// # Map entries
     /// "slot::map" = [
     ///     { key = "0x01", value = "0x10" },
     /// ]
+    ///
+    /// # Nested table (flattened to slot::fields.field)
+    /// ["slot::fields"]
+    /// field = "value"
     /// ```
     pub fn from_toml(toml_str: &str) -> Result<Self, InitStorageDataError> {
         let table: toml::Table = toml::from_str(toml_str)?;
@@ -44,7 +47,18 @@ impl InitStorageData {
             match value {
                 // ["slot::name"]
                 // field = "value"
-                toml::Value::Table(nested) => {
+                toml::Value::Table(mut nested) => {
+                    if nested.len() == 1
+                        && nested.get("array").is_some_and(toml::Value::is_array)
+                        && name.field_name().is_none()
+                    {
+                        let values = alloc::vec::Vec::<WordValue>::deserialize(
+                            nested.remove("array").unwrap(),
+                        )
+                        .map_err(|_| InitStorageDataError::InvalidValue(name.to_string()))?;
+                        data.set_array_values(name.slot_name().clone(), values)?;
+                        continue;
+                    }
                     if nested.is_empty() {
                         return Err(InitStorageDataError::EmptyTable(name.to_string()));
                     }
@@ -109,7 +123,7 @@ pub enum InitStorageDataError {
     ExcessiveNesting(String),
 
     #[error(
-        "invalid input for `{0}`: expected a string, a 4-element string array, or a map entry list"
+        "invalid input for `{0}`: expected a string, a 4-element word, an array wrapper, or a map entry list"
     )]
     InvalidValue(String),
 

@@ -49,8 +49,7 @@ impl MapSlotSchema {
 
     /// Builds a [`StorageMap`] from the provided initialization data.
     ///
-    /// Merges any default values with entries from the init data, validating that the data
-    /// contains map entries (not a direct value or field entries).
+    /// Init entries override defaults. Rejects value, field, and array entries.
     pub fn try_build_map(
         &self,
         init_storage_data: &InitStorageData,
@@ -59,10 +58,12 @@ impl MapSlotSchema {
         let mut entries = self.default_values.clone().unwrap_or_default();
         let slot_prefix = StorageValueName::from_slot_name(slot_name);
 
-        if init_storage_data.slot_value_entry(slot_name).is_some() {
+        if init_storage_data.slot_value_entry(slot_name).is_some()
+            || init_storage_data.array_values(slot_name).is_some()
+        {
             return Err(ComponentMetadataError::InvalidInitStorageValue(
                 slot_prefix,
-                "expected a map, got a value".into(),
+                "expected a map, got a value or array".into(),
             ));
         }
         if init_storage_data.has_field_entries_for_slot(slot_name) {
