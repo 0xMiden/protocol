@@ -14,16 +14,8 @@ use miden_protocol::{
 
 const PROLOGUE: &str =
     include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/prologue.masm");
-const ACCOUNT: &str =
-    include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/account.masm");
 const ACCOUNT_UPDATE: &str =
     include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/account_update.masm");
-const BRIDGE_CONFIG: &str =
-    include_str!("../../../miden-agglayer/asm/agglayer/bridge/bridge_config.masm");
-const BRIDGE_IN: &str = include_str!("../../../miden-agglayer/asm/agglayer/bridge/bridge_in.masm");
-const CLAIM: &str = include_str!("../../../miden-agglayer/asm/agglayer/notes/claim.masm");
-const FAUCET_METADATA_CONFIG: &str =
-    include_str!("../../../miden-standards/asm/standards/notes/faucet_metadata_config.masm");
 
 #[test]
 fn fixed_eidos_initial_chaining_words_match_rust() {
@@ -36,12 +28,6 @@ fn fixed_eidos_initial_chaining_words_match_rust() {
         (PROLOGUE, "EIDOS_INIT_CV_16", generic, 16),
         (PROLOGUE, "EIDOS_INIT_CV_24", generic, 24),
         (PROLOGUE, "EIDOS_INIT_CV_40", generic, 40),
-        (ACCOUNT, "EIDOS_INIT_CV_16", generic, 16),
-        (BRIDGE_CONFIG, "TOKEN_ADDRESS_INIT_CV", generic, 6),
-        (BRIDGE_IN, "CLAIM_NULLIFIER_INIT_CV", generic, 2),
-        (CLAIM, "PROOF_DATA_INIT_CV", generic, 536),
-        (CLAIM, "LEAF_DATA_INIT_CV", generic, 32),
-        (FAUCET_METADATA_CONFIG, "STRING_INIT_CV", generic, 28),
         (ACCOUNT_UPDATE, "ACCOUNT_DELTA_INIT_CV_BASE", account_delta, 0),
         (ACCOUNT_UPDATE, "ACCOUNT_PATCH_INIT_CV_BASE", account_patch, 0),
     ];

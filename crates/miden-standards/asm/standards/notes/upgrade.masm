@@ -187,7 +187,7 @@ proc insert_code_into_advice_map(new_code_commitment: word)
     padw movupw.2
     # => [NEW_CODE_COMMITMENT, EMPTY_WORD, CV, end_ptr]
 
-    compress exec.eidos::digest
+    exec.eidos::compress exec.eidos::digest
     # => [KEY, end_ptr]
 
     locaddr.CODE_LOC movdn.4
