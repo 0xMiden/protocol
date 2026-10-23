@@ -47,14 +47,6 @@ const REMOVED_GER_HASH_CHAIN_HI_SLOT = word("agglayer::bridge::removed_ger_hash_
 const GER_KNOWN_FLAG = ONE_WORD
 const FAUCET_REGISTERED_FLAG = 1
 
-# Generic Felt-sequence Eidos chaining word for an origin token address and network.
-const TOKEN_ADDRESS_INIT_CV = [
-    13503953893947607553,
-    11912009168875159558,
-    11170449401267093504,
-    6620516959492505600
-]
-
 # Local memory slot offsets used inside the `register_faucet` procedure
 const REG_TOKEN_HASH_LOC = 0
 const REG_FAUCET_ID_SUFFIX_LOC = 4
@@ -766,7 +758,7 @@ proc hash_token_address(token: OriginToken) -> StorageMapKey
     push.0.0 movdn.7 movdn.7
     # => [origin_token_addr(5), origin_network, 0, 0]
 
-    push.TOKEN_ADDRESS_INIT_CV
+    push.6 exec.eidos::init_chaining_word
     exec.eidos::compress_double_word
     # => [TOKEN_ADDR_HASH]
 end

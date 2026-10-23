@@ -20,15 +20,9 @@ const VARIANT_PTR = STORAGE_PTR
 const MAX_SUPPLY_PTR = STORAGE_PTR + 1
 const STRING_PTR = STORAGE_PTR + 4
 const STRING_END_PTR = STORAGE_PTR + 32
+const STRING_NUM_ELEMENTS = STRING_END_PTR - STRING_PTR
 const STRING_FULL_BLOCK_END_PTR = STRING_PTR + 24
 const STRING_PARTIAL_BLOCK_NUM_ELEMENTS = 4
-
-const STRING_INIT_CV = [
-    13503953893947607553,
-    11912009168875159580,
-    11170449401267093504,
-    6620516959492505600
-]
 
 # Config note variants, stored in the first storage item. Keep in sync with
 # `FaucetMetadataConfig` on the Rust side.
@@ -238,7 +232,7 @@ proc prepare_string_call(num_storage_items: u32) -> (MetadataStringCommitment, [
     # => [pad(12)]
 
     push.STRING_PARTIAL_BLOCK_NUM_ELEMENTS push.STRING_FULL_BLOCK_END_PTR push.STRING_PTR
-    push.STRING_INIT_CV padw padw
+    push.STRING_NUM_ELEMENTS exec.eidos::init_chaining_word padw padw
     exec.eidos::hash_elements_with_state
     # => [STRING_COMMITMENT, pad(12)]
 
