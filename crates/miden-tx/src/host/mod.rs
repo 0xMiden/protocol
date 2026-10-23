@@ -50,6 +50,7 @@ use miden_protocol::account::{
     AccountStorageHeader,
     AssetDelta,
     PartialAccount,
+    StorageArray,
     StorageMapKey,
     StorageSlotHeader,
     StorageSlotId,
@@ -477,6 +478,16 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         self.update_tracker.storage().set_item(slot_name, new_value)?;
 
+        Ok(Vec::new())
+    }
+
+    /// Tracks a validated array write.
+    pub fn on_account_storage_after_set_array(
+        &mut self,
+        slot_name: StorageSlotName,
+        array: StorageArray,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        self.update_tracker.storage().set_array(slot_name, array)?;
         Ok(Vec::new())
     }
 

@@ -36,6 +36,7 @@ mod test_note;
 mod test_output_note;
 mod test_prologue;
 mod test_reexecution;
+mod test_storage_array;
 mod test_tx;
 
 // HELPER FUNCTIONS

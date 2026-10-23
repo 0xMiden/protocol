@@ -10,6 +10,7 @@ use miden_protocol::account::{
     AccountCodeUpgrade,
     AccountId,
     AssetDelta,
+    StorageArray,
     StorageMap,
     StorageMapKey,
     StorageSlotName,
@@ -87,6 +88,11 @@ pub(crate) enum TransactionEvent {
 
     AccountOnAssetDeltaComputation {
         delta: AssetDelta,
+    },
+
+    AccountStorageAfterSetArray {
+        slot_name: StorageSlotName,
+        array: StorageArray,
     },
 
     AccountStorageAfterSetItem {
@@ -337,6 +343,36 @@ impl TransactionEvent {
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,
+            TransactionEventId::AccountStorageAfterSetArray => {
+                // Expected stack: [event, slot_ptr, ROOT]. The kernel has verified this preimage.
+                let (slot_id, slot_type, _) =
+                    process.get_storage_slot(process.get_stack_item(1))?;
+                let root = process.get_stack_word(2);
+                let StorageSlotType::Array(length) = slot_type else {
+                    return Err(TransactionKernelError::other(
+                        "array event references a non-array slot",
+                    ));
+                };
+                let elements = process
+                    .advice_provider()
+                    .get_mapped_values(&root)
+                    .ok_or_else(|| TransactionKernelError::other("array preimage is missing"))?;
+                if elements.len() != length.as_usize() * Word::NUM_ELEMENTS {
+                    return Err(TransactionKernelError::other("array preimage length mismatch"));
+                }
+                let values = elements
+                    .as_chunks::<{ Word::NUM_ELEMENTS }>()
+                    .0
+                    .iter()
+                    .copied()
+                    .map(Word::new)
+                    .collect();
+                let array = StorageArray::new(values).map_err(|err| {
+                    TransactionKernelError::other_with_source("invalid array preimage", err)
+                })?;
+                let slot_name = base_host.initial_account_storage_slot(slot_id)?.name().clone();
+                Some(TransactionEvent::AccountStorageAfterSetArray { slot_name, array })
+            },
 
             TransactionEventId::AccountStorageAfterSetItem => {
                 // Expected stack state: [event, slot_ptr, VALUE]

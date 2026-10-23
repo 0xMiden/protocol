@@ -84,6 +84,22 @@ The slot stores a sequential hash of the words. Its encoded type is a field elem
 32 bits hold the array type tag (`2`) and whose upper 32 bits hold the length in words.
 
 Headers include all array words, including zeros, for full, partial, and foreign accounts.
+Reads and writes transfer the whole array through caller memory.
+
+| API | Inputs | Output |
+| --- | --- | --- |
+| `active_account::get_array_length` | `[slot_id_suffix, slot_id_prefix]` | `[num_words]` |
+| `active_account::get_array` | `[slot_id_suffix, slot_id_prefix, dst_ptr]` | `[num_words]` |
+| `native_account::get_initial_array` | `[slot_id_suffix, slot_id_prefix, dst_ptr]` | `[num_words]` |
+| `native_account::set_array` | `[slot_id_suffix, slot_id_prefix, src_ptr]` | `[num_words]` |
+
+The leftmost input is on top of the stack. The suffix and prefix identify the storage slot;
+the account comes from the execution context. Buffers must be word-aligned and hold the whole array.
+Active account reads support foreign arrays; writes and initial reads require the native account.
+`get_initial_array` reads the state at transaction start, even after calls to `set_array`.
+
+Like value and map APIs, all four APIs require an account procedure. The kernel checks that the
+calling procedure belongs to the active account.
 
 Update patches contain `(index, new_word)` pairs in ascending index order, omitting words whose
 final value equals their transaction-start value. Creation patches include all words, including zeros.

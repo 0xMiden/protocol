@@ -37,3 +37,9 @@ pub const EMPTY_SMT_ROOT =
 pub const STORAGE_SLOT_TYPE_VALUE = 0
 pub const STORAGE_SLOT_TYPE_MAP = 1
 pub const STORAGE_SLOT_TYPE_ARRAY = 2
+
+#! Maximum words in one storage array.
+pub const MAX_STORAGE_ARRAY_WORDS = 256
+
+#! Maximum storage payload in words: values, map roots, and array contents.
+pub const MAX_ACCOUNT_STORAGE_WORDS = 256

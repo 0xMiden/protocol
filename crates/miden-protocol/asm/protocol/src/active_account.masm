@@ -8,9 +8,10 @@ use {
     StorageMapKey,
     StorageSlotId,
 } from miden::protocol::types
-use {ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_NONCE_OFFSET, ACCOUNT_GET_CODE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_VAULT_ROOT_OFFSET, ACCOUNT_GET_ITEM_OFFSET, ACCOUNT_HAS_STORAGE_SLOT_OFFSET, ACCOUNT_GET_MAP_ITEM_OFFSET, ACCOUNT_GET_ASSET_OFFSET, ACCOUNT_GET_NUM_PROCEDURES_OFFSET, ACCOUNT_GET_PROCEDURE_ROOT_OFFSET, ACCOUNT_HAS_PROCEDURE_OFFSET}
+use {ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_NONCE_OFFSET, ACCOUNT_GET_CODE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_VAULT_ROOT_OFFSET, ACCOUNT_GET_ITEM_OFFSET, ACCOUNT_HAS_STORAGE_SLOT_OFFSET, ACCOUNT_GET_MAP_ITEM_OFFSET, ACCOUNT_GET_ASSET_OFFSET, ACCOUNT_GET_NUM_PROCEDURES_OFFSET, ACCOUNT_GET_PROCEDURE_ROOT_OFFSET, ACCOUNT_HAS_PROCEDURE_OFFSET, ACCOUNT_GET_ARRAY_INFO_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::core::word
+use miden::protocol_utils::mem
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -284,6 +285,44 @@ pub proc get_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
     # => [VALUE]
 end
 
+#! Returns the array length in words.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [num_words]
+#!
+#! Panics if:
+#! - the slot is missing or is not an array.
+#! - the caller is not an account procedure.
+#!
+#! Invocation: exec
+pub proc get_array_length(slot_id: StorageSlotId) -> u16
+    exec.get_array_info
+    # => [ROOT, num_words]
+
+    dropw
+    # => [num_words]
+end
+
+#! Copies the active account's array into caller memory.
+#! `dst_ptr` must be word-aligned with room for the length returned by `get_array_length`.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, dst_ptr]
+#! Outputs: [num_words]
+#!
+#! Panics if:
+#! - the slot is missing or is not an array.
+#! - the caller is not an account procedure.
+#! - the preimage or destination range is invalid.
+#!
+#! Invocation: exec
+pub proc get_array(slot_id: StorageSlotId, dst_ptr: ptr<word>) -> u16
+    exec.get_array_info
+    # => [ROOT, num_words, dst_ptr]
+
+    exec.mem::pipe_words_preimage_to_memory
+    # => [num_words]
+end
+
 # VAULT
 # -------------------------------------------------------------------------------------------------
 
@@ -433,4 +472,30 @@ pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     # clean the stack
     swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [is_procedure_available]
+end
+
+# HELPERS
+# -------------------------------------------------------------------------------------------------
+
+#! Fetches the active account's array commitment and length from the kernel.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [ROOT, num_words]
+proc get_array_info(slot_id: StorageSlotId) -> (word, u16)
+    push.0 movdn.2 push.ACCOUNT_GET_ARRAY_INFO_OFFSET
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
+
+    # pad the stack
+    padw swapw padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
+
+    syscall.exec_kernel_proc
+    # => [ROOT, num_words, pad(11)]
+
+    # clean the stack
+    swapdw dropw dropw
+    repeat.3
+        movup.5 drop
+    end
+    # => [ROOT, num_words]
 end

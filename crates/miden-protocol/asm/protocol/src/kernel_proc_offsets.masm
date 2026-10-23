@@ -112,3 +112,8 @@ pub const TX_GET_FEE_ASSET_ID_OFFSET = 63 # accessor
 # transaction logs
 pub const TX_ADD_LOG_OFFSET = 64
 pub const TX_GET_LOGS_COMMITMENT_OFFSET = 65
+
+# storage arrays
+pub const ACCOUNT_GET_ARRAY_INFO_OFFSET = 66
+pub const ACCOUNT_GET_INITIAL_ARRAY_INFO_OFFSET = 67
+pub const ACCOUNT_SET_ARRAY_OFFSET = 68

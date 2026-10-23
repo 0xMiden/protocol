@@ -295,9 +295,6 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             })?;
 
         let slot_type = slot_metadata[ACCT_STORAGE_SLOT_TYPE_OFFSET as usize];
-        let slot_type = u8::try_from(slot_type.as_canonical_u64()).map_err(|err| {
-            TransactionKernelError::other(format!("failed to convert {slot_type} into u8: {err}"))
-        })?;
         let slot_type = StorageSlotType::try_from(slot_type).map_err(|err| {
             TransactionKernelError::other_with_source(
                 format!("failed to convert {slot_type} into storage slot type",),
