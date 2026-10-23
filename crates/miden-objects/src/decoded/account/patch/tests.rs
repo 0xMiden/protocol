@@ -1,9 +1,14 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
+use core::num::TryFromIntError;
 
+use assert_matches::assert_matches;
 use miden_protocol::Word;
+use miden_protocol::account::StorageArrayError;
 
+use crate::decoded::account::StorageArrayPatchError;
 use crate::decoded::account::test_utils::account_patch;
+use crate::proto::account::{StorageArrayPatchEntries, StorageArrayPatchEntry};
 use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
 
@@ -139,4 +144,56 @@ fn account_patch_protobuf_rejects_unspecified_version_after_decoding() {
     .unwrap_err();
 
     assert_eq!(error.to_string(), "account patch version is unspecified");
+}
+
+#[test]
+fn storage_array_patch_rejects_invalid_entries() -> anyhow::Result<()> {
+    for (length, indices, expected) in [
+        (3, vec![3], StorageArrayError::IndexOutOfBounds { index: 3, length: 3 }),
+        (3, vec![0, 0], StorageArrayError::DuplicateIndex(0)),
+        (0, vec![0], StorageArrayError::InvalidLength(0)),
+        (257, vec![0], StorageArrayError::InvalidLength(257)),
+    ] {
+        let wire = StorageArrayPatchEntries {
+            length,
+            entries: indices
+                .into_iter()
+                .map(|index| StorageArrayPatchEntry { index, value: Some(Word::empty().into()) })
+                .collect(),
+        };
+        let error = wire.decode_fields()?.verify().unwrap_err();
+        let source = error_source::<StorageArrayError>(&error).expect("array validation error");
+        assert_eq!(source.to_string(), expected.to_string());
+    }
+    Ok(())
+}
+
+#[test]
+fn storage_array_patch_rejects_truncated_indices() -> anyhow::Result<()> {
+    // Narrowing this index to u16 would silently turn it into the valid index 0.
+    let wire = StorageArrayPatchEntries {
+        length: 3,
+        entries: vec![StorageArrayPatchEntry {
+            index: 1 << 16,
+            value: Some(Word::empty().into()),
+        }],
+    };
+    let error = wire.decode_fields()?.verify().unwrap_err();
+    assert_matches!(error_source::<TryFromIntError>(&error), Some(_));
+    Ok(())
+}
+
+#[test]
+fn storage_array_patch_rejects_empty_updates_after_decoding() -> anyhow::Result<()> {
+    let wire = proto::account::StorageArrayPatch {
+        operation: Some(proto::account::storage_array_patch::Operation::Update(
+            StorageArrayPatchEntries { length: 3, entries: vec![] },
+        )),
+    };
+    let error = wire.decode_fields()?.verify().unwrap_err();
+    assert_matches!(
+        error_source::<StorageArrayPatchError>(&error),
+        Some(StorageArrayPatchError::EmptyUpdate)
+    );
+    Ok(())
 }

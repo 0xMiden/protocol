@@ -1,4 +1,12 @@
-pub use proto::account::DecodedStorageSlotId as StorageSlotId;
+use miden_protocol::account::{
+    StorageArray as ProtocolStorageArray,
+    StorageArrayError,
+    StorageSlotHeaderContent,
+};
+pub use proto::account::{
+    DecodedStorageArray as StorageArray,
+    DecodedStorageSlotId as StorageSlotId,
+};
 
 use crate::decoded::VerificationError;
 use crate::{Verify, proto};
@@ -28,17 +36,17 @@ pub use proto::account::account_storage_header::DecodedStorageSlot as AccountSto
 
 impl Verify for AccountStorageHeaderStorageSlot {
     type Verified = miden_protocol::account::StorageSlotHeader;
-    type Error = miden_protocol::errors::StorageSlotNameError;
+    type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        use miden_protocol::account::StorageSlotType;
         use proto::account::account_storage_header::storage_slot::DecodedContent;
 
         let name = miden_protocol::account::StorageSlotName::new(self.slot_name)?;
-        let (slot_type, value) = match self.content {
-            DecodedContent::Value(value) => (StorageSlotType::Value, value),
-            DecodedContent::MapRoot(root) => (StorageSlotType::Map, root),
+        let content = match self.content {
+            DecodedContent::Value(value) => StorageSlotHeaderContent::Value(value),
+            DecodedContent::MapRoot(root) => StorageSlotHeaderContent::Map(root),
+            DecodedContent::Array(array) => StorageSlotHeaderContent::Array(array.verify()?),
         };
-        Ok(Self::Verified::new(name, slot_type, value))
+        Ok(Self::Verified::new(name, content))
     }
 }
 
@@ -50,6 +58,14 @@ impl Verify for AccountStorageHeader {
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let slots = self.slots.verify()?;
         Ok(Self::Verified::new(slots)?)
+    }
+}
+
+impl Verify for StorageArray {
+    type Verified = ProtocolStorageArray;
+    type Error = StorageArrayError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Self::Verified::new(self.values.into_inner())
     }
 }
 
@@ -89,6 +105,7 @@ impl Verify for StorageSlot {
         let content = match self.storage_slot_content {
             DecodedStorageSlotContent::Value(value) => StorageSlotContent::Value(value),
             DecodedStorageSlotContent::Map(map) => StorageSlotContent::Map(map.verify()?),
+            DecodedStorageSlotContent::Array(array) => StorageSlotContent::Array(array.verify()?),
         };
         Ok(Self::Verified::new(name, content))
     }

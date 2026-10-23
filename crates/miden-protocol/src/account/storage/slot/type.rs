@@ -1,9 +1,8 @@
 use alloc::string::ToString;
 use core::fmt::Display;
 
-use miden_core::{ONE, ZERO};
-
 use crate::Felt;
+use crate::account::StorageArrayLength;
 use crate::errors::AccountError;
 use crate::utils::serde::{
     ByteReader,
@@ -18,20 +17,37 @@ use crate::utils::serde::{
 
 /// The type of a storage slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
 pub enum StorageSlotType {
-    /// Represents a slot that contains a value.
-    Value = Self::VALUE_TYPE,
-    /// Represents a slot that contains a commitment to a map with key-value pairs.
-    Map = Self::MAP_TYPE,
+    /// A single word.
+    Value,
+    /// A map commitment.
+    Map,
+    /// An array with its word count encoded in the slot type.
+    Array(StorageArrayLength),
 }
 
 impl StorageSlotType {
     const VALUE_TYPE: u8 = 0;
     const MAP_TYPE: u8 = 1;
+    const ARRAY_TYPE: u8 = 2;
 
+    /// Encodes the type tag in the low 32 bits and the array length, if any, in the upper 32 bits.
     pub fn as_felt(&self) -> Felt {
-        Felt::from(*self as u8)
+        match self {
+            Self::Value => Felt::from(Self::VALUE_TYPE),
+            Self::Map => Felt::from(Self::MAP_TYPE),
+            Self::Array(length) => Felt::new_unchecked(
+                u64::from(Self::ARRAY_TYPE) + (u64::from(length.as_u16()) << 32),
+            ),
+        }
+    }
+
+    /// Words counted toward the account storage payload limit.
+    pub fn num_words(&self) -> usize {
+        match self {
+            Self::Value | Self::Map => 1,
+            Self::Array(length) => length.as_usize(),
+        }
     }
 
     /// Returns `true` if the slot is a value slot, `false` otherwise.
@@ -61,12 +77,14 @@ impl TryFrom<Felt> for StorageSlotType {
     type Error = AccountError;
 
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        if value == ZERO {
-            Ok(StorageSlotType::Value)
-        } else if value == ONE {
-            Ok(StorageSlotType::Map)
-        } else {
-            Err(AccountError::other("invalid storage slot type"))
+        let encoded = value.as_canonical_u64();
+        match (encoded as u32, encoded >> 32) {
+            (tag, 0) if tag == u32::from(Self::VALUE_TYPE) => Ok(Self::Value),
+            (tag, 0) if tag == u32::from(Self::MAP_TYPE) => Ok(Self::Map),
+            (tag, length) if tag == u32::from(Self::ARRAY_TYPE) => {
+                Ok(Self::Array(StorageArrayLength::try_from(length as usize)?))
+            },
+            _ => Err(AccountError::other("invalid storage slot type")),
         }
     }
 }
@@ -76,6 +94,7 @@ impl Display for StorageSlotType {
         match self {
             StorageSlotType::Value => f.write_str("value"),
             StorageSlotType::Map => f.write_str("map"),
+            StorageSlotType::Array(length) => write!(f, "array[{}]", length.as_u16()),
         }
     }
 }
@@ -86,14 +105,18 @@ impl Display for StorageSlotType {
 impl Serializable for StorageSlotType {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
-            Self::Value => target.write_u8(0),
-            Self::Map => target.write_u8(1),
+            Self::Value => target.write_u8(Self::VALUE_TYPE),
+            Self::Map => target.write_u8(Self::MAP_TYPE),
+            Self::Array(length) => {
+                target.write_u8(Self::ARRAY_TYPE);
+                target.write(length);
+            },
         }
     }
 
     fn get_size_hint(&self) -> usize {
         // The serialized size of a slot type.
-        0u8.get_size_hint()
+        if matches!(self, Self::Array(_)) { 3 } else { 1 }
     }
 }
 
@@ -104,6 +127,7 @@ impl Deserializable for StorageSlotType {
         match storage_slot_type {
             Self::VALUE_TYPE => Ok(Self::Value),
             Self::MAP_TYPE => Ok(Self::Map),
+            Self::ARRAY_TYPE => Ok(Self::Array(source.read()?)),
             _ => Err(DeserializationError::InvalidValue(storage_slot_type.to_string())),
         }
     }
@@ -115,19 +139,20 @@ impl Deserializable for StorageSlotType {
 #[cfg(test)]
 mod tests {
     use crate::Felt;
-    use crate::account::StorageSlotType;
+    use crate::account::{StorageArrayLength, StorageSlotType};
     use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage_slot_type() {
-        let type_0 = StorageSlotType::Value;
-        let type_1 = StorageSlotType::Value;
-        let type_0_bytes = type_0.to_bytes();
-        let type_1_bytes = type_1.to_bytes();
-        let deserialized_0 = StorageSlotType::read_from_bytes(&type_0_bytes).unwrap();
-        let deserialized_1 = StorageSlotType::read_from_bytes(&type_1_bytes).unwrap();
-        assert_eq!(type_0, deserialized_0);
-        assert_eq!(type_1, deserialized_1);
+        for slot_type in [
+            StorageSlotType::Value,
+            StorageSlotType::Map,
+            StorageSlotType::Array(StorageArrayLength::try_from(1).unwrap()),
+            StorageSlotType::Array(StorageArrayLength::try_from(256).unwrap()),
+        ] {
+            let bytes = slot_type.to_bytes();
+            assert_eq!(StorageSlotType::read_from_bytes(&bytes).unwrap(), slot_type);
+        }
     }
 
     #[test]
@@ -139,5 +164,14 @@ mod tests {
         let felt = Felt::ONE;
         let slot_type = StorageSlotType::try_from(felt).unwrap();
         assert_eq!(slot_type, StorageSlotType::Map);
+
+        for length in [1, 256] {
+            let slot_type = StorageSlotType::Array(StorageArrayLength::try_from(length).unwrap());
+            assert_eq!(StorageSlotType::try_from(slot_type.as_felt()).unwrap(), slot_type);
+        }
+
+        for invalid in [2, 2 + (257 << 32), 1 + (1 << 32), 3 + (1 << 32)] {
+            assert!(StorageSlotType::try_from(Felt::new_unchecked(invalid)).is_err());
+        }
     }
 }

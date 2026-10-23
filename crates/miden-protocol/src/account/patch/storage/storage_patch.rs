@@ -41,6 +41,9 @@ impl AccountStoragePatch {
     /// Domain separator for map storage slots in delta and patch commitments.
     const DOMAIN_MAP: Felt = Felt::new_unchecked(3);
 
+    /// Domain separator for array slots; domain 4 is reserved for account code.
+    const DOMAIN_ARRAY: Felt = Felt::new_unchecked(5);
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -112,14 +115,14 @@ impl AccountStoragePatch {
     pub fn values(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageValuePatch)> {
         self.patches.iter().filter_map(|(slot_name, slot_patch)| match slot_patch {
             StorageSlotPatch::Value(value_patch) => Some((slot_name, value_patch)),
-            StorageSlotPatch::Map(_) => None,
+            StorageSlotPatch::Map(_) | StorageSlotPatch::Array(_) => None,
         })
     }
 
     /// Returns an iterator over the map slot patches in this storage patch.
     pub fn maps(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageMapPatch)> {
         self.patches.iter().filter_map(|(slot_name, slot_patch)| match slot_patch {
-            StorageSlotPatch::Value(_) => None,
+            StorageSlotPatch::Value(_) | StorageSlotPatch::Array(_) => None,
             StorageSlotPatch::Map(map_patch) => Some((slot_name, map_patch)),
         })
     }
@@ -216,6 +219,34 @@ impl AccountStoragePatch {
             let slot_id = slot_name.id();
 
             match slot_patch {
+                StorageSlotPatch::Array(patch) => {
+                    let mut num_entries = 0u16;
+                    for (index, word) in patch.entries() {
+                        elements.extend_from_slice(&[
+                            Felt::from(index),
+                            Felt::ZERO,
+                            Felt::ZERO,
+                            Felt::ZERO,
+                        ]);
+                        elements.extend_from_slice(word.as_elements());
+                        num_entries += 1;
+                    }
+                    if patch.patch_op().is_update() && num_entries == 0 {
+                        continue;
+                    }
+                    elements.extend_from_slice(&[
+                        Self::DOMAIN_ARRAY,
+                        Felt::from(patch.patch_op().as_u8()),
+                        slot_id.suffix(),
+                        slot_id.prefix(),
+                    ]);
+                    elements.extend_from_slice(&[
+                        Felt::from(patch.length().as_u16()),
+                        Felt::from(num_entries),
+                        Felt::ZERO,
+                        Felt::ZERO,
+                    ]);
+                },
                 StorageSlotPatch::Value(value_patch) => {
                     elements.extend_from_slice(&[
                         Self::DOMAIN_VALUE,

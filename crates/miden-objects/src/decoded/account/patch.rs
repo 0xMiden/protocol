@@ -1,14 +1,28 @@
+use core::num::TryFromIntError;
+
 use miden_protobuf::unwrap_infallible;
-pub use proto::account::DecodedAccountVaultPatchEntry as AccountVaultPatchEntry;
+use miden_protocol::Word;
+use miden_protocol::account::{
+    StorageArrayLength,
+    StorageArrayPatch as ProtocolStorageArrayPatch,
+    StorageArrayPatchEntries as ProtocolStorageArrayPatchEntries,
+};
+pub use proto::account::{
+    DecodedAccountVaultPatchEntry as AccountVaultPatchEntry,
+    DecodedStorageArrayPatch as StorageArrayPatch,
+    DecodedStorageArrayPatchEntries as StorageArrayPatchEntries,
+    DecodedStorageArrayPatchEntry as StorageArrayPatchEntry,
+};
 
 use crate::decoded::VerificationError;
+use crate::proto::account::storage_array_patch::DecodedOperation as DecodedArrayPatchOperation;
 use crate::{Verify, proto};
 
 #[cfg(test)]
 mod tests;
 
 impl Verify for AccountVaultPatchEntry {
-    type Verified = (miden_protocol::asset::AssetId, miden_protocol::Word);
+    type Verified = (miden_protocol::asset::AssetId, Word);
     type Error = miden_protocol::errors::AssetError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok((self.asset_id.try_into()?, self.value))
@@ -56,6 +70,51 @@ impl Verify for PrivateAccountUpdate {
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(Self::Verified::Private)
     }
+}
+
+impl Verify for StorageArrayPatchEntry {
+    type Verified = (u16, Word);
+    type Error = TryFromIntError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok((u16::try_from(self.index)?, self.value))
+    }
+}
+
+impl Verify for StorageArrayPatchEntries {
+    type Verified = ProtocolStorageArrayPatchEntries;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        let length = StorageArrayLength::try_from(self.length as usize)?;
+        Ok(Self::Verified::new(length, self.entries.verify()?)?)
+    }
+}
+
+impl Verify for StorageArrayPatch {
+    type Verified = ProtocolStorageArrayPatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(match self.operation {
+            DecodedArrayPatchOperation::Create(array) => {
+                Self::Verified::Create { array: array.verify()? }
+            },
+            DecodedArrayPatchOperation::Update(entries) => {
+                let entries = entries.verify()?;
+                if entries.is_empty() {
+                    return Err(StorageArrayPatchError::EmptyUpdate.into());
+                }
+                Self::Verified::Update { entries }
+            },
+            DecodedArrayPatchOperation::Remove(length) => Self::Verified::Remove {
+                length: StorageArrayLength::try_from(length as usize)?,
+            },
+        })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StorageArrayPatchError {
+    #[error("entries must be non-empty for an update operation")]
+    EmptyUpdate,
 }
 
 pub use proto::account::DecodedStorageMapPatchEntries as StorageMapPatchEntries;
@@ -138,6 +197,7 @@ impl Verify for StorageSlotPatch {
                 StorageSlotPatch::Value(unwrap_infallible(value.verify()))
             },
             DecodedPatch::Map(map) => StorageSlotPatch::Map(map.verify()?),
+            DecodedPatch::Array(array) => StorageSlotPatch::Array(array.verify()?),
         };
         Ok((name, patch))
     }

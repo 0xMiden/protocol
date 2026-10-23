@@ -1,6 +1,12 @@
 use crate::Word;
 use crate::account::storage::slot::StorageSlotId;
-use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};
+use crate::account::{
+    StorageArray,
+    StorageMap,
+    StorageSlotContent,
+    StorageSlotName,
+    StorageSlotType,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -61,6 +67,11 @@ impl StorageSlot {
         Self::new(name, StorageSlotContent::empty_map())
     }
 
+    /// Creates an array slot.
+    pub fn with_array(name: StorageSlotName, array: StorageArray) -> Self {
+        Self::new(name, StorageSlotContent::Array(array))
+    }
+
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -79,6 +90,7 @@ impl StorageSlot {
     /// Returns:
     /// - For [`StorageSlotContent::Value`] the value.
     /// - For [`StorageSlotContent::Map`] the root of the [StorageMap].
+    /// - For [`StorageSlotContent::Array`] the commitment to the ordered array words.
     pub fn value(&self) -> Word {
         self.content().value()
     }

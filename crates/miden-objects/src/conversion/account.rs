@@ -11,11 +11,12 @@ use miden_protocol::account::{
     PartialAccount,
     PartialStorage,
     PartialStorageMap,
+    StorageArray,
     StorageMap,
     StorageSlot,
     StorageSlotContent,
+    StorageSlotHeaderContent,
     StorageSlotId,
-    StorageSlotType,
 };
 use miden_protocol::asset::PartialVault;
 use miden_protocol::block::account_tree::AccountWitness;
@@ -81,9 +82,10 @@ impl From<&AccountStorageHeader> for proto::account::AccountStorageHeader {
             slots: account_storage_header
                 .slots()
                 .map(|slot| {
-                    let content = match slot.slot_type() {
-                        StorageSlotType::Value => Content::Value(slot.value().into()),
-                        StorageSlotType::Map => Content::MapRoot(slot.value().into()),
+                    let content = match slot.content() {
+                        StorageSlotHeaderContent::Value(value) => Content::Value(value.into()),
+                        StorageSlotHeaderContent::Map(root) => Content::MapRoot(root.into()),
+                        StorageSlotHeaderContent::Array(array) => Content::Array(array.into()),
                     };
                     proto::account::account_storage_header::StorageSlot {
                         slot_name: slot.name().to_string(),
@@ -98,6 +100,17 @@ impl From<&AccountStorageHeader> for proto::account::AccountStorageHeader {
 impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     fn from(account_storage_header: AccountStorageHeader) -> Self {
         (&account_storage_header).into()
+    }
+}
+
+// STORAGE ARRAY
+// ================================================================================================
+
+impl From<&StorageArray> for proto::account::StorageArray {
+    fn from(array: &StorageArray) -> Self {
+        Self {
+            values: array.values().iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -246,6 +259,7 @@ impl From<&StorageSlot> for proto::account::StorageSlot {
         let content = match slot.content() {
             StorageSlotContent::Value(value) => WireStorageSlotContent::Value(value.into()),
             StorageSlotContent::Map(map) => WireStorageSlotContent::Map(map.into()),
+            StorageSlotContent::Array(array) => WireStorageSlotContent::Array(array.into()),
         };
         Self {
             slot_name: slot.name().to_string(),

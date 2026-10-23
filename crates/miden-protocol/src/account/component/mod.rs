@@ -13,7 +13,7 @@ mod code;
 pub use code::AccountComponentCode;
 
 use crate::MastForest;
-use crate::account::{AccountProcedureRoot, StorageSlot};
+use crate::account::{AccountProcedureRoot, AccountStorage, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 
@@ -30,7 +30,7 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 /// [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
-/// [`AccountStorage`](crate::account::AccountStorage).
+/// [`AccountStorage`].
 ///
 /// Each component is independent of other components and can only access its own storage slots.
 /// Each component defines its own storage layout starting at index 0 up to the length of the
@@ -61,6 +61,8 @@ impl AccountComponent {
     ///
     /// Returns an error if:
     /// - The number of given [`StorageSlot`]s exceeds 255.
+    /// - The combined value words, map roots, and array contents exceed
+    ///   [`AccountStorage::MAX_NUM_STORAGE_WORDS`].
     pub fn new(
         code: impl Into<AccountComponentCode>,
         storage_slots: Vec<StorageSlot>,
@@ -69,6 +71,7 @@ impl AccountComponent {
         // Check that we have less than 256 storage slots.
         u8::try_from(storage_slots.len())
             .map_err(|_| AccountError::StorageTooManySlots(storage_slots.len() as u64))?;
+        AccountStorage::validate_payload_size(storage_slots.iter().map(StorageSlot::slot_type))?;
 
         Ok(Self {
             code: code.into(),

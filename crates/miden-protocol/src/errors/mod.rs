@@ -34,6 +34,7 @@ use crate::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountVaultDelta,
+    StorageArrayError,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -123,6 +124,8 @@ pub enum ComponentMetadataError {
 
 #[derive(Debug, Error)]
 pub enum AccountError {
+    #[error(transparent)]
+    InvalidStorageArray(#[from] StorageArrayError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]
@@ -191,6 +194,10 @@ pub enum AccountError {
     StorageSlotNotMap(StorageSlotName),
     #[error("storage slot {0} is not of type value")]
     StorageSlotNotValue(StorageSlotName),
+    #[error("storage slot {0} is not an array")]
+    StorageSlotNotArray(StorageSlotName),
+    #[error("account storage payload contains {0} words but may contain at most {max}", max = AccountStorage::MAX_NUM_STORAGE_WORDS)]
+    StoragePayloadTooLarge(usize),
     #[error("storage slot name {0} is assigned to more than one slot")]
     DuplicateStorageSlotName(StorageSlotName),
     #[error("storage does not contain a slot with name {slot_name}")]
@@ -501,6 +508,8 @@ pub enum AccountDeltaError {
 
 #[derive(Debug, Error)]
 pub enum AccountPatchError {
+    #[error(transparent)]
+    InvalidStorageArray(#[from] StorageArrayError),
     #[error("final nonce can never be set to zero")]
     FinalNonceIsZero,
 

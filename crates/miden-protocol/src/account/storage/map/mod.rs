@@ -5,7 +5,7 @@ use miden_crypto::merkle::EmptySubtreeRoots;
 
 use super::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable, Word};
 use crate::account::StorageMapPatchEntries;
-use crate::crypto::merkle::smt::{LeafIndex, SMT_DEPTH, Smt, SmtLeaf};
+use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf};
 use crate::crypto::merkle::{InnerNodeInfo, MerkleError};
 use crate::errors::{AccountError, StorageMapError};
 
@@ -213,6 +213,36 @@ impl StorageMap {
         }
 
         Ok(self.root())
+    }
+
+    /// Prepares a patch without copying the map or changing its contents.
+    pub(super) fn compute_mutations(
+        &self,
+        entries: &StorageMapPatchEntries,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, AccountError> {
+        self.smt
+            .compute_mutations(
+                entries.as_map().iter().map(|(key, value)| (key.hash().into(), *value)),
+            )
+            .map_err(AccountError::MaxNumStorageMapLeavesExceeded)
+    }
+
+    /// Applies mutations prepared for this map, keeping the original keys in sync.
+    pub(super) fn apply_mutations(
+        &mut self,
+        entries: &StorageMapPatchEntries,
+        mutations: MutationSet<SMT_DEPTH, Word, Word>,
+    ) {
+        self.smt
+            .apply_mutations(mutations)
+            .expect("map has not changed since mutations were computed");
+        for (&key, &value) in entries.as_map() {
+            if value.is_empty() {
+                self.entries.remove(&key);
+            } else {
+                self.entries.insert(key, value);
+            }
+        }
     }
 
     /// Consumes the map and returns the underlying map of entries.

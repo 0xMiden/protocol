@@ -8,11 +8,13 @@ use miden_protocol::account::{
     AccountStorageHeader,
     PartialAccount,
     PartialStorage,
+    StorageArray,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotContent,
     StorageSlotHeader,
+    StorageSlotHeaderContent,
     StorageSlotId,
     StorageSlotName,
     StorageSlotType,
@@ -30,6 +32,10 @@ use crate::decoded::account::test_utils::{
     mock_new_account,
     partial_account,
     private_account_id,
+};
+use crate::proto::account::{
+    AccountStorage as ProtoAccountStorage,
+    PartialStorage as ProtoPartialStorage,
 };
 use crate::{DecodeMessage, Verify, proto};
 
@@ -110,8 +116,11 @@ fn account_storage_header_roundtrips_value_and_map_root_payloads() {
         for value in [Word::empty(), Word::from([1_u32, 2, 3, 4])] {
             let header = AccountStorageHeader::new(vec![StorageSlotHeader::new(
                 StorageSlotName::new("miden::test::storage").unwrap(),
-                slot_type,
-                value,
+                if slot_type.is_value() {
+                    StorageSlotHeaderContent::Value(value)
+                } else {
+                    StorageSlotHeaderContent::Map(value)
+                },
             )])
             .unwrap();
 
@@ -203,8 +212,8 @@ fn account_storage_roundtrips_through_protobuf() {
     assert!(contents.iter().any(|content| matches!(content, StorageSlotContent::Value(_))));
     assert!(contents.iter().any(|content| matches!(content, StorageSlotContent::Map(_))));
 
-    let encoded = proto::account::AccountStorage::from(&storage);
-    let wire = proto::account::AccountStorage::decode(encoded.encode_to_vec().as_slice()).unwrap();
+    let encoded = ProtoAccountStorage::from(&storage);
+    let wire = ProtoAccountStorage::decode(encoded.encode_to_vec().as_slice()).unwrap();
 
     assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), storage);
 }
@@ -230,4 +239,26 @@ fn new_account_roundtrips_through_protobuf_with_its_seed() {
 
     let wire = proto::account::Account::decode(encoded.encode_to_vec().as_slice()).unwrap();
     assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), account);
+}
+
+#[test]
+fn storage_arrays_roundtrip_in_full_and_partial_storage() -> anyhow::Result<()> {
+    let array = StorageArray::new(vec![Word::empty(), Word::from([1u32, 2, 3, 4]), Word::empty()])?;
+    let storage =
+        AccountStorage::new(vec![StorageSlot::with_array(StorageSlotName::mock(1), array)])?;
+
+    // Full storage includes the array contents.
+    let bytes = ProtoAccountStorage::from(&storage).encode_to_vec();
+    let message = ProtoAccountStorage::decode(bytes.as_slice())?;
+    let decoded = message.decode_fields()?.verify()?;
+    assert_eq!(decoded, storage);
+
+    // Minimal partial storage retains array contents in its header.
+    let partial = PartialStorage::new_minimal(&storage);
+    let bytes = ProtoPartialStorage::from(&partial).encode_to_vec();
+    let message = ProtoPartialStorage::decode(bytes.as_slice())?;
+    let decoded = message.decode_fields()?.verify()?;
+    assert_eq!(decoded, partial);
+
+    Ok(())
 }

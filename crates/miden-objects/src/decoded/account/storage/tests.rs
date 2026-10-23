@@ -3,7 +3,10 @@ use alloc::vec;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
+use miden_protocol::account::StorageArrayError;
+use miden_protocol::errors::StorageSlotNameError;
 
+use crate::proto::account::StorageArray;
 use crate::{DecodeMessage, Verify, proto};
 
 #[test]
@@ -37,9 +40,12 @@ fn account_storage_header_slot_defers_name_validation() {
         )),
     };
     let decoded = wire.decode_fields().unwrap();
+    let error = decoded.verify().unwrap_err();
     assert!(matches!(
-        decoded.verify(),
-        Err(miden_protocol::errors::StorageSlotNameError::TooShort)
+        core::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<StorageSlotNameError>(),
+        Some(StorageSlotNameError::TooShort)
     ));
 }
 
@@ -77,8 +83,8 @@ fn storage_header_verification_reports_the_invalid_slot_index() {
 
     assert!(error.to_string().starts_with("slots[1]:"), "{error}");
     assert!(matches!(
-        crate::test_utils::error_source::<miden_protocol::errors::StorageSlotNameError>(&error),
-        Some(miden_protocol::errors::StorageSlotNameError::TooShort)
+        crate::test_utils::error_source::<StorageSlotNameError>(&error),
+        Some(StorageSlotNameError::TooShort)
     ));
 }
 
@@ -141,4 +147,15 @@ fn storage_map_rejects_an_empty_value() {
         crate::test_utils::error_source::<crate::decoded::account::StorageMapEntryError>(&error),
         Some(crate::decoded::account::StorageMapEntryError::EmptyValue(empty)) if *empty == key
     );
+}
+
+#[test]
+fn storage_array_rejects_invalid_lengths() -> anyhow::Result<()> {
+    for count in [0, 257] {
+        let wire = StorageArray {
+            values: vec![Word::empty().into(); count],
+        };
+        assert_matches!(wire.decode_fields()?.verify(), Err(StorageArrayError::InvalidLength(actual)) if actual == count);
+    }
+    Ok(())
 }

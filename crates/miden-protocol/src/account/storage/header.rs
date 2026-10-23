@@ -6,7 +6,13 @@ use alloc::vec::Vec;
 use super::map::EMPTY_STORAGE_MAP_ROOT;
 use super::{AccountStorage, Felt, StorageSlotType, Word};
 use crate::DoubleWord;
-use crate::account::{StorageSlot, StorageSlotId, StorageSlotName};
+use crate::account::{
+    StorageArray,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotId,
+    StorageSlotName,
+};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
@@ -20,12 +26,7 @@ use crate::utils::serde::{
 // ACCOUNT STORAGE HEADER
 // ================================================================================================
 
-/// The header of an [`AccountStorage`], storing only the slot name, slot type and value of each
-/// storage slot.
-///
-/// The stored value differs based on the slot type:
-/// - [`StorageSlotType::Value`]: The value of the slot itself.
-/// - [`StorageSlotType::Map`]: The root of the SMT that represents the storage map.
+/// An [`AccountStorage`] header containing full values and arrays, plus map roots.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageHeader {
     slots: Vec<StorageSlotHeader>,
@@ -41,6 +42,7 @@ impl AccountStorageHeader {
     ///
     /// Returns an error if:
     /// - The number of provided slots is greater than [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
+    /// - The logical payload exceeds [`AccountStorage::MAX_NUM_STORAGE_WORDS`].
     /// - The slots are not sorted by [`StorageSlotId`].
     /// - There are multiple storage slots with the same [`StorageSlotName`].
     pub fn new(slots: Vec<StorageSlotHeader>) -> Result<Self, AccountError> {
@@ -60,25 +62,18 @@ impl AccountStorageHeader {
             }
         }
 
+        AccountStorage::validate_payload_size(slots.iter().map(|slot| slot.slot_type()))?;
         Ok(Self { slots })
     }
 
-    /// Returns a new instance of account storage header initialized with the provided slot tuples.
-    ///
-    /// This is a convenience method that converts tuples to [`StorageSlotHeader`]s.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The number of provided slots is greater than [`AccountStorage::MAX_NUM_STORAGE_SLOTS`].
-    /// - The slots are not sorted by [`StorageSlotId`].
+    /// Creates a header from slot names and contents, with the same checks as [`Self::new`].
     #[cfg(any(feature = "testing", test))]
     pub fn from_tuples(
-        slots: Vec<(StorageSlotName, StorageSlotType, Word)>,
+        slots: Vec<(StorageSlotName, StorageSlotHeaderContent)>,
     ) -> Result<Self, AccountError> {
         let slots = slots
             .into_iter()
-            .map(|(name, slot_type, value)| StorageSlotHeader::new(name, slot_type, value))
+            .map(|(name, content)| StorageSlotHeader::new(name, content))
             .collect();
 
         Self::new(slots)
@@ -95,7 +90,7 @@ impl AccountStorageHeader {
     /// Returns an iterator over the storage header map slots.
     pub fn map_slot_roots(&self) -> impl Iterator<Item = Word> + '_ {
         self.slots.iter().filter_map(|slot| match slot.slot_type() {
-            StorageSlotType::Value => None,
+            StorageSlotType::Value | StorageSlotType::Array(_) => None,
             StorageSlotType::Map => Some(slot.value()),
         })
     }
@@ -136,7 +131,7 @@ impl AccountStorageHeader {
             .slot_type()
         {
             StorageSlotType::Map => Ok(true),
-            StorageSlotType::Value => Ok(false),
+            StorageSlotType::Value | StorageSlotType::Array(_) => Ok(false),
         }
     }
 
@@ -156,10 +151,12 @@ impl AccountStorageHeader {
     /// Reconstructs an [`AccountStorageHeader`] from field elements with provided slot names.
     ///
     /// The elements are expected to be groups of 8 elements per slot:
-    /// `[[0, slot_type, slot_id_suffix, slot_id_prefix], SLOT_VALUE]`
+    /// `[[0, slot_type, slot_id_suffix, slot_id_prefix], SLOT_VALUE]`. Supply arrays by commitment;
+    /// their lengths and commitments must match the slot records.
     pub fn try_from_elements(
         elements: &[Felt],
         slot_names: &BTreeMap<StorageSlotId, StorageSlotName>,
+        arrays: &BTreeMap<Word, StorageArray>,
     ) -> Result<Self, AccountError> {
         if !elements.len().is_multiple_of(StorageSlot::NUM_ELEMENTS) {
             return Err(AccountError::other(
@@ -191,7 +188,8 @@ impl AccountStorageHeader {
             // Parse slot value from last 4 elements.
             let slot_value = Word::new([chunk[4], chunk[5], chunk[6], chunk[7]]);
 
-            let slot_header = StorageSlotHeader::new(slot_name, slot_type, slot_value);
+            let slot_header =
+                StorageSlotHeader::from_compact(slot_name, slot_type, slot_value, arrays)?;
             slots.push(slot_header);
         }
 
@@ -247,17 +245,19 @@ impl Deserializable for AccountStorageHeader {
 // STORAGE SLOT HEADER
 // ================================================================================================
 
-/// The header of a [`StorageSlot`], storing only the slot name (or ID), slot type and value of the
-/// slot.
-///
-/// The stored value differs based on the slot type:
-/// - [`StorageSlotType::Value`]: The value of the slot itself.
-/// - [`StorageSlotType::Map`]: The root of the SMT that represents the storage map.
+/// One named slot's value, array contents, or map root.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageSlotHeader {
     name: StorageSlotName,
-    r#type: StorageSlotType,
-    value: Word,
+    content: StorageSlotHeaderContent,
+}
+
+/// Contents of a storage header slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageSlotHeaderContent {
+    Value(Word),
+    Map(Word),
+    Array(StorageArray),
 }
 
 impl StorageSlotHeader {
@@ -265,22 +265,57 @@ impl StorageSlotHeader {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new instance of storage slot header.
-    pub fn new(name: StorageSlotName, r#type: StorageSlotType, value: Word) -> Self {
-        Self { name, r#type, value }
+    pub fn new(name: StorageSlotName, content: StorageSlotHeaderContent) -> Self {
+        Self { name, content }
+    }
+
+    fn from_compact(
+        name: StorageSlotName,
+        slot_type: StorageSlotType,
+        value: Word,
+        arrays: &BTreeMap<Word, StorageArray>,
+    ) -> Result<Self, AccountError> {
+        let content = match slot_type {
+            StorageSlotType::Value => StorageSlotHeaderContent::Value(value),
+            StorageSlotType::Map => StorageSlotHeaderContent::Map(value),
+            StorageSlotType::Array(length) => {
+                let array = arrays
+                    .get(&value)
+                    .ok_or_else(|| AccountError::other("missing storage array preimage"))?;
+                if array.length() != length || array.commitment() != value {
+                    return Err(AccountError::other("storage array does not match slot metadata"));
+                }
+                StorageSlotHeaderContent::Array(array.clone())
+            },
+        };
+        Ok(Self::new(name, content))
     }
 
     /// Returns a new instance of storage slot header with an empty value slot.
     pub fn with_empty_value(name: StorageSlotName) -> StorageSlotHeader {
-        StorageSlotHeader::new(name, StorageSlotType::Value, Word::default())
+        StorageSlotHeader::new(name, StorageSlotHeaderContent::Value(Word::default()))
     }
 
     /// Returns a new instance of storage slot header with an empty map slot.
     pub fn with_empty_map(name: StorageSlotName) -> StorageSlotHeader {
-        StorageSlotHeader::new(name, StorageSlotType::Map, EMPTY_STORAGE_MAP_ROOT)
+        StorageSlotHeader::new(name, StorageSlotHeaderContent::Map(EMPTY_STORAGE_MAP_ROOT))
     }
 
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the slot's contents.
+    pub fn content(&self) -> &StorageSlotHeaderContent {
+        &self.content
+    }
+
+    /// Returns the slot's array, if present.
+    pub fn array(&self) -> Option<&StorageArray> {
+        match &self.content {
+            StorageSlotHeaderContent::Array(array) => Some(array),
+            _ => None,
+        }
+    }
 
     /// Returns a reference to the slot name.
     pub fn name(&self) -> &StorageSlotName {
@@ -294,12 +329,19 @@ impl StorageSlotHeader {
 
     /// Returns the slot type.
     pub fn slot_type(&self) -> StorageSlotType {
-        self.r#type
+        match &self.content {
+            StorageSlotHeaderContent::Value(_) => StorageSlotType::Value,
+            StorageSlotHeaderContent::Map(_) => StorageSlotType::Map,
+            StorageSlotHeaderContent::Array(array) => StorageSlotType::Array(array.length()),
+        }
     }
 
-    /// Returns the slot value.
+    /// Returns the value word or the commitment to the map or array.
     pub fn value(&self) -> Word {
-        self.value
+        match &self.content {
+            StorageSlotHeaderContent::Value(value) | StorageSlotHeaderContent::Map(value) => *value,
+            StorageSlotHeaderContent::Array(array) => array.commitment(),
+        }
     }
 
     /// Returns this storage slot header as a [`DoubleWord`].
@@ -308,14 +350,22 @@ impl StorageSlotHeader {
     /// slot value.
     pub(crate) fn to_double_word(&self) -> DoubleWord {
         let id = self.id();
-        let header_word = Word::new([Felt::ZERO, self.r#type.as_felt(), id.suffix(), id.prefix()]);
-        DoubleWord::new(header_word, self.value)
+        let header_word =
+            Word::new([Felt::ZERO, self.slot_type().as_felt(), id.suffix(), id.prefix()]);
+        DoubleWord::new(header_word, self.value())
     }
 }
 
 impl From<&StorageSlot> for StorageSlotHeader {
     fn from(slot: &StorageSlot) -> Self {
-        StorageSlotHeader::new(slot.name().clone(), slot.slot_type(), slot.value())
+        StorageSlotHeader::new(
+            slot.name().clone(),
+            match slot.content() {
+                StorageSlotContent::Value(value) => StorageSlotHeaderContent::Value(*value),
+                StorageSlotContent::Map(map) => StorageSlotHeaderContent::Map(map.root()),
+                StorageSlotContent::Array(array) => StorageSlotHeaderContent::Array(array.clone()),
+            },
+        )
     }
 }
 
@@ -325,8 +375,11 @@ impl From<&StorageSlot> for StorageSlotHeader {
 impl Serializable for StorageSlotHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.name.write_into(target);
-        self.r#type.write_into(target);
-        self.value.write_into(target);
+        self.slot_type().write_into(target);
+        match &self.content {
+            StorageSlotHeaderContent::Array(array) => target.write_many(array.values()),
+            _ => self.value().write_into(target),
+        }
     }
 }
 
@@ -334,8 +387,17 @@ impl Deserializable for StorageSlotHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let name = StorageSlotName::read_from(source)?;
         let slot_type = StorageSlotType::read_from(source)?;
-        let value = Word::read_from(source)?;
-        Ok(Self::new(name, slot_type, value))
+        let content = match slot_type {
+            StorageSlotType::Value => StorageSlotHeaderContent::Value(source.read()?),
+            StorageSlotType::Map => StorageSlotHeaderContent::Map(source.read()?),
+            StorageSlotType::Array(length) => {
+                let values = source.read_many_iter(length.as_usize())?.collect::<Result<_, _>>()?;
+                StorageSlotHeaderContent::Array(
+                    StorageArray::new(values).expect("validated array length"),
+                )
+            },
+        };
+        Ok(Self::new(name, content))
     }
 }
 
@@ -350,38 +412,52 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_core::Felt;
 
-    use super::AccountStorageHeader;
+    use super::{AccountStorageHeader, StorageSlotHeaderContent};
     use crate::Word;
-    use crate::account::{AccountStorage, StorageSlotHeader, StorageSlotName, StorageSlotType};
+    use crate::account::{
+        AccountStorage,
+        StorageArray,
+        StorageSlot,
+        StorageSlotHeader,
+        StorageSlotName,
+    };
     use crate::errors::AccountError;
     use crate::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
     use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
-    fn test_from_account_storage() {
+    fn test_from_account_storage() -> anyhow::Result<()> {
         let storage_map = AccountStorage::mock_map();
+        let array_name = StorageSlotName::new("test::array")?;
+        let array = StorageArray::new(vec![Word::empty(); 3])?;
 
         // create new storage header from AccountStorage
         let mut slots = vec![
-            (MOCK_VALUE_SLOT0.clone(), StorageSlotType::Value, Word::from([1, 2, 3, 4u32])),
+            (
+                MOCK_VALUE_SLOT0.clone(),
+                StorageSlotHeaderContent::Value(Word::from([1, 2, 3, 4u32])),
+            ),
             (
                 MOCK_VALUE_SLOT1.clone(),
-                StorageSlotType::Value,
-                Word::from([
+                StorageSlotHeaderContent::Value(Word::from([
                     Felt::from(5_u32),
                     Felt::from(6_u32),
                     Felt::from(7_u32),
                     Felt::from(8_u32),
-                ]),
+                ])),
             ),
-            (MOCK_MAP_SLOT.clone(), StorageSlotType::Map, storage_map.root()),
+            (MOCK_MAP_SLOT.clone(), StorageSlotHeaderContent::Map(storage_map.root())),
+            (array_name.clone(), StorageSlotHeaderContent::Array(array.clone())),
         ];
         slots.sort_unstable_by_key(|(slot_name, ..)| slot_name.id());
 
-        let expected_header = AccountStorageHeader::from_tuples(slots).unwrap();
-        let account_storage = AccountStorage::mock();
+        let expected_header = AccountStorageHeader::from_tuples(slots)?;
+        let mut storage_slots = AccountStorage::mock().slots().to_vec();
+        storage_slots.push(StorageSlot::with_array(array_name, array));
+        let account_storage = AccountStorage::new(storage_slots)?;
 
-        assert_eq!(expected_header, AccountStorageHeader::from(&account_storage))
+        assert_eq!(expected_header, AccountStorageHeader::from(&account_storage));
+        Ok(())
     }
 
     #[test]
@@ -406,8 +482,12 @@ mod tests {
 
         // Call from_elements.
         let empty_slot_names = BTreeMap::new();
-        let reconstructed_empty =
-            AccountStorageHeader::try_from_elements(&empty_elements, &empty_slot_names).unwrap();
+        let reconstructed_empty = AccountStorageHeader::try_from_elements(
+            &empty_elements,
+            &empty_slot_names,
+            &BTreeMap::new(),
+        )
+        .unwrap();
         assert_eq!(empty_header, reconstructed_empty);
     }
 
@@ -417,8 +497,12 @@ mod tests {
         let slot_name1 = StorageSlotName::new("test::value::slot1".to_string()).unwrap();
         let slot1 = StorageSlotHeader::new(
             slot_name1,
-            StorageSlotType::Value,
-            Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
+            StorageSlotHeaderContent::Value(Word::new([
+                Felt::ONE,
+                Felt::from(2_u32),
+                Felt::from(3_u32),
+                Felt::from(4_u32),
+            ])),
         );
 
         let single_slot_header = AccountStorageHeader::new(vec![slot1.clone()]).unwrap();
@@ -426,8 +510,12 @@ mod tests {
 
         // Call from_elements.
         let slot_names = BTreeMap::from([(slot1.id(), slot1.name().clone())]);
-        let reconstructed_single =
-            AccountStorageHeader::try_from_elements(&single_elements, &slot_names).unwrap();
+        let reconstructed_single = AccountStorageHeader::try_from_elements(
+            &single_elements,
+            &slot_names,
+            &BTreeMap::new(),
+        )
+        .unwrap();
 
         assert_eq!(single_slot_header, reconstructed_single);
     }
@@ -440,18 +528,21 @@ mod tests {
 
         let slot2 = StorageSlotHeader::new(
             slot_name2,
-            StorageSlotType::Map,
-            Word::new([Felt::from(5_u32), Felt::from(6_u32), Felt::from(7_u32), Felt::from(8_u32)]),
+            StorageSlotHeaderContent::Map(Word::new([
+                Felt::from(5_u32),
+                Felt::from(6_u32),
+                Felt::from(7_u32),
+                Felt::from(8_u32),
+            ])),
         );
         let slot3 = StorageSlotHeader::new(
             slot_name3,
-            StorageSlotType::Value,
-            Word::new([
+            StorageSlotHeaderContent::Value(Word::new([
                 Felt::from(9_u32),
                 Felt::from(10_u32),
                 Felt::from(11_u32),
                 Felt::from(12_u32),
-            ]),
+            ])),
         );
 
         let mut slots = vec![slot2, slot3];
@@ -465,7 +556,8 @@ mod tests {
             (slots[1].id(), slots[1].name.clone()),
         ]);
         let reconstructed_multi =
-            AccountStorageHeader::try_from_elements(&multi_elements, &slot_names).unwrap();
+            AccountStorageHeader::try_from_elements(&multi_elements, &slot_names, &BTreeMap::new())
+                .unwrap();
 
         assert_eq!(multi_slot_header, reconstructed_multi);
     }
@@ -476,22 +568,35 @@ mod tests {
         let invalid_elements = vec![Felt::ONE, Felt::new_unchecked(2), Felt::new_unchecked(3)];
         let empty_slot_names = BTreeMap::new();
         assert!(
-            AccountStorageHeader::try_from_elements(&invalid_elements, &empty_slot_names).is_err()
+            AccountStorageHeader::try_from_elements(
+                &invalid_elements,
+                &empty_slot_names,
+                &BTreeMap::new()
+            )
+            .is_err()
         );
 
         // Test with invalid slot type.
         let mut invalid_type_elements = vec![crate::ZERO; 8];
         invalid_type_elements[1] = Felt::new_unchecked(5); // Invalid slot type.
         assert!(
-            AccountStorageHeader::try_from_elements(&invalid_type_elements, &empty_slot_names)
-                .is_err()
+            AccountStorageHeader::try_from_elements(
+                &invalid_type_elements,
+                &empty_slot_names,
+                &BTreeMap::new()
+            )
+            .is_err()
         );
 
         // Test with a non-zero reserved element.
         let mut reserved_elements = vec![crate::ZERO; 8];
         reserved_elements[0] = Felt::ONE; // Reserved element must be zero.
-        let err = AccountStorageHeader::try_from_elements(&reserved_elements, &empty_slot_names)
-            .unwrap_err();
+        let err = AccountStorageHeader::try_from_elements(
+            &reserved_elements,
+            &empty_slot_names,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
         assert_matches!(err, AccountError::StorageSlotReservedElementNotZero(value) if value == Felt::ONE);
     }
 
@@ -503,8 +608,12 @@ mod tests {
         let slot_name1 = StorageSlotName::new("test::value::slot1".to_string()).unwrap();
         let slot1 = StorageSlotHeader::new(
             slot_name1.clone(),
-            StorageSlotType::Value,
-            Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
+            StorageSlotHeaderContent::Value(Word::new([
+                Felt::ONE,
+                Felt::from(2_u32),
+                Felt::from(3_u32),
+                Felt::from(4_u32),
+            ])),
         );
 
         // Serialize the single slot to elements
@@ -515,8 +624,12 @@ mod tests {
         slot_names.insert(slot1.id(), slot_name1.clone());
 
         // Test from_elements with provided slot names on raw slot elements.
-        let reconstructed_header =
-            AccountStorageHeader::try_from_elements(elements.as_elements(), &slot_names).unwrap();
+        let reconstructed_header = AccountStorageHeader::try_from_elements(
+            elements.as_elements(),
+            &slot_names,
+            &BTreeMap::new(),
+        )
+        .unwrap();
 
         // Verify that the original slot names are preserved.
         assert_eq!(reconstructed_header.slots().count(), 1);

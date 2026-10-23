@@ -9,6 +9,8 @@ use alloc::vec::Vec;
 pub use code::AccountCodePatch;
 pub use storage::{
     AccountStoragePatch,
+    StorageArrayPatch,
+    StorageArrayPatchEntries,
     StorageMapPatch,
     StorageMapPatchEntries,
     StoragePatchOperation,

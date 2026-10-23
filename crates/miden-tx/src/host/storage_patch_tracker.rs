@@ -5,6 +5,7 @@ use miden_protocol::account::{
     AccountStorageHeader,
     AccountStoragePatch,
     PartialAccount,
+    StorageArrayPatch,
     StorageMapKey,
     StorageMapPatch,
     StorageMapPatchEntries,
@@ -65,6 +66,14 @@ impl StoragePatchTracker {
         if account.is_new() {
             for slot_header in account.storage().header().slots() {
                 match slot_header.slot_type() {
+                    StorageSlotType::Array(_) => {
+                        patches.insert(
+                            slot_header.name().clone(),
+                            StorageSlotPatch::Array(StorageArrayPatch::Create {
+                                array: slot_header.array().expect("array slot header").clone(),
+                            }),
+                        );
+                    },
                     StorageSlotType::Value => {
                         // For new accounts, all values are recorded as created, even empty words,
                         // so that the final patch includes the storage slot.
@@ -202,6 +211,7 @@ impl StoragePatchTracker {
         let mut patches = patch.into_map();
 
         patches.retain(|slot_name, slot_patch| match slot_patch {
+            StorageSlotPatch::Array(_) => true,
             StorageSlotPatch::Value(value_patch) => match value_patch {
                 // Created and removed slots are always retained.
                 StorageValuePatch::Create { .. } | StorageValuePatch::Remove => true,

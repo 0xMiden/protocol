@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -5,6 +6,9 @@ use miden_protocol::account::{
     AccountCode,
     AccountCodePatch,
     AccountStoragePatch,
+    StorageArray,
+    StorageArrayPatch,
+    StorageArrayPatchEntries,
     StorageMapPatch,
     StorageSlotName,
     StorageSlotPatch,
@@ -13,6 +17,7 @@ use miden_protocol::account::{
 use prost::Message;
 
 use crate::decoded::account::test_utils::account_patch;
+use crate::proto::account::AccountStoragePatch as ProtoAccountStoragePatch;
 use crate::{DecodeMessage, Verify, proto};
 
 #[test]
@@ -79,7 +84,7 @@ fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
         ("miden::test::slot::4", true),
         ("miden::test::slot::2", false),
     ];
-    let message = proto::account::AccountStoragePatch::from(&storage_patch);
+    let message = ProtoAccountStoragePatch::from(&storage_patch);
 
     assert_eq!(
         message
@@ -134,9 +139,35 @@ fn storage_value_patch_nested_in_account_storage_patch_roundtrips() {
         (StorageSlotName::mock(3), StorageSlotPatch::Value(StorageValuePatch::Remove)),
     ])
     .unwrap();
-    let message = proto::account::AccountStoragePatch::from(&patch);
+    let message = ProtoAccountStoragePatch::from(&patch);
     let encoded = message.encode_to_vec();
-    let decoded = proto::account::AccountStoragePatch::decode(encoded.as_slice()).unwrap();
+    let decoded = ProtoAccountStoragePatch::decode(encoded.as_slice()).unwrap();
 
     assert_eq!(decoded.decode_fields().unwrap().verify().unwrap(), patch);
+}
+
+#[test]
+fn storage_array_patch_oneof_roundtrips_all_operations() -> anyhow::Result<()> {
+    let array = StorageArray::new(vec![Word::empty(); 3])?;
+    let update = StorageArrayPatchEntries::new(
+        array.length(),
+        [(0, Word::empty()), (2, Word::from([9u32; 4]))],
+    )?;
+
+    for patch in [
+        StorageArrayPatch::Create { array: array.clone() },
+        StorageArrayPatch::Update { entries: update },
+        StorageArrayPatch::Remove { length: array.length() },
+    ] {
+        let storage = AccountStoragePatch::from_entries([(
+            StorageSlotName::mock(1),
+            StorageSlotPatch::Array(patch),
+        )])?;
+        let bytes = ProtoAccountStoragePatch::from(&storage).encode_to_vec();
+        let message = ProtoAccountStoragePatch::decode(bytes.as_slice())?;
+        let decoded = message.decode_fields()?.verify()?;
+        assert_eq!(decoded, storage);
+    }
+
+    Ok(())
 }

@@ -9,11 +9,13 @@ title: "Storage"
 A flexible, arbitrary data store within the `Account`.
 :::
 
-The [storage](https://docs.rs/miden-protocol/latest/miden_protocol/account/struct.AccountStorage.html) consists of up to 256 individual [storage slots](https://docs.rs/miden-protocol/latest/miden_protocol/account/enum.StorageSlot.html), where each slot consists of:
+The [storage](https://docs.rs/miden-protocol/latest/miden_protocol/account/struct.AccountStorage.html) consists of up to 255 individual [storage slots](https://docs.rs/miden-protocol/latest/miden_protocol/account/struct.StorageSlot.html), where each slot consists of:
 - Key: Slot name.
-- Value: either a single [`Word`](#storage-units) or a key-value map of [`Word`](#storage-units)s.
+- Value: a single [`Word`](#storage-units), an array of words, or a key-value map of words.
 
 So, account storage can be thought of as a map from slot name to slot value.
+
+Across all slots, an account has a storage budget of 256 words. A value slot uses one word, a map slot uses one word for its root, and an array uses its full length. Map entries, slot names, and metadata don't count toward this budget.
 
 #### Storage units
 
@@ -48,6 +50,7 @@ Because slot names are too large to be used directly in the transaction kernel, 
 Each slot has one of the following types:
 
 - **Value slot:** Contains a single `Word` of arbitrary data.
+- **Array slot:** Contains between 1 and 256 ordered words, committed to by a sequential hash.
 - **Map slot:** Contains a [StorageMap](#map-slots), a key-value store where both keys and values are `Word`s. The slot's value is set to the root of the map.
 
 An account's storage is typically the result of merging multiple [account components](./components).
@@ -73,3 +76,14 @@ This design allows for flexible, scalable, and privacy-preserving storage within
 Map slots can be used with `set_map_item`, `get_map_item` and `get_initial_map_item` APIs.
 
 Additionally, `get_item` and `get_initial_item` can also be used to access the root of the storage map.
+
+### Array Slots
+
+A `StorageArray` holds 1–256 words in one named slot. Its length is fixed at account creation.
+The slot stores a sequential hash of the words. Its encoded type is a field element whose low
+32 bits hold the array type tag (`2`) and whose upper 32 bits hold the length in words.
+
+Headers include all array words, including zeros, for full, partial, and foreign accounts.
+
+Update patches contain `(index, new_word)` pairs in ascending index order, omitting words whose
+final value equals their transaction-start value. Creation patches include all words, including zeros.
