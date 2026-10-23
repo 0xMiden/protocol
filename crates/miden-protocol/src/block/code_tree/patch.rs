@@ -2,8 +2,10 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::Display;
 
 use miden_core::mast::MastNodeExt;
+use miden_crypto_derive::WordWrapper;
 
 use crate::code::ProcedureRoot;
 use crate::errors::CodePatchError;
@@ -66,7 +68,7 @@ pub struct CodePatch {
 
     created_commitment: Word,
     dependencies_commitment: Word,
-    commitment: Word,
+    commitment: CodePatchCommitment,
 }
 
 impl CodePatch {
@@ -204,6 +206,7 @@ impl CodePatch {
         } else {
             Hasher::merge_in_domain(&[created_commitment, dependencies_commitment], Self::DOMAIN)
         };
+        let commitment = CodePatchCommitment::from_raw(commitment);
 
         Self {
             created_procedures,
@@ -270,7 +273,7 @@ impl CodePatch {
     }
 
     /// Returns the commitment to this patch, or [`Word::empty`] for an empty patch.
-    pub fn commitment(&self) -> Word {
+    pub fn commitment(&self) -> CodePatchCommitment {
         self.commitment
     }
 }
@@ -278,6 +281,19 @@ impl CodePatch {
 impl Default for CodePatch {
     fn default() -> Self {
         Self::new_unchecked(Vec::new(), Vec::new(), Arc::new(MastForest::new()))
+    }
+}
+
+// CODE PATCH COMMITMENT
+// ================================================================================================
+
+/// The commitment to a [`CodePatch`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, WordWrapper)]
+pub struct CodePatchCommitment(Word);
+
+impl Display for CodePatchCommitment {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_word())
     }
 }
 
@@ -400,7 +416,7 @@ mod tests {
         assert!(patch.to_dependencies_elements().is_empty());
         assert_eq!(patch.created_commitment(), Word::empty());
         assert_eq!(patch.dependencies_commitment(), Word::empty());
-        assert_eq!(patch.commitment(), Word::empty());
+        assert_eq!(patch.commitment().as_word(), Word::empty());
         assert_eq!(patch, CodePatch::default());
 
         Ok(())
@@ -439,7 +455,7 @@ mod tests {
         assert_eq!(patch.created_commitment(), expected_created_commitment);
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);
         assert_eq!(
-            patch.commitment(),
+            patch.commitment().as_word(),
             Hasher::merge_in_domain(
                 &[expected_created_commitment, expected_dependencies_commitment],
                 CodePatch::DOMAIN
@@ -465,7 +481,7 @@ mod tests {
         assert_eq!(patch.created_commitment(), expected_created_commitment);
         assert_eq!(patch.dependencies_commitment(), Word::empty());
         assert_eq!(
-            patch.commitment(),
+            patch.commitment().as_word(),
             Hasher::merge_in_domain(
                 &[expected_created_commitment, Word::empty()],
                 CodePatch::DOMAIN

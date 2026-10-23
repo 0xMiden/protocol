@@ -36,6 +36,12 @@ const EPILOGUE_START_EVENT = event("miden::protocol::tx::epilogue_start")
 # Event emitted to signal that an execution of the transaction epilogue has ended.
 const EPILOGUE_END_EVENT = event("miden::protocol::tx::epilogue_end")
 
+# CONSTANTS
+# =================================================================================================
+
+# Locals in main.
+const OUTPUT_NOTES_COMMITMENT_LOC = 4
+
 # MAIN
 # =================================================================================================
 
@@ -59,7 +65,7 @@ const EPILOGUE_END_EVENT = event("miden::protocol::tx::epilogue_end")
 #! ]
 #! Outputs: [
 #!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-#!   LOGS_COMMITMENT, tx_expiration_block_num, pad(3)
+#!   CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT
 #! ]
 #!
 #! Where:
@@ -71,10 +77,11 @@ const EPILOGUE_END_EVENT = event("miden::protocol::tx::epilogue_end")
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes created by the transaction.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
-#! - tx_expiration_block_num is the transaction expiration block number.
-#! - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
-@locals(1)
-proc main(block_commitment: Commitment, initial_account_commitment: Commitment, input_notes_commitment: Commitment, account_id: AccountId, block_num: BlockNumber, padding: [felt; 1]) -> (Commitment, Commitment, Commitment, BlockNumber, [felt; 3])
+#! - CODE_PATCH_COMMITMENT is the commitment to the code patch of the transaction.
+#! - LOGS_EXPIRATION_COMMITMENT is the hash of the commitment to all transaction logs emitted by
+#!   the transaction and the transaction expiration block number.
+@locals(8)
+proc main(block_commitment: Commitment, initial_account_commitment: Commitment, input_notes_commitment: Commitment, account_id: AccountId, block_num: BlockNumber, padding: [felt; 1]) -> (Commitment, Commitment, Commitment, Commitment)
     # Prologue
     # ---------------------------------------------------------------------------------------------
     emit.PROLOGUE_START_EVENT
@@ -173,13 +180,22 @@ proc main(block_commitment: Commitment, initial_account_commitment: Commitment, 
 
     # execute the transaction epilogue
     exec.epilogue::finalize_transaction
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num, pad(16)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT, pad(16)]
 
-    # Remove the deepest padding elements below the thirteen transaction outputs.
-    repeat.13
-        movup.15 drop
+    # The transaction outputs occupy the top 16 elements, so the padding below them cannot be
+    # reached directly. Save the output notes commitment in a local to bring the padding up to the
+    # top four words, one word at a time.
+    loc_storew_le.OUTPUT_NOTES_COMMITMENT_LOC dropw
+    # => [ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT, pad(16)]
+
+    repeat.3
+        movupw.3 dropw
     end
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num, pad(3)]
+    # => [ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT, pad(4)]
+
+    # replace the last padding word with the output notes commitment
+    movupw.3 loc_loadw_le.OUTPUT_NOTES_COMMITMENT_LOC
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT]
 
     emit.EPILOGUE_END_EVENT
 end

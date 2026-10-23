@@ -361,6 +361,7 @@ mod tests {
     use crate::account::{AccountId, AccountType, AccountUpdateDetails};
     use crate::batch::BatchAccountUpdate;
     use crate::block::BlockNumber;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::ProvenBatchError;
     use crate::note::{Note, NoteHeader, NoteId};
     use crate::testing::account_id::{
@@ -400,6 +401,7 @@ mod tests {
             input_notes,
             output_notes,
             Word::empty(),
+            CodePatch::default().commitment(),
         )
         .unwrap()
     }

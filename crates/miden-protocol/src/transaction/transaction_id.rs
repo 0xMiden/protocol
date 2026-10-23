@@ -2,7 +2,9 @@ use core::fmt::{Debug, Display};
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
+use super::{Hasher, ProvenTransaction, Word};
+use crate::Felt;
+use crate::block::code_tree::CodePatchCommitment;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -24,6 +26,7 @@ use crate::utils::serde::{
 ///     INPUT_NOTES_COMMITMENT,
 ///     OUTPUT_NOTES_COMMITMENT,
 ///     LOGS_COMMITMENT,
+///     CODE_PATCH_COMMITMENT,
 /// )
 ///
 /// This achieves the following properties:
@@ -40,13 +43,15 @@ impl TransactionId {
         input_notes_commitment: Word,
         output_notes_commitment: Word,
         logs_commitment: Word,
+        code_patch_commitment: CodePatchCommitment,
     ) -> Self {
-        let mut elements = [ZERO; 5 * WORD_SIZE];
+        let mut elements = [Felt::ZERO; 6 * Word::NUM_ELEMENTS];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
         elements[16..20].copy_from_slice(logs_commitment.as_elements());
+        elements[20..24].copy_from_slice(code_patch_commitment.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
 }
@@ -74,6 +79,7 @@ impl From<&ProvenTransaction> for TransactionId {
             tx.input_notes().commitment(),
             tx.output_notes().commitment(),
             tx.log_details().commitment(),
+            tx.code_patch().commitment(),
         )
     }
 }

@@ -8,6 +8,7 @@ use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::{AccountHeader, AccountId};
 use crate::assembly::mast::{DenseMastForestBuilder, ExternalNodeBuilder, JoinNodeBuilder};
 use crate::asset::FungibleAsset;
+use crate::block::code_tree::CodePatch;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
@@ -64,6 +65,7 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
             RawOutputNotes::new(vec![]).unwrap(),
             1u32.into(),
             logs.clone(),
+            CodePatch::default(),
         );
         assert_eq!(outputs.logs(), &logs);
         assert_eq!(outputs.logs_commitment(), logs.commitment());
@@ -72,7 +74,7 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
         } else {
             TransactionLogDetails::Private(logs.commitment())
         };
-        let (final_account, output_notes, log_details) = outputs.into_parts();
+        let (final_account, output_notes, log_details, _) = outputs.into_parts();
         assert_eq!(final_account, account);
         assert!(output_notes.is_empty());
         assert_eq!(log_details, expected);
