@@ -1,5 +1,4 @@
 use alloc::collections::BTreeSet;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_core::Word;
@@ -14,13 +13,6 @@ use crate::block::{
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
 use crate::transaction::{OrderedTransactionHeaders, OutputNote};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{
     MAX_ACCOUNTS_PER_BLOCK,
     MAX_BATCHES_PER_BLOCK,
@@ -282,30 +274,6 @@ impl From<ProposedBlock> for BlockBody {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BlockBody {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.updated_accounts.write_into(target);
-        self.output_note_batches.write_into(target);
-        self.created_nullifiers.write_into(target);
-        self.transactions.write_into(target);
-    }
-}
-
-impl Deserializable for BlockBody {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Self::new(
-            Vec::read_from(source)?,
-            Vec::read_from(source)?,
-            Vec::read_from(source)?,
-            OrderedTransactionHeaders::read_from(source)?,
-        )
-        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -334,7 +302,6 @@ mod tests {
         RawOutputNote,
         TransactionHeader,
     };
-    use crate::utils::serde::{Deserializable, Serializable};
 
     fn account_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
@@ -594,41 +561,5 @@ mod tests {
             transactions,
         )
         .unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_output_notes_mismatch() {
-        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
-            transaction_header(
-                Word::from([1_u32, 2, 3, 4]),
-                Word::from([5_u32, 6, 7, 8]),
-                InputNotes::default(),
-                vec![*note.header()],
-            )
-            .unwrap(),
-        ]);
-        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
-
-        BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_created_nullifiers_mismatch() {
-        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
-        let input =
-            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
-            transaction_header(
-                Word::from([1_u32, 2, 3, 4]),
-                Word::from([5_u32, 6, 7, 8]),
-                InputNotes::new(vec![input]).unwrap(),
-                vec![],
-            )
-            .unwrap(),
-        ]);
-        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
-
-        BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap();
     }
 }

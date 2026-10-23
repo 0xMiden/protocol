@@ -1,5 +1,4 @@
 use alloc::collections::BTreeSet;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::Word;
@@ -14,13 +13,6 @@ use crate::transaction::{
     ProvenTransaction,
     RawOutputNotes,
     TransactionId,
-};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
 };
 
 /// A transaction header derived from a
@@ -238,55 +230,6 @@ impl From<&ExecutedTransaction> for TransactionHeader {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self {
-            id: _,
-            account_id,
-            initial_state_commitment,
-            final_state_commitment,
-            input_notes,
-            output_notes,
-            logs_commitment,
-            code_patch_commitment,
-        } = self;
-
-        account_id.write_into(target);
-        initial_state_commitment.write_into(target);
-        final_state_commitment.write_into(target);
-        input_notes.write_into(target);
-        output_notes.write_into(target);
-        logs_commitment.write_into(target);
-        code_patch_commitment.as_word().write_into(target);
-    }
-}
-
-impl Deserializable for TransactionHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account_id = <AccountId>::read_from(source)?;
-        let initial_state_commitment = <Word>::read_from(source)?;
-        let final_state_commitment = <Word>::read_from(source)?;
-        let input_notes = <InputNotes<InputNoteCommitment>>::read_from(source)?;
-        let output_notes = <Vec<NoteHeader>>::read_from(source)?;
-        let logs_commitment = Word::read_from(source)?;
-        let code_patch_commitment = CodePatchCommitment::from_raw(Word::read_from(source)?);
-
-        Self::new(
-            account_id,
-            initial_state_commitment,
-            final_state_commitment,
-            input_notes,
-            output_notes,
-            logs_commitment,
-            code_patch_commitment,
-        )
-        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -301,8 +244,7 @@ mod tests {
     use crate::errors::TransactionHeaderError;
     use crate::note::Note;
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
-    use crate::transaction::{InputNoteCommitment, InputNotes, TransactionId};
-    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+    use crate::transaction::{InputNoteCommitment, InputNotes};
 
     fn account_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
@@ -374,40 +316,6 @@ mod tests {
         assert_matches!(
             error,
             TransactionHeaderError::NoteCreatedAndConsumed(note_id) if note_id == note.id()
-        );
-    }
-
-    #[test]
-    fn deserialization_rejects_duplicate_output_notes() {
-        let note = Note::mock_noop(Word::empty());
-        let invalid_header = TransactionHeader::new_unchecked(
-            TransactionId::new(
-                Word::empty(),
-                Word::empty(),
-                Word::empty(),
-                Word::empty(),
-                Word::empty(),
-                CodePatch::default().commitment(),
-            ),
-            account_id(),
-            Word::from([1_u32, 2, 3, 4]),
-            Word::from([5_u32, 6, 7, 8]),
-            InputNotes::default(),
-            vec![*note.header(), *note.header()],
-            Word::empty(),
-            CodePatch::default().commitment(),
-        );
-
-        let error = TransactionHeader::read_from_bytes(&invalid_header.to_bytes()).unwrap_err();
-
-        assert_matches!(
-            error,
-            DeserializationError::InvalidValue(message)
-                if message
-                    == format!(
-                        "output note {} appears twice in the transaction header",
-                        note.id()
-                    )
         );
     }
 }

@@ -1,6 +1,5 @@
 use alloc::collections::btree_map::Entry;
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
@@ -14,13 +13,6 @@ use crate::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
     TransactionHeader,
-};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
 };
 use crate::vm::ExecutionProof;
 use crate::{
@@ -354,53 +346,11 @@ fn validate_notes(
     Ok(())
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for ProvenBatch {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.reference_block_commitment.write_into(target);
-        self.reference_block_num.write_into(target);
-        self.account_updates.write_into(target);
-        self.input_notes.write_into(target);
-        self.output_notes.write_into(target);
-        self.batch_expiration_block_num.write_into(target);
-        self.transactions.write_into(target);
-        self.proof.write_into(target);
-    }
-}
-
-impl Deserializable for ProvenBatch {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let reference_block_commitment = Word::read_from(source)?;
-        let reference_block_num = BlockNumber::read_from(source)?;
-        let account_updates = BTreeMap::<AccountId, BatchAccountUpdate>::read_from(source)?;
-        let input_notes = InputNotes::<InputNoteCommitment>::read_from(source)?;
-        let output_notes = Vec::<OutputNote>::read_from(source)?;
-        let batch_expiration_block_num = BlockNumber::read_from(source)?;
-        let transactions = OrderedTransactionHeaders::read_from(source)?;
-        let proof = ExecutionProof::read_from(source)?;
-
-        Self::new(
-            reference_block_commitment,
-            reference_block_num,
-            account_updates.into_values(),
-            input_notes,
-            output_notes,
-            batch_expiration_block_num,
-            transactions,
-            proof,
-        )
-        .map_err(|e| DeserializationError::UnknownError(e.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::BTreeMap;
     use alloc::string::ToString;
     use alloc::vec::Vec;
 
@@ -409,7 +359,7 @@ mod tests {
 
     use super::ProvenBatch;
     use crate::account::{AccountId, AccountType, AccountUpdateDetails};
-    use crate::batch::{BatchAccountUpdate, BatchId};
+    use crate::batch::BatchAccountUpdate;
     use crate::block::BlockNumber;
     use crate::block::code_tree::CodePatch;
     use crate::errors::ProvenBatchError;
@@ -432,7 +382,6 @@ mod tests {
         RawOutputNote,
         TransactionHeader,
     };
-    use crate::utils::serde::{Deserializable, Serializable};
     use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
 
     fn account_id() -> AccountId {
@@ -796,58 +745,6 @@ mod tests {
             dummy_execution_proof(),
         )
         .unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_note_consumed_before_created_in_transaction_headers() {
-        let (_note_id, input_notes, output_notes) = conflicting_notes();
-        let (transactions, update) =
-            transactions_with_conflicting_notes(&input_notes, &output_notes);
-        let id =
-            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
-        let invalid_batch = ProvenBatch::new_unchecked(
-            id,
-            Word::empty(),
-            BlockNumber::from(1),
-            BTreeMap::from([(account_id(), update)]),
-            InputNotes::default(),
-            Vec::new(),
-            BlockNumber::from(2),
-            transactions,
-            dummy_execution_proof(),
-        )
-        .unwrap();
-
-        ProvenBatch::read_from_bytes(&invalid_batch.to_bytes()).unwrap();
-    }
-
-    #[test]
-    fn deserialization_accepts_input_notes_missing_from_batch() {
-        let note = Note::mock_noop(Word::empty());
-        let input =
-            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
-        let transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction_header(
-            Word::from([1_u32, 2, 3, 4]),
-            Word::from([5_u32, 6, 7, 8]),
-            InputNotes::new(vec![input]).unwrap(),
-            vec![],
-        )]);
-        let id =
-            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
-        let invalid_batch = ProvenBatch::new_unchecked(
-            id,
-            Word::empty(),
-            BlockNumber::from(1),
-            BTreeMap::from([(account_id(), private_account_update())]),
-            InputNotes::default(),
-            Vec::new(),
-            BlockNumber::from(2),
-            transactions,
-            dummy_execution_proof(),
-        )
-        .unwrap();
-
-        ProvenBatch::read_from_bytes(&invalid_batch.to_bytes()).unwrap();
     }
 
     #[test]
