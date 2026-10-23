@@ -1,5 +1,7 @@
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 
+use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::NoteId;
 use miden_standards::note::ReclaimError;
 
@@ -51,4 +53,33 @@ pub enum FeeError {
         "a FEE_SPONSORSHIP note bound to the feature note is funded with an asset other than the one the account collects fees in"
     )]
     WrongFeeAsset,
+    /// The account's fee policy has no fee for the feature note, so fee estimation aborted.
+    #[error("the account's fee policy has no fee for feature note {feature_note_id}")]
+    FeeNotScheduled { feature_note_id: NoteId },
+    /// The FEE_SPONSORSHIP notes bound to the feature note carry less than the fee the account
+    /// charges for it.
+    #[error(
+        "the FEE_SPONSORSHIP notes bound to feature note {feature_note_id} provide a fee of {provided}, which does not cover the fee the account charges for it"
+    )]
+    FeeNotCovered {
+        /// The feature note whose fee is not covered.
+        feature_note_id: NoteId,
+        /// The FEE_SPONSORSHIP notes bound to the feature note.
+        sponsorship_ids: Vec<NoteId>,
+        /// The fee the FEE_SPONSORSHIP notes provide between them.
+        provided: AssetAmount,
+        /// The fee the account charges for the feature note, if it could be determined.
+        required: Option<AssetAmount>,
+    },
+}
+
+impl FeeError {
+    /// Sets the fee the account charges for the feature note of a [`FeeError::FeeNotCovered`],
+    /// leaving any other error unchanged.
+    pub(super) fn with_required_fee(mut self, required_fee: Option<AssetAmount>) -> Self {
+        if let FeeError::FeeNotCovered { required, .. } = &mut self {
+            *required = required_fee;
+        }
+        self
+    }
 }
