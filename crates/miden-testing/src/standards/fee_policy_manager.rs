@@ -6,7 +6,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteId, NoteType};
+use miden_protocol::note::{Note, NoteId, NoteStorage, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     AccountIdBuilder,
@@ -70,10 +70,10 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
     let exec_output = mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), script_root, "recovered script root should match");
-    // With zero storage items the storage commitment is the empty word.
+    // With zero storage items the storage commitment is the canonical Eidos empty hash.
     assert_eq!(
         exec_output.get_stack_word(4),
-        Word::empty(),
+        NoteStorage::default().commitment(),
         "recovered storage commitment should match"
     );
 

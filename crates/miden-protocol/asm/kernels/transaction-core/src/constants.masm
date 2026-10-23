@@ -24,13 +24,13 @@ pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
 # TYPES
 # =================================================================================================
 
-# Root of an empty Sparse Merkle Tree
+# Root of an empty depth-64 Sparse Merkle Tree.
 pub const EMPTY_SMT_ROOT =
     [
-        3975378004049472045,
-        2532873049833957132,
-        2640800763532531478,
-        11158234471980764993
+        4885109153093331313,
+        3920278809312512560,
+        2915952205041903168,
+        8149848769586484548
     ]
 
 # Type of storage slot item in the account storage

@@ -100,13 +100,14 @@ impl Eip712TransactionSummary for TransactionSummary {
     }
 
     fn eip712_signature_key(&self, public_key: PublicKeyCommitment) -> Word {
-        let raw_signature_key = Hasher::merge(&[public_key.into(), self.to_commitment()]);
+        let raw_signature_key =
+            Hasher::hash_double_word(&[public_key.into(), self.to_commitment()]);
         let domain = Word::new([
             Felt::new_unchecked(SIGNATURE_KEY_DOMAIN),
             Felt::ZERO,
             Felt::ZERO,
             Felt::ZERO,
         ]);
-        Hasher::merge(&[raw_signature_key, domain])
+        Hasher::hash_double_word(&[raw_signature_key, domain])
     }
 }

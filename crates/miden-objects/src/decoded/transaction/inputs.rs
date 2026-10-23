@@ -25,8 +25,8 @@ impl Verify for AuthSignature {
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(match self.signature {
-            DecodedSignature::Falcon512Poseidon2(signature) => {
-                Self::Verified::Falcon512Poseidon2(signature.into_inner())
+            DecodedSignature::Falcon512Eidos(signature) => {
+                Self::Verified::Falcon512Eidos(signature.into_inner())
             },
             DecodedSignature::EcdsaK256Keccak(signature) => {
                 Self::Verified::EcdsaK256Keccak(signature.into_inner())

@@ -6,10 +6,10 @@
 //! argument contract, the mutability flags and the `Authority` gate — is covered by the parent
 //! [`super`] suite.
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::Note;
 use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
 use miden_standards::errors::standards::{
@@ -36,7 +36,7 @@ fn config_note(
     config: FaucetMetadataConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = FaucetMetadataConfigNote::builder()
         .sender(sender)
         .target(faucet_id)
@@ -58,7 +58,7 @@ fn malformed_config_note(
     storage: Vec<Felt>,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender, &mut rng)
         .script(FaucetMetadataConfigNote::script())
         .note_storage(storage)?

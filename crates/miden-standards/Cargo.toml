@@ -17,7 +17,7 @@ version.workspace      = true
 [features]
 default = ["std"]
 std     = ["miden-assembly/std", "miden-core-lib/std", "miden-protocol/std"]
-testing = ["dep:rand", "miden-assembly/testing", "miden-protocol/testing"]
+testing = ["miden-assembly/testing", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
@@ -27,7 +27,7 @@ miden-protocol = { workspace = true }
 # External dependencies
 bon             = { workspace = true }
 primitive-types = { workspace = true }
-rand            = { optional = true, workspace = true }
+rand            = { workspace = true }
 thiserror       = { workspace = true }
 
 [build-dependencies]

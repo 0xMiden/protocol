@@ -4,7 +4,7 @@ use core::slice;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountCodeInterface, AccountComponentCode, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -41,6 +41,7 @@ use miden_standards::tx_script::{
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
+use rand::RngExt;
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
 /// has the [`BasicWallet`][wallet] interface.
@@ -63,12 +64,10 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_basic_wallet_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [sent_asset0, total_asset],
     )?;
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let p2any_note = create_p2any_note(
         sender_basic_wallet_account.id(),
         NoteType::Private,
@@ -175,7 +174,7 @@ fn create_assetless_note(sender: miden_protocol::account::AccountId) -> anyhow::
     let metadata = PartialNoteMetadata::new(sender, NoteType::Private).with_tag(tag);
     let assets = NoteAssets::new(vec![])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let serial_num = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])).random();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
     Ok(Note::new(assets, metadata, recipient))
 }
@@ -190,9 +189,8 @@ fn create_assetless_note(sender: miden_protocol::account::AccountId) -> anyhow::
 #[tokio::test]
 async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let sender_basic_wallet_account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let sender_basic_wallet_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let assetless_note = create_assetless_note(sender_basic_wallet_account.id())?;
@@ -224,9 +222,7 @@ async fn test_send_note_script_basic_wallet_without_assets() -> anyhow::Result<(
 async fn test_send_note_script_fungible_faucet_without_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "POL",
         200,
         None,
@@ -332,7 +328,7 @@ async fn test_send_note_script_non_fungible_faucet() -> anyhow::Result<()> {
         NonFungibleFaucet::compute_asset_commitment(b"token #1", Word::from([7, 8, 9, 10u32]));
     let asset = Asset::from(NonFungibleAsset::from_parts(faucet_account.id(), commitment));
 
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let note = create_p2any_note(faucet_account.id(), NoteType::Public, [asset], &mut rng);
 
     let script =
@@ -379,7 +375,7 @@ fn test_dedicated_send_notes_scripts_validate_their_interface() -> anyhow::Resul
 
     // The wallet script needs the wallet procedures.
     let own_asset = Asset::from(FungibleAsset::new(faucet_interface.id(), 10)?);
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let faucet_note =
         create_p2any_note(faucet_interface.id(), NoteType::Private, [own_asset], &mut rng);
     assert!(matches!(
@@ -407,7 +403,7 @@ fn test_send_note_script_rejects_foreign_faucet_asset() -> anyhow::Result<()> {
     let faucet_interface =
         code_interface(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, FungibleFaucet::code())?;
     let foreign_asset = FungibleAsset::mock(10);
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let note =
         create_p2any_note(faucet_interface.id(), NoteType::Private, [foreign_asset], &mut rng);
     let partial_note = PartialNote::from(note);
@@ -435,7 +431,7 @@ fn test_send_note_script_dual_faucet_dispatches_on_asset_composition() -> anyhow
             .chain(NonFungibleFaucet::code().procedure_roots())
             .collect(),
     )?;
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let non_fungible =
         Asset::from(NonFungibleAsset::from_parts(account_id, Word::from([5, 6, 7, 8u32])));
@@ -464,9 +460,7 @@ fn test_send_note_script_dual_faucet_dispatches_on_asset_composition() -> anyhow
 async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "POL",
         200,
         None,
@@ -481,7 +475,7 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
         FungibleAsset::new(sender_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let serial_num = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])).random();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
     let attachments = NoteAttachments::from(attachment);
 
@@ -521,14 +515,12 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
 
     let mut builder = MockChain::builder();
     let sender_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [total_asset, non_fungible_asset],
     )?;
     let mock_chain = builder.build()?;
 
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     // Note A: two assets and two attachments.
     let attachment_0 =
@@ -562,7 +554,7 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
     let metadata = PartialNoteMetadata::new(sender_account.id(), NoteType::Public)
         .with_tag(NoteTag::with_account_target(sender_account.id()));
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
-    let recipient = NoteRecipient::new(rng.draw_word(), note_script, NoteStorage::default());
+    let recipient = NoteRecipient::new(rng.random(), note_script, NoteStorage::default());
     let note_c = Note::new(NoteAssets::default(), metadata, recipient);
 
     let notes: Vec<PartialNote> =
@@ -614,16 +606,14 @@ async fn faucet_with_single_asset_payload()
 -> anyhow::Result<(MockChain, Account, SendNotesTransactionScript, Vec<Felt>)> {
     let mut builder = MockChain::builder();
     let faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         "POL",
         200,
         None,
     )?;
     let mock_chain = builder.build()?;
 
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let own_asset = Asset::from(FungibleAsset::new(faucet_account.id(), 10)?);
     let note = create_p2any_note(faucet_account.id(), NoteType::Public, [own_asset], &mut rng);
 

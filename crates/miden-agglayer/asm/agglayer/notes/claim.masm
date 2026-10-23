@@ -2,7 +2,7 @@ use {NoteArgs} from miden::protocol::types
 use {AdviceMapKey} from agglayer::types
 use agglayer::bridge::bridge_in as bridge
 use miden::protocol::active_note
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::standards::note::note_target
 
 # CONSTANTS
@@ -10,14 +10,17 @@ use miden::standards::note::note_target
 
 const PROOF_DATA_SIZE = 536
 const LEAF_DATA_SIZE = 32
-const OUTPUT_NOTE_SIZE = 8
 
 # The number of storage items of a CLAIM note, see the layout in the script's doc comment.
 const CLAIM_NOTE_NUM_STORAGE_ITEMS = 569
 
 const CLAIM_NOTE_STORAGE_PTR = 0
 const PROOF_DATA_START_PTR = CLAIM_NOTE_STORAGE_PTR
+const PROOF_DATA_END_PTR = PROOF_DATA_START_PTR + PROOF_DATA_SIZE
 const LEAF_DATA_START_PTR = 536
+const LEAF_DATA_END_PTR = LEAF_DATA_START_PTR + LEAF_DATA_SIZE
+const PROOF_DATA_NUM_BLOCKS = (PROOF_DATA_END_PTR - PROOF_DATA_START_PTR) // 8
+const LEAF_DATA_NUM_BLOCKS = (LEAF_DATA_END_PTR - LEAF_DATA_START_PTR) // 8
 const FAUCET_MINT_AMOUNT = 568
 
 # NOTE SCRIPT
@@ -144,13 +147,15 @@ end
 #!
 #! Invocation: exec
 proc write_claim_data_into_advice_map_by_key() -> (AdviceMapKey, AdviceMapKey)
-    # 1) Get LEAF_DATA_KEY
-    push.LEAF_DATA_SIZE push.LEAF_DATA_START_PTR
-    exec.poseidon2::hash_elements
-    # => [LEAF_DATA_KEY]
+    # the fixed, aligned ranges contain 4 and 67 complete blocks; their CVs bind the Felt lengths
+    push.LEAF_DATA_START_PTR
+    push.LEAF_DATA_SIZE exec.eidos::init_chaining_word padw padw
+    repeat.LEAF_DATA_NUM_BLOCKS mem_stream exec.eidos::compress end
+    exec.eidos::digest
+    # => [LEAF_DATA_KEY, LEAF_DATA_END_PTR, caller...]
 
-    push.LEAF_DATA_SIZE add.LEAF_DATA_START_PTR push.LEAF_DATA_START_PTR
-    movdn.5 movdn.5
+    # The stream's final pointer also bounds the advice-map entry.
+    push.LEAF_DATA_START_PTR movdn.4
     # => [LEAF_DATA_KEY, start_ptr, end_ptr]
 
     adv.insert_mem
@@ -159,13 +164,13 @@ proc write_claim_data_into_advice_map_by_key() -> (AdviceMapKey, AdviceMapKey)
     movup.4 drop movup.4 drop
     # => [LEAF_DATA_KEY]
 
-    # 2) Get PROOF_DATA_KEY
-    push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
-    exec.poseidon2::hash_elements
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
+    push.PROOF_DATA_START_PTR
+    push.PROOF_DATA_SIZE exec.eidos::init_chaining_word padw padw
+    repeat.PROOF_DATA_NUM_BLOCKS mem_stream exec.eidos::compress end
+    exec.eidos::digest
+    # => [PROOF_DATA_KEY, PROOF_DATA_END_PTR, LEAF_DATA_KEY, caller...]
 
-    push.PROOF_DATA_SIZE add.PROOF_DATA_START_PTR push.PROOF_DATA_START_PTR
-    movdn.5 movdn.5
+    push.PROOF_DATA_START_PTR movdn.4
     # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
 
     adv.insert_mem

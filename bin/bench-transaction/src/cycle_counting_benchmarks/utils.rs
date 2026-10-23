@@ -17,6 +17,7 @@ use crate::note_labels::NoteLabels;
 /// easily converted to the JSON file.
 #[derive(Debug, Clone, Serialize)]
 pub struct MeasurementsPrinter {
+    provenance: &'static str,
     prologue: usize,
     total_cycles: usize,
     notes_processing: usize,
@@ -44,6 +45,7 @@ impl MeasurementsPrinter {
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         Ok(MeasurementsPrinter {
+            provenance: "producer_measured",
             prologue: measurements.prologue,
             total_cycles: measurements.total_cycles(),
             notes_processing: measurements.notes_processing,
@@ -86,15 +88,15 @@ impl EpilogueMeasurements {
 }
 
 /// Per-component trace row counts from a real `ExecutionTrace`. `core_rows`, `chiplets_rows`,
-/// `poseidon2_permutation_rows`, and `range_rows` are the AIR-side totals; `chiplets_shape` is an
-/// advisory per-chiplet breakdown that satisfies
+/// `eidos_compression_rows`, and `byte_pair_lookup_rows` are the AIR-side totals; `chiplets_shape`
+/// is an advisory per-chiplet breakdown that satisfies
 /// `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
 #[derive(Debug, Clone, Serialize)]
 struct TraceMeasurements {
     core_rows: usize,
     chiplets_rows: usize,
-    poseidon2_permutation_rows: usize,
-    range_rows: usize,
+    eidos_compression_rows: usize,
+    byte_pair_lookup_rows: usize,
     chiplets_shape: ChipletsTraceShape,
 }
 
@@ -109,12 +111,12 @@ struct ChipletsTraceShape {
 
 impl From<TraceLenSummary> for TraceMeasurements {
     fn from(summary: TraceLenSummary) -> Self {
-        let chiplets = summary.chiplets_trace_len();
+        let chiplets = summary.chiplets();
         Self {
-            core_rows: summary.core_trace_len(),
+            core_rows: summary.core_rows(),
             chiplets_rows: chiplets.trace_len(),
-            poseidon2_permutation_rows: summary.poseidon2_permutation_trace_len(),
-            range_rows: summary.range_trace_len(),
+            eidos_compression_rows: summary.eidos_compression_rows(),
+            byte_pair_lookup_rows: summary.byte_pair_lookup_rows(),
             chiplets_shape: ChipletsTraceShape {
                 hasher_rows: chiplets.hash_chiplet_len(),
                 bitwise_rows: chiplets.bitwise_chiplet_len(),
@@ -164,6 +166,7 @@ mod tests {
     /// against the producer's contract.
     #[derive(Deserialize)]
     struct ScenarioForTest {
+        provenance: String,
         trace: TraceForTest,
     }
 
@@ -171,8 +174,8 @@ mod tests {
     struct TraceForTest {
         core_rows: u64,
         chiplets_rows: u64,
-        poseidon2_permutation_rows: u64,
-        range_rows: u64,
+        eidos_compression_rows: u64,
+        byte_pair_lookup_rows: u64,
         chiplets_shape: ChipletsShapeForTest,
     }
 
@@ -185,105 +188,116 @@ mod tests {
         ace_rows: u64,
     }
 
+    const EIDOS_COMPRESSION_CYCLE_LEN: u64 = 32;
+    const BYTE_PAIR_LOOKUP_ROWS: u64 = 1 << 16;
     const MIN_TRACE_LEN: u64 = 64;
-    const POSEIDON2_CYCLE_LEN: u64 = 16;
     const COMMITTED_BENCH_TX_JSON: &str = include_str!("../../bench-tx.json");
 
-    /// Expected padded brackets per committed scenario. Mirrors `COMMITTED_SCENARIO_EXPECTATIONS`
-    /// in the miden-vm consumer; refresh both together when a kernel change moves a bracket.
+    /// Expected padded AIR brackets for the representative scenarios consumed by miden-vm's
+    /// synthetic benchmark. Refresh these values and the consumer snapshot together whenever a
+    /// kernel change crosses a power-of-two boundary.
     struct ScenarioExpectation {
         name: &'static str,
-        padded_core_side: u64,
+        padded_core: u64,
         padded_chiplets: u64,
-        padded_poseidon2: u64,
+        padded_eidos_compression: u64,
+        padded_byte_pair_lookup: u64,
     }
 
     const COMMITTED_SCENARIO_EXPECTATIONS: &[ScenarioExpectation] = &[
         ScenarioExpectation {
             name: "consume single P2ID note with Falcon signing",
-            padded_core_side: 131_072,
-            padded_chiplets: 16_384,
-            padded_poseidon2: 65_536,
+            padded_core: 65_536,
+            padded_chiplets: 8_192,
+            padded_eidos_compression: 131_072,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume single P2ID note with ECDSA signing",
-            padded_core_side: 16_384,
-            padded_chiplets: 8_192,
-            padded_poseidon2: 32_768,
+            padded_core: 16_384,
+            padded_chiplets: 4_096,
+            padded_eidos_compression: 65_536,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with Falcon signing",
-            padded_core_side: 131_072,
-            padded_chiplets: 16_384,
-            padded_poseidon2: 65_536,
+            padded_core: 65_536,
+            padded_chiplets: 8_192,
+            padded_eidos_compression: 131_072,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
-            padded_core_side: 32_768,
-            padded_chiplets: 8_192,
-            padded_poseidon2: 32_768,
+            padded_core: 32_768,
+            // Retain precomputed prologue chaining words while runtime initialization crosses
+            // this chiplet bracket.
+            padded_chiplets: 4_096,
+            padded_eidos_compression: 65_536,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "create single P2ID note with Falcon signing",
-            padded_core_side: 131_072,
-            padded_chiplets: 16_384,
-            padded_poseidon2: 65_536,
+            padded_core: 65_536,
+            padded_chiplets: 8_192,
+            padded_eidos_compression: 131_072,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "create single P2ID note with ECDSA signing",
-            padded_core_side: 16_384,
-            padded_chiplets: 8_192,
-            padded_poseidon2: 32_768,
+            padded_core: 16_384,
+            padded_chiplets: 4_096,
+            padded_eidos_compression: 65_536,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L1 to Miden)",
-            padded_core_side: 65_536,
-            padded_chiplets: 32_768,
-            padded_poseidon2: 65_536,
+            padded_core: 65_536,
+            padded_chiplets: 16_384,
+            padded_eidos_compression: 131_072,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L2 to Miden)",
-            padded_core_side: 65_536,
-            padded_chiplets: 32_768,
-            padded_poseidon2: 65_536,
+            padded_core: 65_536,
+            padded_chiplets: 16_384,
+            padded_eidos_compression: 131_072,
+            padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume B2AGG note (bridge-out)",
-            padded_core_side: 262_144,
-            padded_chiplets: 131_072,
-            padded_poseidon2: 131_072,
+            padded_core: 262_144,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 262_144,
+            padded_byte_pair_lookup: 65_536,
         },
     ];
 
-    fn padded_core_side(t: &TraceForTest) -> u64 {
-        t.core_rows.max(t.range_rows).next_power_of_two().max(MIN_TRACE_LEN)
-    }
-
-    fn padded_chiplets(t: &TraceForTest) -> u64 {
-        t.chiplets_rows.next_power_of_two().max(MIN_TRACE_LEN)
-    }
-
-    fn padded_poseidon2(t: &TraceForTest) -> u64 {
-        t.poseidon2_permutation_rows.next_power_of_two().max(MIN_TRACE_LEN)
+    fn padded_height(rows: u64) -> u64 {
+        rows.next_power_of_two().max(MIN_TRACE_LEN)
     }
 
     fn parse_and_assert_trace_contract(name: &str, raw: &serde_json::Value) -> TraceForTest {
         let scenario: ScenarioForTest = serde_json::from_value(raw.clone())
             .unwrap_or_else(|err| panic!("scenario `{name}` does not match the schema: {err}"));
+        assert_eq!(
+            scenario.provenance, "producer_measured",
+            "{name}: trace provenance must identify direct producer measurements",
+        );
         let trace = &scenario.trace;
         let chiplets_shape = &trace.chiplets_shape;
 
         assert!(trace.core_rows > 0, "{name}: core_rows should be > 0");
         assert!(trace.chiplets_rows > 0, "{name}: chiplets_rows should be > 0");
+        assert!(trace.eidos_compression_rows > 0, "{name}: eidos_compression_rows should be > 0",);
         assert!(
-            trace.poseidon2_permutation_rows > 0,
-            "{name}: poseidon2_permutation_rows should be > 0",
+            trace.eidos_compression_rows.is_multiple_of(EIDOS_COMPRESSION_CYCLE_LEN),
+            "{name}: eidos_compression_rows should be a multiple of \
+             {EIDOS_COMPRESSION_CYCLE_LEN}",
         );
-        assert!(
-            trace.poseidon2_permutation_rows.is_multiple_of(POSEIDON2_CYCLE_LEN),
-            "{name}: poseidon2_permutation_rows should be a multiple of {POSEIDON2_CYCLE_LEN}",
+        assert_eq!(
+            trace.byte_pair_lookup_rows, BYTE_PAIR_LOOKUP_ROWS,
+            "{name}: byte_pair_lookup_rows should be the fixed byte-pair table height",
         );
-        assert!(trace.range_rows > 0, "{name}: range_rows should be > 0");
 
         let chiplets_sum = chiplets_shape.hasher_rows
             + chiplets_shape.bitwise_rows
@@ -306,23 +320,10 @@ mod tests {
             .unwrap_or_else(|| panic!("scenario `{name}` is missing from bench-tx.json"));
         let trace = parse_and_assert_trace_contract(name, raw);
 
-        let core_side = padded_core_side(&trace);
-        let chiplets = padded_chiplets(&trace);
-        assert!(core_side.is_power_of_two(), "{name}: padded_core_side not a power of two");
-        assert!(chiplets.is_power_of_two(), "{name}: padded_chiplets not a power of two");
-        assert_eq!(
-            core_side, expected.padded_core_side,
-            "{name}: padded_core_side regressed to a different bracket",
-        );
-        assert_eq!(
-            chiplets, expected.padded_chiplets,
-            "{name}: padded_chiplets regressed to a different bracket",
-        );
-        assert_eq!(
-            padded_poseidon2(&trace),
-            expected.padded_poseidon2,
-            "{name}: padded_poseidon2 regressed to a different bracket",
-        );
+        assert_eq!(padded_height(trace.core_rows), expected.padded_core);
+        assert_eq!(padded_height(trace.chiplets_rows), expected.padded_chiplets);
+        assert_eq!(padded_height(trace.eidos_compression_rows), expected.padded_eidos_compression,);
+        assert_eq!(padded_height(trace.byte_pair_lookup_rows), expected.padded_byte_pair_lookup,);
     }
 
     #[test]
@@ -345,36 +346,41 @@ mod tests {
 
     #[test]
     fn trace_measurements_keep_core_rows_separate_from_total_trace_len() {
-        let summary = TraceLenSummary::new(10, 20, ChipletsLengths::from_parts(30, 40, 50, 60, 70));
+        let summary = TraceLenSummary::new(
+            10,
+            ChipletsLengths::from_parts(30, 40, 50, 60, 70),
+            96,
+            BYTE_PAIR_LOOKUP_ROWS as usize,
+        );
         assert_ne!(
-            summary.core_trace_len(),
+            summary.core_rows(),
             summary.trace_len(),
             "test setup must distinguish core rows from total trace length",
         );
 
         let measurements = TraceMeasurements::from(summary);
 
-        assert_eq!(measurements.core_rows, summary.core_trace_len());
-        assert_eq!(measurements.chiplets_rows, summary.chiplets_trace_len().trace_len());
-        assert_eq!(
-            measurements.poseidon2_permutation_rows,
-            summary.poseidon2_permutation_trace_len(),
-        );
-        assert_eq!(measurements.range_rows, summary.range_trace_len());
+        assert_eq!(measurements.core_rows, summary.core_rows());
+        assert_eq!(measurements.chiplets_rows, summary.chiplets_rows());
+        assert_eq!(measurements.eidos_compression_rows, summary.eidos_compression_rows());
+        assert_eq!(measurements.byte_pair_lookup_rows, summary.byte_pair_lookup_rows());
     }
 
     #[test]
-    fn trace_measurements_preserve_poseidon2_permutation_rows() {
+    fn trace_measurements_preserve_all_four_air_rows() {
         let summary = TraceLenSummary::new_with_padded(
             10,
-            20,
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
-            80,
-            [128; 3],
+            96,
+            BYTE_PAIR_LOOKUP_ROWS as usize,
+            [64, 512, 128, BYTE_PAIR_LOOKUP_ROWS as usize],
         );
 
         let measurements = TraceMeasurements::from(summary);
 
-        assert_eq!(measurements.poseidon2_permutation_rows, 80);
+        assert_eq!(measurements.core_rows, 10);
+        assert_eq!(measurements.chiplets_rows, 251);
+        assert_eq!(measurements.eidos_compression_rows, 96);
+        assert_eq!(measurements.byte_pair_lookup_rows, BYTE_PAIR_LOOKUP_ROWS as usize);
     }
 }

@@ -166,13 +166,13 @@ fn token_uri_is_token_base_uri_followed_by_token_id() -> anyhow::Result<()> {
 fn user_faucets(token_policy_manager: TokenPolicyManager) -> [Account; 3] {
     let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     );
     let approvers: Vec<_> = (1..=3_u32)
         .map(|i| {
             (
                 PublicKeyCommitment::from(Word::new([Felt::from(i); 4])),
-                AuthScheme::Falcon512Poseidon2,
+                AuthScheme::Falcon512Eidos,
             )
         })
         .collect();
@@ -252,7 +252,7 @@ fn compute_asset_commitment_is_salt_sensitive() {
 fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(
         Word::new([Felt::ONE; 4]).into(),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     ));
 
     let err = create_singlesig_user_non_fungible_faucet(

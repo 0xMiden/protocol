@@ -5,11 +5,11 @@
 //! running removed-GER keccak256 hash chain.
 
 use miden_protocol::account::AccountId;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_standards::note::costs::NoteConsumptionCost;
 use miden_utils_sync::LazyLock;
+use rand::Rng;
 
 use crate::costs::REMOVE_GER_CONSUMPTION_CYCLES;
 use crate::ger_note::create_ger_note;
@@ -69,7 +69,7 @@ impl RemoveGerNote {
     ///
     /// # Errors
     /// Returns an error if note creation fails.
-    pub fn create<R: FeltRng>(
+    pub fn create<R: Rng>(
         ger: ExitRoot,
         sender_account_id: AccountId,
         target_account_id: AccountId,

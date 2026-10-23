@@ -37,8 +37,8 @@ impl From<&InputNotes<InputNote>> for proto::transaction::InputNotes {
 impl From<&Signature> for proto::transaction::AuthSignature {
     fn from(signature: &Signature) -> Self {
         let signature = match signature {
-            Signature::Falcon512Poseidon2(signature) => {
-                ProtoSignature::Falcon512Poseidon2(signature.to_bytes())
+            Signature::Falcon512Eidos(signature) => {
+                ProtoSignature::Falcon512Eidos(signature.to_bytes())
             },
             Signature::EcdsaK256Keccak(signature) => {
                 ProtoSignature::EcdsaK256Keccak(signature.to_bytes())

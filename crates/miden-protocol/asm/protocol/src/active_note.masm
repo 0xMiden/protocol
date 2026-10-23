@@ -543,8 +543,8 @@ end
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
-#!   the note does not have any attachments.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
+#!   attachments uses the canonical Eidos empty hash.
 #!
 #! Panics if:
 #! - no note is currently active.

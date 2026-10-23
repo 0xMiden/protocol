@@ -12,11 +12,8 @@ use miden_protocol::errors::AccountError;
 /// A signer that can approve transactions, identified by its public key commitment and the
 /// signature scheme used to verify its signatures.
 ///
-/// Note: an approver using [`AuthScheme::EcdsaK256Keccak`] discloses its public key and signature
-/// at proving time and therefore does not provide public-key privacy, regardless of the component
-/// it is used in (single-sig, multisig, or guarded multisig). See
-/// [`AuthScheme::EcdsaK256Keccak`] for details, and prefer [`AuthScheme::Falcon512Poseidon2`] if
-/// signer-key privacy is required.
+/// The public key and signature are visible to the transaction prover. ECDSA transaction proofs
+/// also carry them in a deferred precompile witness; see [`AuthScheme::EcdsaK256Keccak`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Approver {
     pub_key: PublicKeyCommitment,

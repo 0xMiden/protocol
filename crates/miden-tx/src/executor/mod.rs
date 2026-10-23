@@ -203,7 +203,7 @@ where
         // sections. This enables package-owned debug info for dynamically loaded scripts.
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options.clone())
             .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error)?
             .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
@@ -248,7 +248,7 @@ where
         let program = TransactionKernel::tx_script_main();
         let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
         let processor =
-            EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+            EXEC::new(stack_inputs, advice_inputs, self.exec_options.clone())
                 .map_err(ExecutionError::advice_error_no_context)
                 .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?
                 .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())

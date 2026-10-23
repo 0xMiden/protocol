@@ -3,7 +3,7 @@ use miden_protocol::Word;
 use miden_protocol::account::auth::{self, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountComponent};
 use miden_protocol::asset::{AssetAmount, NonFungibleAsset, TokenSymbol};
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
@@ -37,7 +37,7 @@ fn test_required_asset_same_as_offered() {
         .requested_asset(requested_asset)
         .note_type(NoteType::Public)
         .payback_note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .build();
 
     assert_matches!(result, Err(NoteError::Other { error_msg, .. }) if error_msg == "requested asset same as offered asset".into());
@@ -49,7 +49,7 @@ fn test_required_asset_same_as_offered() {
 fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2))
+    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Eidos))
 }
 
 // CUSTOM COMPONENT IDENTIFICATION TESTS
@@ -281,8 +281,8 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
 
     let approvers = vec![
-        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
-        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Eidos),
+        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Eidos),
         Approver::new(pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
     ];
 

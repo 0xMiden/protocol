@@ -4,7 +4,6 @@ use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
@@ -13,6 +12,7 @@ use miden_standards::account::policies::{BurnOwnerOnly, MintOwnerOnly, TokenPoli
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{Auth, MockChain};
+use rand::RngExt;
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
@@ -25,18 +25,15 @@ use super::test_utils::{
 fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -54,7 +51,7 @@ fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
     let token_supply = Felt::new_unchecked(123_456);
 
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         token_name,
         token_symbol,
         decimals,
@@ -97,7 +94,7 @@ fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
 async fn agglayer_assets_transfer_without_foreign_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         6,
@@ -109,14 +106,11 @@ async fn agglayer_assets_transfer_without_foreign_faucet() -> anyhow::Result<()>
     let asset = FungibleAsset::new(faucet.id(), 50)?;
     builder.add_account(faucet)?;
     let mut sender = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset.into()],
     )?;
-    let mut recipient = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let mut recipient =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let note: Note = P2idNote::builder()
         .sender(sender.id())
         .target(recipient.id())

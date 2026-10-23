@@ -1,4 +1,4 @@
-use miden_verifier::VerificationError;
+use miden_verifier::{HashFunction, VerificationError};
 use thiserror::Error;
 
 // BATCH VERIFIER ERROR
@@ -13,6 +13,11 @@ pub enum BatchVerifierError {
     BatchProofContainsPrecompiles,
     #[error("batch proof has an outstanding precompile obligation")]
     IncompleteProof,
+    #[error("batch VM proof uses {actual:?}, but the protocol requires {expected:?}")]
+    UnsupportedVmProofHash {
+        actual: HashFunction,
+        expected: HashFunction,
+    },
     #[error("batch proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

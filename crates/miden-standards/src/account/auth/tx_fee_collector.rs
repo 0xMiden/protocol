@@ -7,7 +7,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
+use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_eidos};
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
@@ -84,13 +84,13 @@ impl AuthTxFeeCollector {
         Self { approver }
     }
 
-    /// Creates a new [`AuthTxFeeCollector`] component using the Falcon512Poseidon2 signature
+    /// Creates a new [`AuthTxFeeCollector`] component using the Falcon512Eidos signature
     /// scheme.
     ///
     /// The public key commitment is derived from the provided Falcon512 public key.
-    pub fn falcon512_poseidon2(pub_key: falcon512_poseidon2::PublicKey) -> Self {
+    pub fn falcon512_eidos(pub_key: falcon512_eidos::PublicKey) -> Self {
         Self {
-            approver: Approver::new(pub_key.into(), AuthScheme::Falcon512Poseidon2),
+            approver: Approver::new(pub_key.into(), AuthScheme::Falcon512Eidos),
         }
     }
 
@@ -99,10 +99,10 @@ impl AuthTxFeeCollector {
     /// The public key commitment is derived from the provided ECDSA K256 public key.
     ///
     /// # Privacy
-    /// This scheme discloses the signer's public key and signature at proving time and
-    /// therefore does not provide public-key privacy. See
+    /// This scheme discloses the signer's public key and signature in the transaction proof's
+    /// deferred witness. See
     /// [`AuthScheme::EcdsaK256Keccak`][scheme] for details, and prefer
-    /// [`falcon512_poseidon2`](Self::falcon512_poseidon2) if signer-key privacy is required.
+    /// [`falcon512_eidos`](Self::falcon512_eidos) if signer-key privacy is required.
     ///
     /// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
     pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
@@ -149,7 +149,7 @@ impl AuthTxFeeCollector {
     /// This derivation must be kept in sync with `forward_note_assets` in the component's MASM
     /// code.
     pub fn derive_serial_number(auth_args: Word, input_notes_commitment: Word) -> Word {
-        Hasher::merge(&[auth_args, input_notes_commitment])
+        Hasher::hash_double_word(&[auth_args, input_notes_commitment])
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.

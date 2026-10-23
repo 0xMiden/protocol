@@ -9,7 +9,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, ProtocolDomainRegistry, WORD_SIZE, Word};
+use crate::{ACCOUNT_CODE_UPGRADE_ADVICE_DOMAIN, Felt, Hasher, WORD_SIZE, Word};
 
 // ACCOUNT CODE UPGRADE
 // ================================================================================================
@@ -34,15 +34,6 @@ pub struct AccountCodeUpgrade {
 }
 
 impl AccountCodeUpgrade {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// Domain separator for [`AccountCodeUpgrade::advice_map_key`].
-    ///
-    /// It keeps the key distinct from the keys of other advice map entries that hash the same
-    /// elements without a domain, such as note storage or note attachment content.
-    const ADVICE_MAP_KEY_DOMAIN: Felt = ProtocolDomainRegistry::AccountCodeUpgradeAdvice.as_felt();
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -62,7 +53,7 @@ impl AccountCodeUpgrade {
     pub fn advice_map_key(new_code_commitment: Word) -> Word {
         Hasher::hash_elements_in_domain(
             new_code_commitment.as_elements(),
-            Self::ADVICE_MAP_KEY_DOMAIN,
+            ACCOUNT_CODE_UPGRADE_ADVICE_DOMAIN,
         )
     }
 

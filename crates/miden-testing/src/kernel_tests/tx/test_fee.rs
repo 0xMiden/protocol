@@ -165,8 +165,8 @@ async fn compute_fee_derives_fee_from_concrete_clk() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    // Capture `clk`, then compute the fee with an empty exclude-notes commitment and no extra
-    // cycles.
+    // Capture `clk`, then compute the fee without supplying an exclude-notes preimage and with no
+    // extra cycles.
     let code = "
         use miden::tx_kernel_core::prologue
         use miden::protocol::tx
@@ -176,7 +176,7 @@ async fn compute_fee_derives_fee_from_concrete_clk() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             clk padw push.0
-            # => [num_extra_cycles = 0, EXCLUDE_NOTES_COMMITMENT = EMPTY_WORD, captured_clk]
+            # => [num_extra_cycles = 0, EXCLUDE_NOTES absence sentinel = EMPTY_WORD, captured_clk]
 
             exec.tx::compute_fee
             # => [fee_amount, captured_clk]

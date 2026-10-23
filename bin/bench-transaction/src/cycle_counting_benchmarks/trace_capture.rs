@@ -88,11 +88,11 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
     let processor =
         FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
             .context("failed to construct FastProcessor for trace capture")?;
-    let witness = processor
+    let execution_witness = processor
         .execute_for_proving(&program, &mut host)
         .await
         .context("failed to execute transaction kernel for trace")?;
-    let (vm_witness, _) = witness.into_parts();
+    let (vm_witness, _precompile_witness) = execution_witness.into_parts();
     let trace = build_trace(vm_witness).context("failed to build trace from execution output")?;
 
     Ok(*trace.trace_len_summary())

@@ -3,9 +3,9 @@
 //! `set_logo_uri` and `set_external_link`.
 //!
 //! Unlike the other authority-gated faucet mutators, these three do not take their argument on the
-//! operand stack. The caller passes the Poseidon2 commitment of the new 7-Word value and provides
-//! the preimage in the advice map under it; the setter pipes the preimage back out and validates it
-//! against the commitment.
+//! operand stack. The caller passes the Eidos commitment of the new 7-Word value and
+//! provides the preimage in the advice map under it; the setter pipes the preimage back out and
+//! validates it against the commitment.
 //!
 //! `FaucetMetadataConfigNote` is the standard caller that satisfies this contract, so the tests
 //! below drive the setters through it. The one exception is
@@ -23,9 +23,9 @@ mod config;
 
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, Hasher, Word};
@@ -57,7 +57,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 const STRING_NUM_ELEMENTS: usize = 28;
 
 /// Memory address the note scripts below write the note storage to. Word-aligned, as
-/// `poseidon2::hash_elements` requires.
+/// `eidos::hash_elements` requires.
 const STRING_PTR: usize = 0;
 
 fn owner_id() -> AccountId {
@@ -99,7 +99,7 @@ fn config_note(
     config: FaucetMetadataConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = FaucetMetadataConfigNote::builder()
         .sender(sender)
         .target(faucet_id)
@@ -165,7 +165,7 @@ fn build_caller_committed_description_note(
     );
 
     let script = CodeBuilder::default().compile_note_script(&script_code)?;
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .script(script)
@@ -323,8 +323,9 @@ async fn set_description_fails_when_sender_is_not_owner() -> anyhow::Result<()> 
 ///
 /// The setter recomputes the commitment over the piped preimage and asserts it equals the advice
 /// map key. Supplying a key computed by `Hasher::hash_elements` therefore fails unless Rust applies
-/// the same padding rule as `mem::pipe_preimage_to_memory` — both set the first capacity element to
-/// `num_elements % 8`. Callers that compute the commitment outside the VM depend on this.
+/// the same framing rule as `mem::pipe_preimage_to_memory`: both bind the exact logical length into
+/// Eidos's initial chaining word. Callers that compute the commitment outside the VM depend on
+/// this.
 #[tokio::test]
 async fn set_description_accepts_caller_computed_commitment() -> anyhow::Result<()> {
     let owner = owner_id();

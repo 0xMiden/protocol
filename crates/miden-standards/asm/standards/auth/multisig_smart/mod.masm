@@ -30,9 +30,6 @@ const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::multisig_smart::pr
 # (direct call) path.
 const IMMEDIATE_EXECUTION_MODE = 0
 
-# Execution mode value when the transaction runs the delayed (timelocked execute) path.
-const DELAYED_EXECUTION_MODE = 1
-
 # NOTE RESTRICTIONS
 # =================================================================================================
 
@@ -591,7 +588,7 @@ end
 #! Where:
 #! - immediate is the procedure's immediate-mode policy threshold (0 = not configured).
 #! - delayed is the procedure's delayed-mode policy threshold (0 = not configured).
-#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1).
+#! - execution_mode is 0 for immediate execution or 1 for delayed execution.
 #! - default_threshold is the account's configured default multisig threshold.
 #! - contribution is the policy-selected threshold when the procedure has a policy for the active
 #!   mode, or default_threshold when it has no policy at all.
@@ -608,7 +605,7 @@ proc compute_proc_policy_contribution(
     execution_mode: Bool,
     default_threshold: SignatureThreshold
 ) -> (SignatureThreshold, Bool)
-    # selected = (execution_mode == DELAYED_EXECUTION_MODE) ? delayed : immediate
+    # select the delayed policy when execution_mode is 1, otherwise the immediate policy
     dup dup.2
     # => [delayed, immediate, immediate, delayed, execution_mode, default_threshold]
 
@@ -669,7 +666,7 @@ end
 #! Outputs: [policy_threshold, policy_requires_delay, note_restrictions]
 #!
 #! Where:
-#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1).
+#! - execution_mode is 0 for immediate execution or 1 for delayed execution.
 #! - default_threshold is the account's configured default multisig threshold; used as the
 #!   per-procedure contribution for any *called* procedure that has no stored policy. This makes
 #!   procedures-without-a-policy visible in the max accumulation, which closes a privilege

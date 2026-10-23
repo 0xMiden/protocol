@@ -3,11 +3,10 @@ use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
@@ -49,7 +48,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(FungibleAsset::mock(10))
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([2u32; 4])))
         .build()?
         .into();
 
@@ -58,7 +57,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(FungibleAsset::mock(10))
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([2u32; 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([2u32; 4])))
         .build()?
         .into();
 
@@ -240,9 +239,8 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -390,9 +388,8 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -816,7 +813,7 @@ fn create_p2ide_note_with_storage(
     storage: impl IntoIterator<Item = u64>,
     sender: AccountId,
 ) -> Note {
-    let serial_num = RandomCoin::new(Default::default()).draw_word();
+    let serial_num = EidosRandomCoin::new(Default::default()).random();
     let note_script = StandardNote::P2IDE.script();
     let recipient = NoteRecipient::new(
         serial_num,

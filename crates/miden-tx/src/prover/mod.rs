@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
+use miden_protocol::PROTOCOL_PROOF_HASH;
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
@@ -15,7 +16,6 @@ use miden_protocol::transaction::{
     TransactionWitness,
     TxAccountUpdate,
 };
-use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::Prover;
 use miden_prover::{ExecutionProof, Word};
 
@@ -47,15 +47,17 @@ pub struct LocalTransactionProver {
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
-        Self::new(Prover::new().with_hash_fn(Poseidon2))
+        Self::new(Prover::new())
     }
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance with the default [`ExecutionOptions`].
+    ///
+    /// Uses the protocol proof hash and preserves the supplied prover's other settings.
     pub fn new(prover: Prover) -> Self {
         Self {
-            prover,
+            prover: prover.with_hash_fn(PROTOCOL_PROOF_HASH),
             execution_options: ExecutionOptions::default(),
         }
     }
@@ -74,7 +76,7 @@ impl LocalTransactionProver {
 
     /// Returns the [`ExecutionOptions`] this prover uses.
     pub fn execution_options(&self) -> ExecutionOptions {
-        self.execution_options
+        self.execution_options.clone()
     }
 
     fn build_proven_transaction(
@@ -187,7 +189,7 @@ impl LocalTransactionProver {
         let processor = FastProcessor::new_with_options(
             stack_inputs,
             advice_inputs.into_advice_inputs(),
-            self.execution_options,
+            self.execution_options.clone(),
         )
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
@@ -300,7 +302,7 @@ mod tests {
         assert_eq!(prover.execution_options(), ExecutionOptions::default());
 
         let custom_options = ExecutionOptions::default().with_max_advice_size_bytes(1);
-        let prover = prover.with_execution_options(custom_options);
+        let prover = prover.with_execution_options(custom_options.clone());
         assert_eq!(prover.execution_options(), custom_options);
     }
 }
