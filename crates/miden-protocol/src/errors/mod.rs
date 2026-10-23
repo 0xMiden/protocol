@@ -1836,6 +1836,9 @@ pub enum CodePatchError {
     #[error("dependency {0} of code patch is also a created procedure")]
     DependencyIsCreatedProcedure(ProcedureRoot),
 
+    #[error("node {0} of the code patch MAST forest is not reachable from a created procedure")]
+    UnreachableMastNode(Word),
+
     #[error("external node {0} of the code patch MAST forest is not a dependency")]
     ExternalNodeNotDependency(ProcedureRoot),
 
