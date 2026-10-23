@@ -13,7 +13,9 @@ The [storage](https://docs.rs/miden-protocol/latest/miden_protocol/account/struc
 - Key: Slot name.
 - Value: a single [`Word`](#storage-units), an array of words, or a key-value map of words.
 
-Value words, map roots, and array contents are limited to a combined 256 words per account. Each value or map root counts as one word; arrays count as their full length. Map entries, names, and metadata do not count toward this limit.
+So, account storage can be thought of as a map from slot name to slot value.
+
+Across all slots, an account has a storage budget of 256 words. A value slot uses one word, a map slot uses one word for its root, and an array uses its full length. Map entries, slot names, and metadata don't count toward this budget.
 
 #### Storage units
 
@@ -77,9 +79,9 @@ Additionally, `get_item` and `get_initial_item` can also be used to access the r
 
 ### Array Slots
 
-A `StorageArray` holds 1–256 words in one named slot. Its length is set at account creation and
-cannot change. The slot stores a sequential hash of the words. Its encoded type is a field element
-whose low 32 bits hold the array type tag (`2`) and whose upper 32 bits hold the length in words.
+A `StorageArray` holds 1–256 words in one named slot. Its length is fixed at account creation.
+The slot stores a sequential hash of the words. Its encoded type is a field element whose low
+32 bits hold the array type tag (`2`) and whose upper 32 bits hold the length in words.
 
 Headers include all array words, including zeros, for full, partial, and foreign accounts.
 Reads and writes transfer the whole array through caller memory.
