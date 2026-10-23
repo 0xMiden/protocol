@@ -1,5 +1,6 @@
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Display;
 
@@ -33,6 +34,10 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 /// into a separate created procedure, which would add a code tree entry. It also rejects a
 /// procedure root that is a single external node, which would register a reference instead of
 /// code.
+///
+/// Every node of the forest must be reachable from a created procedure. The commitments do not
+/// cover unreachable nodes, so they could add arbitrary data to the registry without changing the
+/// commitment, or add an external node that adds an extra dependency.
 ///
 /// Both lists are kept in the order in which the transaction kernel commits to them.
 ///
@@ -95,6 +100,7 @@ impl CodePatch {
     /// - a dependency is also a created procedure.
     /// - a created procedure is not a procedure root of the forest.
     /// - a procedure root of the forest is not a created procedure.
+    /// - a node of the forest is not reachable from a created procedure.
     /// - an external node of the forest does not reference a dependency.
     /// - a dependency is not referenced by an external node of the forest.
     /// - the serialized forest exceeds [`Self::MAX_SIZE`].
@@ -126,6 +132,10 @@ impl CodePatch {
         if let Some(missing_procedure) = forest_roots.difference(&unique_created_procedures).next()
         {
             return Err(CodePatchError::MastForestRootNotCreated(*missing_procedure));
+        }
+
+        if let Some(unreachable_node) = find_unreachable_node(&mast) {
+            return Err(CodePatchError::UnreachableMastNode(unreachable_node));
         }
 
         let external_references: BTreeSet<ProcedureRoot> = mast
@@ -302,6 +312,30 @@ fn unique_procedure_roots(
     }
 
     Ok(unique_roots)
+}
+
+/// Returns the digest of the first node of the forest that is not reachable from a procedure root,
+/// if any.
+fn find_unreachable_node(mast: &MastForest) -> Option<Word> {
+    let mut is_reachable = vec![false; mast.nodes().len()];
+    let mut pending_nodes = mast.procedure_roots().to_vec();
+
+    while let Some(node_id) = pending_nodes.pop() {
+        if let Some(reachable) = is_reachable.get_mut(u32::from(node_id) as usize)
+            && !*reachable
+        {
+            *reachable = true;
+            if let Some(node) = mast.get_node_by_id(node_id) {
+                node.append_children_to(&mut pending_nodes);
+            }
+        }
+    }
+
+    mast.nodes()
+        .iter()
+        .zip(is_reachable)
+        .find(|(_, reachable)| !reachable)
+        .map(|(node, _)| node.digest())
 }
 
 /// Returns `true` if there are no created procedures and the advice map is empty.
@@ -547,6 +581,34 @@ mod tests {
             error,
             CodePatchError::MastForestRootNotCreated(root) if root == missing_procedure
         );
+    }
+
+    #[test]
+    fn new_rejects_unreachable_node() -> anyhow::Result<()> {
+        let library = library_forest();
+        let foo = forest_roots(&library)[0];
+        let foo_node_id = library
+            .find_procedure_root(foo.as_word())
+            .ok_or_else(|| anyhow::anyhow!("foo should be a procedure root"))?;
+        // Drop `bar` from the roots, so that it and its external node become unreachable.
+        let mast = MastForest::from_raw_parts(
+            library.nodes().to_vec().try_into()?,
+            vec![foo_node_id],
+            AdviceMap::default(),
+        )?;
+
+        let error = CodePatch::new(
+            vec![foo],
+            vec![ProcedureRoot::from_raw(EXTERNAL_DIGEST)],
+            Arc::new(mast),
+        )
+        .unwrap_err();
+        assert_matches!(
+            error,
+            CodePatchError::UnreachableMastNode(digest) if digest == EXTERNAL_DIGEST
+        );
+
+        Ok(())
     }
 
     #[test]
