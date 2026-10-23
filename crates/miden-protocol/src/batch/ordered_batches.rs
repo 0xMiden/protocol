@@ -3,13 +3,6 @@ use alloc::vec::Vec;
 use crate::batch::ProvenBatch;
 use crate::crypto::SequentialCommit;
 use crate::transaction::OrderedTransactionHeaders;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Word};
 
 // ORDERED BATCHES
@@ -77,20 +70,5 @@ impl SequentialCommit for OrderedBatches {
         }
 
         elements
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for OrderedBatches {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target)
-    }
-}
-
-impl Deserializable for OrderedBatches {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        source.read().map(OrderedBatches::new)
     }
 }
