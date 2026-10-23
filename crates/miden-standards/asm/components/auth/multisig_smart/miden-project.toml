@@ -47,3 +47,47 @@ type        = { key = "word", value = "bool" }
 description = "Procedure policies"
 name        = "miden::standards::auth::multisig_smart::procedure_policies"
 type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Spending limits configuration"
+name        = "miden::standards::auth::multisig_smart::spending_config"
+# Word layout: [window_blocks, unpriced_asset_policy, config_generation, 0]
+type = [
+  { name = "window_blocks", type = "u32" },
+  { name = "unpriced_asset_policy", type = "u8" },
+  { name = "config_generation", type = "felt" },
+  { type = "void" },
+]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Spending limits price oracle"
+name        = "miden::standards::auth::multisig_smart::spending_oracle"
+# Word layout: [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0]
+type = [
+  { name = "oracle_id_suffix", type = "felt" },
+  { name = "oracle_id_prefix", type = "felt" },
+  { name = "max_oracle_block_age", type = "u16" },
+  { type = "void" },
+]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Spending limits base asset"
+name        = "miden::standards::auth::multisig_smart::spending_base_asset"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Spending limit"
+name        = "miden::standards::auth::multisig_smart::spending_limit"
+# Word layout: [limit, 0, 0, 0]
+type = [{ name = "limit", type = "felt" }, { type = "void" }, { type = "void" }, { type = "void" }]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Spending limit tracker"
+name        = "miden::standards::auth::multisig_smart::spending_tracker"
+# Word layout: [spent_in_window, window_index, config_generation, 0]
+type = [
+  { name = "spent_in_window", type = "felt" },
+  { name = "window_index", type = "u32" },
+  { name = "config_generation", type = "felt" },
+  { type = "void" },
+]

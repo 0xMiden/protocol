@@ -11,8 +11,9 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::standards::access::authority
-use {AccountProcedureRoot, AssetId} from miden::protocol::types
+use {AccountId, AccountProcedureRoot, AssetId} from miden::protocol::types
 use {ConversionRate} from miden::standards::fee
 
 # CONSTANTS - errors
@@ -79,6 +80,48 @@ pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (u32, Conversi
 
     assert_eq.err=ERR_PRICE_ORACLE_LAST_UPDATED_DEN_MISMATCH
     # => [last_updated, num, den, pad(13)]
+end
+
+#! Reads the rate between two assets from a price oracle account over a foreign procedure call.
+#!
+#! Wraps `get_conversion_rate` for callers in another account: pads the foreign frame, invokes the
+#! procedure through `tx::execute_foreign_procedure` and truncates the result back to the rate. The
+#! read happens at the transaction's reference block and foreign state is not revalidated at
+#! inclusion, so a caller that relies on the freshness of the rate should bound the transaction's
+#! expiration delta itself.
+#!
+#! Inputs:  [oracle_id_suffix, oracle_id_prefix, SOURCE_ASSET_ID, TARGET_ASSET_ID]
+#! Outputs: [last_updated, num, den]
+#!
+#! Where:
+#! - oracle_id_{suffix, prefix} identify the account exposing `get_conversion_rate`.
+#! - SOURCE_ASSET_ID, TARGET_ASSET_ID, last_updated, num and den are as in `get_conversion_rate`.
+#!
+#! Panics if:
+#! - the foreign call fails (see `tx::execute_foreign_procedure`) or `get_conversion_rate` panics.
+#!
+#! Invocation: exec
+@locals(2)
+pub proc get_foreign_conversion_rate(oracle_id: AccountId, source: AssetId, target: AssetId) -> (u32, ConversionRate)
+    loc_store.0 loc_store.1
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID]
+
+    # The foreign procedure takes two words; the rest of its 16-element frame is padding.
+    padw padw swapdw
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    procref.get_conversion_rate
+    # => [GET_CONVERSION_RATE_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    loc_load.1 loc_load.0
+    # => [oracle_id_suffix, oracle_id_prefix, GET_CONVERSION_RATE_ROOT, SOURCE_ASSET_ID,
+    #     TARGET_ASSET_ID, pad(8)]
+
+    exec.tx::execute_foreign_procedure
+    # => [last_updated, num, den, pad(13)]
+
+    swapw.3 dropw dropw dropw movup.3 drop
+    # => [last_updated, num, den]
 end
 
 # CONFIGURATION PROCEDURES

@@ -1,0 +1,772 @@
+use miden::core::word
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::asset
+use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::protocol::asset
+use {MAX_ASSETS_PER_NOTE} from miden::protocol::constants
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::protocol::tx
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
+use {AccountId, AssetAmount, AssetId, AssetValue, Bool} from miden::protocol::types
+use miden::standards::assets::fungible_asset
+use miden::standards::fee
+use miden::standards::oracle::price_oracle
+
+# Spending limits (a window budget in a base asset) for the multisig smart account.
+#
+# Every fungible asset a transaction sends out through an output note is priced into the base asset
+# and charged to the account's budget. The base asset is charged one to one; any other asset is
+# priced through the configured oracle and, without a rate for it, falls to the unpriced-asset
+# policy. The budget resets at fixed window boundaries derived from the reference block number. A
+# transaction that would push the budget over its limit fails regardless of how many approvers
+# signed it. The policy never changes how many signatures a transaction needs, it only decides
+# whether the transaction is allowed at all. Non-fungible assets are outside the policy.
+#
+# Window binding: while the policy is enabled, every transaction expires `window_blocks` blocks (at
+# most 65535) after its reference block. A reference block is therefore at most one window old at
+# inclusion, so an idle window cannot be reopened later by pointing an older reference block at it.
+#
+# Faulty oracle: the base asset is priced without reading the oracle, so a faulty oracle never
+# blocks it. Other assets stop under `reject` until governance points the budget at another oracle
+# with `update_spending_oracle` or disables the limits with `update_spending_limits_policy`.
+
+# TYPE ALIASES
+# =================================================================================================
+
+# How a fungible asset the budget cannot price is treated. Mirrors the Rust `UnpricedAssetPolicy`:
+# `UNPRICED_ASSET_ALLOW` leaves the asset unmetered, `UNPRICED_ASSET_REJECT` fails the transaction.
+pub enum UnpricedAssetPolicy : u8 {
+    UNPRICED_ASSET_ALLOW = 0,
+    UNPRICED_ASSET_REJECT = 1,
+}
+
+# CONSTANTS
+# =================================================================================================
+
+# [window_blocks, unpriced_asset_policy, config_generation, 0]
+# A zero window_blocks disables the policy for the account.
+const SPENDING_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::spending_config")
+
+# [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0]
+# The price oracle account non-base assets are priced through, and how many blocks after the
+# reference block a transaction that read it stays includable.
+const SPENDING_ORACLE_SLOT = word("miden::standards::auth::multisig_smart::spending_oracle")
+
+# [BASE_ASSET_ID]
+# The asset the budget is denominated in.
+const SPENDING_BASE_ASSET_SLOT = word("miden::standards::auth::multisig_smart::spending_base_asset")
+
+# [limit, 0, 0, 0]
+# A zero limit means the budget is not configured.
+const SPENDING_LIMIT_SLOT = word("miden::standards::auth::multisig_smart::spending_limit")
+
+# [spent_in_window, window_index, config_generation, 0]
+const SPENDING_TRACKER_SLOT = word("miden::standards::auth::multisig_smart::spending_tracker")
+
+const UNPRICED_ASSET_POLICY_MAX = UNPRICED_ASSET_REJECT
+
+# Scratch area for the assets of one output note.
+const NOTE_ASSETS_NUM_ELEMENTS = MAX_ASSETS_PER_NOTE * ASSET_SIZE
+
+# ERRORS
+# =================================================================================================
+
+const ERR_WINDOW_BLOCKS_NOT_U32 = "window_blocks must be u32"
+const ERR_UNPRICED_ASSET_POLICY_INVALID = "unpriced_asset_policy must be 0 or 1"
+const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32 = "max_oracle_block_age must be u32"
+const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16 = "max_oracle_block_age must be u16"
+const ERR_MAX_ORACLE_BLOCK_AGE_ZERO = "max_oracle_block_age must be non-zero"
+const ERR_BASE_ASSET_NOT_FUNGIBLE = "spending limit base asset must be fungible"
+const ERR_SPENDING_LIMIT_REQUIRES_ORACLE = "spending limit requires a configured oracle"
+const ERR_UNPRICED_ASSET_REJECTED = "spent asset is not priced into the budget and the policy rejects it"
+const ERR_SPENDING_LIMIT_EXCEEDED = "spending limit exceeded for the current window"
+
+# LOCAL ADDRESSES (enforce_spending_limits)
+# =================================================================================================
+
+const ENFORCE_NOTE_ASSETS_LOC = 0
+const ENFORCE_TOTAL_LOC = ENFORCE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
+
+# CONFIGURATION
+# =================================================================================================
+
+#! Sets the account-wide spending-limit policy: the window length and how unpriced assets are
+#! treated.
+#!
+#! Lengthening the window or switching unpriced assets to `allow` weakens the budget, and changing
+#! the window length resets the running total, so this procedure should carry a policy at least as
+#! strong as the account wants its spending limit to be. Left unpolicied, the default threshold
+#! suffices to reset the budget.
+#!
+#! Changing `window_blocks` bumps `config_generation`: window indices computed under different
+#! lengths are not comparable, so a tracker written under the old generation is treated as the
+#! start of a fresh window. The bump happens only when the length actually changes, so a call that
+#! keeps it cannot be used as a budget reset.
+#!
+#! Inputs:  [window_blocks, unpriced_asset_policy]
+#! Outputs: []
+#!
+#! Where:
+#! - window_blocks is the length of one spending window in blocks; zero disables the policy.
+#! - unpriced_asset_policy is UNPRICED_ASSET_ALLOW or UNPRICED_ASSET_REJECT.
+#!
+#! Panics if:
+#! - `window_blocks` is not a valid `u32` field element (`ERR_WINDOW_BLOCKS_NOT_U32`).
+#! - `unpriced_asset_policy` is not 0 or 1 (`ERR_UNPRICED_ASSET_POLICY_INVALID`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_spending_limits_policy(window_blocks: u32, unpriced_asset_policy: UnpricedAssetPolicy)
+    u32assert.err=ERR_WINDOW_BLOCKS_NOT_U32
+    # => [window_blocks, unpriced_asset_policy]
+
+    dup.1 u32assert.err=ERR_UNPRICED_ASSET_POLICY_INVALID
+    # => [unpriced_asset_policy, window_blocks, unpriced_asset_policy]
+
+    u32lte.UNPRICED_ASSET_POLICY_MAX assert.err=ERR_UNPRICED_ASSET_POLICY_INVALID
+    # => [window_blocks, unpriced_asset_policy]
+
+    # ----- Bump the generation only when the window length actually changes. -----
+    exec.get_initial_spending_config
+    # => [old_window_blocks, old_policy, old_generation, window_blocks, unpriced_asset_policy]
+
+    swap drop
+    # => [old_window_blocks, old_generation, window_blocks, unpriced_asset_policy]
+
+    dup.2 neq add
+    # => [config_generation, window_blocks, unpriced_asset_policy]
+
+    movdn.2 push.0 movdn.3
+    # => [window_blocks, unpriced_asset_policy, config_generation, 0]
+
+    push.SPENDING_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, window_blocks, unpriced_asset_policy, config_generation, 0]
+
+    exec.native_account::set_item
+    # => [OLD_CONFIG]
+
+    dropw
+    # => []
+end
+
+#! Sets the price oracle non-base assets are priced through, the asset the budget is denominated in
+#! and the bound on how old the oracle state read may be.
+#!
+#! Pointing the budget at a different oracle or base asset, or loosening the block-age bound,
+#! changes what every converted amount means, so this procedure should carry a policy at least as
+#! strong as the account wants its budget to be.
+#!
+#! Inputs:  [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, BASE_ASSET_ID]
+#! Outputs: []
+#!
+#! Where:
+#! - oracle_id_{suffix, prefix} identify the account exposing `price_oracle::get_conversion_rate`.
+#! - max_oracle_block_age is how many blocks after its reference block a transaction that read the
+#!   oracle stays includable, applied through `tx::update_expiration_block_delta` after every read.
+#!   Foreign state is not revalidated at inclusion, so this is what keeps an executor from reading a
+#!   price at an arbitrarily old block.
+#! - BASE_ASSET_ID is the asset the budget is denominated in.
+#!
+#! Panics if:
+#! - `BASE_ASSET_ID` is not a fungible asset id (`ERR_BASE_ASSET_NOT_FUNGIBLE`).
+#! - `max_oracle_block_age` is not a valid `u32` field element (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32`).
+#! - `max_oracle_block_age` is zero (`ERR_MAX_ORACLE_BLOCK_AGE_ZERO`).
+#! - `max_oracle_block_age` exceeds the `u16` range `tx::update_expiration_block_delta` accepts
+#!   (`ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_spending_oracle(oracle_id: AccountId, max_oracle_block_age: u16, base_asset_id: AssetId)
+    push.0 movdn.3
+    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
+
+    # ----- A budget in a non-fungible unit would be meaningless. -----
+    dupw.1 exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
+
+    assert.err=ERR_BASE_ASSET_NOT_FUNGIBLE
+    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
+
+    movup.2
+    # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0, BASE_ASSET_ID]
+
+    u32assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U32
+    dup eq.0 assertz.err=ERR_MAX_ORACLE_BLOCK_AGE_ZERO
+    dup u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16
+    # => [max_oracle_block_age, oracle_id_suffix, oracle_id_prefix, 0, BASE_ASSET_ID]
+
+    movdn.2
+    # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, BASE_ASSET_ID]
+
+    push.SPENDING_ORACLE_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, ORACLE_CONFIG, BASE_ASSET_ID]
+
+    exec.native_account::set_item dropw
+    # => [BASE_ASSET_ID]
+
+    push.SPENDING_BASE_ASSET_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, BASE_ASSET_ID]
+
+    exec.native_account::set_item dropw
+    # => []
+end
+
+#! Sets or clears the spending limit, in the base asset.
+#!
+#! Raising or clearing the limit weakens the protection it provides, so this procedure should carry
+#! a policy at least as strong as the account wants its spending limit to be. Left unpolicied, the
+#! default threshold suffices to lift it.
+#!
+#! A non-zero limit needs `update_spending_oracle` to have been called first: without an oracle
+#! every priced spend would fail its foreign call, locking the account out of all non-base assets.
+#! A zero limit clears the budget, after which every fungible asset falls to the unpriced-asset
+#! policy. Changing the limit does not touch the running total: a lowered limit applies to what was
+#! already spent in the current window.
+#!
+#! Inputs:  [limit]
+#! Outputs: []
+#!
+#! Where:
+#! - limit is the maximum amount, in the base asset, that may leave the account per window.
+#!
+#! Panics if:
+#! - `limit` is non-zero and no oracle is configured (`ERR_SPENDING_LIMIT_REQUIRES_ORACLE`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_spending_limit(limit: AssetAmount)
+    dup neq.0
+    # => [is_update, limit]
+
+    if.true
+        push.SPENDING_ORACLE_SLOT[0..2] exec.active_account::get_item
+        # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, limit]
+
+        exec.account_id::testz
+        # => [is_oracle_unset, oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, limit]
+
+        assertz.err=ERR_SPENDING_LIMIT_REQUIRES_ORACLE dropw
+        # => [limit]
+    end
+
+    push.0.0.0 movdn.3 movdn.3 movdn.3
+    # => [limit, 0, 0, 0]
+
+    push.SPENDING_LIMIT_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, limit, 0, 0, 0]
+
+    exec.native_account::set_item dropw
+    # => []
+end
+
+# ENFORCEMENT
+# =================================================================================================
+
+#! Charges every fungible asset this transaction sends out to the spending budget and fails the
+#! transaction if the budget is exceeded.
+#!
+#! Iterates every output note and every asset in it, pricing each fungible asset into the base asset
+#! with `price_asset` and summing the results; an asset the budget cannot price falls to the
+#! unpriced-asset policy and non-fungible assets are skipped. The sum is charged to the budget once,
+#! so the tracker is read and written once per transaction.
+#!
+#! A no-op when the policy is disabled (`window_blocks == 0`). With the policy enabled the
+#! transaction's expiration is bound to the window even when it creates no output notes.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Side effects:
+#! - Tightens the transaction expiration delta to `min(window_blocks, 65535)`, so the reference
+#!   block is at most one window old at inclusion and an idle window cannot be reopened later.
+#! - Writes SPENDING_TRACKER_SLOT when a fungible asset was priced into the budget.
+#!
+#! Panics if:
+#! - `window_blocks` is not a valid `u32` field element (`ERR_WINDOW_BLOCKS_NOT_U32`).
+#! - an asset is unpriced and the policy is UNPRICED_ASSET_REJECT
+#!   (`ERR_UNPRICED_ASSET_REJECTED`).
+#! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
+#! - the oracle call fails (see `tx::execute_foreign_procedure`).
+#!
+#! Invocation: exec
+@locals(129)
+pub proc enforce_spending_limits()
+    exec.get_initial_spending_config
+    # => [window_blocks, unpriced_asset_policy, config_generation]
+
+    dup eq.0
+    # => [is_disabled, window_blocks, unpriced_asset_policy, config_generation]
+
+    if.true
+        drop drop drop
+        # => []
+    else
+        u32assert.err=ERR_WINDOW_BLOCKS_NOT_U32
+        # => [window_blocks, unpriced_asset_policy, config_generation]
+
+        # ----- Bind the transaction to its window: a reference block more than one window old is
+        # expired at inclusion, so an idle window cannot be reopened with it. -----
+        dup push.MAX_EXPIRATION_BLOCK_DELTA u32min exec.tx::update_expiration_block_delta
+        # => [window_blocks, unpriced_asset_policy, config_generation]
+
+        exec.current_window_index
+        # => [window_index, unpriced_asset_policy, config_generation]
+
+        exec.get_initial_spending_limit
+        # => [limit, window_index, unpriced_asset_policy, config_generation]
+
+        push.0 loc_store.ENFORCE_TOTAL_LOC
+        # => [limit, window_index, unpriced_asset_policy, config_generation]
+
+        exec.tx::get_num_output_notes
+        # => [num_output_notes, limit, window_index, unpriced_asset_policy, config_generation]
+
+        dup neq.0
+        # => [has_notes, num_output_notes, limit, window_index, unpriced_asset_policy,
+        #     config_generation]
+
+        while.true
+            # => [note_count, limit, window_index, unpriced_asset_policy, config_generation]
+
+            sub.1
+            # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
+
+            dup locaddr.ENFORCE_NOTE_ASSETS_LOC
+            # => [assets_ptr, note_index, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
+
+            exec.output_note::get_assets
+            # => [num_assets, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
+
+            dup neq.0
+            # => [has_assets, num_assets, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
+
+            while.true
+                # => [asset_count, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
+
+                sub.1
+                # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
+
+                dup.4 dup.3
+                # => [limit, unpriced_asset_policy, asset_idx, note_index, limit, window_index,
+                #     unpriced_asset_policy, config_generation]
+
+                dup.2 mul.ASSET_SIZE locaddr.ENFORCE_NOTE_ASSETS_LOC add
+                # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+                #     window_index, unpriced_asset_policy, config_generation]
+
+                exec.asset::load
+                # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index,
+                #     limit, window_index, unpriced_asset_policy, config_generation]
+
+                exec.price_asset
+                # => [converted_amount, asset_idx, note_index, limit, window_index,
+                #     unpriced_asset_policy, config_generation]
+
+                loc_load.ENFORCE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
+                loc_store.ENFORCE_TOTAL_LOC
+                # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
+
+                dup neq.0
+                # => [has_assets, asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+                #     config_generation]
+            end
+            # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
+
+            drop
+            # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
+
+            dup neq.0
+            # => [has_notes, note_index, limit, window_index, unpriced_asset_policy,
+            #     config_generation]
+        end
+        # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
+
+        drop movup.2 drop
+        # => [limit, window_index, config_generation]
+
+        # ----- Charge the sum once. Nothing to write when no asset was priced into the budget. -----
+        loc_load.ENFORCE_TOTAL_LOC
+        # => [total, limit, window_index, config_generation]
+
+        dup neq.0
+        # => [is_charged, total, limit, window_index, config_generation]
+
+        if.true
+            exec.charge_budget
+            # => []
+        else
+            drop drop drop drop
+            # => []
+        end
+    end
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Loads the spending-limit policy from the initial `SPENDING_CONFIG_SLOT`.
+#!
+#! Reads the transaction's initial storage state, so a policy update earlier in the same
+#! transaction does not affect how that transaction is metered.
+#!
+#! Inputs:  []
+#! Outputs: [window_blocks, unpriced_asset_policy, config_generation]
+#!
+#! Invocation: exec
+proc get_initial_spending_config() -> (u32, UnpricedAssetPolicy, felt)
+    push.SPENDING_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix]
+
+    exec.native_account::get_initial_item
+    # => [window_blocks, unpriced_asset_policy, config_generation, 0]
+
+    movup.3 drop
+    # => [window_blocks, unpriced_asset_policy, config_generation]
+end
+
+#! Reads the spending limit from the initial account state.
+#!
+#! Reads the initial state so a limit raised earlier in this transaction does not apply to it.
+#!
+#! Inputs:  []
+#! Outputs: [limit]
+#!
+#! Where:
+#! - limit is the configured limit in the base asset, or 0 when the budget is not configured.
+#!
+#! Invocation: exec
+proc get_initial_spending_limit() -> AssetAmount
+    push.SPENDING_LIMIT_SLOT[0..2]
+    # => [slot_suffix, slot_prefix]
+
+    exec.native_account::get_initial_item
+    # => [limit, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [limit]
+end
+
+#! Returns the index of the spending window the transaction's reference block falls into.
+#!
+#! Inputs:  [window_blocks]
+#! Outputs: [window_index]
+#!
+#! Where:
+#! - window_blocks is the configured window length in blocks; the caller asserts it is a non-zero
+#!   `u32`.
+#! - window_index is floor(reference_block_num / window_blocks).
+#!
+#! Invocation: exec
+proc current_window_index(window_blocks: u32) -> u32
+    exec.tx::get_reference_block_number
+    # => [reference_block_num, window_blocks]
+
+    swap u32div
+    # => [window_index]
+end
+
+#! Prices one asset into the base asset for the spending budget.
+#!
+#! Only fungible assets are metered. A non-fungible asset has no amount to budget and prices to
+#! zero; moving one is governed by the procedure policies alone, exactly as if the spending-limit
+#! policy were disabled for it.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy]
+#! Outputs: [converted_amount]
+#!
+#! Where:
+#! - ASSET_ID and ASSET_VALUE are the asset leaving the account.
+#! - limit and unpriced_asset_policy are the budget state loaded by `enforce_spending_limits`.
+#! - converted_amount is the asset's amount in the base asset, or 0 when it is not priced.
+#!
+#! Side effects, panics: see `price_fungible_asset`.
+#!
+#! Invocation: exec
+proc price_asset(
+    asset_id: AssetId,
+    asset_value: AssetValue,
+    limit: AssetAmount,
+    unpriced_asset_policy: UnpricedAssetPolicy
+) -> AssetAmount
+    dupw exec.asset::id_into_composition
+    # => [composition, ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy]
+
+    eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible, ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy]
+
+    if.true
+        swapw exec.asset::fungible_value_into_amount_unchecked
+        # => [amount, ASSET_ID, limit, unpriced_asset_policy]
+
+        exec.price_fungible_asset
+        # => [converted_amount]
+    else
+        # Non-fungible: outside the policy.
+        dropw dropw drop drop
+        # => []
+
+        push.0
+        # => [converted_amount = 0]
+    end
+end
+
+#! Prices a fungible amount into the base asset for the spending budget.
+#!
+#! The asset is priced when the budget is configured and it is either the base asset or one the
+#! oracle has a rate for; an unpriced asset falls to the unpriced-asset policy and prices to zero.
+#!
+#! Inputs:  [amount, ASSET_ID, limit, unpriced_asset_policy]
+#! Outputs: [converted_amount]
+#!
+#! Side effects:
+#! - Tightens the transaction expiration delta when the oracle was read (`convert_to_base_asset`).
+#!
+#! Panics if:
+#! - the asset is unpriced and the policy is UNPRICED_ASSET_REJECT
+#!   (`ERR_UNPRICED_ASSET_REJECTED`).
+#!
+#! Invocation: exec
+proc price_fungible_asset(
+    amount: AssetAmount,
+    asset_id: AssetId,
+    limit: AssetAmount,
+    unpriced_asset_policy: UnpricedAssetPolicy
+) -> AssetAmount
+    movup.5 dup neq.0
+    # => [is_configured, limit, amount, ASSET_ID, unpriced_asset_policy]
+
+    if.true
+        drop movdn.4
+        # => [ASSET_ID, amount, unpriced_asset_policy]
+
+        exec.convert_to_base_asset
+        # => [is_priced, converted_amount, unpriced_asset_policy]
+
+        movup.2 swap
+        # => [is_priced, unpriced_asset_policy, converted_amount]
+    else
+        # No budget is configured, so nothing can be priced into it.
+        drop drop dropw
+        # => [unpriced_asset_policy]
+
+        push.0 swap push.0
+        # => [is_priced = 0, unpriced_asset_policy, converted_amount = 0]
+    end
+    # => [is_priced, unpriced_asset_policy, converted_amount]
+
+    swap eq.UNPRICED_ASSET_REJECT not or
+    # => [is_allowed, converted_amount]
+
+    assert.err=ERR_UNPRICED_ASSET_REJECTED
+    # => [converted_amount]
+end
+
+#! Converts an amount of an asset into the base asset through the configured price oracle.
+#!
+#! The base asset itself converts one to one without a foreign call. Any other asset is priced by
+#! `price_oracle::get_conversion_rate` on the oracle account, read at the transaction reference
+#! block. Right after the read the transaction's expiration delta is tightened to
+#! `max_oracle_block_age`, so the reference block the price came from cannot be older than that at
+#! inclusion. The rate is used only when the provider could price the pair (`last_updated != 0`);
+#! the provider's own staleness rule is what makes it zero otherwise.
+#!
+#! Inputs:  [ASSET_ID, amount]
+#! Outputs: [is_priced, converted_amount]
+#!
+#! Where:
+#! - is_priced is 1 when a usable rate was found; converted_amount is then
+#!   ceil(amount * num / den) in the base asset, else 0.
+#!
+#! Side effects:
+#! - Tightens the transaction expiration delta to `max_oracle_block_age` when a foreign call was
+#!   made.
+#!
+#! Panics if:
+#! - the oracle account id is invalid or does not expose `get_conversion_rate` (see
+#!   `tx::execute_foreign_procedure`).
+#! - the rate provider aborts.
+#! - the converted amount overflows a fungible asset amount (`fee::convert_amount`).
+#!
+#! Invocation: exec
+proc convert_to_base_asset(asset_id: AssetId, amount: AssetAmount) -> (Bool, AssetAmount)
+    push.SPENDING_BASE_ASSET_SLOT[0..2] exec.native_account::get_initial_item
+    # => [BASE_ASSET_ID, ASSET_ID, amount]
+
+    dupw.1 dupw.1 exec.word::eq
+    # => [is_base_asset, BASE_ASSET_ID, ASSET_ID, amount]
+
+    if.true
+        dropw dropw
+        # => [amount]
+
+        push.1
+        # => [is_priced = 1, converted_amount = amount]
+    else
+        swapw
+        # => [ASSET_ID, BASE_ASSET_ID, amount]
+
+        push.SPENDING_ORACLE_SLOT[0..2] exec.native_account::get_initial_item
+        # => [oracle_id_suffix, oracle_id_prefix, max_oracle_block_age, 0, ASSET_ID, BASE_ASSET_ID,
+        #     amount]
+
+        movup.3 drop movup.2 movdn.10
+        # => [oracle_id_suffix, oracle_id_prefix, ASSET_ID, BASE_ASSET_ID, max_oracle_block_age,
+        #     amount]
+
+        # ----- get_conversion_rate(SOURCE = ASSET_ID, TARGET = BASE_ASSET_ID) on the oracle. -----
+        exec.price_oracle::get_foreign_conversion_rate
+        # => [last_updated, num, den, max_oracle_block_age, amount]
+
+        # ----- Bound the age of the oracle state just read, in blocks. The kernel keeps the minimum
+        # of all deltas set, so this can only tighten what the approval expiration set. -----
+        movup.3 exec.tx::update_expiration_block_delta
+        # => [last_updated, num, den, amount]
+
+        # ----- A zero last_updated means the provider does not price the pair. -----
+        eq.0
+        # => [is_unpriced, num, den, amount]
+
+        if.true
+            drop drop drop
+            # => []
+
+            push.0.0
+            # => [is_priced = 0, converted_amount = 0]
+        else
+            movup.2 exec.fee::convert_amount
+            # => [converted_amount]
+
+            push.1
+            # => [is_priced = 1, converted_amount]
+        end
+    end
+end
+
+#! Charges an amount to the budget: rolls the tracker over if needed, adds the amount, asserts the
+#! limit and persists the tracker.
+#!
+#! Inputs:  [amount, limit, window_index, config_generation]
+#! Outputs: []
+#!
+#! Side effects:
+#! - Writes SPENDING_TRACKER_SLOT.
+#!
+#! Panics if:
+#! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
+#!
+#! Invocation: exec
+proc charge_budget(amount: AssetAmount, limit: AssetAmount, window_index: u32, config_generation: felt)
+    movup.3 movup.3
+    # => [window_index, config_generation, amount, limit]
+
+    dup.1 movdn.4
+    # => [window_index, config_generation, amount, limit, config_generation]
+
+    exec.load_window_spend
+    # => [spent, effective_window_index, amount, limit, config_generation]
+
+    # Saturate so the stored total keeps the next charge's sum inside the amount bound.
+    movup.2 exec.fungible_asset::saturating_add_amount
+    # => [total, effective_window_index, limit, config_generation]
+
+    # ----- Assert total <= limit. -----
+    dup dup.3 lte
+    # => [is_within_limit, total, effective_window_index, limit, config_generation]
+
+    assert.err=ERR_SPENDING_LIMIT_EXCEEDED
+    # => [total, effective_window_index, limit, config_generation]
+
+    movup.2 drop
+    # => [total, effective_window_index, config_generation]
+
+    exec.store_window_spend
+    # => []
+end
+
+#! Returns the amount already spent in the current window.
+#!
+#! Reads the tracker from the *current* account state so that several assets in one transaction
+#! accumulate instead of overwriting each other. Returns 0 when the tracker belongs to an earlier
+#! window or an earlier configuration generation.
+#!
+#! A tracker ahead of the current window can only come from an executor that picked an older
+#! reference block. Rather than failing the transaction, the spend is charged to the tracked window:
+#! the budget is not reset, so the rollback buys nothing, and a client building against a slightly
+#! stale reference block still goes through.
+#!
+#! Inputs:  [window_index, current_config_generation]
+#! Outputs: [spent, effective_window_index]
+#!
+#! Invocation: exec
+proc load_window_spend(window_index: u32, current_config_generation: felt) -> (AssetAmount, u32)
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, window_index, current_config_generation]
+
+    exec.active_account::get_item
+    # => [spent, tracked_window_index, tracked_generation, 0, window_index, current_config_generation]
+
+    movup.3 drop
+    # => [spent, tracked_window_index, tracked_generation, window_index, current_config_generation]
+
+    movup.2 movup.4 eq
+    # => [is_current_generation, spent, tracked_window_index, window_index]
+
+    if.true
+        swap
+        # => [tracked_window_index, spent, window_index]
+
+        dup dup.3 u32lt
+        # => [is_earlier_window, tracked_window_index, spent, window_index]
+
+        if.true
+            # The tracker is from a past window, so this transaction opens a fresh one.
+            drop drop
+            # => [window_index]
+
+            push.0
+            # => [spent, effective_window_index]
+        else
+            # The tracker is at, or ahead of, the current window; keep accumulating into it.
+            movup.2 drop
+            # => [tracked_window_index, spent]
+
+            swap
+            # => [spent, effective_window_index]
+        end
+    else
+        # The tracker predates the current configuration, so it carries no usable total.
+        drop drop
+        # => [window_index]
+
+        push.0
+        # => [spent, effective_window_index]
+    end
+end
+
+#! Persists the budget's tracker.
+#!
+#! Inputs:  [total, window_index, config_generation]
+#! Outputs: []
+#!
+#! Side effects:
+#! - Writes SPENDING_TRACKER_SLOT.
+#!
+#! Invocation: exec
+proc store_window_spend(total: AssetAmount, window_index: u32, config_generation: felt)
+    push.0 movdn.3
+    # => [total, window_index, config_generation, 0]
+
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, total, window_index, config_generation, 0]
+
+    exec.native_account::set_item dropw
+    # => []
+end
