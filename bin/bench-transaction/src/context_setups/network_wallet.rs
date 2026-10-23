@@ -14,7 +14,7 @@ use miden_protocol::Word;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{Note, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -241,15 +241,11 @@ pub fn tx_consume_pswap_note_network(
 
     let payback_serial = builder.rng_mut().draw_word();
     let payback_storage = P2idNoteStorage::new(creator_account.id());
-    let payback = match payback_note_type {
-        NoteType::Private => PswapPayback::private(
-            P2idNoteRecipient::new(payback_storage, payback_serial),
-            NoteTag::default(),
-        ),
-        NoteType::Public => PswapPayback::Public {
-            creator_account_id: payback_storage.target(),
-        },
-    };
+    let payback = PswapPayback::new(
+        P2idNoteRecipient::new(payback_storage, payback_serial),
+        payback_note_type,
+        PswapNote::PAYBACK_TAG,
+    );
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .payback(payback)

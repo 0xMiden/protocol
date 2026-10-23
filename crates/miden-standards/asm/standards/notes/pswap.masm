@@ -16,7 +16,6 @@ use miden::protocol::tx
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::note as std_note
-use miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::notes::tx_fee
 use miden::standards::wallets::basic as wallet
@@ -25,7 +24,7 @@ use miden::standards::wallets::basic as wallet
 # =================================================================================================
 
 const PRIVATE_NUM_STORAGE_ITEMS=13
-const PUBLIC_NUM_STORAGE_ITEMS=10
+const PUBLIC_NUM_STORAGE_ITEMS=15
 const MAX_NUM_ASSETS = 2
 # Outputs without a separate cancellation reserve carry one asset.
 const NUM_ASSETS = 1
@@ -47,7 +46,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # Note storage is loaded at STORAGE_PTR by get_bounded_storage. Its layout depends on the
 # payback note type, independently of the PSWAP note's own visibility.
 #
-# Common fields (8 felts):
+# Common fields (9 felts):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount      [2]  : 1 felt
@@ -56,14 +55,15 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # - cancellation_fee_suffix   [5]  : 1 felt
 # - cancellation_fee_prefix   [6]  : 1 felt
 # - cancellation_fee_amount   [7]  : 1 felt
+# - payback_tag               [8]  : 1 felt
 #
-# Public payback fields (10 felts total):
-# - creator_id_suffix         [8]  : 1 felt
-# - creator_id_prefix         [9]  : 1 felt
+# Public payback fields (15 felts total):
+# - creator_id_suffix         [9]  : 1 felt
+# - creator_id_prefix        [10]  : 1 felt
+# - fixed_payback_serial  [11..15)  : 4 felts
 #
 # Private payback fields (13 felts total):
-# - payback_recipient     [8..12)  : 4 felts
-# - payback_tag              [12]  : 1 felt
+# - payback_recipient     [9..13)  : 4 felts
 #
 # Where:
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
@@ -71,17 +71,14 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 #   (AccountIdPrefix as Felt)
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
 # - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
-# - payback_note_type: The NoteType used for the P2ID payback note (0 = private, 1 = public)
+# - payback_note_type: The NoteType used for the payback note (0 = private, 1 = public)
 # - cancellation_fee_{suffix,prefix,amount}: Native fee reserve; all zero when absent
 # - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
-# - payback_recipient: Digest of the fixed private P2ID recipient (Word); its preimage is
-#   retained by the owner and supplied privately for cancellation
-# - payback_tag: Explicit discovery tag for private payback notes (NoteTag as Felt, fits in u32)
-#
-# For public payback notes, the tag is derived at runtime from the creator's account ID
-# (via note_tag::create_account_target) rather than stored. For private payback notes, the tag
-# is stored explicitly because the recipient digest does not expose the target account ID.
+# - fixed_payback_serial: Serial number of the fixed public P2ID recipient (Word)
+# - payback_recipient: Digest of the fixed private recipient (Word). Filling supports any
+#   script; cancellation requires a P2ID preimage retained by the owner and supplied privately.
+# - payback_tag: Explicit discovery tag for payback notes (NoteTag as Felt, fits in u32)
 #
 # The remainder PSWAP note's own tag is copied from the active note's
 # metadata at remainder-creation time (same asset pair, same tag), saving one storage slot.
@@ -96,10 +93,14 @@ const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
 const CANCELLATION_FEE_SUFFIX_ITEM = STORAGE_PTR + 5
 const CANCELLATION_FEE_PREFIX_ITEM = STORAGE_PTR + 6
 const CANCELLATION_FEE_AMOUNT_ITEM = STORAGE_PTR + 7
-const PAYBACK_TAG_ITEM = STORAGE_PTR + 12
-const PUBLIC_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 8
-const PUBLIC_CREATOR_PREFIX_ITEM = STORAGE_PTR + 9
-const PRIVATE_RECIPIENT_0_ITEM = STORAGE_PTR + 8
+const PAYBACK_TAG_ITEM = STORAGE_PTR + 8
+const PUBLIC_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 9
+const PUBLIC_CREATOR_PREFIX_ITEM = STORAGE_PTR + 10
+const PUBLIC_SERIAL_0_ITEM = STORAGE_PTR + 11
+const PUBLIC_SERIAL_1_ITEM = PUBLIC_SERIAL_0_ITEM + 1
+const PUBLIC_SERIAL_2_ITEM = PUBLIC_SERIAL_0_ITEM + 2
+const PUBLIC_SERIAL_3_ITEM = PUBLIC_SERIAL_0_ITEM + 3
+const PRIVATE_RECIPIENT_0_ITEM = STORAGE_PTR + 9
 const PRIVATE_RECIPIENT_1_ITEM = PRIVATE_RECIPIENT_0_ITEM + 1
 const PRIVATE_RECIPIENT_2_ITEM = PRIVATE_RECIPIENT_0_ITEM + 2
 const PRIVATE_RECIPIENT_3_ITEM = PRIVATE_RECIPIENT_0_ITEM + 3
@@ -127,12 +128,12 @@ const EXPECTED_NOTE_IDX = EXPECTED_FEE_PTR + ASSET_SIZE
 # pay_cancellation_fee locals
 const PAY_CANCELLATION_FEE_PTR = 0
 
-# create_p2id_note locals
-const P2ID_NOTE_IDX = 0
-const P2ID_REQUESTED_FAUCET_SUFFIX = 1
-const P2ID_REQUESTED_FAUCET_PREFIX = 2
-const P2ID_AMT_ACCOUNT_FILL = 3
-const P2ID_AMT_NOTE_FILL = 4
+# create_payback_note locals
+const PAYBACK_NOTE_IDX = 0
+const PAYBACK_REQUESTED_FAUCET_SUFFIX = 1
+const PAYBACK_REQUESTED_FAUCET_PREFIX = 2
+const PAYBACK_AMT_ACCOUNT_FILL = 3
+const PAYBACK_AMT_NOTE_FILL = 4
 
 # create_remainder_note locals
 const REMAINDER_NOTE_IDX = 0
@@ -301,10 +302,10 @@ end
 #! Inputs:  []
 #! Outputs: []
 proc load_storage()
-    push.PRIVATE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    push.PUBLIC_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    dup u32assert u32gte.PUBLIC_NUM_STORAGE_ITEMS
+    dup u32assert u32gte.PRIVATE_NUM_STORAGE_ITEMS
     assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
     dup mem_store.STORAGE_LENGTH_PTR
     # => [num_storage_items]
@@ -318,7 +319,7 @@ proc load_storage()
 
     # Validate the selected layout. P2ID preparation commits the creator ID as storage
     # without checking its structure, so output creation does not replace this check.
-    # Private payback tags are validated by output_note::create.
+    # Payback tags are validated by output_note::create.
     if.true
         eq.PUBLIC_NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
         # => []
@@ -392,12 +393,13 @@ proc prepare_payback() -> (NoteTag, NoteType, NoteRecipient)
     # => [payback_note_type]
 
     if.true
-        # Preserve public paybacks: canonical P2ID, with PSWAP serial[0] + 1.
-        exec.active_note::get_serial_number add.1
+        # Register the fixed public recipient; fill attachments distinguish its outputs.
+        mem_load.PUBLIC_SERIAL_3_ITEM mem_load.PUBLIC_SERIAL_2_ITEM
+        mem_load.PUBLIC_SERIAL_1_ITEM mem_load.PUBLIC_SERIAL_0_ITEM
         # => [P2ID_SERIAL_NUM]
 
         mem_load.PAYBACK_NOTE_TYPE_ITEM
-        mem_load.PUBLIC_CREATOR_PREFIX_ITEM exec.note_tag::create_account_target
+        mem_load.PAYBACK_TAG_ITEM
         # => [tag, note_type, P2ID_SERIAL_NUM]
 
         mem_load.PUBLIC_CREATOR_PREFIX_ITEM mem_load.PUBLIC_CREATOR_SUFFIX_ITEM
@@ -569,7 +571,7 @@ proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
         locaddr.PAY_CANCELLATION_FEE_PTR exec.asset::store
         # => []
 
-        # Public paybacks increment serial[0]; remainders increment serial[3].
+        # Remainders increment serial[3]; paybacks use an independent fixed recipient.
         # Increment serial[2] for the cancellation fee, preserving the remainder's serial[3].
         exec.active_note::get_serial_number
         # => [s0, s1, s2, s3]
@@ -598,27 +600,28 @@ proc pay_cancellation_fee(fee_faucet: AccountId, fee_amount: AssetAmount)
     # => []
 end
 
-# P2ID NOTE CREATION PROCEDURE
+# PAYBACK NOTE CREATION PROCEDURE
 # =================================================================================================
 
-#! Prepares and creates the public or private payback.
+#! Creates the public or private payback note.
+#!
 #! Inputs:  [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
 @locals(5)
-# P2ID_NOTE_IDX                : note_idx
-# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
-# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
-# P2ID_AMT_ACCOUNT_FILL        : amt_account_fill
-# P2ID_AMT_NOTE_FILL           : amt_note_fill
-proc create_p2id_note(
+# PAYBACK_NOTE_IDX                : note_idx
+# PAYBACK_REQUESTED_FAUCET_SUFFIX : faucet_suffix
+# PAYBACK_REQUESTED_FAUCET_PREFIX : faucet_prefix
+# PAYBACK_AMT_ACCOUNT_FILL        : amt_account_fill
+# PAYBACK_AMT_NOTE_FILL           : amt_note_fill
+proc create_payback_note(
     faucet: AccountId,
     amt_account_fill: AssetAmount,
     amt_note_fill: AssetAmount
 )
-    loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
-    loc_store.P2ID_REQUESTED_FAUCET_PREFIX
-    loc_store.P2ID_AMT_ACCOUNT_FILL
-    loc_store.P2ID_AMT_NOTE_FILL
+    loc_store.PAYBACK_REQUESTED_FAUCET_SUFFIX
+    loc_store.PAYBACK_REQUESTED_FAUCET_PREFIX
+    loc_store.PAYBACK_AMT_ACCOUNT_FILL
+    loc_store.PAYBACK_AMT_NOTE_FILL
     # => []
 
     exec.prepare_payback
@@ -633,11 +636,11 @@ proc create_p2id_note(
     movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
-    loc_store.P2ID_NOTE_IDX
+    loc_store.PAYBACK_NOTE_IDX
     # => []
 
     # The add cannot overflow: `execute_pswap` overflow-checks and validates the fill sum first.
-    loc_load.P2ID_NOTE_IDX
+    loc_load.PAYBACK_NOTE_IDX
     # => [note_idx]
 
     push.0
@@ -649,7 +652,7 @@ proc create_p2id_note(
     exec.get_order_id
     # => [order_id, depth, 0, note_idx]
 
-    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    loc_load.PAYBACK_AMT_ACCOUNT_FILL loc_load.PAYBACK_AMT_NOTE_FILL add
     # => [total_fill, order_id, depth, 0, note_idx]
 
     push.PSWAP_ATTACHMENT_SCHEME
@@ -658,22 +661,22 @@ proc create_p2id_note(
     exec.output_note::add_word_attachment
     # => []
 
-    # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
-    loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
+    # Move account_fill_amount from the consumer's vault to the payback note (if > 0)
+    loc_load.PAYBACK_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
 
     if.true
         # create the asset
-        loc_load.P2ID_AMT_ACCOUNT_FILL
-        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
-        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+        loc_load.PAYBACK_AMT_ACCOUNT_FILL
+        loc_load.PAYBACK_REQUESTED_FAUCET_PREFIX
+        loc_load.PAYBACK_REQUESTED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_account_fill]
 
         exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE]
 
         # pad the stack for the call
-        padw push.0.0.0 loc_load.P2ID_NOTE_IDX swapdw
+        padw push.0.0.0 loc_load.PAYBACK_NOTE_IDX swapdw
         # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         call.wallet::move_asset_to_note
@@ -684,18 +687,18 @@ proc create_p2id_note(
     end
     # => []
 
-    # Add note_fill_amount directly to P2ID note (no vault debit, if > 0)
-    loc_load.P2ID_AMT_NOTE_FILL neq.0
+    # Add note_fill_amount directly to the payback note (no vault debit, if > 0)
+    loc_load.PAYBACK_AMT_NOTE_FILL neq.0
     # => [has_note_fill]
 
     if.true
-        loc_load.P2ID_NOTE_IDX
+        loc_load.PAYBACK_NOTE_IDX
         # => [note_idx]
 
         # create the asset
-        loc_load.P2ID_AMT_NOTE_FILL
-        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
-        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+        loc_load.PAYBACK_AMT_NOTE_FILL
+        loc_load.PAYBACK_REQUESTED_FAUCET_PREFIX
+        loc_load.PAYBACK_REQUESTED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
 
         exec.fungible_asset::create
@@ -706,19 +709,19 @@ proc create_p2id_note(
     end
     # => []
 
-    loc_load.P2ID_NOTE_IDX
+    loc_load.PAYBACK_NOTE_IDX
     # => [note_idx]
 
-    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    loc_load.PAYBACK_AMT_ACCOUNT_FILL loc_load.PAYBACK_AMT_NOTE_FILL add
     # => [total_fill, note_idx]
 
-    loc_load.P2ID_REQUESTED_FAUCET_PREFIX loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+    loc_load.PAYBACK_REQUESTED_FAUCET_PREFIX loc_load.PAYBACK_REQUESTED_FAUCET_SUFFIX
     # => [requested_faucet_suffix, requested_faucet_prefix, total_fill, note_idx]
 
     exec.fungible_asset::create
     # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
-    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    loc_load.PAYBACK_AMT_ACCOUNT_FILL loc_load.PAYBACK_AMT_NOTE_FILL add
     # => [total_fill, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
     mem_load.MIN_REQUESTED_AMOUNT_ITEM gte
@@ -752,7 +755,7 @@ end
 #!           remaining_requested, note_type, tag]
 #! Outputs: []
 @locals(5)
-# REMAINDER_NOTE_IDX              : note_idx
+# REMAINDER_NOTE_IDX             : note_idx
 # REMAINDER_OFFERED_FAUCET_SUFFIX : offered_faucet_suffix
 # REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
 # REMAINDER_AMT_PAYOUT            : amt_payout
@@ -1082,7 +1085,7 @@ end
 
 #! Returns the PSWAP order_id, taken from the active note's serial[1].
 #!
-#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Private paybacks use
+#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Paybacks use
 #! an independent fixed serial; their attachments carry this order ID.
 #!
 #! Inputs:  []
@@ -1152,7 +1155,7 @@ end
 
 #! Executes the partially-fillable swap.
 #!
-#! Sends offered tokens to consumer, requested tokens to the configured P2ID recipient,
+#! Sends offered tokens to consumer, requested tokens to the configured payback recipient,
 #! and creates a remainder note if partially filled.
 #!
 #! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
@@ -1286,7 +1289,7 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note carrying the requested asset to the configured recipient. The note's
+    # Create a payback note carrying the requested asset to the configured recipient. The note's
     # assets are derived from the requested fill amounts (`account_fill +
     # note_fill`), not from `total_payout` (which is the offered asset owed to
     # the consumer). All-zero fill arguments select the requested amount in `fill`.
@@ -1296,7 +1299,7 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
     # => [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
-    exec.create_p2id_note
+    exec.create_payback_note
     # => []
 
     # Consumer receives only account_fill_payout into vault (not the note_fill portion, if > 0)
@@ -1420,7 +1423,7 @@ proc fill(account_fill: AssetAmount, note_fill: AssetAmount)
     # => []
 end
 
-#! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
+#! Partially-fillable swap with public P2ID paybacks or private paybacks to a fixed recipient.
 #!
 #! NOTE_ARGS are [action, account_fill, note_fill, reserved].
 #! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.

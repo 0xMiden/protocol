@@ -317,15 +317,17 @@ The SWAP note script implements atomic asset swapping functionality.
 
 ### PSWAP
 
-PSWAP exchanges part or all of one fungible asset for another. A partial fill creates a P2ID payback and a remainder PSWAP with the same payback configuration. The PSWAP's visibility is independent of its paybacks' visibility.
+PSWAP exchanges part or all of one fungible asset for another. Each fill creates a payback to a fixed recipient; a partial fill also creates a remainder PSWAP. Fill attachments distinguish successive paybacks, even when the same account makes equal fills. The PSWAP's visibility is independent of its paybacks' visibility.
 
-- **Public paybacks:** the order stores the original creator's account ID. Each fill creates a public P2ID for that creator, using the consumed PSWAP serial with its first element incremented. The creator can reclaim an unspent order or remainder directly into its vault.
-- **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
-- **Storage:** 10 elements for public paybacks or 13 for private paybacks. Common fields contain the requested asset, minimum fill step, payback type, and optional cancellation fee asset. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
+- **Public paybacks:** the order stores the creator's account ID and fixed P2ID serial. The creator can reclaim an unspent order or remainder directly into its vault.
+- **Private paybacks:** the order stores a recipient commitment and discovery tag. Fills support any note script; cancellation requires a P2ID recipient. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
+- **Storage:** 15 elements for public paybacks or 13 for private paybacks. Both begin with the requested asset, minimum fill step, payback type, optional cancellation fee asset, and explicit payback tag. Public mode appends the creator ID and serial; private mode appends the recipient commitment.
+
+Use `PswapNote::PAYBACK_TAG` as a shared discovery tag for paybacks and refunds without identifying the owner. Both modes also accept custom tags.
 
 An optional native cancellation reserve travels unchanged into each remainder. A complete fill returns it in the final payback, combining amounts when the requested asset is native. Private cancellation pays the reserve in full through a sealed public TX_FEE. Public reclaim returns the reserve and principal to the creator's vault. The reserve never enters fill pricing.
 
-When reconstructing a private payback or cancellation refund, include its complete on-chain attachment list. Reconstruct paybacks with a reserve from the consumed PSWAP or remainder, whose remaining requested amount identifies a complete fill.
+Use a fresh payback serial for each order, independent of its PSWAP serial, and keep private recipient preimages secret. When reconstructing a payback or cancellation refund, include its complete on-chain attachment list. Reconstruct paybacks with a reserve from the consumed PSWAP or remainder, whose remaining requested amount identifies a complete fill.
 
 Consume reconstructed private paybacks and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Private-payback orders can be cancelled using the recipient preimage, refunding the full remaining offered asset in a private P2ID to the same recipient.
 
