@@ -31,6 +31,7 @@
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
 - [BREAKING] `AccountComponentCode` no longer carries the account component metadata section of its package, leaving `AccountComponent` as the only holder of the metadata ([#4086](https://github.com/0xMiden/protocol/pull/4086)).
 - Introduced the `DoubleWord` newtype (8 `Felt`s) and used it internally to replace ad-hoc `[Felt; 8]` / `Vec<Felt>` representations ([#3319](https://github.com/0xMiden/protocol/pull/3319)).
+- [BREAKING] Removed Winterfell serialization for `TransactionHeader`, `OrderedTransactionHeaders`, `ProvenBatch`, `OrderedBatches`, `ProposedBlock`, `BlockBody`, `SignedBlock` and `ProvenBlock` ([#4105](https://github.com/0xMiden/protocol/pull/4105)).
 
 ### Fixes
 
