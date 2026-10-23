@@ -41,6 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
+use crate::block::code_tree::CodePatch;
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::code::ProcedureRoot;
 use crate::note::{
@@ -1813,6 +1814,45 @@ pub enum CodeTreeError {
 
     #[error("failed to compute code tree mutations")]
     ComputeMutations(#[source] MerkleError),
+}
+
+// CODE PATCH ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum CodePatchError {
+    #[error("created procedure {0} of code patch is duplicated")]
+    DuplicateCreatedProcedure(ProcedureRoot),
+
+    #[error("dependency {0} of code patch is duplicated")]
+    DuplicateDependency(ProcedureRoot),
+
+    #[error("created procedure {0} is not a procedure root of the code patch MAST forest")]
+    CreatedProcedureNotInMastForest(ProcedureRoot),
+
+    #[error("procedure root {0} of the code patch MAST forest is not a created procedure")]
+    MastForestRootNotCreated(ProcedureRoot),
+
+    #[error("dependency {0} of code patch is also a created procedure")]
+    DependencyIsCreatedProcedure(ProcedureRoot),
+
+    #[error("node {0} of the code patch MAST forest is not reachable from a created procedure")]
+    UnreachableMastNode(Word),
+
+    #[error("external node {0} of the code patch MAST forest is not a dependency")]
+    ExternalNodeNotDependency(ProcedureRoot),
+
+    #[error("dependency {0} is not an external node of the code patch MAST forest")]
+    DependencyNotExternalNode(ProcedureRoot),
+
+    #[error(
+        "code patch of size {size} bytes exceeds maximum patch size of {max_size} bytes",
+        max_size = CodePatch::MAX_SIZE
+    )]
+    SizeLimitExceeded { size: usize },
+
+    #[error("advice map key {0} of code patch is not the hash of its value")]
+    AdviceMapKeyNotValueHash(Word),
 }
 
 // AUTH SCHEME ERROR
