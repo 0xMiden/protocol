@@ -248,7 +248,7 @@ pub proc compute_output_notes_commitment() -> Commitment
             # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, CV, current_index, num_notes]
 
             # The block words are dead after compression; keep only the updated chaining value.
-            compress dropw dropw
+            exec.eidos::compress dropw dropw
             # => [CV, current_index, num_notes]
 
             # increment current_index
