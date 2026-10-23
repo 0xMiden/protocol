@@ -104,7 +104,8 @@ final value equals their transaction-start value. Creation patches include all w
 
 ### Array component schemas
 
-An array schema specifies a word type and fixed length. For example:
+An array schema specifies a fixed length and a word type shared by all its elements. You can
+also provide a default for the whole array:
 
 ```toml
 [[storage.slots]]
@@ -117,7 +118,7 @@ default-elements = [
 ]
 ```
 
-Initialization data replaces the whole array:
+Initialization data replaces the whole array, so it must include every word:
 
 ```toml
 "example::portfolio::positions" = { array = [
@@ -127,5 +128,5 @@ Initialization data replaces the whole array:
 ] }
 ```
 
-The schema commitment includes the element schema and length, excluding defaults. Defaults
-must specify the whole array; element defaults are not supported.
+The schema commitment includes the element schema and length, but not the default values.
+Defaults on the element schema itself are not supported.

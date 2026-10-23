@@ -20,7 +20,7 @@ use crate::utils::serde::{
 
 /// Describes a fixed-length array whose elements share a word schema.
 ///
-/// Defaults must specify the whole array; element defaults are not supported.
+/// Defaults must specify the whole array; defaults on the element schema are not supported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArraySlotSchema {
     description: Option<String>,
@@ -54,23 +54,29 @@ impl ArraySlotSchema {
         Ok(schema)
     }
 
+    /// Returns the optional description of the array slot.
     pub fn description(&self) -> Option<&String> {
         self.description.as_ref()
     }
 
+    /// Returns the array length in words.
     pub fn length(&self) -> StorageArrayLength {
         self.length
     }
 
+    /// Returns the schema shared by every word in the array.
     pub fn element(&self) -> &WordSchema {
         &self.element
     }
 
+    /// Returns the complete default array, if one is provided.
     pub fn default_values(&self) -> Option<&[Word]> {
         self.default_values.as_deref()
     }
 
     /// Builds an array from initialization data, falling back to the complete default array.
+    ///
+    /// Initialization data must provide every word; it is not merged with the defaults.
     ///
     /// # Errors
     ///
