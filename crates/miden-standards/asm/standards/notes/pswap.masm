@@ -1454,11 +1454,8 @@ end
 
 #! Partially-fillable swap with public P2ID paybacks or private paybacks to a fixed recipient.
 #!
-#! NOTE_ARGS are [action, account_fill, note_fill, reserved].
-#! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.
-#! All-zero amounts select a full fill for other callers. Action 1 cancels orders with private
-#! paybacks using a secret P2ID preimage and refunds the full remaining balance to that recipient.
-#! The reserved element is zero. Private cancellation requires zero fill amounts.
+#! Private cancellation verifies a secret P2ID recipient preimage and refunds the remaining
+#! offered balance to that recipient.
 #!
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Private cancellation requires create_note; public reclaim requires receive_asset.
@@ -1466,6 +1463,16 @@ end
 #!
 #! Inputs:  [action, account_fill, note_fill, reserved]
 #! Outputs: []
+#!
+#! Where:
+#! - action is 0 to fill, or 1 to cancel an order with private paybacks. With action 0, the stored
+#!   creator of a public-payback order reclaims it instead of filling it.
+#! - account_fill is the requested-asset amount paid from the consuming account's vault.
+#! - note_fill is the requested-asset amount supplied by other input notes in the transaction.
+#! - reserved must be zero.
+#!
+#! When filling, zero account_fill and note_fill select a full fill from the account's vault.
+#! Private cancellation requires both fill amounts to be zero.
 #!
 #! Panics if:
 #! - the note arguments or storage are invalid.
