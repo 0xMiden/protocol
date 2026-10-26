@@ -117,6 +117,8 @@ impl ProposedBlock {
     /// - The note inclusion proof for an unauthenticated is invalid.
     /// - There are any unauthenticated notes for which no note inclusion proof is provided.
     /// - A [`NullifierWitness`] is missing for an authenticated note.
+    /// - A [`NullifierWitness`] is provided for a note that is neither consumed nor erased in the
+    ///   block.
     /// - If the [`NullifierWitness`] for an authenticated note proves that the note was already
     ///   consumed.
     ///
@@ -219,8 +221,8 @@ impl ProposedBlock {
 
         // Check against computed block_input_notes which also contain unauthenticated notes that
         // have been authenticated.
-        check_nullifiers(
-            &nullifier_witnesses,
+        let created_nullifiers = check_nullifiers(
+            nullifier_witnesses,
             block_input_notes.iter().map(InputNoteCommitment::nullifier),
         )?;
 
@@ -246,7 +248,7 @@ impl ProposedBlock {
             timestamp,
             account_updated_witnesses,
             output_note_batches,
-            created_nullifiers: nullifier_witnesses,
+            created_nullifiers,
             partial_blockchain,
             prev_block_header,
             next_validator_config,
@@ -646,29 +648,34 @@ fn check_batch_expiration(
     Ok(())
 }
 
-/// Check that each nullifier in the block has a proof provided and that the nullifier is
-/// unspent. The proofs are required to update the nullifier tree.
+/// Checks that the witnesses match exactly the block's input nullifiers and prove they are unspent.
+/// Returns the validated witnesses used to update the nullifier tree.
 fn check_nullifiers(
-    nullifier_witnesses: &BTreeMap<Nullifier, NullifierWitness>,
+    mut nullifier_witnesses: BTreeMap<Nullifier, NullifierWitness>,
     block_input_notes: impl Iterator<Item = Nullifier>,
-) -> Result<(), ProposedBlockError> {
+) -> Result<BTreeMap<Nullifier, NullifierWitness>, ProposedBlockError> {
+    let mut created_nullifiers = BTreeMap::new();
     for block_input_note in block_input_notes {
-        match nullifier_witnesses
-            .get(&block_input_note)
-            .and_then(|x| x.proof().get(&block_input_note.as_word()))
-        {
+        let witness = nullifier_witnesses
+            .remove(&block_input_note)
+            .ok_or(ProposedBlockError::NullifierProofMissing(block_input_note))?;
+        match witness.proof().get(&block_input_note.as_word()) {
             Some(nullifier_value) => {
                 if nullifier_value != EMPTY_WORD {
                     return Err(ProposedBlockError::NullifierSpent(block_input_note));
                 }
             },
-            // If the nullifier witnesses did not contain a proof for this nullifier or the provided
-            // proof was not for this nullifier, then it's an error.
+            // The provided proof must be for this nullifier.
             None => return Err(ProposedBlockError::NullifierProofMissing(block_input_note)),
         }
+        created_nullifiers.insert(block_input_note, witness);
     }
 
-    Ok(())
+    if let Some((nullifier, _)) = nullifier_witnesses.first_key_value() {
+        return Err(ProposedBlockError::UnexpectedNullifierWitness(*nullifier));
+    }
+
+    Ok(created_nullifiers)
 }
 
 /// Removes the nullifiers from the nullifier witnesses that were erased (i.e. created and consumed
