@@ -443,7 +443,9 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
 /// via the builder.
 ///
-/// Fills are priced against the note's initial offered asset.
+/// Fills are priced against the note's initial offered asset. The offered asset comes first in
+/// the note's assets, followed by the cancellation reserve if it has a different faucet. A reserve
+/// from the offered asset's faucet is merged into the first asset.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
@@ -455,10 +457,6 @@ pub struct PswapNote {
     note_type: NoteType,
 
     offered_asset: FungibleAsset,
-
-    // Preserve input asset order because it contributes to the note ID.
-    #[builder(skip)]
-    assets: NoteAssets,
 
     /// Defaults to the discovery tag for this script and asset pair.
     #[builder(default = PswapNote::create_tag(note_type, &offered_asset, storage.min_requested_asset()))]
@@ -494,7 +492,7 @@ where
     /// - the cancellation fee is zero or overflows when merged with the offered asset.
     /// - the first [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment is malformed.
     pub fn build(self) -> Result<PswapNote, NoteError> {
-        let mut note = self.build_internal();
+        let note = self.build_internal();
 
         if note.offered_asset.faucet_id() == note.storage.requested_faucet_id() {
             return Err(NoteError::other(
@@ -515,7 +513,13 @@ where
         {
             return Err(NoteError::other("cancellation fee must be non-zero"));
         }
-        note.assets = PswapNote::note_assets(note.offered_asset, note.storage.cancellation_fee)?;
+        if let Some(fee) = note.storage.cancellation_fee
+            && fee.faucet_id() == note.offered_asset.faucet_id()
+        {
+            note.offered_asset
+                .add(fee)
+                .map_err(|e| NoteError::other_with_source("PSWAP asset amount overflow", e))?;
+        }
 
         // The VM uses the first PSWAP attachment; callbacks may append others with this scheme.
         if let Some(attachment) = note.attachments.find(PswapNote::PSWAP_ATTACHMENT_SCHEME) {
@@ -539,7 +543,7 @@ impl PswapNote {
     /// Shared discovery tag for PSWAP paybacks and cancellation refunds ("PSWP").
     pub const PAYBACK_TAG: NoteTag = NoteTag::new(u32::from_be_bytes(*b"PSWP"));
 
-    /// Maximum number of distinct assets: offered principal and optional native fee reserve.
+    /// Maximum number of distinct assets: offered asset and optional native fee reserve.
     pub const MAX_NUM_ASSETS: usize = 2;
 
     /// Attachment scheme stamped on payback notes and remainder `PSWAP` notes.
@@ -977,8 +981,9 @@ impl PswapNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if `attachment` was not stamped in a round after this note, or if any
-    /// amount is not a valid asset amount.
+    /// Returns an error if `attachment` was not stamped in a round after this note, either
+    /// remaining amount is zero, or the remaining offered amount and cancellation reserve
+    /// overflow.
     pub fn remainder_note(
         &self,
         consumer_account_id: AccountId,
@@ -1008,19 +1013,16 @@ impl PswapNote {
             min_requested_asset,
             ..self.storage.clone()
         };
-        let recipient = new_storage.into_recipient(remainder_serial);
-
-        let assets = Self::note_assets(offered_asset, self.storage.cancellation_fee)?;
-
-        let metadata =
-            PartialNoteMetadata::new(consumer_account_id, self.note_type).with_tag(self.tag);
-
-        Ok(Note::with_attachments(
-            assets,
-            metadata,
-            recipient,
-            NoteAttachments::from(NoteAttachment::from(*attachment)),
-        ))
+        PswapNote::builder()
+            .sender(consumer_account_id)
+            .storage(new_storage)
+            .serial_number(remainder_serial)
+            .note_type(self.note_type)
+            .tag(self.tag)
+            .offered_asset(offered_asset)
+            .attachment(*attachment)
+            .build()
+            .map(Note::from)
     }
 
     // ASSOCIATED FUNCTIONS
@@ -1119,13 +1121,13 @@ impl PswapNote {
     }
 
     fn note_assets(
-        principal: FungibleAsset,
+        asset: FungibleAsset,
         cancellation_fee: Option<FungibleAsset>,
     ) -> Result<NoteAssets, NoteError> {
-        let mut assets = vec![principal.into()];
+        let mut assets = vec![asset.into()];
         if let Some(fee) = cancellation_fee {
-            if principal.faucet_id() == fee.faucet_id() {
-                assets[0] = principal
+            if asset.faucet_id() == fee.faucet_id() {
+                assets[0] = asset
                     .add(fee)
                     .map_err(|e| NoteError::other_with_source("PSWAP asset amount overflow", e))?
                     .into();
@@ -1229,11 +1231,13 @@ impl PswapNote {
 /// Converts a [`PswapNote`] into a protocol [`Note`], preserving its tag and attachments.
 impl From<PswapNote> for Note {
     fn from(pswap: PswapNote) -> Self {
+        let assets = PswapNote::note_assets(pswap.offered_asset, pswap.storage.cancellation_fee)
+            .expect("the builder validates PSWAP assets and their combined amount");
         let recipient = pswap.storage.into_recipient(pswap.serial_number);
 
         let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(pswap.tag);
 
-        Note::with_attachments(pswap.assets, metadata, recipient, pswap.attachments)
+        Note::with_attachments(assets, metadata, recipient, pswap.attachments)
     }
 }
 
@@ -1248,46 +1252,46 @@ impl TryFrom<&Note> for PswapNote {
 
         let storage = PswapNoteStorage::try_from(note.recipient().storage().items())?;
 
-        let mut assets = note
+        let (first, rest) = note
             .assets()
-            .iter()
-            .map(|asset| {
-                asset
-                    .as_fungible()
-                    .ok_or_else(|| NoteError::other("PSWAP assets must be fungible"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if let Some(fee) = storage.cancellation_fee {
-            let index = assets
-                .iter()
-                .position(|asset| asset.faucet_id() == fee.faucet_id())
-                .ok_or_else(|| NoteError::other("PSWAP cancellation reserve is missing"))?;
-            let remaining = assets[index].sub(fee).map_err(|e| {
+            .as_slice()
+            .split_first()
+            .ok_or_else(|| NoteError::other("PSWAP requires an offered asset"))?;
+        let mut offered_asset = first
+            .as_fungible()
+            .ok_or_else(|| NoteError::other("PSWAP offered asset must be fungible"))?;
+        if let Some(fee) = storage.cancellation_fee
+            && fee.faucet_id() == offered_asset.faucet_id()
+        {
+            offered_asset = offered_asset.sub(fee).map_err(|e| {
                 NoteError::other_with_source("PSWAP cancellation reserve is underfunded", e)
             })?;
-            if remaining.amount() == AssetAmount::ZERO {
-                assets.remove(index);
-            } else {
-                assets[index] = remaining;
+            if !rest.is_empty() {
+                return Err(NoteError::other(
+                    "PSWAP merged cancellation reserve must be the only asset",
+                ));
             }
-        }
-        let [offered_asset] = assets.as_slice() else {
+        } else if let Some(fee) = storage.cancellation_fee {
+            if rest != [fee.into()] {
+                return Err(NoteError::other(
+                    "PSWAP cancellation reserve must follow the offered asset",
+                ));
+            }
+        } else if !rest.is_empty() {
             return Err(NoteError::other(
-                "PSWAP requires one offered asset besides its cancellation reserve",
+                "PSWAP without a cancellation reserve requires exactly one offered asset",
             ));
-        };
+        }
 
-        let mut pswap = PswapNote::builder()
+        PswapNote::builder()
             .sender(note.metadata().sender())
             .storage(storage)
             .serial_number(note.recipient().serial_num())
             .note_type(note.metadata().note_type())
             .tag(note.metadata().tag())
-            .offered_asset(*offered_asset)
+            .offered_asset(offered_asset)
             .attachments(note.attachments().clone())
-            .build()?;
-        pswap.assets = note.assets().clone();
-        Ok(pswap)
+            .build()
     }
 }
 
@@ -1370,6 +1374,36 @@ mod tests {
 
     // TESTS
     // --------------------------------------------------------------------------------------------
+
+    #[rstest]
+    #[case::zero_fee(0, false)]
+    #[case::maximum_combined_amount(FungibleAsset::MAX_AMOUNT.as_u64() - 100, true)]
+    #[case::combined_amount_overflow(FungibleAsset::MAX_AMOUNT.as_u64() - 99, false)]
+    fn pswap_builder_validates_merged_reserve(#[case] fee_amount: u64, #[case] valid: bool) {
+        let offered = FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap();
+        let fee = FungibleAsset::new(offered.faucet_id(), fee_amount).unwrap();
+        let result = PswapNote::builder()
+            .sender(dummy_creator_id())
+            .storage(
+                PswapNoteStorage::builder()
+                    .min_requested_asset(FungibleAsset::new(dummy_faucet_id(0xbb), 50).unwrap())
+                    .payback(public_payback(dummy_creator_id()))
+                    .cancellation_fee(fee)
+                    .build(),
+            )
+            .serial_number(Word::empty())
+            .offered_asset(offered)
+            .build();
+        assert_eq!(result.is_ok(), valid);
+        if let Ok(pswap) = result {
+            let note = Note::from(pswap);
+            assert_eq!(note.assets().as_slice(), &[offered.add(fee).unwrap().into()]);
+            let parsed = PswapNote::try_from(&note).unwrap();
+            assert_eq!(*parsed.offered_asset(), offered);
+            assert_eq!(parsed.storage().cancellation_fee(), Some(fee));
+            assert_eq!(Note::from(parsed).id(), note.id());
+        }
+    }
 
     #[test]
     fn pswap_zero_request_quote_returns_error() {
