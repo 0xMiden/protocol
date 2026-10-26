@@ -30,6 +30,7 @@
 
 ### Fixes
 
+- `ProposedBlock` now rejects surplus nullifier witnesses, preventing nullifier state updates for notes the block does not consume ([#4122](https://github.com/0xMiden/protocol/pull/4122)).
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 - The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
