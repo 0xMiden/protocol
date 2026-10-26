@@ -34,7 +34,6 @@ const DELAY_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_co
 # cancelled proposal keeps its record with unlock_block = CANCELLED_UNLOCK_BLOCK.
 pub const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
 
-const EMPTY_WORD = [0, 0, 0, 0]
 
 # The unlock block of a cancelled proposal record. No reference block can reach it, so the record
 # keeps the delayed path closed for its commitment for good.
