@@ -30,10 +30,9 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 ///
 /// A dependency must not be a created procedure, i.e. an external node must not reference a
 /// created procedure. Building the forest with [`MastForest::merge`] replaces such references with
-/// the procedure itself. This prevents a host from moving an inner node of a created procedure
-/// into a separate created procedure, which would add a code tree entry. It also rejects a
-/// procedure root that is a single external node, which would register a reference instead of
-/// code.
+/// the procedure itself. This rejects a procedure root that is a single external node, which would
+/// register a reference instead of code. It does not prevent a host from making an inner node of a
+/// created procedure a separate root, which adds a code tree entry that the account pays for.
 ///
 /// Every node of the forest must be reachable from a created procedure. The commitments do not
 /// cover unreachable nodes, so they could add arbitrary data to the registry without changing the
