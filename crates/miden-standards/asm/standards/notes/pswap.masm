@@ -1463,6 +1463,17 @@ end
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
 #! Private cancellation requires create_note; public reclaim requires receive_asset.
 #! Consumers: any compatible account may fill or prove a private cancellation preimage.
+#!
+#! Inputs:  [action, account_fill, note_fill, reserved]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note arguments or storage are invalid.
+#! - the offered assets changed or the cancellation reserve is invalid or underfunded.
+#! - the fill amount overflows or is below the effective minimum fill step.
+#! - the next fill depth exceeds u32::MAX.
+#! - a private cancellation preimage is missing or does not match the P2ID recipient.
+#! - an output's assets differ from the expected assets before sealing.
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
