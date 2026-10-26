@@ -40,6 +40,10 @@
 ### Features
 
 - Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+- Added delayed execution to `AuthMultisigSmart`: `propose_transaction` records a proposal with a single approver signature, `cancel_transaction_proposal` cancels it for good with signatures over `AuthMultisigSmart::cancel_signing_message` from at least `cancel_threshold` approvers and no fewer than signed the proposal (a cancelled commitment can neither be re-proposed nor executed through the timelock), and the proposed transaction executes through the timelock once the chain reaches `reference_block + propose_expiration_delta + min_delay`, carrying an approval expiration in its `MultisigAuthArgs`. The auth procedure selects the execution path from the verified signatures, so a proposal only opens the delayed path and never blocks immediate execution ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `DelayedExecutionPolicy` (`min_delay` and `propose_expiration_delta` in blocks, `cancel_threshold`, the floor of the cancellation quorum, in signatures), updatable on chain via `update_delayed_execution_policy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `AuthMultisigSmart::update_signers_and_threshold_root`, `AuthMultisigSmart::update_delayed_execution_policy_root` and `AuthMultisigSmart::set_procedure_policy_root` so procedure policies can guard approver rotation, delay-policy updates and policy edits; `set_procedure_policy` rejects the delay-action procedures, whose policies would be ignored ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `StandardsDomainRegistry` with the `MultisigSmartCancelProposal` domain of the smart multisig cancel message ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 
 ### Changes
 
@@ -60,6 +64,8 @@
 - [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
+- [BREAKING] `AuthMultisigSmartConfig::new` and `Auth::MultisigSmart` now require a `DelayedExecutionPolicy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- [BREAKING] `multisig_smart` accepts delay-only procedure policies again (`ProcedurePolicyExecutionMode::DelayOnly`), and `ProcedurePolicy::immediate_threshold` now returns an `Option` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 - [BREAKING] Added an on-chain `token_base_uri` to `NonFungibleFaucet` that marks its token metadata as public, with the `set_token_base_uri` setter and a `token_uri` helper ([#4011](https://github.com/0xMiden/protocol/issues/4011)).
 - Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).
 - Keyed `bench-tx.json`'s per-note cycle counts by note label instead of note commitment, and added `total_cycles` to each scenario ([#3726](https://github.com/0xMiden/protocol/pull/3726)).
