@@ -10,6 +10,7 @@ use {Bool} from miden::protocol::types
 use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::standards::access::authority
 use miden::standards::access::pausable
 
@@ -25,6 +26,10 @@ const TOKEN_BASE_URI_3_SLOT = word("miden::standards::faucets::non_fungible::tok
 const TOKEN_BASE_URI_4_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_4")
 const TOKEN_BASE_URI_5_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_5")
 const TOKEN_BASE_URI_6_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_6")
+
+# Topic of the log emitted when the token base URI changes, so readers know to refetch the token
+# metadata.
+const TOKEN_BASE_URI_UPDATED_TOPIC = word("miden::standards::faucets::non_fungible::token_base_uri_updated")
 
 # The number of words a metadata string such as the token base URI is stored in.
 const METADATA_STRING_NUM_WORDS = 7
@@ -67,6 +72,9 @@ end
 #! actual 7 Words in the advice map under that hash. The hash is verified against the preimage
 #! during loading.
 #!
+#! Emits a log under the `token_base_uri_updated` topic whose content is the new token base URI, so
+#! readers know to refetch the token metadata.
+#!
 #! Inputs:
 #!   Operand stack: [TOKEN_BASE_URI_HASH, pad(12)]
 #!   Advice map: {
@@ -85,6 +93,7 @@ end
 #! - the preimage does not match TOKEN_BASE_URI_HASH.
 #! - the current token base URI is empty, i.e. the faucet's token metadata is private.
 #! - the new token base URI is empty.
+#! - the transaction log count or content size exceeds its limit.
 #!
 #! Invocation: call
 @locals(28)
@@ -154,6 +163,13 @@ pub proc set_token_base_uri(token_base_uri_hash: MetadataStringCommitment)
     loc_loadw_le.24
     push.TOKEN_BASE_URI_6_SLOT[0..2]
     exec.native_account::set_item dropw
+    # => [pad(16)]
+
+    # announce the update with the new value
+    locaddr.0 push.METADATA_STRING_NUM_WORDS push.TOKEN_BASE_URI_UPDATED_TOPIC[0..2]
+    # => [topic_suffix, topic_prefix, num_words, content_ptr, pad(16)]
+
+    exec.tx::add_log_from_memory
     # => [pad(16)]
 end
 
