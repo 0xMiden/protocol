@@ -17,12 +17,14 @@ The on-chain fields are the source of truth. The JSON only adds to them.
 
 ### The `contract_uri` JSON
 
-The JSON follows [ERC-7572](https://eips.ethereum.org/EIPS/eip-7572), so existing marketplace tooling can read it. It carries only the fields that are not on-chain:
+The JSON holds only presentation data that is not on-chain. All of its fields are optional:
 
-- `banner_image`: a wide image for the collection page.
-- `featured_image`: an image for featured listings.
-- `external_link`: the project's website. On-chain, the faucet's external URI field holds `contract_uri` itself, so the website lives here.
-- `collaborators`: accounts that may manage the collection on marketplaces, given as bech32 [account IDs](../account/id.md#encoding) on the faucet's network (e.g. `mm1...`). Readers ignore entries with a different network prefix.
+- `banner_image` (string): the URI of a wide image for the collection page.
+- `featured_image` (string): the URI of an image for featured listings.
+- `external_link` (string): the project's website. On-chain, the faucet's external URI field holds `contract_uri` itself, so the website lives here.
+- `collaborators` (array of strings): accounts that may manage the collection on marketplaces, given as bech32 [account IDs](../account/id.md#encoding) on the faucet's network (e.g. `mm1...`). Readers ignore entries with a different network prefix.
+
+The field names match the collection metadata that marketplaces already read, so existing tooling can use the JSON as is.
 
 Example:
 
