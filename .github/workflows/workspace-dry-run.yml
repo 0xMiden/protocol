@@ -24,10 +24,10 @@ env:
 jobs:
   release-dry-run:
     if: ${{ github.repository_owner == '0xMiden' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
-      # Remove (and unpin runs-on) once the runner image ships the eMudhra distrust
+      # Remove once the runner image ships the eMudhra distrust
       # (https://emudhra.we-have-a-problem.com/).
       - name: Update CA certificates
         run: |

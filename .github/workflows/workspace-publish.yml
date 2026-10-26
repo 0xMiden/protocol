@@ -15,14 +15,14 @@ env:
 jobs:
   publish:
     if: ${{ github.repository_owner == '0xMiden' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     environment: release # Optional: for enhanced security
     permissions:
       contents: read
       id-token: write # Required for OIDC token exchange
 
     steps:
-      # Remove (and unpin runs-on) once the runner image ships the eMudhra distrust
+      # Remove once the runner image ships the eMudhra distrust
       # (https://emudhra.we-have-a-problem.com/).
       - name: Update CA certificates
         run: |
@@ -69,7 +69,7 @@ jobs:
   upload-artifacts:
     name: upload pre-built miden-protocol library artifacts
     if: ${{ github.repository_owner == '0xMiden' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
