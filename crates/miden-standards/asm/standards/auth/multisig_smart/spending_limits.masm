@@ -2,7 +2,7 @@ use miden::core::word
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::asset
-use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::protocol::asset
+use {ASSET_SIZE, COMPOSITION_FUNGIBLE, FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use {MAX_ASSETS_PER_NOTE} from miden::protocol::constants
 use miden::protocol::native_account
 use miden::protocol::output_note
@@ -79,6 +79,7 @@ const ERR_MAX_ORACLE_BLOCK_AGE_NOT_U16 = "max_oracle_block_age must be u16"
 const ERR_MAX_ORACLE_BLOCK_AGE_ZERO = "max_oracle_block_age must be non-zero"
 const ERR_BASE_ASSET_NOT_FUNGIBLE = "spending limit base asset must be fungible"
 const ERR_SPENDING_LIMIT_REQUIRES_ORACLE = "spending limit requires a configured oracle"
+const ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT = "spending limit exceeds the maximum fungible asset amount"
 const ERR_UNPRICED_ASSET_REJECTED = "spent asset is not priced into the budget and the policy rejects it"
 const ERR_SPENDING_LIMIT_EXCEEDED = "spending limit exceeded for the current window"
 
@@ -228,14 +229,20 @@ end
 #! Outputs: []
 #!
 #! Where:
-#! - limit is the maximum amount, in the base asset, that may leave the account per window.
+#! - limit is the maximum amount, in the base asset, that may leave the account per window; at most
+#!   `FUNGIBLE_ASSET_MAX_AMOUNT`, as the Rust `SpendingBudget` enforces at construction.
 #!
 #! Panics if:
+#! - `limit` exceeds `FUNGIBLE_ASSET_MAX_AMOUNT` (`ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT`).
 #! - `limit` is non-zero and no oracle is configured (`ERR_SPENDING_LIMIT_REQUIRES_ORACLE`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc set_spending_limit(limit: AssetAmount)
+    # A larger limit could never be reached by a running total, which is capped at the maximum.
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT
+    # => [limit]
+
     dup neq.0
     # => [is_update, limit]
 

@@ -51,6 +51,7 @@ use miden_standards::errors::standards::{
     ERR_BASE_ASSET_NOT_FUNGIBLE,
     ERR_MAX_ORACLE_BLOCK_AGE_ZERO,
     ERR_SPENDING_LIMIT_EXCEEDED,
+    ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT,
     ERR_SPENDING_LIMIT_REQUIRES_ORACLE,
     ERR_UNPRICED_ASSET_POLICY_INVALID,
     ERR_UNPRICED_ASSET_REJECTED,
@@ -862,6 +863,29 @@ async fn update_spending_oracle_rejects_a_non_fungible_base_asset() -> anyhow::R
         .await?;
 
     assert_transaction_executor_error!(result, ERR_BASE_ASSET_NOT_FUNGIBLE);
+    Ok(())
+}
+
+/// The on-chain bound matches the one `SpendingBudget::new` enforces: the fungible asset maximum
+/// is accepted, one more is rejected.
+#[tokio::test]
+async fn a_limit_above_the_fungible_asset_maximum_is_rejected() -> anyhow::Result<()> {
+    let mut h = Harness::with_policy()?;
+    let max_amount = FungibleAsset::MAX_AMOUNT.as_u64();
+
+    h.configure(&set_limit_script(max_amount)).await??;
+    assert_eq!(
+        h.limit(),
+        Word::from([
+            Felt::new_unchecked(max_amount),
+            Felt::from(0u32),
+            Felt::from(0u32),
+            Felt::from(0u32)
+        ])
+    );
+
+    let result = h.configure(&set_limit_script(max_amount + 1)).await?;
+    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT);
     Ok(())
 }
 
