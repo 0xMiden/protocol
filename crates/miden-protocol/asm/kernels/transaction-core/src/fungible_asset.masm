@@ -7,7 +7,7 @@ use miden::tx_kernel_core::asset
 # RE-EXPORTS
 # =================================================================================================
 
-pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT, merge_fungible_values as merge} from miden::protocol_utils::asset
+pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT, merge_fungible_values as merge, split_fungible_values as split} from miden::protocol_utils::asset
 
 # ERRORS
 # =================================================================================================
@@ -27,46 +27,8 @@ const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO =
 const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO =
     "fungible asset ID asset class prefix and suffix must be zero"
 
-const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW =
-    "failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
-
 # PROCEDURES
 # =================================================================================================
-
-#! Computes ASSET_VALUE_0 - ASSET_VALUE_1 and returns the result.
-#!
-#! For instance, split(40, 100) returns 60. The operand order matches the `sub` instruction.
-#!
-#! WARNING: This procedure assumes the assets have been validated.
-#!
-#! Inputs:  [ASSET_VALUE_1, ASSET_VALUE_0]
-#! Outputs: [NEW_ASSET_VALUE]
-#!
-#! Where:
-#! - ASSET_VALUE_{0, 1} are the assets to split.
-#! - NEW_ASSET_VALUE is the result of the split computation.
-#!
-#! Panics if:
-#! - ASSET_VALUE_0 does not contain at least the amount of ASSET_VALUE_1.
-pub proc split(asset_value_1: AssetValue, asset_value_0: AssetValue) -> AssetValue
-    # extract amounts from assets
-    exec.asset::fungible_value_into_amount_unchecked movdn.4 exec.asset::fungible_value_into_amount_unchecked swap
-    # => [amount_1, amount_0]
-
-    # assert amount_1 <= amount_0 so we can safely subtract
-    dup dup.2
-    # => [amount_0, amount_1, amount_1, amount_0]
-
-    lte assert.err=ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
-    # => [amount_1, amount_0]
-
-    sub
-    # => [new_amount]
-
-    # reconstruct the asset value
-    push.0.0.0 movup.3
-    # => [NEW_ASSET_VALUE]
-end
 
 #! Returns 1 if ASSET_VALUE_0 is less than ASSET_VALUE_1, 0 otherwise.
 #!
