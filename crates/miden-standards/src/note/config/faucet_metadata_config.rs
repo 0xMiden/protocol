@@ -22,7 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-use crate::account::faucets::{Description, ExternalLink, LogoURI};
+use crate::account::faucets::{Description, ExternalUri, LogoUri};
 use crate::note::costs::{FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 use crate::note::{NetworkAccountTarget, NumStorageItems};
 
@@ -73,9 +73,9 @@ pub enum FaucetMetadataConfig {
     /// Set the token description. Requires the description to be configured as mutable.
     SetDescription { description: Description },
     /// Set the token logo URI. Requires the logo URI to be configured as mutable.
-    SetLogoUri { logo_uri: LogoURI },
-    /// Set the token external link. Requires the external link to be configured as mutable.
-    SetExternalLink { external_link: ExternalLink },
+    SetLogoUri { logo_uri: LogoUri },
+    /// Set the token external URI. Requires the external URI to be configured as mutable.
+    SetExternalUri { external_uri: ExternalUri },
 }
 
 impl FaucetMetadataConfig {
@@ -87,7 +87,7 @@ impl FaucetMetadataConfig {
     const VARIANT_SET_MAX_SUPPLY: u8 = 0;
     const VARIANT_SET_DESCRIPTION: u8 = 1;
     const VARIANT_SET_LOGO_URI: u8 = 2;
-    const VARIANT_SET_EXTERNAL_LINK: u8 = 3;
+    const VARIANT_SET_EXTERNAL_URI: u8 = 3;
 
     /// Returns the variant encoding this action.
     const fn variant(&self) -> u8 {
@@ -95,7 +95,7 @@ impl FaucetMetadataConfig {
             FaucetMetadataConfig::SetMaxSupply { .. } => Self::VARIANT_SET_MAX_SUPPLY,
             FaucetMetadataConfig::SetDescription { .. } => Self::VARIANT_SET_DESCRIPTION,
             FaucetMetadataConfig::SetLogoUri { .. } => Self::VARIANT_SET_LOGO_URI,
-            FaucetMetadataConfig::SetExternalLink { .. } => Self::VARIANT_SET_EXTERNAL_LINK,
+            FaucetMetadataConfig::SetExternalUri { .. } => Self::VARIANT_SET_EXTERNAL_URI,
         }
     }
 
@@ -118,8 +118,8 @@ impl FaucetMetadataConfig {
             FaucetMetadataConfig::SetLogoUri { logo_uri } => {
                 string_storage_values(variant, &logo_uri.to_words())
             },
-            FaucetMetadataConfig::SetExternalLink { external_link } => {
-                string_storage_values(variant, &external_link.to_words())
+            FaucetMetadataConfig::SetExternalUri { external_uri } => {
+                string_storage_values(variant, &external_uri.to_words())
             },
         }
     }
@@ -151,7 +151,7 @@ impl From<FaucetMetadataConfig> for NoteStorage {
 /// it.
 ///
 /// A single note script dispatches on the note variant in its storage to one of the faucet's
-/// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`).
+/// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_uri`).
 /// Authorization is enforced by those procedures through the account-wide
 /// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
 ///
@@ -416,12 +416,12 @@ mod tests {
     /// Every string action carries the same layout, differing only in the variant.
     #[test]
     fn string_action_variants() {
-        let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
+        let logo_uri = LogoUri::new("https://example.com/logo.png").unwrap();
         let storage = NoteStorage::from(FaucetMetadataConfig::SetLogoUri { logo_uri });
         assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_LOGO_URI));
 
-        let external_link = ExternalLink::new("https://example.com").unwrap();
-        let storage = NoteStorage::from(FaucetMetadataConfig::SetExternalLink { external_link });
-        assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_EXTERNAL_LINK));
+        let external_uri = ExternalUri::new("https://example.com").unwrap();
+        let storage = NoteStorage::from(FaucetMetadataConfig::SetExternalUri { external_uri });
+        assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_EXTERNAL_URI));
     }
 }

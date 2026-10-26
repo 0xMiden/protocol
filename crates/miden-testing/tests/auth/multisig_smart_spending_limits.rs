@@ -31,6 +31,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, Transactio
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Authority;
 use miden_standards::account::auth::multisig_smart::{
+    DelayedExecutionPolicy,
     SpendingBudget,
     SpendingLimitsPolicy,
     SpendingOracle,
@@ -206,7 +207,9 @@ fn multisig_account(
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
     let approver_set = ApproverSet::new(approvers, threshold)?;
-    let mut config = AuthMultisigSmartConfig::new(approver_set);
+    // The delayed-execution policy is required by the component but unused by these tests.
+    let mut config =
+        AuthMultisigSmartConfig::new(approver_set, DelayedExecutionPolicy::new(30, 2, 1)?);
     if let Some(policy) = policy {
         config = config.with_spending_limits_policy(policy);
     }

@@ -31,7 +31,7 @@ pub use non_fungible::{
     create_network_non_fungible_faucet,
     create_singlesig_user_non_fungible_faucet,
 };
-pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
+pub use token_metadata::{Description, ExternalUri, LogoUri, TokenMetadata, TokenName};
 
 // OWNER-ONLY POLICY DEPENDENCY CHECK
 // ================================================================================================
@@ -136,6 +136,10 @@ pub enum NonFungibleFaucetError {
         "faucet registers an owner-gated mint or burn policy but does not install the Ownable2Step component the policy reads the owner from"
     )]
     OwnerOnlyPolicyWithoutOwnable2Step,
+    #[error(
+        "faucet registers the min_burn_amount burn policy, which reads the asset value as an amount and only applies to fungible assets"
+    )]
+    MinBurnAmountPolicyNotSupported,
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }
