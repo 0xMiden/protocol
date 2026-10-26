@@ -28,6 +28,7 @@ use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
+use miden_protocol::transaction::{TransactionLog, TransactionLogs};
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::Pausable;
@@ -337,6 +338,44 @@ async fn set_description_accepts_caller_computed_commitment() -> anyhow::Result<
     let updated = consume_note(&mock_chain, &faucet, &note).await?;
 
     assert_eq!(metadata(&updated)?.description(), Some(&description));
+
+    Ok(())
+}
+
+// TESTS — LOGS
+// ================================================================================================
+
+/// `set_external_uri` announces the update in a log carrying the new value, under the topic
+/// [`TokenMetadata::external_uri_updated_topic`] exposes.
+#[tokio::test]
+async fn set_external_uri_emits_log_with_new_value() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let faucet = create_faucet(owner, true)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(faucet.clone())?;
+    let mock_chain = builder.build()?;
+
+    let external_uri = ExternalUri::new("ipfs://bafybeigdyrzt/collection.json")?;
+    let note = config_note(
+        owner,
+        faucet.id(),
+        FaucetMetadataConfig::SetExternalUri { external_uri: external_uri.clone() },
+        9,
+    )?;
+
+    let executed = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await?;
+
+    let expected_log = TransactionLog::new(
+        faucet.id(),
+        TokenMetadata::external_uri_updated_topic(),
+        external_uri.to_words(),
+    )?;
+    assert_eq!(executed.logs(), &TransactionLogs::new(vec![expected_log])?);
 
     Ok(())
 }
