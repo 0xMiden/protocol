@@ -681,21 +681,64 @@ async fn reading_the_oracle_tightens_the_expiration() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The expiration lands on the first block of the next window, whatever the reference block's
+/// position in its own window.
+#[rstest]
+#[case::window_start(0)]
+#[case::mid_window(WINDOW_BLOCKS / 2)]
+#[case::last_block(WINDOW_BLOCKS - 1)]
 #[tokio::test]
-async fn the_policy_binds_the_expiration_to_the_window() -> anyhow::Result<()> {
+async fn the_policy_binds_the_expiration_to_the_window(#[case] offset: u32) -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
+    let window_start = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    h.chain.prove_until_block(window_start + offset)?;
     let reference_block = h.latest_block();
+    assert_eq!(reference_block.as_u32(), window_start + offset);
 
     // The base asset reads no oracle, so the window is the only bound.
     let tx = h.send(fungible(usdcx(), 1)).await?;
 
-    assert_eq!(tx.expiration_block_num(), reference_block + WINDOW_BLOCKS);
+    assert_eq!(tx.expiration_block_num(), BlockNumber::from(window_start + WINDOW_BLOCKS));
+    Ok(())
+}
+
+/// A reference block inside an idle window opens that window's fresh budget, but the transaction
+/// expires with the window, so once the chain has crossed into the next one it can no longer be
+/// included: spending the idle window's budget from the next window is impossible, and the burst
+/// around a boundary stays at twice the limit.
+#[tokio::test]
+async fn an_idle_window_cannot_be_charged_from_the_next_window() -> anyhow::Result<()> {
+    let mut h = Harness::with_policy()?;
+
+    // Stand on the first block of a window whose predecessor saw no spend.
+    let idle_window_start = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    let next_window_start = idle_window_start + WINDOW_BLOCKS;
+    h.chain.prove_until_block(next_window_start)?;
+    let idle_window_end = BlockNumber::from(next_window_start - 1);
+
+    let salt = h.next_salt();
+    let tx = h
+        .run_send_notes(
+            vec![fungible(usdcx(), SPENDING_LIMIT)],
+            salt,
+            &[0, 1],
+            Some(idle_window_end),
+        )
+        .await??;
+
+    // The idle window's budget was fresh, but the transaction is only includable up to the first
+    // block of the next window, which the chain has already produced.
+    assert_eq!(tx.expiration_block_num(), BlockNumber::from(next_window_start));
+    assert!(
+        tx.expiration_block_num() <= h.latest_block(),
+        "the transaction must be expired for the next block"
+    );
     Ok(())
 }
 
 /// A past window with no spend in it looks fresh to the tracker. Referencing a block inside it does
-/// open a fresh budget, but the transaction expires one window after that block, so it can no
-/// longer be included once the chain has moved on.
+/// open a fresh budget, but the transaction expires with that window, so it can no longer be
+/// included once the chain has moved on.
 #[tokio::test]
 async fn an_idle_window_cannot_be_reopened_with_an_old_reference_block() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;

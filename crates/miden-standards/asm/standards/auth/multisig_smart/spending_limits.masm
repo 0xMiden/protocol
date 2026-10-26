@@ -23,9 +23,12 @@ use miden::standards::oracle::price_oracle
 # signed it. The policy never changes how many signatures a transaction needs, it only decides
 # whether the transaction is allowed at all. Non-fungible assets are outside the policy.
 #
-# Window binding: while the policy is enabled, every transaction expires `window_blocks` blocks (at
-# most 65535) after its reference block. A reference block is therefore at most one window old at
-# inclusion, so an idle window cannot be reopened later by pointing an older reference block at it.
+# Window binding: while the policy is enabled, every transaction expires at the end of the window
+# its reference block falls in (at most 65535 blocks later). The window a transaction is charged to
+# is therefore the window it is included in, so an idle window cannot be charged from a later one
+# by pointing a reference block into it, and a burst around a window boundary is bounded by twice
+# the limit. The only exception is a reference block on a window's last block, which may still land
+# on the first block of the next window because the expiration delta must be at least one.
 #
 # Faulty oracle: the base asset is priced without reading the oracle, so a faulty oracle never
 # blocks it. Other assets stop under `reject` until governance points the budget at another oracle
@@ -285,8 +288,8 @@ end
 #! Outputs: []
 #!
 #! Side effects:
-#! - Tightens the transaction expiration delta to `min(window_blocks, 65535)`, so the reference
-#!   block is at most one window old at inclusion and an idle window cannot be reopened later.
+#! - Tightens the transaction expiration delta to the blocks left in the reference block's window
+#!   (at most 65535), so the window charged is the window the transaction is included in.
 #! - Writes SPENDING_TRACKER_SLOT when a fungible asset was priced into the budget.
 #!
 #! Panics if:
@@ -312,9 +315,15 @@ pub proc enforce_spending_limits()
         u32assert.err=ERR_WINDOW_BLOCKS_NOT_U32
         # => [window_blocks, unpriced_asset_policy, config_generation]
 
-        # ----- Bind the transaction to its window: a reference block more than one window old is
-        # expired at inclusion, so an idle window cannot be reopened with it. -----
-        dup push.MAX_EXPIRATION_BLOCK_DELTA u32min exec.tx::update_expiration_block_delta
+        # ----- Bind the transaction to its window: it expires at the end of the window its
+        # reference block falls in, so the window it is charged to is the window it lands in. -----
+        exec.tx::get_reference_block_number dup.1 u32mod
+        # => [blocks_into_window, window_blocks, unpriced_asset_policy, config_generation]
+
+        dup.1 swap sub
+        # => [blocks_left_in_window, window_blocks, unpriced_asset_policy, config_generation]
+
+        push.MAX_EXPIRATION_BLOCK_DELTA u32min exec.tx::update_expiration_block_delta
         # => [window_blocks, unpriced_asset_policy, config_generation]
 
         exec.current_window_index
