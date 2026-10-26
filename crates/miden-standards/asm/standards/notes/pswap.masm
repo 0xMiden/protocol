@@ -118,9 +118,9 @@ const CALC_FILL_REFERENCE = 1
 const OFFERED_ASSETS_PTR = 0
 
 # add_cancellation_fee_and_seal_output locals
-const EXPECTED_PRIMARY_PTR = 0
-const EXPECTED_FEE_PTR = EXPECTED_PRIMARY_PTR + ASSET_SIZE
-const EXPECTED_PRIMARY_VALUE_PTR = EXPECTED_PRIMARY_PTR + ASSET_VALUE_MEMORY_OFFSET
+const EXPECTED_ASSET_PTR = 0
+const EXPECTED_FEE_PTR = EXPECTED_ASSET_PTR + ASSET_SIZE
+const EXPECTED_ASSET_VALUE_PTR = EXPECTED_ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
 const EXPECTED_FEE_VALUE_PTR = EXPECTED_FEE_PTR + ASSET_VALUE_MEMORY_OFFSET
 const EXPECTED_NOTE_IDX = EXPECTED_FEE_PTR + ASSET_SIZE
 
@@ -486,7 +486,7 @@ proc add_cancellation_fee_and_seal_output(
         locaddr.EXPECTED_FEE_PTR exec.asset::store
         # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 
-        locaddr.EXPECTED_PRIMARY_PTR exec.asset::store
+        locaddr.EXPECTED_ASSET_PTR exec.asset::store
         # => [note_idx]
 
         loc_store.EXPECTED_NOTE_IDX
@@ -499,24 +499,24 @@ proc add_cancellation_fee_and_seal_output(
         # => []
 
         # Mirror the output's merging of fungible assets from the same faucet.
-        padw locaddr.EXPECTED_PRIMARY_PTR mem_loadw_le exec.asset::id_into_faucet_id
-        # => [primary_faucet_suffix, primary_faucet_prefix]
+        padw locaddr.EXPECTED_ASSET_PTR mem_loadw_le exec.asset::id_into_faucet_id
+        # => [expected_faucet_suffix, expected_faucet_prefix]
 
         padw locaddr.EXPECTED_FEE_PTR mem_loadw_le exec.asset::id_into_faucet_id
-        # => [fee_faucet_suffix, fee_faucet_prefix, primary_faucet_suffix, primary_faucet_prefix]
+        # => [fee_faucet_suffix, fee_faucet_prefix, expected_faucet_suffix, expected_faucet_prefix]
 
         exec.account_id::eq
         # => [is_same_faucet]
 
         if.true
-            padw loc_loadw_le.EXPECTED_PRIMARY_VALUE_PTR
+            padw loc_loadw_le.EXPECTED_ASSET_VALUE_PTR
             padw loc_loadw_le.EXPECTED_FEE_VALUE_PTR
-            # => [FEE_ASSET_VALUE, PRIMARY_ASSET_VALUE]
+            # => [FEE_ASSET_VALUE, EXPECTED_ASSET_VALUE]
 
             exec.fungible_asset::merge
             # => [COMBINED_ASSET_VALUE]
 
-            loc_storew_le.EXPECTED_PRIMARY_VALUE_PTR dropw
+            loc_storew_le.EXPECTED_ASSET_VALUE_PTR dropw
             push.NUM_ASSETS
             # => [expected_asset_count = 1]
         else
@@ -525,7 +525,7 @@ proc add_cancellation_fee_and_seal_output(
         end
         # => [expected_asset_count]
 
-        dup mul.ASSET_SIZE locaddr.EXPECTED_PRIMARY_PTR
+        dup mul.ASSET_SIZE locaddr.EXPECTED_ASSET_PTR
         # => [expected_assets_ptr, num_elements, expected_asset_count]
 
         exec.poseidon2::hash_elements
@@ -928,7 +928,7 @@ end
 
 #! Loads the sole input asset and subtracts any cancellation reserve from its amount.
 #! The reserve fields at STORAGE_PTR must already be validated. If a reserve is present,
-#! the asset must be the native fee asset and leave a positive offered principal.
+#! the asset must be the native fee asset and leave a positive offered asset.
 #!
 #! Inputs:  [asset_ptr]
 #! Outputs: [ASSET_ID, ASSET_VALUE]
@@ -943,21 +943,22 @@ proc load_single_offered_asset(asset_ptr: ptr<Asset>) -> Asset
         dupw exec.tx::get_fee_asset_id assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
         # => [ASSET_ID, ASSET_VALUE]
 
-        movup.4 mem_load.CANCELLATION_FEE_AMOUNT_ITEM
-        # => [fee_amount, combined_amount, ASSET_ID, value_padding(3)]
+        swapw mem_load.CANCELLATION_FEE_AMOUNT_ITEM exec.fungible_asset::create_value
+        # => [FEE_ASSET_VALUE, COMBINED_ASSET_VALUE, ASSET_ID]
 
-        dup.1 dup.1 gt assert.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-        # => [fee_amount, combined_amount, ASSET_ID, value_padding(3)]
+        exec.fungible_asset::split
+        # => [OFFERED_ASSET_VALUE, ASSET_ID]
 
-        sub movdn.4
+        dup neq.0 assert.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
+        swapw
         # => [ASSET_ID, ASSET_VALUE]
     end
     # => [ASSET_ID, ASSET_VALUE]
 end
 
-#! Loads the offered principal from two input assets after checking the separate reserve.
-#! The assets must be stored consecutively at assets_ptr, and the reserve fields at STORAGE_PTR
-#! must already be validated.
+#! Loads the offered asset from two input assets after checking the separate reserve.
+#! The offered asset must come first and the reserve second, stored consecutively at assets_ptr.
+#! The reserve fields at STORAGE_PTR must already be validated.
 #!
 #! Inputs:  [assets_ptr]
 #! Outputs: [ASSET_ID, ASSET_VALUE]
@@ -965,39 +966,23 @@ proc load_offered_asset_with_separate_fee(assets_ptr: ptr<Asset>) -> Asset
     mem_load.CANCELLATION_FEE_AMOUNT_ITEM neq.0 assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => [assets_ptr]
 
-    dup add.ASSET_SIZE swap
-    # => [first_asset_ptr, second_asset_ptr]
-
-    padw dup.4 mem_loadw_le exec.asset::id_into_faucet_id
-    # => [first_faucet_suffix, first_faucet_prefix, first_asset_ptr, second_asset_ptr]
-
-    mem_load.CANCELLATION_FEE_PREFIX_ITEM mem_load.CANCELLATION_FEE_SUFFIX_ITEM
-    # => [fee_faucet_suffix, fee_faucet_prefix, first_faucet_suffix, first_faucet_prefix,
-    #     first_asset_ptr, second_asset_ptr]
-
-    exec.account_id::eq
-    # => [is_fee_first, first_asset_ptr, second_asset_ptr]
-
-    if.false
-        swap
-        # => [fee_asset_ptr, principal_ptr]
-    end
-    # => [fee_asset_ptr, principal_ptr]
+    dup add.ASSET_SIZE
+    # => [fee_asset_ptr, offered_asset_ptr]
 
     exec.asset::load exec.load_cancellation_fee
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, ACTUAL_FEE_ID, ACTUAL_FEE_VALUE, principal_ptr]
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, ACTUAL_FEE_ID, ACTUAL_FEE_VALUE, offered_asset_ptr]
 
     movupw.2 assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-    # => [FEE_ASSET_VALUE, ACTUAL_FEE_VALUE, principal_ptr]
+    # => [FEE_ASSET_VALUE, ACTUAL_FEE_VALUE, offered_asset_ptr]
 
     assert_eqw.err=ERR_PSWAP_INVALID_CANCELLATION_FEE
-    # => [principal_ptr]
+    # => [offered_asset_ptr]
 
     exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
 end
 
-#! Verifies the input assets and separates the offered principal from the cancellation reserve.
+#! Verifies the input assets and separates the offered asset from the cancellation reserve.
 #!
 #! Inputs:  []
 #! Outputs: [ASSET_ID, ASSET_VALUE]

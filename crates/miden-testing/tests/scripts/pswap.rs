@@ -1434,16 +1434,14 @@ async fn pswap_private_cancel_through_no_auth(
 }
 
 #[rstest]
-#[case::separate_reserve(false, false, false)]
-#[case::separate_reserve_first(false, false, true)]
-#[case::native_offered(true, false, false)]
-#[case::native_requested(false, true, false)]
+#[case::separate_reserve(false, false)]
+#[case::native_offered(true, false)]
+#[case::native_requested(false, true)]
 #[tokio::test]
 async fn pswap_cancellation_reserve_lifecycle(
     #[values(NoteType::Private, NoteType::Public)] payback_type: NoteType,
     #[case] native_offered: bool,
     #[case] native_requested: bool,
-    #[case] reserve_first: bool,
     #[values(false, true)] cancel: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1487,19 +1485,7 @@ async fn pswap_cancellation_reserve_lifecycle(
         .note_type(NoteType::Public)
         .offered_asset(FungibleAsset::new(offered_id, 100)?)
         .build()?;
-    let mut initial_note: Note = current.clone().into();
-    assert_eq!(Note::from(PswapNote::try_from(&initial_note)?).id(), initial_note.id());
-    if reserve_first {
-        // The builder puts the principal first; input notes may use either asset order.
-        let mut assets = initial_note.assets().clone().into_vec();
-        assets.reverse();
-        initial_note = Note::with_attachments(
-            NoteAssets::new(assets)?,
-            *initial_note.metadata().partial_metadata(),
-            initial_note.recipient().clone(),
-            initial_note.attachments().clone(),
-        );
-    }
+    let initial_note: Note = current.clone().into();
     current = PswapNote::try_from(&initial_note)?;
     assert_eq!(Note::from(current.clone()).id(), initial_note.id());
     builder.add_output_note(RawOutputNote::Full(initial_note.clone()));
@@ -1705,16 +1691,18 @@ async fn pswap_cancellation_fee_with_callback_attachment_can_be_collected() -> a
 }
 
 #[rstest]
-#[case::missing(false, false, 0)]
-#[case::insufficient(false, false, 19)]
-#[case::excess(false, false, 21)]
-#[case::no_principal(false, true, 20)]
-#[case::not_native(true, false, 20)]
+#[case::missing(false, false, 0, false)]
+#[case::insufficient(false, false, 19, false)]
+#[case::excess(false, false, 21, false)]
+#[case::no_offered_asset(false, true, 20, false)]
+#[case::not_native(true, false, 20, false)]
+#[case::reserve_first(false, false, 20, true)]
 #[tokio::test]
 async fn pswap_rejects_invalid_cancellation_reserve(
     #[case] wrong_faucet: bool,
     #[case] native_offered: bool,
     #[case] reserve_balance: u64,
+    #[case] reserve_first: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let native_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
@@ -1745,7 +1733,7 @@ async fn pswap_rejects_invalid_cancellation_reserve(
         .offered_asset(FungibleAsset::new(offered_id, 100)?)
         .build()?;
     let note: Note = pswap.into();
-    let assets = if native_offered {
+    let mut assets = if native_offered {
         vec![FungibleAsset::new(native_id, reserve_balance)?.into()]
     } else {
         let mut assets = vec![FungibleAsset::new(offered_id, 100)?.into()];
@@ -1754,6 +1742,9 @@ async fn pswap_rejects_invalid_cancellation_reserve(
         }
         assets
     };
+    if reserve_first {
+        assets.reverse();
+    }
     let malformed = Note::new(
         NoteAssets::new(assets)?,
         *note.metadata().partial_metadata(),

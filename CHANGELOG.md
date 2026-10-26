@@ -12,7 +12,7 @@
 - Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
 - Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
 - Added private PSWAP cancellation through a separate account using canonical recipient advice. An optional native fee reserve funds cancellation, follows partial fills, and returns in the final payback ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
-- Exposed the kernel's fungible value merge through `miden::protocol::asset::merge_fungible_values` and `miden::standards::assets::fungible_asset::merge` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Exposed the kernel's fungible value merge and split through `miden::protocol::asset::{merge_fungible_values, split_fungible_values}` and `miden::standards::assets::fungible_asset::{merge, split}` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - Added `CodeTree`, `PartialCodeTree`, `CodeWitness` and `ProcedureRoot` to prove presence or absence of procedure roots in the blockchain ([#4062](https://github.com/0xMiden/protocol/pull/4062)).
 - [BREAKING] Added `NonFungibleFaucet` to `StandardAccountComponent` and `AccountComponentInterface`, so `AccountInterface::from_account` recognizes NFT faucets instead of reporting their procedures as custom ([#4036](https://github.com/0xMiden/protocol/issues/4036)).
 
