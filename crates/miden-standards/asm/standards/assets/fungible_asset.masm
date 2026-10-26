@@ -227,7 +227,7 @@ pub proc saturating_add_amount(a: AssetAmount, b: AssetAmount) -> AssetAmount
     push.MAX_AMOUNT swap
     # => [sum, max_amount]
 
-    dup dup.2 lt
+    dup lt.MAX_AMOUNT
     # => [is_below_max, sum, max_amount]
 
     cdrop

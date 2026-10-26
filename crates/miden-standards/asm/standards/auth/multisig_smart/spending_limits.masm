@@ -250,7 +250,7 @@ pub proc set_spending_limit(limit: AssetAmount)
         # => [limit]
     end
 
-    push.0.0.0 movdn.3 movdn.3 movdn.3
+    push.0.0.0 movup.3
     # => [limit, 0, 0, 0]
 
     push.SPENDING_LIMIT_SLOT[0..2]
@@ -575,8 +575,9 @@ end
 #! `price_oracle::get_conversion_rate` on the oracle account, read at the transaction reference
 #! block. Right after the read the transaction's expiration delta is tightened to
 #! `max_oracle_block_age`, so the reference block the price came from cannot be older than that at
-#! inclusion. The rate is used only when the provider could price the pair (`last_updated != 0`);
-#! the provider's own staleness rule is what makes it zero otherwise.
+#! inclusion. That bounds the age of the read, not of the rate: a rate is used whenever the provider
+#! priced the pair (`last_updated != 0`), and how long ago it was observed is left to the oracle
+#! operator rather than checked here.
 #!
 #! Inputs:  [ASSET_ID, amount]
 #! Outputs: [is_priced, converted_amount]

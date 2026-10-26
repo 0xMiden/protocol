@@ -582,12 +582,9 @@ pub proc auth_tx(
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Enforcing spending limits ------
-    # A hard gate on the fungible assets this transaction sends out. It runs after the signature
-    # check for the same reason `multisig::record_and_assert_new_tx` and `apply_approval_expiration`
-    # do: the host verifies, when the unauthorized event fires, that the summary's account delta and
-    # expiration delta still match the kernel's, so the budget writes and the expiration tightening
-    # must stay out of the signed summary and past that check. An approval therefore
-    # survives a window rollover, and a spend over a budget fails here with the spending-limit error.
+    # A hard gate on the fungible assets this transaction sends out. It runs after the tx summary
+    # is created so its budget writes and expiration tightening stay out of the signed summary,
+    # which lets an approval survive a window rollover.
     exec.spending_limits::enforce_spending_limits
     # => [TX_SUMMARY_COMMITMENT]
 end
