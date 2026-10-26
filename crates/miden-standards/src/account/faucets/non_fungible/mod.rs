@@ -34,7 +34,7 @@ use crate::account::account_component_package;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::TokenPolicyManager;
+use crate::account::policies::{MinBurnAmount, TokenPolicyManager};
 use crate::account::wallets::BasicWallet;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -542,6 +542,15 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 // FACTORY
 // ================================================================================================
 
+/// Returns `true` if `token_policy_manager` registers the [`MinBurnAmount`] burn policy, either as
+/// the active policy or as a reserved alternative that `set_burn_policy` can activate later.
+///
+/// The policy reads the first element of the asset value as an amount. For an NFT that element is
+/// part of a hash, so the check is meaningless and can make some NFTs impossible to burn.
+fn registers_min_burn_amount_policy(token_policy_manager: &TokenPolicyManager) -> bool {
+    token_policy_manager.allowed_burn_policies().contains(&MinBurnAmount::root())
+}
+
 /// Creates a new **user-account** non-fungible faucet authenticated by a single signature.
 /// The account's auth component is the sole gate for authority-protected setters
 /// ([`Authority::AuthControlled`] is installed directly).
@@ -555,6 +564,9 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_singlesig_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -566,6 +578,9 @@ pub fn create_singlesig_user_non_fungible_faucet(
     // `super::registers_owner_only_policy`.
     if registers_owner_only_policy(&token_policy_manager) {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     AccountBuilder::new(init_seed)
@@ -588,6 +603,9 @@ pub fn create_singlesig_user_non_fungible_faucet(
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_multisig_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -599,6 +617,9 @@ pub fn create_multisig_user_non_fungible_faucet(
     // `super::registers_owner_only_policy`.
     if registers_owner_only_policy(&token_policy_manager) {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     AccountBuilder::new(init_seed)
@@ -621,6 +642,9 @@ pub fn create_multisig_user_non_fungible_faucet(
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_guarded_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -632,6 +656,9 @@ pub fn create_guarded_user_non_fungible_faucet(
     // `super::registers_owner_only_policy`.
     if registers_owner_only_policy(&token_policy_manager) {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     AccountBuilder::new(init_seed)
@@ -664,6 +691,9 @@ pub fn create_guarded_user_non_fungible_faucet(
 /// `token_policy_manager` registers an owner-gated mint or burn policy while `access_control` is
 /// [`AccessControl::Rbac`], which installs no `Ownable2Step` component for the policy to read the
 /// owner from.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_network_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -677,6 +707,9 @@ pub fn create_network_non_fungible_faucet(
         && !matches!(access_control, AccessControl::Ownable2Step { .. })
     {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();

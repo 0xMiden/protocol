@@ -136,6 +136,10 @@ pub enum NonFungibleFaucetError {
         "faucet registers an owner-gated mint or burn policy but does not install the Ownable2Step component the policy reads the owner from"
     )]
     OwnerOnlyPolicyWithoutOwnable2Step,
+    #[error(
+        "faucet registers the min_burn_amount burn policy, which reads the asset value as an amount and only applies to fungible assets"
+    )]
+    MinBurnAmountPolicyNotSupported,
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }
