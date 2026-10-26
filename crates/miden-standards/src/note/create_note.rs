@@ -55,8 +55,11 @@ impl CreateNote {
     ///
     /// # Errors
     ///
-    /// Returns an error unless the output contains fungible assets with nonzero amounts and has
-    /// a separate public sender. Also rejects a zero fee or asset overflow.
+    /// Returns an error if:
+    /// - the output is empty or contains non-fungible assets or zero amounts.
+    /// - the output's sender is private or matches the CREATE note's sender.
+    /// - the fee amount is zero or overflows when merged with an output asset.
+    /// - the output assets and fee exceed [`NoteAssets::MAX_NUM_ASSETS`] distinct assets.
     pub fn new(
         sender: AccountId,
         serial_number: Word,

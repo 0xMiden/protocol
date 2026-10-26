@@ -208,6 +208,7 @@ impl PswapNoteStorage {
         self.min_fill_step
     }
 
+    /// Returns the optional native fee reserve carried by the order and its remainders.
     pub fn cancellation_fee(&self) -> Option<FungibleAsset> {
         self.cancellation_fee
     }
@@ -612,7 +613,7 @@ impl PswapNote {
         &self,
         recipient: P2idNoteRecipient,
     ) -> Result<[(Word, Vec<Felt>); 5], NoteError> {
-        self.validate_private_payback_recipient(recipient)?;
+        self.validate_private_payback_recipient(recipient.digest())?;
         Ok(NoteRecipient::from(recipient).to_advice_map_entries())
     }
 
@@ -632,7 +633,7 @@ impl PswapNote {
         cancelling_account_id: AccountId,
         recipient: P2idNoteRecipient,
     ) -> Result<Note, NoteError> {
-        self.validate_private_payback_recipient(recipient)?;
+        self.validate_private_payback_recipient(recipient.digest())?;
         Ok(Note::new(
             NoteAssets::new(vec![self.offered_asset.into()])?,
             PartialNoteMetadata::new(cancelling_account_id, NoteType::Private)
@@ -711,6 +712,11 @@ impl PswapNote {
     /// behavior when a note is consumed without explicit `note_args` (e.g. in a network
     /// transaction, where the kernel defaults `note_args` to `[0, 0, 0, 0]` and the MASM
     /// script falls back to a full fill).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the next fill depth exceeds `u32::MAX` or adding the cancellation
+    /// reserve to the payback would exceed the maximum fungible asset amount.
     pub fn execute_full_fill(
         &self,
         consumer_account_id: AccountId,
@@ -733,7 +739,10 @@ impl PswapNote {
     /// - Both assets are `None`.
     /// - A fill asset does not match the order's requested faucet.
     /// - The fill amount is zero.
+    /// - The fill amount is below the effective minimum fill step.
     /// - The combined fill amount overflows or exceeds the maximum fungible asset amount.
+    /// - The next fill depth exceeds `u32::MAX`.
+    /// - Adding the cancellation reserve to the payback overflows the asset amount.
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
@@ -894,10 +903,11 @@ impl PswapNote {
         self.payback_note_with_recipient(consumer_account_id, attachment, recipient.into())
     }
 
-    /// Reconstructs a private payback from a fill attachment and its retained P2ID preimage.
+    /// Reconstructs a private payback from a fill attachment and its retained recipient preimage.
     ///
-    /// The preimage includes the independently sampled serial number and P2ID storage; the
-    /// serial cannot be derived from the PSWAP. The sender is the account that filled the order.
+    /// The recipient can use any note script. Its preimage includes the independently sampled
+    /// serial number, script, and storage; the serial cannot be derived from the PSWAP.
+    /// The sender is the account that filled the order.
     /// The returned note includes only the supplied PSWAP attachment. If callbacks added
     /// attachments, use [`Note::with_attachments`] with the complete public attachment list.
     /// Verify the reconstructed ID and consume the payback as an authenticated note.
@@ -914,10 +924,11 @@ impl PswapNote {
         &self,
         consumer_account_id: AccountId,
         attachment: &PswapNoteAttachment,
-        recipient: P2idNoteRecipient,
+        recipient: impl Into<NoteRecipient>,
     ) -> Result<Note, NoteError> {
-        self.validate_private_payback_recipient(recipient)?;
-        self.payback_note_with_recipient(consumer_account_id, attachment, recipient.into())
+        let recipient = recipient.into();
+        self.validate_private_payback_recipient(recipient.digest())?;
+        self.payback_note_with_recipient(consumer_account_id, attachment, recipient)
     }
 
     fn payback_note_with_recipient(
@@ -1097,14 +1108,11 @@ impl PswapNote {
         Ok(PswapNoteAttachment::new(amount, order_id, depth).into())
     }
 
-    fn validate_private_payback_recipient(
-        &self,
-        recipient: P2idNoteRecipient,
-    ) -> Result<(), NoteError> {
+    fn validate_private_payback_recipient(&self, recipient: Word) -> Result<(), NoteError> {
         if self.storage.payback.note_type() != NoteType::Private {
             return Err(NoteError::other("recipient preimage is only used for private paybacks"));
         }
-        if recipient.digest() != self.storage.payback.recipient() {
+        if recipient != self.storage.payback.recipient() {
             return Err(NoteError::other("payback recipient does not match the order"));
         }
         Ok(())
@@ -1675,6 +1683,27 @@ mod tests {
         assert_eq!(expected.clone().into_output_note().unwrap().id(), reconstructed.id());
         pswap.storage.payback = public_payback(dummy_creator_id());
         assert!(pswap.private_payback_note(consumer, &attachment, recipient).is_err());
+    }
+
+    #[test]
+    fn pswap_private_payback_reconstructs_custom_script() {
+        let offered = FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap();
+        let requested = FungibleAsset::new(dummy_faucet_id(0xbb), 50).unwrap();
+        let (mut pswap, _) = build_pswap_note(offered, requested, dummy_creator_id());
+        let recipient = NoteRecipient::new(
+            Word::from([1u32, 2, 3, 4]),
+            crate::note::TxFeeNote::script(),
+            NoteStorage::default(),
+        );
+        pswap.storage.payback = PswapPayback::private(recipient.digest(), NoteTag::default());
+        let attachment = PswapNoteAttachment::new(requested.amount(), pswap.order_id(), 1);
+        let consumer = dummy_consumer_id();
+
+        let expected = pswap.execute_full_fill(consumer).unwrap();
+        let reconstructed =
+            pswap.private_payback_note(consumer, &attachment, recipient.clone()).unwrap();
+        assert_eq!(reconstructed.id(), expected.id());
+        assert_eq!(reconstructed.recipient(), &recipient);
     }
 
     /// Consumer supplies both an account fill and a note fill, and the sum is below
