@@ -18,6 +18,18 @@ const ACCOUNT_UPDATE: &str =
     include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/account_update.masm");
 
 #[test]
+fn multisig_cancel_eidos_domain_matches_rust() {
+    let source = include_str!(
+        "../../../miden-standards/asm/standards/auth/multisig_smart/delayed_execution.masm"
+    );
+    let (_, tail) = source.split_once("const CANCEL_PROPOSAL_DOMAIN = 0x").unwrap();
+    let value = tail.split_whitespace().next().unwrap();
+    let actual = u32::from_str_radix(value, 16).unwrap();
+
+    assert_eq!(actual, miden_standards::MultisigSmartCancelProposalDomain::TAG.as_u32());
+}
+
+#[test]
 fn fixed_eidos_initial_chaining_words_match_rust() {
     let generic = GenericFeltSequenceDomain::TAG;
     let account_delta = AccountDeltaCommitmentDomain::TAG;

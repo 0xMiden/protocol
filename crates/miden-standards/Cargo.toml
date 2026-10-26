@@ -16,12 +16,13 @@ version.workspace      = true
 
 [features]
 default = ["std"]
-std     = ["miden-assembly/std", "miden-core-lib/std", "miden-protocol/std"]
+std     = ["miden-assembly/std", "miden-core-lib/std", "miden-crypto/std", "miden-protocol/std"]
 testing = ["miden-assembly/testing", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
 miden-core-lib = { workspace = true }
+miden-crypto   = { workspace = true }
 miden-protocol = { workspace = true }
 
 # External dependencies
