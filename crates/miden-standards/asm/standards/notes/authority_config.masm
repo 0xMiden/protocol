@@ -1,0 +1,216 @@
+use {NoteArgs} from miden::protocol::types
+use miden::protocol::active_note
+use miden::standards::access::authority
+use miden::standards::note::note_target
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
+const STORAGE_PTR = 0
+
+# Memory addresses of the AuthorityConfig note storage. The variant and the role symbol share the
+# first word, padded with two zeros so the procedure root of `SetProcedureRole` starts word-aligned
+# and can be loaded with a single `mem_loadw_le`.
+const VARIANT_PTR = STORAGE_PTR
+const ROLE_SYMBOL_PTR = STORAGE_PTR + 1
+const PROCEDURE_ROOT_PTR = STORAGE_PTR + 4
+
+# Config note variants, stored in the first storage item. Keep in sync with `AuthorityConfig` on
+# the Rust side.
+const VARIANT_FREEZE = 0
+const VARIANT_UNFREEZE = 1
+const VARIANT_SET_PROCEDURE_ROLE = 2
+
+# Expected note storage item count per action.
+const NUM_ITEMS_FREEZE = 1
+const NUM_ITEMS_UNFREEZE = 1
+const NUM_ITEMS_SET_PROCEDURE_ROLE = 8
+
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_SET_PROCEDURE_ROLE
+
+# ERRORS
+# =================================================================================================
+
+const ERR_AUTHORITY_CONFIG_UNKNOWN_VARIANT = "authority config note variant does not match a known action"
+
+const ERR_AUTHORITY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "authority config note storage item count does not match the selected action"
+
+const ERR_AUTHORITY_CONFIG_NOTE_IS_NOT_PUBLIC = "authority config note must be public"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! AuthorityConfig script: triggers an `Authority` management action against the consuming
+#! account, dispatched on the note variant in its storage.
+#!
+#! The selected action and its arguments are read from the note storage (fixed at note creation,
+#! so authorization is bound to the note sender):
+#! - `0` Freeze:           `[0]`.
+#! - `1` Unfreeze:         `[1]`.
+#! - `2` SetProcedureRole: `[2, role_symbol, 0, 0, PROCEDURE_ROOT]`.
+#!
+#! All authorization is enforced by the called `authority` procedures against the note sender
+#! (`active_note::get_sender`): the emergency switch resolves the owner or the caller's role,
+#! bypassing the frozen flag, and `set_procedure_role` additionally requires an RBAC-controlled
+#! authority. This script only loads the arguments and calls them.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::access::authority::{freeze, unfreeze, set_procedure_role}` (the
+#!   `Authority` component), backed by the `Ownable2Step` or `RoleBasedAccessControl` companion
+#!   component.
+#!
+#! Consumers: target account (attachment)
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note is not public.
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
+#! - the variant is not a known action.
+#! - the number of storage items does not match the selected action.
+#! - the note sender is not authorized for the selected action (per the `authority` procedures).
+@note_script
+pub proc main(args: NoteArgs)
+    dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_AUTHORITY_CONFIG_NOTE_IS_NOT_PUBLIC
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.note_target::assert_active_account_is_network_target_account
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    # => [num_storage_items]
+
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items]
+
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_FREEZE
+    # => [is_freeze, variant, num_storage_items]
+
+    if.true
+        drop
+        # => [num_storage_items]
+
+        exec.execute_freeze
+    else
+        dup eq.VARIANT_UNFREEZE
+        # => [is_unfreeze, variant, num_storage_items]
+
+        if.true
+            drop
+            # => [num_storage_items]
+
+            exec.execute_unfreeze
+        else
+            eq.VARIANT_SET_PROCEDURE_ROLE assert.err=ERR_AUTHORITY_CONFIG_UNKNOWN_VARIANT
+            # => [num_storage_items]
+
+            exec.execute_set_procedure_role
+        end
+    end
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Executes the Freeze action: freezes the account's authority-gated surface.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_FREEZE.
+#! - the note sender is not the account's emergency authority (per `authority::freeze`).
+#!
+#! Invocation: exec
+proc execute_freeze(num_storage_items: u32)
+    eq.NUM_ITEMS_FREEZE
+    assert.err=ERR_AUTHORITY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # pad to the empty `freeze` input window [pad(16)]
+    padw padw padw padw
+    # => [pad(16)]
+
+    call.authority::freeze
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the Unfreeze action: unfreezes the account's authority-gated surface.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_UNFREEZE.
+#! - the note sender is not the account's emergency authority (per `authority::unfreeze`).
+#!
+#! Invocation: exec
+proc execute_unfreeze(num_storage_items: u32)
+    eq.NUM_ITEMS_UNFREEZE
+    assert.err=ERR_AUTHORITY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # pad to the empty `unfreeze` input window [pad(16)]
+    padw padw padw padw
+    # => [pad(16)]
+
+    call.authority::unfreeze
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetProcedureRole action: requires the stored role to invoke the stored procedure,
+#! or unmaps the procedure when the stored role symbol is 0.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_PROCEDURE_ROLE.
+#! - the authority is not RbacControlled, the note sender does not hold the role required by
+#!   `set_procedure_role` or does not administer the procedure's current role, or the role symbol
+#!   is neither 0 nor a valid role symbol encoding (per `authority::set_procedure_role`).
+#!
+#! Invocation: exec
+proc execute_set_procedure_role(num_storage_items: u32)
+    eq.NUM_ITEMS_SET_PROCEDURE_ROLE
+    assert.err=ERR_AUTHORITY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # build the `set_procedure_role` input window: [role_symbol, PROCEDURE_ROOT, pad(11)]
+    padw padw push.0.0.0
+    # => [pad(11)]
+
+    padw mem_loadw_le.PROCEDURE_ROOT_PTR
+    # => [PROCEDURE_ROOT, pad(11)]
+
+    mem_load.ROLE_SYMBOL_PTR
+    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
+
+    call.authority::set_procedure_role
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end

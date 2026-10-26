@@ -18,7 +18,7 @@
       "core_rows": 81952,
       "chiplets_rows": 11657,
       "poseidon2_permutation_rows": 55984,
-      "range_rows": 20677,
+      "range_rows": 20721,
       "chiplets_shape": {
         "hasher_rows": 8792,
         "bitwise_rows": 656,
@@ -47,7 +47,7 @@
       "core_rows": 14047,
       "chiplets_rows": 6001,
       "poseidon2_permutation_rows": 20240,
-      "range_rows": 2035,
+      "range_rows": 2029,
       "chiplets_shape": {
         "hasher_rows": 4336,
         "bitwise_rows": 848,
@@ -80,7 +80,7 @@
       "core_rows": 84540,
       "chiplets_rows": 13568,
       "poseidon2_permutation_rows": 56192,
-      "range_rows": 20415,
+      "range_rows": 20455,
       "chiplets_shape": {
         "hasher_rows": 10208,
         "bitwise_rows": 1032,
@@ -113,7 +113,7 @@
       "core_rows": 16635,
       "chiplets_rows": 7904,
       "poseidon2_permutation_rows": 20448,
-      "range_rows": 1443,
+      "range_rows": 1439,
       "chiplets_shape": {
         "hasher_rows": 5744,
         "bitwise_rows": 1224,
@@ -137,7 +137,7 @@
       "core_rows": 79936,
       "chiplets_rows": 10998,
       "poseidon2_permutation_rows": 53760,
-      "range_rows": 20465,
+      "range_rows": 20279,
       "chiplets_shape": {
         "hasher_rows": 8328,
         "bitwise_rows": 584,
@@ -161,7 +161,7 @@
       "core_rows": 12031,
       "chiplets_rows": 5334,
       "poseidon2_permutation_rows": 18000,
-      "range_rows": 1255,
+      "range_rows": 1253,
       "chiplets_shape": {
         "hasher_rows": 3864,
         "bitwise_rows": 776,
@@ -190,7 +190,7 @@
       "core_rows": 51353,
       "chiplets_rows": 20661,
       "poseidon2_permutation_rows": 42400,
-      "range_rows": 3601,
+      "range_rows": 3593,
       "chiplets_shape": {
         "hasher_rows": 13512,
         "bitwise_rows": 2816,
@@ -219,7 +219,7 @@
       "core_rows": 61323,
       "chiplets_rows": 23219,
       "poseidon2_permutation_rows": 44544,
-      "range_rows": 3831,
+      "range_rows": 3821,
       "chiplets_shape": {
         "hasher_rows": 14872,
         "bitwise_rows": 3072,
@@ -248,7 +248,7 @@
       "core_rows": 149592,
       "chiplets_rows": 71083,
       "poseidon2_permutation_rows": 114000,
-      "range_rows": 5789,
+      "range_rows": 5779,
       "chiplets_shape": {
         "hasher_rows": 57072,
         "bitwise_rows": 3616,
@@ -277,7 +277,7 @@
       "core_rows": 147613,
       "chiplets_rows": 70104,
       "poseidon2_permutation_rows": 115392,
-      "range_rows": 5719,
+      "range_rows": 5717,
       "chiplets_shape": {
         "hasher_rows": 56216,
         "bitwise_rows": 3616,
@@ -306,7 +306,7 @@
       "core_rows": 84804,
       "chiplets_rows": 40246,
       "poseidon2_permutation_rows": 51824,
-      "range_rows": 4787,
+      "range_rows": 4781,
       "chiplets_shape": {
         "hasher_rows": 30048,
         "bitwise_rows": 3616,
@@ -579,12 +579,12 @@
   },
   "consume MINT note (fungible faucet, network account)": {
     "prologue": 5879,
-    "total_cycles": 36650,
-    "notes_processing": 10365,
+    "total_cycles": 36599,
+    "notes_processing": 10314,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 10323
+        "cycles": 10272
       }
     ],
     "tx_script_processing": 41,
@@ -593,14 +593,14 @@
       "auth_procedure": 10473
     },
     "trace": {
-      "core_rows": 36696,
-      "chiplets_rows": 14259,
+      "core_rows": 36645,
+      "chiplets_rows": 14250,
       "poseidon2_permutation_rows": 29856,
-      "range_rows": 3137,
+      "range_rows": 3067,
       "chiplets_shape": {
-        "hasher_rows": 10744,
+        "hasher_rows": 10736,
         "bitwise_rows": 1272,
-        "memory_rows": 2241,
+        "memory_rows": 2240,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -608,12 +608,12 @@
   },
   "consume MINT note (non-fungible faucet, network account)": {
     "prologue": 6393,
-    "total_cycles": 40734,
-    "notes_processing": 12441,
+    "total_cycles": 40683,
+    "notes_processing": 12390,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 12399
+        "cycles": 12348
       }
     ],
     "tx_script_processing": 41,
@@ -622,14 +622,14 @@
       "auth_procedure": 10554
     },
     "trace": {
-      "core_rows": 40780,
-      "chiplets_rows": 15696,
-      "poseidon2_permutation_rows": 31904,
-      "range_rows": 3421,
+      "core_rows": 40729,
+      "chiplets_rows": 15687,
+      "poseidon2_permutation_rows": 31920,
+      "range_rows": 3423,
       "chiplets_shape": {
-        "hasher_rows": 12048,
+        "hasher_rows": 12040,
         "bitwise_rows": 1176,
-        "memory_rows": 2470,
+        "memory_rows": 2469,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -654,7 +654,7 @@
       "core_rows": 31051,
       "chiplets_rows": 12487,
       "poseidon2_permutation_rows": 28800,
-      "range_rows": 2869,
+      "range_rows": 2873,
       "chiplets_shape": {
         "hasher_rows": 9496,
         "bitwise_rows": 992,
@@ -682,8 +682,8 @@
     "trace": {
       "core_rows": 28414,
       "chiplets_rows": 10914,
-      "poseidon2_permutation_rows": 27488,
-      "range_rows": 2653,
+      "poseidon2_permutation_rows": 27472,
+      "range_rows": 2659,
       "chiplets_shape": {
         "hasher_rows": 8392,
         "bitwise_rows": 664,
@@ -711,8 +711,8 @@
     "trace": {
       "core_rows": 29150,
       "chiplets_rows": 11059,
-      "poseidon2_permutation_rows": 26800,
-      "range_rows": 2575,
+      "poseidon2_permutation_rows": 26784,
+      "range_rows": 2587,
       "chiplets_shape": {
         "hasher_rows": 8456,
         "bitwise_rows": 672,
@@ -740,8 +740,8 @@
     "trace": {
       "core_rows": 27647,
       "chiplets_rows": 10576,
-      "poseidon2_permutation_rows": 26096,
-      "range_rows": 2665,
+      "poseidon2_permutation_rows": 26080,
+      "range_rows": 2639,
       "chiplets_shape": {
         "hasher_rows": 8096,
         "bitwise_rows": 664,
@@ -769,8 +769,8 @@
     "trace": {
       "core_rows": 28393,
       "chiplets_rows": 11202,
-      "poseidon2_permutation_rows": 28640,
-      "range_rows": 2671,
+      "poseidon2_permutation_rows": 28656,
+      "range_rows": 2641,
       "chiplets_shape": {
         "hasher_rows": 8648,
         "bitwise_rows": 664,
@@ -798,8 +798,8 @@
     "trace": {
       "core_rows": 28393,
       "chiplets_rows": 11202,
-      "poseidon2_permutation_rows": 28464,
-      "range_rows": 2683,
+      "poseidon2_permutation_rows": 28448,
+      "range_rows": 2651,
       "chiplets_shape": {
         "hasher_rows": 8648,
         "bitwise_rows": 664,
@@ -891,6 +891,35 @@
         "hasher_rows": 8400,
         "bitwise_rows": 680,
         "memory_rows": 1532,
+        "kernel_rom_rows": 1,
+        "ace_rows": 0
+      }
+    }
+  },
+  "consume AUTHORITY_CONFIG note (network account)": {
+    "prologue": 3656,
+    "total_cycles": 20166,
+    "notes_processing": 2925,
+    "note_execution": [
+      {
+        "note": "AUTHORITY_CONFIG",
+        "cycles": 2883
+      }
+    ],
+    "tx_script_processing": 41,
+    "epilogue": {
+      "total": 13544,
+      "auth_procedure": 9947
+    },
+    "trace": {
+      "core_rows": 20212,
+      "chiplets_rows": 8288,
+      "poseidon2_permutation_rows": 24768,
+      "range_rows": 1661,
+      "chiplets_shape": {
+        "hasher_rows": 6360,
+        "bitwise_rows": 664,
+        "memory_rows": 1262,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -1035,7 +1064,7 @@
       "core_rows": 17782,
       "chiplets_rows": 8034,
       "poseidon2_permutation_rows": 24112,
-      "range_rows": 1555,
+      "range_rows": 1571,
       "chiplets_shape": {
         "hasher_rows": 5944,
         "bitwise_rows": 1176,
@@ -1064,7 +1093,7 @@
       "core_rows": 55517,
       "chiplets_rows": 22836,
       "poseidon2_permutation_rows": 47696,
-      "range_rows": 3817,
+      "range_rows": 3807,
       "chiplets_shape": {
         "hasher_rows": 15168,
         "bitwise_rows": 3184,
@@ -1093,7 +1122,7 @@
       "core_rows": 65487,
       "chiplets_rows": 25394,
       "poseidon2_permutation_rows": 49840,
-      "range_rows": 4033,
+      "range_rows": 4021,
       "chiplets_shape": {
         "hasher_rows": 16528,
         "bitwise_rows": 3440,
@@ -1122,7 +1151,7 @@
       "core_rows": 153756,
       "chiplets_rows": 73258,
       "poseidon2_permutation_rows": 118208,
-      "range_rows": 5977,
+      "range_rows": 5969,
       "chiplets_shape": {
         "hasher_rows": 58728,
         "bitwise_rows": 3984,
@@ -1151,7 +1180,7 @@
       "core_rows": 88968,
       "chiplets_rows": 42421,
       "poseidon2_permutation_rows": 55952,
-      "range_rows": 4947,
+      "range_rows": 4943,
       "chiplets_shape": {
         "hasher_rows": 31704,
         "bitwise_rows": 3984,
