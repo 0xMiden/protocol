@@ -4,6 +4,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_note
 use miden::standards::faucets
 use miden::standards::faucets::fungible
+use miden::standards::faucets::non_fungible::token_base_uri
 use miden::standards::note::note_target
 
 # CONSTANTS
@@ -29,6 +30,7 @@ const VARIANT_SET_MAX_SUPPLY = 0
 const VARIANT_SET_DESCRIPTION = 1
 const VARIANT_SET_LOGO_URI = 2
 const VARIANT_SET_EXTERNAL_URI = 3
+const VARIANT_SET_TOKEN_BASE_URI = 4
 
 # Expected note storage item count per action.
 const NUM_ITEMS_SET_MAX_SUPPLY = 2
@@ -52,20 +54,24 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! FaucetMetadataConfig script: triggers a token metadata admin action against the consuming
 #! faucet, dispatched on the note variant in its storage.
 #!
-#! The three string setters live in the shared `miden::standards::faucets` module, which both the
-#! `FungibleFaucet` and `NonFungibleFaucet` components re-export, so those variants work on either
-#! kind of faucet. `SetMaxSupply` is fungible-only: it calls
+#! The description, logo URI and external URI setters live in the shared
+#! `miden::standards::faucets` module, which both the `FungibleFaucet` and `NonFungibleFaucet`
+#! components re-export, so those variants work on either kind of faucet. The two remaining
+#! variants are bound to one faucet kind: `SetMaxSupply` calls
 #! `miden::standards::faucets::fungible::set_max_supply`, which a non-fungible faucet does not
-#! expose, so that variant aborts there.
+#! expose, and `SetTokenBaseUri` calls
+#! `miden::standards::faucets::non_fungible::token_base_uri::set_token_base_uri`, which a fungible
+#! faucet does not expose. Each aborts on the other kind of faucet.
 #!
 #! The selected action and its arguments are read from the note storage and are fixed at note
 #! creation:
-#! - `0` SetMaxSupply:    `[0, new_max_supply]`.
-#! - `1` SetDescription:  `[1, 0, 0, 0, description(28)]`.
-#! - `2` SetLogoUri:      `[2, 0, 0, 0, logo_uri(28)]`.
-#! - `3` SetExternalUri: `[3, 0, 0, 0, external_uri(28)]`.
+#! - `0` SetMaxSupply:     `[0, new_max_supply]`.
+#! - `1` SetDescription:   `[1, 0, 0, 0, description(28)]`.
+#! - `2` SetLogoUri:       `[2, 0, 0, 0, logo_uri(28)]`.
+#! - `3` SetExternalUri:   `[3, 0, 0, 0, external_uri(28)]`.
+#! - `4` SetTokenBaseUri:  `[4, 0, 0, 0, token_base_uri(28)]`.
 #!
-#! The three string setters take the Poseidon2 commitment of their new value on the operand stack
+#! The four string setters take the Poseidon2 commitment of their new value on the operand stack
 #! and read the preimage from the advice map. This script commits to the payload `get_bounded_storage` wrote
 #! to memory and inserts it into the advice map under that commitment, so the value is bound into
 #! the note commitment through the note storage and needs no out-of-band advice inputs.
@@ -74,9 +80,10 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! (`assert_authorized`); this script only loads the arguments and calls them.
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_uri}` for the string
-#!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
-#!   the `Authority` and `Pausable` companion components.
+#! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_uri}` for the shared
+#!   string actions, `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, and
+#!   `miden::standards::faucets::non_fungible::token_base_uri::set_token_base_uri` for
+#!   `SetTokenBaseUri`, backed by the `Authority` and `Pausable` companion components.
 #!
 #! Consumers: target account (attachment)
 #!
@@ -90,6 +97,7 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the selected field's mutability flag is not set, or the account is paused.
+#! - the selected action is `SetTokenBaseUri` and the faucet's token metadata is private.
 #! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
 pub proc main(args: NoteArgs)
@@ -140,11 +148,21 @@ pub proc main(args: NoteArgs)
 
                 exec.execute_set_logo_uri
             else
-                eq.VARIANT_SET_EXTERNAL_URI
-                assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT
-                # => [num_storage_items]
+                dup eq.VARIANT_SET_EXTERNAL_URI
+                # => [is_set_external_uri, variant, num_storage_items]
 
-                exec.execute_set_external_uri
+                if.true
+                    drop
+                    # => [num_storage_items]
+
+                    exec.execute_set_external_uri
+                else
+                    eq.VARIANT_SET_TOKEN_BASE_URI
+                    assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT
+                    # => [num_storage_items]
+
+                    exec.execute_set_token_base_uri
+                end
             end
         end
     end
@@ -292,6 +310,29 @@ proc execute_set_external_uri(num_storage_items: u32)
     # => [EXTERNAL_URI_COMMITMENT, pad(12)]
 
     call.faucets::set_external_uri
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetTokenBaseUri action: sets the non-fungible faucet's token base URI.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_STRING.
+#! - the token base URI mutability flag is not set, the account is paused, or the faucet's token
+#!   metadata is private (per `token_base_uri::set_token_base_uri`).
+#!
+#! Invocation: exec
+proc execute_set_token_base_uri(num_storage_items: u32)
+    exec.prepare_string_call
+    # => [TOKEN_BASE_URI_COMMITMENT, pad(12)]
+
+    call.token_base_uri::set_token_base_uri
     # => [pad(16)]
 
     # truncate the called procedure's output window, restoring the base stack
