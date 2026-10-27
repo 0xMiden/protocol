@@ -92,11 +92,11 @@ const ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT = "spending limit exceeds the maximu
 const ERR_UNPRICED_ASSET_REJECTED = "spent asset is not priced into the budget and the policy rejects it"
 const ERR_SPENDING_LIMIT_EXCEEDED = "spending limit exceeded for the current window"
 
-# LOCAL ADDRESSES (enforce_spending_limits)
+# LOCAL ADDRESSES (price_output_notes)
 # =================================================================================================
 
-const ENFORCE_NOTE_ASSETS_LOC = 0
-const ENFORCE_TOTAL_LOC = ENFORCE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
+const PRICE_NOTE_ASSETS_LOC = 0
+const PRICE_TOTAL_LOC = PRICE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
 
 # CONFIGURATION
 # =================================================================================================
@@ -267,10 +267,8 @@ end
 #! Charges every fungible asset this transaction sends out to the spending budget and fails the
 #! transaction if the budget is exceeded.
 #!
-#! Loads the window the transaction is charged to and binds the transaction's expiration to that
-#! window's end, then iterates every output note and every asset in it, pricing each fungible asset
-#! into the base asset with `price_asset` and summing the results; an asset the budget cannot price
-#! falls to the unpriced-asset policy and non-fungible assets are skipped. The sum is charged to the
+#! Loads the window the transaction is charged to, binds the transaction's expiration to that
+#! window's end, prices the output notes with `price_output_notes` and charges the sum to the
 #! budget once, so the tracker is read and written once per transaction.
 #!
 #! A no-op when the policy is disabled (`window_blocks == 0`). With the policy enabled the
@@ -286,13 +284,10 @@ end
 #!
 #! Panics if:
 #! - `window_blocks` is not a valid `u32` field element (`ERR_WINDOW_BLOCKS_NOT_U32`).
-#! - an asset is unpriced and the policy is UNPRICED_ASSET_REJECT
-#!   (`ERR_UNPRICED_ASSET_REJECTED`).
 #! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
-#! - the oracle call fails (see `tx::execute_foreign_procedure`).
+#! - pricing an output note asset fails (see `price_output_notes`).
 #!
 #! Invocation: exec
-@locals(129)
 pub proc enforce_spending_limits()
     exec.get_initial_spending_config
     # => [window_blocks, unpriced_asset_policy]
@@ -321,79 +316,13 @@ pub proc enforce_spending_limits()
         movup.2 exec.get_initial_spending_limit
         # => [limit, unpriced_asset_policy, spent, window_end]
 
-        push.0 loc_store.ENFORCE_TOTAL_LOC
-        # => [limit, unpriced_asset_policy, spent, window_end]
+        dup movdn.2
+        # => [limit, unpriced_asset_policy, limit, spent, window_end]
 
-        exec.tx::get_num_output_notes
-        # => [num_output_notes, limit, unpriced_asset_policy, spent, window_end]
-
-        dup neq.0
-        # => [has_notes, num_output_notes, limit, unpriced_asset_policy, spent, window_end]
-
-        while.true
-            # => [note_count, limit, unpriced_asset_policy, spent, window_end]
-
-            sub.1
-            # => [note_index, limit, unpriced_asset_policy, spent, window_end]
-
-            dup locaddr.ENFORCE_NOTE_ASSETS_LOC
-            # => [assets_ptr, note_index, note_index, limit, unpriced_asset_policy, spent,
-            #     window_end]
-
-            exec.output_note::get_assets
-            # => [num_assets, note_index, limit, unpriced_asset_policy, spent, window_end]
-
-            dup neq.0
-            # => [has_assets, num_assets, note_index, limit, unpriced_asset_policy, spent,
-            #     window_end]
-
-            while.true
-                # => [asset_count, note_index, limit, unpriced_asset_policy, spent, window_end]
-
-                sub.1
-                # => [asset_idx, note_index, limit, unpriced_asset_policy, spent, window_end]
-
-                dup.3 dup.3
-                # => [limit, unpriced_asset_policy, asset_idx, note_index, limit,
-                #     unpriced_asset_policy, spent, window_end]
-
-                dup.2 mul.ASSET_SIZE locaddr.ENFORCE_NOTE_ASSETS_LOC add
-                # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
-                #     unpriced_asset_policy, spent, window_end]
-
-                exec.asset::load
-                # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index,
-                #     limit, unpriced_asset_policy, spent, window_end]
-
-                exec.price_asset
-                # => [converted_amount, asset_idx, note_index, limit, unpriced_asset_policy, spent,
-                #     window_end]
-
-                loc_load.ENFORCE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
-                loc_store.ENFORCE_TOTAL_LOC
-                # => [asset_idx, note_index, limit, unpriced_asset_policy, spent, window_end]
-
-                dup neq.0
-                # => [has_assets, asset_idx, note_index, limit, unpriced_asset_policy, spent,
-                #     window_end]
-            end
-            # => [asset_idx, note_index, limit, unpriced_asset_policy, spent, window_end]
-
-            drop
-            # => [note_index, limit, unpriced_asset_policy, spent, window_end]
-
-            dup neq.0
-            # => [has_notes, note_index, limit, unpriced_asset_policy, spent, window_end]
-        end
-        # => [note_index, limit, unpriced_asset_policy, spent, window_end]
-
-        drop swap drop
-        # => [limit, spent, window_end]
-
-        # ----- Charge the sum once. Nothing to write when no asset was priced into the budget. -----
-        loc_load.ENFORCE_TOTAL_LOC
+        exec.price_output_notes
         # => [total, limit, spent, window_end]
 
+        # ----- Charge the sum once. Skip the write when nothing was priced into the budget. -----
         dup neq.0
         # => [is_charged, total, limit, spent, window_end]
 
@@ -450,6 +379,103 @@ proc get_initial_spending_limit() -> AssetAmount
 
     movdn.3 drop drop drop
     # => [limit]
+end
+
+#! Prices every fungible asset this transaction sends out through an output note into the base
+#! asset and returns their sum.
+#!
+#! Iterates every output note and every asset in it, pricing each fungible asset with
+#! `price_asset`; an asset the budget cannot price falls to the unpriced-asset policy and
+#! non-fungible assets are skipped. The sum saturates at the maximum fungible asset amount.
+#!
+#! Inputs:  [limit, unpriced_asset_policy]
+#! Outputs: [total]
+#!
+#! Where:
+#! - limit and unpriced_asset_policy are the budget state `enforce_spending_limits` loaded.
+#! - total is this transaction's spend in the base asset.
+#!
+#! Side effects:
+#! - Tightens the transaction expiration delta for every asset priced through the oracle
+#!   (`convert_to_base_asset`).
+#!
+#! Panics if:
+#! - an asset is unpriced and the policy is UNPRICED_ASSET_REJECT
+#!   (`ERR_UNPRICED_ASSET_REJECTED`).
+#! - the oracle call fails (see `tx::execute_foreign_procedure`).
+#!
+#! Invocation: exec
+@locals(129)
+proc price_output_notes(
+    limit: AssetAmount,
+    unpriced_asset_policy: UnpricedAssetPolicy
+) -> AssetAmount
+    push.0 loc_store.PRICE_TOTAL_LOC
+    # => [limit, unpriced_asset_policy]
+
+    exec.tx::get_num_output_notes
+    # => [num_output_notes, limit, unpriced_asset_policy]
+
+    dup neq.0
+    # => [has_notes, num_output_notes, limit, unpriced_asset_policy]
+
+    while.true
+        # => [note_count, limit, unpriced_asset_policy]
+
+        sub.1
+        # => [note_index, limit, unpriced_asset_policy]
+
+        dup locaddr.PRICE_NOTE_ASSETS_LOC
+        # => [assets_ptr, note_index, note_index, limit, unpriced_asset_policy]
+
+        exec.output_note::get_assets
+        # => [num_assets, note_index, limit, unpriced_asset_policy]
+
+        dup neq.0
+        # => [has_assets, num_assets, note_index, limit, unpriced_asset_policy]
+
+        while.true
+            # => [asset_count, note_index, limit, unpriced_asset_policy]
+
+            sub.1
+            # => [asset_idx, note_index, limit, unpriced_asset_policy]
+
+            dup.3 dup.3
+            # => [limit, unpriced_asset_policy, asset_idx, note_index, limit, unpriced_asset_policy]
+
+            dup.2 mul.ASSET_SIZE locaddr.PRICE_NOTE_ASSETS_LOC add
+            # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+            #     unpriced_asset_policy]
+
+            exec.asset::load
+            # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+            #     unpriced_asset_policy]
+
+            exec.price_asset
+            # => [converted_amount, asset_idx, note_index, limit, unpriced_asset_policy]
+
+            loc_load.PRICE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
+            loc_store.PRICE_TOTAL_LOC
+            # => [asset_idx, note_index, limit, unpriced_asset_policy]
+
+            dup neq.0
+            # => [has_assets, asset_idx, note_index, limit, unpriced_asset_policy]
+        end
+        # => [asset_idx, note_index, limit, unpriced_asset_policy]
+
+        drop
+        # => [note_index, limit, unpriced_asset_policy]
+
+        dup neq.0
+        # => [has_notes, note_index, limit, unpriced_asset_policy]
+    end
+    # => [note_index, limit, unpriced_asset_policy]
+
+    drop drop drop
+    # => []
+
+    loc_load.PRICE_TOTAL_LOC
+    # => [total]
 end
 
 #! Prices one asset into the base asset for the spending budget.
