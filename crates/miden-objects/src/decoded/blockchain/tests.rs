@@ -49,7 +49,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     use crate::{BuildUnchecked, VerifyWith};
 
     fn header_for(num: u32, previous: Word, keys: ValidatorConfig) -> BlockHeader {
-        let body = BlockBody::new(vec![], vec![], vec![], vec![]).unwrap();
+        let body = BlockBody::default();
         BlockHeader::new(
             previous,
             num.into(),
@@ -57,7 +57,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
             Word::empty(),
             Word::empty(),
             body.compute_block_note_tree().root(),
-            body.transaction_commitment(),
+            body.compute_transaction_commitment(),
             keys,
             miden_protocol::block::FeeParameters::new(500),
             Word::empty(),
@@ -69,7 +69,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let (child_signers, child_keys) = ValidatorConfig::random_with_signers(1);
     let parent = header_for(0, Word::empty(), parent_keys.clone());
     let header = header_for(1, parent.commitment(), child_keys.clone());
-    let body = BlockBody::new(vec![], vec![], vec![], vec![]).unwrap();
+    let body = BlockBody::default();
     let block = SignedBlock::new(
         header.clone(),
         body.clone(),
@@ -135,7 +135,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
 
 #[test]
 fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
-    let expected = BlockBody::new(vec![], vec![], vec![], vec![]).unwrap();
+    let expected = BlockBody::default();
 
     assert_eq!(
         proto::blockchain::BlockBody::default()

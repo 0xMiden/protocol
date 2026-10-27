@@ -414,9 +414,9 @@ impl BlockHeader {
     ) -> Self {
         use crate::block::{BlockBody, FeeParameters};
 
-        let body = BlockBody::new_unchecked(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let body = BlockBody::default();
         let note_root = body.compute_block_note_tree().root();
-        let tx_commitment = body.transaction_commitment();
+        let tx_commitment = body.compute_transaction_commitment();
 
         BlockHeader::new(
             prev_block_commitment,

@@ -265,7 +265,7 @@ impl ProvenBlock {
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), ProvenBlockError> {
         let header_tx_commitment = self.header.tx_commitment();
-        let body_tx_commitment = self.body.transaction_commitment();
+        let body_tx_commitment = self.body.compute_transaction_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(ProvenBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
         } else {
@@ -321,17 +321,11 @@ impl Deserializable for ProvenBlock {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
-
     use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
 
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-
-    fn empty_body() -> BlockBody {
-        BlockBody::new_unchecked(Vec::new(), Vec::new(), Vec::new(), Vec::new())
-    }
 
     /// Builds block 1 linked to `parent` and signed by `signers` over the validator set
     /// `parent_keys` committed to by the parent. Here we only confirm `ProvenBlock::validate`
@@ -346,7 +340,7 @@ mod tests {
         let signatures = parent_keys.sign_all(signers, header.commitment());
         ProvenBlock::new_unchecked(
             header,
-            empty_body(),
+            BlockBody::default(),
             signatures,
             crate::testing::dummy_execution_proof(),
         )
@@ -402,7 +396,7 @@ mod tests {
         let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
         let block = ProvenBlock::new_unchecked(
             header,
-            empty_body(),
+            BlockBody::default(),
             signatures,
             crate::testing::dummy_execution_proof(),
         );

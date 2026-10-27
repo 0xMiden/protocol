@@ -208,10 +208,10 @@ impl BlockBody {
         self.transactions.iter().flat_map(OrderedTransactionHeaders::as_slice)
     }
 
-    /// Returns the commitment of all transactions included in this block.
+    /// Computes the commitment of all transactions included in this block.
     ///
     /// This is a sequential hash over the tx ID and account ID of all transactions in block order.
-    pub fn transaction_commitment(&self) -> Word {
+    pub fn compute_transaction_commitment(&self) -> Word {
         OrderedTransactionHeaders::compute_commitment(
             self.transaction_headers().map(|tx| (tx.id(), tx.account_id())),
         )
@@ -285,6 +285,12 @@ impl BlockBody {
             self.created_nullifiers,
             self.transactions,
         )
+    }
+}
+
+impl Default for BlockBody {
+    fn default() -> Self {
+        BlockBody::new_unchecked(vec![], vec![], vec![], vec![])
     }
 }
 
@@ -738,7 +744,10 @@ mod tests {
         let body_a = BlockBody::new(vec![], vec![], vec![], batches(&[&[1, 3], &[5]])).unwrap();
         let body_b = BlockBody::new(vec![], vec![], vec![], batches(&[&[1], &[3, 5]])).unwrap();
 
-        assert_eq!(body_a.transaction_commitment(), body_b.transaction_commitment());
+        assert_eq!(
+            body_a.compute_transaction_commitment(),
+            body_b.compute_transaction_commitment()
+        );
         assert_ne!(body_a.batches_commitment(), body_b.batches_commitment());
 
         let expected_batch_ids = body_a
