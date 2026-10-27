@@ -80,16 +80,17 @@ impl PublicTransactionLogBundle {
         let mut entries = Vec::new();
         let (mut num_logs, mut num_words) = (0, 0);
         for tx in batch.transactions() {
-            if let TransactionLogDetails::Public(logs) = tx.log_details() {
-                num_logs += logs.num_logs();
-                num_words += logs.num_content_words();
-                TransactionLogBundleLimits::BATCH.check(
-                    batch.transactions().len(),
-                    num_logs,
-                    num_words,
-                )?;
-                entries.push((tx.id(), logs.clone()));
-            }
+            let TransactionLogDetails::Public(logs) = tx.log_details() else {
+                continue;
+            };
+            num_logs += logs.num_logs();
+            num_words += logs.num_content_words();
+            TransactionLogBundleLimits::BATCH.check(
+                batch.transactions().len(),
+                num_logs,
+                num_words,
+            )?;
+            entries.push((tx.id(), logs.clone()));
         }
         Self::new(entries, &batch.transaction_headers())
     }
@@ -150,36 +151,48 @@ impl PublicTransactionLogBundle {
         headers: &OrderedTransactionHeaders,
         limits: TransactionLogBundleLimits,
     ) -> Result<(), TransactionLogError> {
-        limits.check(headers.as_slice().len().max(self.entries.len()), 0, 0)?;
+        self.validate_limits(headers.as_slice().len(), limits)?;
+        if self.transactions_commitment != headers.commitment() {
+            return Err(TransactionLogError::BundleCommitmentMismatch);
+        }
+        self.validate_entries(headers)
+    }
+
+    fn validate_limits(
+        &self,
+        num_transactions: usize,
+        limits: TransactionLogBundleLimits,
+    ) -> Result<(), TransactionLogError> {
+        limits.check(num_transactions.max(self.entries.len()), 0, 0)?;
         let (mut num_logs, mut num_words) = (0, 0);
         for (_, logs) in &self.entries {
             num_logs += logs.num_logs();
             num_words += logs.num_content_words();
-            limits.check(headers.as_slice().len(), num_logs, num_words)?;
+            limits.check(num_transactions, num_logs, num_words)?;
         }
-        if self.transactions_commitment != headers.commitment() {
-            return Err(TransactionLogError::BundleCommitmentMismatch);
-        }
+        Ok(())
+    }
+
+    fn validate_entries(
+        &self,
+        headers: &OrderedTransactionHeaders,
+    ) -> Result<(), TransactionLogError> {
         let mut ids = BTreeSet::new();
-        let mut entries = self.entries.iter();
-        for header in headers.as_slice() {
-            if !ids.insert(header.id()) {
+        if headers.as_slice().iter().any(|header| !ids.insert(header.id())) {
+            return Err(TransactionLogError::BundleAssociationMismatch);
+        }
+        let public_headers =
+            headers.as_slice().iter().filter(|header| header.account_id().is_public());
+        if public_headers.clone().count() != self.entries.len() {
+            return Err(TransactionLogError::BundleAssociationMismatch);
+        }
+        for ((id, logs), header) in self.entries.iter().zip(public_headers) {
+            if *id != header.id() {
                 return Err(TransactionLogError::BundleAssociationMismatch);
             }
-            if header.account_id().is_public() {
-                let Some((id, logs)) = entries.next() else {
-                    return Err(TransactionLogError::BundleAssociationMismatch);
-                };
-                if *id != header.id() {
-                    return Err(TransactionLogError::BundleAssociationMismatch);
-                }
-                if logs.commitment() != header.logs_commitment() {
-                    return Err(TransactionLogError::BundleCommitmentMismatch);
-                }
+            if logs.commitment() != header.logs_commitment() {
+                return Err(TransactionLogError::BundleCommitmentMismatch);
             }
-        }
-        if entries.next().is_some() {
-            return Err(TransactionLogError::BundleAssociationMismatch);
         }
         Ok(())
     }

@@ -117,47 +117,76 @@ impl proto::transaction::PublicTransactionLogBundle {
             return Err(TransactionLogError::BundleLimitExceeded.into());
         }
         let mut bundle = Self::default();
-        let (mut num_logs, mut num_words) = (0, 0);
+        let mut remaining = limits;
         while !bytes.is_empty() {
             let (tag, wire_type) = decode_key(&mut bytes).map_err(VerificationError::new)?;
             match tag {
-                1 => {
-                    if bundle.transactions_commitment.is_some() {
-                        return Err(VerificationError::new(
-                            LogBundleDecodeError::DuplicateCommitment,
-                        ));
-                    }
-                    let frame = read_frame(&mut bytes, wire_type, 64)?;
-                    bundle.transactions_commitment = Some(
-                        proto::primitives::Word::decode(frame).map_err(VerificationError::new)?,
-                    );
-                },
-                2 => {
-                    limits.check(bundle.entries.len() + 1, num_logs, num_words)?;
-                    // A canonical entry with 64 log records and 64 content words fits in 16 KiB.
-                    let frame = read_frame(&mut bytes, wire_type, 16 * 1024)?;
-                    let entry = proto::transaction::PublicTransactionLogEntry::decode(frame)
-                        .map_err(VerificationError::new)?;
-                    if let Some(logs) = &entry.logs {
-                        if logs.logs.len() > TransactionLogs::MAX_COUNT {
-                            return Err(TransactionLogError::TooManyLogs(logs.logs.len()).into());
-                        }
-                        let words = logs.logs.iter().map(|log| log.content.len()).sum::<usize>();
-                        if words > TransactionLogs::MAX_NUM_WORDS {
-                            return Err(TransactionLogError::TooManyTotalContentWords(words).into());
-                        }
-                        num_logs += logs.logs.len();
-                        num_words += words;
-                    }
-                    limits.check(bundle.entries.len() + 1, num_logs, num_words)?;
-                    bundle.entries.push(entry);
-                },
+                1 => bundle.read_commitment(&mut bytes, wire_type)?,
+                2 => bundle.entries.push(read_entry(&mut bytes, wire_type, &mut remaining)?),
                 _ => skip_field(wire_type, tag, &mut bytes, DecodeContext::default())
                     .map_err(VerificationError::new)?,
             }
         }
         Ok(bundle)
     }
+
+    fn read_commitment(
+        &mut self,
+        bytes: &mut &[u8],
+        wire_type: WireType,
+    ) -> Result<(), VerificationError> {
+        if self.transactions_commitment.is_some() {
+            return Err(VerificationError::new(LogBundleDecodeError::DuplicateCommitment));
+        }
+        let frame = read_frame(bytes, wire_type, 64)?;
+        self.transactions_commitment =
+            Some(proto::primitives::Word::decode(frame).map_err(VerificationError::new)?);
+        Ok(())
+    }
+}
+
+fn read_entry(
+    bytes: &mut &[u8],
+    wire_type: WireType,
+    remaining: &mut TransactionLogBundleLimits,
+) -> Result<proto::transaction::PublicTransactionLogEntry, VerificationError> {
+    // Reserve the entry before reading its frame or allocating its fields.
+    remaining.transactions = remaining
+        .transactions
+        .checked_sub(1)
+        .ok_or(TransactionLogError::BundleLimitExceeded)?;
+    // A canonical entry with 64 log records and 64 content words fits in 16 KiB.
+    let frame = read_frame(bytes, wire_type, 16 * 1024)?;
+    let entry = proto::transaction::PublicTransactionLogEntry::decode(frame)
+        .map_err(VerificationError::new)?;
+    let (logs, words) = entry_log_counts(&entry)?;
+    remaining.logs = remaining
+        .logs
+        .checked_sub(logs)
+        .ok_or(TransactionLogError::BundleLimitExceeded)?;
+    remaining.content_words = remaining
+        .content_words
+        .checked_sub(words)
+        .ok_or(TransactionLogError::BundleLimitExceeded)?;
+    Ok(entry)
+}
+
+fn entry_log_counts(
+    entry: &proto::transaction::PublicTransactionLogEntry,
+) -> Result<(usize, usize), TransactionLogError> {
+    let Some(logs) = &entry.logs else {
+        // Missing required fields are rejected by decode_fields after bounded wire decoding.
+        return Ok((0, 0));
+    };
+    let count = logs.logs.len();
+    if count > TransactionLogs::MAX_COUNT {
+        return Err(TransactionLogError::TooManyLogs(count));
+    }
+    let words = logs.logs.iter().map(|log| log.content.len()).sum::<usize>();
+    if words > TransactionLogs::MAX_NUM_WORDS {
+        return Err(TransactionLogError::TooManyTotalContentWords(words));
+    }
+    Ok((count, words))
 }
 
 fn read_frame<'a>(
