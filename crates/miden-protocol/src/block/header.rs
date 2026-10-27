@@ -30,8 +30,8 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `account_root` is a commitment to account database.
 /// - `nullifier_root` is a commitment to the nullifier database.
 /// - `note_root` is a commitment to all notes created in the current block.
-/// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
-///   block.
+/// - `transactions_commitment` is a commitment to the set of transaction IDs which affected
+///   accounts in the block.
 /// - `validator_config` is the set of validator public keys authorized to sign the *next* block,
 ///   together with the quorum, see [`ValidatorConfig`] for more details.
 /// - `fee_parameters` are the parameters defining the base fees, see [`FeeParameters`] for more
@@ -52,7 +52,7 @@ pub struct BlockHeader {
     account_root: Word,
     nullifier_root: Word,
     note_root: Word,
-    tx_commitment: Word,
+    transactions_commitment: Word,
     validator_config: ValidatorConfig,
     fee_parameters: FeeParameters,
     protocol_config_commitment: Word,
@@ -85,7 +85,7 @@ impl BlockHeader {
         account_root: Word,
         nullifier_root: Word,
         note_root: Word,
-        tx_commitment: Word,
+        transactions_commitment: Word,
         validator_config: ValidatorConfig,
         fee_parameters: FeeParameters,
         protocol_config_commitment: Word,
@@ -101,7 +101,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
-            tx_commitment,
+            transactions_commitment,
             &validator_config,
             &fee_parameters,
             protocol_config_commitment,
@@ -125,7 +125,7 @@ impl BlockHeader {
             account_root,
             nullifier_root,
             note_root,
-            tx_commitment,
+            transactions_commitment,
             validator_config,
             fee_parameters,
             protocol_config_commitment,
@@ -208,8 +208,8 @@ impl BlockHeader {
     /// The commitment is computed as sequential hash of (`transaction_id`, `account_id`) tuples.
     /// This makes it possible for the verifier to link transaction IDs to the accounts which
     /// they were executed against.
-    pub fn tx_commitment(&self) -> Word {
-        self.tx_commitment
+    pub fn transactions_commitment(&self) -> Word {
+        self.transactions_commitment
     }
 
     /// Returns a reference to the [`FeeParameters`] in this header.
@@ -258,7 +258,7 @@ impl BlockHeader {
     ///     CHAIN_COMMITMENT,
     ///     ACCOUNT_ROOT,
     ///     NULLIFIER_ROOT,
-    ///     TX_COMMITMENT,
+    ///     TRANSACTIONS_COMMITMENT,
     ///     PROTOCOL_CONFIG_COMMITMENT,
     ///     VALIDATOR_CONFIG_COMMITMENT,
     ///     NEXT_PROTOCOL_CONFIG_COMMITMENT,
@@ -283,7 +283,7 @@ impl BlockHeader {
             self.chain_commitment,
             self.account_root,
             self.nullifier_root,
-            self.tx_commitment,
+            self.transactions_commitment,
             &self.validator_config,
             &self.fee_parameters,
             self.protocol_config_commitment,
@@ -368,7 +368,7 @@ impl BlockHeader {
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
-        tx_commitment: Word,
+        transactions_commitment: Word,
         validator_config: &ValidatorConfig,
         fee_parameters: &FeeParameters,
         protocol_config_commitment: Word,
@@ -381,7 +381,7 @@ impl BlockHeader {
         elements.extend_from_slice(chain_commitment.as_elements());
         elements.extend_from_slice(account_root.as_elements());
         elements.extend_from_slice(nullifier_root.as_elements());
-        elements.extend_from_slice(tx_commitment.as_elements());
+        elements.extend_from_slice(transactions_commitment.as_elements());
         elements.extend_from_slice(protocol_config_commitment.as_elements());
         elements.extend(validator_config.to_commitment());
         elements.extend(Self::compute_next_protocol_config_commitment(next_protocol_config));
@@ -416,7 +416,7 @@ impl BlockHeader {
 
         let body = BlockBody::default();
         let note_root = body.compute_block_note_tree().root();
-        let tx_commitment = body.compute_transactions_commitment();
+        let transactions_commitment = body.compute_transactions_commitment();
 
         BlockHeader::new(
             prev_block_commitment,
@@ -425,7 +425,7 @@ impl BlockHeader {
             Word::empty(),
             Word::empty(),
             note_root,
-            tx_commitment,
+            transactions_commitment,
             validator_config,
             FeeParameters::new(500),
             Word::empty(),
@@ -448,7 +448,7 @@ impl Serializable for BlockHeader {
             account_root,
             nullifier_root,
             note_root,
-            tx_commitment,
+            transactions_commitment,
             validator_config,
             fee_parameters,
             protocol_config_commitment,
@@ -466,7 +466,7 @@ impl Serializable for BlockHeader {
         account_root.write_into(target);
         nullifier_root.write_into(target);
         note_root.write_into(target);
-        tx_commitment.write_into(target);
+        transactions_commitment.write_into(target);
         validator_config.write_into(target);
         fee_parameters.write_into(target);
         protocol_config_commitment.write_into(target);
@@ -493,7 +493,7 @@ impl Deserializable for BlockHeader {
         let account_root = source.read()?;
         let nullifier_root = source.read()?;
         let note_root = source.read()?;
-        let tx_commitment = source.read()?;
+        let transactions_commitment = source.read()?;
         let validator_config = source.read()?;
         let fee_parameters = source.read()?;
         let protocol_config_commitment = source.read()?;
@@ -507,7 +507,7 @@ impl Deserializable for BlockHeader {
             account_root,
             nullifier_root,
             note_root,
-            tx_commitment,
+            transactions_commitment,
             validator_config,
             fee_parameters,
             protocol_config_commitment,
@@ -637,7 +637,7 @@ mod tests {
             header.account_root(),
             header.nullifier_root(),
             header.note_root(),
-            header.tx_commitment(),
+            header.transactions_commitment(),
             header.validator_config().clone(),
             header.fee_parameters().clone(),
             header.protocol_config_commitment(),

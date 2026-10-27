@@ -262,7 +262,7 @@ impl ProvenBlock {
     ///
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), ProvenBlockError> {
-        let header_tx_commitment = self.header.tx_commitment();
+        let header_tx_commitment = self.header.transactions_commitment();
         let body_tx_commitment = self.body.compute_transactions_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(ProvenBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
