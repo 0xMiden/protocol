@@ -1,11 +1,10 @@
 use alloc::sync::Arc;
 use alloc::{format, vec};
 
+use crate::Word;
 use crate::block::code_tree::CodePatch;
 use crate::code::ProcedureRoot;
 use crate::testing::assembler::assemble_test_package;
-use crate::vm::AdviceMap;
-use crate::{Felt, Hasher, Word};
 
 impl ProcedureRoot {
     /// Returns a procedure root whose leaf is distinct for every `value`.
@@ -15,7 +14,7 @@ impl ProcedureRoot {
 }
 
 impl CodePatch {
-    /// Returns a mock [`CodePatch`] with created procedures, a dependency and an advice map entry.
+    /// Returns a mock [`CodePatch`] with created procedures and a dependency.
     pub fn mock() -> CodePatch {
         let external_procedure = ProcedureRoot::mock(1);
         let source = format!(
@@ -34,11 +33,6 @@ impl CodePatch {
                 .mast_forest()
                 .as_ref()
                 .clone();
-
-        let advice_value = vec![Felt::from(7_u32)];
-        let mut advice_map = AdviceMap::default();
-        advice_map.insert(Hasher::hash_elements(&advice_value), advice_value);
-        let mast = mast.with_advice_map(advice_map);
 
         let created_procedures = mast.procedure_digests().map(ProcedureRoot::from_raw).collect();
 
