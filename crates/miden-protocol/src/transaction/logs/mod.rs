@@ -15,6 +15,9 @@ pub use topic::LogTopic;
 mod details;
 pub use details::TransactionLogDetails;
 
+mod bundle;
+pub use bundle::{PublicTransactionLogBundle, TransactionLogBundleLimits};
+
 mod errors;
 pub use errors::TransactionLogError;
 

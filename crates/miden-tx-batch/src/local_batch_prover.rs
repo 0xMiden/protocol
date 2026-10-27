@@ -3,6 +3,7 @@ use alloc::string::ToString;
 use miden_processor::ExecutionError;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::transaction::PublicTransactionLogBundle;
 use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
@@ -89,6 +90,20 @@ impl LocalBatchProver {
             .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
 
         Self::build_proven_batch(proposed_batch, proof)
+    }
+
+    /// Proves a batch and returns its public logs separately for delivery to the node.
+    ///
+    /// The bundle is checked against the proposal before proving. Neither the batch wire format
+    /// nor the kernel's public inputs/outputs change. The proof has the same limitations as
+    /// [`Self::prove`]; bundle validation does not add recursive proof verification.
+    pub fn prove_with_logs(
+        &self,
+        executed_batch: ExecutedBatch,
+    ) -> Result<(ProvenBatch, PublicTransactionLogBundle), ProvenBatchError> {
+        let logs = PublicTransactionLogBundle::from_batch(executed_batch.proposed_batch())?;
+        let batch = self.prove(executed_batch)?;
+        Ok((batch, logs))
     }
 
     /// Returns a [`ProvenBatch`] built from the proposed batch with a dummy [`ExecutionProof`]
