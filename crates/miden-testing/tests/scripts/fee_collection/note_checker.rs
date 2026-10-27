@@ -216,10 +216,9 @@ async fn note_checker_keeps_intact_pairs_alongside_an_uncovered_note(
     let provided = AssetAmount::new(uncovered_sponsored_amount.unwrap_or(0))?;
     assert_matches!(
         fee_failure(&info, feature_notes[1].id()),
-        FeeError::FeeNotCovered { feature_note_id, provided: actual, required: Some(required), .. }
+        FeeError::FeeNotCovered { feature_note_id, provided: actual, .. }
             if *feature_note_id == feature_notes[1].id()
                 && *actual == provided
-                && required.as_u64() == FEE_AMOUNT
     );
     if uncovered_sponsored_amount.is_some() {
         assert_collateral_of(&info, sponsorship_notes[1].id(), feature_notes[1].id());
@@ -459,8 +458,8 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
     );
     assert_matches!(
         fee_failure(&info, feature_notes[1].id()),
-        FeeError::FeeNotCovered { provided, required: Some(required), .. }
-            if provided.as_u64() == FEE_AMOUNT - 1 && required.as_u64() == FEE_AMOUNT
+        FeeError::FeeNotCovered { provided, .. }
+            if provided.as_u64() == FEE_AMOUNT - 1
     );
 
     let collateral: Vec<_> = info
@@ -598,10 +597,9 @@ async fn note_checker_sums_the_sponsorships_of_a_feature_note(
         assert!(info.successful().is_empty(), "no note of the uncovered bundle should succeed");
         assert_matches!(
             fee_failure(&info, bundle_ids[0]),
-            FeeError::FeeNotCovered { provided, sponsorship_ids, required: Some(required), .. }
+            FeeError::FeeNotCovered { provided, sponsorship_ids, .. }
                 if provided.as_u64() == first_amount + second_amount
                     && *sponsorship_ids == bundle_ids[1..]
-                    && required.as_u64() == FEE_AMOUNT
         );
         for &sponsorship_id in &bundle_ids[1..] {
             assert_collateral_of(&info, sponsorship_id, bundle_ids[0]);
@@ -773,11 +771,10 @@ async fn can_consume_reports_why_a_lone_feature_note_fee_cannot_be_collected(
     match feature_note_fee {
         Some(_) => assert_matches!(
             fee_error,
-            FeeError::FeeNotCovered { feature_note_id, sponsorship_ids, provided, required: Some(required) }
+            FeeError::FeeNotCovered { feature_note_id, sponsorship_ids, provided }
                 if *feature_note_id == feature_note.id()
                     && sponsorship_ids.is_empty()
                     && *provided == AssetAmount::ZERO
-                    && required.as_u64() == FEE_AMOUNT
         ),
         None => assert_matches!(
             fee_error,

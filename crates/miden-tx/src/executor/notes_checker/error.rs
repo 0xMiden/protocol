@@ -59,7 +59,7 @@ pub enum FeeError {
     /// The FEE_SPONSORSHIP notes bound to the feature note carry less than the fee the account
     /// charges for it.
     #[error(
-        "the FEE_SPONSORSHIP notes bound to feature note {feature_note_id} provide a fee of {provided}, which does not cover the fee the account charges for it"
+        "the FEE_SPONSORSHIP notes bound to feature note {feature_note_id} provide a fee of {provided}, which is insufficient"
     )]
     FeeNotCovered {
         /// The feature note whose fee is not covered.
@@ -68,18 +68,5 @@ pub enum FeeError {
         sponsorship_ids: Vec<NoteId>,
         /// The fee the FEE_SPONSORSHIP notes provide between them.
         provided: AssetAmount,
-        /// The fee the account charges for the feature note, if it could be determined.
-        required: Option<AssetAmount>,
     },
-}
-
-impl FeeError {
-    /// Sets the fee the account charges for the feature note of a [`FeeError::FeeNotCovered`],
-    /// leaving any other error unchanged.
-    pub(super) fn with_required_fee(mut self, required_fee: Option<AssetAmount>) -> Self {
-        if let FeeError::FeeNotCovered { required, .. } = &mut self {
-            *required = required_fee;
-        }
-        self
-    }
 }
