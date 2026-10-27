@@ -38,6 +38,7 @@
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 - The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
 - [BREAKING] The non-fungible faucet factories now reject a token policy manager that registers the fungible-only `min_burn_amount` burn policy ([#4035](https://github.com/0xMiden/protocol/issues/4035)).
+- [BREAKING] `ProposedBlock` now rejects a batch whose reference block commitment does not match the canonical block at that height ([#4124](https://github.com/0xMiden/protocol/pull/4124)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 ## v1.0.0-rc.1 (TBD)
