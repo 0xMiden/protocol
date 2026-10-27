@@ -27,17 +27,19 @@ const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
 // construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
-// policy code and the fee schedule keyed by note script roots, and for the rename of the
+// policy code and the fee schedule keyed by note script roots, for the rename of the
 // `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
-// slot IDs embedded in `set_external_uri`. Updated again when `set_external_uri` started emitting a
-// log, which changes its root and so the fee schedule entry of the note script that calls it.
+// slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
+// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, and for
+// the logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the
+// root of the config note script that calls them.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([11833696102954304309, 8039442298045153791, 6431367822147300714, 13032526826539587414])";
+    "Word([5512695098015902272, 13742601425836477437, 2200705168916255157, 5317102735949770292])";
 const GOLDEN_CODE_COMMITMENT: &str =
     "Word([11245971637472955172, 10272178362441086794, 2355715375150679356, 4910552890736700686])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([15232228215263479503, 13671154641042552508, 2123746557493671998, 9603139226678107187])";
-const GOLDEN_ACCOUNT_ID: &str = "0x30ff61b3e36e44710617255361a2e8";
+    "Word([11934322787388200008, 12740576829291714277, 8409363599569151088, 3187457418425219326])";
+const GOLDEN_ACCOUNT_ID: &str = "0xce3c6186fb6b73f115d4a2ae85c116";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.
