@@ -66,7 +66,7 @@ const EXTERNAL_URI_6_SLOT = word("miden::standards::faucets::external_uri_6")
 const EXTERNAL_URI_UPDATED_TOPIC = word("miden::standards::faucets::external_uri_updated")
 
 # The number of words a metadata string is stored in.
-const METADATA_STRING_NUM_WORDS = 7
+pub const METADATA_STRING_NUM_WORDS = 7
 
 # ERRORS
 # =================================================================================================

@@ -5,7 +5,7 @@
 # it private. The authority-gated setter cannot switch between the two, so the mode is fixed at
 # creation.
 
-use {MetadataStringCommitment} from miden::standards::faucets
+use {METADATA_STRING_NUM_WORDS, MetadataStringCommitment} from miden::standards::faucets
 use {Bool} from miden::protocol::types
 use miden::core::mem
 use miden::protocol::active_account
@@ -30,9 +30,6 @@ const TOKEN_BASE_URI_6_SLOT = word("miden::standards::faucets::non_fungible::tok
 # Topic of the log emitted when the token base URI changes, so readers know to refetch the token
 # metadata.
 const TOKEN_BASE_URI_UPDATED_TOPIC = word("miden::standards::faucets::non_fungible::token_base_uri_updated")
-
-# The number of words a metadata string such as the token base URI is stored in.
-const METADATA_STRING_NUM_WORDS = 7
 
 # Masks the first byte of a metadata string's first element, which holds the string's byte length.
 const STRING_LENGTH_MASK = 0xff
