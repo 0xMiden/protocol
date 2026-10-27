@@ -11,6 +11,7 @@ use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteInclusionProof, NoteType};
 use miden_tx::LocalTransactionProver;
+use rstest::rstest;
 
 use crate::kernel_tests::batch::proposed_batch::setup_circular_note_dependency_test;
 use crate::kernel_tests::block::utils::MockChainBlockExt;
@@ -499,6 +500,52 @@ async fn proposed_block_fails_on_missing_nullifier_witness() -> anyhow::Result<(
     let error = ProposedBlock::new(invalid_block_inputs, batches.clone()).unwrap_err();
     assert_matches!(error, ProposedBlockError::NullifierProofMissing(nullifier) => {
         assert_eq!(nullifier, p2id_note.nullifier());
+    });
+
+    Ok(())
+}
+
+/// Tests that witnesses unrelated to the block's input notes are rejected, even if already spent.
+#[rstest]
+#[tokio::test]
+async fn proposed_block_fails_on_surplus_nullifier_witness(
+    #[values(false, true)] include_batch: bool,
+    #[values(false, true)] surplus_spent: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let note0 =
+        builder.add_p2any_note(account0.id(), NoteType::Public, [FungibleAsset::mock(42)])?;
+    let note1 =
+        builder.add_p2any_note(account1.id(), NoteType::Public, [FungibleAsset::mock(50)])?;
+    let mut chain = builder.build()?;
+
+    let surplus_tx =
+        chain.create_authenticated_notes_proven_tx(account0.id(), [note0.id()]).await?;
+    let surplus_batch = chain.create_batch(vec![surplus_tx.clone()])?;
+    if surplus_spent {
+        chain.add_pending_proven_transaction(surplus_tx);
+        chain.prove_next_block()?;
+    }
+    let surplus_inputs = chain.get_block_inputs([&surplus_batch])?;
+    let surplus_witness = surplus_inputs.nullifier_witnesses()[&note0.nullifier()].clone();
+
+    let batches = if include_batch {
+        let tx = chain.create_authenticated_notes_proven_tx(account1.id(), [note1.id()]).await?;
+        vec![chain.create_batch(vec![tx])?]
+    } else {
+        Vec::new()
+    };
+    let mut block_inputs = chain.get_block_inputs(&batches)?;
+    assert_eq!(block_inputs.nullifier_witnesses().len(), usize::from(include_batch));
+    block_inputs
+        .nullifier_witnesses_mut()
+        .insert(note0.nullifier(), surplus_witness);
+
+    let error = ProposedBlock::new(block_inputs, batches).unwrap_err();
+    assert_matches!(error, ProposedBlockError::UnexpectedNullifierWitness(nullifier) => {
+        assert_eq!(nullifier, note0.nullifier());
     });
 
     Ok(())

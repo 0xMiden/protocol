@@ -17,6 +17,7 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
+use miden_protocol::transaction::{TransactionLog, TransactionLogs};
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenBaseUri, TokenName};
@@ -883,7 +884,8 @@ fn build_set_token_base_uri_tx(
         .build()
 }
 
-/// The owner can update a mutable token base URI.
+/// The owner can update a mutable token base URI, and the update is announced in a log carrying the
+/// new value.
 #[tokio::test]
 async fn nft_set_token_base_uri_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -906,10 +908,18 @@ async fn nft_set_token_base_uri_succeeds() -> anyhow::Result<()> {
     let mut updated_faucet = faucet.clone();
     updated_faucet.apply_patch(executed.account_patch())?;
 
+    let new_token_base_uri = TokenBaseUri::new(NEW_TOKEN_BASE_URI)?;
     assert_eq!(
         NonFungibleFaucet::try_from(&updated_faucet)?.token_base_uri(),
-        Some(&TokenBaseUri::new(NEW_TOKEN_BASE_URI)?)
+        Some(&new_token_base_uri)
     );
+
+    let expected_log = TransactionLog::new(
+        faucet.id(),
+        NonFungibleFaucet::token_base_uri_updated_topic(),
+        new_token_base_uri.to_words(),
+    )?;
+    assert_eq!(executed.logs(), &TransactionLogs::new(vec![expected_log])?);
 
     Ok(())
 }

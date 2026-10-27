@@ -22,7 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-use crate::account::faucets::{Description, ExternalUri, LogoUri};
+use crate::account::faucets::{Description, ExternalUri, LogoUri, TokenBaseUri};
 use crate::note::costs::{FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 use crate::note::{NetworkAccountTarget, NumStorageItems};
 
@@ -56,13 +56,15 @@ const STRING_NUM_ELEMENTS: usize = 28;
 /// faucet's metadata setters authorize the action through the account-wide
 /// [`Authority`](crate::account::access::Authority) component.
 ///
-/// The three string actions apply to both faucet kinds, since
+/// The description, logo URI and external URI actions apply to both faucet kinds, since
 /// [`FungibleFaucet`](crate::account::faucets::FungibleFaucet) and
 /// [`NonFungibleFaucet`](crate::account::faucets::NonFungibleFaucet) re-export the same setters
 /// from the shared `miden::standards::faucets` module. [`Self::SetMaxSupply`] is fungible-only, and
 /// aborts on a non-fungible faucet, which does not expose `set_max_supply`.
+/// [`Self::SetTokenBaseUri`] is non-fungible-only, and aborts on a fungible faucet, which does not
+/// expose `set_token_base_uri`.
 ///
-/// The three string actions carry their new value as the 28 felts the faucet stores it in. The note
+/// The string actions carry their new value as the 28 felts the faucet stores it in. The note
 /// script commits to those felts and publishes them in the advice map, which is how the called
 /// setter receives them — nothing outside the note has to supply advice inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +78,9 @@ pub enum FaucetMetadataConfig {
     SetLogoUri { logo_uri: LogoUri },
     /// Set the token external URI. Requires the external URI to be configured as mutable.
     SetExternalUri { external_uri: ExternalUri },
+    /// Set the token base URI. Non-fungible faucets only. Requires the token base URI to be
+    /// configured as mutable, which implies the faucet's token metadata is public.
+    SetTokenBaseUri { token_base_uri: TokenBaseUri },
 }
 
 impl FaucetMetadataConfig {
@@ -88,6 +93,7 @@ impl FaucetMetadataConfig {
     const VARIANT_SET_DESCRIPTION: u8 = 1;
     const VARIANT_SET_LOGO_URI: u8 = 2;
     const VARIANT_SET_EXTERNAL_URI: u8 = 3;
+    const VARIANT_SET_TOKEN_BASE_URI: u8 = 4;
 
     /// Returns the variant encoding this action.
     const fn variant(&self) -> u8 {
@@ -96,6 +102,7 @@ impl FaucetMetadataConfig {
             FaucetMetadataConfig::SetDescription { .. } => Self::VARIANT_SET_DESCRIPTION,
             FaucetMetadataConfig::SetLogoUri { .. } => Self::VARIANT_SET_LOGO_URI,
             FaucetMetadataConfig::SetExternalUri { .. } => Self::VARIANT_SET_EXTERNAL_URI,
+            FaucetMetadataConfig::SetTokenBaseUri { .. } => Self::VARIANT_SET_TOKEN_BASE_URI,
         }
     }
 
@@ -120,6 +127,9 @@ impl FaucetMetadataConfig {
             },
             FaucetMetadataConfig::SetExternalUri { external_uri } => {
                 string_storage_values(variant, &external_uri.to_words())
+            },
+            FaucetMetadataConfig::SetTokenBaseUri { token_base_uri } => {
+                string_storage_values(variant, &token_base_uri.to_words())
             },
         }
     }
@@ -151,7 +161,8 @@ impl From<FaucetMetadataConfig> for NoteStorage {
 /// it.
 ///
 /// A single note script dispatches on the note variant in its storage to one of the faucet's
-/// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_uri`).
+/// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_uri`,
+/// `set_token_base_uri`).
 /// Authorization is enforced by those procedures through the account-wide
 /// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
 ///
@@ -226,12 +237,12 @@ impl FaucetMetadataConfigNote {
     /// Upper bound on the number of storage items of a FaucetMetadataConfig note.
     ///
     /// The layout is variable: `SetMaxSupply` uses 2 items (`[variant, new_max_supply]`), while
-    /// the three string actions use 32 (`[variant, 0, 0, 0, value(28)]`).
+    /// the four string actions use 32 (`[variant, 0, 0, 0, value(28)]`).
     pub const MAX_NUM_STORAGE_ITEMS: usize = 4 + STRING_NUM_ELEMENTS;
 
     /// The numbers of storage items the FaucetMetadataConfig note script accepts.
     ///
-    /// `SetMaxSupply` uses 2 items, the three string actions use
+    /// `SetMaxSupply` uses 2 items, the four string actions use
     /// [`Self::MAX_NUM_STORAGE_ITEMS`], and no size in between is valid. Keep in sync with the
     /// `NUM_ITEMS_*` constants in `faucet_metadata_config.masm`.
     pub const NUM_STORAGE_ITEMS: NumStorageItems = NumStorageItems::AnyOf(&[
@@ -423,5 +434,12 @@ mod tests {
         let external_uri = ExternalUri::new("https://example.com").unwrap();
         let storage = NoteStorage::from(FaucetMetadataConfig::SetExternalUri { external_uri });
         assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_EXTERNAL_URI));
+
+        let token_base_uri = TokenBaseUri::new("ipfs://bafy/").unwrap();
+        let storage = NoteStorage::from(FaucetMetadataConfig::SetTokenBaseUri { token_base_uri });
+        assert_eq!(
+            storage.items()[0],
+            Felt::from(FaucetMetadataConfig::VARIANT_SET_TOKEN_BASE_URI)
+        );
     }
 }
