@@ -63,7 +63,7 @@ const ERR_AUTHORITY_CONFIG_NOTE_IS_NOT_PUBLIC = "authority config note must be p
 #!
 #! Consumers: target account (attachment)
 #!
-#! Inputs:  [ARGS, pad(12)]
+#! Inputs:  [NOTE_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
