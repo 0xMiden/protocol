@@ -600,12 +600,12 @@
   "consume MINT note (fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6184,
-    "total_cycles": 36853,
-    "notes_processing": 10638,
+    "total_cycles": 36904,
+    "notes_processing": 10689,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 10596
+        "cycles": 10647
       }
     ],
     "tx_script_processing": 41,
@@ -614,14 +614,14 @@
       "auth_procedure": 10543
     },
     "trace": {
-      "core_rows": 36899,
-      "chiplets_rows": 7865,
+      "core_rows": 36950,
+      "chiplets_rows": 7874,
       "eidos_compression_rows": 60416,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 5448,
+        "hasher_rows": 5456,
         "bitwise_rows": 161,
-        "memory_rows": 2254,
+        "memory_rows": 2255,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -630,12 +630,12 @@
   "consume MINT note (non-fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6702,
-    "total_cycles": 40096,
-    "notes_processing": 11948,
+    "total_cycles": 40198,
+    "notes_processing": 12050,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 11906
+        "cycles": 12008
       }
     ],
     "tx_script_processing": 41,
@@ -644,14 +644,14 @@
       "auth_procedure": 10624
     },
     "trace": {
-      "core_rows": 40142,
-      "chiplets_rows": 8653,
-      "eidos_compression_rows": 64672,
+      "core_rows": 40244,
+      "chiplets_rows": 8663,
+      "eidos_compression_rows": 64704,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 6032,
+        "hasher_rows": 6040,
         "bitwise_rows": 149,
-        "memory_rows": 2470,
+        "memory_rows": 2472,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -690,12 +690,12 @@
   "consume FAUCET_POLICY_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6031,
-    "total_cycles": 29403,
-    "notes_processing": 4752,
+    "total_cycles": 29454,
+    "notes_processing": 4803,
     "note_execution": [
       {
         "note": "FAUCET_POLICY_CONFIG",
-        "cycles": 4710
+        "cycles": 4761
       }
     ],
     "tx_script_processing": 41,
@@ -704,14 +704,14 @@
       "auth_procedure": 10332
     },
     "trace": {
-      "core_rows": 29449,
-      "chiplets_rows": 6326,
-      "eidos_compression_rows": 55712,
+      "core_rows": 29500,
+      "chiplets_rows": 6327,
+      "eidos_compression_rows": 55680,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4352,
         "bitwise_rows": 85,
-        "memory_rows": 1887,
+        "memory_rows": 1888,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -736,7 +736,7 @@
     "trace": {
       "core_rows": 29538,
       "chiplets_rows": 6357,
-      "eidos_compression_rows": 54432,
+      "eidos_compression_rows": 54400,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4328,
@@ -766,7 +766,7 @@
     "trace": {
       "core_rows": 27581,
       "chiplets_rows": 6007,
-      "eidos_compression_rows": 52928,
+      "eidos_compression_rows": 52896,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4096,
@@ -796,7 +796,7 @@
     "trace": {
       "core_rows": 28337,
       "chiplets_rows": 6363,
-      "eidos_compression_rows": 58080,
+      "eidos_compression_rows": 58112,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4376,
@@ -826,7 +826,7 @@
     "trace": {
       "core_rows": 28337,
       "chiplets_rows": 6363,
-      "eidos_compression_rows": 57728,
+      "eidos_compression_rows": 57696,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4376,
@@ -922,6 +922,36 @@
         "hasher_rows": 4256,
         "bitwise_rows": 87,
         "memory_rows": 1548,
+        "kernel_rom_rows": 1,
+        "ace_rows": 0
+      }
+    }
+  },
+  "consume AUTHORITY_CONFIG note (network account)": {
+    "provenance": "producer_measured",
+    "prologue": 3869,
+    "total_cycles": 20456,
+    "notes_processing": 3024,
+    "note_execution": [
+      {
+        "note": "AUTHORITY_CONFIG",
+        "cycles": 2982
+      }
+    ],
+    "tx_script_processing": 41,
+    "epilogue": {
+      "total": 13522,
+      "auth_procedure": 10017
+    },
+    "trace": {
+      "core_rows": 20502,
+      "chiplets_rows": 4583,
+      "eidos_compression_rows": 50240,
+      "byte_pair_lookup_rows": 65536,
+      "chiplets_shape": {
+        "hasher_rows": 3224,
+        "bitwise_rows": 85,
+        "memory_rows": 1272,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
