@@ -1,6 +1,8 @@
 //! Tests for the token-metadata string setters of the
 //! [`miden_standards::account::faucets::FungibleFaucet`] component: `set_description`,
-//! `set_logo_uri` and `set_external_link`.
+//! `set_logo_uri` and `set_external_uri`. The
+//! [`miden_standards::account::faucets::NonFungibleFaucet`] component's `set_token_base_uri`
+//! follows the same argument contract and is driven through the same note.
 //!
 //! Unlike the other authority-gated faucet mutators, these three do not take their argument on the
 //! operand stack. The caller passes the Poseidon2 commitment of the new 7-Word value and provides
@@ -33,16 +35,18 @@ use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::Pausable;
 use miden_standards::account::faucets::{
     Description,
-    ExternalLink,
+    ExternalUri,
     FungibleFaucet,
-    LogoURI,
+    LogoUri,
+    NonFungibleFaucet,
+    TokenBaseUri,
     TokenMetadata,
     TokenName,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DESCRIPTION_NOT_MUTABLE,
-    ERR_EXTERNAL_LINK_NOT_MUTABLE,
+    ERR_EXTERNAL_URI_NOT_MUTABLE,
     ERR_LOGO_URI_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
@@ -77,11 +81,35 @@ fn create_faucet(owner: AccountId, mutable: bool) -> anyhow::Result<Account> {
         .max_supply(AssetAmount::new(INITIAL_MAX_SUPPLY)?)
         .is_description_mutable(mutable)
         .is_logo_uri_mutable(mutable)
-        .is_external_link_mutable(mutable)
+        .is_external_uri_mutable(mutable)
         .is_max_supply_mutable(mutable)
         .build()?;
 
     let account = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(Pausable::unpaused())
+        .with_component(faucet)
+        .build_existing()?;
+
+    Ok(account)
+}
+
+/// Initial token base URI of the faucets built by [`create_nft_faucet`].
+const INITIAL_TOKEN_BASE_URI: &str = "ipfs://bafy-initial/";
+
+/// Builds an existing non-fungible faucet with public token metadata, owned by `owner` via
+/// `Authority::OwnerControlled`, with the token base URI mutability flag set to `mutable`.
+fn create_nft_faucet(owner: AccountId, mutable: bool) -> anyhow::Result<Account> {
+    let faucet = NonFungibleFaucet::builder()
+        .name(TokenName::new("NFT")?)
+        .symbol("NFT".try_into()?)
+        .token_base_uri(TokenBaseUri::new(INITIAL_TOKEN_BASE_URI)?)
+        .is_token_base_uri_mutable(mutable)
+        .build()?;
+
+    let account = AccountBuilder::new([44; 32])
         .account_type(AccountType::Public)
         .with_components(Auth::IncrNonce)
         .with_components(AccessControl::Ownable2Step { owner })
@@ -240,7 +268,7 @@ async fn set_logo_uri_fails_when_immutable() -> anyhow::Result<()> {
     builder.add_account(faucet.clone())?;
     let mock_chain = builder.build()?;
 
-    let logo_uri = LogoURI::new("https://example.com/nope.png")?;
+    let logo_uri = LogoUri::new("https://example.com/nope.png")?;
     let note = config_note(owner, faucet.id(), FaucetMetadataConfig::SetLogoUri { logo_uri }, 5)?;
 
     let result = mock_chain
@@ -256,20 +284,16 @@ async fn set_logo_uri_fails_when_immutable() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn set_external_link_fails_when_immutable() -> anyhow::Result<()> {
+async fn set_external_uri_fails_when_immutable() -> anyhow::Result<()> {
     let owner = owner_id();
     let faucet = create_faucet(owner, false)?;
     let mut builder = MockChain::builder();
     builder.add_account(faucet.clone())?;
     let mock_chain = builder.build()?;
 
-    let external_link = ExternalLink::new("https://example.com/nope")?;
-    let note = config_note(
-        owner,
-        faucet.id(),
-        FaucetMetadataConfig::SetExternalLink { external_link },
-        6,
-    )?;
+    let external_uri = ExternalUri::new("https://example.com/nope")?;
+    let note =
+        config_note(owner, faucet.id(), FaucetMetadataConfig::SetExternalUri { external_uri }, 6)?;
 
     let result = mock_chain
         .build_transaction(faucet.clone())
@@ -278,7 +302,7 @@ async fn set_external_link_fails_when_immutable() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_EXTERNAL_LINK_NOT_MUTABLE);
+    assert_transaction_executor_error!(result, ERR_EXTERNAL_URI_NOT_MUTABLE);
 
     Ok(())
 }
@@ -302,6 +326,36 @@ async fn set_description_fails_when_sender_is_not_owner() -> anyhow::Result<()> 
         faucet.id(),
         FaucetMetadataConfig::SetDescription { description },
         7,
+    )?;
+
+    let result = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// `set_token_base_uri` is gated the same way on a non-fungible faucet.
+#[tokio::test]
+async fn set_token_base_uri_fails_when_sender_is_not_owner() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let stranger = AccountIdBuilder::new().build_with_seed([2; 32]);
+    let faucet = create_nft_faucet(owner, true)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(faucet.clone())?;
+    let mock_chain = builder.build()?;
+
+    let token_base_uri = TokenBaseUri::new("ipfs://bafy-not-yours/")?;
+    let note = config_note(
+        stranger,
+        faucet.id(),
+        FaucetMetadataConfig::SetTokenBaseUri { token_base_uri },
+        10,
     )?;
 
     let result = mock_chain

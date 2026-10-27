@@ -24,16 +24,16 @@ use miden_standards::account::access::Pausable;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
     Description,
-    ExternalLink,
+    ExternalUri,
     FungibleFaucet,
-    LogoURI,
+    LogoUri,
     TokenMetadata,
     TokenName,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DESCRIPTION_NOT_MUTABLE,
-    ERR_EXTERNAL_LINK_NOT_MUTABLE,
+    ERR_EXTERNAL_URI_NOT_MUTABLE,
     ERR_LOGO_URI_NOT_MUTABLE,
     ERR_MAX_SUPPLY_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
@@ -46,7 +46,7 @@ use crate::{MockChain, TestTransactionBuilder, assert_transaction_executor_error
 // ================================================================================================
 
 /// Builds [`FungibleFaucet`] for tests that use raw word arrays + mutability flags
-/// (e.g. from [`description_config`] / [`logo_uri_config`] / [`external_link_config`]).
+/// (e.g. from [`description_config`] / [`logo_uri_config`] / [`external_uri_config`]).
 fn network_faucet_metadata(
     token_symbol: &str,
     max_supply: u64,
@@ -54,7 +54,7 @@ fn network_faucet_metadata(
     max_supply_mutable: bool,
     description: Option<([Word; 7], bool)>,
     logo_uri: Option<([Word; 7], bool)>,
-    external_link: Option<([Word; 7], bool)>,
+    external_uri: Option<([Word; 7], bool)>,
 ) -> anyhow::Result<FungibleFaucet> {
     let token_supply = AssetAmount::new(token_supply.unwrap_or(0))?;
     let max_supply = AssetAmount::new(max_supply)?;
@@ -70,13 +70,13 @@ fn network_faucet_metadata(
     };
     let (logo_uri, is_logo_uri_mutable) = match logo_uri {
         Some((words, mutable)) => {
-            (Some(LogoURI::try_from_words(&words).expect("valid logo_uri words")), mutable)
+            (Some(LogoUri::try_from_words(&words).expect("valid logo_uri words")), mutable)
         },
         None => (None, false),
     };
-    let (external_link, is_external_link_mutable) = match external_link {
+    let (external_uri, is_external_uri_mutable) = match external_uri {
         Some((words, mutable)) => (
-            Some(ExternalLink::try_from_words(&words).expect("valid external_link words")),
+            Some(ExternalUri::try_from_words(&words).expect("valid external_uri words")),
             mutable,
         ),
         None => (None, false),
@@ -93,8 +93,8 @@ fn network_faucet_metadata(
         .is_description_mutable(is_description_mutable)
         .maybe_logo_uri(logo_uri)
         .is_logo_uri_mutable(is_logo_uri_mutable)
-        .maybe_external_link(external_link)
-        .is_external_link_mutable(is_external_link_mutable)
+        .maybe_external_uri(external_uri)
+        .is_external_uri_mutable(is_external_uri_mutable)
         .build()?)
 }
 
@@ -427,7 +427,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
             call.::miden::standards::faucets::get_mutability_config
             push.1 assert_eq.err="desc_mutable should be 1"
             push.0 assert_eq.err="logo_mutable should be 0"
-            push.0 assert_eq.err="extlink_mutable should be 0"
+            push.0 assert_eq.err="external_uri_mutable should be 0"
             push.1 assert_eq.err="max_supply_mutable should be 1"
         end
         "#,
@@ -447,10 +447,10 @@ async fn get_mutability_config() -> anyhow::Result<()> {
     build_faucet_metadata().with_logo_uri_mutable(true),      1)]
 #[case("::miden::standards::faucets::is_logo_uri_mutable",
     build_faucet_metadata().with_logo_uri_mutable(false),     0)]
-#[case("::miden::standards::faucets::is_external_link_mutable",
-    build_faucet_metadata().with_external_link_mutable(true), 1)]
-#[case("::miden::standards::faucets::is_external_link_mutable",
-    build_faucet_metadata().with_external_link_mutable(false),0)]
+#[case("::miden::standards::faucets::is_external_uri_mutable",
+    build_faucet_metadata().with_external_uri_mutable(true), 1)]
+#[case("::miden::standards::faucets::is_external_uri_mutable",
+    build_faucet_metadata().with_external_uri_mutable(false),0)]
 #[tokio::test]
 async fn is_field_mutable_checks(
     #[case] proc_path: &str,
@@ -571,20 +571,20 @@ fn basic_faucet_with_max_name_and_full_description() {
 // =================================================================================================
 
 // =================================================================================================
-// SETTER TESTS – set_description, set_logo_uri, set_external_link (parameterised)
+// SETTER TESTS – set_description, set_logo_uri, set_external_uri (parameterised)
 // =================================================================================================
 
 struct FieldSetterFaucetArgs {
     description: Option<([Word; 7], bool)>,
     logo_uri: Option<([Word; 7], bool)>,
-    external_link: Option<([Word; 7], bool)>,
+    external_uri: Option<([Word; 7], bool)>,
 }
 
 fn description_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
     FieldSetterFaucetArgs {
         description: Some((data, mutable)),
         logo_uri: None,
-        external_link: None,
+        external_uri: None,
     }
 }
 
@@ -592,15 +592,15 @@ fn logo_uri_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
     FieldSetterFaucetArgs {
         description: None,
         logo_uri: Some((data, mutable)),
-        external_link: None,
+        external_uri: None,
     }
 }
 
-fn external_link_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
+fn external_uri_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
     FieldSetterFaucetArgs {
         description: None,
         logo_uri: None,
-        external_link: Some((data, mutable)),
+        external_uri: Some((data, mutable)),
     }
 }
 
@@ -619,7 +619,7 @@ async fn test_field_setter_immutable_fails(
         false,
         args.description,
         args.logo_uri,
-        args.external_link,
+        args.external_uri,
     )?;
     let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet, [])?;
     let mock_chain = builder.build()?;
@@ -665,7 +665,7 @@ async fn test_field_setter_owner_succeeds(
         false,
         args.description,
         args.logo_uri,
-        args.external_link,
+        args.external_uri,
     )?;
 
     let hash = compute_field_hash(&new_data);
@@ -732,7 +732,7 @@ async fn test_field_setter_non_owner_fails(
         false,
         args.description,
         args.logo_uri,
-        args.external_link,
+        args.external_uri,
     )?;
 
     // Auth check fires before data is touched, so no hash push is needed.
@@ -833,33 +833,33 @@ async fn set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
         .await
 }
 
-// --- set_external_link ---
+// --- set_external_uri ---
 
 #[tokio::test]
-async fn set_external_link_immutable_fails() -> anyhow::Result<()> {
+async fn set_external_uri_immutable_fails() -> anyhow::Result<()> {
     test_field_setter_immutable_fails(
-        "set_external_link",
-        ERR_EXTERNAL_LINK_NOT_MUTABLE,
-        external_link_config(initial_field_data(), false),
+        "set_external_uri",
+        ERR_EXTERNAL_URI_NOT_MUTABLE,
+        external_uri_config(initial_field_data(), false),
     )
     .await
 }
 
 #[tokio::test]
-async fn set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
+async fn set_external_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
     test_field_setter_owner_succeeds(
-        "set_external_link",
-        external_link_config(initial_field_data(), true),
-        TokenMetadata::external_link_slot,
+        "set_external_uri",
+        external_uri_config(initial_field_data(), true),
+        TokenMetadata::external_uri_slot,
     )
     .await
 }
 
 #[tokio::test]
-async fn set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
+async fn set_external_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
     test_field_setter_non_owner_fails(
-        "set_external_link",
-        external_link_config(initial_field_data(), true),
+        "set_external_uri",
+        external_uri_config(initial_field_data(), true),
     )
     .await
 }
