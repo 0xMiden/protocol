@@ -16,8 +16,7 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 /// [`CodeTree`](super::CodeTree) and its code registry, and the procedures it depends on.
 ///
 /// The created procedures are equal to the procedure roots of the contained [`MastForest`]. They
-/// are retained separately to keep tx kernel emission order. The advice map of the forest is
-/// retained, since code may rely on it.
+/// are retained separately to keep tx kernel emission order.
 ///
 /// The dependencies are the procedures that the external nodes of the forest reference and that
 /// the transaction proves present in the code tree. The host selects them, so they are committed
@@ -28,10 +27,9 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 ///
 /// A dependency must not be a created procedure, i.e. an external node must not reference a
 /// created procedure. Building the forest with [`MastForest::merge`] replaces such references with
-/// the procedure itself. This prevents a host from moving an inner node of a created procedure
-/// into a separate created procedure, which would add a code tree entry. It also rejects a
-/// procedure root that is a single external node, which would register a reference instead of
-/// code.
+/// the procedure itself. This rejects a procedure root that is a single external node, which would
+/// register a reference instead of code. It does not prevent a host from making an inner node of a
+/// created procedure a separate root, which adds a code tree entry that the account pays for.
 ///
 /// Every node of the forest must be reachable from a created procedure. The commitments do not
 /// cover unreachable nodes, so they could add arbitrary data to the registry without changing the
@@ -39,10 +37,9 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 ///
 /// Both lists are kept in the order in which the transaction kernel commits to them.
 ///
-/// The commitment to created procedures and advice ([`Self::created_commitment`]) is the sequential
-/// hash of:
+/// The commitment to created procedures ([`Self::created_commitment`]) is the sequential hash of:
 /// ```text
-/// [CREATED_PROC_ROOT_0, ..., CREATED_PROC_ROOT_N, ADVICE_COMMITMENT].
+/// [CREATED_PROC_ROOT_0, ..., CREATED_PROC_ROOT_N].
 /// ```
 ///
 /// The commitment to dependencies ([`Self::dependencies_commitment`]) is the sequential hash of:
@@ -55,9 +52,8 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 /// [CREATED_COMMITMENT, DEPENDENCIES_COMMITMENT].
 /// ```
 ///
-/// Each advice map key must be the hash of its value. The registry merges the advice maps of all
-/// patches, so two entries with the same key must have the same value. Otherwise, a user could
-/// register a key with an arbitrary value first and block all later code that uses the key.
+/// The advice map of the forest must be empty. Advice is expected to be removed from
+/// [`MastForest`], so the code tree and its registry do not commit to or store it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodePatch {
     created_procedures: Vec<ProcedureRoot>,
@@ -101,8 +97,8 @@ impl CodePatch {
     /// - a node of the forest is not reachable from a created procedure.
     /// - an external node of the forest does not reference a dependency.
     /// - a dependency is not referenced by an external node of the forest.
+    /// - the advice map of the forest is not empty.
     /// - the serialized forest exceeds [`Self::MAX_SIZE`].
-    /// - an advice map key is not the hash of its value.
     pub fn new(
         created_procedures: Vec<ProcedureRoot>,
         dependencies: Vec<ProcedureRoot>,
@@ -155,21 +151,16 @@ impl CodePatch {
             return Err(CodePatchError::DependencyNotExternalNode(*unreferenced_dependency));
         }
 
+        if !mast.advice_map().is_empty() {
+            return Err(CodePatchError::AdviceMapNotEmpty);
+        }
+
         // TODO: replace the temporary serialization with a size-hint API on MastForest once it
         // becomes available.
         let mut serialized_mast = Vec::new();
         mast.write_hashless(&mut serialized_mast);
         if serialized_mast.len() > Self::MAX_SIZE as usize {
             return Err(CodePatchError::SizeLimitExceeded { size: serialized_mast.len() });
-        }
-
-        // Ensure all advice map keys are the sequential hashes of their values.
-        if let Some((key, _)) = mast
-            .advice_map()
-            .iter()
-            .find(|(key, value)| Hasher::hash_elements(value) != **key)
-        {
-            return Err(CodePatchError::AdviceMapKeyNotValueHash(*key));
         }
 
         Ok(Self::new_unchecked(created_procedures, dependencies, mast))
@@ -181,11 +172,11 @@ impl CodePatch {
         dependencies: Vec<ProcedureRoot>,
         mast: Arc<MastForest>,
     ) -> Self {
-        let created_commitment = if is_empty_created(&created_procedures, &mast) {
+        let created_commitment = if created_procedures.is_empty() {
             Word::empty()
         } else {
             Hasher::hash_elements_in_domain(
-                &created_elements(&created_procedures, &mast),
+                &procedure_root_elements(&created_procedures),
                 Self::CREATED_DOMAIN,
             )
         };
@@ -233,23 +224,15 @@ impl CodePatch {
         self.dependencies.iter().copied()
     }
 
-    /// Returns `true` if the patch creates no procedures, has no dependencies and has an empty
-    /// advice map.
+    /// Returns `true` if the patch creates no procedures and has no dependencies.
     pub fn is_empty(&self) -> bool {
-        is_empty_created(&self.created_procedures, &self.mast) && self.dependencies.is_empty()
+        self.created_procedures.is_empty() && self.dependencies.is_empty()
     }
 
     /// Returns the elements the created procedures commitment is computed from: the created
-    /// procedure roots in kernel order, followed by the advice map commitment of the forest.
-    ///
-    /// If there are no created procedures and the advice map is empty, an empty vector is
-    /// returned.
+    /// procedure roots in kernel order.
     pub fn to_created_elements(&self) -> Vec<Felt> {
-        if is_empty_created(&self.created_procedures, &self.mast) {
-            return Vec::new();
-        }
-
-        created_elements(&self.created_procedures, &self.mast)
+        procedure_root_elements(&self.created_procedures)
     }
 
     /// Returns the elements the dependencies commitment is computed from: the dependencies in
@@ -258,8 +241,7 @@ impl CodePatch {
         procedure_root_elements(&self.dependencies)
     }
 
-    /// Returns the commitment to the created procedures and the advice map, or [`Word::empty`]
-    /// if both are empty.
+    /// Returns the commitment to the created procedures, or [`Word::empty`] if there are none.
     pub fn created_commitment(&self) -> Word {
         self.created_commitment
     }
@@ -322,22 +304,9 @@ fn find_unreachable_node(mast: &MastForest) -> Option<Word> {
         .map(|(node, _)| node.digest())
 }
 
-/// Returns `true` if there are no created procedures and the advice map is empty.
-fn is_empty_created(created_procedures: &[ProcedureRoot], mast: &MastForest) -> bool {
-    created_procedures.is_empty() && mast.advice_map().is_empty()
-}
-
-/// Returns the created procedure roots followed by the advice map commitment of the forest.
-fn created_elements(created_procedures: &[ProcedureRoot], mast: &MastForest) -> Vec<Felt> {
-    let mut elements = procedure_root_elements(created_procedures);
-    elements.extend_from_slice(mast.advice_commitment().as_elements());
-
-    elements
-}
-
 /// Returns the procedure roots as a sequence of field elements.
 fn procedure_root_elements(procedure_roots: &[ProcedureRoot]) -> Vec<Felt> {
-    let mut elements = Vec::with_capacity((procedure_roots.len() + 1) * Word::NUM_ELEMENTS);
+    let mut elements = Vec::with_capacity(procedure_roots.len() * Word::NUM_ELEMENTS);
     for procedure_root in procedure_roots {
         elements.extend_from_slice(procedure_root.as_elements());
     }
@@ -353,10 +322,13 @@ mod tests {
     use alloc::vec;
 
     use assert_matches::assert_matches;
+    use miden_core::mast::{BasicBlockNodeBuilder, MastNode};
+    use miden_core::operations::Operation;
 
     use super::*;
+    use crate::assembly::mast::MastNodeId;
     use crate::testing::assembler::assemble_test_package;
-    use crate::utils::create_external_node_forest;
+    use crate::utils::{IndexVec, create_external_node_forest};
     use crate::vm::AdviceMap;
 
     /// The digest `[1, 2, 3, 4]` called by `bar`, which becomes an external node of the forest.
@@ -379,14 +351,6 @@ mod tests {
             .clone()
     }
 
-    /// Returns an advice map with a single entry whose key is the hash of its value.
-    fn advice_map_with_value_len(value_len: usize) -> AdviceMap {
-        let value = vec![Felt::ONE; value_len];
-        let mut advice_map = AdviceMap::default();
-        advice_map.insert(Hasher::hash_elements(&value), value);
-        advice_map
-    }
-
     fn forest_roots(mast: &MastForest) -> Vec<ProcedureRoot> {
         mast.procedure_digests().map(ProcedureRoot::from_raw).collect()
     }
@@ -407,9 +371,8 @@ mod tests {
     }
 
     #[test]
-    fn commitment_covers_created_procedures_dependencies_and_advice_map() -> anyhow::Result<()> {
+    fn commitment_covers_created_procedures_and_dependencies() -> anyhow::Result<()> {
         let mast = library_forest();
-        let mast = Arc::new((*mast).clone().with_advice_map(advice_map_with_value_len(4)));
         let [proc0, proc1] = <[ProcedureRoot; 2]>::try_from(forest_roots(&mast))
             .map_err(|roots| anyhow::anyhow!("expected two forest roots, got {}", roots.len()))?;
         let external_procedure = ProcedureRoot::from_raw(EXTERNAL_DIGEST);
@@ -417,11 +380,10 @@ mod tests {
         // Unsorted kernel order.
         let created_procedures = vec![proc1, proc0];
         let dependencies = vec![external_procedure];
-        let patch = CodePatch::new(created_procedures.clone(), dependencies.clone(), mast.clone())?;
+        let patch = CodePatch::new(created_procedures.clone(), dependencies.clone(), mast)?;
 
-        let mut expected_created_elements: Vec<Felt> =
+        let expected_created_elements: Vec<Felt> =
             created_procedures.iter().flat_map(|root| root.as_elements().to_vec()).collect();
-        expected_created_elements.extend_from_slice(mast.advice_commitment().as_elements());
         let expected_dependencies_elements: Vec<Felt> =
             dependencies.iter().flat_map(|root| root.as_elements().to_vec()).collect();
         let expected_created_commitment =
@@ -442,32 +404,6 @@ mod tests {
             patch.commitment(),
             Hasher::merge_in_domain(
                 &[expected_created_commitment, expected_dependencies_commitment],
-                CodePatch::DOMAIN
-            )
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn advice_map_without_procedures_is_allowed() -> anyhow::Result<()> {
-        let mast = MastForest::new().with_advice_map(advice_map_with_value_len(4));
-        let advice_commitment = mast.advice_commitment();
-        let patch = CodePatch::new(Vec::new(), Vec::new(), Arc::new(mast))?;
-        let expected_created_commitment = Hasher::hash_elements_in_domain(
-            advice_commitment.as_elements(),
-            CodePatch::CREATED_DOMAIN,
-        );
-
-        assert!(!patch.is_empty());
-        assert_eq!(patch.created_procedures().count(), 0);
-        assert_eq!(patch.to_created_elements(), advice_commitment.as_elements());
-        assert_eq!(patch.created_commitment(), expected_created_commitment);
-        assert_eq!(patch.dependencies_commitment(), Word::empty());
-        assert_eq!(
-            patch.commitment(),
-            Hasher::merge_in_domain(
-                &[expected_created_commitment, Word::empty()],
                 CodePatch::DOMAIN
             )
         );
@@ -609,28 +545,32 @@ mod tests {
     }
 
     #[test]
-    fn new_rejects_advice_map_key_that_is_not_value_hash() {
-        let invalid_key = Word::from([1, 2, 3, 4u32]);
+    fn new_rejects_non_empty_advice_map() {
+        let value = vec![Felt::ONE];
         let mut advice_map = AdviceMap::default();
-        advice_map.insert(invalid_key, vec![Felt::ONE]);
+        advice_map.insert(Hasher::hash_elements(&value), value);
         let mast = MastForest::new().with_advice_map(advice_map);
 
         let error = CodePatch::new(Vec::new(), Vec::new(), Arc::new(mast)).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::AdviceMapKeyNotValueHash(key) if key == invalid_key
-        );
+        assert_matches!(error, CodePatchError::AdviceMapNotEmpty);
     }
 
     #[test]
-    fn new_rejects_oversized_forest() {
-        let value_len = CodePatch::MAX_SIZE as usize / size_of::<u64>();
-        let mast = MastForest::new().with_advice_map(advice_map_with_value_len(value_len));
+    fn new_rejects_oversized_forest() -> anyhow::Result<()> {
+        // Each push serializes its immediate, so the block exceeds the size limit.
+        let push_count = CodePatch::MAX_SIZE as usize / size_of::<u64>();
+        let operations = vec![Operation::Push(Felt::from_u32(u32::MAX)); push_count];
+        let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
+        let node_id = nodes.push(BasicBlockNodeBuilder::new(operations).build()?.into())?;
+        let mast = MastForest::from_raw_parts(nodes, vec![node_id], AdviceMap::default())?;
+        let mast = Arc::new(mast);
 
-        let error = CodePatch::new(Vec::new(), Vec::new(), Arc::new(mast)).unwrap_err();
+        let error = CodePatch::new(forest_roots(&mast), Vec::new(), mast).unwrap_err();
         assert_matches!(
             error,
             CodePatchError::SizeLimitExceeded { size } if size > CodePatch::MAX_SIZE as usize
         );
+
+        Ok(())
     }
 }

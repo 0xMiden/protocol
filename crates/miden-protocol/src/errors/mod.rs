@@ -1851,8 +1851,8 @@ pub enum CodePatchError {
     )]
     SizeLimitExceeded { size: usize },
 
-    #[error("advice map key {0} of code patch is not the hash of its value")]
-    AdviceMapKeyNotValueHash(Word),
+    #[error("advice map of the code patch MAST forest is not empty")]
+    AdviceMapNotEmpty,
 }
 
 // AUTH SCHEME ERROR
