@@ -1,0 +1,208 @@
+# miden::standards::faucets::non_fungible::token_base_uri
+#
+# The token base URI of a non-fungible faucet. A non-empty value makes the faucet's token metadata
+# public: a token's metadata lives at the base URI followed by its token ID. An empty value makes
+# it private. The authority-gated setter cannot switch between the two, so the mode is fixed at
+# creation.
+
+use {METADATA_STRING_NUM_WORDS, MetadataStringCommitment} from miden::standards::faucets
+use {Bool} from miden::protocol::types
+use miden::core::mem
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+use miden::standards::access::authority
+use miden::standards::access::pausable
+
+# CONSTANTS
+# =================================================================================================
+
+const MUTABILITY_CONFIG_SLOT = word("miden::standards::faucets::non_fungible::mutability_config")
+
+const TOKEN_BASE_URI_0_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_0")
+const TOKEN_BASE_URI_1_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_1")
+const TOKEN_BASE_URI_2_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_2")
+const TOKEN_BASE_URI_3_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_3")
+const TOKEN_BASE_URI_4_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_4")
+const TOKEN_BASE_URI_5_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_5")
+const TOKEN_BASE_URI_6_SLOT = word("miden::standards::faucets::non_fungible::token_base_uri_6")
+
+# Topic of the log emitted when the token base URI changes, so readers know to refetch the token
+# metadata.
+const TOKEN_BASE_URI_UPDATED_TOPIC = word("miden::standards::faucets::non_fungible::token_base_uri_updated")
+
+# Masks the first byte of a metadata string's first element, which holds the string's byte length.
+const STRING_LENGTH_MASK = 0xff
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TOKEN_BASE_URI_NOT_MUTABLE = "token base URI is not mutable"
+const ERR_TOKEN_METADATA_IS_PRIVATE = "token base URI cannot be set on a faucet with private token metadata"
+const ERR_TOKEN_BASE_URI_CANNOT_BE_CLEARED = "token base URI cannot be cleared"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Returns 1 if the token base URI is mutable, and 0 otherwise.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_token_base_uri_mutable, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc is_token_base_uri_mutable() -> Bool
+    exec.is_token_base_uri_mutable_internal
+    # => [is_token_base_uri_mutable, pad(16)]
+
+    swap drop
+    # => [is_token_base_uri_mutable, pad(15)]
+end
+
+#! Updates the token base URI (7 Words) if the token base URI mutability flag is 1 and the caller
+#! satisfies the account-wide [`Authority`] configuration.
+#!
+#! Whether the faucet's token metadata is public (non-empty token base URI) or private (empty) is
+#! fixed at creation, so both the current and the new token base URI must be non-empty.
+#!
+#! The caller passes the Poseidon2 hash of the new token base URI on the stack and provides the
+#! actual 7 Words in the advice map under that hash. The hash is verified against the preimage
+#! during loading.
+#!
+#! Emits a log under the `token_base_uri_updated` topic whose content is the new token base URI, so
+#! readers know to refetch the token metadata.
+#!
+#! Inputs:
+#!   Operand stack: [TOKEN_BASE_URI_HASH, pad(12)]
+#!   Advice map: {
+#!     TOKEN_BASE_URI_HASH: [token_base_uri_elements],
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - token_base_uri_elements are 28 felts (7 Words) encoding the token base URI.
+#!
+#! Panics if:
+#! - the token base URI mutability flag is not 1.
+#! - the caller is not authorized per the installed [`Authority`].
+#! - the faucet is paused.
+#! - the preimage does not match TOKEN_BASE_URI_HASH.
+#! - the current token base URI is empty, i.e. the faucet's token metadata is private.
+#! - the new token base URI is empty.
+#! - the transaction log count or content size exceeds its limit.
+#!
+#! Invocation: call
+@locals(28)
+@account_procedure
+pub proc set_token_base_uri(token_base_uri_hash: MetadataStringCommitment)
+    exec.is_token_base_uri_mutable_internal
+    # => [is_token_base_uri_mutable, TOKEN_BASE_URI_HASH, pad(12)]
+
+    assert.err=ERR_TOKEN_BASE_URI_NOT_MUTABLE
+    # => [TOKEN_BASE_URI_HASH, pad(12)]
+
+    exec.authority::assert_authorized
+    # => [TOKEN_BASE_URI_HASH, pad(12)]
+
+    exec.pausable::assert_not_paused
+    # => [TOKEN_BASE_URI_HASH, pad(12)]
+
+    # pipe the new value from the advice map into local words 0-6, validating the hash
+    adv.push_mapval
+    locaddr.0 push.METADATA_STRING_NUM_WORDS
+    # => [num_words, write_ptr, TOKEN_BASE_URI_HASH, pad(12)]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [pad(16)]
+
+    # the token metadata mode is fixed at creation: the setter can neither make private token
+    # metadata public nor clear the base URI of public token metadata
+    push.TOKEN_BASE_URI_0_SLOT[0..2] exec.active_account::get_item
+    # => [CURRENT_TOKEN_BASE_URI_0, pad(16)]
+
+    movdn.3 drop drop drop
+    # => [current_first_element, pad(16)]
+
+    exec.get_string_length neq.0 assert.err=ERR_TOKEN_METADATA_IS_PRIVATE
+    # => [pad(16)]
+
+    loc_load.0
+    # => [new_first_element, pad(16)]
+
+    exec.get_string_length neq.0 assert.err=ERR_TOKEN_BASE_URI_CANNOT_BE_CLEARED
+    # => [pad(16)]
+
+    loc_loadw_le.0
+    push.TOKEN_BASE_URI_0_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    loc_loadw_le.4
+    push.TOKEN_BASE_URI_1_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    loc_loadw_le.8
+    push.TOKEN_BASE_URI_2_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    loc_loadw_le.12
+    push.TOKEN_BASE_URI_3_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    loc_loadw_le.16
+    push.TOKEN_BASE_URI_4_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    loc_loadw_le.20
+    push.TOKEN_BASE_URI_5_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    loc_loadw_le.24
+    push.TOKEN_BASE_URI_6_SLOT[0..2]
+    exec.native_account::set_item dropw
+    # => [pad(16)]
+
+    # announce the update with the new value
+    locaddr.0 push.METADATA_STRING_NUM_WORDS push.TOKEN_BASE_URI_UPDATED_TOPIC[0..2]
+    # => [topic_suffix, topic_prefix, num_words, content_ptr, pad(16)]
+
+    exec.tx::add_log_from_memory
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Extracts the is_token_base_uri_mutable flag from the non-fungible faucet's mutability config
+#! word.
+#!
+#! Inputs:  []
+#! Outputs: [is_token_base_uri_mutable]
+#!
+#! Invocation: exec
+proc is_token_base_uri_mutable_internal() -> Bool
+    push.MUTABILITY_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [is_token_base_uri_mutable, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [is_token_base_uri_mutable]
+end
+
+#! Returns the byte length of a metadata string, read from the string's first element.
+#!
+#! Metadata strings are length-prefixed: the first byte of the first element is the length.
+#!
+#! Inputs:  [first_element]
+#! Outputs: [length]
+#!
+#! Invocation: exec
+proc get_string_length(first_element: felt) -> u8
+    u32split
+    # => [first_element_lo, first_element_hi]
+
+    swap drop
+    # => [first_element_lo]
+
+    u32and.STRING_LENGTH_MASK
+    # => [length]
+end

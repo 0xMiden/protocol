@@ -307,7 +307,9 @@ impl ProposedBatch {
         }
         // SAFETY: This is safe as we have checked for duplicates and the max number of input notes
         // in a batch.
-        let input_notes = InputNotes::new_unchecked(input_notes);
+        let input_notes = InputNotes::new_unchecked(
+            input_notes.into_values().map(|(_, input_note)| input_note).collect(),
+        );
 
         if output_notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
             return Err(ProposedBatchError::TooManyOutputNotes(output_notes.len()));

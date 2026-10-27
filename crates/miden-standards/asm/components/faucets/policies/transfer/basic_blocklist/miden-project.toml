@@ -11,3 +11,13 @@ path      = "basic_blocklist.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Transfer policy rejecting transfers to blocklisted accounts"
+name        = "miden::standards::faucets::policies::transfer::basic_blocklist"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Whether an account is blocked from receiving transfers"
+name        = "miden::standards::faucets::policies::transfer::blocklist::blocked_accounts"
+type        = { key = "word", value = "bool" }

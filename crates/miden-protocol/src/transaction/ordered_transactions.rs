@@ -2,13 +2,6 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::transaction::{TransactionHeader, TransactionId};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Hasher, Word};
 
 // ORDERED TRANSACTION HEADERS
@@ -84,20 +77,5 @@ impl OrderedTransactionHeaders {
         }
 
         Hasher::hash_elements(&elements)
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for OrderedTransactionHeaders {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target)
-    }
-}
-
-impl Deserializable for OrderedTransactionHeaders {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        source.read().map(OrderedTransactionHeaders::new_unchecked)
     }
 }

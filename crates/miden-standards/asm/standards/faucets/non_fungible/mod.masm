@@ -29,8 +29,9 @@ use {Asset, NoteRecipient, NoteTag, NoteType, StorageMapKey} from miden::protoco
 # Under a permissive policy such as `allow_all`, any caller can claim any token ID, permanently
 # consuming a commitment another party intended to mint.
 #
-# Shared token metadata (name, description, logo_uri, external_link) lives in the parent
-# `miden::standards::faucets` namespace.
+# Shared token metadata (name, description, logo_uri, external_uri) lives in the parent
+# `miden::standards::faucets` namespace. The token base URI, which is specific to non-fungible
+# faucets, lives in the `token_base_uri` submodule.
 
 use miden::core::word
 use miden::protocol::active_account
@@ -39,6 +40,8 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::standards::assets::non_fungible_asset
 use miden::standards::faucets::policies::policy_manager
+
+pub mod token_base_uri
 
 pub type TokenId = struct { suffix: felt, prefix: felt }
 pub type TokenStatus = u8

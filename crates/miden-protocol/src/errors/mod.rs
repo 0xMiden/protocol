@@ -42,6 +42,7 @@ use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::{BlockNumber, ValidatorConfig};
+use crate::code::ProcedureRoot;
 use crate::note::{
     NoteAssets,
     NoteAttachment,
@@ -1681,6 +1682,9 @@ pub enum ProposedBlockError {
     #[error("no proof for nullifier {0} was provided")]
     NullifierProofMissing(Nullifier),
 
+    #[error("witness for nullifier {0} does not correspond to an input note of the block")]
+    UnexpectedNullifierWitness(Nullifier),
+
     #[error("note with nullifier {0} is already spent")]
     NullifierSpent(Nullifier),
 
@@ -1786,6 +1790,36 @@ pub enum NullifierTreeError {
 
     #[error("invalid nullifier block number")]
     InvalidNullifierBlockNumber(Word),
+}
+
+// CODE TREE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum CodeTreeError {
+    #[error("entries passed to code tree contain duplicate procedure roots")]
+    DuplicateProcedureRoots(#[source] MerkleError),
+
+    #[error("code tree contains invalid value {value} for procedure root {procedure_root}")]
+    InvalidLeafValue {
+        procedure_root: ProcedureRoot,
+        value: Word,
+    },
+
+    #[error("maximum number of code tree leaf entries exceeded")]
+    MaxLeafEntriesExceeded(#[source] MerkleError),
+
+    #[error("procedure root {procedure_root} is not tracked by the partial code tree")]
+    UntrackedProcedure {
+        procedure_root: ProcedureRoot,
+        source: MerkleError,
+    },
+
+    #[error("new tree root after code witness insertion does not match previous tree root")]
+    TreeRootConflict(#[source] MerkleError),
+
+    #[error("failed to compute code tree mutations")]
+    ComputeMutations(#[source] MerkleError),
 }
 
 // AUTH SCHEME ERROR
