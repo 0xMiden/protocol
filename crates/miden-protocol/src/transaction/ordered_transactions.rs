@@ -16,10 +16,6 @@ use crate::{Felt, Hasher, Word};
 
 /// The ordered set of transaction headers in a [`ProvenBatch`](crate::batch::ProvenBatch).
 ///
-/// This is a newtype wrapper representing the set of transactions in a single **batch**. A block
-/// keeps the transactions of each of its batches as a separate [`OrderedTransactionHeaders`], see
-/// [`BlockBody::transactions`](crate::block::BlockBody::transactions).
-///
 /// This type cannot be constructed directly, but can be retrieved through:
 /// - [`ProposedBatch::transaction_headers`](crate::batch::ProposedBatch::transaction_headers),
 /// - [`ProvenBatch::transactions`](crate::batch::ProvenBatch::transactions).

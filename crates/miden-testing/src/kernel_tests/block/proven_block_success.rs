@@ -6,12 +6,7 @@ use anyhow::Context;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::BatchNoteTree;
 use miden_protocol::block::account_tree::AccountTree;
-use miden_protocol::block::{
-    BlockInputs,
-    BlockNoteIndex,
-    BlockNoteTree,
-    ProposedBlock,
-};
+use miden_protocol::block::{BlockInputs, BlockNoteIndex, BlockNoteTree, ProposedBlock};
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::InputNoteCommitment;
