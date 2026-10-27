@@ -9,9 +9,6 @@ use crate::{Felt, Hasher, Word};
 // ================================================================================================
 
 /// The sequential commitment to the ordered batch IDs of a block.
-///
-/// This is the `BATCHES_COMMITMENT` public input of the block kernel. It commits to both the set
-/// of batches in a block and the order in which they appear.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, WordWrapper)]
 pub struct BatchesCommitment(Word);
 
