@@ -29,7 +29,7 @@ use {Asset, NoteRecipient, NoteTag, NoteType, StorageMapKey} from miden::protoco
 # Under a permissive policy such as `allow_all`, any caller can claim any token ID, permanently
 # consuming a commitment another party intended to mint.
 #
-# Shared token metadata (name, description, logo_uri, external_link) lives in the parent
+# Shared token metadata (name, description, logo_uri, external_uri) lives in the parent
 # `miden::standards::faucets` namespace. The token base URI, which is specific to non-fungible
 # faucets, lives in the `token_base_uri` submodule.
 
