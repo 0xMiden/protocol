@@ -19,6 +19,7 @@
 
 ### Changes
 
+- [BREAKING] Both PSWAP payback modes now use fixed recipient hashes, with fill attachments distinguishing successive outputs ([#4074](https://github.com/0xMiden/protocol/pull/4074)).
 - [BREAKING] `miden::standards::note::get_recipient_preimage` now verifies and returns the serial number before the script root and storage commitment, requiring the full recipient preimage in advice ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Renamed `PswapNote::create_args` to `create_fill_args` to distinguish it from `create_cancel_args` ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Changed PSWAP private payback notes to use a fixed P2ID recipient with a secret serial number that stays constant across fills and an incrementing depth in each payback attachment. Fixed Rust handling of custom tags, callback attachments, and quote panics for zero-request orders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
