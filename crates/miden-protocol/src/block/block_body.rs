@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 
 use miden_core::Word;
 
+use crate::batch::{BatchId, BatchesCommitment};
 use crate::block::{
     BlockAccountUpdate,
     BlockNoteIndex,
@@ -217,23 +218,16 @@ impl BlockBody {
         )
     }
 
-    /// Returns an iterator over the [`BatchId`](crate::batch::BatchId)s of the batches in this\
-    /// block, in block order.
-    #[cfg(any(feature = "testing", test))]
-    pub fn batch_ids(&self) -> impl Iterator<Item = crate::batch::BatchId> + '_ {
+    /// Returns an iterator over the [`BatchId`]s of the batches in this block, in block order.
+    pub fn batch_ids(&self) -> impl Iterator<Item = BatchId> + '_ {
         self.transactions.iter().map(|batch| {
-            crate::batch::BatchId::from_ids(
-                batch.as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
-            )
+            BatchId::from_ids(batch.as_slice().iter().map(|tx| (tx.id(), tx.account_id())))
         })
     }
 
-    /// Returns the sequential commitment to the batch IDs of this block.
-    ///
-    /// This is the `BATCHES_COMMITMENT` public input of the block kernel.
-    #[cfg(any(feature = "testing", test))]
-    pub fn batches_commitment(&self) -> Word {
-        crate::batch::BatchId::compute_batches_commitment(self.batch_ids())
+    /// Computes the [`BatchesCommitment`] of this block, i.e. the commitment to its batch IDs.
+    pub fn compute_batches_commitment(&self) -> BatchesCommitment {
+        BatchesCommitment::new(self.batch_ids())
     }
 
     /// Returns an iterator over all [`OutputNote`]s created in this block.
@@ -364,7 +358,7 @@ mod tests {
 
     use super::BlockBody;
     use crate::account::{Account, AccountId, AccountPatch, AccountType, AccountUpdateDetails};
-    use crate::batch::BatchId;
+    use crate::batch::{BatchId, BatchesCommitment};
     use crate::block::BlockAccountUpdate;
     use crate::errors::{BlockAccountUpdateError, BlockBodyError, TransactionHeaderError};
     use crate::note::{Note, NoteHeader};
@@ -748,7 +742,7 @@ mod tests {
             body_a.compute_transaction_commitment(),
             body_b.compute_transaction_commitment()
         );
-        assert_ne!(body_a.batches_commitment(), body_b.batches_commitment());
+        assert_ne!(body_a.compute_batches_commitment(), body_b.compute_batches_commitment());
 
         let expected_batch_ids = body_a
             .transactions()
@@ -758,10 +752,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(body_a.batch_ids().collect::<Vec<_>>(), expected_batch_ids);
-        assert_eq!(
-            body_a.batches_commitment(),
-            BatchId::compute_batches_commitment(expected_batch_ids)
-        );
+        assert_eq!(body_a.compute_batches_commitment(), BatchesCommitment::new(expected_batch_ids));
     }
 
     #[test]
@@ -771,6 +762,6 @@ mod tests {
         let deserialized = BlockBody::read_from_bytes(&body.to_bytes()).unwrap();
 
         assert_eq!(deserialized, body);
-        assert_eq!(deserialized.batches_commitment(), body.batches_commitment());
+        assert_eq!(deserialized.compute_batches_commitment(), body.compute_batches_commitment());
     }
 }

@@ -4,7 +4,7 @@ use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
-use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
+use crate::block::{BlockBody, BlockHeader, BlockKernel, BlockNumber, BlockSignatures};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -12,7 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::ExecutionProof;
+use crate::vm::{ExecutionProof, StackInputs};
 
 // PROVEN BLOCK ERROR
 // ================================================================================================
@@ -232,13 +232,11 @@ impl ProvenBlock {
     /// attests to.
     ///
     /// These are derived from the block's data: the previous block commitment from the header and
-    /// the commitment to the batch IDs from the body. See
-    /// [`BlockKernel::build_input_stack`](crate::block::BlockKernel::build_input_stack).
-    #[cfg(any(feature = "testing", test))]
-    pub fn kernel_stack_inputs(&self) -> crate::vm::StackInputs {
-        crate::block::BlockKernel::build_input_stack(
+    /// the commitment to the batch IDs from the body. See [`BlockKernel::build_input_stack`].
+    pub fn kernel_stack_inputs(&self) -> StackInputs {
+        BlockKernel::build_input_stack(
             self.header.prev_block_commitment(),
-            self.body.batches_commitment(),
+            self.body.compute_batches_commitment(),
         )
     }
 

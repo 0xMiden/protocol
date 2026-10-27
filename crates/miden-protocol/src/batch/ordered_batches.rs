@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::batch::{BatchId, ProvenBatch};
+use crate::batch::{BatchesCommitment, ProvenBatch};
 use crate::crypto::SequentialCommit;
 use crate::transaction::OrderedTransactionHeaders;
 use crate::utils::serde::{
@@ -61,7 +61,7 @@ impl SequentialCommit for OrderedBatches {
 
     /// Returns batch IDs represented as a vector of field elements, in order.
     fn to_elements(&self) -> Vec<Felt> {
-        BatchId::batch_ids_to_elements(self.0.iter().map(ProvenBatch::id))
+        BatchesCommitment::batch_ids_to_elements(self.0.iter().map(ProvenBatch::id))
     }
 }
 

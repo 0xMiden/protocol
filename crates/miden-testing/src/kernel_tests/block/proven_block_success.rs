@@ -494,7 +494,7 @@ async fn proven_block_preserves_batch_grouping(
         body.batch_ids().collect::<Vec<_>>(),
         batches.iter().map(ProvenBatch::id).collect::<Vec<_>>()
     );
-    assert_eq!(body.batches_commitment(), expected_batches_commitment);
+    assert_eq!(body.compute_batches_commitment().as_word(), expected_batches_commitment);
     assert_eq!(proven_block.kernel_stack_inputs(), expected_stack_inputs);
 
     // The transaction commitment is computed over the flattened transactions.
