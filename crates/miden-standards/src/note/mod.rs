@@ -26,6 +26,9 @@ pub mod costs;
 mod burn;
 pub use burn::BurnNote;
 
+mod create_note;
+pub use create_note::{CreateNote, CreateNoteStorage};
+
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 
@@ -81,6 +84,7 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    CREATE,
     CONSTANT_FEE_POLICY_CONFIG,
     FAUCET_POLICY_CONFIG,
     FAUCET_METADATA_CONFIG,
@@ -123,6 +127,9 @@ impl StandardNote {
         }
         if root == MintNote::script_root() {
             return Some(Self::MINT);
+        }
+        if root == CreateNote::script_root() {
+            return Some(Self::CREATE);
         }
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
@@ -182,6 +189,7 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::CREATE => "CREATE",
             Self::CONSTANT_FEE_POLICY_CONFIG => "CONSTANT_FEE_POLICY_CONFIG",
             Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
             Self::FAUCET_METADATA_CONFIG => "FAUCET_METADATA_CONFIG",
@@ -209,6 +217,7 @@ impl StandardNote {
                 NumStorageItems::Exact(PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS),
             ]),
             Self::MINT => MintNote::NUM_STORAGE_ITEMS,
+            Self::CREATE => NumStorageItems::Exact(CreateNote::NUM_STORAGE_ITEMS),
             Self::BURN => NumStorageItems::Exact(BurnNote::NUM_STORAGE_ITEMS),
             Self::CONSTANT_FEE_POLICY_CONFIG => {
                 NumStorageItems::Exact(ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS)
@@ -246,6 +255,7 @@ impl StandardNote {
             Self::SWAP => SwapNote::script(),
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
+            Self::CREATE => CreateNote::script(),
             Self::BURN => BurnNote::script(),
             Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script(),
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
@@ -271,6 +281,7 @@ impl StandardNote {
             Self::SWAP => SwapNote::script_root(),
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
+            Self::CREATE => CreateNote::script_root(),
             Self::BURN => BurnNote::script_root(),
             Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script_root(),
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),

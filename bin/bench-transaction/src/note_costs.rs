@@ -128,8 +128,8 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::FEE_SPONSORSHIP) => {
                 &[ExecutionBenchmark::ConsumeFeeSponsorshipWithFeatureNetwork]
             },
-            PricedNote::Standard(StandardNote::TX_FEE) => {
-                unreachable!("TX_FEE is not priced and never appears in `all()`")
+            PricedNote::Standard(StandardNote::TX_FEE | StandardNote::CREATE) => {
+                unreachable!("unpriced notes never appear in `all()`")
             },
             PricedNote::Agglayer(AgglayerNote::CLAIM) => &[
                 ExecutionBenchmark::ConsumeClaimL1WithFee,
