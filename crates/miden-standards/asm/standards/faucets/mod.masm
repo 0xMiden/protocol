@@ -3,7 +3,7 @@ use {Bool} from miden::protocol::types
 # miden::standards::faucets
 #
 # Shared token metadata storage layout and accessors for faucet accounts. Holds the token name
-# and the optional fields (description, logo_uri, external_link) together with their mutability
+# and the optional fields (description, logo_uri, external_uri) together with their mutability
 # flags. Designed to be shared across fungible and non-fungible faucet implementations.
 #
 # Fungible-specific procedures (mint/burn, token_config accessors, max_supply mutators) live in
@@ -19,7 +19,7 @@ pub type TokenSymbol = felt
 pub type MutabilityConfig = struct {
     description: Bool,
     logo_uri: Bool,
-    external_link: Bool,
+    external_uri: Bool,
     max_supply: Bool
 }
 pub type TokenName = struct { first: word, second: word }
@@ -52,20 +52,20 @@ const LOGO_URI_4_SLOT = word("miden::standards::faucets::logo_uri_4")
 const LOGO_URI_5_SLOT = word("miden::standards::faucets::logo_uri_5")
 const LOGO_URI_6_SLOT = word("miden::standards::faucets::logo_uri_6")
 
-const EXTERNAL_LINK_0_SLOT = word("miden::standards::faucets::external_link_0")
-const EXTERNAL_LINK_1_SLOT = word("miden::standards::faucets::external_link_1")
-const EXTERNAL_LINK_2_SLOT = word("miden::standards::faucets::external_link_2")
-const EXTERNAL_LINK_3_SLOT = word("miden::standards::faucets::external_link_3")
-const EXTERNAL_LINK_4_SLOT = word("miden::standards::faucets::external_link_4")
-const EXTERNAL_LINK_5_SLOT = word("miden::standards::faucets::external_link_5")
-const EXTERNAL_LINK_6_SLOT = word("miden::standards::faucets::external_link_6")
+const EXTERNAL_URI_0_SLOT = word("miden::standards::faucets::external_uri_0")
+const EXTERNAL_URI_1_SLOT = word("miden::standards::faucets::external_uri_1")
+const EXTERNAL_URI_2_SLOT = word("miden::standards::faucets::external_uri_2")
+const EXTERNAL_URI_3_SLOT = word("miden::standards::faucets::external_uri_3")
+const EXTERNAL_URI_4_SLOT = word("miden::standards::faucets::external_uri_4")
+const EXTERNAL_URI_5_SLOT = word("miden::standards::faucets::external_uri_5")
+const EXTERNAL_URI_6_SLOT = word("miden::standards::faucets::external_uri_6")
 
 # ERRORS
 # =================================================================================================
 
 const ERR_DESCRIPTION_NOT_MUTABLE = "description is not mutable"
 const ERR_LOGO_URI_NOT_MUTABLE = "logo URI is not mutable"
-const ERR_EXTERNAL_LINK_NOT_MUTABLE = "external link is not mutable"
+const ERR_EXTERNAL_URI_NOT_MUTABLE = "external URI is not mutable"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -87,15 +87,15 @@ end
 #! Returns the mutability config word.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
+#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable, pad(12)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc get_mutability_config() -> MutabilityConfig
     exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(16)]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable, pad(16)]
     swapw dropw
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable, pad(12)]
 end
 
 #! Returns 1 if description is mutable, and 0 otherwise.
@@ -126,18 +126,18 @@ pub proc is_logo_uri_mutable() -> Bool
     # => [is_logo_uri_mutable, pad(15)]
 end
 
-#! Returns 1 if external link is mutable, and 0 otherwise.
+#! Returns 1 if external URI is mutable, and 0 otherwise.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [is_external_link_mutable, pad(15)]
+#! Outputs: [is_external_uri_mutable, pad(15)]
 #!
 #! Invocation: call
 @account_procedure
-pub proc is_external_link_mutable() -> Bool
-    exec.is_external_link_mutable_internal
-    # => [is_external_link_mutable, pad(16)]
+pub proc is_external_uri_mutable() -> Bool
+    exec.is_external_uri_mutable_internal
+    # => [is_external_uri_mutable, pad(16)]
     swap drop
-    # => [is_external_link_mutable, pad(15)]
+    # => [is_external_uri_mutable, pad(15)]
 end
 
 #! Updates the description (7 Words) if the description mutability flag is 1
@@ -293,79 +293,79 @@ pub proc set_logo_uri(logo_uri_hash: MetadataStringCommitment)
     exec.native_account::set_item dropw
 end
 
-#! Updates the external link (7 Words) if the external link mutability flag is 1
+#! Updates the external URI (7 Words) if the external URI mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
 #!
-#! The caller passes the Poseidon2 hash of the new external link on the stack and provides
+#! The caller passes the Poseidon2 hash of the new external URI on the stack and provides
 #! the actual 7 Words in the advice map under that hash. The hash is verified against
 #! the preimage during loading.
 #!
 #! Inputs:
-#!   Operand stack: [EXTERNAL_LINK_HASH, pad(12)]
+#!   Operand stack: [EXTERNAL_URI_HASH, pad(12)]
 #!   Advice map: {
-#!     EXTERNAL_LINK_HASH: [external_link_elements],
+#!     EXTERNAL_URI_HASH: [external_uri_elements],
 #!   }
 #! Outputs:
 #!   Operand stack: [pad(16)]
 #!
 #! Where:
-#! - external_link_elements are 28 felts (7 Words) encoding the external link.
+#! - external_uri_elements are 28 felts (7 Words) encoding the external URI.
 #!
 #! Panics if:
-#! - the external link mutability flag is not 1.
+#! - the external URI mutability flag is not 1.
 #! - the caller is not authorized per the installed [`Authority`].
-#! - the preimage does not match EXTERNAL_LINK_HASH.
+#! - the preimage does not match EXTERNAL_URI_HASH.
 #!
 #! Invocation: call
 @locals(28)
 @account_procedure
-pub proc set_external_link(external_link_hash: MetadataStringCommitment)
+pub proc set_external_uri(external_uri_hash: MetadataStringCommitment)
     # Check mutability; verify owner.
-    # => [EXTERNAL_LINK_HASH, pad(12)]
+    # => [EXTERNAL_URI_HASH, pad(12)]
 
-    exec.is_external_link_mutable_internal
-    # => [is_external_link_mutable, EXTERNAL_LINK_HASH, pad(12)]
-    assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
-    # => [EXTERNAL_LINK_HASH, pad(12)]
+    exec.is_external_uri_mutable_internal
+    # => [is_external_uri_mutable, EXTERNAL_URI_HASH, pad(12)]
+    assert.err=ERR_EXTERNAL_URI_NOT_MUTABLE
+    # => [EXTERNAL_URI_HASH, pad(12)]
 
     exec.authority::assert_authorized
-    # => [EXTERNAL_LINK_HASH, pad(12)]
+    # => [EXTERNAL_URI_HASH, pad(12)]
 
     exec.pausable::assert_not_paused
-    # => [EXTERNAL_LINK_HASH, pad(12)]
+    # => [EXTERNAL_URI_HASH, pad(12)]
 
     adv.push_mapval
     locaddr.0
-    # => [locaddr.0, EXTERNAL_LINK_HASH, pad(16)]
+    # => [locaddr.0, EXTERNAL_URI_HASH, pad(16)]
     exec.pipe_to_memory
     # => [pad(16)]
 
     loc_loadw_le.0
-    push.EXTERNAL_LINK_0_SLOT[0..2]
+    push.EXTERNAL_URI_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.4
-    push.EXTERNAL_LINK_1_SLOT[0..2]
+    push.EXTERNAL_URI_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.8
-    push.EXTERNAL_LINK_2_SLOT[0..2]
+    push.EXTERNAL_URI_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.12
-    push.EXTERNAL_LINK_3_SLOT[0..2]
+    push.EXTERNAL_URI_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.16
-    push.EXTERNAL_LINK_4_SLOT[0..2]
+    push.EXTERNAL_URI_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.20
-    push.EXTERNAL_LINK_5_SLOT[0..2]
+    push.EXTERNAL_URI_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.24
-    push.EXTERNAL_LINK_6_SLOT[0..2]
+    push.EXTERNAL_URI_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
 
@@ -375,10 +375,10 @@ end
 #! Loads the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable]
 #!
 #! Where:
-#! - is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable are boolean flags
+#! - is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable are boolean flags
 #!   (word[0] on top after get_item, little-endian).
 #!
 #! Invocation: exec
@@ -438,7 +438,7 @@ end
 #! Invocation: exec
 proc is_description_mutable_internal() -> Bool
     exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable]
     movdn.3 drop drop drop
     # => [is_description_mutable]
 end
@@ -451,20 +451,20 @@ end
 #! Invocation: exec
 proc is_logo_uri_mutable_internal() -> Bool
     exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable]
     drop movdn.2 drop drop
     # => [is_logo_uri_mutable]
 end
 
-#! Extracts the is_external_link_mutable flag from the mutability config word.
+#! Extracts the is_external_uri_mutable flag from the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [is_external_link_mutable]
+#! Outputs: [is_external_uri_mutable]
 #!
 #! Invocation: exec
-proc is_external_link_mutable_internal() -> Bool
+proc is_external_uri_mutable_internal() -> Bool
     exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable]
     drop drop swap drop
-    # => [is_external_link_mutable]
+    # => [is_external_uri_mutable]
 end

@@ -153,7 +153,7 @@ pub fn tx_consume_faucet_metadata_config_note_network() -> Result<MockTransactio
         .max_supply(AssetAmount::new(1_000_000)?)
         .is_description_mutable(true)
         .is_logo_uri_mutable(true)
-        .is_external_link_mutable(true)
+        .is_external_uri_mutable(true)
         .is_max_supply_mutable(true)
         .build()?;
 

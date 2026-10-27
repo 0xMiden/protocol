@@ -13,6 +13,7 @@
 - Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
 - Added `CodeTree`, `PartialCodeTree`, `CodeWitness` and `ProcedureRoot` to prove presence or absence of procedure roots in the blockchain ([#4062](https://github.com/0xMiden/protocol/pull/4062)).
 - [BREAKING] Added `NonFungibleFaucet` to `StandardAccountComponent` and `AccountComponentInterface`, so `AccountInterface::from_account` recognizes NFT faucets instead of reporting their procedures as custom ([#4036](https://github.com/0xMiden/protocol/issues/4036)).
+- [BREAKING] Added the `SetTokenBaseUri` variant to `FaucetMetadataConfig`, dispatching the `NonFungibleFaucet` `set_token_base_uri` setter through `FaucetMetadataConfigNote`, whose script root changes ([#4115](https://github.com/0xMiden/protocol/issues/4115)).
 
 ### Changes
 
@@ -26,6 +27,7 @@
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
 - [BREAKING] `AccountComponentCode` no longer carries the account component metadata section of its package, leaving `AccountComponent` as the only holder of the metadata ([#4086](https://github.com/0xMiden/protocol/pull/4086)).
 - Introduced the `DoubleWord` newtype (8 `Felt`s) and used it internally to replace ad-hoc `[Felt; 8]` / `Vec<Felt>` representations ([#3319](https://github.com/0xMiden/protocol/pull/3319)).
+- [BREAKING] Renamed `LogoURI` to `LogoUri` and `ExternalLink` to `ExternalUri`, along with the matching `external_link` names in the faucet builders, `TokenMetadata`, `FaucetMetadataConfig`, the MASM faucet procedures and the faucet storage slots ([#4067](https://github.com/0xMiden/protocol/issues/4067)).
 - [BREAKING] Removed Winterfell serialization for `TransactionHeader`, `OrderedTransactionHeaders`, `ProvenBatch`, `OrderedBatches`, `ProposedBlock`, `BlockBody`, `SignedBlock` and `ProvenBlock` ([#4105](https://github.com/0xMiden/protocol/pull/4105)).
 
 ### Fixes
@@ -33,6 +35,7 @@
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 - The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
+- [BREAKING] The non-fungible faucet factories now reject a token policy manager that registers the fungible-only `min_burn_amount` burn policy ([#4035](https://github.com/0xMiden/protocol/issues/4035)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 ## v1.0.0-rc.1 (TBD)
@@ -40,6 +43,10 @@
 ### Features
 
 - Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
+- Added delayed execution to `AuthMultisigSmart`: `propose_transaction` records a proposal with a single approver signature, `cancel_transaction_proposal` cancels it for good with signatures over `AuthMultisigSmart::cancel_signing_message` from at least `cancel_threshold` approvers and no fewer than signed the proposal (a cancelled commitment can neither be re-proposed nor executed through the timelock), and the proposed transaction executes through the timelock once the chain reaches `reference_block + propose_expiration_delta + min_delay`, carrying an approval expiration in its `MultisigAuthArgs`. The auth procedure selects the execution path from the verified signatures, so a proposal only opens the delayed path and never blocks immediate execution ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `DelayedExecutionPolicy` (`min_delay` and `propose_expiration_delta` in blocks, `cancel_threshold`, the floor of the cancellation quorum, in signatures), updatable on chain via `update_delayed_execution_policy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `AuthMultisigSmart::update_signers_and_threshold_root`, `AuthMultisigSmart::update_delayed_execution_policy_root` and `AuthMultisigSmart::set_procedure_policy_root` so procedure policies can guard approver rotation, delay-policy updates and policy edits; `set_procedure_policy` rejects the delay-action procedures, whose policies would be ignored ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- Added `StandardsDomainRegistry` with the `MultisigSmartCancelProposal` domain of the smart multisig cancel message ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 
 ### Changes
 
@@ -60,6 +67,8 @@
 - [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
+- [BREAKING] `AuthMultisigSmartConfig::new` and `Auth::MultisigSmart` now require a `DelayedExecutionPolicy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
+- [BREAKING] `multisig_smart` accepts delay-only procedure policies again (`ProcedurePolicyExecutionMode::DelayOnly`), and `ProcedurePolicy::immediate_threshold` now returns an `Option` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
 - [BREAKING] Added an on-chain `token_base_uri` to `NonFungibleFaucet` that marks its token metadata as public, with the `set_token_base_uri` setter and a `token_uri` helper ([#4011](https://github.com/0xMiden/protocol/issues/4011)).
 - Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).
 - Keyed `bench-tx.json`'s per-note cycle counts by note label instead of note commitment, and added `total_cycles` to each scenario ([#3726](https://github.com/0xMiden/protocol/pull/3726)).
