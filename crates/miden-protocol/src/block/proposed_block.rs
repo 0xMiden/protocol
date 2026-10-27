@@ -21,7 +21,13 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{
+    InputNoteCommitment,
+    OutputNote,
+    PartialBlockchain,
+    PublicTransactionLogBundle,
+    TransactionHeader,
+};
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
 // PROPOSED BLOCK
@@ -569,6 +575,20 @@ impl ProposedBlock {
         );
 
         Ok((header, body))
+    }
+
+    /// Builds the block while returning its complete public logs as a separate delivery bundle.
+    ///
+    /// Supply one bundle per batch, in batch order. Payloads never enter the block body. The
+    /// caller can retain/index the returned bundle independently of the block, and can still use
+    /// [`Self::into_header_and_body`] when public log availability is not required.
+    pub fn into_header_body_and_logs(
+        self,
+        batch_logs: Vec<PublicTransactionLogBundle>,
+    ) -> Result<(BlockHeader, BlockBody, PublicTransactionLogBundle), ProposedBlockError> {
+        let logs = PublicTransactionLogBundle::from_batches(&self.batches, batch_logs)?;
+        let (header, body) = self.into_header_and_body()?;
+        Ok((header, body, logs))
     }
 
     /// Consumes self and returns the non-[`Copy`] parts of the block.

@@ -1,7 +1,11 @@
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_block_prover::{BlockExecutor, LocalBlockProver};
+use miden_objects::prost::Message;
+use miden_objects::{DecodeMessageExt, proto};
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
@@ -14,6 +18,8 @@ use miden_protocol::account::{
     AccountDelta,
     AccountType,
 };
+use miden_protocol::batch::ProposedBatch;
+use miden_protocol::block::SignedBlock;
 use miden_protocol::errors::{MasmError, TransactionVerifierError, tx_kernel};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
@@ -22,6 +28,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
+    ExecutedTransaction,
     LogTopic,
     ProvenTransaction,
     TransactionEffects,
@@ -44,6 +51,7 @@ use miden_tx::{
     TransactionExecutorError,
     TransactionKernelError,
 };
+use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 use rstest::rstest;
 
 use crate::{
@@ -483,6 +491,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].emitter(), intermediate.id());
     assert_eq!(entries[1].emitter(), foreign.id());
+    assert_detached_log_delivery(&chain, executed.clone())?;
     let (_, outputs, ..) = executed.into_parts();
     let (_, _, log_details) = outputs.into_parts();
     assert_eq!(matches!(log_details, TransactionLogDetails::Public(_)), native_type.is_public());
@@ -665,6 +674,64 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
 
 // TEST HELPERS
 // ================================================================================================
+
+/// Exercises real transaction verification and the Rust batch/block pipeline with FPI logs.
+/// The batch/block kernels remain skeletons; this checks transport and host consistency.
+fn assert_detached_log_delivery(
+    chain: &MockChain,
+    executed: ExecutedTransaction,
+) -> anyhow::Result<()> {
+    let public = executed.initial_account().id().is_public();
+    let logs = executed.logs().clone();
+    let commitment = executed.logs_commitment();
+    let tx = LocalTransactionProver::default().prove(executed)?;
+    let tx_id = tx.id();
+    let (reference, partial_chain, note_proofs) =
+        chain.get_batch_inputs([tx.ref_block_num()], core::iter::empty())?;
+    let proposal = ProposedBatch::new(
+        vec![Arc::new(tx)],
+        reference,
+        partial_chain,
+        note_proofs,
+        MIN_PROOF_SECURITY_LEVEL,
+    )?;
+    let (batch, bundle) =
+        LocalBatchProver::default().prove_with_logs(BatchExecutor::new().execute(proposal)?)?;
+    assert_eq!(batch.transactions().as_slice()[0].logs_commitment(), commitment);
+    if public {
+        assert_eq!(bundle.entries(), &[(tx_id, logs)]);
+    } else {
+        assert!(bundle.entries().is_empty());
+    }
+    let batch_bytes = proto::transaction::ProvenBatch::from(&batch).encode_to_vec();
+    let batch = proto::transaction::ProvenBatch::decode(batch_bytes.as_slice())?
+        .decode_and_build_unchecked()?;
+    let bundle_bytes =
+        proto::transaction::PublicTransactionLogBundle::from(&bundle).encode_to_vec();
+    let bundle =
+        proto::transaction::PublicTransactionLogBundle::decode_for_batch(&bundle_bytes, &batch)?;
+    let proposal = chain.propose_block(vec![batch])?;
+    // Exercise the unchanged block execution/proving path alongside detached log delivery.
+    LocalBlockProver::default().prove(BlockExecutor::new().execute(proposal.clone())?)?;
+    let signed = chain.prove_block(proposal.clone())?;
+    let (header, body, bundle) = proposal.into_header_body_and_logs(vec![bundle])?;
+    assert_eq!(&header, signed.header());
+    assert_eq!(&body, signed.body());
+    assert_eq!(header.tx_commitment(), bundle.transactions_commitment());
+    let wire_logs = proto::transaction::PublicTransactionLogBundle::from(&bundle).encode_to_vec();
+    assert_eq!(
+        proto::transaction::PublicTransactionLogBundle::decode_for_block(&wire_logs, &body)?,
+        bundle
+    );
+    let block = SignedBlock::new(header, body, signed.signatures().clone())?;
+    let bytes = proto::blockchain::SignedBlock::from(&block).encode_to_vec();
+    drop(bundle);
+    // The signed block can still be authenticated after the detached data is discarded.
+    let decoded = proto::blockchain::SignedBlock::decode(bytes.as_slice())?
+        .decode_and_verify_with(&chain.latest_block_header())?;
+    assert_eq!(decoded, block);
+    Ok(())
+}
 
 /// Returns content and its commitment for the advice map.
 fn content(words: Vec<Word>) -> (Vec<Word>, Word) {

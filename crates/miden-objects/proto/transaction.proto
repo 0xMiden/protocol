@@ -130,3 +130,16 @@ message TransactionLogDetails {
     TransactionLogs public = 2;
   }
 }
+
+// Detached public log delivery. These messages are not fields of batches or blocks.
+message PublicTransactionLogEntry {
+  TransactionId transaction_id = 1;
+  TransactionLogs logs = 2;
+}
+
+message PublicTransactionLogBundle {
+  // Binds all ordered transaction headers, including private transactions.
+  primitives.Word transactions_commitment = 1;
+  // One entry per public native account transaction, including empty log lists.
+  repeated PublicTransactionLogEntry entries = 2;
+}

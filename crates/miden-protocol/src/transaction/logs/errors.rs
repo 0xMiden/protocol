@@ -7,6 +7,12 @@ use super::{TransactionLog, TransactionLogs};
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum TransactionLogError {
+    #[error("public log bundle exceeds its delivery resource limits")]
+    BundleLimitExceeded,
+    #[error("public log bundle entries do not match the ordered public transactions")]
+    BundleAssociationMismatch,
+    #[error("public log bundle does not match the transaction commitments")]
+    BundleCommitmentMismatch,
     /// An individual transaction log content exceeds its word limit.
     #[error(
         "log content has {0} words, exceeding the maximum of {max}",

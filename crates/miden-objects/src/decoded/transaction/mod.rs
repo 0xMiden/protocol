@@ -55,3 +55,6 @@ pub use batch::{
 
 mod logs;
 pub use logs::{LogTopic, TransactionLog, TransactionLogDetails, TransactionLogs};
+
+mod log_bundle;
+pub use log_bundle::PublicTransactionLogBundle;
