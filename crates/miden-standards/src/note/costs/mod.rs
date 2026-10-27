@@ -31,6 +31,7 @@ use miden_protocol::note::NoteScriptRoot;
 
 use crate::note::config::{
     AllowlistConfigNote,
+    AuthorityConfigNote,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
     FaucetMetadataConfigNote,
@@ -138,6 +139,7 @@ impl StandardNote {
             StandardNote::PAUSE_CONFIG => Some(NoteCost::of::<PauseConfigNote>()),
             StandardNote::OWNER_CONFIG => Some(NoteCost::of::<OwnerConfigNote>()),
             StandardNote::RBAC_CONFIG => Some(NoteCost::of::<RbacConfigNote>()),
+            StandardNote::AUTHORITY_CONFIG => Some(NoteCost::of::<AuthorityConfigNote>()),
             StandardNote::NETWORK_ACCOUNT_CONFIG => {
                 Some(NoteCost::of::<NetworkAccountConfigNote>())
             },
@@ -186,6 +188,7 @@ mod tests {
             (PauseConfigNote::script_root(), PAUSE_CONFIG_CONSUMPTION_CYCLES),
             (OwnerConfigNote::script_root(), OWNER_CONFIG_CONSUMPTION_CYCLES),
             (RbacConfigNote::script_root(), RBAC_CONFIG_CONSUMPTION_CYCLES),
+            (AuthorityConfigNote::script_root(), AUTHORITY_CONFIG_CONSUMPTION_CYCLES),
             (
                 NetworkAccountConfigNote::script_root(),
                 NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES,
