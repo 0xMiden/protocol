@@ -596,8 +596,15 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 }
 
 /// Tests that adding two fungible assets results in the expected value.
+#[rstest::rstest]
 #[tokio::test]
-async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
+async fn test_merge_fungible_asset_success(
+    #[values(
+        "miden::tx_kernel_core::fungible_asset",
+        "miden::standards::assets::fungible_asset"
+    )]
+    module: &str,
+) -> anyhow::Result<()> {
     let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
     let asset1 = FungibleAsset::mock(FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT);
     let merged_asset = asset0.unwrap_fungible().add(asset1.unwrap_fungible())?;
@@ -606,7 +613,7 @@ async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
     for (asset_a, asset_b) in [(asset0, asset1), (asset1, asset0)] {
         let code = format!(
             "
-        use miden::tx_kernel_core::fungible_asset
+        use {module}
 
         begin
             push.{ASSETA}
@@ -632,8 +639,15 @@ async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
 
 /// Tests that adding two fungible assets fails when the added amounts exceed
 /// [`FungibleAsset::MAX_AMOUNT`].
+#[rstest::rstest]
 #[tokio::test]
-async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::Result<()> {
+async fn test_merge_fungible_asset_fails_when_max_amount_exceeded(
+    #[values(
+        "miden::tx_kernel_core::fungible_asset",
+        "miden::standards::assets::fungible_asset"
+    )]
+    module: &str,
+) -> anyhow::Result<()> {
     let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
     let asset1 =
         FungibleAsset::mock(FungibleAsset::MAX_AMOUNT.as_u64() + 1 - FUNGIBLE_ASSET_AMOUNT);
@@ -648,7 +662,7 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
 
         let code = format!(
             "
-        use miden::tx_kernel_core::fungible_asset
+        use {module}
 
         begin
             push.{ASSETA}
@@ -681,6 +695,11 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
 )]
 #[tokio::test]
 async fn test_split_fungible_asset_success(
+    #[values(
+        "miden::tx_kernel_core::fungible_asset",
+        "miden::standards::assets::fungible_asset"
+    )]
+    module: &str,
     #[case] asset0: Asset,
     #[case] asset1: Asset,
 ) -> anyhow::Result<()> {
@@ -688,7 +707,7 @@ async fn test_split_fungible_asset_success(
 
     let code = format!(
         "
-        use miden::tx_kernel_core::fungible_asset
+        use {module}
 
         begin
             push.{ASSET0}
@@ -712,8 +731,15 @@ async fn test_split_fungible_asset_success(
 }
 
 /// Tests that splitting a fungible asset fails when the amount to withdraw exceeds the balance.
+#[rstest::rstest]
 #[tokio::test]
-async fn test_split_fungible_asset_fails_when_amount_exceeds_balance() -> anyhow::Result<()> {
+async fn test_split_fungible_asset_fails_when_amount_exceeds_balance(
+    #[values(
+        "miden::tx_kernel_core::fungible_asset",
+        "miden::standards::assets::fungible_asset"
+    )]
+    module: &str,
+) -> anyhow::Result<()> {
     let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
     let asset1 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT + 1);
 
@@ -725,7 +751,7 @@ async fn test_split_fungible_asset_fails_when_amount_exceeds_balance() -> anyhow
 
     let code = format!(
         "
-        use miden::tx_kernel_core::fungible_asset
+        use {module}
 
         begin
             push.{ASSET0}

@@ -2,7 +2,6 @@
 //! script root and storage commitment from its recipient (`miden::standards::note`), and the
 //! FEE_SPONSORSHIP `prepare_note` recipient computation.
 
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
@@ -11,6 +10,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     AccountIdBuilder,
 };
+use miden_protocol::{Felt, Word};
 use miden_standards::note::FeeSponsorshipNote;
 use miden_standards::testing::mock_account::MockAccountExt;
 
@@ -18,13 +18,15 @@ use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::{Auth, TestTransactionBuilder};
 
-/// `output_note_get_recipient_preimage` must recover an output note's script root
-/// and storage commitment from the recipient it exposes via the advice map entries that
-/// compute_and_store_recipient inserts.
+/// Recipient helpers recover the serial, script root, and storage commitment from the advice
+/// entries inserted by compute_and_store_recipient; the output-note wrapper omits the serial.
 #[tokio::test]
 async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-    let mock_tx = TestTransactionBuilder::new(account).build()?;
+    let advice_marker = Word::from([31u32, 32, 33, 34]);
+    let mock_tx = TestTransactionBuilder::new(account)
+        .add_advice_map_entry(advice_marker, vec![Felt::from(42u32)])
+        .build()?;
 
     let script_root = Word::from([11u32, 12, 13, 14]);
     let serial_num = Word::from([21u32, 22, 23, 24]);
@@ -39,6 +41,8 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
         begin
             exec.prologue::prepare_transaction
 
+            push.{advice_marker} adv.push_mapval dropw
+
             # build a recipient for a note with the given script root and empty storage, seeding the
             # advice map with the preimages the helper reads back
             push.{script_root}
@@ -46,6 +50,17 @@ async fn output_note_get_recipient_preimage_recovers_preimage() -> anyhow::Resul
             push.0.0
             # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
             exec.note::compute_and_store_recipient
+            # => [RECIPIENT]
+
+            dupw exec.std_note::get_recipient_preimage
+            # => [SERIAL_NUM, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
+
+            # The helper must leave subsequent advice reads aligned.
+            adv_push push.42 assert_eq
+
+            push.{serial_num} assert_eqw
+            push.{script_root} assert_eqw
+            padw assert_eqw
             # => [RECIPIENT]
 
             # create an output note carrying that recipient
