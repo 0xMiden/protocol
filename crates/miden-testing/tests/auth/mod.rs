@@ -17,6 +17,8 @@ mod network_account;
 
 mod tx_fee_collector;
 
+mod passthrough;
+
 /// Returns an advice map entry that presents a signature by `foreign_key` as the signature for
 /// `key`.
 ///

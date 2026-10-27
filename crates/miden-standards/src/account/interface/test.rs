@@ -13,6 +13,7 @@ use crate::account::auth::{
     ApproverSet,
     AuthMultisig,
     AuthMultisigConfig,
+    AuthPassthrough,
     AuthSingleSig,
     AuthTxFeeCollector,
     NoAuth,
@@ -202,6 +203,21 @@ fn test_account_interface_identifies_no_auth() {
         no_auth_account_interface.auth_component(),
         AccountComponentInterface::AuthNoAuth
     ));
+}
+
+#[test]
+fn test_account_interface_identifies_passthrough_auth() {
+    let account = AccountBuilder::new([42; 32])
+        .with_component(AuthPassthrough)
+        .with_component(BasicWallet)
+        .build_existing()
+        .expect("failed to create passthrough account");
+
+    let interface = AccountInterface::from_account(&account);
+
+    assert_eq!(interface.auth_component(), &AccountComponentInterface::AuthPassthrough);
+    assert_eq!(interface.components().len(), 2);
+    assert!(interface.components().contains(&AccountComponentInterface::BasicWallet));
 }
 
 #[test]
