@@ -498,7 +498,7 @@ async fn proven_block_preserves_batch_grouping(
     assert_eq!(proven_block.kernel_stack_inputs(), expected_stack_inputs);
 
     // The transaction commitment is computed over the flattened transactions.
-    assert_eq!(body.compute_transaction_commitment(), proven_block.header().tx_commitment());
+    assert_eq!(body.compute_transactions_commitment(), proven_block.header().tx_commitment());
 
     Ok(())
 }

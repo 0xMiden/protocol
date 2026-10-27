@@ -262,7 +262,7 @@ impl MockChainBuilder {
         let account_root = account_tree.root();
         let nullifier_root = NullifierTree::<Smt>::default().root();
         let note_root = note_tree.root();
-        let tx_commitment = body.compute_transaction_commitment();
+        let tx_commitment = body.compute_transactions_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.verification_base_fee);
         let protocol_config = ProtocolConfig::current(AssetId::new_fungible(self.fee_faucet_id))

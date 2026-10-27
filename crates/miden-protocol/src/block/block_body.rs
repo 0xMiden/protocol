@@ -212,7 +212,7 @@ impl BlockBody {
     /// Computes the commitment of all transactions included in this block.
     ///
     /// This is a sequential hash over the tx ID and account ID of all transactions in block order.
-    pub fn compute_transaction_commitment(&self) -> Word {
+    pub fn compute_transactions_commitment(&self) -> Word {
         OrderedTransactionHeaders::compute_commitment(
             self.transaction_headers().map(|tx| (tx.id(), tx.account_id())),
         )
@@ -728,8 +728,8 @@ mod tests {
         let body_b = BlockBody::new(vec![], vec![], vec![], batches(&[&[1], &[3, 5]])).unwrap();
 
         assert_eq!(
-            body_a.compute_transaction_commitment(),
-            body_b.compute_transaction_commitment()
+            body_a.compute_transactions_commitment(),
+            body_b.compute_transactions_commitment()
         );
         assert_ne!(body_a.compute_batches_commitment(), body_b.compute_batches_commitment());
 

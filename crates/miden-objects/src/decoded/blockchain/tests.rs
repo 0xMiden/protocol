@@ -57,7 +57,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
             Word::empty(),
             Word::empty(),
             body.compute_block_note_tree().root(),
-            body.compute_transaction_commitment(),
+            body.compute_transactions_commitment(),
             keys,
             miden_protocol::block::FeeParameters::new(500),
             Word::empty(),

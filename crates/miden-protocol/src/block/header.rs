@@ -416,7 +416,7 @@ impl BlockHeader {
 
         let body = BlockBody::default();
         let note_root = body.compute_block_note_tree().root();
-        let tx_commitment = body.compute_transaction_commitment();
+        let tx_commitment = body.compute_transactions_commitment();
 
         BlockHeader::new(
             prev_block_commitment,
