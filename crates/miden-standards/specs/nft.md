@@ -7,7 +7,7 @@ This document specifies how wallets, marketplaces and indexers read the metadata
 An NFT faucet describes its collection in two places:
 
 - On-chain, in the faucet's storage: `name`, `symbol`, `description`, `logo_uri`, `contract_uri` and `token_base_uri`. Each optional field has a mutability flag that is fixed at creation and readable on-chain.
-- Off-chain, in a JSON document that `contract_uri` points to. It holds presentation data that is too large or too rarely needed to keep on-chain.
+- Off-chain, in a JSON document that `contract_uri` points to.
 
 The on-chain fields are the source of truth. The JSON only adds to them.
 
@@ -17,7 +17,7 @@ The JSON holds only presentation data that is not on-chain. All of its fields ar
 
 - `banner_image` (string): the URI of a wide image for the collection page.
 - `featured_image` (string): the URI of an image for featured listings.
-- `external_link` (string): the project's website. On-chain, the faucet's external URI field holds `contract_uri` itself, so the website lives here.
+- `external_link` (string): the project's website.
 - `collaborators` (array of strings): accounts that may manage the collection on marketplaces, given as bech32 [account IDs](../../../docs/src/account/id.md#encoding) on the faucet's network (e.g. `mm1...`). Readers ignore entries with a different network prefix.
 
 The field names match the collection metadata that marketplaces already read, so existing tooling can use the JSON as is.
