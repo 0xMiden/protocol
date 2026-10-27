@@ -28,12 +28,12 @@ const TOKEN_SUPPLY: u64 = 0;
 // Account commitments for the production composition at SEED, including embedded note scripts
 // and fee policies. The fixed seed makes both construction paths deterministic.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([7898321239248828897, 12627960328361542385, 17212675911123345991, 10549619071714545762])";
+    "Word([18228889690611956506, 14830226714149561988, 12450240521029170624, 3974930532350992481])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([9764203098162402302, 7803755467686361709, 2386049796488608868, 3428065880539519858])";
+    "Word([16782959359561082931, 8249633234648459318, 10484817112381943044, 9676185675070529713])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([605209317104483611, 5755697188834589597, 3612813817491735399, 16862342326799463127])";
-const GOLDEN_ACCOUNT_ID: &str = "0xc311974d5e5db1f104ae76feaf7bf8";
+    "Word([11812271652255511334, 2799003499416823253, 13736285000517876486, 17697144169414349021])";
+const GOLDEN_ACCOUNT_ID: &str = "0x4b156b383746a631152319991ee5ce";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.
@@ -151,7 +151,8 @@ fn crate_root_account_carries_the_policed_asset_callback_flag() {
 /// `max_supply`, so the deployed `set_max_supply` admin function stays operable. This is the
 /// POSITIVE lock that replaces the removed `ImmutableMaxSupply` runtime reject — a constructor that
 /// built the faucet immutable would flip the flag felt and fail here. The `mutability_config` word
-/// layout is `[is_desc, is_logo, is_extlink, is_max_supply]`, so the max-supply flag is element 3.
+/// layout is `[is_desc, is_logo, is_external_uri, is_max_supply]`, so the max-supply flag is
+/// element 3.
 #[test]
 fn crate_root_faucet_max_supply_is_mutable_by_construction() {
     const MUTABILITY_CONFIG_SLOT: &str = "miden::standards::faucets::mutability_config";

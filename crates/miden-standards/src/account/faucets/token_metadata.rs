@@ -1,12 +1,12 @@
 //! Generic token metadata helper.
 //!
 //! [`TokenMetadata`] is a builder-pattern struct used to manage the token name and optional
-//! fields (description, logo_uri, external_link) along with their mutability flags. It is meant
+//! fields (description, logo_uri, external_uri) along with their mutability flags. It is meant
 //! to be embedded inside a token-bearing component such as
 //! [`FungibleFaucet`][crate::account::faucets::FungibleFaucet], not used as a
 //! standalone account component.
 //!
-//! Owner-gated mutators (`set_description`, `set_logo_uri`, `set_external_link`,
+//! Owner-gated mutators (`set_description`, `set_logo_uri`, `set_external_uri`,
 //! `set_max_supply`) are exposed through the embedding component's MASM library and rely on
 //! the `Ownable2Step` access component for ownership checks.
 //!
@@ -16,10 +16,10 @@
 //! |-----------|----------|
 //! | `faucets::token_name_0` | first 4 felts of name |
 //! | `faucets::token_name_1` | last 4 felts of name |
-//! | `faucets::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
+//! | `faucets::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_external_uri_mutable, is_max_supply_mutable]` |
 //! | `faucets::token_description_0..=6` | description (7 Words, max 195 bytes) |
 //! | `faucets::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
-//! | `faucets::external_link_0..=6` | external link (7 Words, max 195 bytes) |
+//! | `faucets::external_uri_0..=6` | external URI (7 Words, max 195 bytes) |
 //!
 //! Layout sync: the same layout is defined in MASM at `asm/standards/faucets/mod.masm`.
 //! Any change to slot names must be applied in both Rust and MASM.
@@ -53,7 +53,7 @@ static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     ]
 });
 
-/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_external_uri_mutable,
 /// is_max_supply_mutable]`.
 static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::faucets::mutability_config")
@@ -93,23 +93,16 @@ static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     ]
 });
 
-/// External link (7 Words), split across 7 slots.
-static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+/// External URI (7 Words), split across 7 slots.
+static EXTERNAL_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::faucets::external_link_0")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_1")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_2")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_3")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_4")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_5")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::external_link_6")
-            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_uri_6").expect("valid slot name"),
     ]
 });
 
@@ -200,9 +193,9 @@ impl Description {
 
 /// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogoURI(FixedWidthString<7>);
+pub struct LogoUri(FixedWidthString<7>);
 
-impl LogoURI {
+impl LogoUri {
     /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
     pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
@@ -227,30 +220,30 @@ impl LogoURI {
     }
 }
 
-/// Token external link (max 195 bytes UTF-8), stored in 7 Words.
+/// Token external URI (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExternalLink(FixedWidthString<7>);
+pub struct ExternalUri(FixedWidthString<7>);
 
-impl ExternalLink {
-    /// Maximum byte length for an external link (7 Words × 4 felts × 7 bytes − 1 length byte).
+impl ExternalUri {
+    /// Maximum byte length for an external URI (7 Words × 4 felts × 7 bytes − 1 length byte).
     pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
-    /// Creates an external link from a UTF-8 string.
+    /// Creates an external URI from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
         FixedWidthString::<7>::new(s).map(Self)
     }
 
-    /// Returns the external link as a string slice.
+    /// Returns the external URI as a string slice.
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 
-    /// Encodes the external link into 7 Words for storage.
+    /// Encodes the external URI into 7 Words for storage.
     pub fn to_words(&self) -> Vec<Word> {
         self.0.to_words()
     }
 
-    /// Decodes an external link from a 7-Word slice.
+    /// Decodes an external URI from a 7-Word slice.
     pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
         FixedWidthString::<7>::try_from_words(words).map(Self)
     }
@@ -269,11 +262,11 @@ impl ExternalLink {
 pub struct TokenMetadata {
     name: TokenName,
     description: Option<Description>,
-    logo_uri: Option<LogoURI>,
-    external_link: Option<ExternalLink>,
+    logo_uri: Option<LogoUri>,
+    external_uri: Option<ExternalUri>,
     is_description_mutable: bool,
     is_logo_uri_mutable: bool,
-    is_external_link_mutable: bool,
+    is_external_uri_mutable: bool,
     is_max_supply_mutable: bool,
 }
 
@@ -285,10 +278,10 @@ impl TokenMetadata {
             name,
             description: None,
             logo_uri: None,
-            external_link: None,
+            external_uri: None,
             is_description_mutable: false,
             is_logo_uri_mutable: false,
-            is_external_link_mutable: false,
+            is_external_uri_mutable: false,
             is_max_supply_mutable: false,
         }
     }
@@ -310,7 +303,7 @@ impl TokenMetadata {
     }
 
     /// Sets the logo URI and its mutability flag together.
-    pub fn with_logo_uri(mut self, logo_uri: LogoURI, mutable: bool) -> Self {
+    pub fn with_logo_uri(mut self, logo_uri: LogoUri, mutable: bool) -> Self {
         self.logo_uri = Some(logo_uri);
         self.is_logo_uri_mutable = mutable;
         self
@@ -322,16 +315,16 @@ impl TokenMetadata {
         self
     }
 
-    /// Sets the external link and its mutability flag together.
-    pub fn with_external_link(mut self, external_link: ExternalLink, mutable: bool) -> Self {
-        self.external_link = Some(external_link);
-        self.is_external_link_mutable = mutable;
+    /// Sets the external URI and its mutability flag together.
+    pub fn with_external_uri(mut self, external_uri: ExternalUri, mutable: bool) -> Self {
+        self.external_uri = Some(external_uri);
+        self.is_external_uri_mutable = mutable;
         self
     }
 
-    /// Sets whether the external link can be updated by the owner.
-    pub fn with_external_link_mutable(mut self, mutable: bool) -> Self {
-        self.is_external_link_mutable = mutable;
+    /// Sets whether the external URI can be updated by the owner.
+    pub fn with_external_uri_mutable(mut self, mutable: bool) -> Self {
+        self.is_external_uri_mutable = mutable;
         self
     }
 
@@ -355,13 +348,13 @@ impl TokenMetadata {
     }
 
     /// Returns the logo URI if set.
-    pub fn logo_uri(&self) -> Option<&LogoURI> {
+    pub fn logo_uri(&self) -> Option<&LogoUri> {
         self.logo_uri.as_ref()
     }
 
-    /// Returns the external link if set.
-    pub fn external_link(&self) -> Option<&ExternalLink> {
-        self.external_link.as_ref()
+    /// Returns the external URI if set.
+    pub fn external_uri(&self) -> Option<&ExternalUri> {
+        self.external_uri.as_ref()
     }
 
     /// Returns whether the max supply is configured as mutable.
@@ -397,9 +390,9 @@ impl TokenMetadata {
         &LOGO_URI_SLOTS[index]
     }
 
-    /// Returns the [`StorageSlotName`] for an external link chunk by index (0..=6).
-    pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
-        &EXTERNAL_LINK_SLOTS[index]
+    /// Returns the [`StorageSlotName`] for an external URI chunk by index (0..=6).
+    pub fn external_uri_slot(index: usize) -> &'static StorageSlotName {
+        &EXTERNAL_URI_SLOTS[index]
     }
 
     // STORAGE
@@ -418,7 +411,7 @@ impl TokenMetadata {
 
     /// Decodes the mutability config [`Word`] into its four boolean flags.
     ///
-    /// The word layout is `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+    /// The word layout is `[is_desc_mutable, is_logo_mutable, is_external_uri_mutable,
     /// is_max_supply_mutable]`. Each element must be exactly `0` or `1`.
     ///
     /// # Errors
@@ -440,7 +433,7 @@ impl TokenMetadata {
         Word::from([
             Felt::from(self.is_description_mutable as u32),
             Felt::from(self.is_logo_uri_mutable as u32),
-            Felt::from(self.is_external_link_mutable as u32),
+            Felt::from(self.is_external_uri_mutable as u32),
             Felt::from(self.is_max_supply_mutable as u32),
         ])
     }
@@ -490,7 +483,7 @@ impl TokenMetadata {
         };
 
         let logo_words = read_slots(&LOGO_URI_SLOTS)?;
-        let logo_uri = LogoURI::try_from_words(&logo_words).map_err(|err| {
+        let logo_uri = LogoUri::try_from_words(&logo_words).map_err(|err| {
             TokenMetadataError::InvalidStringField { field: "logo_uri", source: err }
         })?;
         let logo_uri = if logo_uri.as_str().is_empty() {
@@ -499,14 +492,14 @@ impl TokenMetadata {
             Some(logo_uri)
         };
 
-        let link_words = read_slots(&EXTERNAL_LINK_SLOTS)?;
-        let external_link = ExternalLink::try_from_words(&link_words).map_err(|err| {
-            TokenMetadataError::InvalidStringField { field: "external_link", source: err }
+        let external_uri_words = read_slots(&EXTERNAL_URI_SLOTS)?;
+        let external_uri = ExternalUri::try_from_words(&external_uri_words).map_err(|err| {
+            TokenMetadataError::InvalidStringField { field: "external_uri", source: err }
         })?;
-        let external_link = if external_link.as_str().is_empty() {
+        let external_uri = if external_uri.as_str().is_empty() {
             None
         } else {
-            Some(external_link)
+            Some(external_uri)
         };
 
         let mutability_word = storage.get_item(mutability_config_slot()).map_err(|err| {
@@ -515,7 +508,7 @@ impl TokenMetadata {
                 source: err,
             }
         })?;
-        let (is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable) =
+        let (is_desc_mutable, is_logo_mutable, is_external_uri_mutable, is_max_supply_mutable) =
             TokenMetadata::mutability_flags_from_word(mutability_word)?;
 
         let mut meta = TokenMetadata::new(name);
@@ -527,10 +520,10 @@ impl TokenMetadata {
             meta = meta.with_logo_uri(l, is_logo_mutable);
         }
         meta = meta.with_logo_uri_mutable(is_logo_mutable);
-        if let Some(e) = external_link {
-            meta = meta.with_external_link(e, is_extlink_mutable);
+        if let Some(e) = external_uri {
+            meta = meta.with_external_uri(e, is_external_uri_mutable);
         }
-        meta = meta.with_external_link_mutable(is_extlink_mutable);
+        meta = meta.with_external_uri_mutable(is_external_uri_mutable);
         meta = meta.with_max_supply_mutable(is_max_supply_mutable);
 
         Ok(meta)
@@ -565,17 +558,16 @@ impl TokenMetadata {
 
         let logo_uri = self
             .logo_uri
-            .unwrap_or_else(|| LogoURI::new("").expect("empty logo URI should be valid"));
+            .unwrap_or_else(|| LogoUri::new("").expect("empty logo URI should be valid"));
         for (i, word) in logo_uri.to_words().iter().enumerate() {
             slots.push(StorageSlot::with_value(TokenMetadata::logo_uri_slot(i).clone(), *word));
         }
 
-        let external_link = self
-            .external_link
-            .unwrap_or_else(|| ExternalLink::new("").expect("empty external link should be valid"));
-        for (i, word) in external_link.to_words().iter().enumerate() {
-            slots
-                .push(StorageSlot::with_value(TokenMetadata::external_link_slot(i).clone(), *word));
+        let external_uri = self
+            .external_uri
+            .unwrap_or_else(|| ExternalUri::new("").expect("empty external URI should be valid"));
+        for (i, word) in external_uri.to_words().iter().enumerate() {
+            slots.push(StorageSlot::with_value(TokenMetadata::external_uri_slot(i).clone(), *word));
         }
 
         slots

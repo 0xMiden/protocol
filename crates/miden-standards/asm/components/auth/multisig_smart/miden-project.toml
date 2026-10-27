@@ -47,3 +47,19 @@ type        = { key = "word", value = "bool" }
 description = "Procedure policies"
 name        = "miden::standards::auth::multisig_smart::procedure_policies"
 type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Delayed execution policy"
+name        = "miden::standards::auth::multisig_smart::delay_config"
+# Word layout: [min_delay, propose_expiration_delta, cancel_threshold, 0]
+type = [
+  { name = "min_delay", type = "u32" },
+  { name = "propose_expiration_delta", type = "u16" },
+  { name = "cancel_threshold", type = "u32" },
+  { type = "void" },
+]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Tx proposals (tx_summary_commitment => [unlock_block, proposal_block, min_cancel_sigs, 0]); a cancelled proposal keeps its record with unlock_block = u32::MAX"
+name        = "miden::standards::auth::multisig_smart::tx_proposals"
+type        = { key = "word", value = "word" }
