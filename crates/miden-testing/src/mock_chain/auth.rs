@@ -4,13 +4,12 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::TransactionScriptRoot;
-use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
+use miden_standards::account::auth::multisig_smart::{DelayedExecutionPolicy, ProcedurePolicy};
 use miden_standards::account::auth::{
     Approver,
     ApproverSet,
@@ -55,10 +54,12 @@ pub enum Auth {
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
-    /// Multisig with smart per-procedure policy configuration.
+    /// Multisig with smart per-procedure policy configuration and a delayed-execution policy
+    /// controlling propose/cancel/execute timelock flows.
     MultisigSmart {
         approver_set: ApproverSet,
-        proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+        proc_policy_map: Vec<(AccountProcedureRoot, ProcedurePolicy)>,
+        delayed_execution_policy: DelayedExecutionPolicy,
     },
 
     /// Creates a mock authentication mechanism for the account that only increments the nonce.
@@ -163,10 +164,15 @@ impl Auth {
 
                 (vec![component], None)
             },
-            Auth::MultisigSmart { approver_set, proc_policy_map } => {
-                let config = AuthMultisigSmartConfig::new(approver_set.clone())
-                    .with_proc_policies(proc_policy_map.clone())
-                    .expect("invalid multisig smart config");
+            Auth::MultisigSmart {
+                approver_set,
+                proc_policy_map,
+                delayed_execution_policy,
+            } => {
+                let config =
+                    AuthMultisigSmartConfig::new(approver_set.clone(), *delayed_execution_policy)
+                        .with_proc_policies(proc_policy_map.clone())
+                        .expect("invalid multisig smart config");
 
                 let component = AuthMultisigSmart::new(config)
                     .expect("multisig smart component creation failed")
