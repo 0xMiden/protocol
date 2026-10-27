@@ -433,24 +433,13 @@ mod tests {
         Ok((vec![update], transactions))
     }
 
-    /// Returns a transaction header with no notes whose ID is determined by `seed`.
-    fn seeded_transaction_header(seed: u32) -> TransactionHeader {
-        transaction_header(
-            Word::from([seed, 0, 0, 0]),
-            Word::from([seed + 1, 0, 0, 0]),
-            InputNotes::default(),
-            vec![],
-        )
-        .unwrap()
-    }
-
-    /// Groups the seeded transaction headers into batches.
+    /// Groups mock transaction headers with the given seeds into batches.
     fn batches(seeds_by_batch: &[&[u32]]) -> Vec<OrderedTransactionHeaders> {
         seeds_by_batch
             .iter()
             .map(|seeds| {
                 OrderedTransactionHeaders::new_unchecked(
-                    seeds.iter().copied().map(seeded_transaction_header).collect(),
+                    seeds.iter().copied().map(TransactionHeader::mock).collect(),
                 )
             })
             .collect()
@@ -727,7 +716,7 @@ mod tests {
         assert_matches!(
             result,
             Err(BlockBodyError::DuplicateTransaction(transaction_id))
-                if transaction_id == seeded_transaction_header(1).id()
+                if transaction_id == TransactionHeader::mock(1).id()
         );
     }
 
