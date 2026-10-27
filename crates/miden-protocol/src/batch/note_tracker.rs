@@ -94,7 +94,7 @@ pub(crate) struct NoteTracker<'container, ContainerId: Copy + Eq + Debug> {
 
 /// The result of [`NoteTracker::finalize`].
 pub(crate) struct TrackerOutput<ContainerId> {
-    pub input_notes: Vec<InputNoteCommitment>,
+    pub input_notes: BTreeMap<Nullifier, (ContainerId, InputNoteCommitment)>,
     pub erased_notes: Vec<Nullifier>,
     pub output_notes: BTreeMap<NoteId, (ContainerId, OutputNote)>,
 }
@@ -274,11 +274,7 @@ impl<'container, ContainerId: Copy + Eq + Debug> NoteTracker<'container, Contain
         }
 
         Ok(TrackerOutput {
-            input_notes: self
-                .input_notes
-                .into_values()
-                .map(|(_, input_note_commitment)| input_note_commitment)
-                .collect(),
+            input_notes: self.input_notes,
             erased_notes: self.erased_notes,
             output_notes: self.output_notes,
         })
