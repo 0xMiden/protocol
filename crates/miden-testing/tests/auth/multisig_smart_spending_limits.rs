@@ -487,15 +487,16 @@ impl Harness {
     }
 }
 
-fn window_index(block: BlockNumber) -> u32 {
-    block.as_u32() / WINDOW_BLOCKS
+/// The first block after the window `block` falls in.
+fn window_end(block: BlockNumber) -> u32 {
+    (block.as_u32() / WINDOW_BLOCKS + 1) * WINDOW_BLOCKS
 }
 
-fn tracker_word(spent: u64, block: BlockNumber, generation: u32) -> Word {
+fn tracker_word(spent: u64, block: BlockNumber) -> Word {
     Word::from([
         Felt::new_unchecked(spent),
-        Felt::from(window_index(block)),
-        Felt::from(generation),
+        Felt::from(window_end(block)),
+        Felt::from(0u32),
         Felt::from(0u32),
     ])
 }
@@ -510,7 +511,7 @@ async fn spend_within_the_limit_is_allowed_and_tracked() -> anyhow::Result<()> {
 
     h.send(fungible(usdcx(), 50_000)).await?;
 
-    assert_eq!(h.tracker(), tracker_word(50_000, block, 0));
+    assert_eq!(h.tracker(), tracker_word(50_000, block));
     Ok(())
 }
 
@@ -544,13 +545,13 @@ async fn spends_accumulate_within_a_window_and_reset_after_it() -> anyhow::Resul
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
     // The next window starts from zero.
-    let next_window_block = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    let next_window_block = window_end(h.latest_block());
     h.chain.prove_until_block(next_window_block)?;
     h.send(fungible(usdcx(), 50_000)).await?;
 
     let block = h.latest_block();
-    assert_eq!(window_index(block), window_index(BlockNumber::from(next_window_block)));
-    assert_eq!(h.tracker(), tracker_word(50_000, block, 0));
+    assert_eq!(window_end(block), window_end(BlockNumber::from(next_window_block)));
+    assert_eq!(h.tracker(), tracker_word(50_000, block));
     Ok(())
 }
 
@@ -561,7 +562,7 @@ async fn an_older_reference_block_does_not_release_budget() -> anyhow::Result<()
     // Spend in window N, then move into window N+1 and spend again.
     let window_n_block = h.latest_block();
     h.send(fungible(usdcx(), 60_000)).await?;
-    let next_window_block = (window_index(window_n_block) + 1) * WINDOW_BLOCKS;
+    let next_window_block = window_end(window_n_block);
     h.chain.prove_until_block(next_window_block)?;
     h.send(fungible(usdcx(), 50_000)).await?;
 
@@ -618,7 +619,7 @@ async fn the_base_asset_is_charged_one_to_one_without_the_oracle() -> anyhow::Re
 
     h.send(fungible(usdcx(), 60_000)).await?;
 
-    assert_eq!(h.tracker(), tracker_word(60_000, block, 0));
+    assert_eq!(h.tracker(), tracker_word(60_000, block));
     Ok(())
 }
 
@@ -629,7 +630,7 @@ async fn other_assets_are_converted_through_the_oracle() -> anyhow::Result<()> {
 
     h.send(fungible(eth(), 10)).await?;
 
-    assert_eq!(h.tracker(), tracker_word(10 * ORACLE_RATE, block, 0));
+    assert_eq!(h.tracker(), tracker_word(10 * ORACLE_RATE, block));
     Ok(())
 }
 
@@ -690,7 +691,7 @@ async fn reading_the_oracle_tightens_the_expiration() -> anyhow::Result<()> {
 #[tokio::test]
 async fn the_policy_binds_the_expiration_to_the_window(#[case] offset: u32) -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
-    let window_start = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    let window_start = window_end(h.latest_block());
     h.chain.prove_until_block(window_start + offset)?;
     let reference_block = h.latest_block();
     assert_eq!(reference_block.as_u32(), window_start + offset);
@@ -711,7 +712,7 @@ async fn an_idle_window_cannot_be_charged_from_the_next_window() -> anyhow::Resu
     let mut h = Harness::with_policy()?;
 
     // Stand on the first block of a window whose predecessor saw no spend.
-    let idle_window_start = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    let idle_window_start = window_end(h.latest_block());
     let next_window_start = idle_window_start + WINDOW_BLOCKS;
     h.chain.prove_until_block(next_window_start)?;
     let idle_window_end = BlockNumber::from(next_window_start - 1);
@@ -746,7 +747,7 @@ async fn an_idle_window_cannot_be_reopened_with_an_old_reference_block() -> anyh
     h.send(fungible(usdcx(), 60_000)).await?;
 
     // Leave the next window idle and stand two windows past it.
-    let idle_window_block = (window_index(h.latest_block()) + 1) * WINDOW_BLOCKS;
+    let idle_window_block = window_end(h.latest_block());
     h.chain.prove_until_block(idle_window_block + 2 * WINDOW_BLOCKS)?;
 
     let salt = h.next_salt();
@@ -849,23 +850,48 @@ async fn set_spending_limit_writes_and_clears_the_slot() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn changing_the_window_length_resets_the_tracker() -> anyhow::Result<()> {
+async fn changing_the_window_length_keeps_the_running_total() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
+    let block = h.latest_block();
 
     h.send(fungible(usdcx(), 60_000)).await?;
 
-    // Re-saving the same window length keeps the running total.
-    h.configure(&update_policy_script(WINDOW_BLOCKS, UnpricedAssetPolicy::Reject.as_u32()))
+    // A longer window does not reopen the budget: the old window keeps its total and its end.
+    h.configure(&update_policy_script(WINDOW_BLOCKS * 4, UnpricedAssetPolicy::Reject.as_u32()))
         .await??;
     let result = h.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
-    // A different window length bumps the generation and the total starts over.
-    h.configure(&update_policy_script(WINDOW_BLOCKS * 2, UnpricedAssetPolicy::Reject.as_u32()))
+    h.send(fungible(usdcx(), 30_000)).await?;
+    assert_eq!(h.tracker(), tracker_word(90_000, block));
+    Ok(())
+}
+
+/// After the window is lengthened, a transaction still charged to the old, shorter window expires
+/// at that window's end, not at the end of the longer window its reference block now falls in.
+/// Once the old window has ended, the next spend opens a window of the new length.
+#[tokio::test]
+async fn a_spend_charged_to_the_old_window_expires_with_it() -> anyhow::Result<()> {
+    let mut h = Harness::with_policy()?;
+    let old_window_end = window_end(h.latest_block());
+    let new_window_blocks = WINDOW_BLOCKS * 4;
+
+    h.send(fungible(usdcx(), 60_000)).await?;
+    h.configure(&update_policy_script(new_window_blocks, UnpricedAssetPolicy::Reject.as_u32()))
         .await??;
-    h.send(fungible(usdcx(), 50_000)).await?;
-    assert_eq!(h.tracker()[0], Felt::new_unchecked(50_000));
-    assert_eq!(h.tracker()[2], Felt::from(1u32));
+
+    let tx = h.send(fungible(usdcx(), 1)).await?;
+    assert_eq!(tx.expiration_block_num(), BlockNumber::from(old_window_end));
+
+    h.chain.prove_until_block(old_window_end)?;
+    let block = h.latest_block();
+    let new_window_end = (block.as_u32() / new_window_blocks + 1) * new_window_blocks;
+
+    // 70_000 only fits because the old window's 60_001 no longer counts.
+    let tx = h.send(fungible(usdcx(), 70_000)).await?;
+    assert_eq!(tx.expiration_block_num(), BlockNumber::from(new_window_end));
+    assert_eq!(h.tracker()[0], Felt::new_unchecked(70_000));
+    assert_eq!(h.tracker()[1], Felt::from(new_window_end));
     Ok(())
 }
 
@@ -960,7 +986,7 @@ async fn assets_across_notes_accumulate_within_a_transaction() -> anyhow::Result
     let block = h.latest_block();
     h.send_many(vec![fungible(usdcx(), 30_000), fungible(usdcx(), 30_000)])
         .await??;
-    assert_eq!(h.tracker(), tracker_word(60_000, block, 0));
+    assert_eq!(h.tracker(), tracker_word(60_000, block));
     Ok(())
 }
 
@@ -971,7 +997,7 @@ async fn two_assets_in_one_note_are_both_charged() -> anyhow::Result<()> {
 
     // The base asset and a priced asset ride in a single note: 20_000 plus 5 ETH at 3000.
     h.send_bundle(vec![fungible(usdcx(), 20_000), fungible(eth(), 5)]).await??;
-    assert_eq!(h.tracker(), tracker_word(20_000 + 5 * ORACLE_RATE, block, 0));
+    assert_eq!(h.tracker(), tracker_word(20_000 + 5 * ORACLE_RATE, block));
 
     // The second asset in the note is what pushes the budget over: 35_001 + 66_000.
     let result = h.send_bundle(vec![fungible(usdcx(), 1), fungible(eth(), 22)]).await?;
@@ -1047,24 +1073,23 @@ async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow
 }
 
 #[tokio::test]
-async fn disabling_and_re_enabling_the_policy_bumps_the_generation_twice() -> anyhow::Result<()> {
+async fn disabling_and_re_enabling_the_policy_keeps_the_running_total() -> anyhow::Result<()> {
     let mut h = Harness::with_policy()?;
     let reject = UnpricedAssetPolicy::Reject.as_u32();
+    let block = h.latest_block();
 
     h.send(fungible(usdcx(), 60_000)).await?;
-    assert_eq!(h.config()[2], Felt::from(0u32));
 
-    // N -> 0: disabled, nothing is metered, generation 1.
+    // N -> 0: disabled, nothing is metered and the tracker is left alone.
     h.configure(&update_policy_script(0, reject)).await??;
-    assert_eq!(h.config(), Word::from([0u32, reject, 1, 0]));
+    assert_eq!(h.config(), Word::from([0u32, reject, 0, 0]));
     h.send(fungible(usdcx(), 500_000)).await?;
-    assert_eq!(h.tracker()[0], Felt::new_unchecked(60_000));
+    assert_eq!(h.tracker(), tracker_word(60_000, block));
 
-    // 0 -> N: enabled again, generation 2, the old tracker is stale and the budget starts over.
+    // 0 -> N inside the same window: the old total still counts.
     h.configure(&update_policy_script(WINDOW_BLOCKS, reject)).await??;
-    assert_eq!(h.config(), Word::from([WINDOW_BLOCKS, reject, 2, 0]));
-    let block = h.latest_block();
-    h.send(fungible(usdcx(), 70_000)).await?;
-    assert_eq!(h.tracker(), tracker_word(70_000, block, 2));
+    assert_eq!(h.config(), Word::from([WINDOW_BLOCKS, reject, 0, 0]));
+    let result = h.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
+    assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
 }

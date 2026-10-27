@@ -118,9 +118,13 @@ impl SpendingBudget {
 /// changes the signature threshold.
 ///
 /// While the policy is enabled every transaction of the account expires at the end of the window
-/// its reference block falls in, capped at the kernel's maximum delta, so the window a spend is
-/// charged to is the window the transaction is included in: an idle window cannot be charged from
-/// a later one, and a burst around a window boundary is bounded by twice the limit.
+/// it is charged to, capped at the kernel's maximum delta, so that window is the window the
+/// transaction is included in: an idle window cannot be charged from a later one, and a burst
+/// around a window boundary is bounded by twice the limit.
+///
+/// The tracker keeps the end block of the window it accounts for, so changing `window_blocks`
+/// later does not reset the budget: what was spent keeps counting until its window ends, and the
+/// windows after it follow the new length.
 ///
 /// An asset that is neither the base asset nor priced by the oracle falls to the
 /// [`UnpricedAssetPolicy`]. Non-fungible assets are not metered.
@@ -179,7 +183,7 @@ impl SpendingLimitsPolicy {
     // STORAGE ENCODING
     // --------------------------------------------------------------------------------------------
 
-    /// `[window_blocks, unpriced_asset_policy, config_generation = 0, 0]`.
+    /// `[window_blocks, unpriced_asset_policy, 0, 0]`.
     pub(super) fn config_word(&self) -> Word {
         Word::from([self.window_blocks.get(), self.unpriced_assets.as_u32(), 0, 0])
     }

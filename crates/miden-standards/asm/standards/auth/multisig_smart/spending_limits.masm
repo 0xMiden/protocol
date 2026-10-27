@@ -24,11 +24,15 @@ use miden::standards::oracle::price_oracle
 # whether the transaction is allowed at all. Non-fungible assets are outside the policy.
 #
 # Window binding: while the policy is enabled, every transaction expires at the end of the window
-# its reference block falls in (at most 65535 blocks later). The window a transaction is charged to
-# is therefore the window it is included in, so an idle window cannot be charged from a later one
-# by pointing a reference block into it, and a burst around a window boundary is bounded by twice
-# the limit. The only exception is a reference block on a window's last block, which may still land
-# on the first block of the next window because the expiration delta must be at least one.
+# it is charged to (at most 65535 blocks after its reference block). That window is therefore the
+# window the transaction is included in, so an idle window cannot be charged from a later one by
+# pointing a reference block into it, and a burst around a window boundary is bounded by twice the
+# limit. The only exception is a reference block on a window's last block, which may still land on
+# the first block of the next window because the expiration delta must be at least one.
+#
+# The tracker keeps the end block of the window it accounts for rather than a window index, so it
+# stays meaningful when the window length changes: what was spent keeps counting until its window
+# ends, and the windows after it follow the new length.
 #
 # Faulty oracle: the base asset is priced without reading the oracle, so a faulty oracle never
 # blocks it. Other assets stop under `reject` until governance points the budget at another oracle
@@ -47,7 +51,7 @@ pub enum UnpricedAssetPolicy : u8 {
 # CONSTANTS
 # =================================================================================================
 
-# [window_blocks, unpriced_asset_policy, config_generation, 0]
+# [window_blocks, unpriced_asset_policy, 0, 0]
 # A zero window_blocks disables the policy for the account.
 const SPENDING_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::spending_config")
 
@@ -64,7 +68,9 @@ const SPENDING_BASE_ASSET_SLOT = word("miden::standards::auth::multisig_smart::s
 # A zero limit means the budget is not configured.
 const SPENDING_LIMIT_SLOT = word("miden::standards::auth::multisig_smart::spending_limit")
 
-# [spent_in_window, window_index, config_generation, 0]
+# [spent_in_window, window_end_block, 0, 0]
+# window_end_block is the first block after the window the total belongs to: a reference block
+# before it keeps adding to the total, one at or past it opens a fresh window.
 const SPENDING_TRACKER_SLOT = word("miden::standards::auth::multisig_smart::spending_tracker")
 
 const UNPRICED_ASSET_POLICY_MAX = UNPRICED_ASSET_REJECT
@@ -98,15 +104,13 @@ const ENFORCE_TOTAL_LOC = ENFORCE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
 #! Sets the account-wide spending-limit policy: the window length and how unpriced assets are
 #! treated.
 #!
-#! Lengthening the window or switching unpriced assets to `allow` weakens the budget, and changing
-#! the window length resets the running total, so this procedure should carry a policy at least as
-#! strong as the account wants its spending limit to be. Left unpolicied, the default threshold
-#! suffices to reset the budget.
+#! Lengthening the window or switching unpriced assets to `allow` weakens the budget, so this
+#! procedure should carry a policy at least as strong as the account wants its spending limit to
+#! be. Left unpolicied, the default threshold suffices to lengthen the window.
 #!
-#! Changing `window_blocks` bumps `config_generation`: window indices computed under different
-#! lengths are not comparable, so a tracker written under the old generation is treated as the
-#! start of a fresh window. The bump happens only when the length actually changes, so a call that
-#! keeps it cannot be used as a budget reset.
+#! Changing `window_blocks` does not touch the running total: what was already spent keeps counting
+#! until its window ends, and the windows after it follow the new length. A length change can
+#! therefore not be used as a budget reset.
 #!
 #! Inputs:  [window_blocks, unpriced_asset_policy]
 #! Outputs: []
@@ -131,26 +135,13 @@ pub proc update_spending_limits_policy(window_blocks: u32, unpriced_asset_policy
     u32lte.UNPRICED_ASSET_POLICY_MAX assert.err=ERR_UNPRICED_ASSET_POLICY_INVALID
     # => [window_blocks, unpriced_asset_policy]
 
-    # ----- Bump the generation only when the window length actually changes. -----
-    exec.get_initial_spending_config
-    # => [old_window_blocks, old_policy, old_generation, window_blocks, unpriced_asset_policy]
-
-    swap drop
-    # => [old_window_blocks, old_generation, window_blocks, unpriced_asset_policy]
-
-    dup.2 neq add
-    # => [config_generation, window_blocks, unpriced_asset_policy]
-
-    movdn.2 push.0 movdn.3
-    # => [window_blocks, unpriced_asset_policy, config_generation, 0]
+    push.0.0 movdn.3 movdn.3
+    # => [window_blocks, unpriced_asset_policy, 0, 0]
 
     push.SPENDING_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, window_blocks, unpriced_asset_policy, config_generation, 0]
+    # => [slot_suffix, slot_prefix, window_blocks, unpriced_asset_policy, 0, 0]
 
-    exec.native_account::set_item
-    # => [OLD_CONFIG]
-
-    dropw
+    exec.native_account::set_item dropw
     # => []
 end
 
@@ -276,10 +267,11 @@ end
 #! Charges every fungible asset this transaction sends out to the spending budget and fails the
 #! transaction if the budget is exceeded.
 #!
-#! Iterates every output note and every asset in it, pricing each fungible asset into the base asset
-#! with `price_asset` and summing the results; an asset the budget cannot price falls to the
-#! unpriced-asset policy and non-fungible assets are skipped. The sum is charged to the budget once,
-#! so the tracker is read and written once per transaction.
+#! Loads the window the transaction is charged to and binds the transaction's expiration to that
+#! window's end, then iterates every output note and every asset in it, pricing each fungible asset
+#! into the base asset with `price_asset` and summing the results; an asset the budget cannot price
+#! falls to the unpriced-asset policy and non-fungible assets are skipped. The sum is charged to the
+#! budget once, so the tracker is read and written once per transaction.
 #!
 #! A no-op when the policy is disabled (`window_blocks == 0`). With the policy enabled the
 #! transaction's expiration is bound to the window even when it creates no output notes.
@@ -288,8 +280,8 @@ end
 #! Outputs: []
 #!
 #! Side effects:
-#! - Tightens the transaction expiration delta to the blocks left in the reference block's window
-#!   (at most 65535), so the window charged is the window the transaction is included in.
+#! - Tightens the transaction expiration delta to the blocks left in the window the transaction is
+#!   charged to (at most 65535), so that window is the window the transaction is included in.
 #! - Writes SPENDING_TRACKER_SLOT when a fungible asset was priced into the budget.
 #!
 #! Panics if:
@@ -303,117 +295,107 @@ end
 @locals(129)
 pub proc enforce_spending_limits()
     exec.get_initial_spending_config
-    # => [window_blocks, unpriced_asset_policy, config_generation]
+    # => [window_blocks, unpriced_asset_policy]
 
     dup eq.0
-    # => [is_disabled, window_blocks, unpriced_asset_policy, config_generation]
+    # => [is_disabled, window_blocks, unpriced_asset_policy]
 
     if.true
-        drop drop drop
+        drop drop
         # => []
     else
         u32assert.err=ERR_WINDOW_BLOCKS_NOT_U32
-        # => [window_blocks, unpriced_asset_policy, config_generation]
+        # => [window_blocks, unpriced_asset_policy]
 
-        # ----- Bind the transaction to its window: it expires at the end of the window its
-        # reference block falls in, so the window it is charged to is the window it lands in. -----
-        exec.tx::get_reference_block_number dup.1 u32mod
-        # => [blocks_into_window, window_blocks, unpriced_asset_policy, config_generation]
+        exec.load_window_spend
+        # => [spent, window_end, unpriced_asset_policy]
 
-        dup.1 swap sub
-        # => [blocks_left_in_window, window_blocks, unpriced_asset_policy, config_generation]
+        # ----- Bind the transaction to the window it is charged to: it expires at that window's
+        # end, so the window it is charged to is the window it lands in. -----
+        dup.1 exec.tx::get_reference_block_number sub
+        # => [blocks_left_in_window, spent, window_end, unpriced_asset_policy]
 
         push.MAX_EXPIRATION_BLOCK_DELTA u32min exec.tx::update_expiration_block_delta
-        # => [window_blocks, unpriced_asset_policy, config_generation]
+        # => [spent, window_end, unpriced_asset_policy]
 
-        exec.current_window_index
-        # => [window_index, unpriced_asset_policy, config_generation]
-
-        exec.get_initial_spending_limit
-        # => [limit, window_index, unpriced_asset_policy, config_generation]
+        movup.2 exec.get_initial_spending_limit
+        # => [limit, unpriced_asset_policy, spent, window_end]
 
         push.0 loc_store.ENFORCE_TOTAL_LOC
-        # => [limit, window_index, unpriced_asset_policy, config_generation]
+        # => [limit, unpriced_asset_policy, spent, window_end]
 
         exec.tx::get_num_output_notes
-        # => [num_output_notes, limit, window_index, unpriced_asset_policy, config_generation]
+        # => [num_output_notes, limit, unpriced_asset_policy, spent, window_end]
 
         dup neq.0
-        # => [has_notes, num_output_notes, limit, window_index, unpriced_asset_policy,
-        #     config_generation]
+        # => [has_notes, num_output_notes, limit, unpriced_asset_policy, spent, window_end]
 
         while.true
-            # => [note_count, limit, window_index, unpriced_asset_policy, config_generation]
+            # => [note_count, limit, unpriced_asset_policy, spent, window_end]
 
             sub.1
-            # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
+            # => [note_index, limit, unpriced_asset_policy, spent, window_end]
 
             dup locaddr.ENFORCE_NOTE_ASSETS_LOC
-            # => [assets_ptr, note_index, note_index, limit, window_index, unpriced_asset_policy,
-            #     config_generation]
+            # => [assets_ptr, note_index, note_index, limit, unpriced_asset_policy, spent,
+            #     window_end]
 
             exec.output_note::get_assets
-            # => [num_assets, note_index, limit, window_index, unpriced_asset_policy,
-            #     config_generation]
+            # => [num_assets, note_index, limit, unpriced_asset_policy, spent, window_end]
 
             dup neq.0
-            # => [has_assets, num_assets, note_index, limit, window_index, unpriced_asset_policy,
-            #     config_generation]
+            # => [has_assets, num_assets, note_index, limit, unpriced_asset_policy, spent,
+            #     window_end]
 
             while.true
-                # => [asset_count, note_index, limit, window_index, unpriced_asset_policy,
-                #     config_generation]
+                # => [asset_count, note_index, limit, unpriced_asset_policy, spent, window_end]
 
                 sub.1
-                # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
-                #     config_generation]
+                # => [asset_idx, note_index, limit, unpriced_asset_policy, spent, window_end]
 
-                dup.4 dup.3
-                # => [limit, unpriced_asset_policy, asset_idx, note_index, limit, window_index,
-                #     unpriced_asset_policy, config_generation]
+                dup.3 dup.3
+                # => [limit, unpriced_asset_policy, asset_idx, note_index, limit,
+                #     unpriced_asset_policy, spent, window_end]
 
                 dup.2 mul.ASSET_SIZE locaddr.ENFORCE_NOTE_ASSETS_LOC add
                 # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
-                #     window_index, unpriced_asset_policy, config_generation]
+                #     unpriced_asset_policy, spent, window_end]
 
                 exec.asset::load
                 # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index,
-                #     limit, window_index, unpriced_asset_policy, config_generation]
+                #     limit, unpriced_asset_policy, spent, window_end]
 
                 exec.price_asset
-                # => [converted_amount, asset_idx, note_index, limit, window_index,
-                #     unpriced_asset_policy, config_generation]
+                # => [converted_amount, asset_idx, note_index, limit, unpriced_asset_policy, spent,
+                #     window_end]
 
                 loc_load.ENFORCE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
                 loc_store.ENFORCE_TOTAL_LOC
-                # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
-                #     config_generation]
+                # => [asset_idx, note_index, limit, unpriced_asset_policy, spent, window_end]
 
                 dup neq.0
-                # => [has_assets, asset_idx, note_index, limit, window_index, unpriced_asset_policy,
-                #     config_generation]
+                # => [has_assets, asset_idx, note_index, limit, unpriced_asset_policy, spent,
+                #     window_end]
             end
-            # => [asset_idx, note_index, limit, window_index, unpriced_asset_policy,
-            #     config_generation]
+            # => [asset_idx, note_index, limit, unpriced_asset_policy, spent, window_end]
 
             drop
-            # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
+            # => [note_index, limit, unpriced_asset_policy, spent, window_end]
 
             dup neq.0
-            # => [has_notes, note_index, limit, window_index, unpriced_asset_policy,
-            #     config_generation]
+            # => [has_notes, note_index, limit, unpriced_asset_policy, spent, window_end]
         end
-        # => [note_index, limit, window_index, unpriced_asset_policy, config_generation]
+        # => [note_index, limit, unpriced_asset_policy, spent, window_end]
 
-        drop movup.2 drop
-        # => [limit, window_index, config_generation]
+        drop swap drop
+        # => [limit, spent, window_end]
 
         # ----- Charge the sum once. Nothing to write when no asset was priced into the budget. -----
         loc_load.ENFORCE_TOTAL_LOC
-        # => [total, limit, window_index, config_generation]
+        # => [total, limit, spent, window_end]
 
         dup neq.0
-        # => [is_charged, total, limit, window_index, config_generation]
+        # => [is_charged, total, limit, spent, window_end]
 
         if.true
             exec.charge_budget
@@ -434,18 +416,18 @@ end
 #! transaction does not affect how that transaction is metered.
 #!
 #! Inputs:  []
-#! Outputs: [window_blocks, unpriced_asset_policy, config_generation]
+#! Outputs: [window_blocks, unpriced_asset_policy]
 #!
 #! Invocation: exec
-proc get_initial_spending_config() -> (u32, UnpricedAssetPolicy, felt)
+proc get_initial_spending_config() -> (u32, UnpricedAssetPolicy)
     push.SPENDING_CONFIG_SLOT[0..2]
     # => [slot_suffix, slot_prefix]
 
     exec.native_account::get_initial_item
-    # => [window_blocks, unpriced_asset_policy, config_generation, 0]
+    # => [window_blocks, unpriced_asset_policy, 0, 0]
 
-    movup.3 drop
-    # => [window_blocks, unpriced_asset_policy, config_generation]
+    movup.3 drop movup.2 drop
+    # => [window_blocks, unpriced_asset_policy]
 end
 
 #! Reads the spending limit from the initial account state.
@@ -468,25 +450,6 @@ proc get_initial_spending_limit() -> AssetAmount
 
     movdn.3 drop drop drop
     # => [limit]
-end
-
-#! Returns the index of the spending window the transaction's reference block falls into.
-#!
-#! Inputs:  [window_blocks]
-#! Outputs: [window_index]
-#!
-#! Where:
-#! - window_blocks is the configured window length in blocks; the caller asserts it is a non-zero
-#!   `u32`.
-#! - window_index is floor(reference_block_num / window_blocks).
-#!
-#! Invocation: exec
-proc current_window_index(window_blocks: u32) -> u32
-    exec.tx::get_reference_block_number
-    # => [reference_block_num, window_blocks]
-
-    swap u32div
-    # => [window_index]
 end
 
 #! Prices one asset into the base asset for the spending budget.
@@ -667,11 +630,15 @@ proc convert_to_base_asset(asset_id: AssetId, amount: AssetAmount) -> (Bool, Ass
     end
 end
 
-#! Charges an amount to the budget: rolls the tracker over if needed, adds the amount, asserts the
-#! limit and persists the tracker.
+#! Charges this transaction's priced spend to the budget: adds it to the window's running total,
+#! asserts the limit and persists the tracker.
 #!
-#! Inputs:  [amount, limit, window_index, config_generation]
+#! Inputs:  [total, limit, spent, window_end]
 #! Outputs: []
+#!
+#! Where:
+#! - total is this transaction's spend, priced into the base asset.
+#! - spent and window_end describe the window being charged, as `load_window_spend` returned them.
 #!
 #! Side effects:
 #! - Writes SPENDING_TRACKER_SLOT.
@@ -680,109 +647,92 @@ end
 #! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
 #!
 #! Invocation: exec
-proc charge_budget(amount: AssetAmount, limit: AssetAmount, window_index: u32, config_generation: felt)
-    movup.3 movup.3
-    # => [window_index, config_generation, amount, limit]
-
-    dup.1 movdn.4
-    # => [window_index, config_generation, amount, limit, config_generation]
-
-    exec.load_window_spend
-    # => [spent, effective_window_index, amount, limit, config_generation]
-
+proc charge_budget(total: AssetAmount, limit: AssetAmount, spent: AssetAmount, window_end: felt)
     # Saturate so the stored total keeps the next charge's sum inside the amount bound.
     movup.2 exec.fungible_asset::saturating_add_amount
-    # => [total, effective_window_index, limit, config_generation]
+    # => [window_total, limit, window_end]
 
-    # ----- Assert total <= limit. -----
-    dup dup.3 lte
-    # => [is_within_limit, total, effective_window_index, limit, config_generation]
+    # ----- Assert window_total <= limit. -----
+    dup dup.2 lte
+    # => [is_within_limit, window_total, limit, window_end]
 
     assert.err=ERR_SPENDING_LIMIT_EXCEEDED
-    # => [total, effective_window_index, limit, config_generation]
+    # => [window_total, limit, window_end]
 
-    movup.2 drop
-    # => [total, effective_window_index, config_generation]
+    swap drop
+    # => [window_total, window_end]
 
     exec.store_window_spend
     # => []
 end
 
-#! Returns the amount already spent in the current window.
+#! Returns the window this transaction is charged to: the amount already spent in it and the block
+#! it ends at.
 #!
-#! Reads the tracker from the *current* account state so that several assets in one transaction
-#! accumulate instead of overwriting each other. Returns 0 when the tracker belongs to an earlier
-#! window or an earlier configuration generation.
+#! The tracked window stays open while the reference block is before its end. A reference block in
+#! an earlier window can only come from an executor that picked an older reference block; charging
+#! the tracked window means that rollback buys nothing. At or past the end, the window the
+#! reference block falls in opens with nothing spent. The tracker keeps the end block rather than a
+#! window index so that it stays meaningful across changes of the window length.
 #!
-#! A tracker ahead of the current window can only come from an executor that picked an older
-#! reference block. Rather than failing the transaction, the spend is charged to the tracked window:
-#! the budget is not reset, so the rollback buys nothing, and a client building against a slightly
-#! stale reference block still goes through.
+#! Reads the tracker from the current account state, the state the write at the end of this
+#! transaction builds on.
 #!
-#! Inputs:  [window_index, current_config_generation]
-#! Outputs: [spent, effective_window_index]
+#! Inputs:  [window_blocks]
+#! Outputs: [spent, window_end]
+#!
+#! Where:
+#! - window_blocks is the configured window length; the caller asserts it is a non-zero `u32`.
+#! - window_end is the first block after the window, `(reference_block_num / window_blocks + 1) *
+#!   window_blocks` for a fresh one. It can exceed the `u32` block range by up to one window, so it
+#!   is kept and compared as a field element.
 #!
 #! Invocation: exec
-proc load_window_spend(window_index: u32, current_config_generation: felt) -> (AssetAmount, u32)
-    push.SPENDING_TRACKER_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, window_index, current_config_generation]
+proc load_window_spend(window_blocks: u32) -> (AssetAmount, felt)
+    exec.tx::get_reference_block_number
+    # => [reference_block_num, window_blocks]
 
-    exec.active_account::get_item
-    # => [spent, tracked_window_index, tracked_generation, 0, window_index, current_config_generation]
+    push.SPENDING_TRACKER_SLOT[0..2] exec.active_account::get_item
+    # => [spent, tracked_end, 0, 0, reference_block_num, window_blocks]
 
-    movup.3 drop
-    # => [spent, tracked_window_index, tracked_generation, window_index, current_config_generation]
+    movup.3 drop movup.2 drop
+    # => [spent, tracked_end, reference_block_num, window_blocks]
 
-    movup.2 movup.4 eq
-    # => [is_current_generation, spent, tracked_window_index, window_index]
+    dup.2 dup.2 lt
+    # => [is_tracked_window_open, spent, tracked_end, reference_block_num, window_blocks]
 
     if.true
-        swap
-        # => [tracked_window_index, spent, window_index]
-
-        dup dup.3 u32lt
-        # => [is_earlier_window, tracked_window_index, spent, window_index]
-
-        if.true
-            # The tracker is from a past window, so this transaction opens a fresh one.
-            drop drop
-            # => [window_index]
-
-            push.0
-            # => [spent, effective_window_index]
-        else
-            # The tracker is at, or ahead of, the current window; keep accumulating into it.
-            movup.2 drop
-            # => [tracked_window_index, spent]
-
-            swap
-            # => [spent, effective_window_index]
-        end
+        # The tracked window is still open: keep accumulating into it.
+        movup.2 drop movup.2 drop
+        # => [spent, window_end = tracked_end]
     else
-        # The tracker predates the current configuration, so it carries no usable total.
+        # The tracked window has ended, or none was tracked: open the reference block's window.
         drop drop
-        # => [window_index]
+        # => [reference_block_num, window_blocks]
+
+        dup.1 u32div add.1 mul
+        # => [window_end]
 
         push.0
-        # => [spent, effective_window_index]
+        # => [spent = 0, window_end]
     end
 end
 
 #! Persists the budget's tracker.
 #!
-#! Inputs:  [total, window_index, config_generation]
+#! Inputs:  [window_total, window_end]
 #! Outputs: []
 #!
 #! Side effects:
 #! - Writes SPENDING_TRACKER_SLOT.
 #!
 #! Invocation: exec
-proc store_window_spend(total: AssetAmount, window_index: u32, config_generation: felt)
-    push.0 movdn.3
-    # => [total, window_index, config_generation, 0]
+proc store_window_spend(window_total: AssetAmount, window_end: felt)
+    push.0.0 movdn.3 movdn.3
+    # => [window_total, window_end, 0, 0]
 
     push.SPENDING_TRACKER_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, total, window_index, config_generation, 0]
+    # => [slot_suffix, slot_prefix, window_total, window_end, 0, 0]
 
     exec.native_account::set_item dropw
     # => []

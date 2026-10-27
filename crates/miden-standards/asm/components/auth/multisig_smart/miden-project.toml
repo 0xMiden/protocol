@@ -68,7 +68,7 @@ name = "miden::standards::auth::multisig_smart::spending_config"
 type = [
   { name = "window_blocks", type = "u32" },
   { name = "unpriced_asset_policy", type = "u8" },
-  { name = "config_generation", type = "felt" },
+  { type = "void" },
   { type = "void" },
 ]
 
@@ -97,7 +97,7 @@ description = "Spending limit tracker"
 name = "miden::standards::auth::multisig_smart::spending_tracker"
 type = [
   { name = "spent_in_window", type = "felt" },
-  { name = "window_index", type = "u32" },
-  { name = "config_generation", type = "felt" },
+  { name = "window_end_block", type = "felt" },
+  { type = "void" },
   { type = "void" },
 ]
