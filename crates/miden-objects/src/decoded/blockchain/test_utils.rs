@@ -15,7 +15,7 @@ pub(crate) fn block_header_with_scheduled_upgrade() -> BlockHeader {
         header.account_root(),
         header.nullifier_root(),
         header.note_root(),
-        header.tx_commitment(),
+        header.transactions_commitment(),
         validator_config,
         header.fee_parameters().clone(),
         header.protocol_config_commitment(),
