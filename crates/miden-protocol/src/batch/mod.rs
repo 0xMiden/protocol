@@ -4,6 +4,9 @@ pub use note_tree::BatchNoteTree;
 mod batch_id;
 pub use batch_id::BatchId;
 
+mod batches_commitment;
+pub use batches_commitment::BatchesCommitment;
+
 mod account_update;
 pub use account_update::BatchAccountUpdate;
 

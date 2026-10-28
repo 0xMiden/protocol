@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 
 use miden_core::program::KernelDescriptor;
 
+use crate::batch::{BatchesCommitment, ProvenBatch};
 use crate::block::ProposedBlock;
-use crate::crypto::SequentialCommit;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
@@ -56,7 +56,8 @@ impl BlockKernel {
     /// the block kernel.
     pub fn prepare_inputs(proposed_block: &ProposedBlock) -> (StackInputs, AdviceInputs) {
         let prev_block_commitment = proposed_block.prev_block_header().commitment();
-        let batches_commitment = proposed_block.batches().to_commitment();
+        let batches_commitment =
+            BatchesCommitment::new(proposed_block.batches().as_slice().iter().map(ProvenBatch::id));
 
         let stack_inputs = Self::build_input_stack(prev_block_commitment, batches_commitment);
 
@@ -77,7 +78,10 @@ impl BlockKernel {
     /// Where:
     /// - `PREV_BLOCK_COMMITMENT` is the commitment of the block header this block builds on top of.
     /// - `BATCHES_COMMITMENT` is the sequential commitment to the batch IDs in the block.
-    pub fn build_input_stack(prev_block_commitment: Word, batches_commitment: Word) -> StackInputs {
+    pub fn build_input_stack(
+        prev_block_commitment: Word,
+        batches_commitment: BatchesCommitment,
+    ) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
         inputs.extend_from_slice(prev_block_commitment.as_elements());
         inputs.extend_from_slice(batches_commitment.as_elements());

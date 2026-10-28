@@ -31,6 +31,9 @@
 mod allowlist_config;
 pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
 
+mod authority_config;
+pub use authority_config::{AuthorityConfig, AuthorityConfigNote};
+
 mod blocklist_config;
 pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
 

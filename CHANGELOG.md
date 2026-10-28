@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added the `AUTHORITY_CONFIG` note (`AuthorityConfigNote`), which freezes or unfreezes the `Authority` component's gated surface or assigns a procedure's role on the account that consumes it ([#4118](https://github.com/0xMiden/protocol/pull/4118)).
 - Added the `tx::add_log_from_memory` helper procedure to emit transaction logs from content in memory ([#4092](https://github.com/0xMiden/protocol/pull/4092)).
 - Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
@@ -14,6 +15,8 @@
 - Added `CodeTree`, `PartialCodeTree`, `CodeWitness` and `ProcedureRoot` to prove presence or absence of procedure roots in the blockchain ([#4062](https://github.com/0xMiden/protocol/pull/4062)).
 - Added `CodePatch` to describe the procedures a transaction creates and depends on ([#4101](https://github.com/0xMiden/protocol/pull/4101)).
 - [BREAKING] Added `NonFungibleFaucet` to `StandardAccountComponent` and `AccountComponentInterface`, so `AccountInterface::from_account` recognizes NFT faucets instead of reporting their procedures as custom ([#4036](https://github.com/0xMiden/protocol/issues/4036)).
+- [BREAKING] `set_external_uri` (exposed as `set_contract_uri` on NFT faucets) and `set_token_base_uri` now emit a transaction log carrying the new value, so readers know to refetch the metadata it points to ([#4117](https://github.com/0xMiden/protocol/issues/4117)).
+- Added the NFT standard spec (`crates/miden-standards/specs/nft.md`), starting with the `contract_uri` collection metadata ([#4015](https://github.com/0xMiden/protocol/issues/4015)).
 - [BREAKING] Added the `SetTokenBaseUri` variant to `FaucetMetadataConfig`, dispatching the `NonFungibleFaucet` `set_token_base_uri` setter through `FaucetMetadataConfigNote`, whose script root changes ([#4115](https://github.com/0xMiden/protocol/issues/4115)).
 
 ### Changes
@@ -24,6 +27,7 @@
 - [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
 - [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
+- [BREAKING] `BlockBody` now groups its transactions by batch, so the block's `BatchesCommitment` can be derived from it ([#4079](https://github.com/0xMiden/protocol/pull/4079)).
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
 - [BREAKING] `AccountComponentCode` no longer carries the account component metadata section of its package, leaving `AccountComponent` as the only holder of the metadata ([#4086](https://github.com/0xMiden/protocol/pull/4086)).
 - Introduced the `DoubleWord` newtype (8 `Felt`s) and used it internally to replace ad-hoc `[Felt; 8]` / `Vec<Felt>` representations ([#3319](https://github.com/0xMiden/protocol/pull/3319)).
