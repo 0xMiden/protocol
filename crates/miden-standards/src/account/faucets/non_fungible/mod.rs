@@ -17,6 +17,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{NonFungibleAsset, TokenSymbol};
+use miden_protocol::transaction::LogTopic;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
@@ -200,8 +201,14 @@ procedure_root!(
 /// A faucet without a [`TokenBaseUri`] has private token metadata, and [`token_uri`] returns
 /// `None` for its assets.
 ///
+/// Updating the contract URI or the token base URI emits a transaction log whose content is the new
+/// value, under [`contract_uri_updated_topic`] or [`token_base_uri_updated_topic`], so readers know
+/// to refetch the collection or token metadata.
+///
 /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
 /// [`token_uri`]: NonFungibleFaucet::token_uri
+/// [`contract_uri_updated_topic`]: NonFungibleFaucet::contract_uri_updated_topic
+/// [`token_base_uri_updated_topic`]: NonFungibleFaucet::token_base_uri_updated_topic
 #[derive(Debug, Clone)]
 pub struct NonFungibleFaucet {
     symbol: TokenSymbol,
@@ -341,6 +348,23 @@ impl NonFungibleFaucet {
     /// Returns the [`StorageSlotName`] for a token base URI chunk by index (0..=6).
     pub fn token_base_uri_slot(index: usize) -> &'static StorageSlotName {
         token_base_uri::token_base_uri_slot(index)
+    }
+
+    /// Returns the topic of the log that `set_contract_uri` emits when the contract URI changes.
+    ///
+    /// The contract URI is stored as the shared external URI, so this is the same topic as
+    /// [`TokenMetadata::external_uri_updated_topic`]. The log's content is the new contract URI.
+    pub fn contract_uri_updated_topic() -> LogTopic {
+        TokenMetadata::external_uri_updated_topic()
+    }
+
+    /// Returns the topic of the log that `set_token_base_uri` emits when the token base URI
+    /// changes.
+    ///
+    /// The log's content is the new token base URI, decodable with
+    /// [`TokenBaseUri::try_from_words`].
+    pub fn token_base_uri_updated_topic() -> LogTopic {
+        token_base_uri::token_base_uri_updated_topic()
     }
 
     /// Returns the token symbol.

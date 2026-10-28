@@ -50,6 +50,7 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::PAUSE_CONFIG),
             PricedNote::Standard(StandardNote::OWNER_CONFIG),
             PricedNote::Standard(StandardNote::RBAC_CONFIG),
+            PricedNote::Standard(StandardNote::AUTHORITY_CONFIG),
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG),
             PricedNote::Standard(StandardNote::UPGRADE),
             PricedNote::Standard(StandardNote::FEE_SPONSORSHIP),
@@ -116,6 +117,9 @@ impl PricedNote {
             },
             PricedNote::Standard(StandardNote::RBAC_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeRbacConfigNetwork]
+            },
+            PricedNote::Standard(StandardNote::AUTHORITY_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeAuthorityConfigNetwork]
             },
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork]
@@ -200,6 +204,7 @@ impl PricedNote {
         match self {
             PricedNote::Standard(
                 StandardNote::ALLOWLIST_CONFIG
+                | StandardNote::AUTHORITY_CONFIG
                 | StandardNote::OWNER_CONFIG
                 | StandardNote::RBAC_CONFIG
                 | StandardNote::UPGRADE,
@@ -377,6 +382,7 @@ mod tests {
         assert_eq!(subjects["OWNER_CONFIG"], "an OWNER_CONFIG");
         assert_eq!(subjects["UPDATE_GER"], "an UPDATE_GER");
         assert_eq!(subjects["RBAC_CONFIG"], "an RBAC_CONFIG");
+        assert_eq!(subjects["AUTHORITY_CONFIG"], "an AUTHORITY_CONFIG");
         assert_eq!(subjects["REMOVE_GER"], "a REMOVE_GER");
         assert_eq!(subjects["P2ID"], "a P2ID");
     }
