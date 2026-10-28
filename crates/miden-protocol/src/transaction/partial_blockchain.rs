@@ -294,6 +294,7 @@ mod tests {
     use super::PartialBlockchain;
     use crate::Word;
     use crate::alloc::vec::Vec;
+    use crate::block::code_tree::CodeTreeRoot;
     use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorConfig};
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
@@ -486,6 +487,7 @@ mod tests {
             Word::empty(),
             Word::empty(),
             Word::empty(),
+            CodeTreeRoot::from_raw(Word::empty()),
             Word::empty(),
             Word::empty(),
             validator_config,

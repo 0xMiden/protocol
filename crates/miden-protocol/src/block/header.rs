@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use crate::block::code_tree::CodeTreeRoot;
 use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
 use crate::protocol_config::NextProtocolConfig;
 use crate::utils::serde::{
@@ -29,6 +30,8 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `chain_commitment` is a commitment to an MMR of the entire chain where each block is a leaf.
 /// - `account_root` is a commitment to account database.
 /// - `nullifier_root` is a commitment to the nullifier database.
+/// - `code_tree_root` is the root of the [`CodeTree`](crate::block::code_tree::CodeTree) of all
+///   registered procedure roots.
 /// - `note_root` is a commitment to all notes created in the current block.
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
@@ -51,6 +54,7 @@ pub struct BlockHeader {
     chain_commitment: Word,
     account_root: Word,
     nullifier_root: Word,
+    code_tree_root: CodeTreeRoot,
     note_root: Word,
     tx_commitment: Word,
     validator_config: ValidatorConfig,
@@ -71,7 +75,7 @@ impl BlockHeader {
     const VERSION_1: u8 = 1;
 
     /// The number of field elements in the preimage of [`BlockHeader::sub_commitment`].
-    const NUM_SUB_COMMITMENT_ELEMENTS: usize = 40;
+    const NUM_SUB_COMMITMENT_ELEMENTS: usize = 48;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -84,6 +88,7 @@ impl BlockHeader {
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
+        code_tree_root: CodeTreeRoot,
         note_root: Word,
         tx_commitment: Word,
         validator_config: ValidatorConfig,
@@ -101,6 +106,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             tx_commitment,
             &validator_config,
             &fee_parameters,
@@ -124,6 +130,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             validator_config,
@@ -188,6 +195,11 @@ impl BlockHeader {
     /// Returns the nullifier database root.
     pub fn nullifier_root(&self) -> Word {
         self.nullifier_root
+    }
+
+    /// Returns the code tree root.
+    pub fn code_tree_root(&self) -> CodeTreeRoot {
+        self.code_tree_root
     }
 
     /// Returns the note root.
@@ -258,14 +270,19 @@ impl BlockHeader {
     ///     CHAIN_COMMITMENT,
     ///     ACCOUNT_ROOT,
     ///     NULLIFIER_ROOT,
+    ///     CODE_TREE_ROOT,
     ///     TX_COMMITMENT,
     ///     PROTOCOL_CONFIG_COMMITMENT,
     ///     VALIDATOR_CONFIG_COMMITMENT,
     ///     NEXT_PROTOCOL_CONFIG_COMMITMENT,
     ///     [verification_base_fee, 0, 0, 0],
+    ///     EMPTY_WORD,
     ///     NOTE_ROOT,
     /// ]
     /// ```
+    ///
+    /// The empty word pads the sub commitment preimage to a multiple of the hasher rate, so that
+    /// the kernel can absorb it with full permutations.
     ///
     /// This is the canonical encoding of a header. It is the layout of the kernel's block data
     /// memory section and the order in which the header is provided to the kernel, so keep it in
@@ -283,6 +300,7 @@ impl BlockHeader {
             self.chain_commitment,
             self.account_root,
             self.nullifier_root,
+            self.code_tree_root,
             self.tx_commitment,
             &self.validator_config,
             &self.fee_parameters,
@@ -368,6 +386,7 @@ impl BlockHeader {
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
+        code_tree_root: CodeTreeRoot,
         tx_commitment: Word,
         validator_config: &ValidatorConfig,
         fee_parameters: &FeeParameters,
@@ -381,11 +400,13 @@ impl BlockHeader {
         elements.extend_from_slice(chain_commitment.as_elements());
         elements.extend_from_slice(account_root.as_elements());
         elements.extend_from_slice(nullifier_root.as_elements());
+        elements.extend_from_slice(code_tree_root.as_elements());
         elements.extend_from_slice(tx_commitment.as_elements());
         elements.extend_from_slice(protocol_config_commitment.as_elements());
         elements.extend(validator_config.to_commitment());
         elements.extend(Self::compute_next_protocol_config_commitment(next_protocol_config));
         elements.extend([Felt::from(fee_parameters.verification_base_fee()), ZERO, ZERO, ZERO]);
+        elements.extend_from_slice(Word::empty().as_elements());
         elements
     }
 
@@ -403,8 +424,9 @@ impl BlockHeader {
     /// Builds a minimal block header with a controllable block number, previous-block commitment,
     /// and validator key set.
     ///
-    /// The remaining roots are zeroed except the note root and transaction commitment, which match
-    /// the empty [`BlockBody`](super::BlockBody) the block tests pair this header with, so the
+    /// The remaining roots are zeroed except the code tree root, which is the root of the empty
+    /// tree, and the note root and transaction commitment, which match the empty
+    /// [`BlockBody`](super::BlockBody) the block tests pair this header with, so the
     /// self-consistency checks in `SignedBlock::validate` and  `ProvenBlock::validate` pass.
     #[cfg(test)]
     pub(crate) fn new_dummy(
@@ -412,7 +434,9 @@ impl BlockHeader {
         prev_block_commitment: Word,
         validator_config: ValidatorConfig,
     ) -> Self {
+        use crate::block::code_tree::CodeTree;
         use crate::block::{BlockBody, FeeParameters};
+        use crate::crypto::merkle::smt::Smt;
         use crate::transaction::OrderedTransactionHeaders;
 
         let body = BlockBody::new_unchecked(
@@ -430,6 +454,7 @@ impl BlockHeader {
             Word::empty(),
             Word::empty(),
             Word::empty(),
+            CodeTree::<Smt>::default().root(),
             note_root,
             tx_commitment,
             validator_config,
@@ -453,6 +478,7 @@ impl Serializable for BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             validator_config,
@@ -471,6 +497,7 @@ impl Serializable for BlockHeader {
         chain_commitment.write_into(target);
         account_root.write_into(target);
         nullifier_root.write_into(target);
+        code_tree_root.as_word().write_into(target);
         note_root.write_into(target);
         tx_commitment.write_into(target);
         validator_config.write_into(target);
@@ -498,6 +525,7 @@ impl Deserializable for BlockHeader {
         let chain_commitment = source.read()?;
         let account_root = source.read()?;
         let nullifier_root = source.read()?;
+        let code_tree_root = CodeTreeRoot::from_raw(source.read()?);
         let note_root = source.read()?;
         let tx_commitment = source.read()?;
         let validator_config = source.read()?;
@@ -512,6 +540,7 @@ impl Deserializable for BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             validator_config,
@@ -642,6 +671,7 @@ mod tests {
             header.chain_commitment(),
             header.account_root(),
             header.nullifier_root(),
+            header.code_tree_root(),
             header.note_root(),
             header.tx_commitment(),
             header.validator_config().clone(),

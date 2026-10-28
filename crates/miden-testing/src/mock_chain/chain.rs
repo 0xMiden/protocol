@@ -7,6 +7,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
+use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
     BlockHeader,
@@ -188,6 +189,9 @@ pub struct MockChain {
     /// Tree containing the state commitments of all accounts.
     account_tree: AccountTree,
 
+    /// Tree containing all registered procedure roots.
+    code_tree: CodeTree,
+
     /// Transactions that have been submitted to the chain but have not yet been included in a
     /// block.
     pending_transactions: Vec<ProvenTransaction>,
@@ -239,10 +243,11 @@ impl MockChain {
         MockChainBuilder::new()
     }
 
-    /// Creates a new `MockChain` with the provided genesis block and account tree.
+    /// Creates a new `MockChain` with the provided genesis block, account tree and code tree.
     pub(super) fn from_genesis_block(
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
+        code_tree: CodeTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_keys: Vec<SigningKey>,
         protocol_config: ProtocolConfig,
@@ -252,6 +257,7 @@ impl MockChain {
             blocks: vec![],
             nullifier_tree: NullifierTree::default(),
             account_tree,
+            code_tree,
             pending_transactions: Vec::new(),
             pending_batches: Vec::new(),
             committed_notes: BTreeMap::new(),
@@ -1520,6 +1526,7 @@ mod tests {
         assert_eq!(chain.blocks, restored.blocks);
         assert_eq!(chain.nullifier_tree, restored.nullifier_tree);
         assert_eq!(chain.account_tree, restored.account_tree);
+        assert_eq!(chain.code_tree, restored.code_tree);
         assert_eq!(chain.pending_transactions, restored.pending_transactions);
         assert_eq!(chain.pending_batches, restored.pending_batches);
         assert_eq!(chain.committed_accounts, restored.committed_accounts);

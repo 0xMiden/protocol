@@ -50,6 +50,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             chain_commitment: Some(header.chain_commitment().into()),
             account_root: Some(header.account_root().into()),
             nullifier_root: Some(header.nullifier_root().into()),
+            code_tree_root: Some(header.code_tree_root().as_word().into()),
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
             validator_config: Some(header.validator_config().into()),

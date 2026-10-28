@@ -22,7 +22,7 @@ pub type StorageSlot = u8;
 // | Bookkeeping                 | 1_200         | 85               |                                             |
 // | Transaction logs            | 1_300         | 8                | Counters, dirty flag, commitment            |
 // | Global inputs               | 1_600         | 40               |                                             |
-// | Block header                | 2_000         | 44               |                                             |
+// | Block header                | 2_000         | 52               |                                             |
 // | Protocol config             | 2_200         | 24               |                                             |
 // | Partial blockchain          | 2_400         | 132              |                                             |
 // | Transaction log commitments | 3_000         | 256              | 64 individual transaction log commitments   |
@@ -228,26 +228,29 @@ pub const ACCT_DB_ROOT_PTR: MemoryAddress = 2012;
 /// The memory address at which the nullifier db root is store.
 pub const NULLIFIER_DB_ROOT_PTR: MemoryAddress = 2016;
 
+/// The memory address at which the code tree root is stored.
+pub const CODE_TREE_ROOT_PTR: MemoryAddress = 2020;
+
 /// The memory address at which the TX commitment is stored.
-pub const TX_COMMITMENT_PTR: MemoryAddress = 2020;
+pub const TX_COMMITMENT_PTR: MemoryAddress = 2024;
 
 /// The memory address at which the protocol config commitment is stored.
-pub const PROTOCOL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2024;
+pub const PROTOCOL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2028;
 
 /// The memory address at which the validator config commitment is stored.
-pub const VALIDATOR_CONFIG_COMMITMENT_PTR: MemoryAddress = 2028;
+pub const VALIDATOR_CONFIG_COMMITMENT_PTR: MemoryAddress = 2032;
 
 /// The memory address at which the next protocol config commitment is stored.
-pub const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2032;
+pub const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2036;
 
 /// The memory address at which the fee parameters are stored.
-pub const FEE_PARAMETERS_PTR: MemoryAddress = 2036;
+pub const FEE_PARAMETERS_PTR: MemoryAddress = 2040;
 
 /// The index of the verification base fee within the block fee parameters.
 pub const VERIFICATION_BASE_FEE_IDX: DataIndex = 0;
 
 /// The memory address at which the note root is stored.
-pub const NOTE_ROOT_PTR: MemoryAddress = 2040;
+pub const NOTE_ROOT_PTR: MemoryAddress = 2048;
 
 // PROTOCOL CONFIG
 // ------------------------------------------------------------------------------------------------

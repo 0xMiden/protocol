@@ -31,6 +31,7 @@ message MockChainV1 {
   repeated AccountAuthenticator account_authenticators = 8;
   repeated account_file.AuthSecretKey validator_secret_keys = 9;
   protocol_config.ProtocolConfig protocol_config = 10;
+  repeated primitives.Word code_tree_procedure_roots = 11;
 }
 
 message ProvenBlock {

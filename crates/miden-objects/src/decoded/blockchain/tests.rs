@@ -4,6 +4,7 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
+use miden_protocol::block::code_tree::CodeTreeRoot;
 use miden_protocol::block::{BlockBody, BlockNumber};
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
 use miden_protocol::transaction::OrderedTransactionHeaders;
@@ -64,6 +65,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
             Word::empty(),
             Word::empty(),
             Word::empty(),
+            CodeTreeRoot::from_raw(Word::empty()),
             body.compute_block_note_tree().root(),
             body.transaction_commitment(),
             keys,
