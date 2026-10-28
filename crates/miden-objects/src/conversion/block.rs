@@ -9,7 +9,7 @@ use miden_protocol::block::{
     ValidatorConfig,
 };
 use miden_protocol::protocol_config::NextProtocolConfig;
-use miden_protocol::transaction::{OutputNote, PartialBlockchain};
+use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, PartialBlockchain};
 
 use crate::proto;
 
@@ -52,7 +52,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             nullifier_root: Some(header.nullifier_root().into()),
             code_tree_root: Some(header.code_tree_root().as_word().into()),
             note_root: Some(header.note_root().into()),
-            tx_commitment: Some(header.tx_commitment().into()),
+            tx_commitment: Some(header.transactions_commitment().into()),
             validator_config: Some(header.validator_config().into()),
             fee_parameters: Some(header.fee_parameters().into()),
             protocol_config_commitment: Some(header.protocol_config_commitment().into()),
@@ -80,7 +80,7 @@ impl From<&BlockBody> for proto::blockchain::BlockBody {
                 .iter()
                 .map(|nullifier| nullifier.as_word().into())
                 .collect(),
-            transactions: body.transactions().as_slice().iter().map(Into::into).collect(),
+            transactions: body.transactions().iter().map(Into::into).collect(),
         }
     }
 }
@@ -118,6 +118,14 @@ impl From<&OutputNoteBatch> for proto::blockchain::OutputNoteBatch {
     fn from(batch: &OutputNoteBatch) -> Self {
         Self {
             notes: batch.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&OrderedTransactionHeaders> for proto::blockchain::BatchTransactions {
+    fn from(batch: &OrderedTransactionHeaders) -> Self {
+        Self {
+            transactions: batch.as_slice().iter().map(Into::into).collect(),
         }
     }
 }

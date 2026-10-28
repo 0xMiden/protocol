@@ -212,6 +212,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeRbacConfigNetwork => {
             network_config::tx_consume_rbac_config_note_network()
         },
+        ExecutionBenchmark::ConsumeAuthorityConfigNetwork => {
+            network_config::tx_consume_authority_config_note_network()
+        },
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
             network_config::tx_consume_network_account_config_note_network()
         },

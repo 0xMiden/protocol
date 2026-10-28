@@ -162,7 +162,7 @@ fn dummy_block_header(
         base.nullifier_root(),
         base.code_tree_root(),
         base.note_root(),
-        base.tx_commitment(),
+        base.transactions_commitment(),
         base.validator_config().clone(),
         base.fee_parameters().clone(),
         protocol_config.to_commitment(),

@@ -54,7 +54,7 @@ use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
+use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::vm::PackageExport;
 use miden_protocol::{CoreLibrary, MAX_OUTPUT_NOTES_PER_BATCH, ProtocolLib, Word};
 use miden_standards::StandardsLib;
@@ -265,11 +265,15 @@ impl MockChainBuilder {
             .map(|batch_notes| batch_notes.into_iter().enumerate().collect::<Vec<_>>())
             .collect();
 
-        let created_nullifiers = Vec::new();
-        let transactions = OrderedTransactionHeaders::new_unchecked(Vec::new());
-
         let note_tree = BlockNoteTree::from_note_batches(&output_note_batches)
             .context("failed to create block note tree")?;
+
+        let body = BlockBody::new_unchecked(
+            block_account_updates,
+            output_note_batches,
+            Vec::new(),
+            Vec::new(),
+        );
 
         let prev_block_commitment = Word::empty();
         let block_num = BlockNumber::from(0u32);
@@ -282,7 +286,7 @@ impl MockChainBuilder {
             CodeTree::default()
         };
         let note_root = note_tree.root();
-        let tx_commitment = transactions.commitment();
+        let tx_commitment = body.compute_transactions_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.verification_base_fee);
         let protocol_config = ProtocolConfig::current(AssetId::new_fungible(self.fee_faucet_id))
@@ -312,13 +316,6 @@ impl MockChainBuilder {
             protocol_config.to_commitment(),
             None,
             timestamp,
-        );
-
-        let body = BlockBody::new_unchecked(
-            block_account_updates,
-            output_note_batches,
-            created_nullifiers,
-            transactions,
         );
 
         // The genesis block is the trust root: it is self-signed by the validator set it commits

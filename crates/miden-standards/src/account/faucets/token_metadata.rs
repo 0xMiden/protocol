@@ -36,6 +36,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
+use miden_protocol::transaction::LogTopic;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -105,6 +106,10 @@ static EXTERNAL_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
         StorageSlotName::new("miden::standards::faucets::external_uri_6").expect("valid slot name"),
     ]
 });
+
+/// Topic of the log `set_external_uri` emits with the new external URI as its content.
+static EXTERNAL_URI_UPDATED_TOPIC: LazyLock<LogTopic> =
+    LazyLock::new(|| LogTopic::from_name("miden::standards::faucets::external_uri_updated"));
 
 /// Returns the [`StorageSlotName`] for the mutability config Word.
 pub(crate) fn mutability_config_slot() -> &'static StorageSlotName {
@@ -393,6 +398,13 @@ impl TokenMetadata {
     /// Returns the [`StorageSlotName`] for an external URI chunk by index (0..=6).
     pub fn external_uri_slot(index: usize) -> &'static StorageSlotName {
         &EXTERNAL_URI_SLOTS[index]
+    }
+
+    /// Returns the topic of the log that `set_external_uri` emits when the external URI changes.
+    ///
+    /// The log's content is the new external URI, decodable with [`ExternalUri::try_from_words`].
+    pub fn external_uri_updated_topic() -> LogTopic {
+        *EXTERNAL_URI_UPDATED_TOPIC
     }
 
     // STORAGE

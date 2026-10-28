@@ -57,11 +57,15 @@ message OutputNoteBatch {
   repeated IndexedOutputNote notes = 1;
 }
 
+message BatchTransactions {
+  repeated transaction.TransactionHeader transactions = 1;
+}
+
 message BlockBody {
   repeated BlockAccountUpdate updated_accounts = 1;
   repeated OutputNoteBatch output_note_batches = 2;
   repeated primitives.Word created_nullifiers = 3;
-  repeated transaction.TransactionHeader transactions = 4;
+  repeated BatchTransactions transactions = 4;
 }
 
 message SignedBlock {
