@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -42,7 +43,7 @@ use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
-use crate::errors::{DataStoreRequestKind, TransactionKernelError};
+use crate::errors::{DataStoreRequest, TransactionKernelError};
 use crate::host::{
     RecipientData,
     ScriptMastForestStore,
@@ -52,51 +53,28 @@ use crate::host::{
     TransactionProgressEvent,
     TxSummaryOrSignature,
 };
-use crate::{AccountProcedureIndexMap, DataStore};
+use crate::{AccountProcedureIndexMap, DataStore, DataStoreError};
 
 /// Maximum number of lazy data store requests made during one transaction execution request.
 pub const MAX_DATA_STORE_REQUESTS_PER_TX: usize = 256;
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum DataStoreRequest {
-    ForeignAccount(AccountId),
-    StorageMap {
-        account_id: AccountId,
-        map_root: Word,
-        map_key: StorageMapKey,
-    },
-    VaultAsset {
-        account_id: AccountId,
-        vault_root: Word,
-        asset_id: AssetId,
-    },
-}
-
-impl DataStoreRequest {
-    fn kind(&self) -> DataStoreRequestKind {
-        match self {
-            Self::ForeignAccount(_) => DataStoreRequestKind::ForeignAccountInputs,
-            Self::StorageMap { .. } => DataStoreRequestKind::StorageMapWitness,
-            Self::VaultAsset { .. } => DataStoreRequestKind::VaultAssetWitness,
-        }
-    }
-}
 
 /// Tracks bounded data store work and failed requests across transaction retries.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DataStoreRequestState {
     request_count: usize,
-    failed_requests: BTreeSet<DataStoreRequest>,
+    failed_requests: BTreeMap<DataStoreRequest, Box<str>>,
+    missing_note_scripts: BTreeSet<NoteScriptRoot>,
 }
 
 impl DataStoreRequestState {
     fn start(&mut self, request: &DataStoreRequest) -> Result<(), TransactionKernelError> {
-        if self.failed_requests.contains(request) {
+        if let Some(original_error) = self.failed_requests.get(request) {
             return Err(TransactionKernelError::CachedDataStoreRequestFailure {
-                request_kind: request.kind(),
+                request: request.clone(),
+                original_error: original_error.clone(),
             });
         }
-        if self.request_count == MAX_DATA_STORE_REQUESTS_PER_TX {
+        if self.request_count >= MAX_DATA_STORE_REQUESTS_PER_TX {
             return Err(TransactionKernelError::DataStoreRequestLimitExceeded {
                 max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
             });
@@ -106,8 +84,8 @@ impl DataStoreRequestState {
         Ok(())
     }
 
-    fn record_failure(&mut self, request: DataStoreRequest) {
-        self.failed_requests.insert(request);
+    fn record_failure(&mut self, request: DataStoreRequest, source: &DataStoreError) {
+        self.failed_requests.insert(request, source.to_string().into_boxed_str());
     }
 }
 
@@ -252,7 +230,10 @@ where
         &mut self,
         foreign_account_id: AccountId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let request = DataStoreRequest::ForeignAccount(foreign_account_id);
+        let request = DataStoreRequest::ForeignAccountInputs {
+            account_id: foreign_account_id,
+            ref_block: self.ref_block,
+        };
         self.data_store_requests.start(&request)?;
         let foreign_account_inputs = match self
             .base_host
@@ -262,7 +243,7 @@ where
         {
             Ok(inputs) => inputs,
             Err(source) => {
-                self.data_store_requests.record_failure(request);
+                self.data_store_requests.record_failure(request, &source);
                 return Err(TransactionKernelError::GetForeignAccountInputs {
                     foreign_account_id,
                     ref_block: self.ref_block,
@@ -332,7 +313,7 @@ where
         map_root: Word,
         map_key: StorageMapKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let request = DataStoreRequest::StorageMap {
+        let request = DataStoreRequest::StorageMapWitness {
             account_id: active_account_id,
             map_root,
             map_key,
@@ -346,7 +327,7 @@ where
         {
             Ok(witness) => witness,
             Err(source) => {
-                self.data_store_requests.record_failure(request);
+                self.data_store_requests.record_failure(request, &source);
                 return Err(TransactionKernelError::GetStorageMapWitness {
                     map_root,
                     map_key,
@@ -410,7 +391,7 @@ where
         vault_root: Word,
         asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let request = DataStoreRequest::VaultAsset {
+        let request = DataStoreRequest::VaultAssetWitness {
             account_id: active_account_id,
             vault_root,
             asset_id,
@@ -428,7 +409,7 @@ where
         {
             Ok(witnesses) => witnesses,
             Err(source) => {
-                self.data_store_requests.record_failure(request);
+                self.data_store_requests.record_failure(request, &source);
                 return Err(TransactionKernelError::GetVaultAssetWitness {
                     vault_root,
                     asset_id,
@@ -474,13 +455,22 @@ where
         let note_script: Option<NoteScript> =
             if let Some(standard_note) = StandardNote::from_script_root(script_root) {
                 Some(standard_note.script())
+            } else if self.data_store_requests.missing_note_scripts.contains(&script_root) {
+                None
             } else {
-                self.base_host.store().get_note_script(script_root).await.map_err(|err| {
-                    TransactionKernelError::other_with_source(
-                        "failed to retrieve note script from data store",
-                        err,
-                    )
-                })?
+                let request = DataStoreRequest::NoteScript { script_root };
+                self.data_store_requests.start(&request)?;
+                match self.base_host.store().get_note_script(script_root).await {
+                    Ok(Some(note_script)) => Some(note_script),
+                    Ok(None) => {
+                        self.data_store_requests.missing_note_scripts.insert(script_root);
+                        None
+                    },
+                    Err(source) => {
+                        self.data_store_requests.record_failure(request, &source);
+                        return Err(TransactionKernelError::GetNoteScript { script_root, source });
+                    },
+                }
             };
 
         match note_script {
@@ -900,4 +890,36 @@ fn asset_witness_to_advice_mutation(asset_witness: AssetWitness) -> [AdviceMutat
     )]));
 
     [merkle_store_ext, map_ext]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn note_script_requests_share_the_data_store_limit() {
+        let mut state = DataStoreRequestState::default();
+
+        for index in 0..MAX_DATA_STORE_REQUESTS_PER_TX {
+            state
+                .start(&DataStoreRequest::NoteScript {
+                    script_root: NoteScriptRoot::from_raw(Word::from([0, 0, 0, index as u32])),
+                })
+                .unwrap();
+        }
+
+        assert!(matches!(
+            state.start(&DataStoreRequest::NoteScript {
+                script_root: NoteScriptRoot::from_raw(Word::from([
+                    0,
+                    0,
+                    0,
+                    MAX_DATA_STORE_REQUESTS_PER_TX as u32,
+                ])),
+            }),
+            Err(TransactionKernelError::DataStoreRequestLimitExceeded {
+                max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+            })
+        ));
+    }
 }

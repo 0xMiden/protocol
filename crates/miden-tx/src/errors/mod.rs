@@ -21,7 +21,7 @@ use miden_protocol::errors::{
     TransactionInputError,
     TransactionOutputError,
 };
-use miden_protocol::note::{NoteId, PartialNoteMetadata};
+use miden_protocol::note::{NoteId, NoteScriptRoot, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use miden_prover::ProverError;
@@ -32,6 +32,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum NoteCheckerError {
+    #[error("note consumability exceeded the limit of {max_requests} lazy data store requests")]
+    DataStoreRequestLimitExceeded { max_requests: usize },
     #[error("note consumability execution budget of {max_cycles} cycles was exhausted")]
     ExecutionBudgetExhausted { max_cycles: u32 },
     #[error("invalid input note count ({0} is out of range)")]
@@ -51,6 +53,8 @@ pub enum NoteCheckerError {
 
 #[derive(Debug, Error)]
 pub(crate) enum TransactionCheckerError {
+    #[error("note consumability exceeded the limit of {max_requests} lazy data store requests")]
+    DataStoreRequestLimitExceeded { max_requests: usize },
     #[error("note consumability execution budget of {max_cycles} cycles was exhausted")]
     ExecutionBudgetExhausted { max_cycles: u32 },
     #[error("transaction preparation failed: {0}")]
@@ -212,12 +216,26 @@ impl TransactionProverError {
 // ================================================================================================
 
 /// Identifies a lazy data store request made by the transaction host.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
-pub enum DataStoreRequestKind {
-    ForeignAccountInputs,
-    StorageMapWitness,
-    VaultAssetWitness,
+pub enum DataStoreRequest {
+    ForeignAccountInputs {
+        account_id: AccountId,
+        ref_block: BlockNumber,
+    },
+    StorageMapWitness {
+        account_id: AccountId,
+        map_root: Word,
+        map_key: StorageMapKey,
+    },
+    VaultAssetWitness {
+        account_id: AccountId,
+        vault_root: Word,
+        asset_id: AssetId,
+    },
+    NoteScript {
+        script_root: NoteScriptRoot,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -343,10 +361,18 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
+    #[error("failed to get note script {script_root} from data store")]
+    GetNoteScript {
+        script_root: NoteScriptRoot,
+        source: DataStoreError,
+    },
     #[error("transaction exceeded the limit of {max_requests} lazy data store requests")]
     DataStoreRequestLimitExceeded { max_requests: usize },
-    #[error("a {request_kind:?} data store request failed earlier in this transaction")]
-    CachedDataStoreRequestFailure { request_kind: DataStoreRequestKind },
+    #[error("data store request {request:?} failed earlier: {original_error}")]
+    CachedDataStoreRequestFailure {
+        request: DataStoreRequest,
+        original_error: Box<str>,
+    },
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]
