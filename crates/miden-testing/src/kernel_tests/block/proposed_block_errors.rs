@@ -203,14 +203,20 @@ async fn proposed_block_fails_on_timestamp_too_far_in_future() -> anyhow::Result
         BTreeMap::default(),
         BTreeMap::default(),
     );
-    let validator_timestamp = block_inputs.prev_block_header().timestamp() + 1;
+    let block_timestamp = block_inputs.prev_block_header().timestamp() + 1;
+    let validator_timestamp = block_timestamp + 1;
     let max_timestamp = validator_timestamp + MAX_BLOCK_TIMESTAMP_DRIFT_SECS;
 
+    ProposedBlock::new_at(block_inputs.clone(), Vec::new(), block_timestamp, validator_timestamp)?;
     ProposedBlock::new_at(block_inputs.clone(), Vec::new(), max_timestamp, validator_timestamp)?;
 
-    let error =
-        ProposedBlock::new_at(block_inputs, Vec::new(), max_timestamp + 1, validator_timestamp)
-            .unwrap_err();
+    let error = ProposedBlock::new_at(
+        block_inputs.clone(),
+        Vec::new(),
+        max_timestamp + 1,
+        validator_timestamp,
+    )
+    .unwrap_err();
     assert_matches!(
         error,
         ProposedBlockError::TimestampTooFarInFuture {
@@ -221,6 +227,20 @@ async fn proposed_block_fails_on_timestamp_too_far_in_future() -> anyhow::Result
             && error_validator_timestamp == validator_timestamp
             && error_max_timestamp == max_timestamp
     );
+
+    let max_validator_timestamp_without_saturation = u32::MAX - MAX_BLOCK_TIMESTAMP_DRIFT_SECS;
+    ProposedBlock::new_at(
+        block_inputs.clone(),
+        Vec::new(),
+        u32::MAX,
+        max_validator_timestamp_without_saturation,
+    )?;
+    ProposedBlock::new_at(
+        block_inputs,
+        Vec::new(),
+        u32::MAX,
+        max_validator_timestamp_without_saturation + 1,
+    )?;
 
     Ok(())
 }
