@@ -211,6 +211,15 @@ impl TransactionProverError {
 // TRANSACTION KERNEL ERROR
 // ================================================================================================
 
+/// Identifies a lazy data store request made by the transaction host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum DataStoreRequestKind {
+    ForeignAccountInputs,
+    StorageMapWitness,
+    VaultAssetWitness,
+}
+
 #[derive(Debug, Error)]
 pub enum TransactionKernelError {
     #[error("failed to add asset to account delta")]
@@ -334,6 +343,10 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
+    #[error("transaction exceeded the limit of {max_requests} lazy data store requests")]
+    DataStoreRequestLimitExceeded { max_requests: usize },
+    #[error("a {request_kind:?} data store request failed earlier in this transaction")]
+    CachedDataStoreRequestFailure { request_kind: DataStoreRequestKind },
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]
