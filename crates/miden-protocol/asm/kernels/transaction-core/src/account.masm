@@ -1417,7 +1417,11 @@ pub proc save_account_storage_data(storage_commitment: Commitment)
     else
         # Each storage slot occupies one complete Eidos block.
         mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+        # OS => [num_elements, STORAGE_COMMITMENT]
+
         exec.memory::get_account_active_storage_slots_section_ptr
+        # OS => [acct_storage_slots_ptr, num_elements, STORAGE_COMMITMENT]
+
         dup movdn.2 add swap
         # OS => [acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
         # AS => [[STORAGE_SLOT_DATA]]
