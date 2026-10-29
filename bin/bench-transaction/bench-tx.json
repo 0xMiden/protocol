@@ -130,16 +130,16 @@
   "create single P2ID note with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 2348,
-    "total_cycles": 41380,
+    "total_cycles": 41384,
     "notes_processing": 35,
     "note_execution": [],
     "tx_script_processing": 1883,
     "epilogue": {
-      "total": 37114,
-      "auth_procedure": 35029
+      "total": 37118,
+      "auth_procedure": 35031
     },
     "trace": {
-      "core_rows": 41426,
+      "core_rows": 41430,
       "chiplets_rows": 5240,
       "eidos_compression_rows": 80448,
       "byte_pair_lookup_rows": 65536,
@@ -155,16 +155,16 @@
   "create single P2ID note with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 2348,
-    "total_cycles": 12134,
+    "total_cycles": 12138,
     "notes_processing": 35,
     "note_execution": [],
     "tx_script_processing": 1883,
     "epilogue": {
-      "total": 7868,
-      "auth_procedure": 5783
+      "total": 7872,
+      "auth_procedure": 5785
     },
     "trace": {
-      "core_rows": 12180,
+      "core_rows": 12184,
       "chiplets_rows": 2759,
       "eidos_compression_rows": 36608,
       "byte_pair_lookup_rows": 65536,
@@ -330,7 +330,7 @@
   "consume P2ID note (network account)": {
     "provenance": "producer_measured",
     "prologue": 4459,
-    "total_cycles": 20453,
+    "total_cycles": 20457,
     "notes_processing": 2402,
     "note_execution": [
       {
@@ -340,11 +340,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13551,
-      "auth_procedure": 10191
+      "total": 13555,
+      "auth_procedure": 10193
     },
     "trace": {
-      "core_rows": 20499,
+      "core_rows": 20503,
       "chiplets_rows": 4835,
       "eidos_compression_rows": 54784,
       "byte_pair_lookup_rows": 65536,
@@ -360,7 +360,7 @@
   "consume P2ID note (16 assets, network account)": {
     "provenance": "producer_measured",
     "prologue": 12889,
-    "total_cycles": 59734,
+    "total_cycles": 59738,
     "notes_processing": 30714,
     "note_execution": [
       {
@@ -370,11 +370,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16090,
-      "auth_procedure": 10510
+      "total": 16094,
+      "auth_procedure": 10512
     },
     "trace": {
-      "core_rows": 59780,
+      "core_rows": 59784,
       "chiplets_rows": 16464,
       "eidos_compression_rows": 87808,
       "byte_pair_lookup_rows": 65536,
@@ -390,7 +390,7 @@
   "consume P2IDE note (claim, network account)": {
     "provenance": "producer_measured",
     "prologue": 4459,
-    "total_cycles": 20547,
+    "total_cycles": 20551,
     "notes_processing": 2496,
     "note_execution": [
       {
@@ -400,11 +400,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13551,
-      "auth_procedure": 10191
+      "total": 13555,
+      "auth_procedure": 10193
     },
     "trace": {
-      "core_rows": 20593,
+      "core_rows": 20597,
       "chiplets_rows": 4847,
       "eidos_compression_rows": 54880,
       "byte_pair_lookup_rows": 65536,
@@ -420,7 +420,7 @@
   "consume P2IDE note (claim, 16 assets, network account)": {
     "provenance": "producer_measured",
     "prologue": 12889,
-    "total_cycles": 59828,
+    "total_cycles": 59832,
     "notes_processing": 30808,
     "note_execution": [
       {
@@ -430,11 +430,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16090,
-      "auth_procedure": 10510
+      "total": 16094,
+      "auth_procedure": 10512
     },
     "trace": {
-      "core_rows": 59874,
+      "core_rows": 59878,
       "chiplets_rows": 16484,
       "eidos_compression_rows": 87904,
       "byte_pair_lookup_rows": 65536,
@@ -450,7 +450,7 @@
   "consume P2IDE note (reclaim, network account)": {
     "provenance": "producer_measured",
     "prologue": 4564,
-    "total_cycles": 20871,
+    "total_cycles": 20875,
     "notes_processing": 2715,
     "note_execution": [
       {
@@ -460,11 +460,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13551,
-      "auth_procedure": 10191
+      "total": 13555,
+      "auth_procedure": 10193
     },
     "trace": {
-      "core_rows": 20917,
+      "core_rows": 20921,
       "chiplets_rows": 4905,
       "eidos_compression_rows": 55456,
       "byte_pair_lookup_rows": 65536,
@@ -480,7 +480,7 @@
   "consume SWAP note (public payback, network account)": {
     "provenance": "producer_measured",
     "prologue": 4560,
-    "total_cycles": 24780,
+    "total_cycles": 24786,
     "notes_processing": 4955,
     "note_execution": [
       {
@@ -490,11 +490,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15224,
-      "auth_procedure": 10712
+      "total": 15230,
+      "auth_procedure": 10714
     },
     "trace": {
-      "core_rows": 24826,
+      "core_rows": 24832,
       "chiplets_rows": 5873,
       "eidos_compression_rows": 59200,
       "byte_pair_lookup_rows": 65536,
@@ -510,7 +510,7 @@
   "consume SWAP note (private payback, network account)": {
     "provenance": "producer_measured",
     "prologue": 4560,
-    "total_cycles": 24180,
+    "total_cycles": 24186,
     "notes_processing": 4355,
     "note_execution": [
       {
@@ -520,11 +520,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15224,
-      "auth_procedure": 10712
+      "total": 15230,
+      "auth_procedure": 10714
     },
     "trace": {
-      "core_rows": 24226,
+      "core_rows": 24232,
       "chiplets_rows": 5784,
       "eidos_compression_rows": 58496,
       "byte_pair_lookup_rows": 65536,
@@ -540,7 +540,7 @@
   "consume PSWAP note (full fill, network account)": {
     "provenance": "producer_measured",
     "prologue": 4459,
-    "total_cycles": 28291,
+    "total_cycles": 28295,
     "notes_processing": 8412,
     "note_execution": [
       {
@@ -550,11 +550,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 15379,
-      "auth_procedure": 10712
+      "total": 15383,
+      "auth_procedure": 10714
     },
     "trace": {
-      "core_rows": 28337,
+      "core_rows": 28341,
       "chiplets_rows": 6437,
       "eidos_compression_rows": 64896,
       "byte_pair_lookup_rows": 65536,
@@ -570,7 +570,7 @@
   "consume PSWAP note (partial fill, network account)": {
     "provenance": "producer_measured",
     "prologue": 4459,
-    "total_cycles": 33111,
+    "total_cycles": 33115,
     "notes_processing": 11697,
     "note_execution": [
       {
@@ -580,11 +580,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16914,
-      "auth_procedure": 10916
+      "total": 16918,
+      "auth_procedure": 10918
     },
     "trace": {
-      "core_rows": 33157,
+      "core_rows": 33161,
       "chiplets_rows": 7395,
       "eidos_compression_rows": 68544,
       "byte_pair_lookup_rows": 65536,
@@ -600,7 +600,7 @@
   "consume MINT note (fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6184,
-    "total_cycles": 36904,
+    "total_cycles": 36910,
     "notes_processing": 10689,
     "note_execution": [
       {
@@ -610,11 +610,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 19990,
-      "auth_procedure": 10543
+      "total": 19996,
+      "auth_procedure": 10545
     },
     "trace": {
-      "core_rows": 36950,
+      "core_rows": 36956,
       "chiplets_rows": 7874,
       "eidos_compression_rows": 60416,
       "byte_pair_lookup_rows": 65536,
@@ -630,7 +630,7 @@
   "consume MINT note (non-fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6702,
-    "total_cycles": 40198,
+    "total_cycles": 40204,
     "notes_processing": 12050,
     "note_execution": [
       {
@@ -640,11 +640,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 21405,
-      "auth_procedure": 10624
+      "total": 21411,
+      "auth_procedure": 10626
     },
     "trace": {
-      "core_rows": 40244,
+      "core_rows": 40250,
       "chiplets_rows": 8663,
       "eidos_compression_rows": 64704,
       "byte_pair_lookup_rows": 65536,
@@ -660,7 +660,7 @@
   "consume BURN note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6800,
-    "total_cycles": 32532,
+    "total_cycles": 32536,
     "notes_processing": 6969,
     "note_execution": [
       {
@@ -670,11 +670,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 18722,
-      "auth_procedure": 10341
+      "total": 18726,
+      "auth_procedure": 10343
     },
     "trace": {
-      "core_rows": 32578,
+      "core_rows": 32582,
       "chiplets_rows": 7116,
       "eidos_compression_rows": 58400,
       "byte_pair_lookup_rows": 65536,
@@ -690,7 +690,7 @@
   "consume FAUCET_POLICY_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6031,
-    "total_cycles": 29454,
+    "total_cycles": 29458,
     "notes_processing": 4803,
     "note_execution": [
       {
@@ -700,11 +700,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 18579,
-      "auth_procedure": 10332
+      "total": 18583,
+      "auth_procedure": 10334
     },
     "trace": {
-      "core_rows": 29500,
+      "core_rows": 29504,
       "chiplets_rows": 6327,
       "eidos_compression_rows": 55680,
       "byte_pair_lookup_rows": 65536,
@@ -720,7 +720,7 @@
   "consume FAUCET_METADATA_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 5574,
-    "total_cycles": 29492,
+    "total_cycles": 29496,
     "notes_processing": 6612,
     "note_execution": [
       {
@@ -730,11 +730,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 17265,
-      "auth_procedure": 10251
+      "total": 17269,
+      "auth_procedure": 10253
     },
     "trace": {
-      "core_rows": 29538,
+      "core_rows": 29542,
       "chiplets_rows": 6357,
       "eidos_compression_rows": 54400,
       "byte_pair_lookup_rows": 65536,
@@ -750,7 +750,7 @@
   "consume MIN_BURN_AMOUNT_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6088,
-    "total_cycles": 27535,
+    "total_cycles": 27539,
     "notes_processing": 2684,
     "note_execution": [
       {
@@ -760,11 +760,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 18722,
-      "auth_procedure": 10341
+      "total": 18726,
+      "auth_procedure": 10343
     },
     "trace": {
-      "core_rows": 27581,
+      "core_rows": 27585,
       "chiplets_rows": 6007,
       "eidos_compression_rows": 52896,
       "byte_pair_lookup_rows": 65536,
@@ -780,7 +780,7 @@
   "consume ALLOWLIST_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6088,
-    "total_cycles": 28291,
+    "total_cycles": 28295,
     "notes_processing": 3250,
     "note_execution": [
       {
@@ -790,11 +790,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 18912,
-      "auth_procedure": 10341
+      "total": 18916,
+      "auth_procedure": 10343
     },
     "trace": {
-      "core_rows": 28337,
+      "core_rows": 28341,
       "chiplets_rows": 6363,
       "eidos_compression_rows": 58112,
       "byte_pair_lookup_rows": 65536,
@@ -810,7 +810,7 @@
   "consume BLOCKLIST_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6088,
-    "total_cycles": 28291,
+    "total_cycles": 28295,
     "notes_processing": 3250,
     "note_execution": [
       {
@@ -820,11 +820,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 18912,
-      "auth_procedure": 10341
+      "total": 18916,
+      "auth_procedure": 10343
     },
     "trace": {
-      "core_rows": 28337,
+      "core_rows": 28341,
       "chiplets_rows": 6363,
       "eidos_compression_rows": 57696,
       "byte_pair_lookup_rows": 65536,
@@ -840,7 +840,7 @@
   "consume PAUSE_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 3958,
-    "total_cycles": 20363,
+    "total_cycles": 20367,
     "notes_processing": 2699,
     "note_execution": [
       {
@@ -850,11 +850,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13665,
-      "auth_procedure": 10026
+      "total": 13669,
+      "auth_procedure": 10028
     },
     "trace": {
-      "core_rows": 20409,
+      "core_rows": 20413,
       "chiplets_rows": 4563,
       "eidos_compression_rows": 50496,
       "byte_pair_lookup_rows": 65536,
@@ -870,7 +870,7 @@
   "consume OWNER_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 3794,
-    "total_cycles": 19941,
+    "total_cycles": 19945,
     "notes_processing": 2727,
     "note_execution": [
       {
@@ -880,11 +880,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13379,
-      "auth_procedure": 10008
+      "total": 13383,
+      "auth_procedure": 10010
     },
     "trace": {
-      "core_rows": 19987,
+      "core_rows": 19991,
       "chiplets_rows": 4476,
       "eidos_compression_rows": 50208,
       "byte_pair_lookup_rows": 65536,
@@ -900,7 +900,7 @@
   "consume RBAC_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 3992,
-    "total_cycles": 23994,
+    "total_cycles": 23998,
     "notes_processing": 5735,
     "note_execution": [
       {
@@ -910,11 +910,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 14226,
-      "auth_procedure": 10035
+      "total": 14230,
+      "auth_procedure": 10037
     },
     "trace": {
-      "core_rows": 24040,
+      "core_rows": 24044,
       "chiplets_rows": 5893,
       "eidos_compression_rows": 63456,
       "byte_pair_lookup_rows": 65536,
@@ -930,7 +930,7 @@
   "consume AUTHORITY_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 3869,
-    "total_cycles": 20456,
+    "total_cycles": 20460,
     "notes_processing": 3024,
     "note_execution": [
       {
@@ -940,11 +940,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13522,
-      "auth_procedure": 10017
+      "total": 13526,
+      "auth_procedure": 10019
     },
     "trace": {
-      "core_rows": 20502,
+      "core_rows": 20506,
       "chiplets_rows": 4583,
       "eidos_compression_rows": 50240,
       "byte_pair_lookup_rows": 65536,
@@ -960,7 +960,7 @@
   "consume NETWORK_ACCOUNT_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 3869,
-    "total_cycles": 20832,
+    "total_cycles": 20836,
     "notes_processing": 3223,
     "note_execution": [
       {
@@ -970,13 +970,13 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13699,
-      "auth_procedure": 10017
+      "total": 13703,
+      "auth_procedure": 10019
     },
     "trace": {
-      "core_rows": 20878,
+      "core_rows": 20882,
       "chiplets_rows": 4850,
-      "eidos_compression_rows": 55616,
+      "eidos_compression_rows": 55424,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 3456,
@@ -990,7 +990,7 @@
   "consume UPGRADE note (network account)": {
     "provenance": "producer_measured",
     "prologue": 3892,
-    "total_cycles": 21258,
+    "total_cycles": 21262,
     "notes_processing": 4069,
     "note_execution": [
       {
@@ -1000,11 +1000,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13256,
-      "auth_procedure": 9776
+      "total": 13260,
+      "auth_procedure": 9778
     },
     "trace": {
-      "core_rows": 21304,
+      "core_rows": 21308,
       "chiplets_rows": 4849,
       "eidos_compression_rows": 52672,
       "byte_pair_lookup_rows": 65536,
@@ -1020,7 +1020,7 @@
   "consume CONSTANT_FEE_POLICY_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 4050,
-    "total_cycles": 21947,
+    "total_cycles": 21951,
     "notes_processing": 4014,
     "note_execution": [
       {
@@ -1030,13 +1030,13 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 13842,
-      "auth_procedure": 10026
+      "total": 13846,
+      "auth_procedure": 10028
     },
     "trace": {
-      "core_rows": 21993,
+      "core_rows": 21997,
       "chiplets_rows": 5064,
-      "eidos_compression_rows": 55872,
+      "eidos_compression_rows": 55808,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 3592,
@@ -1049,8 +1049,8 @@
   },
   "consume FEE_SPONSORSHIP note with feature note (network account)": {
     "provenance": "producer_measured",
-    "prologue": 5589,
-    "total_cycles": 23494,
+    "prologue": 5591,
+    "total_cycles": 23500,
     "notes_processing": 1398,
     "note_execution": [
       {
@@ -1064,13 +1064,13 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16466,
-      "auth_procedure": 13254
+      "total": 16470,
+      "auth_procedure": 13256
     },
     "trace": {
-      "core_rows": 23540,
+      "core_rows": 23546,
       "chiplets_rows": 5454,
-      "eidos_compression_rows": 55232,
+      "eidos_compression_rows": 55296,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4000,
@@ -1084,7 +1084,7 @@
   "consume FEE_SPONSORSHIP note (reclaim)": {
     "provenance": "producer_measured",
     "prologue": 4338,
-    "total_cycles": 18120,
+    "total_cycles": 18126,
     "notes_processing": 3090,
     "note_execution": [
       {
@@ -1094,11 +1094,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 10651,
-      "auth_procedure": 8394
+      "total": 10657,
+      "auth_procedure": 8398
     },
     "trace": {
-      "core_rows": 18166,
+      "core_rows": 18172,
       "chiplets_rows": 4117,
       "eidos_compression_rows": 49280,
       "byte_pair_lookup_rows": 65536,
@@ -1114,7 +1114,7 @@
   "consume CLAIM note (L1 to Miden, with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5405,
-    "total_cycles": 56695,
+    "total_cycles": 56699,
     "notes_processing": 28139,
     "note_execution": [
       {
@@ -1124,11 +1124,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 23110,
-      "auth_procedure": 16303
+      "total": 23114,
+      "auth_procedure": 16305
     },
     "trace": {
-      "core_rows": 56741,
+      "core_rows": 56745,
       "chiplets_rows": 12982,
       "eidos_compression_rows": 98208,
       "byte_pair_lookup_rows": 65536,
@@ -1144,7 +1144,7 @@
   "consume CLAIM note (L2 to Miden, with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5405,
-    "total_cycles": 66249,
+    "total_cycles": 66253,
     "notes_processing": 37693,
     "note_execution": [
       {
@@ -1154,11 +1154,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 23110,
-      "auth_procedure": 16303
+      "total": 23114,
+      "auth_procedure": 16305
     },
     "trace": {
-      "core_rows": 66295,
+      "core_rows": 66299,
       "chiplets_rows": 14668,
       "eidos_compression_rows": 103360,
       "byte_pair_lookup_rows": 65536,
@@ -1174,7 +1174,7 @@
   "consume B2AGG note (bridge-out, with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5715,
-    "total_cycles": 155399,
+    "total_cycles": 155403,
     "notes_processing": 116542,
     "note_execution": [
       {
@@ -1184,11 +1184,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 33101,
-      "auth_procedure": 16332
+      "total": 33105,
+      "auth_procedure": 16334
     },
     "trace": {
-      "core_rows": 155445,
+      "core_rows": 155449,
       "chiplets_rows": 40851,
       "eidos_compression_rows": 238304,
       "byte_pair_lookup_rows": 65536,
@@ -1204,7 +1204,7 @@
   "consume B2AGG note (bridge-out, 2^31-1 leaves, with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5715,
-    "total_cycles": 90506,
+    "total_cycles": 90510,
     "notes_processing": 60825,
     "note_execution": [
       {
@@ -1214,11 +1214,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 23925,
-      "auth_procedure": 16332
+      "total": 23929,
+      "auth_procedure": 16334
     },
     "trace": {
-      "core_rows": 90552,
+      "core_rows": 90556,
       "chiplets_rows": 23398,
       "eidos_compression_rows": 112832,
       "byte_pair_lookup_rows": 65536,
@@ -1234,7 +1234,7 @@
   "consume CONFIG_AGG_BRIDGE note (with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5082,
-    "total_cycles": 36165,
+    "total_cycles": 36169,
     "notes_processing": 13804,
     "note_execution": [
       {
@@ -1244,11 +1244,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 17238,
-      "auth_procedure": 10179
+      "total": 17242,
+      "auth_procedure": 10181
     },
     "trace": {
-      "core_rows": 36211,
+      "core_rows": 36215,
       "chiplets_rows": 9003,
       "eidos_compression_rows": 78048,
       "byte_pair_lookup_rows": 65536,
@@ -1264,7 +1264,7 @@
   "consume DEREGISTER_AGG_FAUCET note (with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5032,
-    "total_cycles": 34984,
+    "total_cycles": 34988,
     "notes_processing": 12673,
     "note_execution": [
       {
@@ -1274,11 +1274,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 17238,
-      "auth_procedure": 10179
+      "total": 17242,
+      "auth_procedure": 10181
     },
     "trace": {
-      "core_rows": 35030,
+      "core_rows": 35034,
       "chiplets_rows": 8737,
       "eidos_compression_rows": 75264,
       "byte_pair_lookup_rows": 65536,
@@ -1294,7 +1294,7 @@
   "consume UPDATE_GER note (with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 4972,
-    "total_cycles": 26092,
+    "total_cycles": 26096,
     "notes_processing": 4689,
     "note_execution": [
       {
@@ -1304,11 +1304,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16390,
-      "auth_procedure": 10179
+      "total": 16394,
+      "auth_procedure": 10181
     },
     "trace": {
-      "core_rows": 26138,
+      "core_rows": 26142,
       "chiplets_rows": 6056,
       "eidos_compression_rows": 62528,
       "byte_pair_lookup_rows": 65536,
@@ -1324,7 +1324,7 @@
   "consume REMOVE_GER note (with fee payment)": {
     "provenance": "producer_measured",
     "prologue": 5032,
-    "total_cycles": 27206,
+    "total_cycles": 27210,
     "notes_processing": 5693,
     "note_execution": [
       {
@@ -1334,11 +1334,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16440,
-      "auth_procedure": 10179
+      "total": 16444,
+      "auth_procedure": 10181
     },
     "trace": {
-      "core_rows": 27252,
+      "core_rows": 27256,
       "chiplets_rows": 6264,
       "eidos_compression_rows": 63552,
       "byte_pair_lookup_rows": 65536,
