@@ -11,6 +11,7 @@ use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::InputNoteCommitment;
 use miden_standards::note::P2idNote;
+use rstest::rstest;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
 use crate::utils::create_p2any_note;
@@ -213,8 +214,11 @@ async fn proven_block_success() -> anyhow::Result<()> {
 ///
 /// We also test that the batch note tree containing the output generating transactions is a subtree
 /// of the subtree of the overall block note tree computed from the block's output notes.
+#[rstest]
 #[tokio::test]
-async fn proven_block_erasing_unauthenticated_notes() -> anyhow::Result<()> {
+async fn proven_block_erasing_unauthenticated_notes(
+    #[values(false, true)] include_erased_witness: bool,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
@@ -278,12 +282,13 @@ async fn proven_block_erasing_unauthenticated_notes() -> anyhow::Result<()> {
     // This block will use block2 as the reference block.
     let mut block_inputs = chain.get_block_inputs(&batches)?;
 
-    // Remove the nullifier witness for output_note0 which will be erased, to check that the
-    // proposed block does not _require_ nullifier witnesses for erased notes.
-    block_inputs
-        .nullifier_witnesses_mut()
-        .remove(&output_note0.nullifier())
-        .unwrap();
+    // Erased-note witnesses are optional and must be discarded when provided.
+    if !include_erased_witness {
+        block_inputs
+            .nullifier_witnesses_mut()
+            .remove(&output_note0.nullifier())
+            .unwrap();
+    }
 
     let proposed_block = ProposedBlock::new(block_inputs.clone(), batches.to_vec())
         .context("failed to build proposed block")?;

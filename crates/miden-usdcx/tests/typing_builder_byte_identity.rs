@@ -30,16 +30,17 @@ const TOKEN_SUPPLY: u64 = 0;
 // policy code and the fee schedule keyed by note script roots, for the rename of the
 // `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
 // slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
-// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, and for
-// the bound on converted amounts in `fee::convert_amount`, which changes the auth component's
-// `pay_fee` code.
+// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, for the
+// logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the root
+// of the config note script that calls them, and for the bound on converted amounts in
+// `fee::convert_amount`, which changes the auth component's `pay_fee` code.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([11922480226948436583, 17994174611010856391, 3828567709124955078, 13675933761621316439])";
+    "Word([5162996465510048755, 2094439739736683357, 6936787768993976662, 17230760176016600422])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([5227136844067707920, 3824583827308581638, 18289208632388423757, 9824110766907489789])";
+    "Word([4330151583663897892, 1076998090470432129, 2457291820389870476, 9246314450693933979])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([8486509983168642448, 5730804629329885111, 8946131456208947087, 14721022451171487294])";
-const GOLDEN_ACCOUNT_ID: &str = "0x33e49190b76c81f11d97896fbafc57";
+    "Word([11934322787388200008, 12740576829291714277, 8409363599569151088, 3187457418425219326])";
+const GOLDEN_ACCOUNT_ID: &str = "0xf10557781db4fbf15678c813fadd2d";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

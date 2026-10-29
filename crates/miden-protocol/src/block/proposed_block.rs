@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::{BTreeMap, BTreeSet, btree_map};
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 
 use crate::account::{AccountId, AccountUpdateDetails};
 use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
@@ -21,7 +22,7 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{OutputNote, PartialBlockchain, TransactionHeader};
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
 // PROPOSED BLOCK
@@ -117,6 +118,8 @@ impl ProposedBlock {
     /// - The note inclusion proof for an unauthenticated is invalid.
     /// - There are any unauthenticated notes for which no note inclusion proof is provided.
     /// - A [`NullifierWitness`] is missing for an authenticated note.
+    /// - A [`NullifierWitness`] is provided for a note that is neither consumed nor erased in the
+    ///   block.
     /// - If the [`NullifierWitness`] for an authenticated note proves that the note was already
     ///   consumed.
     ///
@@ -201,8 +204,8 @@ impl ProposedBlock {
 
         // All unauthenticated notes must be erased or authenticated by now.
         if let Some(nullifier) = block_input_notes
-            .iter()
-            .find_map(|note| (!note.is_authenticated()).then_some(note.nullifier()))
+            .values()
+            .find_map(|(_, note)| (!note.is_authenticated()).then_some(note.nullifier()))
         {
             return Err(ProposedBlockError::UnauthenticatedNoteConsumed { nullifier });
         }
@@ -219,10 +222,7 @@ impl ProposedBlock {
 
         // Check against computed block_input_notes which also contain unauthenticated notes that
         // have been authenticated.
-        check_nullifiers(
-            &nullifier_witnesses,
-            block_input_notes.iter().map(InputNoteCommitment::nullifier),
-        )?;
+        let created_nullifiers = check_nullifiers(nullifier_witnesses, block_input_notes.keys())?;
 
         // Aggregate account updates across batches.
         // --------------------------------------------------------------------------------------------
@@ -246,7 +246,7 @@ impl ProposedBlock {
             timestamp,
             account_updated_witnesses,
             output_note_batches,
-            created_nullifiers: nullifier_witnesses,
+            created_nullifiers,
             partial_blockchain,
             prev_block_header,
             next_validator_config,
@@ -544,7 +544,7 @@ impl ProposedBlock {
         let body = BlockBody::from(self);
 
         // Construct the header.
-        let tx_commitment = body.transaction_commitment();
+        let tx_commitment = body.compute_transactions_commitment();
         let prev_block_commitment = prev_block_header.commitment();
 
         // For now we copy the parameters of the previous header, which means the parameters set on
@@ -646,29 +646,44 @@ fn check_batch_expiration(
     Ok(())
 }
 
-/// Check that each nullifier in the block has a proof provided and that the nullifier is
-/// unspent. The proofs are required to update the nullifier tree.
-fn check_nullifiers(
-    nullifier_witnesses: &BTreeMap<Nullifier, NullifierWitness>,
-    block_input_notes: impl Iterator<Item = Nullifier>,
-) -> Result<(), ProposedBlockError> {
-    for block_input_note in block_input_notes {
-        match nullifier_witnesses
-            .get(&block_input_note)
-            .and_then(|x| x.proof().get(&block_input_note.as_word()))
-        {
+/// Checks that the witnesses match exactly the block's input nullifiers and prove they are unspent.
+/// Returns the validated witnesses used to update the nullifier tree.
+///
+/// The map keys in `block_input_notes` guarantee strictly ascending nullifiers.
+fn check_nullifiers<T>(
+    nullifier_witnesses: BTreeMap<Nullifier, NullifierWitness>,
+    block_input_notes: btree_map::Keys<'_, Nullifier, T>,
+) -> Result<BTreeMap<Nullifier, NullifierWitness>, ProposedBlockError> {
+    let mut witnesses = nullifier_witnesses.iter();
+    for &block_input_note in block_input_notes {
+        let (nullifier, witness) = witnesses
+            .next()
+            .ok_or(ProposedBlockError::NullifierProofMissing(block_input_note))?;
+        match nullifier.cmp(&block_input_note) {
+            Ordering::Less => {
+                return Err(ProposedBlockError::UnexpectedNullifierWitness(*nullifier));
+            },
+            Ordering::Greater => {
+                return Err(ProposedBlockError::NullifierProofMissing(block_input_note));
+            },
+            Ordering::Equal => {},
+        }
+        match witness.proof().get(&block_input_note.as_word()) {
             Some(nullifier_value) => {
                 if nullifier_value != EMPTY_WORD {
                     return Err(ProposedBlockError::NullifierSpent(block_input_note));
                 }
             },
-            // If the nullifier witnesses did not contain a proof for this nullifier or the provided
-            // proof was not for this nullifier, then it's an error.
+            // The provided proof must be for this nullifier.
             None => return Err(ProposedBlockError::NullifierProofMissing(block_input_note)),
         }
     }
 
-    Ok(())
+    if let Some((nullifier, _)) = witnesses.next() {
+        return Err(ProposedBlockError::UnexpectedNullifierWitness(*nullifier));
+    }
+
+    Ok(nullifier_witnesses)
 }
 
 /// Removes the nullifiers from the nullifier witnesses that were erased (i.e. created and consumed
@@ -939,5 +954,59 @@ impl AccountUpdateAggregator {
             initial_state_proof,
             details.expect("details should be Some as updates is guaranteed to not be empty"),
         ))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::block::nullifier_tree::NullifierTree;
+
+    #[rstest]
+    #[case::before_inputs(1)]
+    #[case::between_inputs(2)]
+    #[case::after_inputs(3)]
+    fn check_nullifiers_rejects_surplus_witness(#[case] surplus: u64) {
+        let tree: NullifierTree = NullifierTree::default();
+        let nullifiers = [1, 2, 3].map(Nullifier::dummy);
+        let surplus = Nullifier::dummy(surplus);
+        let witnesses = nullifiers
+            .into_iter()
+            .map(|nullifier| (nullifier, tree.open(&nullifier)))
+            .collect();
+        let inputs: BTreeMap<_, _> = nullifiers
+            .into_iter()
+            .filter(|nullifier| *nullifier != surplus)
+            .map(|nullifier| (nullifier, ()))
+            .collect();
+
+        let error = check_nullifiers(witnesses, inputs.keys()).unwrap_err();
+        assert_matches!(error, ProposedBlockError::UnexpectedNullifierWitness(nullifier) if nullifier == surplus);
+    }
+
+    #[rstest]
+    #[case::before_witnesses(1)]
+    #[case::between_witnesses(2)]
+    #[case::after_witnesses(3)]
+    fn check_nullifiers_rejects_missing_witness(#[case] missing: u64) {
+        let tree: NullifierTree = NullifierTree::default();
+        let nullifiers = [1, 2, 3].map(Nullifier::dummy);
+        let missing = Nullifier::dummy(missing);
+        let witnesses = nullifiers
+            .into_iter()
+            .filter(|nullifier| *nullifier != missing)
+            .map(|nullifier| (nullifier, tree.open(&nullifier)))
+            .collect();
+
+        let inputs: BTreeMap<_, _> =
+            nullifiers.into_iter().map(|nullifier| (nullifier, ())).collect();
+        let error = check_nullifiers(witnesses, inputs.keys()).unwrap_err();
+        assert_matches!(error, ProposedBlockError::NullifierProofMissing(nullifier) if nullifier == missing);
     }
 }

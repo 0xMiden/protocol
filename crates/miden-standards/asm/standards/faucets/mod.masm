@@ -12,6 +12,7 @@ use {Bool} from miden::protocol::types
 use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::standards::access::authority
 use miden::standards::access::pausable
 
@@ -59,6 +60,13 @@ const EXTERNAL_URI_3_SLOT = word("miden::standards::faucets::external_uri_3")
 const EXTERNAL_URI_4_SLOT = word("miden::standards::faucets::external_uri_4")
 const EXTERNAL_URI_5_SLOT = word("miden::standards::faucets::external_uri_5")
 const EXTERNAL_URI_6_SLOT = word("miden::standards::faucets::external_uri_6")
+
+# Topic of the log emitted when the external URI changes, so readers know to refetch the document it
+# points to.
+const EXTERNAL_URI_UPDATED_TOPIC = word("miden::standards::faucets::external_uri_updated")
+
+# The number of words a metadata string is stored in.
+pub const METADATA_STRING_NUM_WORDS = 7
 
 # ERRORS
 # =================================================================================================
@@ -300,6 +308,9 @@ end
 #! the actual 7 Words in the advice map under that hash. The hash is verified against
 #! the preimage during loading.
 #!
+#! Emits a log under the `external_uri_updated` topic whose content is the new external URI, so
+#! readers know to refetch the document it points to.
+#!
 #! Inputs:
 #!   Operand stack: [EXTERNAL_URI_HASH, pad(12)]
 #!   Advice map: {
@@ -315,6 +326,7 @@ end
 #! - the external URI mutability flag is not 1.
 #! - the caller is not authorized per the installed [`Authority`].
 #! - the preimage does not match EXTERNAL_URI_HASH.
+#! - the transaction log count or content size exceeds its limit.
 #!
 #! Invocation: call
 @locals(28)
@@ -367,6 +379,14 @@ pub proc set_external_uri(external_uri_hash: MetadataStringCommitment)
     loc_loadw_le.24
     push.EXTERNAL_URI_6_SLOT[0..2]
     exec.native_account::set_item dropw
+    # => [pad(16)]
+
+    # announce the update with the new value
+    locaddr.0 push.METADATA_STRING_NUM_WORDS push.EXTERNAL_URI_UPDATED_TOPIC[0..2]
+    # => [topic_suffix, topic_prefix, num_words, content_ptr, pad(16)]
+
+    exec.tx::add_log_from_memory
+    # => [pad(16)]
 end
 
 # PUBLIC HELPERS

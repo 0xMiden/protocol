@@ -174,8 +174,8 @@ impl SignedBlock {
     ///
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), SignedBlockError> {
-        let header_tx_commitment = self.header.tx_commitment();
-        let body_tx_commitment = self.body.transactions().commitment();
+        let header_tx_commitment = self.header.transactions_commitment();
+        let body_tx_commitment = self.body.compute_transactions_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(SignedBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
         } else {
@@ -202,23 +202,12 @@ impl SignedBlock {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
 
     use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
 
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::OrderedTransactionHeaders;
-
-    fn empty_body() -> BlockBody {
-        BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        )
-    }
 
     fn block_one(
         parent: &BlockHeader,
@@ -228,7 +217,7 @@ mod tests {
         let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
         let signatures = parent_keys.sign_all(signers, header.commitment());
-        SignedBlock::new_unchecked(header, empty_body(), signatures)
+        SignedBlock::new_unchecked(header, BlockBody::default(), signatures)
     }
 
     #[test]
@@ -256,7 +245,7 @@ mod tests {
         // committed.
         let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
         let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
-        let block = SignedBlock::new_unchecked(header, empty_body(), signatures);
+        let block = SignedBlock::new_unchecked(header, BlockBody::default(), signatures);
 
         let result = block.validate(Some(&parent));
         assert!(matches!(result, Err(SignedBlockError::InvalidSignatureAtPosition { .. })));
