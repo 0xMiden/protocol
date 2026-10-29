@@ -88,8 +88,10 @@ pub proc compute_attachments_commitment(note_ptr: ptr<OutputNoteData>) -> Commit
 
     dup eq.0
     if.true
-        drop drop
         exec.eidos::empty_felt_sequence_digest
+        # => [ATTACHMENTS_COMMITMENT, num_attachments, note_ptr]
+
+        movup.4 drop movup.4 drop
         # => [ATTACHMENTS_COMMITMENT]
     else
         # end_ptr = attachment_data_ptr + num_attachments * WORD_NUM_ELEMENTS

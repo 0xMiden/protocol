@@ -55,8 +55,10 @@ pub proc compute_storage_commitment(
 
     dup.1 eq.0
     if.true
-        drop drop
         exec.eidos::empty_felt_sequence_digest
+        # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items]
+
+        movup.4 drop movup.4 drop
         # => [STORAGE_COMMITMENT]
     else
         # compute the storage commitment (over the unpadded values)
