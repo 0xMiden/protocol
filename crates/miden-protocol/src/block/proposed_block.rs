@@ -103,6 +103,8 @@ impl ProposedBlock {
     ///   block header in the block inputs.
     /// - The [`PartialBlockchain`]'s chain commitment is not equal to the
     ///   [`BlockHeader::chain_commitment`] of the previous block header.
+    /// - A batch's reference block commitment does not match the canonical block commitment at its
+    ///   reference block number.
     ///
     /// ## Notes
     ///
@@ -174,7 +176,8 @@ impl ProposedBlock {
             block_inputs.prev_block_header(),
         )?;
 
-        // Check every block referenced by a batch is in the partial blockchain.
+        // Check that each batch's reference commitment matches the previous block header or an
+        // authenticated historical header.
         // --------------------------------------------------------------------------------------------
 
         check_batch_reference_blocks(
@@ -733,8 +736,8 @@ fn check_reference_block_partial_blockchain_consistency(
     Ok(())
 }
 
-/// Check that each block referenced by a batch in the block has an entry in the partial blockchain,
-/// except if the referenced block is the same as the previous block, referenced by the block.
+/// Check that each block referenced by a batch matches the canonical block commitment from either
+/// the previous block header or the partial blockchain.
 fn check_batch_reference_blocks(
     partial_blockchain: &PartialBlockchain,
     prev_block_header: &BlockHeader,
@@ -742,12 +745,26 @@ fn check_batch_reference_blocks(
 ) -> Result<(), ProposedBlockError> {
     for batch in batches {
         let batch_reference_block_num = batch.reference_block_num();
-        if batch_reference_block_num != prev_block_header.block_num()
-            && !partial_blockchain.contains_block(batch.reference_block_num())
-        {
-            return Err(ProposedBlockError::BatchReferenceBlockMissingFromChain {
-                reference_block_num: batch.reference_block_num(),
+
+        let expected_block_commitment =
+            if batch_reference_block_num == prev_block_header.block_num() {
+                prev_block_header.commitment()
+            } else {
+                partial_blockchain
+                    .get_block(batch_reference_block_num)
+                    .ok_or(ProposedBlockError::BatchReferenceBlockMissingFromChain {
+                        reference_block_num: batch_reference_block_num,
+                        batch_id: batch.id(),
+                    })?
+                    .commitment()
+            };
+
+        if batch.reference_block_commitment() != expected_block_commitment {
+            return Err(ProposedBlockError::BatchReferenceBlockCommitmentMismatch {
+                reference_block_num: batch_reference_block_num,
                 batch_id: batch.id(),
+                actual_block_commitment: batch.reference_block_commitment(),
+                expected_block_commitment,
             });
         }
     }

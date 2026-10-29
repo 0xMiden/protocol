@@ -1645,6 +1645,16 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "batch {batch_id} reference block commitment {actual_block_commitment} does not match the commitment {expected_block_commitment} of block {reference_block_num}"
+    )]
+    BatchReferenceBlockCommitmentMismatch {
+        reference_block_num: BlockNumber,
+        batch_id: BatchId,
+        actual_block_commitment: Word,
+        expected_block_commitment: Word,
+    },
+
+    #[error(
         "failed to prove unauthenticated note inclusion because block {block_number} in which note with id {note_id} was created is not in partial blockchain"
     )]
     UnauthenticatedInputNoteBlockNotInPartialBlockchain {
