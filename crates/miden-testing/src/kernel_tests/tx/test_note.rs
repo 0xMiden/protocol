@@ -5,7 +5,14 @@ use anyhow::Context;
 use miden_processor::ExecutionOutput;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountId};
-use miden_protocol::assembly::DefaultSourceManager;
+use miden_protocol::assembly::{
+    Assembler,
+    DefaultSourceManager,
+    Linkage,
+    ModuleKind,
+    ModuleParser,
+    Path,
+};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_eidos::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
@@ -413,6 +420,72 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
     assert_eq!(exec_output.get_stack_word(4), note_storage_15_hash);
     assert_eq!(exec_output.get_stack_word(8), note_storage_8_hash);
     assert_eq!(exec_output.get_stack_word(12), note_storage_5_hash);
+
+    Ok(())
+}
+
+/// Empty hashing must preserve its documented stack effect even at the VM's minimum depth.
+#[rstest::rstest]
+#[case::note_storage("miden::protocol::note", "compute_storage_commitment", "0.4000", 2)]
+#[case::advice_preimage("empty_preimage_helpers", "pipe_elements_preimage_to_memory", "4000.0", 2)]
+#[case::attachments("miden::tx_kernel_core::note", "compute_attachments_commitment", "4000", 1)]
+#[tokio::test]
+async fn empty_hash_helpers_preserve_minimum_stack_depth(
+    #[case] module: &str,
+    #[case] procedure: &str,
+    #[case] arguments: &str,
+    #[case] num_arguments: usize,
+) -> anyhow::Result<()> {
+    let num_extra_outputs = Word::NUM_ELEMENTS - num_arguments;
+    let remove_input_padding = if num_arguments == 1 {
+        "swap drop".into()
+    } else {
+        format!("repeat.{num_arguments} movup.{num_arguments} drop end")
+    };
+    let code = format!(
+        "
+        use {module} as helpers
+
+        proc hash_empty
+            push.{arguments}
+            {remove_input_padding}
+            # => [arguments, pad(16 - num_arguments)]
+
+            exec.helpers::{procedure}
+            # => [COMMITMENT, pad(16 - num_arguments)]
+
+            repeat.{num_extra_outputs} movup.4 drop end
+            # => [COMMITMENT, pad(12)]
+        end
+
+        begin
+            call.hash_empty
+        end
+        "
+    );
+
+    // Protocol utilities are statically linked internals, so compile their production source
+    // under a test namespace to exercise the advice helper directly.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let module = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(
+            Some(Path::new("empty_preimage_helpers")),
+            include_str!("../../../../miden-protocol/asm/protocol_utils/src/mem.masm"),
+            source_manager.clone(),
+        )
+        .unwrap();
+    let assembler: Assembler = CodeBuilder::with_kernel_core_package(source_manager).into();
+    let helpers = assembler
+        .clone()
+        .assemble_library("empty-preimage-helpers", module, None::<&str>)
+        .unwrap();
+    let program = assembler
+        .with_package(Arc::from(helpers), Linkage::Static)
+        .unwrap()
+        .assemble_program("empty-hash-stack-depth", code.as_str())
+        .unwrap();
+    let output = CodeExecutor::with_default_host().execute_package(program).await?;
+    assert_eq!(output.get_stack_word(0), miden_protocol::Hasher::hash_elements::<Felt>(&[]));
 
     Ok(())
 }

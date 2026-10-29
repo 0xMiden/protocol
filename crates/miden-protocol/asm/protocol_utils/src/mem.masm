@@ -25,8 +25,10 @@ use miden::core::crypto::hashes::eidos
 pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>) -> word
     dup eq.0
     if.true
-        drop drop
         exec.eidos::empty_felt_sequence_digest
+        # => [COMPUTED_COMMITMENT, num_elements, dest_ptr]
+
+        movup.4 drop movup.4 drop
         # => [COMPUTED_COMMITMENT]
     else
         dup u32lt.9
