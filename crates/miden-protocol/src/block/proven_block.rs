@@ -87,12 +87,6 @@ pub struct ProvenBlock {
     signatures: BlockSignatures,
 
     /// The execution proof of the block kernel over this block.
-    // TODO: The block kernel takes BATCHES_COMMITMENT as a public input, but this struct carries
-    // neither that commitment nor the `BatchId`s it is built from, so the claim the proof attests
-    // to cannot be reconstructed here. Recomputing the batch IDs additionally needs the per-batch
-    // grouping of `body.transactions()`, which is flattened away. Add the batch IDs and that
-    // grouping to this struct or to `BlockBody` so the proof can be tied back to the block's data:
-    // https://github.com/0xMiden/protocol/issues/1706
     proof: ExecutionProof,
 }
 
@@ -247,8 +241,8 @@ impl ProvenBlock {
     ///
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), ProvenBlockError> {
-        let header_tx_commitment = self.header.tx_commitment();
-        let body_tx_commitment = self.body.transactions().commitment();
+        let header_tx_commitment = self.header.transactions_commitment();
+        let body_tx_commitment = self.body.compute_transactions_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(ProvenBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
         } else {
@@ -275,23 +269,11 @@ impl ProvenBlock {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
-
     use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
 
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::OrderedTransactionHeaders;
-
-    fn empty_body() -> BlockBody {
-        BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        )
-    }
 
     /// Builds block 1 linked to `parent` and signed by `signers` over the validator set
     /// `parent_keys` committed to by the parent. Here we only confirm `ProvenBlock::validate`
@@ -306,7 +288,7 @@ mod tests {
         let signatures = parent_keys.sign_all(signers, header.commitment());
         ProvenBlock::new_unchecked(
             header,
-            empty_body(),
+            BlockBody::default(),
             signatures,
             crate::testing::dummy_execution_proof(),
         )
@@ -356,7 +338,7 @@ mod tests {
         let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
         let block = ProvenBlock::new_unchecked(
             header,
-            empty_body(),
+            BlockBody::default(),
             signatures,
             crate::testing::dummy_execution_proof(),
         );

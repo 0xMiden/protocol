@@ -47,6 +47,8 @@ use miden_standards::note::UpgradeNote;
 use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
+    AuthorityConfig,
+    AuthorityConfigNote,
     BlocklistConfig,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
@@ -505,6 +507,49 @@ pub fn tx_consume_rbac_config_note_network() -> Result<MockTransaction> {
             role: RoleSymbol::new("MINTER")?,
             account: member,
         })
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// AUTHORITY ACTION NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network owner-controlled account consuming an
+/// AUTHORITY_CONFIG note.
+///
+/// The account carries the `Authority` component gated by the owner wallet via
+/// `Authority::OwnerControlled` (installed by `AccessControl::Ownable2Step`), mirroring
+/// `create_owner_controlled_account` in the `authority` config note test suite. The benchmarked
+/// action is `Freeze` on the initially unfrozen account.
+pub fn tx_consume_authority_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to operate the emergency switch
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let account_builder = AccountBuilder::new([44; 32])
+        .account_type(AccountType::Public)
+        .with_components(AccessControl::Ownable2Step { owner: owner.id() })
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([AuthorityConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let note: Note = AuthorityConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .config(AuthorityConfig::Freeze)
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();

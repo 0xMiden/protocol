@@ -1,6 +1,8 @@
 //! Tests for the `Authority` global emergency switch (`freeze` / `unfreeze`) and the
 //! procedure role assignment (`set_procedure_role`).
 
+mod config;
+
 use std::collections::BTreeMap;
 
 use miden_protocol::Felt;

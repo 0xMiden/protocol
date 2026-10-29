@@ -547,7 +547,7 @@ impl ProposedBlock {
         let body = BlockBody::from(self);
 
         // Construct the header.
-        let tx_commitment = body.transaction_commitment();
+        let tx_commitment = body.compute_transactions_commitment();
         let prev_block_commitment = prev_block_header.commitment();
 
         // For now we copy the parameters of the previous header, which means the parameters set on
