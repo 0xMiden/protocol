@@ -176,7 +176,8 @@ impl ProposedBlock {
             block_inputs.prev_block_header(),
         )?;
 
-        // Check every block referenced by a batch is in the partial blockchain.
+        // Check that each batch's reference commitment matches the previous block header or an
+        // authenticated historical header.
         // --------------------------------------------------------------------------------------------
 
         check_batch_reference_blocks(
