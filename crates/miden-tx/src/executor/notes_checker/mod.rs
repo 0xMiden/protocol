@@ -18,7 +18,7 @@ use super::{DataStoreRequestState, ProgramExecutor, TransactionExecutor};
 use crate::auth::TransactionAuthenticator;
 use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
-use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
+use crate::{DataStore, NoteCheckerError, TransactionExecutorError, TransactionKernelError};
 
 mod checker_utils;
 
@@ -167,6 +167,9 @@ where
                     TransactionCheckerError::ExecutionBudgetExhausted { max_cycles } => {
                         Err(NoteCheckerError::ExecutionBudgetExhausted { max_cycles })
                     },
+                    TransactionCheckerError::DataStoreRequestLimitExceeded { max_requests } => {
+                        Err(NoteCheckerError::DataStoreRequestLimitExceeded { max_requests })
+                    },
                     // execution failed on the preparation stage, before we actually executed the tx
                     TransactionCheckerError::TransactionPreparation(e) => {
                         Err(NoteCheckerError::TransactionPreparation(e))
@@ -269,6 +272,9 @@ where
                 Err(TransactionCheckerError::ExecutionBudgetExhausted { max_cycles }) => {
                     return Err(NoteCheckerError::ExecutionBudgetExhausted { max_cycles });
                 },
+                Err(TransactionCheckerError::DataStoreRequestLimitExceeded { max_requests }) => {
+                    return Err(NoteCheckerError::DataStoreRequestLimitExceeded { max_requests });
+                },
                 Err(TransactionCheckerError::PrologueExecution(err)) => {
                     return Err(NoteCheckerError::PrologueExecution(err));
                 },
@@ -335,6 +341,13 @@ where
                     },
                     Err(TransactionCheckerError::ExecutionBudgetExhausted { max_cycles }) => {
                         return Err(NoteCheckerError::ExecutionBudgetExhausted { max_cycles });
+                    },
+                    Err(TransactionCheckerError::DataStoreRequestLimitExceeded {
+                        max_requests,
+                    }) => {
+                        return Err(NoteCheckerError::DataStoreRequestLimitExceeded {
+                            max_requests,
+                        });
                     },
                     Err(TransactionCheckerError::PrologueExecution(error)) => {
                         return Err(NoteCheckerError::PrologueExecution(error));
@@ -445,6 +458,12 @@ where
             )
         })?;
 
+        if let Err(error) = &result
+            && let Some(max_requests) = data_store_request_limit(error)
+        {
+            return Err(TransactionCheckerError::DataStoreRequestLimitExceeded { max_requests });
+        }
+
         match result {
             Ok(_execution_output) => {
                 let cycle_counts = tx_progress
@@ -505,6 +524,23 @@ where
                 }
             },
         }
+    }
+}
+
+fn data_store_request_limit(error: &TransactionExecutorError) -> Option<usize> {
+    let TransactionExecutorError::TransactionProgramExecutionFailed(ExecutionError::EventError {
+        error,
+        ..
+    }) = error
+    else {
+        return None;
+    };
+
+    match error.downcast_ref::<TransactionKernelError>() {
+        Some(TransactionKernelError::DataStoreRequestLimitExceeded { max_requests }) => {
+            Some(*max_requests)
+        },
+        _ => None,
     }
 }
 

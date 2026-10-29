@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
 use miden_processor::{ExecutionError, FutureMaybeSend, LoadedMastForest, MastForestStore};
+use miden_protocol::Felt;
 use miden_protocol::account::{
     AccountBuilder,
     AccountId,
@@ -22,7 +23,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, AssetWitness, FungibleAsset};
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::note::{NoteScript, NoteScriptRoot};
+use miden_protocol::note::{NoteScript, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -38,7 +39,9 @@ use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     DataStore,
     DataStoreError,
+    DataStoreRequest,
     MAX_DATA_STORE_REQUESTS_PER_TX,
+    NoteCheckerError,
     NoteConsumptionChecker,
     TransactionExecutor,
     TransactionKernelError,
@@ -58,6 +61,8 @@ struct CountingDataStore<'a> {
     inner: &'a MockTransaction,
     storage_map_requests: AtomicUsize,
     fail_storage_map_requests: bool,
+    note_script_requests: AtomicUsize,
+    fail_note_script_requests: bool,
 }
 
 impl<'a> CountingDataStore<'a> {
@@ -66,6 +71,8 @@ impl<'a> CountingDataStore<'a> {
             inner,
             storage_map_requests: AtomicUsize::new(0),
             fail_storage_map_requests: false,
+            note_script_requests: AtomicUsize::new(0),
+            fail_note_script_requests: false,
         }
     }
 
@@ -74,11 +81,27 @@ impl<'a> CountingDataStore<'a> {
             inner,
             storage_map_requests: AtomicUsize::new(0),
             fail_storage_map_requests: true,
+            note_script_requests: AtomicUsize::new(0),
+            fail_note_script_requests: false,
+        }
+    }
+
+    fn failing_note_script_requests(inner: &'a MockTransaction) -> Self {
+        Self {
+            inner,
+            storage_map_requests: AtomicUsize::new(0),
+            fail_storage_map_requests: false,
+            note_script_requests: AtomicUsize::new(0),
+            fail_note_script_requests: true,
         }
     }
 
     fn storage_map_request_count(&self) -> usize {
         self.storage_map_requests.load(Ordering::Relaxed)
+    }
+
+    fn note_script_request_count(&self) -> usize {
+        self.note_script_requests.load(Ordering::Relaxed)
     }
 }
 
@@ -130,7 +153,14 @@ impl DataStore for CountingDataStore<'_> {
         &self,
         script_root: NoteScriptRoot,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
-        self.inner.get_note_script(script_root)
+        self.note_script_requests.fetch_add(1, Ordering::Relaxed);
+        async move {
+            if self.fail_note_script_requests {
+                Err(DataStoreError::other("note script request failed for test"))
+            } else {
+                self.inner.get_note_script(script_root).await
+            }
+        }
     }
 }
 
@@ -421,6 +451,181 @@ async fn note_checker_caches_failed_data_store_requests_across_retries() -> anyh
     assert!(result.successful().is_empty());
     assert_eq!(result.failed().len(), 2);
     assert_eq!(data_store.storage_map_request_count(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_reports_data_store_limit_exhausted_across_retries() -> anyhow::Result<()> {
+    let map_keys = (0..=MAX_DATA_STORE_REQUESTS_PER_TX)
+        .map(|index| StorageMapKey::from_array([0, 0, 0, index as u32]))
+        .collect::<Vec<_>>();
+    let map_entries = map_keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (*key, Word::from([index as u32 + 1, 0, 0, 0])))
+        .collect::<Vec<_>>();
+    let map_slot_name = StorageSlotName::mock(0);
+    let account = AccountBuilder::new([4; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_map(
+            map_slot_name.clone(),
+            StorageMap::with_entries(map_entries.into_iter())?,
+        )]))
+        .build_existing()?;
+    let note_script = |keys: &[StorageMapKey]| {
+        let accesses = keys
+            .iter()
+            .map(|key| {
+                format!(
+                    "push.{key}\n\
+                     push.MOCK_MAP_SLOT[0..2]\n\
+                     call.account::get_map_item\n\
+                     dropw\n\
+                     exec.sys::truncate_stack"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            r#"
+            use miden::core::sys
+            use mock::account
+
+            const MOCK_MAP_SLOT = word("{map_slot_name}")
+
+            @note_script
+            pub proc main
+                {accesses}
+                push.0 assert.err="force another checker attempt"
+            end
+            "#
+        )
+    };
+    let notes = [note_script(&map_keys[..128]), note_script(&map_keys[128..])]
+        .map(|script| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
+        .build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        NoteCheckerError::DataStoreRequestLimitExceeded {
+            max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+        }
+    ));
+    assert_eq!(data_store.storage_map_request_count(), MAX_DATA_STORE_REQUESTS_PER_TX);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_caches_failed_note_script_requests_across_retries() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(crate::Auth::IncrNonce)?;
+    let output_note = NoteBuilder::new(account.id(), rand::rng())
+        .note_type(NoteType::Public)
+        .code(
+            r#"
+            @note_script
+            pub proc main
+                push.0 drop
+            end
+            "#,
+        )
+        .build()?;
+    let recipient_digest = output_note.recipient().digest();
+    let script_root = output_note.script().root();
+    let output_note_tag = Felt::from(output_note.metadata().tag());
+    let input_note_script = format!(
+        r#"
+        use mock::account
+
+        @note_script
+        pub proc main
+            push.{recipient_digest}
+            push.{note_type}
+            push.{output_note_tag}
+            call.account::create_note
+            drop
+        end
+        "#,
+        note_type = NoteType::Public as u8,
+    );
+    let input_notes = [1_u32, 2]
+        .map(|_| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(&input_note_script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(input_notes.clone());
+    for (key, value) in output_note
+        .recipient()
+        .to_advice_map_entries()
+        .into_iter()
+        .filter(|(key, _)| *key != Word::from(script_root))
+    {
+        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::failing_note_script_requests(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            input_notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    assert!(result.successful().is_empty());
+    assert_eq!(result.failed().len(), 2);
+    assert_eq!(data_store.note_script_request_count(), 1);
+    assert!(result.failed().iter().filter_map(|failure| failure.error()).any(|error| {
+        matches!(
+            error,
+            miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::EventError { error, .. }
+            ) if matches!(
+                error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::CachedDataStoreRequestFailure {
+                    request: DataStoreRequest::NoteScript { script_root: cached_root },
+                    original_error,
+                }) if *cached_root == script_root
+                    && original_error.as_ref() == "note script request failed for test"
+            )
+        )
+    }));
 
     Ok(())
 }
