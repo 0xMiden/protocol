@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::ExecutionError;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteId};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -22,6 +22,7 @@ use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
 mod checker_utils;
 
+use checker_utils::{CheckerBudget, NoteBundle, handle_epilogue_error};
 pub use checker_utils::{
     FailedNote,
     MAX_NUM_CHECKER_NOTES,
@@ -29,7 +30,6 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
-use checker_utils::{NoteBundle, handle_epilogue_error};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -109,7 +109,8 @@ where
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // Attempt to find an executable set of notes.
-        self.find_executable_notes_by_elimination(tx_inputs).await
+        let mut budget = CheckerBudget::new(self.0.exec_options);
+        self.find_executable_notes_by_elimination(tx_inputs, &mut budget).await
     }
 
     /// Checks whether the provided input note could be consumed by the provided account by
@@ -151,11 +152,15 @@ where
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // try to consume the provided note
-        match self.try_execute_notes(&mut tx_inputs).await {
+        let mut budget = CheckerBudget::new(self.0.exec_options);
+        match self.try_execute_notes(&mut tx_inputs, &mut budget).await {
             // execution succeeded
             Ok(_cycle_counts) => Ok(NoteConsumptionStatus::Consumable),
             Err(tx_checker_error) => {
                 match tx_checker_error {
+                    TransactionCheckerError::ExecutionBudgetExhausted { max_cycles } => {
+                        Err(NoteCheckerError::ExecutionBudgetExhausted { max_cycles })
+                    },
                     // execution failed on the preparation stage, before we actually executed the tx
                     TransactionCheckerError::TransactionPreparation(e) => {
                         Err(NoteCheckerError::TransactionPreparation(e))
@@ -172,6 +177,9 @@ where
                     TransactionCheckerError::EpilogueExecution {
                         error: epilogue_error, ..
                     } => Ok(handle_epilogue_error(epilogue_error)),
+                    TransactionCheckerError::TransactionScriptExecution(error) => {
+                        Err(NoteCheckerError::TransactionScriptExecution(error))
+                    },
                 }
             },
         }
@@ -187,6 +195,7 @@ where
     async fn find_executable_notes_by_elimination(
         &self,
         mut tx_inputs: TransactionInputs,
+        budget: &mut CheckerBudget,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let mut candidate_notes = tx_inputs
             .input_notes()
@@ -207,7 +216,7 @@ where
             tx_inputs.set_input_notes(InputNotes::new_unchecked(
                 candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
             ));
-            match self.try_execute_notes(&mut tx_inputs).await {
+            match self.try_execute_notes(&mut tx_inputs, budget).await {
                 Ok(cycle_counts) => {
                     // A full set of successful notes has been found.
                     let successful = candidate_notes
@@ -240,20 +249,26 @@ where
                     // Continue and process the next set of candidates.
                 },
                 Err(TransactionCheckerError::EpilogueExecution { .. }) => {
-                    let consumption_info = self
+                    return self
                         .find_largest_executable_combination(
                             candidate_notes,
                             failed_notes,
                             tx_inputs,
+                            budget,
                         )
                         .await;
-                    return Ok(consumption_info);
+                },
+                Err(TransactionCheckerError::ExecutionBudgetExhausted { max_cycles }) => {
+                    return Err(NoteCheckerError::ExecutionBudgetExhausted { max_cycles });
                 },
                 Err(TransactionCheckerError::PrologueExecution(err)) => {
                     return Err(NoteCheckerError::PrologueExecution(err));
                 },
                 Err(TransactionCheckerError::TransactionPreparation(err)) => {
                     return Err(NoteCheckerError::TransactionPreparation(err));
+                },
+                Err(TransactionCheckerError::TransactionScriptExecution(err)) => {
+                    return Err(NoteCheckerError::TransactionScriptExecution(err));
                 },
             }
         }
@@ -270,7 +285,8 @@ where
         remaining_notes: Vec<Note>,
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
-    ) -> NoteConsumptionInfo {
+        budget: &mut CheckerBudget,
+    ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let mut remaining_bundles = NoteBundle::group(remaining_notes);
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
@@ -292,7 +308,7 @@ where
                 tx_inputs.set_input_notes(InputNotes::new_unchecked(
                     candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
                 ));
-                match self.try_execute_notes(&mut tx_inputs).await {
+                match self.try_execute_notes(&mut tx_inputs, budget).await {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or
                         // as part of another candidate set. Remove them from the failed list.
@@ -308,50 +324,44 @@ where
                         extended = true;
                         break;
                     },
-                    Err(error) => {
-                        // This combination failed, so the whole bundle is rejected. Blame the note
-                        // the executor pointed at, when it pointed at one of the bundle's notes;
-                        // an epilogue failure blames no particular note, so it falls to the note
-                        // heading the bundle, the one the rest of the bundle is bound to.
-                        let (blamed_idx, num_cycles) = match &error {
-                            TransactionCheckerError::NoteExecution {
-                                failed_note_index,
-                                failed_note_cycle_count,
-                                ..
-                            } => (
-                                failed_note_index
-                                    .checked_sub(successful_notes.len())
-                                    .filter(|idx| *idx < bundle_notes.len())
-                                    .unwrap_or(0),
-                                *failed_note_cycle_count,
-                            ),
-                            _ => (0, None),
-                        };
-
-                        let blamed_note = bundle_notes[blamed_idx].clone();
-                        let blamed_id = blamed_note.id();
-
-                        // Record every note of the bundle (overwriting previous failures for the
-                        // relevant notes), so the reported notes always account for all inputs.
-                        // Only the blamed note owns the error; the rest failed with its bundle.
-                        failed_note_index.insert(
-                            blamed_id,
-                            FailedNote::new(
-                                blamed_note,
-                                NoteFailure::Blamed { error: error.into(), num_cycles },
-                            ),
+                    Err(TransactionCheckerError::ExecutionBudgetExhausted { max_cycles }) => {
+                        return Err(NoteCheckerError::ExecutionBudgetExhausted { max_cycles });
+                    },
+                    Err(TransactionCheckerError::PrologueExecution(error)) => {
+                        return Err(NoteCheckerError::PrologueExecution(error));
+                    },
+                    Err(TransactionCheckerError::TransactionPreparation(error)) => {
+                        return Err(NoteCheckerError::TransactionPreparation(error));
+                    },
+                    Err(TransactionCheckerError::TransactionScriptExecution(error)) => {
+                        return Err(NoteCheckerError::TransactionScriptExecution(error));
+                    },
+                    Err(TransactionCheckerError::NoteExecution {
+                        failed_note_index: execution_failed_note_index,
+                        error,
+                        failed_note_cycle_count,
+                        ..
+                    }) => {
+                        let blamed_idx = execution_failed_note_index
+                            .checked_sub(successful_notes.len())
+                            .filter(|idx| *idx < bundle_notes.len())
+                            .unwrap_or(0);
+                        record_bundle_failure(
+                            &mut failed_note_index,
+                            &bundle_notes,
+                            blamed_idx,
+                            error,
+                            failed_note_cycle_count,
                         );
-                        for (note_idx, note) in bundle_notes.iter().enumerate() {
-                            if note_idx != blamed_idx {
-                                failed_note_index.insert(
-                                    note.id(),
-                                    FailedNote::new(
-                                        note.clone(),
-                                        NoteFailure::Collateral { blamed_by: blamed_id },
-                                    ),
-                                );
-                            }
-                        }
+                    },
+                    Err(TransactionCheckerError::EpilogueExecution { error, .. }) => {
+                        record_bundle_failure(
+                            &mut failed_note_index,
+                            &bundle_notes,
+                            0,
+                            error,
+                            None,
+                        );
                     },
                 }
             }
@@ -370,7 +380,7 @@ where
 
         // Append failed notes to the list of failed notes provided as input.
         failed_notes.extend(failed_note_index.into_values());
-        NoteConsumptionInfo::new(successful, failed_notes)
+        Ok(NoteConsumptionInfo::new(successful, failed_notes))
     }
 
     /// Attempts to execute a transaction with the provided input notes.
@@ -383,6 +393,7 @@ where
     async fn try_execute_notes(
         &self,
         tx_inputs: &mut TransactionInputs,
+        budget: &mut CheckerBudget,
     ) -> Result<Vec<usize>, TransactionCheckerError> {
         if tx_inputs.input_notes().is_empty() {
             return Ok(Vec::new());
@@ -394,9 +405,13 @@ where
                 .await
                 .map_err(TransactionCheckerError::TransactionPreparation)?;
 
+        let exec_options = budget.take_execution_options(self.0.exec_options).ok_or(
+            TransactionCheckerError::ExecutionBudgetExhausted { max_cycles: budget.max_cycles() },
+        )?;
+
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let executor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options)
+        let executor = EXEC::new(stack_inputs, advice_inputs, exec_options)
             .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error)
             .map_err(TransactionCheckerError::PrologueExecution)?;
@@ -440,15 +455,17 @@ where
                 let ((_, last_note_interval), success_notes) =
                     notes.split_last().expect("notes vector is not empty because of earlier check");
 
-                // If the interval end of the last note is specified, then an error occurred after
-                // notes processing. All notes executed successfully in this case.
-                if last_note_interval.end().is_some() {
+                // If the epilogue started, then an error occurred during the epilogue. All notes
+                // executed successfully in this case.
+                if tx_progress.epilogue().start().is_some() {
                     let successful_notes_cycle_counts =
                         notes.iter().map(|(_, interval)| interval.len()).collect();
                     Err(TransactionCheckerError::EpilogueExecution {
                         error,
                         successful_notes_cycle_counts,
                     })
+                } else if last_note_interval.end().is_some() {
+                    Err(TransactionCheckerError::TransactionScriptExecution(error))
                 } else {
                     // Return the index of the failed note.
                     let failed_note_index = success_notes.len();
@@ -475,6 +492,30 @@ where
                     })
                 }
             },
+        }
+    }
+}
+
+fn record_bundle_failure(
+    failed_note_index: &mut BTreeMap<NoteId, FailedNote>,
+    bundle_notes: &[Note],
+    blamed_idx: usize,
+    error: TransactionExecutorError,
+    num_cycles: Option<usize>,
+) {
+    let blamed_note = bundle_notes[blamed_idx].clone();
+    let blamed_id = blamed_note.id();
+
+    failed_note_index.insert(
+        blamed_id,
+        FailedNote::new(blamed_note, NoteFailure::Blamed { error, num_cycles }),
+    );
+    for (note_idx, note) in bundle_notes.iter().enumerate() {
+        if note_idx != blamed_idx {
+            failed_note_index.insert(
+                note.id(),
+                FailedNote::new(note.clone(), NoteFailure::Collateral { blamed_by: blamed_id }),
+            );
         }
     }
 }

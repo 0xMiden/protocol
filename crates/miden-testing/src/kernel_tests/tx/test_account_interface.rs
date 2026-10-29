@@ -27,6 +27,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
@@ -232,6 +233,45 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
         [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_note_consumability_stops_on_transaction_script_failure() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let note = builder.add_p2id_note(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(10)],
+        NoteType::Public,
+    )?;
+    let chain = builder.build()?;
+    let tx_script = CodeBuilder::default().compile_tx_script(
+        "@transaction_script
+         pub proc main
+             push.0 assert
+         end",
+    )?;
+    let mock_tx = chain
+        .build_transaction(account)
+        .unauthenticated_input_notes([note.clone()])
+        .tx_script(tx_script)
+        .build()?;
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            vec![note],
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_matches!(error, NoteCheckerError::TransactionScriptExecution(_));
+
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use miden_processor::ExecutionOptions;
 use miden_protocol::note::{Note, NoteId};
 use miden_standards::note::{FeeSponsorshipNote, NoteConsumptionStatus};
 
@@ -13,6 +14,61 @@ use crate::TransactionExecutorError;
 ///
 /// Fixed at an amount that should keep each run of note consumption checking to a maximum of ~50ms.
 pub const MAX_NUM_CHECKER_NOTES: usize = 20;
+
+// CHECKER EXECUTION BUDGET
+// ================================================================================================
+
+/// Limits the total VM cycle allowance granted across one note consumability check.
+pub(super) struct CheckerBudget {
+    max_cycles: u32,
+    max_cycles_per_attempt: u32,
+    remaining_cycles: u32,
+}
+
+impl CheckerBudget {
+    pub(super) fn new(options: ExecutionOptions) -> Self {
+        let max_cycles = options.max_cycles();
+        let max_cycles_per_attempt =
+            (max_cycles / MAX_NUM_CHECKER_NOTES as u32).max(options.expected_cycles());
+
+        Self {
+            max_cycles,
+            max_cycles_per_attempt,
+            remaining_cycles: max_cycles,
+        }
+    }
+
+    pub(super) fn max_cycles(&self) -> u32 {
+        self.max_cycles
+    }
+
+    /// Reserves one conservative execution allowance and returns options capped to that allowance.
+    pub(super) fn take_execution_options(
+        &mut self,
+        options: ExecutionOptions,
+    ) -> Option<ExecutionOptions> {
+        if self.remaining_cycles < self.max_cycles_per_attempt {
+            return None;
+        }
+        self.remaining_cycles -= self.max_cycles_per_attempt;
+
+        let capped_options = ExecutionOptions::new(
+            Some(self.max_cycles_per_attempt),
+            options.expected_cycles(),
+            options.core_trace_fragment_size(),
+        )
+        .expect("checker cycle cap must satisfy the source execution options")
+        .with_max_advice_size_bytes(options.max_advice_size_bytes())
+        .with_max_hash_len_bytes(options.max_hash_len_bytes())
+        .with_max_num_continuations(options.max_num_continuations())
+        .with_max_stack_depth(options.max_stack_depth())
+        .expect("source execution options must contain a valid stack limit")
+        .with_max_memory_elements(options.max_memory_elements())
+        .with_overlapped_trace_build(options.overlapped_trace_build());
+
+        Some(capped_options)
+    }
+}
 
 // NOTE CONSUMPTION INFO
 // ================================================================================================
@@ -231,5 +287,37 @@ pub(super) fn handle_epilogue_error(
         },
         // TODO: apply additional checks to get the verbose error reason
         _ => NoteConsumptionStatus::UnconsumableConditions,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checker_budget_caps_total_granted_cycles() {
+        let options = ExecutionOptions::new(Some(81_920), 4_096, 2_048)
+            .unwrap()
+            .with_max_advice_size_bytes(123)
+            .with_max_hash_len_bytes(456)
+            .with_max_num_continuations(7)
+            .with_max_stack_depth(32)
+            .unwrap()
+            .with_max_memory_elements(40)
+            .with_overlapped_trace_build(false);
+        let mut budget = CheckerBudget::new(options);
+
+        for _ in 0..MAX_NUM_CHECKER_NOTES {
+            let attempt_options = budget.take_execution_options(options).unwrap();
+            assert_eq!(attempt_options.max_cycles(), 4_096);
+            assert_eq!(attempt_options.max_advice_size_bytes(), 123);
+            assert_eq!(attempt_options.max_hash_len_bytes(), 456);
+            assert_eq!(attempt_options.max_num_continuations(), 7);
+            assert_eq!(attempt_options.max_stack_depth(), 32);
+            assert_eq!(attempt_options.max_memory_elements(), 40);
+            assert!(!attempt_options.overlapped_trace_build());
+        }
+
+        assert!(budget.take_execution_options(options).is_none());
     }
 }
