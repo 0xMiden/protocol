@@ -103,14 +103,26 @@ impl AccountFile {
 
 #[cfg(all(feature = "std", unix))]
 fn write_account_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_account_file_with_permissions(path, bytes, |file| {
+        file.set_permissions(Permissions::from_mode(0o600))
+    })
+}
+
+#[cfg(all(feature = "std", unix))]
+fn write_account_file_with_permissions(
+    path: &Path,
+    bytes: &[u8],
+    set_permissions: impl FnOnce(&std::fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .mode(0o600)
         .open(path)?;
 
-    file.set_permissions(Permissions::from_mode(0o600))?;
+    set_permissions(&file)?;
+    file.set_len(0)?;
     file.write_all(bytes)
 }
 
