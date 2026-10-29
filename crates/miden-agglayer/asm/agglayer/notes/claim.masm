@@ -121,6 +121,7 @@ end
 #!
 #! This procedure organizes the claim note data into two logical groups and inserts them
 #! into the advice map under separate keys for easier access.
+#! Each complete-block stream binds its full Felt length in the initial chaining word.
 #!
 #! Inputs: []
 #! Outputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
@@ -147,14 +148,19 @@ end
 #!
 #! Invocation: exec
 proc write_claim_data_into_advice_map_by_key() -> (AdviceMapKey, AdviceMapKey)
-    # the fixed, aligned ranges contain 4 and 67 complete blocks; their CVs bind the Felt lengths
+    # step 1: compute LEAF_DATA_KEY
     push.LEAF_DATA_START_PTR
     push.LEAF_DATA_SIZE exec.eidos::init_chaining_word padw padw
-    repeat.LEAF_DATA_NUM_BLOCKS mem_stream exec.eidos::compress end
-    exec.eidos::digest
-    # => [LEAF_DATA_KEY, LEAF_DATA_END_PTR, caller...]
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, LEAF_DATA_START_PTR]
 
-    # The stream's final pointer also bounds the advice-map entry.
+    repeat.LEAF_DATA_NUM_BLOCKS
+        mem_stream
+        exec.eidos::compress
+    end
+    exec.eidos::digest
+    # => [LEAF_DATA_KEY, LEAF_DATA_END_PTR]
+
+    # the stream's final pointer also bounds the advice-map entry
     push.LEAF_DATA_START_PTR movdn.4
     # => [LEAF_DATA_KEY, start_ptr, end_ptr]
 
@@ -164,11 +170,17 @@ proc write_claim_data_into_advice_map_by_key() -> (AdviceMapKey, AdviceMapKey)
     movup.4 drop movup.4 drop
     # => [LEAF_DATA_KEY]
 
+    # step 2: compute PROOF_DATA_KEY
     push.PROOF_DATA_START_PTR
     push.PROOF_DATA_SIZE exec.eidos::init_chaining_word padw padw
-    repeat.PROOF_DATA_NUM_BLOCKS mem_stream exec.eidos::compress end
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, PROOF_DATA_START_PTR, LEAF_DATA_KEY]
+
+    repeat.PROOF_DATA_NUM_BLOCKS
+        mem_stream
+        exec.eidos::compress
+    end
     exec.eidos::digest
-    # => [PROOF_DATA_KEY, PROOF_DATA_END_PTR, LEAF_DATA_KEY, caller...]
+    # => [PROOF_DATA_KEY, PROOF_DATA_END_PTR, LEAF_DATA_KEY]
 
     push.PROOF_DATA_START_PTR movdn.4
     # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]

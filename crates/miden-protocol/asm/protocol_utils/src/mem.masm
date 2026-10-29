@@ -35,9 +35,9 @@ pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>
         if.true
             # A short preimage occupies exactly one padded advice block.
             exec.eidos::init
-            # => [BLOCK_LO, BLOCK_HI, CV, dest_ptr]
+            # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, dest_ptr]
 
-            adv_pipe compress
+            adv_pipe exec.eidos::compress
             exec.eidos::digest
             movup.4 drop
             # => [COMPUTED_COMMITMENT]
@@ -55,11 +55,11 @@ pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>
 
             # Initialize Eidos with the exact logical length.
             movup.2 exec.eidos::init
-            # => [BLOCK_LO, BLOCK_HI, CV, dest_ptr, end_ptr]
+            # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, dest_ptr, end_ptr]
 
             # write the elements to memory while hashing them
             exec.mem::pipe_double_words_to_memory
-            # => [BLOCK_LO, BLOCK_HI, CV, dest_ptr']
+            # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, dest_ptr']
 
             # extract the computed commitment from the hasher state
             exec.eidos::digest

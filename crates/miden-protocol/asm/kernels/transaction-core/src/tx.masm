@@ -632,7 +632,7 @@ end
 #! Outputs: [LOGS_COMMITMENT]
 proc compute_logs_commitment() -> word
     exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR push.LOGS_DOMAIN
-    # => [LOGS_DOMAIN, LOG_COMMITMENTS_PTR, num_log_commitment_elements]
+    # => [logs_domain, log_commitments_ptr, num_log_commitment_elements]
 
     exec.eidos::hash_elements_in_domain
     # => [LOGS_COMMITMENT]

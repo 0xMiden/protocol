@@ -11,7 +11,13 @@ use miden::protocol_utils::account_id
 use miden::protocol_utils::mem as mem_utils
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
-use {WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
+use {
+    EIDOS_INIT_CHAINING_WORD_8,
+    EIDOS_INIT_CHAINING_WORD_16,
+    EIDOS_INIT_CHAINING_WORD_24,
+    EIDOS_INIT_CHAINING_WORD_40,
+    WORD_NUM_ELEMENTS,
+} from miden::tx_kernel_core::constants
 use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::tx_kernel_core::asset
 use {ACCOUNT_VERSION_1} from miden::tx_kernel_core::account
 use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT}
@@ -29,32 +35,6 @@ use miden::tx_kernel_core::note
 
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
-
-# Generic Felt-sequence Eidos chaining words for statically sized preimages.
-const EIDOS_INIT_CV_8 = [
-    13503953893947607553,
-    11912009168875159560,
-    11170449401267093504,
-    6620516959492505600
-]
-const EIDOS_INIT_CV_16 = [
-    13503953893947607553,
-    11912009168875159568,
-    11170449401267093504,
-    6620516959492505600
-]
-const EIDOS_INIT_CV_24 = [
-    13503953893947607553,
-    11912009168875159576,
-    11170449401267093504,
-    6620516959492505600
-]
-const EIDOS_INIT_CV_40 = [
-    13503953893947607553,
-    11912009168875159592,
-    11170449401267093504,
-    6620516959492505600
-]
 
 # Procedure locals in process_note_num_storage_items
 const PROCESS_NOTE_STORAGE_PREIMAGE_LOC = 0
@@ -189,7 +169,7 @@ proc process_protocol_config()
     # OS => [protocol_config_ptr, PROTOCOL_CONFIG_COMMITMENT]
 
     # read the protocol config and compute its commitment
-    push.EIDOS_INIT_CV_24 padw padw
+    push.EIDOS_INIT_CHAINING_WORD_24 padw padw
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
@@ -332,7 +312,7 @@ proc process_block_data(block_num: BlockNumber)
 
     # read the block header and compute its sub commitment
     # see `Advice stack` above for details.
-    push.EIDOS_INIT_CV_40 padw padw
+    push.EIDOS_INIT_CHAINING_WORD_40 padw padw
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
@@ -568,7 +548,7 @@ proc process_account_data()
     # => [acct_data_ptr]
 
     # read account details and compute its digest. See `Advice stack` above for details.
-    push.EIDOS_INIT_CV_16 padw padw
+    push.EIDOS_INIT_CHAINING_WORD_16 padw padw
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
     exec.eidos::digest
@@ -696,7 +676,7 @@ proc authenticate_note(note_id: NoteId)
     # ---------------------------------------------------------------------------------------------
 
     # read data from advice and compute hash(BLOCK_SUB_COMMITMENT || NOTE_ROOT)
-    push.EIDOS_INIT_CV_8 padw padw
+    push.EIDOS_INIT_CHAINING_WORD_8 padw padw
     adv_pipe exec.eidos::compress
     exec.eidos::digest
     # => [COMPUTED_BLOCK_COMMITMENT, mem_ptr', BLOCK_COMMITMENT, NOTE_ID]
@@ -763,7 +743,7 @@ proc process_input_note_details(idx: u16) -> Commitment
 
     # read the input note's nullifier preimage from the advice stack and hash it. See `Advice stack`
     # above for details.
-    push.EIDOS_INIT_CV_24 padw padw
+    push.EIDOS_INIT_CHAINING_WORD_24 padw padw
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
     adv_pipe exec.eidos::compress
@@ -939,7 +919,7 @@ proc process_note_assets(note_ptr: ptr<InputNoteData>)
         # => [assets_ptr, assets_end_ptr, note_ptr]
 
         dup.1 dup.1 sub exec.eidos::init
-        # => [BLOCK_LO, BLOCK_HI, CV, assets_ptr, assets_end_ptr, note_ptr]
+        # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, assets_ptr, assets_end_ptr, note_ptr]
 
         exec.mem::pipe_double_words_to_memory
         exec.eidos::digest
@@ -1056,7 +1036,7 @@ end
 #! stack so that the input notes commitment can be extracted.
 #!
 #! Inputs:
-#!   Operand stack: [idx, CV]
+#!   Operand stack: [idx, CHAINING_WORD]
 #!   Advice stack: [
 #!      NOTE_ARGS,
 #!      SERIAL_NUMBER,
@@ -1076,12 +1056,12 @@ end
 #!      )?
 #!   ]
 #! Outputs:
-#!   Operand stack: [BLOCK_LO, BLOCK_HI, CV]
+#!   Operand stack: [BLOCK_LO, BLOCK_HI, CHAINING_WORD]
 #!   Advice stack: []
 #!
 #! Where:
 #! - idx is the index of the input note.
-#! - CV is the chaining word after committing to the previous notes.
+#! - CHAINING_WORD is the chaining word after committing to the previous notes.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
 #! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
@@ -1097,85 +1077,85 @@ end
 #!   - BLOCK_SUB_COMMITMENT is the block's sub_commitment for which the note was created.
 #!   - NOTE_ROOT is the merkle root of the note's tree.
 #!   - note_index is the input note's position in the notes tree.
-proc process_input_note(idx: u16, cv: word) -> State
+proc process_input_note(idx: u16, chaining_word: eidos::ChainingValue) -> State
     # note args
     # ---------------------------------------------------------------------------------------------
     dup exec.memory::get_input_note_ptr
-    # => [note_ptr, idx, CV]
+    # => [note_ptr, idx, CHAINING_WORD]
 
     exec.process_note_args
-    # => [note_ptr, idx, CV]
+    # => [note_ptr, idx, CHAINING_WORD]
 
     # note details and nullifier
     # ---------------------------------------------------------------------------------------------
 
     swap exec.process_input_note_details movup.4
-    # => [note_ptr, NULLIFIER, CV]
+    # => [note_ptr, NULLIFIER, CHAINING_WORD]
 
     # note number of storage items
     # ---------------------------------------------------------------------------------------------
 
     exec.process_note_num_storage_items
-    # => [note_ptr, NULLIFIER, CV]
+    # => [note_ptr, NULLIFIER, CHAINING_WORD]
 
     # note assets
     # ---------------------------------------------------------------------------------------------
 
     dup exec.process_note_assets
     dup exec.add_input_note_assets_to_vault
-    # => [note_ptr, NULLIFIER, CV]
+    # => [note_ptr, NULLIFIER, CHAINING_WORD]
 
     # note metadata
     # ---------------------------------------------------------------------------------------------
 
     # validate the metadata and compute NOTE_METADATA_COMMITMENT
     dup exec.process_note_metadata
-    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CV]
+    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CHAINING_WORD]
 
     # note details commitment
     # ---------------------------------------------------------------------------------------------
 
     dup.4 exec.compute_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CV]
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CHAINING_WORD]
 
     # save note details commitment to memory
     dup.8 exec.memory::set_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CV]
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CHAINING_WORD]
 
     # note id
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_ID: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`
     exec.eidos::hash_double_word
-    # => [NOTE_ID, note_ptr, NULLIFIER, CV]
+    # => [NOTE_ID, note_ptr, NULLIFIER, CHAINING_WORD]
 
     # cache the note ID in the note's data segment
     movup.4 exec.memory::set_input_note_id
-    # => [NOTE_ID, NULLIFIER, CV]
+    # => [NOTE_ID, NULLIFIER, CHAINING_WORD]
 
     # note authentication
     # ---------------------------------------------------------------------------------------------
 
     adv_push
-    # => [is_authenticated, NOTE_ID, NULLIFIER, CV]
+    # => [is_authenticated, NOTE_ID, NULLIFIER, CHAINING_WORD]
 
     if.true
-        # => [NOTE_ID, NULLIFIER, CV]
+        # => [NOTE_ID, NULLIFIER, CHAINING_WORD]
 
         exec.authenticate_note
-        # => [NULLIFIER, CV]
+        # => [NULLIFIER, CHAINING_WORD]
 
         padw
-        # => [EMPTY_WORD, NULLIFIER, CV]
+        # => [EMPTY_WORD, NULLIFIER, CHAINING_WORD]
     end
-    # => [EMPTY_WORD_OR_NOTE_ID, NULLIFIER, CV]
+    # => [EMPTY_WORD_OR_NOTE_ID, NULLIFIER, CHAINING_WORD]
 
     swapw
-    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_ID, CV]
+    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_ID, CHAINING_WORD]
 
     # update the input notes commitment with hash(NULLIFIER || EMPTY_WORD_OR_NOTE_ID)
     exec.eidos::compress
-    # => [BLOCK_LO, BLOCK_HI, CV]
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD]
 end
 
 #! Process the input notes data provided via the advice provider. This involves reading the data
@@ -1240,25 +1220,25 @@ proc process_input_notes_data()
         # => [INPUT_NOTES_COMMITMENT, idx, num_notes]
     else
         dup.1 mul.8 exec.eidos::init_chaining_word
-        # => [CV, idx, num_notes]
+        # => [CHAINING_WORD, idx, num_notes]
 
         # The nonempty branch always processes at least one note.
         push.1
-        # => [has_more_notes, CV, idx, num_notes]
+        # => [has_more_notes, CHAINING_WORD, idx, num_notes]
 
         while.true
             # process the note
             dup.4 exec.process_input_note
             dropw dropw
-            # => [CV, idx, num_notes]
+            # => [CHAINING_WORD, idx, num_notes]
 
             # update the idx counter
             swapw add.1 swapw
-            # => [CV, idx+1, num_notes]
+            # => [CHAINING_WORD, idx+1, num_notes]
 
             # loop condition: idx != num_notes
             dup.5 dup.5 neq
-            # => [has_more_notes, CV, idx+1, num_notes]
+            # => [has_more_notes, CHAINING_WORD, idx+1, num_notes]
         end
 
         # => [INPUT_NOTES_COMMITMENT, idx+1, num_notes]

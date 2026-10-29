@@ -12,8 +12,8 @@ use miden_protocol::{
     Felt,
 };
 
-const PROLOGUE: &str =
-    include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/prologue.masm");
+const KERNEL_CONSTANTS: &str =
+    include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/constants.masm");
 const ACCOUNT_UPDATE: &str =
     include_str!("../../../miden-protocol/asm/kernels/transaction-core/src/account_update.masm");
 
@@ -36,12 +36,12 @@ fn fixed_eidos_initial_chaining_words_match_rust() {
     let account_patch = AccountPatchCommitmentDomain::TAG;
 
     let cases = [
-        (PROLOGUE, "EIDOS_INIT_CV_8", generic, 8),
-        (PROLOGUE, "EIDOS_INIT_CV_16", generic, 16),
-        (PROLOGUE, "EIDOS_INIT_CV_24", generic, 24),
-        (PROLOGUE, "EIDOS_INIT_CV_40", generic, 40),
-        (ACCOUNT_UPDATE, "ACCOUNT_DELTA_INIT_CV_BASE", account_delta, 0),
-        (ACCOUNT_UPDATE, "ACCOUNT_PATCH_INIT_CV_BASE", account_patch, 0),
+        (KERNEL_CONSTANTS, "EIDOS_INIT_CHAINING_WORD_8", generic, 8),
+        (KERNEL_CONSTANTS, "EIDOS_INIT_CHAINING_WORD_16", generic, 16),
+        (KERNEL_CONSTANTS, "EIDOS_INIT_CHAINING_WORD_24", generic, 24),
+        (KERNEL_CONSTANTS, "EIDOS_INIT_CHAINING_WORD_40", generic, 40),
+        (ACCOUNT_UPDATE, "ACCOUNT_DELTA_INIT_CHAINING_WORD_BASE", account_delta, 0),
+        (ACCOUNT_UPDATE, "ACCOUNT_PATCH_INIT_CHAINING_WORD_BASE", account_patch, 0),
     ];
 
     for (source, name, domain, num_elements) in cases {

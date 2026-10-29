@@ -21,6 +21,32 @@ pub const MAX_OUTPUT_NOTES_PER_TX = 1024
 # The number of field elements per account procedure data entry (procedure MAST root).
 pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
 
+# Generic Felt-sequence Eidos chaining words for the prologue's fixed-length preimages.
+pub const EIDOS_INIT_CHAINING_WORD_8 = [
+    13503953893947607553,
+    11912009168875159560,
+    11170449401267093504,
+    6620516959492505600
+]
+pub const EIDOS_INIT_CHAINING_WORD_16 = [
+    13503953893947607553,
+    11912009168875159568,
+    11170449401267093504,
+    6620516959492505600
+]
+pub const EIDOS_INIT_CHAINING_WORD_24 = [
+    13503953893947607553,
+    11912009168875159576,
+    11170449401267093504,
+    6620516959492505600
+]
+pub const EIDOS_INIT_CHAINING_WORD_40 = [
+    13503953893947607553,
+    11912009168875159592,
+    11170449401267093504,
+    6620516959492505600
+]
+
 # TYPES
 # =================================================================================================
 

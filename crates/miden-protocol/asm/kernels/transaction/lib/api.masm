@@ -212,6 +212,10 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    # these two checks are strictly redundant here: a non-empty delta requires the nonce to be
+    # incremented, which is already gated to the auth procedure, and an empty delta only ever
+    # commits to the public canonical empty-delta digest. We keep them for consistency with the
+    # other account procedures and may drop them later.
     exec.memory::assert_native_account
     exec.authenticate_account_origin
 

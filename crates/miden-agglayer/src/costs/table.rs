@@ -5,17 +5,17 @@
 /// Cycles of consuming a CLAIM note: L1 origin 56699, L2 origin 66253 (maximum).
 pub const CLAIM_CONSUMPTION_CYCLES: u32 = 66253;
 
-/// Cycles of consuming a B2AGG note: empty frontier 155403 (maximum), 2^31-1 leaves 90510.
-pub const B2AGG_CONSUMPTION_CYCLES: u32 = 155403;
+/// Cycles of consuming a B2AGG note: empty frontier 155411 (maximum), 2^31-1 leaves 90518.
+pub const B2AGG_CONSUMPTION_CYCLES: u32 = 155411;
 
 /// Cycles of consuming a CONFIG_AGG_BRIDGE note (single benchmarked path).
 pub const CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES: u32 = 36169;
 
 /// Cycles of consuming a DEREGISTER_AGG_FAUCET note (single benchmarked path).
-pub const DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES: u32 = 34988;
+pub const DEREGISTER_AGG_FAUCET_CONSUMPTION_CYCLES: u32 = 34996;
 
 /// Cycles of consuming an UPDATE_GER note (single benchmarked path).
-pub const UPDATE_GER_CONSUMPTION_CYCLES: u32 = 26096;
+pub const UPDATE_GER_CONSUMPTION_CYCLES: u32 = 26104;
 
 /// Cycles of consuming a REMOVE_GER note (single benchmarked path).
-pub const REMOVE_GER_CONSUMPTION_CYCLES: u32 = 27210;
+pub const REMOVE_GER_CONSUMPTION_CYCLES: u32 = 27218;

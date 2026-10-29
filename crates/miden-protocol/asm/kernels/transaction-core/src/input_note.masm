@@ -270,8 +270,7 @@ pub proc remove_all_assets(input_note_ptr: ptr<InputNoteData>) -> (NoteAssetsCom
     # => [input_note_ptr]
 
     # set up the iteration over the note's asset slots; the note pointer stays on the stack
-    # through the scan so the stack depth does not drop below 16 while this runs in the kernel
-    # context (a pop at depth 16 would pull in a zero, changing the procedure's stack effect)
+    # through the scan so the stack depth does not drop below 16 while this runs
     dup exec.memory::get_input_note_num_assets loc_store.REMOVE_ALL_ASSETS_COUNT_LOC
     dup exec.memory::get_input_note_assets_ptr
     # => [assets_ptr, input_note_ptr]
