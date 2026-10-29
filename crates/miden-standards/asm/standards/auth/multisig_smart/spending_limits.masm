@@ -8,7 +8,7 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
 use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
-use {AccountId, AssetAmount, AssetId, AssetValue, Bool} from miden::protocol::types
+use {AccountId, AssetAmount, AssetId, AssetValue, BlockNumber, Bool} from miden::protocol::types
 use miden::standards::assets::fungible_asset
 use miden::standards::fee
 use miden::standards::oracle::price_oracle
@@ -29,10 +29,6 @@ use miden::standards::oracle::price_oracle
 # pointing a reference block into it, and a burst around a window boundary is bounded by twice the
 # limit. The only exception is a reference block on a window's last block, which may still land on
 # the first block of the next window because the expiration delta must be at least one.
-#
-# The tracker keeps the end block of the window it accounts for rather than a window index, so it
-# stays meaningful when the window length changes: what was spent keeps counting until its window
-# ends, and the windows after it follow the new length.
 #
 # Faulty oracle: the base asset is priced without reading the oracle, so a faulty oracle never
 # blocks it. Other assets stop under `reject` until governance points the budget at another oracle
@@ -69,8 +65,7 @@ const SPENDING_BASE_ASSET_SLOT = word("miden::standards::auth::multisig_smart::s
 const SPENDING_LIMIT_SLOT = word("miden::standards::auth::multisig_smart::spending_limit")
 
 # [spent_in_window, window_end_block, 0, 0]
-# window_end_block is the first block after the window the total belongs to: a reference block
-# before it keeps adding to the total, one at or past it opens a fresh window.
+# window_end_block is the first block after the window the total belongs to.
 const SPENDING_TRACKER_SLOT = word("miden::standards::auth::multisig_smart::spending_tracker")
 
 const UNPRICED_ASSET_POLICY_MAX = UNPRICED_ASSET_REJECT
@@ -104,13 +99,15 @@ const PRICE_TOTAL_LOC = PRICE_NOTE_ASSETS_LOC + NOTE_ASSETS_NUM_ELEMENTS
 #! Sets the account-wide spending-limit policy: the window length and how unpriced assets are
 #! treated.
 #!
-#! Lengthening the window or switching unpriced assets to `allow` weakens the budget, so this
+#! Shortening the window or switching unpriced assets to `allow` weakens the budget, so this
 #! procedure should carry a policy at least as strong as the account wants its spending limit to
-#! be. Left unpolicied, the default threshold suffices to lengthen the window.
+#! be. Left unpolicied, the default threshold suffices to shorten the window.
 #!
 #! Changing `window_blocks` does not touch the running total: what was already spent keeps counting
 #! until its window ends, and the windows after it follow the new length. A length change can
-#! therefore not be used as a budget reset.
+#! therefore not be used as a budget reset, and a window set too long cannot be cut short, neither
+#! by shortening it nor by disabling and re-enabling the policy. Raising the limit, or spending
+#! while the policy is disabled, are the ways out.
 #!
 #! Inputs:  [window_blocks, unpriced_asset_policy]
 #! Outputs: []
@@ -673,7 +670,12 @@ end
 #! - the budget's window total would exceed its limit (`ERR_SPENDING_LIMIT_EXCEEDED`).
 #!
 #! Invocation: exec
-proc charge_budget(total: AssetAmount, limit: AssetAmount, spent: AssetAmount, window_end: felt)
+proc charge_budget(
+    total: AssetAmount,
+    limit: AssetAmount,
+    spent: AssetAmount,
+    window_end: BlockNumber
+)
     # Saturate so the stored total keeps the next charge's sum inside the amount bound.
     movup.2 exec.fungible_asset::saturating_add_amount
     # => [window_total, limit, window_end]
@@ -698,8 +700,7 @@ end
 #! The tracked window stays open while the reference block is before its end. A reference block in
 #! an earlier window can only come from an executor that picked an older reference block; charging
 #! the tracked window means that rollback buys nothing. At or past the end, the window the
-#! reference block falls in opens with nothing spent. The tracker keeps the end block rather than a
-#! window index so that it stays meaningful across changes of the window length.
+#! reference block falls in opens with nothing spent.
 #!
 #! Reads the tracker from the current account state, the state the write at the end of this
 #! transaction builds on.
@@ -710,11 +711,11 @@ end
 #! Where:
 #! - window_blocks is the configured window length; the caller asserts it is a non-zero `u32`.
 #! - window_end is the first block after the window, `(reference_block_num / window_blocks + 1) *
-#!   window_blocks` for a fresh one. It can exceed the `u32` block range by up to one window, so it
-#!   is kept and compared as a field element.
+#!   window_blocks` for a fresh one. It is compared with `lt` rather than `u32lt`, as the product
+#!   exceeds the `u32` range for a reference block within one window of the maximum block number.
 #!
 #! Invocation: exec
-proc load_window_spend(window_blocks: u32) -> (AssetAmount, felt)
+proc load_window_spend(window_blocks: u32) -> (AssetAmount, BlockNumber)
     exec.tx::get_reference_block_number
     # => [reference_block_num, window_blocks]
 
@@ -753,7 +754,7 @@ end
 #! - Writes SPENDING_TRACKER_SLOT.
 #!
 #! Invocation: exec
-proc store_window_spend(window_total: AssetAmount, window_end: felt)
+proc store_window_spend(window_total: AssetAmount, window_end: BlockNumber)
     push.0.0 movdn.3 movdn.3
     # => [window_total, window_end, 0, 0]
 

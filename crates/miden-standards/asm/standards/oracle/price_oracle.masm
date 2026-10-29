@@ -101,19 +101,18 @@ end
 #! - the foreign call fails (see `tx::execute_foreign_procedure`) or `get_conversion_rate` panics.
 #!
 #! Invocation: exec
-@locals(2)
 pub proc get_foreign_conversion_rate(oracle_id: AccountId, source: AssetId, target: AssetId) -> (u32, ConversionRate)
-    loc_store.0 loc_store.1
-    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID]
-
-    # The foreign procedure takes two words; the rest of its 16-element frame is padding.
-    padw padw swapdw
-    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    # The foreign procedure takes two words; the rest of its 16-element frame is padding, pushed
+    # under TARGET_ASSET_ID so the oracle id stays within reach on top.
+    padw movdn.13 movdn.13 movdn.13 movdn.13
+    padw movdn.13 movdn.13 movdn.13 movdn.13
+    # => [oracle_id_suffix, oracle_id_prefix, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
     procref.get_conversion_rate
-    # => [GET_CONVERSION_RATE_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    # => [GET_CONVERSION_RATE_ROOT, oracle_id_suffix, oracle_id_prefix, SOURCE_ASSET_ID,
+    #     TARGET_ASSET_ID, pad(8)]
 
-    loc_load.1 loc_load.0
+    movup.5 movup.5
     # => [oracle_id_suffix, oracle_id_prefix, GET_CONVERSION_RATE_ROOT, SOURCE_ASSET_ID,
     #     TARGET_ASSET_ID, pad(8)]
 
