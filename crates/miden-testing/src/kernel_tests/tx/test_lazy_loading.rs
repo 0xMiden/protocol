@@ -156,7 +156,10 @@ impl DataStore for CountingDataStore<'_> {
         self.note_script_requests.fetch_add(1, Ordering::Relaxed);
         async move {
             if self.fail_note_script_requests {
-                Err(DataStoreError::other("note script request failed for test"))
+                Err(DataStoreError::other_with_source(
+                    "note script request failed for test",
+                    std::io::Error::other("nested note script cause"),
+                ))
             } else {
                 self.inner.get_note_script(script_root).await
             }
@@ -399,6 +402,134 @@ async fn lazy_data_store_requests_are_bounded() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn note_script_fetches_share_the_lazy_data_store_limit() -> anyhow::Result<()> {
+    let storage_request_count = MAX_DATA_STORE_REQUESTS_PER_TX - 1;
+    let map_keys = (0..storage_request_count)
+        .map(|index| StorageMapKey::from_array([0, 0, 0, index as u32]))
+        .collect::<Vec<_>>();
+    let map_entries = map_keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (*key, Word::from([index as u32 + 1, 0, 0, 0])))
+        .collect::<Vec<_>>();
+    let map_slot_name = StorageSlotName::mock(0);
+    let account = AccountBuilder::new([5; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_map(
+            map_slot_name.clone(),
+            StorageMap::with_entries(map_entries.into_iter())?,
+        )]))
+        .build_existing()?;
+    let output_notes = [1_u32, 2]
+        .map(|value| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .note_type(NoteType::Private)
+                .code(format!(
+                    r#"
+                    @note_script
+                    pub proc main
+                        push.{value} drop
+                    end
+                    "#
+                ))
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let storage_accesses = map_keys
+        .iter()
+        .map(|key| {
+            format!(
+                "push.{key}\n\
+                 push.MOCK_MAP_SLOT[0..2]\n\
+                 call.account::get_map_item\n\
+                 dropw\n\
+                 exec.sys::truncate_stack"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let note_creations = output_notes
+        .iter()
+        .map(|note| {
+            format!(
+                "push.{recipient}\n\
+                 push.{note_type}\n\
+                 push.{tag}\n\
+                 call.account::create_note\n\
+                 drop\n\
+                 exec.sys::truncate_stack",
+                recipient = note.recipient().digest(),
+                note_type = NoteType::Private as u8,
+                tag = Felt::from(note.metadata().tag()),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use mock::account
+
+        const MOCK_MAP_SLOT = word("{map_slot_name}")
+
+        @transaction_script
+        pub proc main
+            {storage_accesses}
+            {note_creations}
+        end
+        "#
+    );
+    let code_builder = CodeBuilder::with_mock_packages();
+    let source_manager = code_builder.source_manager();
+    let tx_script = code_builder.compile_tx_script(code)?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager);
+    for note in &output_notes {
+        let script_root = Word::from(note.script().root());
+        for (key, value) in note
+            .recipient()
+            .to_advice_map_entries()
+            .into_iter()
+            .filter(|(key, _)| *key != script_root)
+        {
+            tx_builder = tx_builder.add_advice_map_entry(key, value);
+        }
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = executor
+        .execute_transaction(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            mock_tx.tx_inputs().input_notes().clone(),
+            mock_tx.tx_args().clone(),
+        )
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_error, .. }
+            if matches!(
+                event_error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::DataStoreRequestLimitExceeded {
+                    max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+                })
+            )
+    );
+    assert_eq!(data_store.storage_map_request_count(), storage_request_count);
+    assert_eq!(data_store.note_script_request_count(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn note_checker_caches_failed_data_store_requests_across_retries() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account_with_storage(
@@ -622,10 +753,174 @@ async fn note_checker_caches_failed_note_script_requests_across_retries() -> any
                     request: DataStoreRequest::NoteScript { script_root: cached_root },
                     original_error,
                 }) if *cached_root == script_root
-                    && original_error.as_ref() == "note script request failed for test"
+                    && original_error.as_ref()
+                        == "note script request failed for test: nested note script cause"
             )
         )
     }));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_caches_missing_private_note_scripts_across_retries() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(crate::Auth::IncrNonce)?;
+    let output_note = NoteBuilder::new(account.id(), rand::rng())
+        .note_type(NoteType::Private)
+        .code(
+            r#"
+            @note_script
+            pub proc main
+                push.0 drop
+            end
+            "#,
+        )
+        .build()?;
+    let script_root = output_note.script().root();
+    let create_output_note = format!(
+        "push.{recipient}\n\
+         push.{note_type}\n\
+         push.{tag}\n\
+         call.account::create_note\n\
+         drop",
+        recipient = output_note.recipient().digest(),
+        note_type = NoteType::Private as u8,
+        tag = Felt::from(output_note.metadata().tag()),
+    );
+    let input_note_scripts = [
+        format!(
+            r#"
+            use mock::account
+            @note_script
+            pub proc main
+                {create_output_note}
+                push.0 assert.err="force another checker attempt"
+            end
+            "#
+        ),
+        format!(
+            r#"
+            use mock::account
+            @note_script
+            pub proc main
+                {create_output_note}
+                push.0 assert.err="force another checker attempt"
+            end
+            "#
+        ),
+    ];
+    let input_notes = input_note_scripts
+        .map(|script| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(input_notes.clone());
+    for (key, value) in output_note
+        .recipient()
+        .to_advice_map_entries()
+        .into_iter()
+        .filter(|(key, _)| *key != Word::from(script_root))
+    {
+        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            input_notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    assert!(result.successful().is_empty());
+    assert_eq!(result.failed().len(), 2);
+    assert_eq!(data_store.note_script_request_count(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_caches_missing_public_note_scripts_across_retries() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(crate::Auth::IncrNonce)?;
+    let output_note = NoteBuilder::new(account.id(), rand::rng())
+        .note_type(NoteType::Public)
+        .code(
+            r#"
+            @note_script
+            pub proc main
+                push.0 drop
+            end
+            "#,
+        )
+        .build()?;
+    let script_root = output_note.script().root();
+    let input_note_script = format!(
+        r#"
+        use mock::account
+
+        @note_script
+        pub proc main
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.account::create_note
+            drop
+        end
+        "#,
+        recipient = output_note.recipient().digest(),
+        note_type = NoteType::Public as u8,
+        tag = Felt::from(output_note.metadata().tag()),
+    );
+    let input_notes = [1_u32, 2]
+        .map(|_| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(&input_note_script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(input_notes.clone());
+    for (key, value) in output_note
+        .recipient()
+        .to_advice_map_entries()
+        .into_iter()
+        .filter(|(key, _)| *key != Word::from(script_root))
+    {
+        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            input_notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    assert!(result.successful().is_empty());
+    assert_eq!(result.failed().len(), 2);
+    assert_eq!(data_store.note_script_request_count(), 1);
 
     Ok(())
 }
