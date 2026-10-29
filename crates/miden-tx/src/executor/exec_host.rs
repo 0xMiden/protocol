@@ -42,7 +42,7 @@ use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
-use crate::errors::TransactionKernelError;
+use crate::errors::{DataStoreRequestKind, TransactionKernelError};
 use crate::host::{
     RecipientData,
     ScriptMastForestStore,
@@ -53,6 +53,63 @@ use crate::host::{
     TxSummaryOrSignature,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
+
+/// Maximum number of lazy data store requests made during one transaction execution request.
+pub const MAX_DATA_STORE_REQUESTS_PER_TX: usize = 256;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum DataStoreRequest {
+    ForeignAccount(AccountId),
+    StorageMap {
+        account_id: AccountId,
+        map_root: Word,
+        map_key: StorageMapKey,
+    },
+    VaultAsset {
+        account_id: AccountId,
+        vault_root: Word,
+        asset_id: AssetId,
+    },
+}
+
+impl DataStoreRequest {
+    fn kind(&self) -> DataStoreRequestKind {
+        match self {
+            Self::ForeignAccount(_) => DataStoreRequestKind::ForeignAccountInputs,
+            Self::StorageMap { .. } => DataStoreRequestKind::StorageMapWitness,
+            Self::VaultAsset { .. } => DataStoreRequestKind::VaultAssetWitness,
+        }
+    }
+}
+
+/// Tracks bounded data store work and failed requests across transaction retries.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DataStoreRequestState {
+    request_count: usize,
+    failed_requests: BTreeSet<DataStoreRequest>,
+}
+
+impl DataStoreRequestState {
+    fn start(&mut self, request: &DataStoreRequest) -> Result<(), TransactionKernelError> {
+        if self.failed_requests.contains(request) {
+            return Err(TransactionKernelError::CachedDataStoreRequestFailure {
+                request_kind: request.kind(),
+            });
+        }
+        if self.request_count == MAX_DATA_STORE_REQUESTS_PER_TX {
+            return Err(TransactionKernelError::DataStoreRequestLimitExceeded {
+                max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+            });
+        }
+
+        self.request_count += 1;
+        Ok(())
+    }
+
+    fn record_failure(&mut self, request: DataStoreRequest) {
+        self.failed_requests.insert(request);
+    }
+}
 
 // TRANSACTION EXECUTOR HOST
 // ================================================================================================
@@ -86,6 +143,9 @@ where
 
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
+
+    /// Bounds data store calls and caches failures for this transaction execution request.
+    data_store_requests: DataStoreRequestState,
 
     /// Whether execution is currently inside the authentication procedure.
     ///
@@ -128,6 +188,33 @@ where
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Result<Self, TransactionKernelError> {
+        Self::new_with_data_store_requests(
+            account,
+            input_notes,
+            mast_store,
+            scripts_mast_store,
+            acct_procedure_index_map,
+            authenticator,
+            ref_block,
+            block_commitments,
+            source_manager,
+            DataStoreRequestState::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_data_store_requests(
+        account: &PartialAccount,
+        input_notes: InputNotes<InputNote>,
+        mast_store: &'store STORE,
+        scripts_mast_store: ScriptMastForestStore,
+        acct_procedure_index_map: AccountProcedureIndexMap,
+        authenticator: Option<&'auth AUTH>,
+        ref_block: BlockNumber,
+        block_commitments: BTreeMap<BlockNumber, Word>,
+        source_manager: Arc<dyn SourceManagerSync>,
+        data_store_requests: DataStoreRequestState,
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
@@ -143,6 +230,7 @@ where
             authenticator,
             ref_block,
             lazy_loaded_data: LazyLoadedData::default(),
+            data_store_requests,
             in_auth_procedure: false,
             source_manager,
         })
@@ -164,16 +252,24 @@ where
         &mut self,
         foreign_account_id: AccountId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let foreign_account_inputs = self
+        let request = DataStoreRequest::ForeignAccount(foreign_account_id);
+        self.data_store_requests.start(&request)?;
+        let foreign_account_inputs = match self
             .base_host
             .store()
             .get_foreign_account_inputs(foreign_account_id, self.ref_block)
             .await
-            .map_err(|err| TransactionKernelError::GetForeignAccountInputs {
-                foreign_account_id,
-                ref_block: self.ref_block,
-                source: err,
-            })?;
+        {
+            Ok(inputs) => inputs,
+            Err(source) => {
+                self.data_store_requests.record_failure(request);
+                return Err(TransactionKernelError::GetForeignAccountInputs {
+                    foreign_account_id,
+                    ref_block: self.ref_block,
+                    source,
+                });
+            },
+        };
 
         let mut tx_advice_inputs = TransactionAdviceInputs::default();
         tx_advice_inputs.add_foreign_accounts([&foreign_account_inputs]);
@@ -236,16 +332,28 @@ where
         map_root: Word,
         map_key: StorageMapKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let storage_map_witness = self
+        let request = DataStoreRequest::StorageMap {
+            account_id: active_account_id,
+            map_root,
+            map_key,
+        };
+        self.data_store_requests.start(&request)?;
+        let storage_map_witness = match self
             .base_host
             .store()
             .get_storage_map_witness(active_account_id, map_root, map_key)
             .await
-            .map_err(|err| TransactionKernelError::GetStorageMapWitness {
-                map_root,
-                map_key,
-                source: err,
-            })?;
+        {
+            Ok(witness) => witness,
+            Err(source) => {
+                self.data_store_requests.record_failure(request);
+                return Err(TransactionKernelError::GetStorageMapWitness {
+                    map_root,
+                    map_key,
+                    source,
+                });
+            },
+        };
 
         self.lazy_loaded_data
             .storage_map_witnesses
@@ -302,7 +410,13 @@ where
         vault_root: Word,
         asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let asset_witnesses = self
+        let request = DataStoreRequest::VaultAsset {
+            account_id: active_account_id,
+            vault_root,
+            asset_id,
+        };
+        self.data_store_requests.start(&request)?;
+        let asset_witnesses = match self
             .base_host
             .store()
             .get_vault_asset_witnesses(
@@ -311,11 +425,17 @@ where
                 BTreeSet::from_iter([asset_id]),
             )
             .await
-            .map_err(|err| TransactionKernelError::GetVaultAssetWitness {
-                vault_root,
-                asset_id,
-                source: err,
-            })?;
+        {
+            Ok(witnesses) => witnesses,
+            Err(source) => {
+                self.data_store_requests.record_failure(request);
+                return Err(TransactionKernelError::GetVaultAssetWitness {
+                    vault_root,
+                    asset_id,
+                    source,
+                });
+            },
+        };
 
         self.lazy_loaded_data
             .asset_witnesses
@@ -429,8 +549,10 @@ where
     ///
     /// The checker cannot call `into_parts` as it would panic when constructing the patch on an
     /// erroneous transaction.
-    pub(crate) fn into_notes_checker_parts(self) -> (TransactionProgress, LazyLoadedData) {
-        (self.tx_progress, self.lazy_loaded_data)
+    pub(crate) fn into_notes_checker_parts(
+        self,
+    ) -> (TransactionProgress, LazyLoadedData, DataStoreRequestState) {
+        (self.tx_progress, self.lazy_loaded_data, self.data_store_requests)
     }
 }
 
