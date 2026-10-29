@@ -9,7 +9,7 @@ use miden::core::word
 use {ASSET_SIZE, COMPOSITION_NONE} from miden::tx_kernel_core::asset
 use {STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE} from miden::tx_kernel_core::constants
 use {
-    ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR,
+    ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR,
     ACCOUNT_UPDATE_ASSET_PTR,
 } from miden::tx_kernel_core::memory
 
@@ -63,15 +63,15 @@ const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT =
 # CONSTANTS
 # =================================================================================================
 
-# Eidos chaining-word bases for the registered account commitment selectors. The runtime message
+# Eidos chaining-word bases for the registered patch and delta selectors. The runtime message
 # length is added to the second element.
-const ACCOUNT_DELTA_INIT_CV_BASE = [
+const ACCOUNT_DELTA_INIT_CHAINING_WORD_BASE = [
     13503953893981159680,
     11912009168875159552,
     11170449401267093504,
     6620516959492505600
 ]
-const ACCOUNT_PATCH_INIT_CV_BASE = [
+const ACCOUNT_PATCH_INIT_CHAINING_WORD_BASE = [
     13503953893981159424,
     11912009168875159552,
     11170449401267093504,
@@ -142,42 +142,6 @@ const MAX_ASSETS_PER_DELTA_OP = 1024
 # DELTA & PATCH COMPUTATION
 # -------------------------------------------------------------------------------------------------
 
-#! Adds a number of emitted blocks to the account-commitment body-block balance.
-#!
-#! The balance starts at the negated advised count. The u32 message-length check bounds that count
-#! below 2^29, and the transaction cycle limit places the same bound on the number of blocks the
-#! kernel can emit. The final balance is therefore zero exactly
-#! when the two counts agree; field wraparound cannot make unequal counts compare equal.
-#!
-#! Inputs:  [num_blocks, ...]
-#! Outputs: [...]
-proc consume_commitment_body_blocks(num_blocks: u32)
-    mem_load.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
-    add
-    mem_store.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
-end
-
-#! Compresses one account-commitment body block and accounts for it in the advised message length.
-#!
-#! Inputs:  [BLOCK_LO, BLOCK_HI, CV, ...]
-#! Outputs: [CV', ...]
-proc compress_commitment_body_block(block_lo: word, block_hi: word, cv: word) -> word
-    exec.eidos::compress dropw dropw
-    mem_load.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
-    add.1
-    mem_store.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
-end
-
-#! Prepares an account-commitment chaining word from its selector base and message length.
-#!
-#! Inputs:  [CV_BASE, num_elements]
-#! Outputs: [CV]
-proc prepare_account_commitment_cv(cv_base: word, num_elements: u32) -> word
-    movup.4
-    u32assert.err="account commitment length must fit in a u32"
-    movup.2 add swap
-end
-
 #! Computes the commitment to the native account's patch.
 #!
 #! See the Rust function `AccountPatch::to_commitment` for a detailed description of how it is computed.
@@ -190,60 +154,68 @@ end
 #!
 #! Panics if:
 #! - the vault, storage or code patch is not empty but the nonce increment is zero.
+#!
+#! Invocation: exec
 pub proc compute_patch_commitment() -> Commitment
     emit.ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_EVENT
     adv_push
     u32assert.err=ERR_ACCOUNT_PATCH_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH
-    dup neg mem_store.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
+    # => [num_body_blocks]
 
-    # The advised count excludes the fixed metadata header block.
+    dup neg
+    # => [negative_num_body_blocks, num_body_blocks]
+
+    mem_store.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
+    # => [num_body_blocks]
+
+    # the advised count excludes the fixed metadata header block
     add.1 mul.8
     # => [num_elements]
 
-    push.ACCOUNT_PATCH_INIT_CV_BASE
-    exec.prepare_account_commitment_cv
-    # => [CV]
+    push.ACCOUNT_PATCH_INIT_CHAINING_WORD_BASE
+    exec.prepare_commitment_chaining_word
+    # => [CHAINING_WORD]
 
-    # The high word of the metadata header is empty.
+    # the high word of the metadata header is empty
     padw
-    # => [EMPTY_WORD, CV]
+    # => [EMPTY_WORD, CHAINING_WORD]
 
     exec.memory::get_native_account_id
-    # => [native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CV]
+    # => [native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CHAINING_WORD]
 
     # get the nonce of the account and assume it is the final nonce
     # we later assert that the nonce was incremented (unless the patch is empty)
     exec.memory::get_native_account_nonce
     push.PATCH_VERSION_1
-    # => [patch_version, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CV]
-    # => [METADATA, EMPTY_WORD, CV]
+    # => [patch_version, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CHAINING_WORD]
+    # => [METADATA, EMPTY_WORD, CHAINING_WORD]
 
     exec.eidos::compress dropw dropw
-    # => [CV]
+    # => [CHAINING_WORD]
 
-    # save the metadata chaining word for a later check
+    # save the metadata digest for a later check
     dupw
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
     exec.commit_asset_patch
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
     exec.commit_storage_patch
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
     exec.commit_code_section
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
-    mem_load.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
+    mem_load.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
     assertz.err=ERR_ACCOUNT_PATCH_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH
-    # => [PATCH_COMMITMENT, METADATA_CV]
+    # => [PATCH_COMMITMENT, METADATA_DIGEST]
 
     exec.was_nonce_incremented not
-    # => [!was_nonce_incremented, PATCH_COMMITMENT, METADATA_CV]
+    # => [!was_nonce_incremented, PATCH_COMMITMENT, METADATA_DIGEST]
 
     if.true
         # if the nonce wasn't incremented, then the vault, storage and code patches must be empty,
-        # which is the case if the patch commitment is equal to METADATA_CV
+        # which is the case if the patch commitment is equal to METADATA_DIGEST
         assert_eqw.err=ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED
         # => []
 
@@ -268,58 +240,66 @@ end
 #!
 #! Panics if:
 #! - the vault, storage or code delta is not empty but the nonce increment is zero.
+#!
+#! Invocation: exec
 pub proc compute_delta_commitment() -> Commitment
     emit.ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_EVENT
     adv_push
     u32assert.err=ERR_ACCOUNT_DELTA_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH
-    dup neg mem_store.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
+    # => [num_body_blocks]
 
-    # The advised count excludes the fixed metadata header block.
+    dup neg
+    # => [negative_num_body_blocks, num_body_blocks]
+
+    mem_store.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
+    # => [num_body_blocks]
+
+    # the advised count excludes the fixed metadata header block
     add.1 mul.8
     # => [num_elements]
 
-    push.ACCOUNT_DELTA_INIT_CV_BASE
-    exec.prepare_account_commitment_cv
-    # => [CV]
+    push.ACCOUNT_DELTA_INIT_CHAINING_WORD_BASE
+    exec.prepare_commitment_chaining_word
+    # => [CHAINING_WORD]
 
-    # The high word of the metadata header is empty.
+    # the high word of the metadata header is empty
     padw
-    # => [EMPTY_WORD, CV]
+    # => [EMPTY_WORD, CHAINING_WORD]
 
     exec.memory::get_native_account_id
-    # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CV]
+    # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CHAINING_WORD]
 
     # the delta of the nonce is equal to was_nonce_incremented
     exec.was_nonce_incremented push.DELTA_VERSION_1
-    # => [delta_version, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CV]
-    # => [METADATA, EMPTY_WORD, CV]
+    # => [delta_version, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CHAINING_WORD]
+    # => [METADATA, EMPTY_WORD, CHAINING_WORD]
 
     exec.eidos::compress dropw dropw
-    # => [CV]
+    # => [CHAINING_WORD]
 
-    # save the metadata chaining word for a later check
+    # save the metadata digest for a later check
     dupw
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
     exec.commit_asset_delta
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
     exec.commit_storage_patch
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
     exec.commit_code_section
-    # => [CV, METADATA_CV]
+    # => [CHAINING_WORD, METADATA_DIGEST]
 
-    mem_load.ACCOUNT_COMMITMENT_BODY_BLOCK_BALANCE_PTR
+    mem_load.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
     assertz.err=ERR_ACCOUNT_DELTA_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH
-    # => [DELTA_COMMITMENT, METADATA_CV]
+    # => [DELTA_COMMITMENT, METADATA_DIGEST]
 
     exec.was_nonce_incremented not
-    # => [!was_nonce_incremented, DELTA_COMMITMENT, METADATA_CV]
+    # => [!was_nonce_incremented, DELTA_COMMITMENT, METADATA_DIGEST]
 
     if.true
         # if the nonce wasn't incremented, then the vault, storage and code deltas must be empty,
-        # which is the case if the delta commitment is equal to METADATA_CV
+        # which is the case if the delta commitment is equal to METADATA_DIGEST
         assert_eqw.err=ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED
         # => []
 
@@ -332,109 +312,162 @@ pub proc compute_delta_commitment() -> Commitment
     end
 end
 
-#! Updates the account-commitment chaining word with the storage slot patches.
+#! Adds a number of emitted blocks to the patch or delta commitment's body-block balance.
 #!
-#! Inputs:  [CV]
-#! Outputs: [CV]
-proc commit_storage_patch(cv: word) -> word
+#! The balance starts at the negated advised count. The u32 message-length check bounds that count
+#! below 2^29, and the transaction cycle limit places the same bound on the number of blocks the
+#! kernel can emit. The final balance is therefore zero exactly
+#! when the two counts agree; field wraparound cannot make unequal counts compare equal.
+#!
+#! Inputs:  [num_blocks]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc consume_commitment_body_blocks(num_blocks: u32)
+    mem_load.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
+    add
+    mem_store.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
+end
+
+#! Compresses one patch or delta body block and accounts for it in the advised message length.
+#!
+#! Inputs:  [BLOCK_LO, BLOCK_HI, CHAINING_WORD]
+#! Outputs: [CHAINING_WORD']
+#!
+#! Invocation: exec
+proc compress_commitment_body_block(state: eidos::State) -> eidos::Digest
+    exec.eidos::compress dropw dropw
+    # => [CHAINING_WORD']
+
+    mem_load.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
+    add.1
+    mem_store.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
+end
+
+#! Prepares a patch or delta chaining word from its selector base and message length.
+#!
+#! Inputs:  [CHAINING_WORD_BASE, num_elements]
+#! Outputs: [CHAINING_WORD]
+#!
+#! Invocation: exec
+proc prepare_commitment_chaining_word(
+    chaining_word_base: eidos::ChainingValue,
+    num_elements: u32
+) -> eidos::ChainingValue
+    movup.4
+    # => [num_elements, CHAINING_WORD_BASE]
+
+    u32assert.err="account commitment length must fit in a u32"
+    movup.2
+    # => [base_1, num_elements, base_0, base_2, base_3]
+
+    add swap
+    # => [CHAINING_WORD]
+end
+
+#! Updates the patch or delta chaining word with the storage slot patches.
+#!
+#! Inputs:  [CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
+proc commit_storage_patch(chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     exec.memory::get_native_num_storage_slots movdn.4
-    # => [CV, num_storage_slots]
+    # => [CHAINING_WORD, num_storage_slots]
 
     push.0 movdn.4
-    # => [CV, slot_idx = 0, num_storage_slots]
+    # => [CHAINING_WORD, slot_idx = 0, num_storage_slots]
 
     # loop if num_storage_slots != 0
     dup.5 neq.0
-    # => [should_loop, CV, slot_idx, num_storage_slots]
+    # => [should_loop, CHAINING_WORD, slot_idx, num_storage_slots]
 
     while.true
         dup.4
-        # => [slot_idx, CV, slot_idx, num_storage_slots]
+        # => [slot_idx, CHAINING_WORD, slot_idx, num_storage_slots]
 
         exec.commit_slot_patch
-        # => [CV, slot_idx, num_storage_slots]
+        # => [CHAINING_WORD, slot_idx, num_storage_slots]
 
         # increment slot index
         movup.4 add.1
-        # => [next_slot_idx, CV, num_storage_slots]
+        # => [next_slot_idx, CHAINING_WORD, num_storage_slots]
 
         dup movdn.5
-        # => [next_slot_idx, CV, next_slot_idx, num_storage_slots]
+        # => [next_slot_idx, CHAINING_WORD, next_slot_idx, num_storage_slots]
 
         # continue if next_slot_idx != num_storage_slots
         # we use neq instead of lt for efficiency
         dup.6 neq
-        # => [should_loop, CV, next_slot_idx, num_storage_slots]
+        # => [should_loop, CHAINING_WORD, next_slot_idx, num_storage_slots]
     end
-    # => [CV, next_slot_idx, num_storage_slots]
+    # => [CHAINING_WORD, next_slot_idx, num_storage_slots]
 
     # clean the stack
     movup.4 drop movup.4 drop
-    # => [CV]
+    # => [CHAINING_WORD]
 end
 
-#! Updates the account-commitment chaining word with the storage slot at the provided index.
+#! Updates the patch or delta chaining word with the storage slot at the provided index.
 #!
-#! Inputs:  [slot_idx, CV]
-#! Outputs: [CV]
-proc commit_slot_patch(slot_idx: u8, cv: word) -> word
+#! Inputs:  [slot_idx, CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
+proc commit_slot_patch(slot_idx: u8, chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     dup exec.account::get_native_storage_slot_type
-    # => [storage_slot_type, slot_idx, CV]
+    # => [storage_slot_type, slot_idx, CHAINING_WORD]
 
     # check if slot is of type value
     dup push.STORAGE_SLOT_TYPE_VALUE eq
-    # => [is_value_slot_type, storage_slot_type, slot_idx, CV]
+    # => [is_value_slot_type, storage_slot_type, slot_idx, CHAINING_WORD]
 
     if.true
         drop
-        # => [slot_idx, CV]
+        # => [slot_idx, CHAINING_WORD]
 
         exec.commit_value_slot_patch
     else
         # reject any type that is neither value nor map instead of defaulting to map
         push.STORAGE_SLOT_TYPE_MAP eq assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
-        # => [slot_idx, CV]
+        # => [slot_idx, CHAINING_WORD]
 
         exec.commit_map_slot_patch
     end
-    # => [CV]
+    # => [CHAINING_WORD]
 end
 
 #! Updates the chaining word with the native account's code commitment, if the account is new or
 #! its code is upgraded.
 #!
-#! Inputs:  [CV]
-#! Outputs: [CV]
-proc commit_code_section(cv: word) -> word
+#! Inputs:  [CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
+proc commit_code_section(chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     exec.memory::is_new_account
-    # => [is_new_account, CV]
+    # => [is_new_account, CHAINING_WORD]
 
     dup exec.memory::has_code_upgrade or
-    # => [has_code, is_new_account, CV]
+    # => [has_code, is_new_account, CHAINING_WORD]
 
     if.true
         # a new account cannot be upgraded, so its code is the current code and the code of an
         # existing account is the pending upgrade
         exec.memory::get_code_upgrade_commitment
         exec.memory::get_account_code_commitment
-        # => [CURRENT_CODE_COMMITMENT, UPGRADE_CODE_COMMITMENT, is_new_account, CV]
+        # => [CURRENT_CODE_COMMITMENT, UPGRADE_CODE_COMMITMENT, is_new_account, CHAINING_WORD]
 
         movup.8
-        # => [is_new_account, CURRENT_CODE_COMMITMENT, UPGRADE_CODE_COMMITMENT, CV]
+        # => [is_new_account, CURRENT_CODE_COMMITMENT, UPGRADE_CODE_COMMITMENT, CHAINING_WORD]
 
         # If is_new_account CURRENT_CODE_COMMITMENT remains.
         # If !is_new_account UPGRADE_CODE_COMMITMENT remains.
         cdropw
-        # => [CODE_COMMITMENT, CV]
+        # => [CODE_COMMITMENT, CHAINING_WORD]
 
         push.0.0.0.DOMAIN_CODE
-        # => [[domain_code, 0, 0, 0], CODE_COMMITMENT, CV]
+        # => [[domain_code, 0, 0, 0], CODE_COMMITMENT, CHAINING_WORD]
 
         exec.compress_commitment_body_block
-        # => [CV]
+        # => [CHAINING_WORD]
     else
         drop
-        # => [CV]
+        # => [CHAINING_WORD]
     end
 end
 
@@ -452,52 +485,52 @@ proc get_storage_slot_patch_op() -> u8
     exec.memory::is_new_account not
 end
 
-#! Updates the account-commitment chaining word with the value storage slot at the provided index.
+#! Updates the patch or delta chaining word with the value storage slot at the provided index.
 #!
-#! Inputs:  [slot_idx, CV]
-#! Outputs: [CV]
-proc commit_value_slot_patch(slot_idx: u8, cv: word) -> word
+#! Inputs:  [slot_idx, CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
+proc commit_value_slot_patch(slot_idx: u8, chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     exec.account::get_item_patch
-    # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CV]
+    # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CHAINING_WORD]
 
     exec.word::test_eq
-    # => [has_not_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CV]
+    # => [has_not_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CHAINING_WORD]
 
     # do not commit the slot if the operation is Update and the value hasn't changed
     # in particular, this means we commit the patch if the slot was created or removed
     exec.get_storage_slot_patch_op eq.PATCH_OP_UPDATE and
-    # => [should_not_commit, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CV]
+    # => [should_not_commit, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CHAINING_WORD]
 
     not
-    # => [should_commit, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CV]
+    # => [should_commit, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CHAINING_WORD]
 
     # only include in delta if the slot's value has changed or the account is new
     if.true
         # drop init value
         dropw
-        # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CV]
+        # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, CHAINING_WORD]
 
         # build value slot metadata
         movup.5 movup.5
-        # => [slot_id_suffix, slot_id_prefix, CURRENT_VALUE, CV]
+        # => [slot_id_suffix, slot_id_prefix, CURRENT_VALUE, CHAINING_WORD]
 
         exec.get_storage_slot_patch_op push.DOMAIN_VALUE
-        # => [[domain_value, patch_op, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, CV]
+        # => [[domain_value, patch_op, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, CHAINING_WORD]
 
         exec.compress_commitment_body_block
-        # => [CV]
+        # => [CHAINING_WORD]
     else
         # drop init value, current value and slot name
         dropw dropw drop drop
-        # => [CV]
+        # => [CHAINING_WORD]
     end
-    # => [CV]
+    # => [CHAINING_WORD]
 end
 
-#! Updates the account-commitment chaining word with the map storage slot at the provided index.
+#! Updates the patch or delta chaining word with the map storage slot at the provided index.
 #!
-#! Inputs:  [slot_idx, CV]
-#! Outputs: [CV]
+#! Inputs:  [slot_idx, CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
 #!
 #! Locals:
 #! - 0: slot_id_suffix
@@ -506,101 +539,102 @@ end
 #! - 3: iter
 #! - 4: num_changed_entries
 @locals(5)
-proc commit_map_slot_patch(slot_idx: u8, cv: word) -> word
+proc commit_map_slot_patch(slot_idx: u8, chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     # initialize num_changed_entries = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's value
     push.0 loc_store.4
-    # => [slot_idx, CV]
+    # => [slot_idx, CHAINING_WORD]
 
     dup exec.account::get_native_slot_id
-    # => [slot_id_suffix, slot_id_prefix, slot_idx, CV]
+    # => [slot_id_suffix, slot_id_prefix, slot_idx, CHAINING_WORD]
 
     loc_store.0 loc_store.1
-    # => [slot_idx, CV]
+    # => [slot_idx, CHAINING_WORD]
 
     exec.memory::get_account_patch_storage_map_ptr
-    # => [account_patch_storage_map_ptr, CV]
+    # => [account_patch_storage_map_ptr, CHAINING_WORD]
 
     exec.link_map::iter
-    # => [has_next, iter, CV]
+    # => [has_next, iter, CHAINING_WORD]
 
     # enter loop if the link map is not empty
     while.true
         exec.link_map::next_key_double_value
-        # => [KEY, INIT_VALUE, NEW_VALUE, has_next, iter, CV]
+        # => [KEY, INIT_VALUE, NEW_VALUE, has_next, iter, CHAINING_WORD]
 
         # store has_next
         movup.12 loc_store.2
-        # => [KEY, INIT_VALUE, NEW_VALUE, iter, CV]
+        # => [KEY, INIT_VALUE, NEW_VALUE, iter, CHAINING_WORD]
 
         # store iter
         movup.12 loc_store.3
-        # => [KEY, INIT_VALUE, NEW_VALUE, CV]
+        # => [KEY, INIT_VALUE, NEW_VALUE, CHAINING_WORD]
 
         swapw.2
-        # => [NEW_VALUE, INIT_VALUE, KEY, CV]
+        # => [NEW_VALUE, INIT_VALUE, KEY, CHAINING_WORD]
 
         exec.word::test_eq not
-        # => [was_changed, NEW_VALUE, INIT_VALUE, KEY, CV]
+        # => [was_changed, NEW_VALUE, INIT_VALUE, KEY, CHAINING_WORD]
 
         # if the key-value pair has actually changed, update the hasher
         if.true
             # drop the initial value
             swapw dropw swapw
-            # => [KEY, NEW_VALUE, CV]
+            # => [KEY, NEW_VALUE, CHAINING_WORD]
 
             # increment number of changed entries in local
             loc_load.4 add.1 loc_store.4
-            # => [KEY, NEW_VALUE, CV]
+            # => [KEY, NEW_VALUE, CHAINING_WORD]
 
             exec.eidos::compress dropw dropw
-            # => [CV]
+            # => [CHAINING_WORD]
         else
             # discard the key and init and new value words loaded from the map
             dropw dropw dropw
-            # => [CV]
+            # => [CHAINING_WORD]
         end
-        # => [CV]
+        # => [CHAINING_WORD]
 
         # load iter and has_next
         loc_load.3
-        # => [iter, CV]
+        # => [iter, CHAINING_WORD]
 
         loc_load.2
-        # => [has_next, iter, CV]
+        # => [has_next, iter, CHAINING_WORD]
     end
 
     # drop iter
     drop
-    # => [CV]
+    # => [CHAINING_WORD]
 
     loc_load.4 eq.0
-    # => [is_num_changed_entries_zero, CV]
+    # => [is_num_changed_entries_zero, CHAINING_WORD]
 
     # omit the map slot trailer if the operation is Update and the number of changed entries is
     # zero
     # in particular, this means we commit the trailer if the slot was created or removed
     exec.get_storage_slot_patch_op eq.PATCH_OP_UPDATE and
-    # => [should_not_commit, CV]
+    # => [should_not_commit, CHAINING_WORD]
 
     not
-    # => [should_commit, CV]
+    # => [should_commit, CHAINING_WORD]
 
     if.true
-        # Account for the changed entries and the map trailer together.
+        # account for the changed entries and the map trailer together
         loc_load.4 add.1 exec.consume_commitment_body_blocks
+        # => [CHAINING_WORD]
 
         # build the high block word holding the number of changed entries
         push.0.0.0 loc_load.4
-        # => [[num_changed_entries, 0, 0, 0], CV]
+        # => [[num_changed_entries, 0, 0, 0], CHAINING_WORD]
 
         # build the map slot metadata as the low block word
         loc_load.1 loc_load.0 exec.get_storage_slot_patch_op push.DOMAIN_MAP
-        # => [[domain_map, patch_op, slot_id_suffix, slot_id_prefix], [num_changed_entries, 0, 0, 0], CV]
+        # => [[domain_map, patch_op, slot_id_suffix, slot_id_prefix], [num_changed_entries, 0, 0, 0], CHAINING_WORD]
 
         exec.eidos::compress dropw dropw
-        # => [CV]
+        # => [CHAINING_WORD]
     end
 end
 
@@ -610,8 +644,8 @@ end
 #! removed assets into local memory to enable a subsequent iteration over linear memory rather than
 #! a second expensive link map iteration that would have to skip added assets.
 #!
-#! Inputs:  [CV]
-#! Outputs: [CV]
+#! Inputs:  [CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
 #!
 #! Locals:
 #! - 0: has_next
@@ -620,7 +654,7 @@ end
 #! - 3: num_removed_assets
 #! - 4..8196: removed_assets (MAX_ASSETS_PER_DELTA_OP * ASSET_SIZE elements)
 @locals(8196)
-proc commit_asset_delta(cv: word) -> word
+proc commit_asset_delta(chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     # initialize num_added_assets = 0 and num_removed_assets = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's values
@@ -639,33 +673,33 @@ proc commit_asset_delta(cv: word) -> word
     # ---------------------------------------------------------------------------------------------
 
     push.ACCOUNT_UPDATE_ASSET_PTR
-    # => [asset_delta_map_ptr, CV]
+    # => [asset_delta_map_ptr, CHAINING_WORD]
 
     exec.link_map::iter
-    # => [has_next, iter, CV]
+    # => [has_next, iter, CHAINING_WORD]
 
     # enter loop if the link map is not empty
     while.true
         exec.link_map::next_key_double_value
-        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, CV]
+        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, CHAINING_WORD]
 
         # store has_next and iter
         movup.12 loc_store.COMMIT_ASSET_DELTA_HAS_NEXT_LOC
         movup.12 loc_store.COMMIT_ASSET_DELTA_ITER_LOC
-        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, CV]
+        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, CHAINING_WORD]
 
         movdnw.2 exec.word::test_eq not
-        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID, CV]
+        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID, CHAINING_WORD]
 
         if.true
             exec.compute_asset_delta
-            # => [delta_op, ASSET_ID, DELTA_ASSET_VALUE, CV]
+            # => [delta_op, ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
             emit.ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT
-            # => [delta_op, ASSET_ID, DELTA_ASSET_VALUE, CV]
+            # => [delta_op, ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
             eq.DELTA_OP_ADD
-            # => [is_addition, ASSET_ID, DELTA_ASSET_VALUE, CV]
+            # => [is_addition, ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
             if.true
                 loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
@@ -675,97 +709,111 @@ proc commit_asset_delta(cv: word) -> word
                 # increment num_added_assets
                 add.1
                 loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
-                # => [ASSET_ID, DELTA_ASSET_VALUE, CV]
+                # => [ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
                 exec.eidos::compress dropw dropw
-                # => [CV]
+                # => [CHAINING_WORD]
             else
                 loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
-                # => [num_removed_assets, ASSET_ID, DELTA_ASSET_VALUE, CV]
+                # => [num_removed_assets, ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
                 # make sure we do not write outside the assigned number of locals
                 dup neq.MAX_ASSETS_PER_DELTA_OP
                 assert.err=ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS
-                # => [num_removed_assets, ASSET_ID, DELTA_ASSET_VALUE, CV]
+                # => [num_removed_assets, ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
                 # compute the pointer at which to store the removed asset as
                 # locaddr.removed_assets_ptr + num_removed_assets * ASSET_SIZE
                 mul.ASSET_SIZE
                 locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC
                 add
-                # => [removed_assets_ptr, ASSET_ID, DELTA_ASSET_VALUE, CV]
+                # => [removed_assets_ptr, ASSET_ID, DELTA_ASSET_VALUE, CHAINING_WORD]
 
                 exec.asset::store
-                # => [CV]
+                # => [CHAINING_WORD]
 
                 # increment num_removed_assets
                 loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
                 add.1
                 loc_store.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
-                # => [CV]
+                # => [CHAINING_WORD]
             end
         else
             # discard the values loaded from the map
             dropw dropw dropw
-            # => [CV]
+            # => [CHAINING_WORD]
         end
-        # => [CV]
+        # => [CHAINING_WORD]
 
         # load iter and has_next
         loc_load.COMMIT_ASSET_DELTA_ITER_LOC
         loc_load.COMMIT_ASSET_DELTA_HAS_NEXT_LOC
-        # => [has_next, iter, CV]
+        # => [has_next, iter, CHAINING_WORD]
     end
 
     # drop iter
     drop
-    # => [CV]
+    # => [CHAINING_WORD]
 
     # Add the added assets trailer if num_added_assets != 0.
     # ---------------------------------------------------------------------------------------------
 
     loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC push.DELTA_OP_ADD
     exec.commit_asset_count_trailer
-    # => [CV]
+    # => [CHAINING_WORD]
 
     # Hash the removed assets.
     # ---------------------------------------------------------------------------------------------
 
     locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC dup
-    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC mul.ASSET_SIZE add
-    # => [end_ptr, start_ptr, CV]
+    # => [start_ptr, start_ptr, CHAINING_WORD]
+
+    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
+    # => [num_removed_assets, start_ptr, start_ptr, CHAINING_WORD]
+
+    mul.ASSET_SIZE add
+    # => [end_ptr, start_ptr, CHAINING_WORD]
 
     # The memory absorber needs block lanes even for an empty range.
-    movdn.5 movdn.4 padw padw
-    # => [BLOCK_LO, BLOCK_HI, CV, start_ptr, end_ptr]
+    movdn.5 movdn.4
+    # => [CHAINING_WORD, start_ptr, end_ptr]
+
+    padw padw
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, start_ptr, end_ptr]
 
     exec.eidos::absorb_double_words_from_memory
-    # => [BLOCK_LO, BLOCK_HI, CV, end_ptr, end_ptr]
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, end_ptr, end_ptr]
 
-    dropw dropw
+    exec.eidos::digest
+    # => [CHAINING_WORD, end_ptr, end_ptr]
+
     movup.4 drop movup.4 drop
-    # => [CV]
+    # => [CHAINING_WORD]
 
     # Add the removed assets trailer if num_removed_assets != 0.
     # ---------------------------------------------------------------------------------------------
 
     loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC push.DELTA_OP_REMOVE
     exec.commit_asset_count_trailer
-    # => [CV]
+    # => [CHAINING_WORD]
 end
 
 #! Compresses a trailer that commits to the number of assets affected by the given delta operation.
 #! If num_assets is zero, this is a no-op and the chaining word is preserved.
 #!
-#! Inputs:  [delta_op, num_assets, CV]
-#! Outputs: [CV]
+#! Inputs:  [delta_op, num_assets, CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
 #!
 #! Where:
 #! - delta_op is the delta operation (DELTA_OP_ADD or DELTA_OP_REMOVE).
 #! - num_assets is the number of assets affected by delta_op (added or removed).
-proc commit_asset_count_trailer(delta_op: u8, num_assets: u32, cv: word) -> word
+proc commit_asset_count_trailer(
+    delta_op: u8,
+    num_assets: u32,
+    chaining_word: eidos::ChainingValue
+) -> eidos::ChainingValue
     dup.1 neq.0
-    # => [is_non_zero, delta_op, num_assets, CV]
+    # => [is_non_zero, delta_op, num_assets, CHAINING_WORD]
 
     if.true
         # Account for the asset blocks and their trailer together.
@@ -773,32 +821,32 @@ proc commit_asset_count_trailer(delta_op: u8, num_assets: u32, cv: word) -> word
 
         # build the metadata
         push.0 movdn.2 push.DOMAIN_ASSET
-        # => [[domain, delta_op, num_assets, 0], CV]
+        # => [[domain, delta_op, num_assets, 0], CHAINING_WORD]
 
         # prepend the empty word that follows the metadata word as the second hasher input
         padw swapw
-        # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CV]
+        # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CHAINING_WORD]
 
         exec.eidos::compress dropw dropw
-        # => [CV]
+        # => [CHAINING_WORD]
     else
         # discard delta_op and num_assets
         drop drop
-        # => [CV]
+        # => [CHAINING_WORD]
     end
 end
 
 #! Updates the account-patch chaining word with the asset vault patches.
 #!
-#! Inputs:  [CV]
-#! Outputs: [CV]
+#! Inputs:  [CHAINING_WORD]
+#! Outputs: [CHAINING_WORD]
 #!
 #! Locals:
 #! - 0: has_next
 #! - 1: iter
 #! - 2: num_changed_assets
 @locals(3)
-proc commit_asset_patch(cv: word) -> word
+proc commit_asset_patch(chaining_word: eidos::ChainingValue) -> eidos::ChainingValue
     # initialize num_changed_assets = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's values
@@ -808,53 +856,53 @@ proc commit_asset_patch(cv: word) -> word
     # ---------------------------------------------------------------------------------------------
 
     push.ACCOUNT_UPDATE_ASSET_PTR
-    # => [asset_delta_map_ptr, CV]
+    # => [asset_delta_map_ptr, CHAINING_WORD]
 
     exec.link_map::iter
-    # => [has_next, iter, CV]
+    # => [has_next, iter, CHAINING_WORD]
 
     # enter loop if the link map is not empty
     while.true
         exec.link_map::next_key_double_value
-        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, CV]
+        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, CHAINING_WORD]
 
         # store has_next and iter
         movup.12 loc_store.COMMIT_ASSET_PATCH_HAS_NEXT_LOC
         movup.12 loc_store.COMMIT_ASSET_PATCH_ITER_LOC
-        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, CV]
+        # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, CHAINING_WORD]
 
         movdnw.2 exec.word::test_eq not
-        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID, CV]
+        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID, CHAINING_WORD]
 
         if.true
             # increment num_changed_assets
             loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
             add.1
             loc_store.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
-            # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID, CV]
+            # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID, CHAINING_WORD]
 
             # drop initial value
             dropw swapw
-            # => [ASSET_ID, FINAL_ASSET_VALUE, CV]
+            # => [ASSET_ID, FINAL_ASSET_VALUE, CHAINING_WORD]
 
             exec.eidos::compress dropw dropw
-            # => [CV]
+            # => [CHAINING_WORD]
         else
             # discard the values loaded from the map
             dropw dropw dropw
-            # => [CV]
+            # => [CHAINING_WORD]
         end
-        # => [CV]
+        # => [CHAINING_WORD]
 
         # load iter and has_next
         loc_load.COMMIT_ASSET_PATCH_ITER_LOC
         loc_load.COMMIT_ASSET_PATCH_HAS_NEXT_LOC
-        # => [has_next, iter, CV]
+        # => [has_next, iter, CHAINING_WORD]
     end
 
     # drop iter
     drop
-    # => [CV]
+    # => [CHAINING_WORD]
 
     # Add the asset patch trailer if num_changed_assets != 0.
     # ---------------------------------------------------------------------------------------------
@@ -868,10 +916,10 @@ proc commit_asset_patch(cv: word) -> word
         padw push.0.0
         loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
         push.DOMAIN_ASSET
-        # => [[domain, num_changed_assets, 0, 0], EMPTY_WORD, CV]
+        # => [[domain, num_changed_assets, 0, 0], EMPTY_WORD, CHAINING_WORD]
 
         exec.eidos::compress dropw dropw
-        # => [CV]
+        # => [CHAINING_WORD]
     end
 end
 
