@@ -46,14 +46,19 @@ pub struct SpendingOracle {
 }
 
 impl SpendingOracle {
+    /// Creates the oracle reference: the account prices are read from and how many blocks after
+    /// its reference block a transaction that read it stays includable.
     pub const fn new(id: AccountId, max_block_age: NonZeroU16) -> Self {
         Self { id, max_block_age }
     }
 
+    /// The oracle account prices are read from.
     pub const fn id(&self) -> AccountId {
         self.id
     }
 
+    /// How many blocks after its reference block a transaction that read the oracle stays
+    /// includable.
     pub const fn max_block_age(&self) -> NonZeroU16 {
         self.max_block_age
     }
@@ -93,14 +98,17 @@ impl SpendingBudget {
         Ok(Self { base_asset, limit, oracle })
     }
 
+    /// The asset the budget is denominated in.
     pub const fn base_asset(&self) -> AssetId {
         self.base_asset
     }
 
+    /// The maximum amount of the base asset that may leave the account per window.
     pub const fn limit(&self) -> NonZeroU64 {
         self.limit
     }
 
+    /// The oracle non-base assets are priced through.
     pub const fn oracle(&self) -> SpendingOracle {
         self.oracle
     }
@@ -122,9 +130,10 @@ impl SpendingBudget {
 /// transaction is included in: an idle window cannot be charged from a later one, and a burst
 /// around a window boundary is bounded by twice the limit.
 ///
-/// The tracker keeps the end block of the window it accounts for, so changing `window_blocks`
-/// later does not reset the budget: what was spent keeps counting until its window ends, and the
-/// windows after it follow the new length.
+/// Changing `window_blocks` later does not reset the budget: what was spent keeps counting until
+/// its window ends, and the windows after it follow the new length. A window set too long can
+/// therefore not be cut short, neither by shortening it nor by disabling and re-enabling the
+/// policy; raising the limit, or spending while the policy is disabled, are the ways out.
 ///
 /// An asset that is neither the base asset nor priced by the oracle falls to the
 /// [`UnpricedAssetPolicy`]. Non-fungible assets are not metered.
@@ -168,14 +177,17 @@ impl SpendingLimitsPolicy {
         self
     }
 
+    /// The length of one spending window in blocks.
     pub const fn window_blocks(&self) -> NonZeroU32 {
         self.window_blocks
     }
 
+    /// How assets the budget cannot price are treated.
     pub const fn unpriced_assets(&self) -> UnpricedAssetPolicy {
         self.unpriced_assets
     }
 
+    /// The budget enforced per window.
     pub const fn budget(&self) -> &SpendingBudget {
         &self.budget
     }

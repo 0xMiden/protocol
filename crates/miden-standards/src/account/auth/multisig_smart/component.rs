@@ -340,7 +340,7 @@ fn validate_proc_policies(
 /// cancel it.
 ///
 /// The spending limit configured through [`SpendingLimitsPolicy`] is only as strong as the
-/// policies on the procedures that can weaken it. `update_spending_limits_policy` lengthens the
+/// policies on the procedures that can weaken it. `update_spending_limits_policy` shortens the
 /// window, `update_spending_oracle` changes what every converted amount means, and
 /// `set_spending_limit` lifts the limit; without a policy of their own, each costs only the
 /// default threshold. Give them a [`ProcedurePolicy`] at least as strong as the protection the
