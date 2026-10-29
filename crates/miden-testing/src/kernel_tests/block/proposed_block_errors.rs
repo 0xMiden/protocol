@@ -10,7 +10,7 @@ use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteInclusionProof, NoteType};
-use miden_protocol::{MAX_BATCHES_PER_BLOCK, Word};
+use miden_protocol::{MAX_BATCHES_PER_BLOCK, MAX_BLOCK_TIMESTAMP_DRIFT_SECS, Word};
 use miden_tx::LocalTransactionProver;
 use rstest::rstest;
 
@@ -175,13 +175,52 @@ async fn proposed_block_fails_on_timestamp_not_increasing_monotonically() -> any
 
     let prev_block_timestamp = block_inputs.prev_block_header().timestamp();
 
+    let error = ProposedBlock::new_at(
+        block_inputs.clone(),
+        batches.clone(),
+        prev_block_timestamp - 1,
+        prev_block_timestamp,
+    )
+    .unwrap_err();
+    assert_matches!(error, ProposedBlockError::TimestampDoesNotIncreaseMonotonically { .. });
+
     let error =
-        ProposedBlock::new_at(block_inputs.clone(), batches.clone(), prev_block_timestamp - 1)
+        ProposedBlock::new_at(block_inputs, batches, prev_block_timestamp, prev_block_timestamp)
             .unwrap_err();
     assert_matches!(error, ProposedBlockError::TimestampDoesNotIncreaseMonotonically { .. });
 
-    let error = ProposedBlock::new_at(block_inputs, batches, prev_block_timestamp).unwrap_err();
-    assert_matches!(error, ProposedBlockError::TimestampDoesNotIncreaseMonotonically { .. });
+    Ok(())
+}
+
+/// Tests that a timestamp beyond the maximum clock drift produces an error.
+#[tokio::test]
+async fn proposed_block_fails_on_timestamp_too_far_in_future() -> anyhow::Result<()> {
+    let chain = MockChain::builder().build()?;
+    let block_inputs = BlockInputs::new(
+        chain.latest_block_header(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+        BTreeMap::default(),
+        BTreeMap::default(),
+    );
+    let validator_timestamp = block_inputs.prev_block_header().timestamp() + 1;
+    let max_timestamp = validator_timestamp + MAX_BLOCK_TIMESTAMP_DRIFT_SECS;
+
+    ProposedBlock::new_at(block_inputs.clone(), Vec::new(), max_timestamp, validator_timestamp)?;
+
+    let error =
+        ProposedBlock::new_at(block_inputs, Vec::new(), max_timestamp + 1, validator_timestamp)
+            .unwrap_err();
+    assert_matches!(
+        error,
+        ProposedBlockError::TimestampTooFarInFuture {
+            provided_timestamp,
+            validator_timestamp: error_validator_timestamp,
+            max_timestamp: error_max_timestamp,
+        } if provided_timestamp == max_timestamp + 1
+            && error_validator_timestamp == validator_timestamp
+            && error_max_timestamp == max_timestamp
+    );
 
     Ok(())
 }

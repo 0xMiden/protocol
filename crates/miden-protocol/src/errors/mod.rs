@@ -1610,6 +1610,15 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "timestamp {provided_timestamp} exceeds the maximum timestamp {max_timestamp} allowed for validator timestamp {validator_timestamp}"
+    )]
+    TimestampTooFarInFuture {
+        provided_timestamp: u32,
+        validator_timestamp: u32,
+        max_timestamp: u32,
+    },
+
+    #[error(
         "account {account_id} is updated from the same initial state commitment {initial_state_commitment} by multiple conflicting batches with IDs {first_batch_id} and {second_batch_id}"
     )]
     ConflictingBatchesUpdateSameAccount {

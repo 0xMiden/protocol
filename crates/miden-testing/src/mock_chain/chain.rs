@@ -574,7 +574,7 @@ impl MockChain {
             .get_block_inputs(batches.iter())
             .context("could not retrieve block inputs")?;
 
-        let proposed_block = ProposedBlock::new_at(block_inputs, batches, timestamp)
+        let proposed_block = ProposedBlock::new_at(block_inputs, batches, timestamp, timestamp)
             .context("failed to create proposed block")?;
 
         Ok(proposed_block)

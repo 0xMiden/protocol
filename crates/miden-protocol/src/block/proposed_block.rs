@@ -23,7 +23,7 @@ use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
 use crate::transaction::{OutputNote, PartialBlockchain, TransactionHeader};
-use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
+use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, MAX_BLOCK_TIMESTAMP_DRIFT_SECS, Word};
 
 // PROPOSED BLOCK
 // =================================================================================================
@@ -79,8 +79,8 @@ impl ProposedBlock {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new proposed block from the provided [`BlockInputs`], transaction batches and
-    /// timestamp.
+    /// Creates a new proposed block from the provided [`BlockInputs`], transaction batches, block
+    /// timestamp, and validator timestamp.
     ///
     /// This checks most of the constraints of a block and computes most of the data structure
     /// updates except for the more expensive tree updates (nullifier, account and chain
@@ -144,10 +144,13 @@ impl ProposedBlock {
     ///
     /// - The given `timestamp` does not increase monotonically compared to the previous block
     ///   header' timestamp.
+    /// - The given `timestamp` exceeds `validator_timestamp` by more than
+    ///   [`MAX_BLOCK_TIMESTAMP_DRIFT_SECS`].
     pub fn new_at(
         block_inputs: BlockInputs,
         batches: Vec<ProvenBatch>,
         timestamp: u32,
+        validator_timestamp: u32,
     ) -> Result<Self, ProposedBlockError> {
         // Check for duplicate and max number of batches.
         // --------------------------------------------------------------------------------------------
@@ -162,6 +165,7 @@ impl ProposedBlock {
         // --------------------------------------------------------------------------------------------
 
         check_timestamp_increases_monotonically(timestamp, block_inputs.prev_block_header())?;
+        check_timestamp_within_max_clock_drift(timestamp, validator_timestamp)?;
 
         // Check for batch expiration.
         // --------------------------------------------------------------------------------------------
@@ -276,9 +280,10 @@ impl ProposedBlock {
             .try_into()
             .expect("timestamp should fit in a u32 before the year 2106");
 
-        let timestamp = timestamp_now.max(block_inputs.prev_block_header().timestamp() + 1);
+        let timestamp =
+            timestamp_now.max(block_inputs.prev_block_header().timestamp().saturating_add(1));
 
-        Self::new_at(block_inputs, batches, timestamp)
+        Self::new_at(block_inputs, batches, timestamp, timestamp_now)
     }
 
     // BUILDERS
@@ -620,6 +625,23 @@ fn check_timestamp_increases_monotonically(
         Err(ProposedBlockError::TimestampDoesNotIncreaseMonotonically {
             provided_timestamp,
             previous_timestamp: prev_block_header.timestamp(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn check_timestamp_within_max_clock_drift(
+    provided_timestamp: u32,
+    validator_timestamp: u32,
+) -> Result<(), ProposedBlockError> {
+    let max_timestamp = validator_timestamp.saturating_add(MAX_BLOCK_TIMESTAMP_DRIFT_SECS);
+
+    if provided_timestamp > max_timestamp {
+        Err(ProposedBlockError::TimestampTooFarInFuture {
+            provided_timestamp,
+            validator_timestamp,
+            max_timestamp,
         })
     } else {
         Ok(())
