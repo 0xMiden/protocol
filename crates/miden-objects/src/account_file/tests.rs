@@ -1,3 +1,8 @@
+#[cfg(all(feature = "std", unix))]
+use std::fs;
+#[cfg(all(feature = "std", unix))]
+use std::os::unix::fs::PermissionsExt;
+
 #[cfg(feature = "std")]
 use assert_matches::assert_matches;
 
@@ -27,6 +32,32 @@ fn account_file_roundtrips_through_a_file() {
     file.write(&path).unwrap();
 
     assert_eq!(AccountFile::read(&path).unwrap(), file);
+}
+
+#[cfg(all(feature = "std", unix))]
+#[test]
+fn account_file_write_restricts_new_file_permissions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("account_file.mac");
+
+    account_file().write(&path).unwrap();
+
+    assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+#[cfg(all(feature = "std", unix))]
+#[test]
+fn account_file_write_restricts_existing_file_permissions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("account_file.mac");
+    fs::write(&path, []).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+    let file = account_file();
+    file.write(&path).unwrap();
+
+    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(AccountFile::read(path).unwrap(), file);
 }
 
 #[cfg(feature = "std")]
