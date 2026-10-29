@@ -38,6 +38,17 @@ impl CheckerBudget {
         }
     }
 
+    /// Creates a budget for a single execution that may use the full configured allowance.
+    pub(super) fn single_attempt(options: ExecutionOptions) -> Self {
+        let max_cycles = options.max_cycles();
+
+        Self {
+            max_cycles,
+            max_cycles_per_attempt: max_cycles,
+            remaining_cycles: max_cycles,
+        }
+    }
+
     pub(super) fn max_cycles(&self) -> u32 {
         self.max_cycles
     }
@@ -318,6 +329,15 @@ mod tests {
             assert!(!attempt_options.overlapped_trace_build());
         }
 
+        assert!(budget.take_execution_options(options).is_none());
+    }
+
+    #[test]
+    fn single_attempt_budget_preserves_configured_cycle_limit() {
+        let options = ExecutionOptions::new(Some(81_920), 4_096, 2_048).unwrap();
+        let mut budget = CheckerBudget::single_attempt(options);
+
+        assert_eq!(budget.take_execution_options(options).unwrap().max_cycles(), 81_920);
         assert!(budget.take_execution_options(options).is_none());
     }
 }
