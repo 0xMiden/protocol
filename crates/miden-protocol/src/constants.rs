@@ -58,6 +58,9 @@ pub const BLOCK_NOTE_TREE_DEPTH: u8 = 16;
 /// Maximum number of batches that can be inserted into a single block.
 pub const MAX_BATCHES_PER_BLOCK: usize = 1 << (BLOCK_NOTE_TREE_DEPTH - BATCH_NOTE_TREE_DEPTH);
 
+/// Maximum number of seconds by which a block timestamp may exceed a validator's current time.
+pub const MAX_BLOCK_TIMESTAMP_DRIFT_SECS: u32 = 24 * 60 * 60;
+
 /// Maximum number of output notes that can be created in a single block.
 pub const MAX_OUTPUT_NOTES_PER_BLOCK: usize = MAX_OUTPUT_NOTES_PER_BATCH * MAX_BATCHES_PER_BLOCK;
 const _: () = assert!(MAX_OUTPUT_NOTES_PER_BLOCK >= MAX_OUTPUT_NOTES_PER_BATCH);
