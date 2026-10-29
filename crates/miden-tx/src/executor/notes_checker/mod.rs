@@ -177,7 +177,7 @@ where
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // try to consume the provided note
-        let mut budget = CheckerBudget::new(self.tx_executor.exec_options);
+        let mut budget = CheckerBudget::single_attempt(self.tx_executor.exec_options);
         match self.try_execute_notes(&mut tx_inputs, &mut budget).await {
             // execution succeeded
             Ok(_cycle_counts) => Ok(NoteConsumptionStatus::Consumable),
