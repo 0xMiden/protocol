@@ -31,7 +31,8 @@ use crate::errors::TransactionKernelError;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
 
 mod exec_host;
-pub use exec_host::TransactionExecutorHost;
+use exec_host::DataStoreRequestState;
+pub use exec_host::{MAX_DATA_STORE_REQUESTS_PER_TX, TransactionExecutorHost};
 
 mod data_store;
 pub use data_store::DataStore;
@@ -333,6 +334,21 @@ where
         (TransactionExecutorHost<'store, 'auth, STORE, AUTH>, StackInputs, AdviceInputs),
         TransactionExecutorError,
     > {
+        self.prepare_transaction_with_data_store_requests(
+            tx_inputs,
+            DataStoreRequestState::default(),
+        )
+        .await
+    }
+
+    async fn prepare_transaction_with_data_store_requests(
+        &self,
+        tx_inputs: &TransactionInputs,
+        data_store_requests: DataStoreRequestState,
+    ) -> Result<
+        (TransactionExecutorHost<'store, 'auth, STORE, AUTH>, StackInputs, AdviceInputs),
+        TransactionExecutorError,
+    > {
         let (stack_inputs, tx_advice_inputs) = TransactionKernel::prepare_inputs(tx_inputs);
         let input_notes = tx_inputs.input_notes();
 
@@ -351,7 +367,7 @@ where
                 .chain([tx_inputs.account().code()]),
         );
 
-        let host = TransactionExecutorHost::new(
+        let host = TransactionExecutorHost::new_with_data_store_requests(
             tx_inputs.account(),
             input_notes.clone(),
             self.data_store,
@@ -361,6 +377,7 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
+            data_store_requests,
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 
