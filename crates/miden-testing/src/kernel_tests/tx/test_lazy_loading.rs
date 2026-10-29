@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
+use assert_matches::assert_matches;
 use miden_processor::{ExecutionError, FutureMaybeSend, LoadedMastForest, MastForestStore};
 use miden_protocol::Felt;
 use miden_protocol::account::{
@@ -44,6 +45,7 @@ use miden_tx::{
     NoteCheckerError,
     NoteConsumptionChecker,
     TransactionExecutor,
+    TransactionExecutorError,
     TransactionKernelError,
 };
 
@@ -766,50 +768,53 @@ async fn note_checker_caches_failed_note_script_requests_across_retries() -> any
 async fn note_checker_caches_missing_private_note_scripts_across_retries() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(crate::Auth::IncrNonce)?;
-    let output_note = NoteBuilder::new(account.id(), rand::rng())
-        .note_type(NoteType::Private)
-        .code(
+    let output_notes = [1_u32, 2]
+        .map(|_| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .note_type(NoteType::Private)
+                .code(
+                    r#"
+                    @note_script
+                    pub proc main
+                        push.0 drop
+                    end
+                    "#,
+                )
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let script_root = output_notes[0].script().root();
+    let input_note_scripts = output_notes.iter().enumerate().map(|(index, output_note)| {
+        let create_output_note = format!(
+            "push.{recipient}\n\
+             push.{note_type}\n\
+             push.{tag}\n\
+             call.account::create_note\n\
+             drop\n\
+             exec.sys::truncate_stack",
+            recipient = output_note.recipient().digest(),
+            note_type = NoteType::Private as u8,
+            tag = Felt::from(output_note.metadata().tag()),
+        );
+        let forced_failure = if index == 1 {
+            "push.0 assert.err=\"force another checker attempt\""
+        } else {
+            ""
+        };
+
+        format!(
             r#"
+            use miden::core::sys
+            use mock::account
             @note_script
             pub proc main
-                push.0 drop
+                {create_output_note}
+                {forced_failure}
             end
-            "#,
+            "#
         )
-        .build()?;
-    let script_root = output_note.script().root();
-    let create_output_note = format!(
-        "push.{recipient}\n\
-         push.{note_type}\n\
-         push.{tag}\n\
-         call.account::create_note\n\
-         drop",
-        recipient = output_note.recipient().digest(),
-        note_type = NoteType::Private as u8,
-        tag = Felt::from(output_note.metadata().tag()),
-    );
-    let input_note_scripts = [
-        format!(
-            r#"
-            use mock::account
-            @note_script
-            pub proc main
-                {create_output_note}
-                push.0 assert.err="force another checker attempt"
-            end
-            "#
-        ),
-        format!(
-            r#"
-            use mock::account
-            @note_script
-            pub proc main
-                {create_output_note}
-                push.0 assert.err="force another checker attempt"
-            end
-            "#
-        ),
-    ];
+    });
     let input_notes = input_note_scripts
         .map(|script| {
             NoteBuilder::new(account.id(), rand::rng())
@@ -817,19 +822,20 @@ async fn note_checker_caches_missing_private_note_scripts_across_retries() -> an
                 .dynamically_linked_packages(CodeBuilder::mock_packages())
                 .build()
         })
-        .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
     let mock_chain = builder.build()?;
     let mut tx_builder = mock_chain
         .build_transaction(account)
         .unauthenticated_input_notes(input_notes.clone());
-    for (key, value) in output_note
-        .recipient()
-        .to_advice_map_entries()
-        .into_iter()
-        .filter(|(key, _)| *key != Word::from(script_root))
-    {
-        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    for output_note in &output_notes {
+        for (key, value) in output_note
+            .recipient()
+            .to_advice_map_entries()
+            .into_iter()
+            .filter(|(key, _)| *key != Word::from(script_root))
+        {
+            tx_builder = tx_builder.add_advice_map_entry(key, value);
+        }
     }
     let mock_tx = tx_builder.build()?;
     let data_store = CountingDataStore::new(&mock_tx);
@@ -839,13 +845,27 @@ async fn note_checker_caches_missing_private_note_scripts_across_retries() -> an
         .check_notes_consumability(
             mock_tx.account().id(),
             mock_tx.tx_inputs().block_header().block_num(),
-            input_notes,
+            input_notes.clone(),
             mock_tx.tx_args().clone(),
         )
         .await?;
 
-    assert!(result.successful().is_empty());
-    assert_eq!(result.failed().len(), 2);
+    assert_eq!(result.successful().len(), 1);
+    assert_eq!(result.successful()[0].note().id(), input_notes[0].id());
+    assert_eq!(result.failed().len(), 1);
+    assert_eq!(result.failed()[0].note().id(), input_notes[1].id());
+    assert_matches!(
+        result.failed()[0].error().expect("the failed note should carry its error"),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::FailedAssertion {
+                    err_msg,
+                    ..
+                },
+                ..
+            }
+        ) if err_msg.as_ref().map(AsRef::as_ref) == Some("force another checker attempt")
+    );
     assert_eq!(data_store.note_script_request_count(), 1);
 
     Ok(())
@@ -920,6 +940,22 @@ async fn note_checker_caches_missing_public_note_scripts_across_retries() -> any
 
     assert!(result.successful().is_empty());
     assert_eq!(result.failed().len(), 2);
+    let expected_error = format!(
+        "note script with root {} not found in data store for public note",
+        Word::from(script_root),
+    );
+    assert!(result.failed().iter().all(|failure| {
+        matches!(
+            failure.error(),
+            Some(TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::EventError { error, .. }
+            )) if matches!(
+                error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::Other { message, .. })
+                    if message.as_ref() == expected_error
+            )
+        )
+    }));
     assert_eq!(data_store.note_script_request_count(), 1);
 
     Ok(())
