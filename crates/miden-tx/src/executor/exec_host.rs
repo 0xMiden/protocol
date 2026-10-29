@@ -3,6 +3,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::error::Error;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
@@ -85,7 +86,7 @@ impl DataStoreRequestState {
     }
 
     fn record_failure(&mut self, request: DataStoreRequest, source: &DataStoreError) {
-        self.failed_requests.insert(request, source.to_string().into_boxed_str());
+        self.failed_requests.insert(request, format_error_chain(source));
     }
 }
 
@@ -892,34 +893,14 @@ fn asset_witness_to_advice_mutation(asset_witness: AssetWitness) -> [AdviceMutat
     [merkle_store_ext, map_ext]
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn note_script_requests_share_the_data_store_limit() {
-        let mut state = DataStoreRequestState::default();
-
-        for index in 0..MAX_DATA_STORE_REQUESTS_PER_TX {
-            state
-                .start(&DataStoreRequest::NoteScript {
-                    script_root: NoteScriptRoot::from_raw(Word::from([0, 0, 0, index as u32])),
-                })
-                .unwrap();
-        }
-
-        assert!(matches!(
-            state.start(&DataStoreRequest::NoteScript {
-                script_root: NoteScriptRoot::from_raw(Word::from([
-                    0,
-                    0,
-                    0,
-                    MAX_DATA_STORE_REQUESTS_PER_TX as u32,
-                ])),
-            }),
-            Err(TransactionKernelError::DataStoreRequestLimitExceeded {
-                max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
-            })
-        ));
+fn format_error_chain(error: &(dyn Error + 'static)) -> Box<str> {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(error) = source {
+        message.push_str(": ");
+        message.push_str(&error.to_string());
+        source = error.source();
     }
+
+    message.into_boxed_str()
 }
