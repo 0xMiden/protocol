@@ -506,20 +506,22 @@ fn tracker_word(spent: u64, block: BlockNumber) -> Word {
 
 #[tokio::test]
 async fn spend_within_the_limit_is_allowed_and_tracked() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let block = h.latest_block();
+    let mut harness = Harness::with_policy()?;
+    let block = harness.latest_block();
 
-    h.send(fungible(usdcx(), 50_000)).await?;
+    harness.send(fungible(usdcx(), 50_000)).await?;
 
-    assert_eq!(h.tracker(), tracker_word(50_000, block));
+    assert_eq!(harness.tracker(), tracker_word(50_000, block));
     Ok(())
 }
 
 #[tokio::test]
 async fn spend_over_the_limit_fails_even_with_every_signature() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    let result = h.send_signed(fungible(usdcx(), SPENDING_LIMIT + 1), &[0, 1], None).await?;
+    let result = harness
+        .send_signed(fungible(usdcx(), SPENDING_LIMIT + 1), &[0, 1], None)
+        .await?;
 
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
@@ -527,59 +529,61 @@ async fn spend_over_the_limit_fails_even_with_every_signature() -> anyhow::Resul
 
 #[tokio::test]
 async fn spend_exactly_at_the_limit_is_allowed() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    h.send(fungible(usdcx(), SPENDING_LIMIT)).await?;
+    harness.send(fungible(usdcx(), SPENDING_LIMIT)).await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn spends_accumulate_within_a_window_and_reset_after_it() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    h.send(fungible(usdcx(), 60_000)).await?;
+    harness.send(fungible(usdcx(), 60_000)).await?;
 
     // 60_000 + 50_000 exceeds the limit inside the same window.
-    let result = h.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
+    let result = harness.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
     // The next window starts from zero.
-    let next_window_block = window_end(h.latest_block());
-    h.chain.prove_until_block(next_window_block)?;
-    h.send(fungible(usdcx(), 50_000)).await?;
+    let next_window_block = window_end(harness.latest_block());
+    harness.chain.prove_until_block(next_window_block)?;
+    harness.send(fungible(usdcx(), 50_000)).await?;
 
-    let block = h.latest_block();
+    let block = harness.latest_block();
     assert_eq!(window_end(block), window_end(BlockNumber::from(next_window_block)));
-    assert_eq!(h.tracker(), tracker_word(50_000, block));
+    assert_eq!(harness.tracker(), tracker_word(50_000, block));
     Ok(())
 }
 
 #[tokio::test]
 async fn an_older_reference_block_does_not_release_budget() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
     // Spend in window N, then move into window N+1 and spend again.
-    let window_n_block = h.latest_block();
-    h.send(fungible(usdcx(), 60_000)).await?;
+    let window_n_block = harness.latest_block();
+    harness.send(fungible(usdcx(), 60_000)).await?;
     let next_window_block = window_end(window_n_block);
-    h.chain.prove_until_block(next_window_block)?;
-    h.send(fungible(usdcx(), 50_000)).await?;
+    harness.chain.prove_until_block(next_window_block)?;
+    harness.send(fungible(usdcx(), 50_000)).await?;
 
     // A transaction referencing a block back in window N finds the tracker ahead of it and keeps
     // charging window N+1: 50_000 + 60_000 exceeds the limit, no budget was released.
-    let result = h.send_signed(fungible(usdcx(), 60_000), &[0, 1], Some(window_n_block)).await?;
+    let result = harness
+        .send_signed(fungible(usdcx(), 60_000), &[0, 1], Some(window_n_block))
+        .await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
 }
 
 #[tokio::test]
 async fn a_disabled_policy_does_not_meter() -> anyhow::Result<()> {
-    let mut h = Harness::new(None, FIXED_RATE_PROVIDER)?;
+    let mut harness = Harness::new(None, FIXED_RATE_PROVIDER)?;
 
-    let tx = h.send(fungible(usdcx(), 500_000)).await?;
+    let tx = harness.send(fungible(usdcx(), 500_000)).await?;
 
-    assert_eq!(h.tracker(), Word::empty());
+    assert_eq!(harness.tracker(), Word::empty());
     // Nothing bound the expiration either.
     assert_eq!(tx.expiration_block_num(), BlockNumber::from(u32::MAX));
     Ok(())
@@ -588,20 +592,20 @@ async fn a_disabled_policy_does_not_meter() -> anyhow::Result<()> {
 #[tokio::test]
 async fn non_fungible_assets_are_not_metered() -> anyhow::Result<()> {
     // `reject` for unpriced assets and no price for the NFT: the send still goes through.
-    let mut h = Harness::new(Some(UnpricedAssetPolicy::Reject), UNPRICED_PROVIDER)?;
+    let mut harness = Harness::new(Some(UnpricedAssetPolicy::Reject), UNPRICED_PROVIDER)?;
 
-    h.send(nft()).await?;
+    harness.send(nft()).await?;
 
-    assert_eq!(h.tracker(), Word::empty());
+    assert_eq!(harness.tracker(), Word::empty());
     Ok(())
 }
 
 #[tokio::test]
 async fn spending_limits_leave_the_signature_threshold_unchanged() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
     // One of two signatures: within the limit, still unauthorized.
-    let result = h.send_signed(fungible(usdcx(), 1_000), &[0], None).await?;
+    let result = harness.send_signed(fungible(usdcx(), 1_000), &[0], None).await?;
     result.unwrap_err().unwrap_unauthorized_err();
 
     Ok(())
@@ -612,37 +616,37 @@ async fn spending_limits_leave_the_signature_threshold_unchanged() -> anyhow::Re
 
 #[tokio::test]
 async fn the_base_asset_is_charged_one_to_one_without_the_oracle() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
     // Drop the oracle from the transaction inputs: the base asset must not need it.
-    h.with_oracle_inputs = false;
-    let block = h.latest_block();
+    harness.with_oracle_inputs = false;
+    let block = harness.latest_block();
 
-    h.send(fungible(usdcx(), 60_000)).await?;
+    harness.send(fungible(usdcx(), 60_000)).await?;
 
-    assert_eq!(h.tracker(), tracker_word(60_000, block));
+    assert_eq!(harness.tracker(), tracker_word(60_000, block));
     Ok(())
 }
 
 #[tokio::test]
 async fn other_assets_are_converted_through_the_oracle() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let block = h.latest_block();
+    let mut harness = Harness::with_policy()?;
+    let block = harness.latest_block();
 
-    h.send(fungible(eth(), 10)).await?;
+    harness.send(fungible(eth(), 10)).await?;
 
-    assert_eq!(h.tracker(), tracker_word(10 * ORACLE_RATE, block));
+    assert_eq!(harness.tracker(), tracker_word(10 * ORACLE_RATE, block));
     Ok(())
 }
 
 #[tokio::test]
 async fn the_budget_accumulates_across_assets() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    h.send(fungible(usdcx(), 60_000)).await?;
-    h.send(fungible(eth(), 10)).await?;
+    harness.send(fungible(usdcx(), 60_000)).await?;
+    harness.send(fungible(eth(), 10)).await?;
 
     // 60_000 + 30_000 + 15_000 exceeds the limit.
-    let result = h.send_signed(fungible(eth(), 5), &[0, 1], None).await?;
+    let result = harness.send_signed(fungible(eth(), 5), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
 }
@@ -654,9 +658,9 @@ async fn the_budget_accumulates_across_assets() -> anyhow::Result<()> {
 async fn an_unpriced_asset_falls_to_the_policy(
     #[case] unpriced: UnpricedAssetPolicy,
 ) -> anyhow::Result<()> {
-    let mut h = Harness::new(Some(unpriced), UNPRICED_PROVIDER)?;
+    let mut harness = Harness::new(Some(unpriced), UNPRICED_PROVIDER)?;
 
-    let result = h.send_signed(fungible(eth(), 10), &[0, 1], None).await?;
+    let result = harness.send_signed(fungible(eth(), 10), &[0, 1], None).await?;
 
     match unpriced {
         UnpricedAssetPolicy::Reject => {
@@ -664,7 +668,7 @@ async fn an_unpriced_asset_falls_to_the_policy(
         },
         UnpricedAssetPolicy::Allow => {
             result?;
-            assert_eq!(h.tracker(), Word::empty());
+            assert_eq!(harness.tracker(), Word::empty());
         },
         _ => unreachable!("the policy has two variants"),
     }
@@ -673,10 +677,10 @@ async fn an_unpriced_asset_falls_to_the_policy(
 
 #[tokio::test]
 async fn reading_the_oracle_tightens_the_expiration() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let reference_block = h.latest_block();
+    let mut harness = Harness::with_policy()?;
+    let reference_block = harness.latest_block();
 
-    let tx = h.send(fungible(eth(), 1)).await?;
+    let tx = harness.send(fungible(eth(), 1)).await?;
 
     assert_eq!(tx.expiration_block_num(), reference_block + u32::from(MAX_ORACLE_BLOCK_AGE));
     Ok(())
@@ -690,14 +694,14 @@ async fn reading_the_oracle_tightens_the_expiration() -> anyhow::Result<()> {
 #[case::last_block(WINDOW_BLOCKS - 1)]
 #[tokio::test]
 async fn the_policy_binds_the_expiration_to_the_window(#[case] offset: u32) -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let window_start = window_end(h.latest_block());
-    h.chain.prove_until_block(window_start + offset)?;
-    let reference_block = h.latest_block();
+    let mut harness = Harness::with_policy()?;
+    let window_start = window_end(harness.latest_block());
+    harness.chain.prove_until_block(window_start + offset)?;
+    let reference_block = harness.latest_block();
     assert_eq!(reference_block.as_u32(), window_start + offset);
 
     // The base asset reads no oracle, so the window is the only bound.
-    let tx = h.send(fungible(usdcx(), 1)).await?;
+    let tx = harness.send(fungible(usdcx(), 1)).await?;
 
     assert_eq!(tx.expiration_block_num(), BlockNumber::from(window_start + WINDOW_BLOCKS));
     Ok(())
@@ -709,16 +713,16 @@ async fn the_policy_binds_the_expiration_to_the_window(#[case] offset: u32) -> a
 /// around a boundary stays at twice the limit.
 #[tokio::test]
 async fn an_idle_window_cannot_be_charged_from_the_next_window() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
     // Stand on the first block of a window whose predecessor saw no spend.
-    let idle_window_start = window_end(h.latest_block());
+    let idle_window_start = window_end(harness.latest_block());
     let next_window_start = idle_window_start + WINDOW_BLOCKS;
-    h.chain.prove_until_block(next_window_start)?;
+    harness.chain.prove_until_block(next_window_start)?;
     let idle_window_end = BlockNumber::from(next_window_start - 1);
 
-    let salt = h.next_salt();
-    let tx = h
+    let salt = harness.next_salt();
+    let tx = harness
         .run_send_notes(
             vec![fungible(usdcx(), SPENDING_LIMIT)],
             salt,
@@ -731,7 +735,7 @@ async fn an_idle_window_cannot_be_charged_from_the_next_window() -> anyhow::Resu
     // block of the next window, which the chain has already produced.
     assert_eq!(tx.expiration_block_num(), BlockNumber::from(next_window_start));
     assert!(
-        tx.expiration_block_num() <= h.latest_block(),
+        tx.expiration_block_num() <= harness.latest_block(),
         "the transaction must be expired for the next block"
     );
     Ok(())
@@ -742,16 +746,16 @@ async fn an_idle_window_cannot_be_charged_from_the_next_window() -> anyhow::Resu
 /// included once the chain has moved on.
 #[tokio::test]
 async fn an_idle_window_cannot_be_reopened_with_an_old_reference_block() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    h.send(fungible(usdcx(), 60_000)).await?;
+    harness.send(fungible(usdcx(), 60_000)).await?;
 
     // Leave the next window idle and stand two windows past it.
-    let idle_window_block = window_end(h.latest_block());
-    h.chain.prove_until_block(idle_window_block + 2 * WINDOW_BLOCKS)?;
+    let idle_window_block = window_end(harness.latest_block());
+    harness.chain.prove_until_block(idle_window_block + 2 * WINDOW_BLOCKS)?;
 
-    let salt = h.next_salt();
-    let tx = h
+    let salt = harness.next_salt();
+    let tx = harness
         .run_send_notes(
             vec![fungible(usdcx(), 60_000)],
             salt,
@@ -761,16 +765,19 @@ async fn an_idle_window_cannot_be_reopened_with_an_old_reference_block() -> anyh
         .await??;
 
     assert_eq!(tx.expiration_block_num(), BlockNumber::from(idle_window_block + WINDOW_BLOCKS));
-    assert!(tx.expiration_block_num() < h.latest_block(), "the transaction must be expired");
+    assert!(
+        tx.expiration_block_num() < harness.latest_block(),
+        "the transaction must be expired"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn a_priced_spend_without_the_oracle_account_fails() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    h.with_oracle_inputs = false;
+    let mut harness = Harness::with_policy()?;
+    harness.with_oracle_inputs = false;
 
-    let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
+    let result = harness.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
 
     assert!(result.is_err(), "the foreign call must fail without the oracle inputs");
     Ok(())
@@ -832,38 +839,39 @@ fn update_oracle_script_raw(oracle_id: AccountId, max_block_age: u32, base_asset
 
 #[tokio::test]
 async fn set_spending_limit_writes_and_clears_the_slot() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    h.configure(&set_limit_script(500)).await??;
-    assert_eq!(h.limit(), Word::from([500u32, 0, 0, 0]));
+    harness.configure(&set_limit_script(500)).await??;
+    assert_eq!(harness.limit(), Word::from([500u32, 0, 0, 0]));
 
     // The new limit applies from the next transaction on: 1 ETH is 3000 in the base asset.
-    let result = h.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
+    let result = harness.send_signed(fungible(eth(), 1), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
     // A cleared limit leaves every fungible asset unpriced, the base asset included.
-    h.configure(&set_limit_script(0)).await??;
-    assert_eq!(h.limit(), Word::empty());
-    let result = h.send_signed(fungible(usdcx(), 1), &[0, 1], None).await?;
+    harness.configure(&set_limit_script(0)).await??;
+    assert_eq!(harness.limit(), Word::empty());
+    let result = harness.send_signed(fungible(usdcx(), 1), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_REJECTED);
     Ok(())
 }
 
 #[tokio::test]
 async fn changing_the_window_length_keeps_the_running_total() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let block = h.latest_block();
+    let mut harness = Harness::with_policy()?;
+    let block = harness.latest_block();
 
-    h.send(fungible(usdcx(), 60_000)).await?;
+    harness.send(fungible(usdcx(), 60_000)).await?;
 
     // A longer window does not reopen the budget: the old window keeps its total and its end.
-    h.configure(&update_policy_script(WINDOW_BLOCKS * 4, UnpricedAssetPolicy::Reject.as_u32()))
+    harness
+        .configure(&update_policy_script(WINDOW_BLOCKS * 4, UnpricedAssetPolicy::Reject.as_u32()))
         .await??;
-    let result = h.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
+    let result = harness.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
-    h.send(fungible(usdcx(), 30_000)).await?;
-    assert_eq!(h.tracker(), tracker_word(90_000, block));
+    harness.send(fungible(usdcx(), 30_000)).await?;
+    assert_eq!(harness.tracker(), tracker_word(90_000, block));
     Ok(())
 }
 
@@ -872,34 +880,35 @@ async fn changing_the_window_length_keeps_the_running_total() -> anyhow::Result<
 /// Once the old window has ended, the next spend opens a window of the new length.
 #[tokio::test]
 async fn a_spend_charged_to_the_old_window_expires_with_it() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let old_window_end = window_end(h.latest_block());
+    let mut harness = Harness::with_policy()?;
+    let old_window_end = window_end(harness.latest_block());
     let new_window_blocks = WINDOW_BLOCKS * 4;
 
-    h.send(fungible(usdcx(), 60_000)).await?;
-    h.configure(&update_policy_script(new_window_blocks, UnpricedAssetPolicy::Reject.as_u32()))
+    harness.send(fungible(usdcx(), 60_000)).await?;
+    harness
+        .configure(&update_policy_script(new_window_blocks, UnpricedAssetPolicy::Reject.as_u32()))
         .await??;
 
-    let tx = h.send(fungible(usdcx(), 1)).await?;
+    let tx = harness.send(fungible(usdcx(), 1)).await?;
     assert_eq!(tx.expiration_block_num(), BlockNumber::from(old_window_end));
 
-    h.chain.prove_until_block(old_window_end)?;
-    let block = h.latest_block();
+    harness.chain.prove_until_block(old_window_end)?;
+    let block = harness.latest_block();
     let new_window_end = (block.as_u32() / new_window_blocks + 1) * new_window_blocks;
 
     // 70_000 only fits because the old window's 60_001 no longer counts.
-    let tx = h.send(fungible(usdcx(), 70_000)).await?;
+    let tx = harness.send(fungible(usdcx(), 70_000)).await?;
     assert_eq!(tx.expiration_block_num(), BlockNumber::from(new_window_end));
-    assert_eq!(h.tracker()[0], Felt::new_unchecked(70_000));
-    assert_eq!(h.tracker()[1], Felt::from(new_window_end));
+    assert_eq!(harness.tracker()[0], Felt::new_unchecked(70_000));
+    assert_eq!(harness.tracker()[1], Felt::from(new_window_end));
     Ok(())
 }
 
 #[tokio::test]
 async fn update_spending_limits_policy_rejects_an_invalid_unpriced_policy() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
-    let result = h.configure(&update_policy_script(WINDOW_BLOCKS, 2)).await?;
+    let result = harness.configure(&update_policy_script(WINDOW_BLOCKS, 2)).await?;
 
     assert_transaction_executor_error!(result, ERR_UNPRICED_ASSET_POLICY_INVALID);
     Ok(())
@@ -907,10 +916,10 @@ async fn update_spending_limits_policy_rejects_an_invalid_unpriced_policy() -> a
 
 #[tokio::test]
 async fn update_spending_oracle_rejects_a_zero_block_age() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let oracle = h.oracle.id();
+    let mut harness = Harness::with_policy()?;
+    let oracle = harness.oracle.id();
 
-    let result = h
+    let result = harness
         .configure(&update_oracle_script(oracle, 0, AssetId::new_fungible(usdcx())))
         .await?;
 
@@ -920,10 +929,10 @@ async fn update_spending_oracle_rejects_a_zero_block_age() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn update_spending_oracle_rejects_a_non_fungible_base_asset() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let oracle = h.oracle.id();
+    let mut harness = Harness::with_policy()?;
+    let oracle = harness.oracle.id();
 
-    let result = h
+    let result = harness
         .configure(&update_oracle_script_raw(
             oracle,
             MAX_ORACLE_BLOCK_AGE.into(),
@@ -939,12 +948,12 @@ async fn update_spending_oracle_rejects_a_non_fungible_base_asset() -> anyhow::R
 /// is accepted, one more is rejected.
 #[tokio::test]
 async fn a_limit_above_the_fungible_asset_maximum_is_rejected() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
     let max_amount = FungibleAsset::MAX_AMOUNT.as_u64();
 
-    h.configure(&set_limit_script(max_amount)).await??;
+    harness.configure(&set_limit_script(max_amount)).await??;
     assert_eq!(
-        h.limit(),
+        harness.limit(),
         Word::from([
             Felt::new_unchecked(max_amount),
             Felt::from(0u32),
@@ -953,7 +962,7 @@ async fn a_limit_above_the_fungible_asset_maximum_is_rejected() -> anyhow::Resul
         ])
     );
 
-    let result = h.configure(&set_limit_script(max_amount + 1)).await?;
+    let result = harness.configure(&set_limit_script(max_amount + 1)).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDS_MAX_AMOUNT);
     Ok(())
 }
@@ -961,13 +970,13 @@ async fn a_limit_above_the_fungible_asset_maximum_is_rejected() -> anyhow::Resul
 #[tokio::test]
 async fn a_limit_cannot_be_set_without_an_oracle() -> anyhow::Result<()> {
     // No policy: the oracle slot is empty.
-    let mut h = Harness::new(None, FIXED_RATE_PROVIDER)?;
+    let mut harness = Harness::new(None, FIXED_RATE_PROVIDER)?;
 
-    let result = h.configure(&set_limit_script(100_000)).await?;
+    let result = harness.configure(&set_limit_script(100_000)).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_REQUIRES_ORACLE);
 
     // Clearing never needs one.
-    h.configure(&set_limit_script(0)).await??;
+    harness.configure(&set_limit_script(0)).await??;
     Ok(())
 }
 
@@ -976,31 +985,36 @@ async fn a_limit_cannot_be_set_without_an_oracle() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn assets_across_notes_accumulate_within_a_transaction() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
     // Two notes of 60_000 USDCX each: 120_000 in one transaction exceeds the limit.
-    let result = h.send_many(vec![fungible(usdcx(), 60_000), fungible(usdcx(), 60_000)]).await?;
+    let result = harness
+        .send_many(vec![fungible(usdcx(), 60_000), fungible(usdcx(), 60_000)])
+        .await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
 
     // Two notes of 30_000 fit and the tracker holds their sum.
-    let block = h.latest_block();
-    h.send_many(vec![fungible(usdcx(), 30_000), fungible(usdcx(), 30_000)])
+    let block = harness.latest_block();
+    harness
+        .send_many(vec![fungible(usdcx(), 30_000), fungible(usdcx(), 30_000)])
         .await??;
-    assert_eq!(h.tracker(), tracker_word(60_000, block));
+    assert_eq!(harness.tracker(), tracker_word(60_000, block));
     Ok(())
 }
 
 #[tokio::test]
 async fn two_assets_in_one_note_are_both_charged() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
-    let block = h.latest_block();
+    let mut harness = Harness::with_policy()?;
+    let block = harness.latest_block();
 
     // The base asset and a priced asset ride in a single note: 20_000 plus 5 ETH at 3000.
-    h.send_bundle(vec![fungible(usdcx(), 20_000), fungible(eth(), 5)]).await??;
-    assert_eq!(h.tracker(), tracker_word(20_000 + 5 * ORACLE_RATE, block));
+    harness
+        .send_bundle(vec![fungible(usdcx(), 20_000), fungible(eth(), 5)])
+        .await??;
+    assert_eq!(harness.tracker(), tracker_word(20_000 + 5 * ORACLE_RATE, block));
 
     // The second asset in the note is what pushes the budget over: 35_001 + 66_000.
-    let result = h.send_bundle(vec![fungible(usdcx(), 1), fungible(eth(), 22)]).await?;
+    let result = harness.send_bundle(vec![fungible(usdcx(), 1), fungible(eth(), 22)]).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
 }
@@ -1009,13 +1023,13 @@ async fn two_assets_in_one_note_are_both_charged() -> anyhow::Result<()> {
 /// initial account state, so the raise does not apply to the transaction that makes it.
 #[tokio::test]
 async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
 
     let target = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE)?;
     let serial_num = Word::from([7u32, 7, 7, 7]);
     let asset = fungible(usdcx(), 110_000);
     let note: Note = P2idNote::builder()
-        .sender(h.account.id())
+        .sender(harness.account.id())
         .target(target)
         .asset(asset)
         .note_type(NoteType::Public)
@@ -1058,15 +1072,16 @@ async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow
         asset_id = asset.to_id_word(),
     ))?;
 
-    let salt = h.next_salt();
-    let builder = h
+    let salt = harness.next_salt();
+    let builder = harness
         .chain
-        .build_transaction(h.account.id())
+        .build_transaction(harness.account.id())
         .expected_output_note(RawOutputNote::Full(note))
         .tx_script(script)
-        .multisig_auth_args(MultisigAuthArgs::new(h.latest_block(), salt));
+        .multisig_auth_args(MultisigAuthArgs::new(harness.latest_block(), salt));
     let result =
-        Harness::sign_and_execute(builder, &[0, 1], &h.public_keys, &h.authenticators).await?;
+        Harness::sign_and_execute(builder, &[0, 1], &harness.public_keys, &harness.authenticators)
+            .await?;
 
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
@@ -1074,22 +1089,22 @@ async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow
 
 #[tokio::test]
 async fn disabling_and_re_enabling_the_policy_keeps_the_running_total() -> anyhow::Result<()> {
-    let mut h = Harness::with_policy()?;
+    let mut harness = Harness::with_policy()?;
     let reject = UnpricedAssetPolicy::Reject.as_u32();
-    let block = h.latest_block();
+    let block = harness.latest_block();
 
-    h.send(fungible(usdcx(), 60_000)).await?;
+    harness.send(fungible(usdcx(), 60_000)).await?;
 
     // N -> 0: disabled, nothing is metered and the tracker is left alone.
-    h.configure(&update_policy_script(0, reject)).await??;
-    assert_eq!(h.config(), Word::from([0u32, reject, 0, 0]));
-    h.send(fungible(usdcx(), 500_000)).await?;
-    assert_eq!(h.tracker(), tracker_word(60_000, block));
+    harness.configure(&update_policy_script(0, reject)).await??;
+    assert_eq!(harness.config(), Word::from([0u32, reject, 0, 0]));
+    harness.send(fungible(usdcx(), 500_000)).await?;
+    assert_eq!(harness.tracker(), tracker_word(60_000, block));
 
     // 0 -> N inside the same window: the old total still counts.
-    h.configure(&update_policy_script(WINDOW_BLOCKS, reject)).await??;
-    assert_eq!(h.config(), Word::from([WINDOW_BLOCKS, reject, 0, 0]));
-    let result = h.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
+    harness.configure(&update_policy_script(WINDOW_BLOCKS, reject)).await??;
+    assert_eq!(harness.config(), Word::from([WINDOW_BLOCKS, reject, 0, 0]));
+    let result = harness.send_signed(fungible(usdcx(), 50_000), &[0, 1], None).await?;
     assert_transaction_executor_error!(result, ERR_SPENDING_LIMIT_EXCEEDED);
     Ok(())
 }
