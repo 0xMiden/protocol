@@ -188,6 +188,68 @@ impl FeeSponsorshipNote {
     pub fn reclaim_height(&self) -> Option<BlockNumber> {
         self.storage.reclaim_height()
     }
+
+    // RECLAIM
+    // --------------------------------------------------------------------------------------------
+
+    /// Checks that `account_id` can reclaim this note at `block_ref`.
+    ///
+    /// Mirrors the `miden::standards::note::note_reclaim::assert_reclaimable` procedure the note
+    /// script takes the reclaim path through, which it does whenever its feature note is not
+    /// consumed in the same transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `account_id` is not the note's reclaimer.
+    /// - reclaim is disabled for the note.
+    /// - `block_ref` is below the note's reclaim height.
+    pub fn check_reclaim(
+        &self,
+        account_id: AccountId,
+        block_ref: BlockNumber,
+    ) -> Result<(), ReclaimError> {
+        if self.reclaimer() != account_id {
+            return Err(ReclaimError::NotReclaimer { account_id, reclaimer: self.reclaimer() });
+        }
+
+        match self.reclaim_height() {
+            None => Err(ReclaimError::ReclaimDisabled),
+            Some(reclaim_height) if block_ref < reclaim_height => {
+                Err(ReclaimError::ReclaimHeightNotReached {
+                    reclaim_height,
+                    current_height: block_ref,
+                })
+            },
+            Some(_) => Ok(()),
+        }
+    }
+}
+
+// RECLAIM ERROR
+// ================================================================================================
+
+/// The reason an account cannot reclaim a [`FeeSponsorshipNote`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReclaimError {
+    /// The account is not the note's reclaimer.
+    #[error("account {account_id} is not the reclaimer {reclaimer} of the FEE_SPONSORSHIP note")]
+    NotReclaimer {
+        account_id: AccountId,
+        reclaimer: AccountId,
+    },
+    /// Reclaim is disabled for the note.
+    #[error("reclaim of the FEE_SPONSORSHIP note is disabled")]
+    ReclaimDisabled,
+    /// The reclaim height of the note has not been reached.
+    #[error(
+        "the FEE_SPONSORSHIP note can be reclaimed from block {reclaim_height}, but the current block is {current_height}"
+    )]
+    ReclaimHeightNotReached {
+        reclaim_height: BlockNumber,
+        current_height: BlockNumber,
+    },
 }
 
 // BUILDER EXTENSIONS
@@ -715,5 +777,44 @@ mod tests {
         let decoded = FeeSponsorshipNoteStorage::try_from(encoded.items()).unwrap();
 
         assert_eq!(decoded, storage);
+    }
+
+    /// `check_reclaim` mirrors the reclaim rules of the note script: only the reclaimer may reclaim
+    /// the note, only when reclaim is enabled, and only once the reclaim height is reached.
+    #[rstest]
+    #[case::height_reached(sponsor(), Some(5), 5, Ok(()))]
+    #[case::height_not_reached(
+        sponsor(),
+        Some(5),
+        4,
+        Err(ReclaimError::ReclaimHeightNotReached {
+            reclaim_height: BlockNumber::from(5u32),
+            current_height: BlockNumber::from(4u32),
+        })
+    )]
+    #[case::reclaim_disabled(sponsor(), None, 5, Err(ReclaimError::ReclaimDisabled))]
+    #[case::not_the_reclaimer(
+        other_reclaimer(),
+        Some(5),
+        5,
+        Err(ReclaimError::NotReclaimer { account_id: other_reclaimer(), reclaimer: sponsor() })
+    )]
+    fn check_reclaim_applies_the_reclaim_rules(
+        #[case] account_id: AccountId,
+        #[case] reclaim_height: Option<u32>,
+        #[case] block_ref: u32,
+        #[case] expected: Result<(), ReclaimError>,
+    ) {
+        let sponsorship = FeeSponsorshipNote::builder()
+            .sender(sponsor())
+            .target_account(network_account())
+            .feature_note_id(feature_note_id())
+            .asset(fee_asset())
+            .maybe_reclaim_height(reclaim_height.map(BlockNumber::from))
+            .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+            .build()
+            .unwrap();
+
+        assert_eq!(sponsorship.check_reclaim(account_id, BlockNumber::from(block_ref)), expected);
     }
 }
