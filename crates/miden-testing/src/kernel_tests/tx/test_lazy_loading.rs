@@ -80,21 +80,15 @@ impl<'a> CountingDataStore<'a> {
 
     fn failing_storage_map_requests(inner: &'a MockTransaction) -> Self {
         Self {
-            inner,
-            storage_map_requests: AtomicUsize::new(0),
             fail_storage_map_requests: true,
-            note_script_requests: AtomicUsize::new(0),
-            fail_note_script_requests: false,
+            ..Self::new(inner)
         }
     }
 
     fn failing_note_script_requests(inner: &'a MockTransaction) -> Self {
         Self {
-            inner,
-            storage_map_requests: AtomicUsize::new(0),
-            fail_storage_map_requests: false,
-            note_script_requests: AtomicUsize::new(0),
             fail_note_script_requests: true,
+            ..Self::new(inner)
         }
     }
 
