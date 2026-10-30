@@ -365,6 +365,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             expected_output_notes: self.expected_output_notes,
             foreign_account_inputs: self.foreign_account_inputs,
             tx_inputs,
+            code_tree: self.chain.code_tree().clone(),
             mast_store,
             authenticator: self.authenticator,
             source_manager,

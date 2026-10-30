@@ -16,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetAmount, AssetId, AssetWitness, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness, CodeWitnessRequest};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -230,6 +231,18 @@ impl DataStore for TransactionInputsDataStore {
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let note_script = self.tx_inputs.note_scripts().get(&script_root).cloned();
         async move { Ok(note_script) }
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        _requests: Vec<CodeWitnessRequest>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        async move {
+            Err(DataStoreError::other(format!(
+                "code witnesses of code tree {code_tree_root} were requested again"
+            )))
+        }
     }
 }
 
