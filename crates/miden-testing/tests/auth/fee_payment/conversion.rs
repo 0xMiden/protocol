@@ -1,3 +1,4 @@
+use miden_protocol::asset::FungibleAsset;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO,
@@ -114,6 +115,20 @@ async fn zero_conversion_rate_aborts(
 async fn converted_amount_overflow_aborts(#[case] rate_num: u64) -> anyhow::Result<()> {
     let result = convert_amount(8500, rate_num, 1, None).await?;
 
+    assert_transaction_executor_error!(result, ERR_FEE_CONVERTED_AMOUNT_OVERFLOW);
+
+    Ok(())
+}
+
+/// The bound is the fungible asset maximum, not 2^63: the largest amount converts, one more aborts.
+/// A converted amount in between would let a running total of amounts wrap the field.
+#[tokio::test]
+async fn converted_amount_is_bounded_by_the_fungible_asset_maximum() -> anyhow::Result<()> {
+    let max_amount = FungibleAsset::MAX_AMOUNT.as_u64();
+
+    convert_amount(1, max_amount, 1, Some(max_amount)).await??;
+
+    let result = convert_amount(1, max_amount + 1, 1, None).await?;
     assert_transaction_executor_error!(result, ERR_FEE_CONVERTED_AMOUNT_OVERFLOW);
 
     Ok(())

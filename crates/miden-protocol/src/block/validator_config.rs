@@ -1,16 +1,9 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::crypto::SequentialCommit;
 use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use crate::errors::ValidatorConfigError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::utils::serde::Serializable;
 use crate::{Felt, WORD_SIZE, Word, ZERO};
 
 // VALIDATOR CONFIG
@@ -150,31 +143,6 @@ impl SequentialCommit for ValidatorConfig {
 // SERIALIZATION
 // ================================================================================================
 
-impl Serializable for ValidatorConfig {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self { keys, quorum } = self;
-
-        let num_keys =
-            u8::try_from(keys.len()).expect("constructor should validate num keys fits in u8");
-
-        quorum.write_into(target);
-        num_keys.write_into(target);
-        target.write_many(keys);
-    }
-}
-
-impl Deserializable for ValidatorConfig {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let quorum = u16::read_from(source)?;
-        let num_keys: u8 = source.read()?;
-        let keys = source
-            .read_many_iter(num_keys as usize)?
-            .collect::<Result<Vec<PublicKey>, _>>()?;
-
-        Self::new(keys, quorum).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -261,15 +229,6 @@ mod tests {
         let config = ValidatorConfig::new(random_keys(3), 3)?;
 
         assert_eq!(config.to_elements()[0], Felt::from(config.quorum()));
-        Ok(())
-    }
-
-    #[test]
-    fn serde_round_trip() -> anyhow::Result<()> {
-        let config = ValidatorConfig::new(random_keys(4), 4)?;
-        let deserialized = ValidatorConfig::read_from_bytes(&config.to_bytes())?;
-        assert_eq!(config, deserialized);
-
         Ok(())
     }
 }
