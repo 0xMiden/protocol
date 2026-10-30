@@ -81,6 +81,7 @@
 
 ### Fixes
 
+- Fixed account file writes to use owner only permissions and preserve existing files when permission changes fail. Block validation now rejects timestamps over 24 hours ahead of validator time, while transaction execution bounds note checker retries and lazy data store requests ([#4131](https://github.com/0xMiden/protocol/pull/4131)).
 - `SwapNote` and `PswapNote` builders now reject zero-amount offered or requested assets ([#4044](https://github.com/0xMiden/protocol/pull/4044)).
 - [BREAKING] `NoteConsumptionChecker::check_notes_consumability` now rejects input notes with duplicate nullifiers via the new `NoteCheckerError::TransactionInputs` variant. Removed `From<Vec<Note>> for InputNotes<InputNote>` and changed `TransactionInputs::set_input_notes` to take `InputNotes<InputNote>` ([#4005](https://github.com/0xMiden/protocol/pull/4005)).
 - [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
