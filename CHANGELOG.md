@@ -129,6 +129,7 @@ Later releases are recorded in [`.changelog/`](.changelog/) and on the [GitHub r
 
 ### Fixes
 
+- Fixed account file writes to use owner only permissions and preserve existing files when permission changes fail. Block validation now rejects timestamps over 24 hours ahead of validator time, while transaction execution bounds note checker retries and lazy data store requests ([#4131](https://github.com/0xMiden/protocol/pull/4131)).
 - The faucet factories now reject a `TokenPolicyManager` whose policies read a storage slot the account does not install ([#3527](https://github.com/0xMiden/protocol/pull/3527)).
 - Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
