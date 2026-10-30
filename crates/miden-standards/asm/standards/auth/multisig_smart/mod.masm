@@ -14,6 +14,8 @@ use {TX_PROPOSALS_SLOT} from miden::standards::auth::multisig_smart::delayed_exe
 
 pub mod delayed_execution
 
+pub mod spending_limits
+
 pub type ProcedurePolicy = struct {
     immediate: SignatureThreshold,
     delayed: SignatureThreshold,
@@ -457,11 +459,10 @@ end
 #! Invocation: exec
 #!
 #! NOTE: This procedure is a temporary form covering signer verification, per-procedure policy
-#! enforcement, and delayed execution. The following section will be added:
-#! - Spending Limits + Amount-Based Thresholds: a prologue that calls
-#!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
-#!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
-#!   the final `compute_tx_threshold` fallback.
+#! enforcement, delayed execution and spending limits. The following section will be added:
+#! - Amount-Based Thresholds: `spending_limits::enforce_spending_limits` will additionally return a
+#!   spending-derived threshold, combined via `u32max` with the policy thresholds before the final
+#!   `compute_tx_threshold` fallback.
 @locals(3)
 pub proc auth_tx(
     bound_block_num: BlockNumber,
@@ -578,6 +579,13 @@ pub proc auth_tx(
         end
         # => [TX_SUMMARY_COMMITMENT]
     end
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Enforcing spending limits ------
+    # A hard gate on the fungible assets this transaction sends out. It runs after the tx summary
+    # is created so its budget writes and expiration tightening stay out of the signed summary,
+    # which lets an approval survive a window rollover.
+    exec.spending_limits::enforce_spending_limits
     # => [TX_SUMMARY_COMMITMENT]
 end
 
