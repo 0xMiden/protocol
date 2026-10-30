@@ -27,14 +27,15 @@ const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
 // construction paths deterministic. These commitments include the mint policy code and the fee
-// schedule keyed by note script roots.
+// schedule keyed by note script roots. The fee-conversion bound also changes the authentication
+// code and the seed-derived account identity.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([8749210737763042709, 1514429685198038530, 2504183763438832649, 8090085305124368343])";
+    "Word([3285913880535316029, 1154164076604541351, 8701790716047480886, 2489131607827354404])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([592247684284637542, 2924435979595481615, 1585347794374846133, 5363369431289852611])";
+    "Word([9049168560135811765, 951009045549162648, 2406518288417399557, 7200974564246475952])";
 const GOLDEN_STORAGE_DIGEST: &str =
     "Word([1414494865552101221, 458193529781318654, 8480572613317170211, 6737599557854227636])";
-const GOLDEN_ACCOUNT_ID: &str = "0x6d89de614a5c3a7119f81b7d3a427b";
+const GOLDEN_ACCOUNT_ID: &str = "0x385177c6c22b2a312c44d97805f4fb";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.
