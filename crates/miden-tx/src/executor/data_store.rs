@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
 use miden_protocol::asset::{AssetId, AssetWitness};
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness, CodeWitnessRequest};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -77,6 +78,21 @@ pub trait DataStore: MastForestStore {
         map_root: Word,
         map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>>;
+
+    /// Returns the code witnesses for the requested procedure roots in the code tree with the
+    /// requested `code_tree_root`. The witnesses are needed to prove presence or absence of the
+    /// procedures.
+    ///
+    /// For each request, the data store must return a witness for its top-level procedure root. If
+    /// that root is absent, it must also return a witness for each referenced procedure of the
+    /// request, otherwise they can be skipped. The code of a present root is already registered, so
+    /// its referenced procedures can be skipped. Each witness should be returned only once, even if
+    /// multiple requests need it.
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        requests: Vec<CodeWitnessRequest>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>>;
 
     /// Returns a note script with the specified root, or `None` if not found.
     ///
