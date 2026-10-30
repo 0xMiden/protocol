@@ -15,7 +15,7 @@ use miden_protocol::transaction::{
 };
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
-use super::{DataStoreRequestState, ProgramExecutor, TransactionExecutor};
+use super::{ProgramExecutor, TransactionExecutor};
 use crate::auth::TransactionAuthenticator;
 use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
@@ -130,13 +130,13 @@ where
 
         // Attempt to find an executable set of notes.
         let mut budget = CheckerBudget::new(self.tx_executor.exec_options);
-        let mut data_store_requests = DataStoreRequestState::default();
+        let mut data_store_request_count = 0;
         self.find_executable_notes_by_elimination(
             tx_inputs,
             bundles,
             rejected,
             &mut budget,
-            &mut data_store_requests,
+            &mut data_store_request_count,
         )
         .await
     }
@@ -185,9 +185,9 @@ where
 
         // try to consume the provided note
         let mut budget = CheckerBudget::single_attempt(self.tx_executor.exec_options);
-        let mut data_store_requests = DataStoreRequestState::default();
+        let mut data_store_request_count = 0;
         match self
-            .try_execute_notes(&mut tx_inputs, &mut budget, &mut data_store_requests)
+            .try_execute_notes(&mut tx_inputs, &mut budget, &mut data_store_request_count)
             .await
         {
             // execution succeeded
@@ -241,7 +241,7 @@ where
         mut bundles: NoteBundles,
         mut failed_notes: Vec<FailedNote>,
         budget: &mut CheckerBudget,
-        data_store_requests: &mut DataStoreRequestState,
+        data_store_request_count: &mut usize,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         // Attempt to execute notes in a loop. Reduce the set of bundles based on failures until
         // either a set of notes executes without failure or the set of bundles cannot be further
@@ -255,7 +255,7 @@ where
             tx_inputs.set_input_notes(InputNotes::new_unchecked(
                 bundles.to_notes().into_iter().map(InputNote::unauthenticated).collect(),
             ));
-            match self.try_execute_notes(&mut tx_inputs, budget, data_store_requests).await {
+            match self.try_execute_notes(&mut tx_inputs, budget, data_store_request_count).await {
                 Ok(cycle_counts) => {
                     // A full set of successful notes has been found. The bundles hold the notes in
                     // the order they were executed in, so they line up with the cycle counts.
@@ -305,7 +305,7 @@ where
                             failed_notes,
                             tx_inputs,
                             budget,
-                            data_store_requests,
+                            data_store_request_count,
                         )
                         .await;
                 },
@@ -340,7 +340,7 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
         budget: &mut CheckerBudget,
-        data_store_requests: &mut DataStoreRequestState,
+        data_store_request_count: &mut usize,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
@@ -363,7 +363,8 @@ where
                 tx_inputs.set_input_notes(InputNotes::new_unchecked(
                     candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
                 ));
-                match self.try_execute_notes(&mut tx_inputs, budget, data_store_requests).await {
+                match self.try_execute_notes(&mut tx_inputs, budget, data_store_request_count).await
+                {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or
                         // as part of another candidate set. Remove them from the failed list.
@@ -401,52 +402,30 @@ where
                     Err(TransactionCheckerError::TransactionScriptExecution(error)) => {
                         return Err(NoteCheckerError::TransactionScriptExecution(error));
                     },
-                    Err(error) => {
-                        // This combination failed, so the whole bundle is rejected. Decide which
-                        // note of the bundle takes the failure and how it is reported; the rest
-                        // of the bundle is reported as its collateral.
-                        let (blamed_idx, failure) = match error {
-                            // A note failed while executing: blame it, when it is one of the
-                            // bundle's notes rather than one of the already accepted ones.
-                            TransactionCheckerError::NoteExecution {
-                                failed_note_index,
-                                error,
-                                failed_note_cycle_count,
-                                ..
-                            } => (
-                                failed_note_index
-                                    .checked_sub(successful_notes.len())
-                                    .filter(|idx| *idx < bundle_notes.len())
-                                    .unwrap_or(0),
-                                NoteFailure::Blamed {
-                                    error,
-                                    num_cycles: failed_note_cycle_count,
-                                },
-                            ),
-                            // The epilogue failed, which points at no particular note: blame the
-                            // feature note, the one the rest of the bundle is bound to.
-                            TransactionCheckerError::EpilogueExecution { error, .. } => {
-                                let failure = match bundle.fee_error(&error) {
-                                    // The account could not collect the bundle's fee, which this
-                                    // bundle alone is responsible for, since it is the only one
-                                    // this execution added: report it with the fee details.
-                                    Some(reason) => NoteFailure::Fee { reason, error },
-                                    // The epilogue failed for another reason.
-                                    None => NoteFailure::Blamed { error, num_cycles: None },
-                                };
-                                (0, failure)
-                            },
-                            // The prologue failed, or the transaction inputs could not be
-                            // prepared: no note ran, so blame the feature note.
-                            other => {
-                                (0, NoteFailure::Blamed { error: other.into(), num_cycles: None })
-                            },
+                    Err(TransactionCheckerError::NoteExecution {
+                        failed_note_index: execution_failed_note_index,
+                        error,
+                        failed_note_cycle_count,
+                        ..
+                    }) => {
+                        let blamed_idx = execution_failed_note_index
+                            .checked_sub(successful_notes.len())
+                            .filter(|idx| *idx < bundle_notes.len())
+                            .unwrap_or(0);
+                        let failure = NoteFailure::Blamed {
+                            error,
+                            num_cycles: failed_note_cycle_count,
                         };
-
-                        // Record every note of the bundle (overwriting previous failures for the
-                        // relevant notes), so the reported notes always account for all inputs.
-                        // Only the blamed note owns the error; the rest failed with its bundle.
                         for failed_note in bundle.failed_notes(blamed_idx, failure) {
+                            failed_note_index.insert(failed_note.note().id(), failed_note);
+                        }
+                    },
+                    Err(TransactionCheckerError::EpilogueExecution { error, .. }) => {
+                        let failure = match bundle.fee_error(&error) {
+                            Some(reason) => NoteFailure::Fee { reason, error },
+                            None => NoteFailure::Blamed { error, num_cycles: None },
+                        };
+                        for failed_note in bundle.failed_notes(0, failure) {
                             failed_note_index.insert(failed_note.note().id(), failed_note);
                         }
                     },
@@ -481,7 +460,7 @@ where
         &self,
         tx_inputs: &mut TransactionInputs,
         budget: &mut CheckerBudget,
-        data_store_requests: &mut DataStoreRequestState,
+        data_store_request_count: &mut usize,
     ) -> Result<Vec<usize>, TransactionCheckerError> {
         if tx_inputs.input_notes().is_empty() {
             return Ok(Vec::new());
@@ -489,7 +468,7 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self
             .tx_executor
-            .prepare_transaction_with_data_store_requests(tx_inputs, data_store_requests.clone())
+            .prepare_transaction_with_data_store_request_count(tx_inputs, *data_store_request_count)
             .await
             .map_err(TransactionCheckerError::TransactionPreparation)?;
 
@@ -510,9 +489,9 @@ where
             .await
             .map_err(map_execution_error);
 
-        let (tx_progress, lazy_loaded_data, updated_data_store_requests) =
+        let (tx_progress, lazy_loaded_data, updated_data_store_request_count) =
             host.into_notes_checker_parts();
-        *data_store_requests = updated_data_store_requests;
+        *data_store_request_count = updated_data_store_request_count;
 
         // Set the lazy loaded from the execution as input for reexecution. This avoids lazy-loading
         // data that was already loaded from the data store in the next potential run.
