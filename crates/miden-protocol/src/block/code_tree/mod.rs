@@ -16,6 +16,9 @@ pub use witness::CodeWitness;
 mod partial;
 pub use partial::PartialCodeTree;
 
+mod patch;
+pub use patch::CodePatch;
+
 /// The value of a procedure root that is present in the code tree.
 ///
 /// Absent procedure roots have the [`EMPTY_WORD`] as their value.
