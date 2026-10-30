@@ -272,11 +272,13 @@ end
 #!     PARTIAL_BLOCKCHAIN_COMMITMENT,
 #!     ACCOUNT_ROOT,
 #!     NULLIFIER_ROOT,
+#!     CODE_TREE_ROOT,
 #!     TX_COMMITMENT,
 #!     PROTOCOL_CONFIG_COMMITMENT,
 #!     VALIDATOR_CONFIG_COMMITMENT,
 #!     NEXT_PROTOCOL_CONFIG_COMMITMENT,
 #!     [verification_base_fee, 0, 0, 0],
+#!     EMPTY_WORD,
 #!     NOTE_ROOT,
 #!  ]
 #! Outputs:
@@ -292,12 +294,14 @@ end
 #! - ACCOUNT_ROOT is the root of the tree with latest account states for all accounts.
 #! - NULLIFIER_ROOT is the root of the tree with nullifiers of all notes that have ever been
 #!   consumed.
+#! - CODE_TREE_ROOT is the root of the tree with all registered procedure roots.
 #! - TX_COMMITMENT is a commitment to the set of transaction IDs which affected accounts in the block.
 #! - PROTOCOL_CONFIG_COMMITMENT is the commitment to the protocol config.
 #! - VALIDATOR_CONFIG_COMMITMENT is the commitment to the validator config.
 #! - NEXT_PROTOCOL_CONFIG_COMMITMENT is the the commitment to the next protocol config.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
+#! - EMPTY_WORD pads the sub commitment preimage to a multiple of the hasher rate.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 proc process_block_data(block_num: BlockNumber)
     push.BLOCK_METADATA_PTR
@@ -306,6 +310,7 @@ proc process_block_data(block_num: BlockNumber)
     # read the block header and compute its sub commitment
     # see `Advice stack` above for details.
     exec.poseidon2::init_no_padding
+    adv_pipe exec.poseidon2::permute
     adv_pipe exec.poseidon2::permute
     adv_pipe exec.poseidon2::permute
     adv_pipe exec.poseidon2::permute

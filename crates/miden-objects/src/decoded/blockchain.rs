@@ -1,5 +1,6 @@
 //! Domain construction for decoded blockchain messages.
 use miden_protobuf::unwrap_infallible;
+use miden_protocol::block::code_tree::CodeTreeRoot;
 
 use crate::decoded::VerificationError;
 use crate::{Verify, proto};
@@ -68,6 +69,7 @@ impl crate::BuildUnchecked for BlockHeader {
             self.chain_commitment,
             self.account_root,
             self.nullifier_root,
+            CodeTreeRoot::from_raw(self.code_tree_root),
             self.note_root,
             self.tx_commitment,
             self.validator_config.verify()?,

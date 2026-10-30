@@ -19,6 +19,9 @@ pub use partial::PartialCodeTree;
 mod patch;
 pub use patch::{CodePatch, CodePatchCommitment};
 
+mod root;
+pub use root::CodeTreeRoot;
+
 /// The value of a procedure root that is present in the code tree.
 ///
 /// Absent procedure roots have the [`EMPTY_WORD`] as their value.
@@ -95,8 +98,8 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Returns the root of the code SMT.
-    pub fn root(&self) -> Word {
-        self.smt.root()
+    pub fn root(&self) -> CodeTreeRoot {
+        CodeTreeRoot::from_raw(self.smt.root())
     }
 
     /// Returns the number of procedure roots in this tree.
@@ -358,7 +361,7 @@ mod tests {
             let witness = tree.open(&root);
             assert_eq!(witness.proof().get(&root.as_word()), Some(PRESENT_VALUE));
             assert_eq!(witness.proof().leaf().num_entries(), 2);
-            assert_eq!(witness.proof().compute_root(), tree.root());
+            assert_eq!(witness.proof().compute_root(), tree.root().as_word());
         }
 
         Ok(())
