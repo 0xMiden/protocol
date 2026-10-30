@@ -41,7 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::code_tree::{CodePatch, CodePatchCommitment};
+use crate::block::code_tree::{CodePatch, CodePatchCommitment, CodeTreeRoot};
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::code::ProcedureRoot;
 use crate::note::{
@@ -1030,6 +1030,15 @@ pub enum TransactionInputError {
     },
     #[error("transaction inputs contain no account {0} to add a witness to")]
     WitnessForUnknownAccount(AccountId),
+    #[error("code witness does not fit the code tree of the reference block")]
+    InvalidCodeWitness(#[source] Box<CodeTreeError>),
+    #[error(
+        "code tree has root {actual} which does not match the block header's code tree root {expected}"
+    )]
+    InconsistentCodeTreeRoot {
+        expected: CodeTreeRoot,
+        actual: CodeTreeRoot,
+    },
     #[error("partial blockchain has length {actual} which does not match block number {expected}")]
     InconsistentChainLength {
         expected: BlockNumber,
@@ -1831,7 +1840,7 @@ pub enum CodeTreeError {
         source: MerkleError,
     },
 
-    #[error("new tree root after code witness insertion does not match previous tree root")]
+    #[error("code witness root does not match the partial code tree root")]
     TreeRootConflict(#[source] MerkleError),
 
     #[error("failed to compute code tree mutations")]
