@@ -541,7 +541,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn on_account_push_delta_commitment_body_block_count(
         &self,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let num_blocks = u32::try_from(self.update_tracker.delta_commitment_body_block_count()?)
+        let num_blocks = u32::try_from(self.update_tracker.delta_commitment_body_block_count())
             .map_err(|_| {
                 TransactionKernelError::other(
                     "account delta commitment body block count exceeds u32::MAX",

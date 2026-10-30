@@ -102,8 +102,8 @@ const DOMAIN_MAP = 3
 #! The domain of the account code in a delta or patch commitment.
 const DOMAIN_CODE = 4
 
-#! The version of the delta commitment layout.
-const DELTA_VERSION_1 = 1
+#! The delta layout version with both operation trailers for every nonempty vault delta.
+const DELTA_VERSION_2 = 2
 
 #! The version of the patch commitment layout.
 const PATCH_VERSION_1 = 1
@@ -270,7 +270,7 @@ pub proc compute_delta_commitment() -> Commitment
     # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CHAINING_WORD]
 
     # the delta of the nonce is equal to was_nonce_incremented
-    exec.was_nonce_incremented push.DELTA_VERSION_1
+    exec.was_nonce_incremented push.DELTA_VERSION_2
     # => [delta_version, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CHAINING_WORD]
     # => [METADATA, EMPTY_WORD, CHAINING_WORD]
 
@@ -643,6 +643,7 @@ end
 #! It iterates the asset delta link map once and processes the added assets first. It writes the
 #! removed assets into local memory to enable a subsequent iteration over linear memory rather than
 #! a second expensive link map iteration that would have to skip added assets.
+#! A nonempty delta includes both operation trailers, even if one count is zero.
 #!
 #! Inputs:  [CHAINING_WORD]
 #! Outputs: [CHAINING_WORD]
@@ -755,51 +756,61 @@ proc commit_asset_delta(chaining_word: eidos::ChainingValue) -> eidos::ChainingV
     drop
     # => [CHAINING_WORD]
 
-    # Add the added assets trailer if num_added_assets != 0.
-    # ---------------------------------------------------------------------------------------------
+    # omit the entire vault section only when no assets changed
+    # load the adjacent counts together and discard has_next and iter
+    padw loc_loadw_le.COMMIT_ASSET_DELTA_HAS_NEXT_LOC drop drop
+    # => [num_added_assets, num_removed_assets, CHAINING_WORD]
 
-    loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC push.DELTA_OP_ADD
-    exec.commit_asset_count_trailer
-    # => [CHAINING_WORD]
+    dup.1 dup.1 add dup neq.0
+    # => [has_changes, num_changed_assets, num_added_assets, num_removed_assets, CHAINING_WORD]
 
-    # Hash the removed assets.
-    # ---------------------------------------------------------------------------------------------
+    if.true
+        # account for every asset block and both trailers together
+        add.2 exec.consume_commitment_body_blocks
+        # => [num_added_assets, num_removed_assets, CHAINING_WORD]
 
-    locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC dup
-    # => [start_ptr, start_ptr, CHAINING_WORD]
+        # add the addition trailer, including when its count is zero
+        swap movdn.5 push.DELTA_OP_ADD
+        # => [delta_op, num_added_assets, CHAINING_WORD, num_removed_assets]
 
-    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC
-    # => [num_removed_assets, start_ptr, start_ptr, CHAINING_WORD]
+        exec.commit_asset_count_trailer
+        # => [CHAINING_WORD, num_removed_assets]
 
-    mul.ASSET_SIZE add
-    # => [end_ptr, start_ptr, CHAINING_WORD]
+        # hash the removed assets
+        dup.4 locaddr.COMMIT_ASSET_DELTA_REMOVED_ASSETS_LOC dup movup.2
+        # => [num_removed_assets, start_ptr, start_ptr, CHAINING_WORD, num_removed_assets]
 
-    # The memory absorber needs block lanes even for an empty range.
-    movdn.5 movdn.4
-    # => [CHAINING_WORD, start_ptr, end_ptr]
+        mul.ASSET_SIZE add
+        # => [end_ptr, start_ptr, CHAINING_WORD, num_removed_assets]
 
-    padw padw
-    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, start_ptr, end_ptr]
+        # the memory absorber needs block lanes even for an empty range
+        movdn.5 movdn.4
+        # => [CHAINING_WORD, start_ptr, end_ptr, num_removed_assets]
 
-    exec.eidos::absorb_double_words_from_memory
-    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, end_ptr, end_ptr]
+        padw padw
+        # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, start_ptr, end_ptr, num_removed_assets]
 
-    exec.eidos::digest
-    # => [CHAINING_WORD, end_ptr, end_ptr]
+        exec.eidos::absorb_double_words_from_memory
+        # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, end_ptr, end_ptr, num_removed_assets]
 
-    movup.4 drop movup.4 drop
-    # => [CHAINING_WORD]
+        exec.eidos::digest
+        # => [CHAINING_WORD, end_ptr, end_ptr, num_removed_assets]
 
-    # Add the removed assets trailer if num_removed_assets != 0.
-    # ---------------------------------------------------------------------------------------------
+        movup.4 drop movup.4 drop
+        # => [CHAINING_WORD, num_removed_assets]
 
-    loc_load.COMMIT_ASSET_DELTA_NUM_REMOVED_LOC push.DELTA_OP_REMOVE
-    exec.commit_asset_count_trailer
-    # => [CHAINING_WORD]
+        # add the removal trailer, including when its count is zero
+        movup.4 push.DELTA_OP_REMOVE
+        exec.commit_asset_count_trailer
+        # => [CHAINING_WORD]
+    else
+        drop drop drop
+        # => [CHAINING_WORD]
+    end
 end
 
 #! Compresses a trailer that commits to the number of assets affected by the given delta operation.
-#! If num_assets is zero, this is a no-op and the chaining word is preserved.
+#! The trailer is included even when num_assets is zero.
 #!
 #! Inputs:  [delta_op, num_assets, CHAINING_WORD]
 #! Outputs: [CHAINING_WORD]
@@ -807,33 +818,24 @@ end
 #! Where:
 #! - delta_op is the delta operation (DELTA_OP_ADD or DELTA_OP_REMOVE).
 #! - num_assets is the number of assets affected by delta_op (added or removed).
+#! - CHAINING_WORD is the current account-delta chaining word.
+#!
+#! Invocation: exec
 proc commit_asset_count_trailer(
     delta_op: u8,
     num_assets: u32,
     chaining_word: eidos::ChainingValue
 ) -> eidos::ChainingValue
-    dup.1 neq.0
-    # => [is_non_zero, delta_op, num_assets, CHAINING_WORD]
+    # build the metadata
+    push.0 movdn.2 push.DOMAIN_ASSET
+    # => [[domain, delta_op, num_assets, 0], CHAINING_WORD]
 
-    if.true
-        # Account for the asset blocks and their trailer together.
-        dup.1 add.1 exec.consume_commitment_body_blocks
+    # prepend the empty word that follows the metadata word as the second hasher input
+    padw swapw
+    # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CHAINING_WORD]
 
-        # build the metadata
-        push.0 movdn.2 push.DOMAIN_ASSET
-        # => [[domain, delta_op, num_assets, 0], CHAINING_WORD]
-
-        # prepend the empty word that follows the metadata word as the second hasher input
-        padw swapw
-        # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CHAINING_WORD]
-
-        exec.eidos::compress dropw dropw
-        # => [CHAINING_WORD]
-    else
-        # discard delta_op and num_assets
-        drop drop
-        # => [CHAINING_WORD]
-    end
+    exec.eidos::compress dropw dropw
+    # => [CHAINING_WORD]
 end
 
 #! Updates the account-patch chaining word with the asset vault patches.
