@@ -4,7 +4,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -20,6 +19,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use rand::{Rng, RngExt};
 
 use super::decode_optional_block_height;
 use crate::StandardsLib;
@@ -200,9 +200,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> FeeSponsorshipNoteBuilder<fee_sponsorship_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -409,7 +409,7 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::asset::{Asset, NonFungibleAsset};
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments};
     use rstest::rstest;
 
@@ -458,7 +458,7 @@ mod tests {
         #[case] expected_reclaimer: AccountId,
         #[case] expected_reclaim_height: Felt,
     ) {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
 
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
@@ -548,7 +548,7 @@ mod tests {
     /// A built note round-trips through [`Note`] and back with its fields intact.
     #[test]
     fn try_from_round_trips_built_note() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
 
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())

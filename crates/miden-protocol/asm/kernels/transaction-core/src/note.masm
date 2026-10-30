@@ -1,6 +1,6 @@
 use {NoteArgs, NoteScriptRoot} from miden::protocol_utils::types
 use {Commitment, InputNoteData, OutputNoteData} from miden::tx_kernel_core::types
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
 use {NOTE_MEM_SIZE, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
@@ -8,18 +8,6 @@ use miden::tx_kernel_core::memory
 
 pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, validate_metadata, metadata_into_version}
     from miden::protocol_utils::note
-
-# ERRORS
-# =================================================================================================
-
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 16"
-
-# CONSTANTS
-# =================================================================================================
-
-# The diff between the memory address after first mem_stream operation and the next target when
-# generating the output notes commitment. Must be NOTE_MEM_SIZE - 8;
-const OUTPUT_NOTE_HASHING_MEM_DIFF = 1016
 
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================
@@ -85,10 +73,8 @@ end
 
 #! Computes the commitment to the output note's attachments.
 #!
-#! The commitment is defined as:
-#! - 0 attachments: EMPTY_WORD
-#! - 1+ attachments: hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)
-#!   i.e., the sequential hash over the individual attachment commitments.
+#! The commitment is the sequential hash over the individual attachment commitments. An empty
+#! attachment list uses the canonical Eidos empty hash.
 #!
 #! Inputs:  [note_ptr]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
@@ -100,24 +86,33 @@ pub proc compute_attachments_commitment(note_ptr: ptr<OutputNoteData>) -> Commit
     dup exec.memory::get_output_note_num_attachments
     # => [num_attachments, note_ptr]
 
-    # end_ptr = attachment_data_ptr + num_attachments * WORD_NUM_ELEMENTS
-    swap exec.memory::get_output_note_attachment_commitment_ptr
-    # => [start_ptr, num_attachments]
+    dup eq.0
+    if.true
+        exec.eidos::empty_felt_sequence_digest
+        # => [ATTACHMENTS_COMMITMENT, num_attachments, note_ptr]
 
-    swap mul.WORD_NUM_ELEMENTS dup.1 add swap
-    # => [start_ptr, end_ptr]
+        movup.4 drop movup.4 drop
+        # => [ATTACHMENTS_COMMITMENT]
+    else
+        # end_ptr = attachment_data_ptr + num_attachments * WORD_NUM_ELEMENTS
+        swap exec.memory::get_output_note_attachment_commitment_ptr
+        # => [start_ptr, num_attachments]
 
-    exec.poseidon2::hash_words
-    # => [ATTACHMENTS_COMMITMENT]
+        swap mul.WORD_NUM_ELEMENTS dup.1 add swap
+        # => [start_ptr, end_ptr]
+
+        exec.eidos::hash_words
+        # => [ATTACHMENTS_COMMITMENT]
+    end
 end
 
 #! Computes the assets commitment of the output note located at the specified memory address.
 #!
-#! The hash is computed as a sequential hash of the assets contained in the note. If there is an
-#! odd number of assets, then for the final hashing permutation we pad the last word of the hasher
-#! rate with zeros. If the note contains no assets, ASSET_COMMITMENT is set to EMPTY_WORD.
+#! The hash is computed as a sequential hash of the assets contained in the note. Each asset fills
+#! one Eidos block. If the note contains no assets, ASSET_COMMITMENT is the canonical Eidos empty
+#! hash.
 #!
-#! Recomputation of the assets commitment is performed only if the assets commitment dirty flag is 
+#! Recomputation of the assets commitment is performed only if the assets commitment dirty flag is
 #! set to 1. Otherwise the commitment stored in the output note data memory segment is returned.
 #!
 #! Inputs:  [note_data_ptr]
@@ -146,7 +141,7 @@ pub proc compute_output_note_assets_commitment(note_data_ptr: ptr<OutputNoteData
         mul.ASSET_SIZE dup.1 add swap
         # => [assets_ptr, assets_end_ptr, note_data_ptr]
 
-        exec.poseidon2::hash_double_words
+        exec.eidos::hash_words
         # => [ASSETS_COMMITMENT, note_data_ptr]
 
         # save the assets commitment to memory
@@ -188,7 +183,7 @@ proc compute_output_note_details_commitment(note_data_ptr: ptr<OutputNoteData>) 
     # => [RECIPIENT, ASSETS_COMMITMENT, note_data_ptr]
 
     # compute note details commitment
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [NOTE_DETAILS_COMMITMENT, note_data_ptr]
 
     # save the output note details commitment to memory
@@ -213,60 +208,61 @@ pub proc compute_output_notes_commitment() -> Commitment
     push.0
     # => [current_index = 0, num_notes]
 
-    # prepare stack for hashing
-    exec.poseidon2::init_no_padding
-    # => [RATE0, RATE1, CAPACITY, current_index, num_notes]
+    # Avoid setting up a hasher when there are no output notes.
+    dup.1 eq.0
+    if.true
+        exec.eidos::empty_felt_sequence_digest
+        # => [OUTPUT_NOTES_COMMITMENT, current_index, num_notes]
+    else
+        # One 8-Felt block per note; only the chaining word is live between iterations.
+        dup.1 mul.8 exec.eidos::init_chaining_word
+        # => [CV, current_index, num_notes]
 
-    # starting looping if num_notes != 0
-    dup.13 neq.0
-    # => [should_loop, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # The nonempty branch always processes at least one note.
+        push.1
+        # => [has_more_notes, CV, current_index, num_notes]
 
-    # loop and hash output notes
-    while.true
-        dup.12 exec.memory::get_output_note_ptr
-        # => [current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # loop and hash output notes
+        while.true
+            dup.4 exec.memory::get_output_note_ptr
+            # => [current_note_ptr, CV, current_index, num_notes]
 
-        # compute and save output note details commitment to memory (this also computes the note's
-        # asset commitment)
-        dup exec.compute_output_note_details_commitment
-        # => [NOTE_DETAILS_COMMITMENT, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
+            # compute and save output note details commitment to memory (this also computes the
+            # note's asset commitment)
+            dup exec.compute_output_note_details_commitment
+            # => [NOTE_DETAILS_COMMITMENT, current_note_ptr, CV, current_index, num_notes]
 
-        # compute attachments commitment
-        dup.4 exec.compute_attachments_commitment
-        # => [ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
+            # compute attachments commitment
+            dup.4 exec.compute_attachments_commitment
+            # => [ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT, current_note_ptr,
+            #     CV, current_index, num_notes]
 
-        movup.8 exec.memory::get_output_note_metadata
-        # => [NOTE_METADATA, ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT, RATE0, RATE1, CAPACITY, current_index, num_notes]
+            movup.8 exec.memory::get_output_note_metadata
+            # => [NOTE_METADATA, ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT,
+            #     CV, current_index, num_notes]
 
-        # compute hash(NOTE_METADATA || ATTACHMENTS_COMMITMENT)
-        exec.poseidon2::merge
-        # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, RATE0, RATE1, CAPACITY, current_index, num_notes]
+            # compute hash(NOTE_METADATA || ATTACHMENTS_COMMITMENT)
+            exec.eidos::hash_double_word
+            # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, CV, current_index, num_notes]
 
-        # replace rate words with note details commitment and metadata commitment
-        swapdw dropw dropw
-        # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, CAPACITY, current_index, num_notes]
+            # move note details commitment to the top of the stack
+            swapw
+            # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, CV, current_index, num_notes]
 
-        # move note details commitment to the top of the stack
-        swapw
-        # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, CAPACITY, current_index, num_notes]
+            # The block words are dead after compression; keep only the updated chaining value.
+            exec.eidos::compress dropw dropw
+            # => [CV, current_index, num_notes]
 
-        # permute over (NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT)
-        exec.poseidon2::permute
-        # => [RATE0, RATE1, CAPACITY, current_index, num_notes]
+            # increment current_index
+            movup.4 add.1 movdn.4
+            # => [CV, current_index + 1, num_notes]
 
-        # increment current_index
-        movup.12 add.1 movdn.12
-        # => [RATE0, RATE1, CAPACITY, current_index + 1, num_notes]
-
-        # continue looping if current_index != num_notes
-        dup.13 dup.13 neq
-        # => [should_loop, RATE0, RATE1, CAPACITY, current_index + 1, num_notes]
+            # continue looping if current_index != num_notes
+            dup.5 dup.5 neq
+            # => [should_loop, CV, current_index + 1, num_notes]
+        end
+        # => [OUTPUT_NOTES_COMMITMENT, current_index + 1, num_notes]
     end
-    # => [RATE0, RATE1, CAPACITY, current_index + 1, num_notes]
-
-    # extract digest
-    exec.poseidon2::squeeze_digest
-    # => [OUTPUT_NOTES_COMMITMENT, current_index + 1, num_notes]
 
     # drop accessory variables from stack
     movup.4 drop

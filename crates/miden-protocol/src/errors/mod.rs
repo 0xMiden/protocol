@@ -9,7 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::utils::HexParseError;
 use miden_processor::ExecutionError;
-use miden_verifier::VerificationError;
+use miden_verifier::{HashFunction, VerificationError};
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
@@ -1866,6 +1866,11 @@ pub enum BoundSignatureError {
 
 #[derive(Debug, Error)]
 pub enum TransactionVerifierError {
+    #[error("transaction VM proof uses {actual:?}, but the protocol requires {expected:?}")]
+    UnsupportedVmProofHash {
+        actual: HashFunction,
+        expected: HashFunction,
+    },
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
     #[error("transaction proof contains settled precompile work")]

@@ -26,21 +26,16 @@ const SEED: [u8; 32] = [7u8; 32];
 const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
-// construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
-// policy code and the fee schedule keyed by note script roots, for the rename of the
-// `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
-// slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
-// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, for the
-// logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the root
-// of the config note script that calls them, and for the bound on converted amounts in
-// `fee::convert_amount`, which changes the auth component's `pay_fee` code.
+// construction paths deterministic. These commitments include the mint policy code and the fee
+// schedule keyed by note script roots. The fee-conversion bound also changes the authentication
+// code and the seed-derived account identity.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([5162996465510048755, 2094439739736683357, 6936787768993976662, 17230760176016600422])";
+    "Word([3285913880535316029, 1154164076604541351, 8701790716047480886, 2489131607827354404])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([4330151583663897892, 1076998090470432129, 2457291820389870476, 9246314450693933979])";
+    "Word([9049168560135811765, 951009045549162648, 2406518288417399557, 7200974564246475952])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([11934322787388200008, 12740576829291714277, 8409363599569151088, 3187457418425219326])";
-const GOLDEN_ACCOUNT_ID: &str = "0xf10557781db4fbf15678c813fadd2d";
+    "Word([1414494865552101221, 458193529781318654, 8480572613317170211, 6737599557854227636])";
+const GOLDEN_ACCOUNT_ID: &str = "0x385177c6c22b2a312c44d97805f4fb";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

@@ -19,10 +19,10 @@ use core::fmt;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_standards::note::config::MinBurnAmountConfigNote;
+use rand::Rng;
 
 use crate::account::xreserve::MIN_BURN_SIZE_FLOOR;
 
@@ -93,7 +93,7 @@ impl XReserveMinBurnAmountNote {
     /// `miden-standards` script, which does not validate the value. Returns
     /// [`XReserveMinBurnAmountNoteError::Note`] if the standard note cannot be assembled.
     #[builder]
-    pub fn new<R: FeltRng>(
+    pub fn new<R: Rng>(
         sender: AccountId,
         target: AccountId,
         min_burn_amount: AssetAmount,

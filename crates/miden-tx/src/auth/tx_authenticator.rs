@@ -245,7 +245,7 @@ mod test {
     #[test]
     fn serialize_auth_key() {
         let mut rng = ChaCha20Rng::from_seed([0_u8; 32]);
-        let auth_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
+        let auth_key = AuthSecretKey::new_falcon512_eidos_with_rng(&mut rng);
         let serialized = auth_key.to_bytes();
         let deserialized = AuthSecretKey::read_from_bytes(&serialized).unwrap();
 

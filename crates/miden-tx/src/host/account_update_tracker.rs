@@ -114,6 +114,36 @@ impl AccountUpdateTracker {
         &mut self.storage
     }
 
+    /// Returns the number of 8-Felt body blocks in the account patch commitment.
+    ///
+    /// This excludes the fixed metadata header block. The transaction kernel asks the host for
+    /// this value before initializing Eidos, then proves it by counting the blocks it actually
+    /// commits.
+    pub fn patch_commitment_body_block_count(&self) -> usize {
+        let vault_patch = self.vault.clone().into_patch();
+        let storage_patch = self.storage.clone().into_patch();
+
+        AccountPatch::commitment_body_block_count(
+            vault_patch.num_assets(),
+            &storage_patch,
+            !matches!(self.code, AccountCodeState::None),
+        )
+    }
+
+    /// Returns the number of 8-Felt body blocks in the account delta commitment.
+    ///
+    /// This excludes the fixed metadata header block. The vault-delta section is derived from the
+    /// tracked initial/final asset values instead of the accumulated delta events, because those
+    /// events are emitted by the same kernel pass which consumes this advised count.
+    pub fn delta_commitment_body_block_count(&self) -> usize {
+        let storage_patch = self.storage.clone().into_patch();
+        AccountDelta::commitment_body_block_count(
+            self.vault.num_changed_assets(),
+            &storage_patch,
+            !matches!(self.code, AccountCodeState::None),
+        )
+    }
+
     /// Consumes `self` and returns the resulting [AccountDelta].
     ///
     /// Normalizes the delta by removing entries for storage slots where the initial and new

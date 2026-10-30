@@ -28,7 +28,7 @@ use super::config::DelayedExecutionPolicy;
 use super::spending_limits::SpendingLimitsPolicy;
 use crate::account::account_component_package;
 use crate::account::auth::{Approver, ApproverSet};
-use crate::{StandardsDomainRegistry, procedure_root};
+use crate::{MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN, procedure_root};
 
 account_component_package!(MULTISIG_SMART_PACKAGE, "miden-standards-auth-multisig-smart.masp");
 
@@ -481,12 +481,12 @@ impl AuthMultisigSmart {
     ///
     /// Mirrors `cancel_signing_message` in the MASM component: the proposal stays keyed by the raw
     /// commitment, but cancellation signatures are over its hash under
-    /// [`StandardsDomainRegistry::MultisigSmartCancelProposal`], so that proposal signatures (which
+    /// [`MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN`], so that proposal signatures (which
     /// are over the commitment itself and also authorize execution) cannot be replayed to cancel.
     pub fn cancel_signing_message(tx_summary_commitment: Word) -> Word {
-        Hasher::merge_in_domain(
+        Hasher::hash_double_word_in_domain(
             &[tx_summary_commitment, Word::empty()],
-            StandardsDomainRegistry::MultisigSmartCancelProposal.as_felt(),
+            MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN,
         )
     }
 

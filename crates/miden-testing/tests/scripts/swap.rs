@@ -306,9 +306,7 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // CREATE ACCOUNT 1: Has asset A, wants asset B
     // --------------------------------------------------------------------------------------------
     let account_1 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![asset_a],
     )?;
 
@@ -319,9 +317,7 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // CREATE ACCOUNT 2: Has asset B, wants asset A
     // --------------------------------------------------------------------------------------------
     let account_2 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![asset_b],
     )?;
     let (swap_note_2, payback_note_2) =
@@ -332,9 +328,7 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
 
     // TODO: matcher account should be able to fill both SWAP notes without holding assets A & B
     let matcher_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![asset_a, asset_b],
     )?;
     // Initial matching account balance should have two assets.
@@ -394,15 +388,11 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
 
     let mut builder = MockChain::builder();
     let sender_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![offered_asset],
     )?;
     let target_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![requested_asset],
     )?;
 

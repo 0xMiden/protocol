@@ -1,7 +1,6 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, BoundSignature};
 use miden_protocol::account::{
     Account,
@@ -12,6 +11,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
@@ -79,7 +79,7 @@ fn setup_singlesig_with_mock_component(
 /// rather than `get_item` which would return the overwritten (bogus) value.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_singlesig_auth_uses_initial_public_key(
     #[case] auth_scheme: AuthScheme,
@@ -125,7 +125,7 @@ async fn test_singlesig_auth_uses_initial_public_key(
 /// `get_initial_item`, so MASM verify must reject the bogus signature.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_singlesig_auth_rejects_rotated_key_signature(
     #[case] auth_scheme: AuthScheme,
@@ -197,7 +197,7 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
                 MasmError::from_static_str("invalid public key commitment")
             );
         },
-        AuthScheme::Falcon512Poseidon2 => {
+        AuthScheme::Falcon512Eidos => {
             // Falcon's h-vs-PK check in `load_h_s2_and_product` is a bare `assert_eqw`
             // without a named err, so we can only assert the failed-assertion shape.
             assert_matches!(
@@ -268,7 +268,7 @@ fn setup_singlesig_user_faucet_with_burn_note(
 
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([3; 32]);
     let asset = FungibleAsset::new(faucet_account.id(), 10)?;
-    let mut note_rng = RandomCoin::new([Felt::from(7u32); 4].into());
+    let mut note_rng = EidosRandomCoin::new([Felt::from(7u32); 4].into());
     let burn_note: Note = BurnNote::builder()
         .sender(sender)
         .asset(asset)
@@ -289,7 +289,7 @@ fn setup_singlesig_user_faucet_with_burn_note(
 /// call - including one that only reaches `receive_and_burn` - requires authentication.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_singlesig_burn_note_against_user_faucet_requires_signature(
     #[case] auth_scheme: AuthScheme,
@@ -317,7 +317,7 @@ async fn test_singlesig_burn_note_against_user_faucet_requires_signature(
 /// asserts the faucet's token supply actually dropped by the burned amount.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_singlesig_burn_note_against_user_faucet_succeeds_with_signature(
     #[case] auth_scheme: AuthScheme,

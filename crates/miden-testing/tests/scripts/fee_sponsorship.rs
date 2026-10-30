@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::account::Account;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME;
 use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNoteMetadata};
@@ -16,6 +16,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::RngExt;
 use rstest::rstest;
 
 const FEE_AMOUNT: u64 = 500;
@@ -75,7 +76,7 @@ struct Fixture {
 /// Builds the fixture with the given reclaim height (`None` disables reclaim) and reclaimer.
 fn setup(reclaim_height: Option<BlockNumber>, reclaimer: Reclaimer) -> anyhow::Result<Fixture> {
     let fee_asset = FungibleAsset::new(FungibleAsset::mock_issuer(), FEE_AMOUNT)?;
-    let mut rng = RandomCoin::new(Word::empty());
+    let mut rng = EidosRandomCoin::new(Word::empty());
 
     let mut builder = MockChain::builder();
     let network_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
@@ -225,7 +226,7 @@ async fn sponsorship_cannot_be_consumed_without_feature_note(
 /// The Rust builder cannot produce such a note, so it is assembled by hand from the raw parts.
 #[tokio::test]
 async fn script_rejects_note_without_exactly_one_asset() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::empty());
+    let mut rng = EidosRandomCoin::new(Word::empty());
     let mut builder = MockChain::builder();
     let network_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
     let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
@@ -235,7 +236,7 @@ async fn script_rejects_note_without_exactly_one_asset() -> anyhow::Result<()> {
     let metadata = PartialNoteMetadata::new(sponsor.id(), NoteType::Public)
         .with_tag(NoteTag::with_account_target(network_account.id()));
     let assetless_sponsorship =
-        Note::new(NoteAssets::default(), metadata, storage.into_recipient(rng.draw_word()));
+        Note::new(NoteAssets::default(), metadata, storage.into_recipient(rng.random()));
     builder.add_output_note(RawOutputNote::Full(assetless_sponsorship.clone()));
     let mock_chain = builder.build()?;
 

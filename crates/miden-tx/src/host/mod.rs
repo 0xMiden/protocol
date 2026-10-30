@@ -521,6 +521,36 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(Vec::new())
     }
 
+    /// Pushes the number of 8-Felt body blocks in the account patch commitment onto the advice
+    /// stack.
+    pub fn on_account_push_patch_commitment_body_block_count(
+        &self,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let num_blocks = u32::try_from(self.update_tracker.patch_commitment_body_block_count())
+            .map_err(|_| {
+                TransactionKernelError::other(
+                    "account patch commitment body block count exceeds u32::MAX",
+                )
+            })?;
+
+        Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(num_blocks)])])
+    }
+
+    /// Pushes the number of 8-Felt body blocks in the account delta commitment onto the advice
+    /// stack.
+    pub fn on_account_push_delta_commitment_body_block_count(
+        &self,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let num_blocks = u32::try_from(self.update_tracker.delta_commitment_body_block_count())
+            .map_err(|_| {
+                TransactionKernelError::other(
+                    "account delta commitment body block count exceeds u32::MAX",
+                )
+            })?;
+
+        Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(num_blocks)])])
+    }
+
     /// Tracks the update of an asset from the account vault in the account patch.
     pub fn on_account_vault_after_remove_asset(
         &mut self,

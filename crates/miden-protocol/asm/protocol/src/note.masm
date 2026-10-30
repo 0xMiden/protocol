@@ -10,7 +10,7 @@ use {
     NoteType,
 } from miden::protocol::types
 use miden::protocol::account_id
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
 pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
     from miden::protocol_utils::note
@@ -29,7 +29,7 @@ const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT =
 #! This procedure checks that the provided number of note storage items is within limits and then computes
 #! the commitment.
 #!
-#! If the number of note storage items is 0, procedure returns the empty word: [0, 0, 0, 0].
+#! If the number of note storage items is 0, the procedure returns the canonical Eidos empty hash.
 #!
 #! Inputs:  [storage_ptr, num_storage_items]
 #! Outputs: [STORAGE_COMMITMENT]
@@ -53,9 +53,18 @@ pub proc compute_storage_commitment(
     u32lte assert.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     # => [storage_ptr, num_storage_items]
 
-    # compute the storage commitment (over the unpadded values)
-    exec.poseidon2::hash_elements
-    # => [STORAGE_COMMITMENT]
+    dup.1 eq.0
+    if.true
+        exec.eidos::empty_felt_sequence_digest
+        # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items]
+
+        movup.4 drop movup.4 drop
+        # => [STORAGE_COMMITMENT]
+    else
+        # compute the storage commitment (over the unpadded values)
+        exec.eidos::hash_elements
+        # => [STORAGE_COMMITMENT]
+    end
 end
 
 #! Computes the recipient hash from note storage, script root, and serial number.
@@ -123,13 +132,13 @@ pub proc compute_and_store_recipient(
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    adv.insert_hdword exec.poseidon2::merge
+    adv.insert_hdword exec.eidos::hash_double_word
     # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    adv.insert_hdword exec.poseidon2::merge
+    adv.insert_hdword exec.eidos::hash_double_word
     # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
 
-    adv.insert_hdword exec.poseidon2::merge
+    adv.insert_hdword exec.eidos::hash_double_word
     # => [RECIPIENT]
 end
 
@@ -153,13 +162,13 @@ pub proc compute_recipient(
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [SERIAL_NUM_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [MERGE_SCRIPT, STORAGE_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [RECIPIENT]
 end
 

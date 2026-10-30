@@ -22,9 +22,9 @@ use core::num::NonZeroU16;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountComponent};
 use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{NoteAttachmentScheme, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
@@ -66,8 +66,8 @@ use support::*;
 // ================================================================================================
 
 /// A repeatable RNG for note serial numbers.
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(7u32),

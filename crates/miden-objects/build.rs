@@ -220,9 +220,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".transaction.AuthSignature.signature.falcon512_poseidon2",
+        ".transaction.AuthSignature.signature.falcon512_eidos",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::crypto::dsa::falcon512_poseidon2::Signature
+            miden_protocol::crypto::dsa::falcon512_eidos::Signature
         >)])
         .to_string(),
     );
@@ -234,9 +234,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".account_file.AuthSecretKey.key.falcon512_poseidon2",
+        ".account_file.AuthSecretKey.key.falcon512_eidos",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey
+            miden_protocol::crypto::dsa::falcon512_eidos::SecretKey
         >)])
         .to_string(),
     );

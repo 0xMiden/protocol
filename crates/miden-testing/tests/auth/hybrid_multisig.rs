@@ -1,5 +1,4 @@
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -9,6 +8,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
@@ -48,7 +48,7 @@ fn setup_keys_and_authenticators(
 
     for index in 0..num_approvers {
         let sec_key = if index % 2 == 0 {
-            AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
+            AuthSecretKey::new_falcon512_eidos_with_rng(&mut rng)
         } else {
             AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng)
         };
@@ -59,7 +59,7 @@ fn setup_keys_and_authenticators(
 
         // Alternate scheme IDs between Falcon (2) and ECDSA (1)
         if index % 2 == 0 {
-            auth_schemes.push(AuthScheme::Falcon512Poseidon2);
+            auth_schemes.push(AuthScheme::Falcon512Eidos);
         } else {
             auth_schemes.push(AuthScheme::EcdsaK256Keccak);
         }
@@ -504,7 +504,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(output_note_asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::empty()))
         .build()?
         .into();
 

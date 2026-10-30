@@ -1,6 +1,6 @@
 use {MetadataStringCommitment} from miden::standards::faucets
 use {NoteArgs} from miden::protocol::types
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::protocol::active_note
 use miden::standards::faucets
 use miden::standards::faucets::fungible
@@ -10,19 +10,19 @@ use miden::standards::note::note_target
 # CONSTANTS
 # =================================================================================================
 
-# Number of felts encoding a metadata string: 7 Words.
-const STRING_NUM_ELEMENTS = 28
-
 # Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the FaucetMetadataConfig note storage. The variant is one felt padded out to
 # a full word with three zeros, so the 7-Word string payload of the metadata actions starts
-# word-aligned, as `poseidon2::hash_elements` requires.
+# word-aligned, as `eidos::hash_elements` requires.
 const VARIANT_PTR = STORAGE_PTR
 const MAX_SUPPLY_PTR = STORAGE_PTR + 1
 const STRING_PTR = STORAGE_PTR + 4
 const STRING_END_PTR = STORAGE_PTR + 32
+const STRING_NUM_ELEMENTS = STRING_END_PTR - STRING_PTR
+const STRING_FULL_BLOCK_END_PTR = STRING_PTR + 24
+const STRING_PARTIAL_BLOCK_NUM_ELEMENTS = 4
 
 # Config note variants, stored in the first storage item. Keep in sync with
 # `FaucetMetadataConfig` on the Rust side.
@@ -71,7 +71,7 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! - `3` SetExternalUri:   `[3, 0, 0, 0, external_uri(28)]`.
 #! - `4` SetTokenBaseUri:  `[4, 0, 0, 0, token_base_uri(28)]`.
 #!
-#! The four string setters take the Poseidon2 commitment of their new value on the operand stack
+#! The four string setters take the Eidos commitment of their new value on the operand stack
 #! and read the preimage from the advice map. This script commits to the payload `get_bounded_storage` wrote
 #! to memory and inserts it into the advice map under that commitment, so the value is bound into
 #! the note commitment through the note storage and needs no out-of-band advice inputs.
@@ -206,9 +206,8 @@ end
 #! string payload, and inserts the payload into the advice map under that commitment so the called
 #! setter can pipe it back out.
 #!
-#! The commitment uses `poseidon2::hash_elements`, whose first capacity element is
-#! `num_elements % 8` — the same padding rule `mem::pipe_preimage_to_memory` applies inside the
-#! setter, so the two agree for the 28-element payload.
+#! The commitment uses the Eidos Felt-sequence encoding expected by
+#! `mem::pipe_preimage_to_memory` inside the setter.
 #!
 #! Inputs:
 #!   Operand stack: [num_storage_items]
@@ -232,8 +231,9 @@ proc prepare_string_call(num_storage_items: u32) -> (MetadataStringCommitment, [
     padw padw padw
     # => [pad(12)]
 
-    push.STRING_NUM_ELEMENTS push.STRING_PTR
-    exec.poseidon2::hash_elements
+    push.STRING_PARTIAL_BLOCK_NUM_ELEMENTS push.STRING_FULL_BLOCK_END_PTR push.STRING_PTR
+    push.STRING_NUM_ELEMENTS exec.eidos::init_chaining_word padw padw
+    exec.eidos::hash_elements_with_state
     # => [STRING_COMMITMENT, pad(12)]
 
     push.STRING_END_PTR push.STRING_PTR

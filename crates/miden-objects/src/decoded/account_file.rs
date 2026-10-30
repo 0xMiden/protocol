@@ -16,9 +16,7 @@ impl Verify for AuthSecretKey {
         use proto::account_file::auth_secret_key::DecodedKey;
 
         Ok(match self.key {
-            DecodedKey::Falcon512Poseidon2(key) => {
-                Self::Verified::Falcon512Poseidon2(key.into_inner())
-            },
+            DecodedKey::Falcon512Eidos(key) => Self::Verified::Falcon512Eidos(key.into_inner()),
             DecodedKey::EcdsaK256Keccak(key) => Self::Verified::EcdsaK256Keccak(key.into_inner()),
         })
     }

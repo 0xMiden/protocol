@@ -30,7 +30,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
+use crate::{ACCOUNT_PATCH_COMMITMENT_DOMAIN, Felt, Hasher, Word};
 
 /// An [`AccountPatch`] describes the new absolute state of an account after one or more
 /// transactions, in contrast to an [`AccountDelta`](crate::account::AccountDelta), which describes
@@ -71,12 +71,6 @@ pub struct AccountPatch {
 impl AccountPatch {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
-
-    /// Domain separator for the account patch commitment.
-    ///
-    /// See [`AccountDelta::DOMAIN`](crate::account::AccountDelta) for why it lives in the capacity
-    /// word.
-    const DOMAIN: Felt = ProtocolDomainRegistry::AccountPatch.as_felt();
 
     /// Version 1 of the account patch commitment layout.
     ///
@@ -253,25 +247,58 @@ impl AccountPatch {
         self.final_nonce.is_none()
     }
 
+    /// Returns the number of field elements in this patch's commitment preimage.
+    ///
+    /// This equals the length of [`SequentialCommit::to_elements`] without allocating the preimage.
+    pub fn to_num_elements(&self) -> usize {
+        if self.is_empty() {
+            return 0;
+        }
+
+        8 * (1 + Self::commitment_body_block_count(
+            self.vault.num_assets(),
+            &self.storage,
+            !self.code.is_empty(),
+        ))
+    }
+
+    /// Returns the number of eight-Felt commitment body blocks for the given patch components.
+    ///
+    /// This excludes the metadata header. `num_changed_assets` is the number of changed vault
+    /// entries, and `has_code` indicates whether the patch includes new or upgraded account code.
+    pub fn commitment_body_block_count(
+        num_changed_assets: usize,
+        storage: &AccountStoragePatch,
+        has_code: bool,
+    ) -> usize {
+        num_changed_assets
+            + usize::from(num_changed_assets != 0)
+            + storage.commitment_body_block_count()
+            + usize::from(has_code)
+    }
+
     /// Computes the commitment to the account patch.
     ///
     /// This is very similar to
     /// [`AccountDelta::to_commitment`](crate::account::AccountDelta::to_commitment). See its docs
-    /// for the rationale, security aspects, and other details. The only differences between
-    /// these are:
+    /// for the rationale, security aspects, and other details. The layouts differ as follows:
+    /// - the patch uses layout version 1, while the delta uses layout version 2.
     /// - the patch includes the new nonce rather than the nonce delta.
     /// - The patch includes the new absolute asset values ([`AccountVaultPatch`]) while the delta
     ///   includes the relative asset changes
     ///   ([`AccountVaultDelta`](crate::account::AccountVaultDelta)).
+    /// - a nonempty vault patch has one trailer, while a nonempty vault delta has both operation
+    ///   trailers.
     ///
     /// ## Computation
     ///
     /// The patch commitment is a sequential hash over a vector of field elements which starts out
-    /// empty and is appended to in the following way. If no asset, storage or code elements were
-    /// appended, the commitment is defined as the empty word. Whenever sorting is expected, it is
-    /// that of a [`Word`]. The hash is domain-separated by the patch's `DOMAIN`, which is
-    /// placed in the capacity word of the hasher. This is what distinguishes a patch commitment
-    /// from a delta commitment, whose headers are otherwise identically shaped.
+    /// empty and is appended to in the following way. A structurally empty patch has an empty
+    /// preimage and commits to the canonical Eidos hash of an empty sequence in the patch domain.
+    /// Any non-empty patch, including one which only changes the nonce, includes the header below.
+    /// Whenever sorting is expected, it is that of a [`Word`]. The registered patch selector is
+    /// bound into Eidos's initial chaining word. This distinguishes a patch commitment from a delta
+    /// commitment, whose headers are otherwise identically shaped.
     ///
     /// - Append `[[version = 1, final_nonce, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
@@ -282,10 +309,10 @@ impl AccountPatch {
     ///     including if it was removed, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
     ///       of the asset (for updates) or the empty word (for removals).
-    ///     - Append `[[domain = 1, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
-    ///       `num_changed_assets` is the number of assets that were appended. This is the same
-    ///       domain as the delta asset section uses, since the capacity domain already prevents an
-    ///       asset delta and an asset patch from producing the same commitment.
+    ///   - If any assets changed, append `[[domain = 1, num_changed_assets, 0, 0], EMPTY_WORD]`,
+    ///     where `num_changed_assets` is the number of assets that were appended. This is the same
+    ///     domain as the delta asset section uses, since the registered Eidos selector prevents an
+    ///     asset delta and an asset patch from producing the same commitment.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
     ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
     ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
@@ -366,31 +393,24 @@ impl AccountPatch {
 impl SequentialCommit for AccountPatch {
     type Commitment = Word;
 
-    /// Computes the commitment to the patch, domain-separated by its `DOMAIN`.
+    /// Computes the commitment to the patch under its registered Eidos selector.
     ///
     /// See [AccountPatch::to_commitment()] for more details.
     fn to_commitment(&self) -> Word {
         let elements = self.to_elements();
-
-        // An empty patch produces no elements and its commitment is defined as the empty word.
-        if elements.is_empty() {
-            return Word::empty();
-        }
-
-        Hasher::hash_elements_in_domain(&elements, Self::DOMAIN)
+        Hasher::hash_elements_in_domain(&elements, ACCOUNT_PATCH_COMMITMENT_DOMAIN)
     }
 
     /// Reduces the patch to a sequence of field elements.
     ///
     /// See [AccountPatch::to_commitment()] for more details.
     fn to_elements(&self) -> Vec<Felt> {
-        // The commitment to an empty patch is defined as the empty word.
+        // An empty patch has an empty commitment preimage.
         if self.is_empty() {
             return Vec::new();
         }
 
-        // Minor optimization: At least 8 elements are always added.
-        let mut elements = Vec::with_capacity(8);
+        let mut elements = Vec::with_capacity(self.to_num_elements());
 
         // Metadata
         let final_nonce = self.final_nonce.expect("non-empty patches should have a new nonce set");
@@ -481,7 +501,17 @@ mod tests {
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::utils::serde::Serializable;
-    use crate::{Felt, Word};
+    use crate::{ACCOUNT_PATCH_COMMITMENT_DOMAIN, Felt, Hasher, Word};
+
+    #[test]
+    fn empty_account_patch_uses_canonical_domain_hash() {
+        let patch = AccountPatch::empty(ACCOUNT_ID_PRIVATE_SENDER.try_into().unwrap());
+        let expected =
+            Hasher::hash_elements_in_domain::<Felt, _>(&[], ACCOUNT_PATCH_COMMITMENT_DOMAIN);
+
+        assert_eq!(patch.to_commitment(), expected);
+        assert_ne!(patch.to_commitment(), Word::empty());
+    }
 
     #[test]
     fn account_patch_serde() -> anyhow::Result<()> {

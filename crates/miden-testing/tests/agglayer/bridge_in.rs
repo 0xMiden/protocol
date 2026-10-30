@@ -28,7 +28,6 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::policies::MintPolicy;
@@ -146,25 +145,22 @@ async fn test_bridge_in_claim_to_p2id(
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
     // --------------------------------------------------------------------------------------------
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_priced_bridge(
         bridge_seed,
         bridge_admin_account_id(),
@@ -187,7 +183,7 @@ async fn test_bridge_in_claim_to_p2id(
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -230,7 +226,7 @@ async fn test_bridge_in_claim_to_p2id(
     // CREATE CLAIM NOTE (now targets the bridge, not the faucet)
     // --------------------------------------------------------------------------------------------
 
-    // The P2ID serial number is derived from the PROOF_DATA_KEY (RPO hash of proof data)
+    // The P2ID serial number is the Eidos commitment to the proof data.
     let serial_num = proof_data.to_commitment();
 
     // Calculate the scaled-down Miden amount using the faucet's scale factor
@@ -495,17 +491,14 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -529,7 +522,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let scale = 10u8;
 
     // faucet_A is the bridge's registered faucet for the claim's origin token address.
-    let faucet_a_seed = builder.rng_mut().draw_word();
+    let faucet_a_seed = builder.rng_mut().random();
     let faucet_a = create_existing_agglayer_faucet(
         faucet_a_seed,
         token_name_a,
@@ -544,7 +537,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // faucet_B is owned by the same bridge but tied to a different origin token. It is the
     // attacker's target: the claimant tries to direct faucet_A's MINT note here.
-    let faucet_b_seed = builder.rng_mut().draw_word();
+    let faucet_b_seed = builder.rng_mut().random();
     // Flip one byte of the address so the new EthAddress is distinct from faucet_A's.
     let mut other_bytes = leaf_data.origin_token_address.into_bytes();
     other_bytes[0] ^= 0x01;
@@ -699,25 +692,22 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER REMOVER ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -746,7 +736,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
@@ -858,22 +848,19 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // CREATE FAUCET MANAGER ACCOUNT
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER INJECTOR ACCOUNT
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and injector)
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -894,7 +881,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -1030,22 +1017,19 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // CREATE FAUCET MANAGER ACCOUNT
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER INJECTOR ACCOUNT
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER REMOVER ACCOUNT (sends the REMOVE_GER note)
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1066,7 +1050,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -1198,17 +1182,14 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Faucet manager / GER injector / bridge account.
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let bridge_seed = builder.rng_mut().random();
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1271,9 +1252,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     };
 
     // Sender of the B2AGG note used to seed the bridge vault with the native asset.
-    let lock_sender = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let lock_sender =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // Register the native faucet with is_native = true.
     let config_note = ConfigAggBridgeNote::create(
@@ -1493,17 +1473,14 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let bridge_seed = builder.rng_mut().random();
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mut bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1557,9 +1534,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?
     };
 
-    let lock_sender = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let lock_sender =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
@@ -1745,18 +1721,15 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let bridge_seed = builder.rng_mut().random();
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1775,7 +1748,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let leaf_origin_network = leaf_data.origin_network;
@@ -1896,17 +1869,14 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_seed = builder.rng_mut().random();
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
         bridge_admin_account_id(),
@@ -1925,7 +1895,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let leaf_origin_network = leaf_data.origin_network;

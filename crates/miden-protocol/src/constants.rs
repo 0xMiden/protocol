@@ -1,4 +1,5 @@
 use miden_processor::ExecutionOptions;
+use miden_verifier::HashFunction;
 
 /// Depth of the account database tree.
 pub const ACCOUNT_TREE_DEPTH: u8 = 64;
@@ -25,6 +26,9 @@ pub const MAX_OUTPUT_NOTES_PER_TX: usize = MAX_INPUT_NOTES_PER_TX;
 
 /// The minimum proof security level used by the Miden prover & verifier.
 pub const MIN_PROOF_SECURITY_LEVEL: u32 = 96;
+
+/// The transcript hash required for transaction, batch, block, and deferred-precompile proofs.
+pub const PROTOCOL_PROOF_HASH: HashFunction = HashFunction::Eidos;
 
 /// The maximum number of VM cycles a transaction is allowed to take.
 pub const MAX_TX_EXECUTION_CYCLES: u32 = ExecutionOptions::MAX_CYCLES;

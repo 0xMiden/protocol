@@ -1,7 +1,6 @@
 use alloc::string::ToString;
 use std::borrow::ToOwned;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{
     Account,
@@ -11,6 +10,7 @@ use miden_protocol::account::{
     AccountVaultPatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
@@ -120,7 +120,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
+        Hasher::hash_double_word(&[final_account.to_commitment(), account_patch_commitment]);
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
@@ -161,7 +161,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
 async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
     let asset0 = assets.next().unwrap();

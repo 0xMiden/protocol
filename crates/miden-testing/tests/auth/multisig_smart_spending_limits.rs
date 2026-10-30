@@ -8,7 +8,6 @@
 
 use core::num::{NonZeroU16, NonZeroU32, NonZeroU64};
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
@@ -21,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -293,7 +293,7 @@ impl Harness {
             .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into()?)
             .assets(assets)
             .note_type(NoteType::Public)
-            .generate_serial_number(&mut RandomCoin::new(seed))
+            .generate_serial_number(&mut EidosRandomCoin::new(seed))
             .build()?
             .into())
     }
