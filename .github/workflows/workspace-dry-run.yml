@@ -15,8 +15,9 @@ concurrency:
   group: "${{ github.workflow }} @ ${{ github.ref }}"
   cancel-in-progress: true
 
-# Node actions must use the updated system CA bundle. This job saves the cargo cache that the
-# publish job restores.
+# Until the runner's own Node is 24.22.1 or later, Node actions must use the system CA bundle,
+# which distrusts the compromised eMudhra CAs (https://emudhra.we-have-a-problem.com/).
+# This job saves the cargo cache that the publish job restores.
 env:
   NODE_OPTIONS: --use-openssl-ca
   SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
@@ -27,12 +28,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Remove once the runner image ships the eMudhra distrust
-      # (https://emudhra.we-have-a-problem.com/).
-      - name: Update CA certificates
+      # Fail on an image without the fixed bundle, e.g. after a rollback. Remove with NODE_OPTIONS.
+      - name: Check CA certificates
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ca-certificates
           dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
             ge 20260816ubuntu0.24.04.1
 
