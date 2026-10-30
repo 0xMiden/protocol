@@ -3,6 +3,7 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::smt::PartialSmt;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::Note;
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -140,6 +141,24 @@ fn transaction_inputs_reject_an_inconsistent_protocol_config() {
     assert_matches!(
         transaction_input_error(&error),
         TransactionInputError::InconsistentProtocolConfig { .. }
+    );
+}
+
+#[test]
+fn transaction_inputs_reject_an_inconsistent_code_tree_root() {
+    let mut message = common::dummy_transaction_inputs_message();
+    common::transaction_inputs_v1_mut(&mut message).code_tree =
+        Some(PartialSmt::new(common::dummy_word(1)).into());
+
+    let error = message
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .map_err(ConversionError::new)
+        .unwrap_err();
+    assert_matches!(
+        transaction_input_error(&error),
+        TransactionInputError::InconsistentCodeTreeRoot { .. }
     );
 }
 

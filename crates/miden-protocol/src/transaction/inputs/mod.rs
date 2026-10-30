@@ -8,6 +8,7 @@ use crate::Word;
 use crate::account::auth::BoundSignature;
 use crate::account::{AccountId, PartialAccount, StorageMapWitness};
 use crate::asset::AssetWitness;
+use crate::block::code_tree::{CodeWitness, PartialCodeTree};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::TransactionInputError;
 use crate::note::{Note, NoteInclusionProof, NoteScript, NoteScriptRoot};
@@ -46,6 +47,8 @@ pub struct TransactionInputs {
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     /// Signatures the authenticator generated during execution.
     signatures: Vec<BoundSignature>,
+    /// See [`Self::code_tree`].
+    code_tree: PartialCodeTree,
 }
 
 #[bon::bon]
@@ -56,7 +59,8 @@ impl TransactionInputs {
     /// Returns a builder for [`TransactionInputs`].
     ///
     /// Required setters: `account`, `block_header`, `protocol_config`, `blockchain` and
-    /// `input_notes`. The other fields default to empty values.
+    /// `input_notes`. The other fields default to empty values. The code tree defaults to a
+    /// partial code tree with the code tree root of the block header that tracks no procedures.
     ///
     /// # Errors
     ///
@@ -64,6 +68,7 @@ impl TransactionInputs {
     /// - The protocol config does not match the one committed to by the block header.
     /// - The partial blockchain does not track the block headers required to prove inclusion of any
     ///   authenticated input note.
+    /// - The code tree root does not match the one committed to by the block header.
     /// - Any of the conditions of [`Self::add_foreign_account`] is not met.
     /// - Any of the conditions of [`Self::add_signature`] is not met.
     #[builder]
@@ -73,12 +78,22 @@ impl TransactionInputs {
         protocol_config: ProtocolConfig,
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
+        code_tree: Option<PartialCodeTree>,
         #[builder(default)] tx_args: TransactionArgs,
         #[builder(default)] foreign_accounts: Vec<AccountInputs>,
         #[builder(default)] note_scripts: Vec<NoteScript>,
         #[builder(default)] signatures: Vec<BoundSignature>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
+
+        let code_tree =
+            code_tree.unwrap_or_else(|| PartialCodeTree::new(block_header.code_tree_root()));
+        if code_tree.root() != block_header.code_tree_root() {
+            return Err(TransactionInputError::InconsistentCodeTreeRoot {
+                expected: block_header.code_tree_root(),
+                actual: code_tree.root(),
+            });
+        }
 
         let note_scripts = note_scripts.into_iter().map(|script| (script.root(), script)).collect();
 
@@ -92,6 +107,7 @@ impl TransactionInputs {
             foreign_accounts: BTreeMap::new(),
             note_scripts,
             signatures: Vec::new(),
+            code_tree,
         };
         for foreign_account in foreign_accounts {
             tx_inputs.add_foreign_account(foreign_account)?;
@@ -264,6 +280,25 @@ impl TransactionInputs {
         Ok(())
     }
 
+    /// Adds code witnesses to the code tree, so that re-executing the transaction does not need to
+    /// fetch them again.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the witnesses does not fit the code tree of the reference block.
+    pub fn add_code_witnesses(
+        &mut self,
+        witnesses: impl IntoIterator<Item = CodeWitness>,
+    ) -> Result<(), TransactionInputError> {
+        for witness in witnesses {
+            self.code_tree
+                .track_procedure(witness)
+                .map_err(|source| TransactionInputError::InvalidCodeWitness(Box::new(source)))?;
+        }
+
+        Ok(())
+    }
+
     /// Adds a note script, so that re-executing the transaction does not need to fetch it again.
     pub fn add_note_script(&mut self, script: NoteScript) {
         self.note_scripts.insert(script.root(), script);
@@ -360,6 +395,12 @@ impl TransactionInputs {
     /// Returns the signatures generated during execution.
     pub fn signatures(&self) -> &[BoundSignature] {
         &self.signatures
+    }
+
+    /// Returns the code tree of the reference block, which tracks the procedure roots whose
+    /// presence or absence the transaction proved during execution.
+    pub fn code_tree(&self) -> &PartialCodeTree {
+        &self.code_tree
     }
 
     /// Returns the transaction arguments to be consumed in the transaction.
