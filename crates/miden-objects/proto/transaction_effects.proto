@@ -26,4 +26,5 @@ message TransactionEffectsV1 {
   primitives.Word ref_block_commitment = 7;
   blockchain.BlockNumber expiration_block_num = 8;
   TransactionLogs logs = 9;
+  CodePatch code_patch = 10;
 }

@@ -13,6 +13,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockHeader;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
 use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
@@ -58,6 +59,7 @@ fn proposal() -> ProposedBatch {
         header.block_num() + 1,
         dummy_execution_proof(),
         TransactionLogDetails::Private(Word::empty()),
+        CodePatch::default(),
     )
     .unwrap();
     // A dummy proof is deliberate: structural decoding must not perform proof verification.

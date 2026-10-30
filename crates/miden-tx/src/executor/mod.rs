@@ -11,6 +11,7 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -385,6 +386,8 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         &final_advice_inputs,
         output_notes,
         logs,
+        // TODO(#4006): take the code patch from the host once the transaction kernel builds it.
+        CodePatch::default(),
     )
     .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 

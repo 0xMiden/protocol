@@ -17,7 +17,7 @@ mod partial;
 pub use partial::PartialCodeTree;
 
 mod patch;
-pub use patch::CodePatch;
+pub use patch::{CodePatch, CodePatchCommitment};
 
 /// The value of a procedure root that is present in the code tree.
 ///

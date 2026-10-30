@@ -20,6 +20,7 @@ impl From<&TransactionEffects> for proto::transaction::TransactionEffectsV1 {
             ref_block_commitment: Some(effects.ref_block_commitment().into()),
             expiration_block_num: Some(effects.expiration_block_num().into()),
             logs: Some(effects.logs().into()),
+            code_patch: Some(effects.code_patch().into()),
         }
     }
 }

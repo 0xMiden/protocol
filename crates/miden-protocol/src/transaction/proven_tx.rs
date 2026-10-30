@@ -7,6 +7,7 @@ use super::{InputNote, ToInputNoteCommitments, TransactionLogDetails};
 use crate::Word;
 use crate::account::{AccountUpdateDetails, validate_new_public_account};
 use crate::block::BlockNumber;
+use crate::block::code_tree::CodePatch;
 use crate::errors::ProvenTransactionError;
 use crate::note::{NoteHeader, NoteId};
 use crate::transaction::{
@@ -65,6 +66,9 @@ pub struct ProvenTransaction {
     /// A STARK proof that attests to the correct execution of the transaction.
     proof: ExecutionProof,
     log_details: TransactionLogDetails,
+
+    /// The procedures the transaction adds to the code tree and the procedures it depends on.
+    code_patch: CodePatch,
 }
 
 impl ProvenTransaction {
@@ -88,6 +92,7 @@ impl ProvenTransaction {
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
     ///   not match its declared account delta commitment.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_update: TxAccountUpdate,
         input_notes: impl IntoIterator<Item = impl Into<InputNoteCommitment>>,
@@ -97,6 +102,7 @@ impl ProvenTransaction {
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
         log_details: TransactionLogDetails,
+        code_patch: CodePatch,
     ) -> Result<Self, ProvenTransactionError> {
         let input_notes: Vec<InputNoteCommitment> =
             input_notes.into_iter().map(Into::into).collect();
@@ -116,6 +122,7 @@ impl ProvenTransaction {
             expiration_block_num,
             proof,
             log_details,
+            code_patch,
         )
     }
 
@@ -131,6 +138,11 @@ impl ProvenTransaction {
     /// Returns unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {
         self.id
+    }
+
+    /// Returns the code patch of this transaction.
+    pub fn code_patch(&self) -> &CodePatch {
+        &self.code_patch
     }
 
     /// Returns ID of the account against which this transaction was executed.
@@ -202,9 +214,8 @@ impl ProvenTransaction {
 
     /// Creates a [`ProvenTransaction`] from its raw parts, enforcing all invariants.
     ///
-    /// [`ProvenTransaction::new`] validates transactions through this
-    /// constructor so that every invariant is checked on both the creation and deserialization
-    /// paths.
+    /// [`ProvenTransaction::new`] validates transactions through this constructor so that every
+    /// invariant is checked on both the creation and deserialization paths.
     ///
     /// # Errors
     ///
@@ -215,6 +226,7 @@ impl ProvenTransaction {
     ///   dependency, see <https://github.com/0xMiden/protocol/issues/2796>).
     /// - The commitment computed on the actual account delta does not match its declared account
     ///   delta commitment.
+    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         account_update: TxAccountUpdate,
         input_notes: InputNotes<InputNoteCommitment>,
@@ -224,6 +236,7 @@ impl ProvenTransaction {
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
         log_details: TransactionLogDetails,
+        code_patch: CodePatch,
     ) -> Result<Self, ProvenTransactionError> {
         log_details
             .validate_visibility(account_update.account_id())
@@ -253,6 +266,7 @@ impl ProvenTransaction {
             input_notes.commitment(),
             output_notes.commitment(),
             log_details.commitment(),
+            code_patch.commitment(),
         );
         Ok(Self {
             log_details,
@@ -264,6 +278,7 @@ impl ProvenTransaction {
             ref_block_commitment,
             expiration_block_num,
             proof,
+            code_patch,
         })
     }
 }

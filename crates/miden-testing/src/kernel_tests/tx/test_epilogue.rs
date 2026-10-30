@@ -1,6 +1,7 @@
 use alloc::string::ToString;
 use std::borrow::ToOwned;
 
+use anyhow::Context;
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{
@@ -45,6 +46,12 @@ use crate::{
     assert_execution_error,
     assert_transaction_executor_error,
 };
+
+/// Returns the logs expiration commitment of a transaction without logs that expires at the
+/// provided block number.
+fn logs_expiration_commitment(expiration_block_num: u32) -> Word {
+    Hasher::merge(&[Word::empty(), Word::from([expiration_block_num, 0, 0, 0])])
+}
 
 /// Tests that the return values from the tx kernel main.masm program match the expected values.
 #[tokio::test]
@@ -131,23 +138,25 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         account_update_commitment,
     );
     assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_canonical_u64(),
-        u64::from(u32::MAX)
-    );
-
-    assert_eq!(
-        exec_output.get_stack_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX),
+        exec_output.get_stack_word(TransactionOutputs::CODE_PATCH_COMMITMENT_WORD_IDX),
         Word::empty(),
     );
 
-    // Everything after the expiration block number must be zero.
+    let logs_commitment = Word::empty();
+    let expiration_word = Word::from([u32::MAX, 0, 0, 0]);
+    let logs_expiration_commitment =
+        exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX);
+    assert_eq!(logs_expiration_commitment, Hasher::merge(&[logs_commitment, expiration_word]),);
+
+    // The advice map must contain the logs commitment and the expiration word under the logs
+    // expiration commitment.
+    let logs_expiration_data = exec_output
+        .advice
+        .get_mapped_values(&logs_expiration_commitment)
+        .context("logs expiration commitment should be in the advice map")?;
     assert_eq!(
-        exec_output
-            .get_stack_word(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_elements()[1..],
-        Word::empty().as_elements()[1..],
+        logs_expiration_data,
+        [logs_commitment.as_elements(), expiration_word.as_elements()].concat(),
     );
 
     assert_eq!(
@@ -319,6 +328,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         use miden::tx_kernel_core::tx
         use miden::tx_kernel_core::epilogue
         use miden::tx_kernel_core::account
+        use miden::core::sys
 
         begin
             exec.prologue::prepare_transaction
@@ -332,7 +342,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
             exec.epilogue::finalize_transaction
 
             # truncate the stack
-            repeat.13 movup.13 drop end
+            exec.sys::truncate_stack
         end
         ";
 
@@ -348,10 +358,8 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         // (which can only decrease, not increase)
         let expected_expiry = v1.min(v2) + mock_tx.tx_inputs().block_header().block_num().as_u64();
         assert_eq!(
-            exec_output
-                .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-                .as_canonical_u64(),
-            expected_expiry
+            exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX),
+            logs_expiration_commitment(u32::try_from(expected_expiry)?),
         );
     }
 
@@ -416,6 +424,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     use miden::tx_kernel_core::epilogue
     use miden::tx_kernel_core::tx
     use miden::tx_kernel_core::account
+    use miden::core::sys
 
     begin
         exec.prologue::prepare_transaction
@@ -425,7 +434,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
         exec.epilogue::finalize_transaction
 
         # truncate the stack
-        repeat.13 movup.13 drop end
+        exec.sys::truncate_stack
     end
     ";
 
@@ -433,10 +442,8 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
 
     // Default value should be equal to u32::MAX, set in the prologue
     assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_canonical_u64() as u32,
-        u32::MAX
+        exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX),
+        logs_expiration_commitment(u32::MAX),
     );
 
     Ok(())
@@ -454,6 +461,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
         use mock::account
         use miden::tx_kernel_core::epilogue
         use miden::tx_kernel_core::memory
+        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -467,8 +475,8 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
 
             exec.epilogue::finalize_transaction
 
-            # clean the stack
-            dropw dropw dropw dropw
+            # truncate the stack
+            exec.sys::truncate_stack
 
             exec.memory::get_account_nonce
             push.{expected_nonce} assert_eq.err="nonce mismatch"
