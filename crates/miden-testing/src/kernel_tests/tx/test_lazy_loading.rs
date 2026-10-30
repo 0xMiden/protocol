@@ -2,20 +2,171 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use anyhow::Context;
-use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_processor::{ExecutionError, FutureMaybeSend, LoadedMastForest, MastForestStore};
+use miden_protocol::Felt;
+use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{
+    AccountBuilder,
+    AccountId,
+    AccountStorage,
+    AccountType,
+    PartialAccount,
+    StorageMap,
+    StorageMapKey,
+    StorageMapWitness,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::asset::{Asset, AssetId, AssetWitness, FungibleAsset};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{NoteScript, NoteScriptRoot, NoteType};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
 use miden_protocol::testing::constants::FUNGIBLE_ASSET_AMOUNT;
 use miden_protocol::testing::storage::MOCK_MAP_SLOT;
+use miden_protocol::transaction::{AccountInputs, PartialBlockchain};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
+use miden_tx::auth::UnreachableAuth;
+use miden_tx::{
+    DataStore,
+    DataStoreError,
+    MAX_DATA_STORE_REQUESTS_PER_TX,
+    NoteCheckerError,
+    NoteConsumptionChecker,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionKernelError,
+};
 
 use super::Word;
-use crate::{MockChain, TestTransactionBuilder};
+use crate::{
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    MockTransaction,
+    TestTransactionBuilder,
+    assert_transaction_executor_error,
+};
+
+struct CountingDataStore<'a> {
+    inner: &'a MockTransaction,
+    storage_map_requests: AtomicUsize,
+    fail_storage_map_requests: bool,
+    note_script_requests: AtomicUsize,
+    fail_note_script_requests: bool,
+}
+
+impl<'a> CountingDataStore<'a> {
+    fn new(inner: &'a MockTransaction) -> Self {
+        Self {
+            inner,
+            storage_map_requests: AtomicUsize::new(0),
+            fail_storage_map_requests: false,
+            note_script_requests: AtomicUsize::new(0),
+            fail_note_script_requests: false,
+        }
+    }
+
+    fn failing_storage_map_requests(inner: &'a MockTransaction) -> Self {
+        Self {
+            fail_storage_map_requests: true,
+            ..Self::new(inner)
+        }
+    }
+
+    fn failing_note_script_requests(inner: &'a MockTransaction) -> Self {
+        Self {
+            fail_note_script_requests: true,
+            ..Self::new(inner)
+        }
+    }
+
+    fn storage_map_request_count(&self) -> usize {
+        self.storage_map_requests.load(Ordering::Relaxed)
+    }
+
+    fn note_script_request_count(&self) -> usize {
+        self.note_script_requests.load(Ordering::Relaxed)
+    }
+}
+
+impl DataStore for CountingDataStore<'_> {
+    fn get_transaction_inputs(
+        &self,
+        account_id: AccountId,
+        ref_blocks: BTreeSet<BlockNumber>,
+    ) -> impl FutureMaybeSend<
+        Result<(PartialAccount, BlockHeader, ProtocolConfig, PartialBlockchain), DataStoreError>,
+    > {
+        self.inner.get_transaction_inputs(account_id, ref_blocks)
+    }
+
+    fn get_foreign_account_inputs(
+        &self,
+        foreign_account_id: AccountId,
+        ref_block: BlockNumber,
+    ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
+        self.inner.get_foreign_account_inputs(foreign_account_id, ref_block)
+    }
+
+    fn get_vault_asset_witnesses(
+        &self,
+        account_id: AccountId,
+        vault_root: Word,
+        asset_ids: BTreeSet<AssetId>,
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
+        self.inner.get_vault_asset_witnesses(account_id, vault_root, asset_ids)
+    }
+
+    fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        map_root: Word,
+        map_key: StorageMapKey,
+    ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
+        self.storage_map_requests.fetch_add(1, Ordering::Relaxed);
+        async move {
+            if self.fail_storage_map_requests {
+                Err(DataStoreError::other("storage map request failed for test"))
+            } else {
+                self.inner.get_storage_map_witness(account_id, map_root, map_key).await
+            }
+        }
+    }
+
+    fn get_note_script(
+        &self,
+        script_root: NoteScriptRoot,
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
+        self.note_script_requests.fetch_add(1, Ordering::Relaxed);
+        async move {
+            if self.fail_note_script_requests {
+                Err(DataStoreError::other_with_source(
+                    "note script request failed for test",
+                    std::io::Error::other("nested note script cause"),
+                ))
+            } else {
+                self.inner.get_note_script(script_root).await
+            }
+        }
+    }
+}
+
+impl MastForestStore for CountingDataStore<'_> {
+    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
+        self.inner.get(procedure_hash)
+    }
+}
 
 // ASSET LAZY LOADING
 // ================================================================================================
@@ -163,6 +314,635 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
 
 // STORAGE LAZY LOADING
 // ================================================================================================
+
+#[tokio::test]
+async fn lazy_data_store_requests_are_bounded() -> anyhow::Result<()> {
+    let map_keys = (0..=MAX_DATA_STORE_REQUESTS_PER_TX)
+        .map(|index| StorageMapKey::from_array([0, 0, 0, index as u32]))
+        .collect::<Vec<_>>();
+    let map_entries = map_keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (*key, Word::from([index as u32 + 1, 0, 0, 0])))
+        .collect::<Vec<_>>();
+    let map_slot_name = StorageSlotName::mock(0);
+    let account = AccountBuilder::new([3; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_map(
+            map_slot_name.clone(),
+            StorageMap::with_entries(map_entries.into_iter())?,
+        )]))
+        .build_existing()?;
+    let accesses = map_keys
+        .iter()
+        .map(|key| {
+            format!(
+                "push.{key}\n\
+                 push.MOCK_MAP_SLOT[0..2]\n\
+                 call.account::get_map_item\n\
+                 dropw\n\
+                 exec.sys::truncate_stack"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use mock::account
+
+        const MOCK_MAP_SLOT = word("{map_slot_name}")
+
+        @transaction_script
+        pub proc main
+            {accesses}
+        end
+        "#
+    );
+    let builder = CodeBuilder::with_mock_packages();
+    let source_manager = builder.source_manager();
+    let tx_script = builder.compile_tx_script(code)?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = executor
+        .execute_transaction(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            mock_tx.tx_inputs().input_notes().clone(),
+            mock_tx.tx_args().clone(),
+        )
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_error, .. }
+            if matches!(
+                event_error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::DataStoreRequestLimitExceeded {
+                    max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+                })
+            )
+    );
+    assert_eq!(data_store.storage_map_request_count(), MAX_DATA_STORE_REQUESTS_PER_TX);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_script_fetches_share_the_lazy_data_store_limit() -> anyhow::Result<()> {
+    let storage_request_count = MAX_DATA_STORE_REQUESTS_PER_TX - 1;
+    let map_keys = (0..storage_request_count)
+        .map(|index| StorageMapKey::from_array([0, 0, 0, index as u32]))
+        .collect::<Vec<_>>();
+    let map_entries = map_keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (*key, Word::from([index as u32 + 1, 0, 0, 0])))
+        .collect::<Vec<_>>();
+    let map_slot_name = StorageSlotName::mock(0);
+    let account = AccountBuilder::new([5; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_map(
+            map_slot_name.clone(),
+            StorageMap::with_entries(map_entries.into_iter())?,
+        )]))
+        .build_existing()?;
+    let output_notes = [1_u32, 2]
+        .map(|value| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .note_type(NoteType::Private)
+                .code(format!(
+                    r#"
+                    @note_script
+                    pub proc main
+                        push.{value} drop
+                    end
+                    "#
+                ))
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let storage_accesses = map_keys
+        .iter()
+        .map(|key| {
+            format!(
+                "push.{key}\n\
+                 push.MOCK_MAP_SLOT[0..2]\n\
+                 call.account::get_map_item\n\
+                 dropw\n\
+                 exec.sys::truncate_stack"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let note_creations = output_notes
+        .iter()
+        .map(|note| {
+            format!(
+                "push.{recipient}\n\
+                 push.{note_type}\n\
+                 push.{tag}\n\
+                 call.account::create_note\n\
+                 drop\n\
+                 exec.sys::truncate_stack",
+                recipient = note.recipient().digest(),
+                note_type = NoteType::Private as u8,
+                tag = Felt::from(note.metadata().tag()),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use mock::account
+
+        const MOCK_MAP_SLOT = word("{map_slot_name}")
+
+        @transaction_script
+        pub proc main
+            {storage_accesses}
+            {note_creations}
+        end
+        "#
+    );
+    let code_builder = CodeBuilder::with_mock_packages();
+    let source_manager = code_builder.source_manager();
+    let tx_script = code_builder.compile_tx_script(code)?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager);
+    for note in &output_notes {
+        let script_root = Word::from(note.script().root());
+        for (key, value) in note
+            .recipient()
+            .to_advice_map_entries()
+            .into_iter()
+            .filter(|(key, _)| *key != script_root)
+        {
+            tx_builder = tx_builder.add_advice_map_entry(key, value);
+        }
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = executor
+        .execute_transaction(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            mock_tx.tx_inputs().input_notes().clone(),
+            mock_tx.tx_args().clone(),
+        )
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_error, .. }
+            if matches!(
+                event_error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::DataStoreRequestLimitExceeded {
+                    max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+                })
+            )
+    );
+    assert_eq!(data_store.storage_map_request_count(), storage_request_count);
+    assert_eq!(data_store.note_script_request_count(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_retries_failed_data_store_requests() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account_with_storage(
+        crate::Auth::IncrNonce,
+        [AccountStorage::mock_map_slot()],
+    )?;
+    let map_key = *AccountStorage::mock_map().entries().next().unwrap().0;
+    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let note_script = format!(
+        r#"
+        use mock::account
+
+        const MOCK_MAP_SLOT = word("{mock_map_slot}")
+
+        @note_script
+        pub proc main
+            push.{map_key}
+            push.MOCK_MAP_SLOT[0..2]
+            call.account::get_map_item
+            dropw
+        end
+        "#
+    );
+    let notes = [1_u32, 2]
+        .map(|_| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(&note_script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
+        .build()?;
+    let data_store = CountingDataStore::failing_storage_map_requests(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    assert!(result.successful().is_empty());
+    assert_eq!(result.failed().len(), 2);
+    assert!(result.failed().iter().all(|failure| {
+        matches!(
+            failure.error(),
+            Some(TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::EventError { error, .. }
+            )) if matches!(
+                error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::GetStorageMapWitness {
+                    source: DataStoreError::Other { error_msg, .. },
+                    ..
+                }) if error_msg.as_ref() == "storage map request failed for test"
+            )
+        )
+    }));
+    assert_eq!(data_store.storage_map_request_count(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_reports_data_store_limit_exhausted_across_retries() -> anyhow::Result<()> {
+    let map_keys = (0..=MAX_DATA_STORE_REQUESTS_PER_TX)
+        .map(|index| StorageMapKey::from_array([0, 0, 0, index as u32]))
+        .collect::<Vec<_>>();
+    let map_entries = map_keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (*key, Word::from([index as u32 + 1, 0, 0, 0])))
+        .collect::<Vec<_>>();
+    let map_slot_name = StorageSlotName::mock(0);
+    let account = AccountBuilder::new([4; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_map(
+            map_slot_name.clone(),
+            StorageMap::with_entries(map_entries.into_iter())?,
+        )]))
+        .build_existing()?;
+    let note_script = |keys: &[StorageMapKey]| {
+        let accesses = keys
+            .iter()
+            .map(|key| {
+                format!(
+                    "push.{key}\n\
+                     push.MOCK_MAP_SLOT[0..2]\n\
+                     call.account::get_map_item\n\
+                     dropw\n\
+                     exec.sys::truncate_stack"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            r#"
+            use miden::core::sys
+            use mock::account
+
+            const MOCK_MAP_SLOT = word("{map_slot_name}")
+
+            @note_script
+            pub proc main
+                {accesses}
+                push.0 assert.err="force another checker attempt"
+            end
+            "#
+        )
+    };
+    let notes = [note_script(&map_keys[..128]), note_script(&map_keys[128..])]
+        .map(|script| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
+        .build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        NoteCheckerError::DataStoreRequestLimitExceeded {
+            max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+        }
+    ));
+    assert_eq!(data_store.storage_map_request_count(), MAX_DATA_STORE_REQUESTS_PER_TX);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_limits_missing_private_note_scripts_across_retries() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let output_note = NoteBuilder::new(account.id(), rand::rng())
+        .note_type(NoteType::Private)
+        .code(
+            r#"
+            @note_script
+            pub proc main
+                push.0 drop
+            end
+            "#,
+        )
+        .build()?;
+    let script_root = output_note.script().root();
+    let input_note_script = format!(
+        r#"
+        use miden::core::sys
+        use mock::account
+
+        @note_script
+        pub proc main
+            repeat.129
+                push.{recipient}
+                push.{note_type}
+                push.{tag}
+                call.account::create_note
+                drop
+                exec.sys::truncate_stack
+            end
+        end
+        "#,
+        recipient = output_note.recipient().digest(),
+        note_type = NoteType::Private as u8,
+        tag = Felt::from(output_note.metadata().tag()),
+    );
+    let input_note = NoteBuilder::new(account.id(), rand::rng())
+        .code(input_note_script)
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
+        .build()?;
+    let mock_chain = builder.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes([input_note.clone()]);
+    for (key, value) in output_note
+        .recipient()
+        .to_advice_map_entries()
+        .into_iter()
+        .filter(|(key, _)| *key != Word::from(script_root))
+    {
+        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            vec![input_note],
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        NoteCheckerError::DataStoreRequestLimitExceeded {
+            max_requests: MAX_DATA_STORE_REQUESTS_PER_TX,
+        }
+    ));
+    assert_eq!(data_store.note_script_request_count(), MAX_DATA_STORE_REQUESTS_PER_TX);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_retries_failed_note_script_requests() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(crate::Auth::IncrNonce)?;
+    let output_note = NoteBuilder::new(account.id(), rand::rng())
+        .note_type(NoteType::Public)
+        .code(
+            r#"
+            @note_script
+            pub proc main
+                push.0 drop
+            end
+            "#,
+        )
+        .build()?;
+    let script_root = output_note.script().root();
+    let input_note_script = format!(
+        r#"
+        use mock::account
+
+        @note_script
+        pub proc main
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.account::create_note
+            drop
+        end
+        "#,
+        recipient = output_note.recipient().digest(),
+        note_type = NoteType::Public as u8,
+        tag = Felt::from(output_note.metadata().tag()),
+    );
+    let input_notes = [1_u32, 2]
+        .map(|_| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(&input_note_script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(input_notes.clone());
+    for (key, value) in output_note
+        .recipient()
+        .to_advice_map_entries()
+        .into_iter()
+        .filter(|(key, _)| *key != Word::from(script_root))
+    {
+        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::failing_note_script_requests(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            input_notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    assert!(result.successful().is_empty());
+    assert_eq!(result.failed().len(), 2);
+    assert!(result.failed().iter().all(|failure| {
+        matches!(
+            failure.error(),
+            Some(TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::EventError { error, .. }
+            )) if matches!(
+                error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::GetNoteScript {
+                    script_root: failed_root,
+                    source: DataStoreError::Other {
+                        error_msg,
+                        source: Some(source),
+                    },
+                }) if *failed_root == script_root
+                    && error_msg.as_ref() == "note script request failed for test"
+                    && format!("{source}") == "nested note script cause"
+            )
+        )
+    }));
+    assert_eq!(data_store.note_script_request_count(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_checker_retries_missing_public_note_scripts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(crate::Auth::IncrNonce)?;
+    let output_note = NoteBuilder::new(account.id(), rand::rng())
+        .note_type(NoteType::Public)
+        .code(
+            r#"
+            @note_script
+            pub proc main
+                push.0 drop
+            end
+            "#,
+        )
+        .build()?;
+    let script_root = output_note.script().root();
+    let input_note_script = format!(
+        r#"
+        use mock::account
+
+        @note_script
+        pub proc main
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.account::create_note
+            drop
+        end
+        "#,
+        recipient = output_note.recipient().digest(),
+        note_type = NoteType::Public as u8,
+        tag = Felt::from(output_note.metadata().tag()),
+    );
+    let input_notes = [1_u32, 2]
+        .map(|_| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .code(&input_note_script)
+                .dynamically_linked_packages(CodeBuilder::mock_packages())
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mut tx_builder = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(input_notes.clone());
+    for (key, value) in output_note
+        .recipient()
+        .to_advice_map_entries()
+        .into_iter()
+        .filter(|(key, _)| *key != Word::from(script_root))
+    {
+        tx_builder = tx_builder.add_advice_map_entry(key, value);
+    }
+    let mock_tx = tx_builder.build()?;
+    let data_store = CountingDataStore::new(&mock_tx);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
+
+    let result = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            input_notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    let expected_error = format!(
+        "note script with root {} not found in data store for public note",
+        Word::from(script_root),
+    );
+    assert!(result.successful().is_empty());
+    assert_eq!(result.failed().len(), 2);
+    assert!(result.failed().iter().all(|failure| {
+        matches!(
+            failure.error(),
+            Some(TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::EventError { error, .. }
+            )) if matches!(
+                error.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::Other { message, .. })
+                    if message.as_ref() == expected_error
+            )
+        )
+    }));
+    assert_eq!(data_store.note_script_request_count(), 2);
+
+    Ok(())
+}
 
 /// Tests that updating or inserting a map item into a storage map succeeds when lazy loading is
 /// enabled.

@@ -1,9 +1,20 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use std::sync::Mutex;
 
 use assert_matches::assert_matches;
-use miden_processor::ExecutionError;
+use miden_processor::advice::{AdviceError, AdviceInputs};
 use miden_processor::crypto::random::RandomCoin;
+use miden_processor::{
+    ExecutionError,
+    ExecutionOptions,
+    ExecutionOutput,
+    FastProcessor,
+    Host,
+    Program,
+    ProgramExecutor,
+    StackInputs,
+};
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -26,7 +37,9 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::{InputNote, RawOutputNote};
+use miden_protocol::vm::{DebugSourceNodeId, PackageDebugInfo};
 use miden_protocol::{Felt, Word};
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
@@ -41,6 +54,74 @@ use rand_chacha::ChaCha20Rng;
 
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, TestTransactionBuilder};
+
+const CAN_CONSUME_RECORDER: u8 = 0;
+const ELIMINATION_RECORDER: u8 = 1;
+const COMBINATION_RECORDER: u8 = 2;
+
+static CAN_CONSUME_MAX_CYCLES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+static ELIMINATION_MAX_CYCLES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+static COMBINATION_MAX_CYCLES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+struct RecordingExecutor<const RECORDER: u8> {
+    inner: FastProcessor,
+}
+
+impl<const RECORDER: u8> RecordingExecutor<RECORDER> {
+    fn max_cycles() -> &'static Mutex<Vec<u32>> {
+        match RECORDER {
+            CAN_CONSUME_RECORDER => &CAN_CONSUME_MAX_CYCLES,
+            ELIMINATION_RECORDER => &ELIMINATION_MAX_CYCLES,
+            COMBINATION_RECORDER => &COMBINATION_MAX_CYCLES,
+            _ => unreachable!("unknown recording executor"),
+        }
+    }
+
+    fn clear() {
+        Self::max_cycles().lock().unwrap().clear();
+    }
+
+    fn recorded_max_cycles() -> Vec<u32> {
+        Self::max_cycles().lock().unwrap().clone()
+    }
+}
+
+impl<const RECORDER: u8> ProgramExecutor for RecordingExecutor<RECORDER> {
+    fn new(
+        stack_inputs: StackInputs,
+        advice_inputs: AdviceInputs,
+        options: ExecutionOptions,
+    ) -> Result<Self, AdviceError> {
+        Self::max_cycles().lock().unwrap().push(options.max_cycles());
+        let inner = <FastProcessor as ProgramExecutor>::new(stack_inputs, advice_inputs, options)?;
+        Ok(Self { inner })
+    }
+
+    fn with_debug_info(mut self, package_debug_info: PackageDebugInfo) -> Self {
+        self.inner =
+            <FastProcessor as ProgramExecutor>::with_debug_info(self.inner, package_debug_info);
+        self
+    }
+
+    fn with_entrypoint_source_node(
+        mut self,
+        entrypoint_source_node: Option<DebugSourceNodeId>,
+    ) -> Self {
+        self.inner = <FastProcessor as ProgramExecutor>::with_entrypoint_source_node(
+            self.inner,
+            entrypoint_source_node,
+        );
+        self
+    }
+
+    async fn execute<H: Host + Send>(
+        self,
+        program: &Program,
+        host: &mut H,
+    ) -> Result<ExecutionOutput, ExecutionError> {
+        <FastProcessor as ProgramExecutor>::execute(self.inner, program, host).await
+    }
+}
 
 #[tokio::test]
 async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
@@ -232,6 +313,165 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
         [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn can_consume_uses_full_cycle_allowance() -> anyhow::Result<()> {
+    type Executor = RecordingExecutor<CAN_CONSUME_RECORDER>;
+    Executor::clear();
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let note = NoteBuilder::new(AccountId::try_from(ACCOUNT_ID_SENDER)?, &mut rand::rng())
+        .code(
+            "@note_script
+             pub proc main
+                 repeat.5000 push.1 drop end
+             end",
+        )
+        .build()?;
+    let mock_chain = builder.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes([note.clone()])
+        .build()?;
+    let options = ExecutionOptions::new(Some(81_920), 4_096, 2_048)?;
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
+        .with_options(options)?
+        .with_program_executor::<Executor>();
+
+    let status = NoteConsumptionChecker::new(&executor)
+        .can_consume(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            InputNote::unauthenticated(note),
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    assert_matches!(status, NoteConsumptionStatus::Consumable);
+    assert_eq!(Executor::recorded_max_cycles(), vec![81_920]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_note_consumability_stops_when_elimination_budget_is_exhausted() -> anyhow::Result<()>
+{
+    type Executor = RecordingExecutor<ELIMINATION_RECORDER>;
+    Executor::clear();
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let notes = [1_u32, 2].map(|value| {
+        NoteBuilder::new(sender, &mut rand::rng())
+            .code(format!("@note_script pub proc main push.{value} drop push.0 div end"))
+            .build()
+    });
+    let notes = notes.into_iter().collect::<Result<Vec<_>, _>>()?;
+    let mock_chain = builder.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
+        .build()?;
+    let options = ExecutionOptions::new(Some(131_071), 65_536, 2_048)?;
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
+        .with_options(options)?
+        .with_program_executor::<Executor>();
+
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_matches!(error, NoteCheckerError::ExecutionBudgetExhausted { max_cycles: 131_071 });
+    assert_eq!(Executor::recorded_max_cycles(), vec![65_536]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_note_consumability_stops_when_combination_budget_is_exhausted() -> anyhow::Result<()>
+{
+    type Executor = RecordingExecutor<COMBINATION_RECORDER>;
+    Executor::clear();
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let note_asset = FungibleAsset::mock(700).unwrap_fungible();
+    let note = NoteBuilder::new(account.id(), &mut rand::rng())
+        .add_assets([Asset::from(note_asset)])
+        .build()?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes([note.clone()])
+        .build()?;
+    let options = ExecutionOptions::new(Some(131_071), 65_536, 2_048)?;
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
+        .with_options(options)?
+        .with_program_executor::<Executor>();
+
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            vec![note],
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_matches!(error, NoteCheckerError::ExecutionBudgetExhausted { max_cycles: 131_071 });
+    assert_eq!(Executor::recorded_max_cycles(), vec![65_536]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_note_consumability_stops_on_transaction_script_failure() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let note = builder.add_p2id_note(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(10)],
+        NoteType::Public,
+    )?;
+    let chain = builder.build()?;
+    let tx_script = CodeBuilder::default().compile_tx_script(
+        "@transaction_script
+         pub proc main
+             push.0 assert
+         end",
+    )?;
+    let mock_tx = chain
+        .build_transaction(account)
+        .unauthenticated_input_notes([note.clone()])
+        .tx_script(tx_script)
+        .build()?;
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let error = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            vec![note],
+            mock_tx.tx_args().clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_matches!(error, NoteCheckerError::TransactionScriptExecution(_));
+
     Ok(())
 }
 

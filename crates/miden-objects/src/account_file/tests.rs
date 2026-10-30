@@ -1,9 +1,18 @@
+#[cfg(all(feature = "std", unix))]
+use std::fs;
+#[cfg(all(feature = "std", unix))]
+use std::io;
+#[cfg(all(feature = "std", unix))]
+use std::os::unix::fs::PermissionsExt;
+
 #[cfg(feature = "std")]
 use assert_matches::assert_matches;
 
 use super::AccountFile;
 #[cfg(feature = "std")]
 use super::AccountFileError;
+#[cfg(all(feature = "std", unix))]
+use super::write_account_file_with_permissions;
 use crate::decoded::account::test_utils::{auth_secret_keys, mock_account};
 
 fn account_file() -> AccountFile {
@@ -27,6 +36,48 @@ fn account_file_roundtrips_through_a_file() {
     file.write(&path).unwrap();
 
     assert_eq!(AccountFile::read(&path).unwrap(), file);
+}
+
+#[cfg(all(feature = "std", unix))]
+#[test]
+fn account_file_write_restricts_new_file_permissions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("account_file.mac");
+
+    account_file().write(&path).unwrap();
+
+    assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+#[cfg(all(feature = "std", unix))]
+#[test]
+fn account_file_write_restricts_existing_file_permissions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("account_file.mac");
+    fs::write(&path, []).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+    let file = account_file();
+    file.write(&path).unwrap();
+
+    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(AccountFile::read(path).unwrap(), file);
+}
+
+#[cfg(all(feature = "std", unix))]
+#[test]
+fn account_file_write_preserves_contents_when_setting_permissions_fails() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("account_file.mac");
+    fs::write(&path, b"existing account file").unwrap();
+
+    let error = write_account_file_with_permissions(&path, b"replacement", |_| {
+        Err(io::Error::from(io::ErrorKind::PermissionDenied))
+    })
+    .unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(fs::read(path).unwrap(), b"existing account file");
 }
 
 #[cfg(feature = "std")]
