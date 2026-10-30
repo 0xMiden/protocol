@@ -52,11 +52,12 @@ impl AccountDelta {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Version 1 of the account delta commitment layout.
+    /// Version 2 of the account delta commitment layout.
     ///
     /// The version occupies the first element of the commitment header, so a reader can get it
-    /// before it interprets the rest of the commitment.
-    const VERSION_1: u8 = 1;
+    /// before it interprets the rest of the commitment. Version 2 includes both asset operation
+    /// trailers whenever the vault delta is nonempty.
+    const VERSION_2: u8 = 2;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -134,6 +135,38 @@ impl AccountDelta {
         (self.storage, self.vault, self.code, self.nonce_delta)
     }
 
+    /// Returns the number of field elements in this delta's commitment preimage.
+    ///
+    /// This equals the length of [`SequentialCommit::to_elements`] without allocating the preimage.
+    pub fn to_num_elements(&self) -> usize {
+        if self.is_empty() {
+            return 0;
+        }
+
+        8 * (1 + Self::commitment_body_block_count(
+            self.vault.num_assets(),
+            &self.storage,
+            !self.code.is_empty(),
+        ))
+    }
+
+    /// Returns the number of eight-Felt commitment body blocks for the given delta components.
+    ///
+    /// This excludes the metadata header. `num_changed_assets` counts unequal initial/final vault
+    /// values, so callers can compute the length before the kernel emits its per-asset deltas.
+    /// A nonempty vault section includes both operation trailers. `has_code` indicates whether
+    /// the delta includes new or upgraded account code.
+    pub fn commitment_body_block_count(
+        num_changed_assets: usize,
+        storage: &AccountStoragePatch,
+        has_code: bool,
+    ) -> usize {
+        num_changed_assets
+            + 2 * usize::from(num_changed_assets != 0)
+            + storage.commitment_body_block_count()
+            + usize::from(has_code)
+    }
+
     /// Computes the commitment to the account delta.
     ///
     /// ## Computation
@@ -145,20 +178,22 @@ impl AccountDelta {
     /// Whenever sorting is expected, it is that of a [`Word`]. The registered delta selector is
     /// bound into Eidos's initial chaining word.
     ///
-    /// - Append `[[version = 1, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
+    /// - Append `[[version = 2, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
     ///   id, `nonce_delta` is the value by which the nonce was incremented, and `version` is the
     ///   version of this layout.
     /// - Asset Delta
+    ///   - If no assets changed, omit this section. Otherwise, include both operation trailers,
+    ///     even when one operation's count is zero, for a total of `num_changed_assets + 2` blocks.
     ///   - For each **added** asset, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE]`.
-    ///   - Append `[domain = 1, delta_op = 1, num_added_assets, 0]` if `num_added_assets != 0`
-    ///     where `num_added_assets` is the number of added assets and `delta_op` is set to `1`
-    ///     indicating asset addition.
+    ///   - Append `[[domain = 1, delta_op = 1, num_added_assets, 0], EMPTY_WORD]`, where
+    ///     `num_added_assets` is the number of added assets and `delta_op` is set to `1` indicating
+    ///     asset addition.
     ///   - For each **removed** asset, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE]`.
-    ///   - Append `[domain = 1, delta_op = 2, num_removed_assets, 0]` if `num_removed_assets != 0`
-    ///     where `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
+    ///   - Append `[[domain = 1, delta_op = 2, num_removed_assets, 0], EMPTY_WORD]`, where
+    ///     `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
     ///     indicating asset removal.
     ///   - Note that the domain is the same independent of asset addition or removal, since the
     ///     `delta_op` sufficiently distinguishes the two domains.
@@ -234,7 +269,7 @@ impl AccountDelta {
     ///   METADATA, EMPTY_WORD,
     ///   [ASSET_ID, ASSET_VALUE],
     ///   [[domain = 1, delta_op = 1, num_added_assets = 1, 0], EMPTY_WORD],
-    ///   [/* no removed assets delta */],
+    ///   [[domain = 1, delta_op = 2, num_removed_assets = 0, 0], EMPTY_WORD],
     ///   [/* no storage patch */]
     /// ]
     /// ```
@@ -245,17 +280,17 @@ impl AccountDelta {
     ///   [/* no asset delta */],
     ///   [[domain = 2, patch_op, slot_id_suffix0, slot_id_prefix0], NEW_VALUE]
     ///   [[domain = 2, patch_op, slot_id_suffix1, slot_id_prefix1], NEW_VALUE]
+    ///   [[domain = 2, patch_op, slot_id_suffix2, slot_id_prefix2], NEW_VALUE]
     /// ]
     /// ```
     ///
     /// - `NEW_VALUE` is user-controlled and can be crafted to match `ASSET_VALUE` or `EMPTY_WORD`.
     /// - Slot IDs are user-controlled and can be crafted to match the two most significant elements
-    ///   in the asset ID or `num_added_assets` and the fixed 0.
+    ///   in the asset ID, or the added/removed asset counts and the fixed 0.
     /// - This leaves only the domain separator and the patch_op to differentiate these two deltas.
     ///
-    /// A delta and a patch have identically shaped headers, so their element sequences can be made
-    /// to match. They cannot collide because the delta and the patch commitment use distinct hasher
-    /// registered Eidos selectors.
+    /// Delta and patch commitments use distinct registered Eidos selectors, so they are separated
+    /// independently of their layout versions and payload structure.
     ///
     /// ### Number of Changed Entries
     ///
@@ -358,12 +393,11 @@ impl SequentialCommit for AccountDelta {
             return Vec::new();
         }
 
-        // Reserve space for the header and a small delta.
-        let mut elements = Vec::with_capacity(24);
+        let mut elements = Vec::with_capacity(self.to_num_elements());
 
         // Metadata
         elements.extend_from_slice(&[
-            Felt::from(Self::VERSION_1),
+            Felt::from(Self::VERSION_2),
             self.nonce_delta,
             self.account_id.suffix(),
             self.account_id.prefix().as_felt(),
@@ -475,7 +509,10 @@ mod tests {
         AccountVaultPatch,
         StorageMapKey,
         StorageMapPatch,
+        StorageMapPatchEntries,
         StorageSlotName,
+        StorageSlotPatch,
+        StorageValuePatch,
     };
     use crate::asset::{
         Asset,
@@ -492,7 +529,13 @@ mod tests {
         AccountIdBuilder,
     };
     use crate::utils::serde::Serializable;
-    use crate::{ACCOUNT_DELTA_COMMITMENT_DOMAIN, Felt, Hasher, Word};
+    use crate::{
+        ACCOUNT_DELTA_COMMITMENT_DOMAIN,
+        ACCOUNT_PATCH_COMMITMENT_DOMAIN,
+        Felt,
+        Hasher,
+        Word,
+    };
 
     #[test]
     fn empty_account_delta_uses_canonical_domain_hash() -> anyhow::Result<()> {
@@ -518,8 +561,7 @@ mod tests {
         Ok(())
     }
 
-    /// Patch and delta commitments bind the layout version in the payload under distinct
-    /// delegated domains, even when the payloads are identical.
+    /// Patch and delta commitments bind their layout versions under distinct delegated domains.
     #[test]
     fn account_delta_commitment_domain_separation() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
@@ -540,7 +582,7 @@ mod tests {
             Some(nonce),
         )?;
 
-        let preimage = [
+        let patch_preimage = [
             Felt::ONE,
             nonce,
             account_id.suffix(),
@@ -550,12 +592,15 @@ mod tests {
             Felt::ZERO,
             Felt::ZERO,
         ];
-        assert_eq!(delta.to_elements(), preimage);
-        assert_eq!(patch.to_elements(), preimage);
+        let mut delta_preimage = patch_preimage;
+        delta_preimage[0] = Felt::from(2u8);
+        assert_eq!(delta.to_elements(), delta_preimage);
+        assert_eq!(patch.to_elements(), patch_preimage);
 
-        for (actual, tag) in
-            [(delta.to_commitment(), 0x0200_0100), (patch.to_commitment(), 0x0200_0000)]
-        {
+        for (actual, tag, preimage) in [
+            (delta.to_commitment(), 0x0200_0100, delta_preimage),
+            (patch.to_commitment(), 0x0200_0000, patch_preimage),
+        ] {
             let cv =
                 Hasher::init_chaining_word_with_tag(DomainTag::from_u32(tag).unwrap(), [8, 0, 0]);
             assert_eq!(actual, Hasher::compress(cv, preimage));
@@ -563,6 +608,14 @@ mod tests {
 
         assert_ne!(delta.to_commitment(), Word::empty());
         assert_ne!(delta.to_commitment(), patch.to_commitment());
+        assert_ne!(
+            delta.to_commitment(),
+            Hasher::hash_elements_in_domain(&patch_preimage, ACCOUNT_DELTA_COMMITMENT_DOMAIN)
+        );
+        assert_ne!(
+            delta.to_commitment(),
+            Hasher::hash_elements_in_domain(&delta_preimage, ACCOUNT_PATCH_COMMITMENT_DOMAIN)
+        );
 
         Ok(())
     }
@@ -720,6 +773,76 @@ mod tests {
         assert_eq!(account.code(), &code);
         assert_eq!(account.storage().get_item(&created_slot)?, created_value);
 
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::no_storage(None, 0)]
+    #[case::value_create(Some(StorageSlotPatch::Value(StorageValuePatch::Create { value: Word::empty() })), 1)]
+    #[case::value_update(Some(StorageSlotPatch::Value(StorageValuePatch::Update { value: Word::empty() })), 1)]
+    #[case::value_remove(Some(StorageSlotPatch::Value(StorageValuePatch::Remove)), 1)]
+    #[case::empty_map_create(Some(StorageSlotPatch::Map(StorageMapPatch::Create { entries: StorageMapPatchEntries::new() })), 1)]
+    #[case::empty_map_update(Some(StorageSlotPatch::Map(StorageMapPatch::Update { entries: StorageMapPatchEntries::new() })), 0)]
+    #[case::map_remove(Some(StorageSlotPatch::Map(StorageMapPatch::Remove)), 1)]
+    #[case::map_update(Some(StorageSlotPatch::Map(StorageMapPatch::from_iters([], [(StorageMapKey::from_array([1, 2, 3, 4]), Word::empty())]))), 2)]
+    fn account_update_encoding_lengths(
+        #[case] slot_patch: Option<StorageSlotPatch>,
+        #[case] storage_blocks: usize,
+    ) -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let storage = AccountStoragePatch::from_entries(
+            slot_patch.map(|patch| (StorageSlotName::mock(1), patch)),
+        )?;
+        assert_eq!(AccountPatch::empty(account_id).to_num_elements(), 0);
+        let empty_delta = AccountDelta::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultDelta::default(),
+            AccountCodePatch::default(),
+            Felt::ZERO,
+        )?;
+        assert_eq!(empty_delta.to_num_elements(), empty_delta.to_elements().len());
+        assert_eq!(empty_delta.to_num_elements(), 0);
+
+        for (add, remove) in [(false, false), (true, false), (false, true), (true, true)] {
+            for has_code in [false, true] {
+                let added = FungibleAsset::mock(42);
+                let removed = NonFungibleAsset::mock(&[1, 2, 3]);
+                let vault_delta =
+                    AccountVaultDelta::from_iters(add.then_some(added), remove.then_some(removed));
+                let mut vault_patch = AccountVaultPatch::default();
+                if add {
+                    vault_patch.insert_asset(added);
+                }
+                if remove {
+                    vault_patch.remove_asset(removed.id());
+                }
+                let code = AccountCodePatch::new(has_code.then(AccountCode::mock));
+                let delta = AccountDelta::new(
+                    account_id,
+                    storage.clone(),
+                    vault_delta,
+                    code.clone(),
+                    Felt::ONE,
+                )?;
+                let patch = AccountPatch::new(
+                    account_id,
+                    storage.clone(),
+                    vault_patch,
+                    code,
+                    Some(Felt::from(2u32)),
+                )?;
+                let num_assets = usize::from(add) + usize::from(remove);
+                let common_blocks = 1 + storage_blocks + usize::from(has_code);
+                let delta_vault_blocks = if num_assets == 0 { 0 } else { num_assets + 2 };
+                let patch_vault_blocks = if num_assets == 0 { 0 } else { num_assets + 1 };
+
+                assert_eq!(delta.to_num_elements(), 8 * (common_blocks + delta_vault_blocks));
+                assert_eq!(delta.to_num_elements(), delta.to_elements().len());
+                assert_eq!(patch.to_num_elements(), 8 * (common_blocks + patch_vault_blocks));
+                assert_eq!(patch.to_num_elements(), patch.to_elements().len());
+            }
+        }
         Ok(())
     }
 

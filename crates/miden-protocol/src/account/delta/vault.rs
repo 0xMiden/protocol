@@ -144,8 +144,12 @@ impl AccountVaultDelta {
     }
 
     /// Appends the vault delta to the given `elements` from which the delta commitment will be
-    /// computed.
+    /// computed. A nonempty delta includes both operation trailers, even if one count is zero.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
+        if self.is_empty() {
+            return;
+        }
+
         self.append_asset_section(AssetDeltaOperation::Add, elements);
         self.append_asset_section(AssetDeltaOperation::Remove, elements);
     }
@@ -194,7 +198,7 @@ impl AccountVaultDelta {
 
     /// Appends the assets changed by the provided operation, followed by the section's trailer.
     ///
-    /// The trailer is omitted if the operation did not change any asset.
+    /// The trailer is included even if the operation did not change any asset.
     fn append_asset_section(&self, delta_op: AssetDeltaOperation, elements: &mut Vec<Felt>) {
         let mut num_changed_assets = 0;
         for asset in self.filter_by_op(delta_op) {
@@ -202,18 +206,16 @@ impl AccountVaultDelta {
             num_changed_assets += 1;
         }
 
-        if num_changed_assets != 0 {
-            let num_changed_assets = Felt::try_from(num_changed_assets as u64)
-                .expect("number of changed assets should not exceed max representable felt");
+        let num_changed_assets = Felt::try_from(num_changed_assets as u64)
+            .expect("number of changed assets should not exceed max representable felt");
 
-            elements.extend_from_slice(&[
-                Self::DOMAIN,
-                Felt::from(delta_op.as_u8()),
-                num_changed_assets,
-                Felt::ZERO,
-            ]);
-            elements.extend_from_slice(Word::empty().as_elements());
-        }
+        elements.extend_from_slice(&[
+            Self::DOMAIN,
+            Felt::from(delta_op.as_u8()),
+            num_changed_assets,
+            Felt::ZERO,
+        ]);
+        elements.extend_from_slice(Word::empty().as_elements());
     }
 }
 
@@ -289,6 +291,51 @@ mod tests {
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountDeltaError;
     use crate::utils::serde::ByteWriter;
+    use crate::{Felt, Word};
+
+    #[rstest]
+    #[case::empty(false, false)]
+    #[case::add_only(true, false)]
+    #[case::remove_only(false, true)]
+    #[case::mixed(true, true)]
+    fn account_vault_delta_commitment_encoding(#[case] add: bool, #[case] remove: bool) {
+        let added = FungibleAsset::mock(42);
+        let removed = NonFungibleAsset::mock(&[1, 2, 3]);
+        let delta = AccountVaultDelta::from_iters(add.then_some(added), remove.then_some(removed));
+        // Preserve any preceding commitment sections, including for an empty vault delta.
+        let prefix = [Felt::from(99u32); 8];
+        let mut actual = prefix.to_vec();
+        delta.append_delta_elements(&mut actual);
+
+        let mut expected = prefix.to_vec();
+        if add || remove {
+            if add {
+                expected.extend_from_slice(&added.as_elements());
+            }
+            expected.extend_from_slice(&[
+                Felt::ONE,
+                Felt::ONE,
+                Felt::from(u32::from(add)),
+                Felt::ZERO,
+            ]);
+            expected.extend_from_slice(Word::empty().as_elements());
+            if remove {
+                expected.extend_from_slice(&removed.as_elements());
+            }
+            expected.extend_from_slice(&[
+                Felt::ONE,
+                Felt::from(2u32),
+                Felt::from(u32::from(remove)),
+                Felt::ZERO,
+            ]);
+            expected.extend_from_slice(Word::empty().as_elements());
+        }
+
+        assert_eq!(actual, expected);
+        let num_assets = usize::from(add) + usize::from(remove);
+        let expected_blocks = if num_assets == 0 { 0 } else { num_assets + 2 };
+        assert_eq!(actual.len() - prefix.len(), 8 * expected_blocks);
+    }
 
     #[test]
     fn account_vault_delta_serde() -> anyhow::Result<()> {

@@ -2,9 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{AccountVaultDelta, AccountVaultPatch, AssetDelta};
-use miden_protocol::asset::{Asset, AssetId};
+use miden_protocol::asset::AssetId;
 
 use crate::TransactionKernelError;
 use crate::host::tx_event::AssetPatch;
@@ -54,30 +53,16 @@ impl VaultUpdateTracker {
         self.asset_deltas.clear();
     }
 
-    /// Returns the number of 8-Felt body blocks in the vault-delta section.
+    /// Returns the number of asset IDs whose tracked initial and final vault values differ.
     ///
     /// The host uses this before the kernel computes the delta commitment. At that point
     /// `asset_deltas` may still be empty because it is populated by the commitment pass itself, so
     /// the count is derived from the tracked initial/final vault values.
-    pub fn delta_commitment_body_block_count(&self) -> Result<usize, TransactionKernelError> {
-        let mut num_added_assets = 0usize;
-        let mut num_removed_assets = 0usize;
-
-        for (asset_id, (initial_value, final_value)) in self.entries.iter() {
-            if initial_value == final_value {
-                continue;
-            }
-
-            match compute_delta_op(*asset_id, *initial_value, *final_value)? {
-                AssetDeltaOperation::Add => num_added_assets += 1,
-                AssetDeltaOperation::Remove => num_removed_assets += 1,
-            }
-        }
-
-        Ok(num_added_assets
-            + usize::from(num_added_assets != 0)
-            + num_removed_assets
-            + usize::from(num_removed_assets != 0))
+    pub fn num_changed_assets(&self) -> usize {
+        self.entries
+            .values()
+            .filter(|(initial_value, final_value)| initial_value != final_value)
+            .count()
     }
 
     /// Consumes self and returns the vault delta.
@@ -109,47 +94,58 @@ impl VaultUpdateTracker {
     }
 }
 
-fn compute_delta_op(
-    asset_id: AssetId,
-    initial_value: Word,
-    final_value: Word,
-) -> Result<AssetDeltaOperation, TransactionKernelError> {
-    if asset_id.composition().is_none() {
-        return if initial_value.is_empty() {
-            Ok(AssetDeltaOperation::Add)
-        } else {
-            Ok(AssetDeltaOperation::Remove)
-        };
+#[cfg(test)]
+mod tests {
+    use miden_protocol::Word;
+    use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+
+    use super::VaultUpdateTracker;
+    use crate::host::tx_event::AssetPatch;
+
+    #[test]
+    fn vault_delta_count_treats_values_as_opaque() {
+        let mut tracker = VaultUpdateTracker::default();
+        // These words cannot be decoded as fungible amounts. Counting needs only equality.
+        tracker.entries.insert(
+            FungibleAsset::mock(42).id(),
+            (Word::from([9, 8, 7, 6u32]), Word::from([6, 7, 8, 9u32])),
+        );
+        assert_eq!(tracker.num_changed_assets(), 1);
     }
 
-    if !asset_id.composition().is_fungible() {
-        return Err(TransactionKernelError::other(
-            "custom asset composition is not supported in account delta commitments",
-        ));
-    }
+    #[test]
+    fn vault_delta_changed_asset_count() {
+        for (add, remove, expected_assets) in
+            [(false, false, 0), (true, false, 1), (false, true, 1), (true, true, 2)]
+        {
+            let mut tracker = VaultUpdateTracker::default();
+            assert_eq!(tracker.num_changed_assets(), 0);
 
-    let initial_amount = Asset::new(asset_id, initial_value)
-        .map_err(|source| {
-            TransactionKernelError::other_with_source(
-                "failed to decode initial fungible asset value",
-                source,
-            )
-        })?
-        .unwrap_fungible()
-        .amount();
-    let final_amount = Asset::new(asset_id, final_value)
-        .map_err(|source| {
-            TransactionKernelError::other_with_source(
-                "failed to decode final fungible asset value",
-                source,
-            )
-        })?
-        .unwrap_fungible()
-        .amount();
+            let added = FungibleAsset::mock(42);
+            let removed = NonFungibleAsset::mock(&[1, 2, 3]);
+            let unchanged = NonFungibleAsset::mock(&[4, 5, 6]);
+            let zero = miden_protocol::Word::empty();
+            for (asset, initial, final_value) in [
+                (added, zero, if add { added.to_value_word() } else { zero }),
+                (
+                    removed,
+                    removed.to_value_word(),
+                    if remove { zero } else { removed.to_value_word() },
+                ),
+                (unchanged, unchanged.to_value_word(), unchanged.to_value_word()),
+            ] {
+                tracker
+                    .update_patch(AssetPatch {
+                        asset_id: asset.id(),
+                        initial_vault_value: initial,
+                        final_vault_value: final_value,
+                    })
+                    .unwrap();
+            }
 
-    if final_amount > initial_amount {
-        Ok(AssetDeltaOperation::Add)
-    } else {
-        Ok(AssetDeltaOperation::Remove)
+            // The count is available before MASM emits any per-asset delta events.
+            assert!(tracker.asset_deltas.is_empty());
+            assert_eq!(tracker.num_changed_assets(), expected_assets);
+        }
     }
 }

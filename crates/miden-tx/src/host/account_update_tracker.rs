@@ -6,8 +6,6 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     AccountPatch,
-    AccountStoragePatch,
-    AccountVaultPatch,
     AssetDelta,
     PartialAccount,
 };
@@ -125,9 +123,11 @@ impl AccountUpdateTracker {
         let vault_patch = self.vault.clone().into_patch();
         let storage_patch = self.storage.clone().into_patch();
 
-        vault_patch_body_block_count(&vault_patch)
-            + storage_patch_body_block_count(&storage_patch)
-            + usize::from(!matches!(self.code, AccountCodeState::None))
+        AccountPatch::commitment_body_block_count(
+            vault_patch.num_assets(),
+            &storage_patch,
+            !matches!(self.code, AccountCodeState::None),
+        )
     }
 
     /// Returns the number of 8-Felt body blocks in the account delta commitment.
@@ -135,13 +135,13 @@ impl AccountUpdateTracker {
     /// This excludes the fixed metadata header block. The vault-delta section is derived from the
     /// tracked initial/final asset values instead of the accumulated delta events, because those
     /// events are emitted by the same kernel pass which consumes this advised count.
-    pub fn delta_commitment_body_block_count(&self) -> Result<usize, TransactionKernelError> {
+    pub fn delta_commitment_body_block_count(&self) -> usize {
         let storage_patch = self.storage.clone().into_patch();
-        let vault_delta_blocks = self.vault.delta_commitment_body_block_count()?;
-
-        Ok(vault_delta_blocks
-            + storage_patch_body_block_count(&storage_patch)
-            + usize::from(!matches!(self.code, AccountCodeState::None)))
+        AccountDelta::commitment_body_block_count(
+            self.vault.num_changed_assets(),
+            &storage_patch,
+            !matches!(self.code, AccountCodeState::None),
+        )
     }
 
     /// Consumes `self` and returns the resulting [AccountDelta].
@@ -217,21 +217,4 @@ impl AccountCodeState {
             AccountCodeState::UpgradeInitialized(code_upgrade) => Some(code_upgrade.into_code()),
         }
     }
-}
-
-fn vault_patch_body_block_count(vault_patch: &AccountVaultPatch) -> usize {
-    let num_assets = vault_patch.num_assets();
-    num_assets + usize::from(num_assets != 0)
-}
-
-fn storage_patch_body_block_count(storage_patch: &AccountStoragePatch) -> usize {
-    let value_slot_blocks = storage_patch.values().count();
-    let map_slot_blocks = storage_patch.maps().map(|(_slot_name, map_patch)| {
-        let num_entries = map_patch.entries().map_or(0, |entries| entries.num_entries());
-        let has_trailer = !map_patch.patch_op().is_update() || num_entries != 0;
-
-        num_entries + usize::from(has_trailer)
-    });
-
-    value_slot_blocks + map_slot_blocks.sum::<usize>()
 }

@@ -307,6 +307,94 @@ async fn delta_commitment_rejects_too_few_advised_body_blocks() -> anyhow::Resul
     Ok(())
 }
 
+/// A one-asset vault delta has three body blocks, including its zero-count operation trailer.
+#[rstest]
+#[case::old_encoding_count(2)]
+#[case::too_many(4)]
+#[tokio::test]
+async fn vault_delta_rejects_incorrect_advised_body_block_count(
+    #[case] advised_blocks: u32,
+) -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let asset = FungibleAsset::mock(42);
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::account_update
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+            push.{value} padw push.{id}
+            exec.account_update::update_asset
+            exec.account::incr_nonce drop
+            exec.account_update::compute_delta_commitment
+        end
+        "#,
+        value = asset.to_value_word(),
+        id = asset.to_id_word(),
+    );
+    let result = mock_tx
+        .execute_code_with_account_commitment_body_block_count_response(
+            &code,
+            None,
+            Some(Felt::from(advised_blocks)),
+        )
+        .await;
+    assert_execution_error!(result, ERR_ACCOUNT_DELTA_COMMITMENT_BODY_BLOCK_COUNT_MISMATCH);
+    Ok(())
+}
+
+/// Checks both zero-count trailers through the host/Rust/MASM commitment comparison.
+#[rstest]
+#[case::empty(false, false)]
+#[case::add_only(true, false)]
+#[case::remove_only(false, true)]
+#[case::mixed(true, true)]
+#[tokio::test]
+async fn vault_delta_operation_trailers(
+    #[case] add: bool,
+    #[case] remove: bool,
+) -> anyhow::Result<()> {
+    let added = FungibleAsset::mock(42);
+    let removed = NonFungibleAsset::mock(&[1, 2, 3]);
+    let tx_script = if remove {
+        Some(parse_tx_script(format!(
+            "@transaction_script
+             pub proc main
+                 push.{value} push.{id}
+                 exec.util::create_default_note_with_moved_asset
+             end",
+            value = removed.to_value_word(),
+            id = removed.to_id_word(),
+        ))?)
+    } else {
+        None
+    };
+    let mut expected_vault_patch = AccountVaultPatch::default();
+    if add {
+        expected_vault_patch.insert_asset(added);
+    }
+    if remove {
+        expected_vault_patch.remove_asset(removed.id());
+    }
+    AccountUpdateTest {
+        initial_storage_slots: vec![],
+        initial_vault_assets: remove.then_some(removed).into_iter().collect(),
+        input_notes_assets: add.then_some(added).into_iter().collect(),
+        tx_script,
+        expected_storage_patch: AccountStoragePatch::new(),
+        expected_vault_delta: AccountVaultDelta::from_iters(
+            add.then_some(added),
+            remove.then_some(removed),
+        ),
+        expected_vault_patch,
+        expected_code: None,
+    }
+    .execute()
+    .await
+}
+
 /// Tests that a noop transaction with a nonce-incrementing auth results in a nonce delta of 1
 /// and a patch whose only change is the bumped final nonce.
 #[tokio::test]

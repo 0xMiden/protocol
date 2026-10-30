@@ -2,7 +2,7 @@
   "consume single P2ID note with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 5610,
-    "total_cycles": 43833,
+    "total_cycles": 43853,
     "notes_processing": 2406,
     "note_execution": [
       {
@@ -12,18 +12,18 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 35776,
-      "auth_procedure": 34459
+      "total": 35796,
+      "auth_procedure": 34479
     },
     "trace": {
-      "core_rows": 43879,
-      "chiplets_rows": 5679,
-      "eidos_compression_rows": 85760,
+      "core_rows": 43899,
+      "chiplets_rows": 5675,
+      "eidos_compression_rows": 85824,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 3624,
         "bitwise_rows": 84,
-        "memory_rows": 1969,
+        "memory_rows": 1965,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -32,7 +32,7 @@
   "consume single P2ID note with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 5610,
-    "total_cycles": 14587,
+    "total_cycles": 14607,
     "notes_processing": 2406,
     "note_execution": [
       {
@@ -42,18 +42,18 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 6530,
-      "auth_procedure": 5213
+      "total": 6550,
+      "auth_procedure": 5233
     },
     "trace": {
-      "core_rows": 14633,
-      "chiplets_rows": 3198,
-      "eidos_compression_rows": 41920,
+      "core_rows": 14653,
+      "chiplets_rows": 3202,
+      "eidos_compression_rows": 41984,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 2248,
+        "hasher_rows": 2256,
         "bitwise_rows": 108,
-        "memory_rows": 840,
+        "memory_rows": 836,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -62,7 +62,7 @@
   "consume two P2ID notes with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 6010,
-    "total_cycles": 46617,
+    "total_cycles": 46637,
     "notes_processing": 4990,
     "note_execution": [
       {
@@ -76,18 +76,18 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 35576,
-      "auth_procedure": 34359
+      "total": 35596,
+      "auth_procedure": 34379
     },
     "trace": {
-      "core_rows": 46663,
-      "chiplets_rows": 6569,
-      "eidos_compression_rows": 86080,
+      "core_rows": 46683,
+      "chiplets_rows": 6565,
+      "eidos_compression_rows": 86144,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4360,
         "bitwise_rows": 129,
-        "memory_rows": 2078,
+        "memory_rows": 2074,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -96,7 +96,7 @@
   "consume two P2ID notes with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 6010,
-    "total_cycles": 17371,
+    "total_cycles": 17391,
     "notes_processing": 4990,
     "note_execution": [
       {
@@ -110,18 +110,18 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 6330,
-      "auth_procedure": 5113
+      "total": 6350,
+      "auth_procedure": 5133
     },
     "trace": {
-      "core_rows": 17417,
-      "chiplets_rows": 4088,
-      "eidos_compression_rows": 42240,
+      "core_rows": 17437,
+      "chiplets_rows": 4092,
+      "eidos_compression_rows": 42304,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 2984,
+        "hasher_rows": 2992,
         "bitwise_rows": 153,
-        "memory_rows": 949,
+        "memory_rows": 945,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -130,23 +130,23 @@
   "create single P2ID note with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 2348,
-    "total_cycles": 41384,
+    "total_cycles": 41404,
     "notes_processing": 35,
     "note_execution": [],
     "tx_script_processing": 1883,
     "epilogue": {
-      "total": 37118,
-      "auth_procedure": 35031
+      "total": 37138,
+      "auth_procedure": 35051
     },
     "trace": {
-      "core_rows": 41430,
-      "chiplets_rows": 5240,
-      "eidos_compression_rows": 80448,
+      "core_rows": 41450,
+      "chiplets_rows": 5236,
+      "eidos_compression_rows": 80512,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 3328,
         "bitwise_rows": 77,
-        "memory_rows": 1833,
+        "memory_rows": 1829,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -155,23 +155,23 @@
   "create single P2ID note with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 2348,
-    "total_cycles": 12138,
+    "total_cycles": 12158,
     "notes_processing": 35,
     "note_execution": [],
     "tx_script_processing": 1883,
     "epilogue": {
-      "total": 7872,
-      "auth_procedure": 5785
+      "total": 7892,
+      "auth_procedure": 5805
     },
     "trace": {
-      "core_rows": 12184,
-      "chiplets_rows": 2759,
-      "eidos_compression_rows": 36608,
+      "core_rows": 12204,
+      "chiplets_rows": 2763,
+      "eidos_compression_rows": 36672,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 1952,
+        "hasher_rows": 1960,
         "bitwise_rows": 101,
-        "memory_rows": 704,
+        "memory_rows": 700,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -1084,7 +1084,7 @@
   "consume FEE_SPONSORSHIP note (reclaim)": {
     "provenance": "producer_measured",
     "prologue": 4342,
-    "total_cycles": 18134,
+    "total_cycles": 18154,
     "notes_processing": 3094,
     "note_execution": [
       {
@@ -1094,18 +1094,18 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 10657,
-      "auth_procedure": 8398
+      "total": 10677,
+      "auth_procedure": 8418
     },
     "trace": {
-      "core_rows": 18180,
-      "chiplets_rows": 4125,
-      "eidos_compression_rows": 49248,
+      "core_rows": 18200,
+      "chiplets_rows": 4121,
+      "eidos_compression_rows": 49312,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 3048,
         "bitwise_rows": 149,
-        "memory_rows": 926,
+        "memory_rows": 922,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }

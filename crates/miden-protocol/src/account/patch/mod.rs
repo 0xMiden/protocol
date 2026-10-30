@@ -247,16 +247,48 @@ impl AccountPatch {
         self.final_nonce.is_none()
     }
 
+    /// Returns the number of field elements in this patch's commitment preimage.
+    ///
+    /// This equals the length of [`SequentialCommit::to_elements`] without allocating the preimage.
+    pub fn to_num_elements(&self) -> usize {
+        if self.is_empty() {
+            return 0;
+        }
+
+        8 * (1 + Self::commitment_body_block_count(
+            self.vault.num_assets(),
+            &self.storage,
+            !self.code.is_empty(),
+        ))
+    }
+
+    /// Returns the number of eight-Felt commitment body blocks for the given patch components.
+    ///
+    /// This excludes the metadata header. `num_changed_assets` is the number of changed vault
+    /// entries, and `has_code` indicates whether the patch includes new or upgraded account code.
+    pub fn commitment_body_block_count(
+        num_changed_assets: usize,
+        storage: &AccountStoragePatch,
+        has_code: bool,
+    ) -> usize {
+        num_changed_assets
+            + usize::from(num_changed_assets != 0)
+            + storage.commitment_body_block_count()
+            + usize::from(has_code)
+    }
+
     /// Computes the commitment to the account patch.
     ///
     /// This is very similar to
     /// [`AccountDelta::to_commitment`](crate::account::AccountDelta::to_commitment). See its docs
-    /// for the rationale, security aspects, and other details. The only differences between
-    /// these are:
+    /// for the rationale, security aspects, and other details. The layouts differ as follows:
+    /// - the patch uses layout version 1, while the delta uses layout version 2.
     /// - the patch includes the new nonce rather than the nonce delta.
     /// - The patch includes the new absolute asset values ([`AccountVaultPatch`]) while the delta
     ///   includes the relative asset changes
     ///   ([`AccountVaultDelta`](crate::account::AccountVaultDelta)).
+    /// - a nonempty vault patch has one trailer, while a nonempty vault delta has both operation
+    ///   trailers.
     ///
     /// ## Computation
     ///
@@ -277,10 +309,10 @@ impl AccountPatch {
     ///     including if it was removed, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
     ///       of the asset (for updates) or the empty word (for removals).
-    ///     - Append `[[domain = 1, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
-    ///       `num_changed_assets` is the number of assets that were appended. This is the same
-    ///       domain as the delta asset section uses, since the registered Eidos selector prevents
-    ///       an asset delta and an asset patch from producing the same commitment.
+    ///   - If any assets changed, append `[[domain = 1, num_changed_assets, 0, 0], EMPTY_WORD]`,
+    ///     where `num_changed_assets` is the number of assets that were appended. This is the same
+    ///     domain as the delta asset section uses, since the registered Eidos selector prevents an
+    ///     asset delta and an asset patch from producing the same commitment.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
     ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
     ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
@@ -378,8 +410,7 @@ impl SequentialCommit for AccountPatch {
             return Vec::new();
         }
 
-        // Minor optimization: At least 8 elements are always added.
-        let mut elements = Vec::with_capacity(8);
+        let mut elements = Vec::with_capacity(self.to_num_elements());
 
         // Metadata
         let final_nonce = self.final_nonce.expect("non-empty patches should have a new nonce set");

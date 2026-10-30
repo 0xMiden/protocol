@@ -209,6 +209,19 @@ impl AccountStoragePatch {
     // COMMITMENT
     // --------------------------------------------------------------------------------------------
 
+    /// Returns the number of eight-Felt blocks in the storage commitment section.
+    pub(in crate::account) fn commitment_body_block_count(&self) -> usize {
+        let value_slot_blocks = self.values().count();
+        let map_slot_blocks = self.maps().map(|(_slot_name, map_patch)| {
+            let num_entries = map_patch.entries().map_or(0, |entries| entries.num_entries());
+            let has_trailer = !map_patch.patch_op().is_update() || num_entries != 0;
+
+            num_entries + usize::from(has_trailer)
+        });
+
+        value_slot_blocks + map_slot_blocks.sum::<usize>()
+    }
+
     /// Appends the storage slot patches to the given `elements` from which the delta or patch
     /// commitment is computed.
     pub(in crate::account) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
