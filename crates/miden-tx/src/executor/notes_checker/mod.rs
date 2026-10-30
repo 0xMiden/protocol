@@ -14,7 +14,7 @@ use miden_protocol::transaction::{
 };
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
-use super::{DataStoreRequestState, ProgramExecutor, TransactionExecutor};
+use super::{ProgramExecutor, TransactionExecutor};
 use crate::auth::TransactionAuthenticator;
 use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
@@ -110,9 +110,13 @@ where
 
         // Attempt to find an executable set of notes.
         let mut budget = CheckerBudget::new(self.0.exec_options);
-        let mut data_store_requests = DataStoreRequestState::default();
-        self.find_executable_notes_by_elimination(tx_inputs, &mut budget, &mut data_store_requests)
-            .await
+        let mut data_store_request_count = 0;
+        self.find_executable_notes_by_elimination(
+            tx_inputs,
+            &mut budget,
+            &mut data_store_request_count,
+        )
+        .await
     }
 
     /// Checks whether the provided input note could be consumed by the provided account by
@@ -155,9 +159,9 @@ where
 
         // try to consume the provided note
         let mut budget = CheckerBudget::single_attempt(self.0.exec_options);
-        let mut data_store_requests = DataStoreRequestState::default();
+        let mut data_store_request_count = 0;
         match self
-            .try_execute_notes(&mut tx_inputs, &mut budget, &mut data_store_requests)
+            .try_execute_notes(&mut tx_inputs, &mut budget, &mut data_store_request_count)
             .await
         {
             // execution succeeded
@@ -205,7 +209,7 @@ where
         &self,
         mut tx_inputs: TransactionInputs,
         budget: &mut CheckerBudget,
-        data_store_requests: &mut DataStoreRequestState,
+        data_store_request_count: &mut usize,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let mut candidate_notes = tx_inputs
             .input_notes()
@@ -226,7 +230,7 @@ where
             tx_inputs.set_input_notes(InputNotes::new_unchecked(
                 candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
             ));
-            match self.try_execute_notes(&mut tx_inputs, budget, data_store_requests).await {
+            match self.try_execute_notes(&mut tx_inputs, budget, data_store_request_count).await {
                 Ok(cycle_counts) => {
                     // A full set of successful notes has been found.
                     let successful = candidate_notes
@@ -265,7 +269,7 @@ where
                             failed_notes,
                             tx_inputs,
                             budget,
-                            data_store_requests,
+                            data_store_request_count,
                         )
                         .await;
                 },
@@ -300,7 +304,7 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
         budget: &mut CheckerBudget,
-        data_store_requests: &mut DataStoreRequestState,
+        data_store_request_count: &mut usize,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let mut remaining_bundles = NoteBundle::group(remaining_notes);
         let mut successful_notes: Vec<Note> = Vec::new();
@@ -323,7 +327,8 @@ where
                 tx_inputs.set_input_notes(InputNotes::new_unchecked(
                     candidate_notes.iter().cloned().map(InputNote::unauthenticated).collect(),
                 ));
-                match self.try_execute_notes(&mut tx_inputs, budget, data_store_requests).await {
+                match self.try_execute_notes(&mut tx_inputs, budget, data_store_request_count).await
+                {
                     Ok(cycle_counts) => {
                         // The notes just added might have failed earlier, either on their own or
                         // as part of another candidate set. Remove them from the failed list.
@@ -416,7 +421,7 @@ where
         &self,
         tx_inputs: &mut TransactionInputs,
         budget: &mut CheckerBudget,
-        data_store_requests: &mut DataStoreRequestState,
+        data_store_request_count: &mut usize,
     ) -> Result<Vec<usize>, TransactionCheckerError> {
         if tx_inputs.input_notes().is_empty() {
             return Ok(Vec::new());
@@ -424,7 +429,7 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self
             .0
-            .prepare_transaction_with_data_store_requests(tx_inputs, data_store_requests.clone())
+            .prepare_transaction_with_data_store_request_count(tx_inputs, *data_store_request_count)
             .await
             .map_err(TransactionCheckerError::TransactionPreparation)?;
 
@@ -445,9 +450,9 @@ where
             .await
             .map_err(map_execution_error);
 
-        let (tx_progress, lazy_loaded_data, updated_data_store_requests) =
+        let (tx_progress, lazy_loaded_data, updated_data_store_request_count) =
             host.into_notes_checker_parts();
-        *data_store_requests = updated_data_store_requests;
+        *data_store_request_count = updated_data_store_request_count;
 
         // Set the lazy loaded from the execution as input for reexecution. This avoids lazy-loading
         // data that was already loaded from the data store in the next potential run.
