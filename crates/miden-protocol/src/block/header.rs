@@ -3,13 +3,6 @@ use alloc::vec::Vec;
 use crate::block::code_tree::CodeTreeRoot;
 use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
 use crate::protocol_config::NextProtocolConfig;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Hasher, Word, ZERO};
 
 // BLOCK HEADER
@@ -577,22 +570,6 @@ impl FeeParameters {
     }
 }
 
-impl Serializable for FeeParameters {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self { verification_base_fee } = self;
-
-        verification_base_fee.write_into(target);
-    }
-}
-
-impl Deserializable for FeeParameters {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let verification_base_fee = source.read()?;
-
-        Ok(Self::new(verification_base_fee))
-    }
-}
-
 // PARENT VALIDATION ERROR
 // ================================================================================================
 
@@ -628,31 +605,11 @@ pub(crate) enum ParentValidationError {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use miden_core::Word;
     use rand::random;
 
     use super::*;
-
-    #[test]
-    fn block_header_deserialization_rejects_unsupported_version() {
-        let error = BlockHeader::read_from_bytes(&[0]).unwrap_err();
-
-        assert_matches!(error, DeserializationError::InvalidValue(message) => {
-            assert!(message.contains("block version is 0"));
-        });
-    }
-
-    #[test]
-    fn test_serde() {
-        let chain_commitment = random::<Word>();
-        let note_root = random::<Word>();
-        let header = BlockHeader::mock(0, Some(chain_commitment), Some(note_root), &[]);
-        let serialized = header.to_bytes();
-        let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
-
-        assert_eq!(deserialized, header);
-    }
+    use crate::utils::serde::{Deserializable, Serializable};
 
     /// Returns `header` with a protocol upgrade scheduled for block 42.
     fn with_scheduled_upgrade(header: &BlockHeader) -> BlockHeader {
@@ -677,15 +634,12 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_upgrade_round_trips_and_changes_the_commitment() {
+    fn scheduled_upgrade_changes_the_commitment() {
         let without_upgrade = BlockHeader::mock(0, None, None, &[]);
         let with_upgrade = with_scheduled_upgrade(&without_upgrade);
 
         assert_eq!(without_upgrade.next_protocol_config_commitment(), Word::empty());
         assert_ne!(with_upgrade.commitment(), without_upgrade.commitment());
-
-        let deserialized = BlockHeader::read_from_bytes(&with_upgrade.to_bytes()).unwrap();
-        assert_eq!(deserialized, with_upgrade);
     }
 
     /// The header's element encoding is the single definition of the block data layout, used by

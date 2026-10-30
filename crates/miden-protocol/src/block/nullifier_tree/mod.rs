@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
@@ -9,13 +8,6 @@ use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
 use crate::errors::NullifierTreeError;
 use crate::note::Nullifier;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Word};
 
 mod witness;
@@ -277,20 +269,6 @@ where
 
 // SERIALIZATION
 // ================================================================================================
-
-impl Serializable for NullifierTree {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.entries().collect::<Vec<_>>().write_into(target);
-    }
-}
-
-impl Deserializable for NullifierTree {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let entries = Vec::<(Nullifier, BlockNumber)>::read_from(source)?;
-        Self::with_entries(entries)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
 
 // NULLIFIER MUTATION SET
 // ================================================================================================

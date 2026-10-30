@@ -2,13 +2,6 @@ use core::fmt;
 use core::ops::Add;
 
 use crate::Felt;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // BLOCK NUMBER
 // ================================================================================================
@@ -85,22 +78,6 @@ impl Add<u32> for BlockNumber {
 
     fn add(self, other: u32) -> Self::Output {
         BlockNumber(self.0 + other)
-    }
-}
-
-impl Serializable for BlockNumber {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u32(self.0);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        core::mem::size_of::<u32>()
-    }
-}
-
-impl Deserializable for BlockNumber {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        source.read::<u32>().map(BlockNumber::from)
     }
 }
 

@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added spending limits to `AuthMultisigSmart`: a window budget in a base asset, priced through the price oracle, that fails a transaction exceeding it regardless of the signature count.
 - Added the `AUTHORITY_CONFIG` note (`AuthorityConfigNote`), which freezes or unfreezes the `Authority` component's gated surface or assigns a procedure's role on the account that consumes it ([#4118](https://github.com/0xMiden/protocol/pull/4118)).
 - Added the `tx::add_log_from_memory` helper procedure to emit transaction logs from content in memory ([#4092](https://github.com/0xMiden/protocol/pull/4092)).
 - Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
@@ -34,6 +35,7 @@
 - [BREAKING] The transaction kernel now outputs a code patch commitment and a hash of the logs commitment and expiration block number, and `ProvenTransaction` and `TransactionId` now include the `CodePatch` ([#4103](https://github.com/0xMiden/protocol/pull/4103)).
 - [BREAKING] Renamed `LogoURI` to `LogoUri` and `ExternalLink` to `ExternalUri`, along with the matching `external_link` names in the faucet builders, `TokenMetadata`, `FaucetMetadataConfig`, the MASM faucet procedures and the faucet storage slots ([#4067](https://github.com/0xMiden/protocol/issues/4067)).
 - [BREAKING] Removed Winterfell serialization for `TransactionHeader`, `OrderedTransactionHeaders`, `ProvenBatch`, `OrderedBatches`, `ProposedBlock`, `BlockBody`, `SignedBlock` and `ProvenBlock` ([#4105](https://github.com/0xMiden/protocol/pull/4105)).
+- [BREAKING] Removed Winterfell serialization for `BlockInputs`, `BlockHeader`, `ValidatorConfig`, `FeeParameters`, `NextProtocolConfig`, `PartialBlockchain`, `NullifierWitness`, `NullifierTree`, `NoteInclusionProof`, `NoteLocation`, `BlockNumber` and `InputNote` ([#4127](https://github.com/0xMiden/protocol/pull/4127)).
 
 ### Fixes
 
@@ -42,6 +44,7 @@
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 - The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
 - [BREAKING] The non-fungible faucet factories now reject a token policy manager that registers the fungible-only `min_burn_amount` burn policy ([#4035](https://github.com/0xMiden/protocol/issues/4035)).
+- [BREAKING] `ProposedBlock` now rejects a batch whose reference block commitment does not match the canonical block at that height ([#4124](https://github.com/0xMiden/protocol/pull/4124)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 ## v1.0.0-rc.1 (TBD)

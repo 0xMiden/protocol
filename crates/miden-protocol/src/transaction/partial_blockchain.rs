@@ -1,5 +1,4 @@
 use alloc::collections::BTreeMap;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::ops::RangeTo;
 
@@ -7,7 +6,6 @@ use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
 use crate::errors::PartialBlockchainError;
-use crate::utils::serde::{Deserializable, Serializable};
 
 // PARTIAL BLOCKCHAIN
 // ================================================================================================
@@ -257,24 +255,6 @@ impl PartialBlockchain {
     }
 }
 
-impl Serializable for PartialBlockchain {
-    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
-        self.mmr.write_into(target);
-        self.blocks.write_into(target);
-    }
-}
-
-impl Deserializable for PartialBlockchain {
-    fn read_from<R: miden_crypto::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_crypto::utils::DeserializationError> {
-        let mmr = PartialMmr::read_from(source)?;
-        let blocks = BTreeMap::<BlockNumber, BlockHeader>::read_from(source)?;
-        Self::new(mmr, blocks.into_values())
-            .map_err(|err| miden_crypto::utils::DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 impl Default for PartialBlockchain {
     fn default() -> Self {
         Self::new(PartialMmr::default(), Vec::new())
@@ -299,7 +279,6 @@ mod tests {
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
-    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 
     #[test]
     fn test_partial_blockchain_add() {
@@ -390,39 +369,6 @@ mod tests {
     }
 
     #[test]
-    fn partial_blockchain_deserialization_on_invalid_header_fails() {
-        let block_header0 = int_to_block_header(0);
-        let block_header1 = int_to_block_header(1);
-        let block_header2 = int_to_block_header(2);
-
-        let mut mmr = Mmr::default();
-        mmr.add(block_header0.commitment()).unwrap();
-        mmr.add(block_header1.commitment()).unwrap();
-        mmr.add(block_header2.commitment()).unwrap();
-
-        let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
-        for i in 0..3 {
-            partial_mmr
-                .track(i, mmr.get(i).unwrap(), mmr.open(i).unwrap().merkle_path())
-                .unwrap();
-        }
-
-        let fake_block_header2 = BlockHeader::mock(2, None, None, &[]);
-
-        assert_ne!(block_header2.commitment(), fake_block_header2.commitment());
-
-        let forged_partial_blockchain = PartialBlockchain::new_unchecked(
-            partial_mmr,
-            vec![block_header0, block_header1, fake_block_header2],
-        )
-        .unwrap();
-        let bytes = forged_partial_blockchain.to_bytes();
-
-        let err = PartialBlockchain::read_from_bytes(&bytes).unwrap_err();
-        assert_matches!(err, DeserializationError::InvalidValue(_));
-    }
-
-    #[test]
     fn partial_blockchain_new_on_block_number_exceeding_chain_length_fails() {
         let block_header0 = int_to_block_header(0);
         let mmr = Mmr::default();
@@ -456,23 +402,6 @@ mod tests {
         assert_matches!(error, PartialBlockchainError::UntrackedBlock {
           block_num,
         } if block_num == BlockNumber::from(0));
-    }
-
-    #[test]
-    fn partial_blockchain_serialization() {
-        // create partial blockchain with 3 blocks - i.e., 2 peaks
-        let mut mmr = Mmr::default();
-        for i in 0..3 {
-            let block_header = int_to_block_header(i);
-            mmr.add(block_header.commitment()).unwrap();
-        }
-        let partial_mmr: PartialMmr = mmr.peaks().into();
-        let partial_blockchain = PartialBlockchain::new(partial_mmr, Vec::new()).unwrap();
-
-        let bytes = partial_blockchain.to_bytes();
-        let deserialized = PartialBlockchain::read_from_bytes(&bytes).unwrap();
-
-        assert_eq!(partial_blockchain, deserialized);
     }
 
     fn int_to_block_header(block_num: impl Into<BlockNumber>) -> BlockHeader {
