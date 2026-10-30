@@ -18,6 +18,8 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness, CodeWitnessRequest};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+#[cfg(test)]
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
@@ -29,6 +31,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionInputs,
 };
+use miden_protocol::utils::sync::RwLock;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
     DataStore,
@@ -54,6 +57,8 @@ pub struct MockTransaction {
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
     pub(super) tx_inputs: TransactionInputs,
     pub(super) code_tree: CodeTree,
+    /// The code witness requests that the data store received, one entry per request.
+    pub(super) code_witness_requests: RwLock<Vec<Vec<CodeWitnessRequest>>>,
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
@@ -106,6 +111,12 @@ impl MockTransaction {
         self.authenticator.as_ref()
     }
 
+    /// Returns the code witness requests that the data store received, one entry per request.
+    #[cfg(test)]
+    pub(crate) fn code_witness_requests(&self) -> Vec<Vec<CodeWitnessRequest>> {
+        self.code_witness_requests.read().clone()
+    }
+
     /// Returns the source manager used in the assembler of the mock transaction.
     pub fn source_manager(&self) -> Arc<dyn SourceManagerSync> {
         Arc::clone(&self.source_manager)
@@ -138,7 +149,7 @@ impl MockTransaction {
     ///
     /// - If the provided `code` is not a valid program.
     pub(crate) async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, None).await
+        self.execute_code_inner(code, true, None, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], except that the host does _not_ handle lazy
@@ -147,7 +158,7 @@ impl MockTransaction {
         &self,
         code: &str,
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, false, None).await
+        self.execute_code_inner(code, false, None, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], but overrides the host response to an input-note
@@ -157,7 +168,19 @@ impl MockTransaction {
         code: &str,
         response: [Felt; 2],
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, Some(response)).await
+        self.execute_code_inner(code, true, Some(response), None).await
+    }
+
+    /// Same as [`MockTransaction::execute_code`], but overrides the host hint for the verification
+    /// of `procedure_root` with `[index, hint_kind]`.
+    pub(crate) async fn execute_code_with_code_root_hint(
+        &self,
+        code: &str,
+        procedure_root: ProcedureRoot,
+        response: [Felt; 2],
+    ) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, true, None, Some((procedure_root, response)))
+            .await
     }
 
     async fn execute_code_inner(
@@ -165,6 +188,7 @@ impl MockTransaction {
         code: &str,
         is_lazy_loading_enabled: bool,
         input_note_index_response: Option<[Felt; 2]>,
+        code_root_hint_response: Option<(ProcedureRoot, [Felt; 2])>,
     ) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
 
@@ -247,6 +271,8 @@ impl MockTransaction {
             None,
             ref_block,
             block_commitments,
+            tx_inputs.code_tree().clone(),
+            tx_inputs.tx_args().output_note_recipients(),
             self.source_manager(),
         )
         .expect("partial account from a full account should contain its complete storage");
@@ -259,6 +285,9 @@ impl MockTransaction {
         }
         if let Some(response) = input_note_index_response {
             mock_host.set_input_note_index_response(response);
+        }
+        if let Some((procedure_root, response)) = code_root_hint_response {
+            mock_host.set_code_root_hint_response(procedure_root, response);
         }
 
         CodeExecutor::new(mock_host)
@@ -443,6 +472,8 @@ impl DataStore for MockTransaction {
                 )));
             }
 
+            self.code_witness_requests.write().push(requests.clone());
+
             let mut procedure_roots = BTreeSet::new();
             for request in requests {
                 procedure_roots.insert(request.procedure_root());
@@ -472,8 +503,6 @@ impl MastForestStore for MockTransaction {
 mod tests {
     use std::string::ToString;
 
-    use anyhow::Context;
-    use miden_protocol::code::ProcedureRoot;
     use miden_protocol::errors::tx_kernel::ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32;
     use miden_standards::code_builder::CodeBuilder;
 

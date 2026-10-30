@@ -77,6 +77,9 @@ impl CodePatch {
     /// The maximum size of a serialized patch in bytes (256 KiB).
     pub const MAX_SIZE: u32 = 2u32.pow(18);
 
+    /// The maximum number of procedure roots in each code patch list of a single transaction.
+    pub const MAX_ROOTS: usize = 512;
+
     /// Domain separator for the patch commitment.
     const DOMAIN: Felt = ProtocolDomainRegistry::CodePatch.as_felt();
 
@@ -95,6 +98,7 @@ impl CodePatch {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - the number of created procedures or dependencies exceeds [`Self::MAX_ROOTS`].
     /// - a created procedure or a dependency is duplicated.
     /// - a dependency is also a created procedure.
     /// - a created procedure is not a procedure root of the forest.
@@ -109,6 +113,14 @@ impl CodePatch {
         dependencies: Vec<ProcedureRoot>,
         mast: Arc<MastForest>,
     ) -> Result<Self, CodePatchError> {
+        if created_procedures.len() > Self::MAX_ROOTS {
+            return Err(CodePatchError::TooManyCreatedProcedures(created_procedures.len()));
+        }
+
+        if dependencies.len() > Self::MAX_ROOTS {
+            return Err(CodePatchError::TooManyDependencies(dependencies.len()));
+        }
+
         let unique_created_procedures = unique_procedure_roots(&created_procedures)
             .map_err(CodePatchError::DuplicateCreatedProcedure)?;
         let unique_dependencies =
@@ -343,6 +355,7 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_core::mast::{BasicBlockNodeBuilder, MastNode};
     use miden_core::operations::Operation;
+    use rstest::rstest;
 
     use super::*;
     use crate::assembly::mast::MastNodeId;
@@ -428,6 +441,32 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[rstest]
+    #[case::created_procedures(CodePatch::MAX_ROOTS + 1, 0)]
+    #[case::dependencies(0, CodePatch::MAX_ROOTS + 1)]
+    fn new_rejects_too_many_roots(
+        #[case] num_created_procedures: usize,
+        #[case] num_dependencies: usize,
+    ) {
+        let root = ProcedureRoot::from_raw(EXTERNAL_DIGEST);
+        let created_procedures = vec![root; num_created_procedures];
+        let dependencies = vec![root; num_dependencies];
+
+        let error = CodePatch::new(created_procedures, dependencies, Arc::new(MastForest::new()))
+            .unwrap_err();
+        if num_created_procedures > CodePatch::MAX_ROOTS {
+            assert_matches!(
+                error,
+                CodePatchError::TooManyCreatedProcedures(count) if count == num_created_procedures
+            );
+        } else {
+            assert_matches!(
+                error,
+                CodePatchError::TooManyDependencies(count) if count == num_dependencies
+            );
+        }
     }
 
     #[test]

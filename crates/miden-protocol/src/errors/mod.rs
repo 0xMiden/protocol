@@ -1852,6 +1852,18 @@ pub enum CodeTreeError {
 
 #[derive(Debug, Error)]
 pub enum CodePatchError {
+    #[error(
+        "code patch has {0} created procedures, which exceeds the maximum of {max}",
+        max = CodePatch::MAX_ROOTS
+    )]
+    TooManyCreatedProcedures(usize),
+
+    #[error(
+        "code patch has {0} dependencies, which exceeds the maximum of {max}",
+        max = CodePatch::MAX_ROOTS
+    )]
+    TooManyDependencies(usize),
+
     #[error("created procedure {0} of code patch is duplicated")]
     DuplicateCreatedProcedure(ProcedureRoot),
 

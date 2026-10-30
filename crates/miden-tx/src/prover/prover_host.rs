@@ -10,6 +10,8 @@ use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::PartialCodeTree;
+use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
@@ -52,6 +54,8 @@ where
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
+        code_tree: PartialCodeTree,
+        expected_output_recipients: &[NoteRecipient],
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -60,6 +64,8 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
+            code_tree,
+            expected_output_recipients,
         )?;
 
         Ok(Self { base_host })
@@ -207,6 +213,12 @@ where
             TransactionEvent::InputNoteIndexLookup { note_id } => {
                 Ok(self.base_host.on_input_note_index_lookup(note_id))
             },
+
+            // The code witnesses are in the transaction inputs at proving time.
+            TransactionEvent::CodeBeforeProcRootVerified { procedure_root } => self
+                .base_host
+                .on_code_before_proc_root_verified(procedure_root)
+                .map(|verification| verification.into_parts().0),
 
             TransactionEvent::AuthRequest { tx_summary_or_signature, .. } => {
                 if let TxSummaryOrSignature::Signature(signature) = tx_summary_or_signature {

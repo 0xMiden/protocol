@@ -174,8 +174,12 @@ impl LocalTransactionProver {
         );
 
         let block_commitments = tx_inputs.collect_block_commitments();
+        // TODO(#4006): the MAST store does not contain the code of absent procedures outside of
+        // the default libraries, so such transactions cannot be proven until the transaction
+        // inputs carry the MAST of the code patch.
+        let code_tree = tx_inputs.code_tree().clone();
 
-        let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
+        let (partial_account, ref_block, _, input_notes, tx_args) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
@@ -183,6 +187,8 @@ impl LocalTransactionProver {
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
+            code_tree,
+            tx_args.output_note_recipients(),
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 

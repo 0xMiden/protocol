@@ -1,9 +1,10 @@
 use miden_core::program::KernelDescriptor;
 
-use crate::WORD_SIZE;
 // TYPE ALIASES
 // ================================================================================================
+use crate::WORD_SIZE;
 use crate::account::AccountHeader;
+use crate::block::code_tree::CodePatch;
 
 pub type MemoryAddress = u32;
 pub type MemoryOffset = u32;
@@ -32,6 +33,7 @@ pub type StorageSlot = u8;
 // | Input notes                 | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)     |
 // |                             |               |                  | + 1024 input notes max, 1024 elements each  |
 // | Output notes                | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each   |
+// | Code patch                  | 17_825_792    | 6_156            | 3 lists of 512 procedure roots max          |
 // | Link Map Memory             | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs        |
 
 // Relative layout of one account
@@ -544,6 +546,26 @@ pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 28;
 pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 32;
 pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 36;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 40;
+
+// CODE PATCH
+// ------------------------------------------------------------------------------------------------
+
+/// The memory address at which the code patch section begins. See the kernel's `memory.masm` for
+/// its layout.
+pub const CODE_PATCH_SECTION_PTR: MemoryAddress = 17_825_792;
+
+/// The offset of the first procedure root relative to the start of a code patch list.
+pub const CODE_PATCH_LIST_ROOTS_OFFSET: MemoryOffset = WORD_SIZE as MemoryOffset;
+
+/// The length of the memory interval that a code patch list occupies.
+pub const CODE_PATCH_LIST_LENGTH: MemoryOffset =
+    CODE_PATCH_LIST_ROOTS_OFFSET + (CodePatch::MAX_ROOTS * WORD_SIZE) as MemoryOffset;
+
+/// The memory addresses at which the code patch lists begin.
+pub const CREATED_PROCS_LIST_PTR: MemoryAddress = CODE_PATCH_SECTION_PTR;
+pub const DEPENDENCIES_LIST_PTR: MemoryAddress = CREATED_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH;
+pub const PRESENT_TOP_LEVEL_LIST_PTR: MemoryAddress =
+    DEPENDENCIES_LIST_PTR + CODE_PATCH_LIST_LENGTH;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------

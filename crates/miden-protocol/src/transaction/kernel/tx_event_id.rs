@@ -58,6 +58,8 @@ pub enum TransactionEventId {
 
     NoteBeforeAddAttachment = NOTE_BEFORE_ADD_ATTACHMENT_ID,
 
+    CodeBeforeProcRootVerified = CODE_BEFORE_PROC_ROOT_VERIFIED_ID,
+
     InputNoteIndexLookup = INPUT_NOTE_INDEX_LOOKUP_ID,
 
     TxLogAdded = TX_LOG_ADDED_ID,
@@ -135,6 +137,7 @@ impl TransactionEventId {
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
             Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
+            Self::CodeBeforeProcRootVerified => &CODE_BEFORE_PROC_ROOT_VERIFIED_NAME,
             Self::InputNoteIndexLookup => &INPUT_NOTE_INDEX_LOOKUP_NAME,
             Self::TxLogAdded => &TX_LOG_ADDED_NAME,
             Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
@@ -231,6 +234,8 @@ impl TryFrom<EventId> for TransactionEventId {
             NOTE_AFTER_ADD_ASSET_ID => Ok(TransactionEventId::NoteAfterAddAsset),
 
             NOTE_BEFORE_ADD_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeAddAttachment),
+
+            CODE_BEFORE_PROC_ROOT_VERIFIED_ID => Ok(TransactionEventId::CodeBeforeProcRootVerified),
 
             INPUT_NOTE_INDEX_LOOKUP_ID => Ok(TransactionEventId::InputNoteIndexLookup),
 

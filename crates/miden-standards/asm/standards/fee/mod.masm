@@ -30,7 +30,9 @@ pub type ConversionInfo = word
 
 # Estimated upper bound on the number of cycles a pay_fee flow spends after the kernel's
 # compute_fee call returns: rate conversion, fee-asset construction, serial-number derivation,
-# recipient computation, note creation and funding. Guarded by the fee-payment regression tests.
+# recipient computation, note creation (including the verification of the code witness of the fee
+# note script, which assumes that the script is registered) and funding. Guarded by the
+# fee-payment regression tests.
 const PAY_FEE_CYCLES = 8192
 
 # Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure

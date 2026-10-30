@@ -3,6 +3,7 @@ use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
+use miden::tx_kernel_core::code_patch
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 use miden::tx_kernel_core::tx
@@ -259,6 +260,7 @@ end
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
+#! - verifies the code witnesses of the public code that the transaction created so far.
 #! - invokes the native account's authentication procedure.
 #! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment and the hash of the transaction logs commitment and
@@ -296,6 +298,15 @@ end
 pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitment)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
+
+    # ------ Verify the code witnesses ------
+
+    # Verify code witnesses for new account code and all notes created so far. This happens before
+    # the auth procedure so the cycles incurred by witness verification are included if the auth
+    # procedure computes the fee and to allow auth procedures to constrain the number of verified
+    # witnesses (e.g. network accounts).
+    exec.code_patch::verify_before_auth
+    # => []
 
     # ------ Execute the account's authentication procedure ------
 

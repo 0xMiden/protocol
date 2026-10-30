@@ -9,6 +9,7 @@ pub mod account_update
 pub mod asset
 pub mod asset_vault
 mod callbacks
+pub mod code_patch
 pub mod constants
 pub mod epilogue
 pub mod faucet
