@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Post-PR-create hook: spawns a changelog-manager agent to classify
-the PR diff and decide whether a `.changelog/unreleased/<PR>.md` entry or
+the PR diff and decide whether a `.changelog/unreleased/` entry or
 "no changelog" label is needed. Outputs actionable instructions to the
 main agent via hookSpecificOutput.
 """
@@ -89,7 +89,8 @@ def main() -> None:
         entry = _extract_changelog_entry(result.stdout)
         _emit_context(
             f"Changelog entry needed for PR #{pr_number}. Create "
-            f"`.changelog/unreleased/{pr_number}.md` with the following "
+            "`.changelog/unreleased/<name>.md`, where `<name>` is the branch "
+            "name without its `<author>-claude/` prefix, with the following "
             f"content, then commit and push:\n\n{entry}"
         )
         sys.exit(2)
@@ -139,8 +140,8 @@ def _emit_context(message: str) -> None:
 def _emit_warning(pr_number: str, stdout: str, stderr: str) -> None:
     warning = (
         f"WARNING: changelog-manager produced no verdict for PR #{pr_number}. "
-        f"Decide manually: add a `.changelog/unreleased/{pr_number}.md` "
-        "entry, or apply the 'no changelog' label via: gh pr "
+        "Decide manually: add an entry to `.changelog/unreleased/`, "
+        "or apply the 'no changelog' label via: gh pr "
         f"edit {pr_number} --add-label 'no changelog'"
     )
     if stderr.strip():
