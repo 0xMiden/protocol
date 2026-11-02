@@ -6,7 +6,7 @@ use {Asset, AssetAmount, Bool, NoteRecipient, NoteTag, NoteType} from miden::pro
 # accessors, owner-gated max_supply setter, and the `mint_and_send` / `receive_and_burn`
 # procedures wrapping the active mint/burn policies from the `TokenPolicyManager`.
 #
-# Shared token metadata (name, description, logo_uri, external_link) and the associated
+# Shared token metadata (name, description, logo_uri, external_uri) and the associated
 # mutability config word live in the parent `miden::standards::faucets` namespace.
 
 use miden::protocol::active_account
@@ -80,7 +80,7 @@ end
 #! Invocation: exec
 proc is_max_supply_mutable_internal() -> Bool
     exec.faucets::get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_uri_mutable, is_max_supply_mutable]
     drop drop drop
     # => [is_max_supply_mutable]
 end

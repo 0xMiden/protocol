@@ -8,6 +8,7 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
 use {Asset, BlockNumber} from miden::protocol::types
+use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::assets::fungible_asset
 use miden::standards::fees
 use miden::standards::notes::tx_fee
@@ -225,13 +226,17 @@ pub proc convert_amount(amount: felt, rate: ConversionRate) -> felt
     assertz.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
     # => [converted_lo, converted_hi]
 
-    # bound the high limb so the recombined amount stays below 2^63
+    # bound the high limb so the limbs recombine into a felt without wrapping
     dup.1 push.MAX_CONVERTED_AMOUNT_HI_LIMB u32lt
     assert.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
     # => [converted_lo, converted_hi]
 
     # recombine the limbs into a felt amount
     swap mul.U32_LIMB_MULTIPLIER add
+    # => [converted_amount]
+
+    # ensure the converted amount is a valid fungible asset amount
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_FEE_CONVERTED_AMOUNT_OVERFLOW
     # => [converted_amount]
 end
 

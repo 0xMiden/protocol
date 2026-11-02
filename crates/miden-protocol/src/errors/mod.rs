@@ -664,6 +664,10 @@ pub enum BlockBodyError {
     TooManyNullifiers(usize),
     #[error("block has {0} output note batches but at most {MAX_BATCHES_PER_BLOCK} are allowed")]
     TooManyOutputNoteBatches(usize),
+    #[error("block has {0} transaction batches but at most {MAX_BATCHES_PER_BLOCK} are allowed")]
+    TooManyTransactionBatches(usize),
+    #[error("transaction batch {batch_index} contains no transactions")]
+    EmptyTransactionBatch { batch_index: usize },
     #[error(
         "output note batch {batch_index} has {note_count} notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -1669,6 +1673,16 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "batch {batch_id} reference block commitment {actual_block_commitment} does not match the commitment {expected_block_commitment} of block {reference_block_num}"
+    )]
+    BatchReferenceBlockCommitmentMismatch {
+        reference_block_num: BlockNumber,
+        batch_id: BatchId,
+        actual_block_commitment: Word,
+        expected_block_commitment: Word,
+    },
+
+    #[error(
         "failed to prove unauthenticated note inclusion because block {block_number} in which note with id {note_id} was created is not in partial blockchain"
     )]
     UnauthenticatedInputNoteBlockNotInPartialBlockchain {
@@ -1705,6 +1719,9 @@ pub enum ProposedBlockError {
 
     #[error("no proof for nullifier {0} was provided")]
     NullifierProofMissing(Nullifier),
+
+    #[error("witness for nullifier {0} does not correspond to an input note of the block")]
+    UnexpectedNullifierWitness(Nullifier),
 
     #[error("note with nullifier {0} is already spent")]
     NullifierSpent(Nullifier),

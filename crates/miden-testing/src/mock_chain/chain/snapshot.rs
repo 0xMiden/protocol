@@ -9,7 +9,6 @@ use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockBody, BlockSignatures, Blockchain, ProvenBlock};
 use miden_protocol::note::Nullifier;
-use miden_protocol::transaction::OrderedTransactionHeaders;
 use miden_tx::auth::BasicAuthenticator;
 use proto::mock_chain as wire;
 
@@ -102,9 +101,7 @@ impl MockChain {
                 block.body.updated_accounts.verify()?,
                 block.body.output_note_batches.verify()?,
                 block.body.created_nullifiers.map(Nullifier::from_raw),
-                OrderedTransactionHeaders::new_unchecked(
-                    block.body.transactions.build_unchecked()?,
-                ),
+                block.body.transactions.build_unchecked()?,
             );
             let signatures = BlockSignatures::new(block.signatures.verify_infallible())?;
             let block = ProvenBlock::new_unchecked(header, body, signatures, block.proof);

@@ -6,6 +6,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
+use miden_protocol::transaction::LogTopic;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -53,6 +54,16 @@ pub(super) fn mutability_config_slot() -> &'static StorageSlotName {
 /// Returns the [`StorageSlotName`] for a token base URI chunk by index (0..=6).
 pub(super) fn token_base_uri_slot(index: usize) -> &'static StorageSlotName {
     &TOKEN_BASE_URI_SLOTS[index]
+}
+
+/// Topic of the log `set_token_base_uri` emits with the new token base URI as its content.
+static TOKEN_BASE_URI_UPDATED_TOPIC: LazyLock<LogTopic> = LazyLock::new(|| {
+    LogTopic::from_name("miden::standards::faucets::non_fungible::token_base_uri_updated")
+});
+
+/// Returns the topic of the log `set_token_base_uri` emits.
+pub(super) fn token_base_uri_updated_topic() -> LogTopic {
+    *TOKEN_BASE_URI_UPDATED_TOPIC
 }
 
 // TOKEN BASE URI

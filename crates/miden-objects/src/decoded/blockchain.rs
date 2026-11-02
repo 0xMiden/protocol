@@ -148,6 +148,18 @@ impl Verify for OutputNoteBatch {
     }
 }
 
+pub use proto::blockchain::DecodedBatchTransactions as BatchTransactions;
+
+/// Trusts transaction ordering and unchecked input-note commitments, like [`BlockBody`].
+impl crate::BuildUnchecked for BatchTransactions {
+    type Output = miden_protocol::transaction::OrderedTransactionHeaders;
+    type Error = VerificationError;
+    fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
+        let transactions = self.transactions.build_unchecked()?;
+        Ok(Self::Output::new_unchecked(transactions))
+    }
+}
+
 pub use proto::blockchain::DecodedBlockBody as BlockBody;
 
 /// Checks body invariants, but trusts transaction ordering and unchecked input-note commitments.
@@ -159,12 +171,7 @@ impl crate::BuildUnchecked for BlockBody {
         let notes = self.output_note_batches.verify()?;
         let nullifiers = self.created_nullifiers.map(miden_protocol::note::Nullifier::from_raw);
         let transactions = self.transactions.build_unchecked()?;
-        Ok(Self::Output::new(
-            updates,
-            notes,
-            nullifiers,
-            miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions),
-        )?)
+        Ok(Self::Output::new(updates, notes, nullifiers, transactions)?)
     }
 }
 

@@ -6,13 +6,6 @@ use crate::block::account_tree::AccountWitness;
 use crate::block::nullifier_tree::NullifierWitness;
 use crate::note::{NoteId, NoteInclusionProof, Nullifier};
 use crate::transaction::PartialBlockchain;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // BLOCK INPUTS
 // ================================================================================================
@@ -140,32 +133,3 @@ impl BlockInputs {
 
 // SERIALIZATION
 // ================================================================================================
-
-impl Serializable for BlockInputs {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.prev_block_header.write_into(target);
-        self.partial_blockchain.write_into(target);
-        self.account_witnesses.write_into(target);
-        self.nullifier_witnesses.write_into(target);
-        self.unauthenticated_note_proofs.write_into(target);
-    }
-}
-
-impl Deserializable for BlockInputs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let prev_block_header = BlockHeader::read_from(source)?;
-        let partial_blockchain = PartialBlockchain::read_from(source)?;
-        let account_witnesses = BTreeMap::<AccountId, AccountWitness>::read_from(source)?;
-        let nullifier_witnesses = BTreeMap::<Nullifier, NullifierWitness>::read_from(source)?;
-        let unauthenticated_note_proofs =
-            BTreeMap::<NoteId, NoteInclusionProof>::read_from(source)?;
-
-        Ok(Self::new(
-            prev_block_header,
-            partial_blockchain,
-            account_witnesses,
-            nullifier_witnesses,
-            unauthenticated_note_proofs,
-        ))
-    }
-}

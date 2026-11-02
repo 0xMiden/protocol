@@ -11,6 +11,8 @@ mod hybrid_multisig;
 
 mod multisig_smart;
 
+mod multisig_smart_spending_limits;
+
 mod guarded_multisig;
 
 mod network_account;

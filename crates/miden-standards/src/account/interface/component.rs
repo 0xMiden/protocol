@@ -18,6 +18,9 @@ pub enum AccountComponentInterface {
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
     FungibleFaucet,
     /// Exposes procedures from the
+    /// [`NonFungibleFaucet`][crate::account::faucets::NonFungibleFaucet] module.
+    NonFungibleFaucet,
+    /// Exposes procedures from the
     /// [`CodeInspection`][crate::account::inspection::CodeInspection] component.
     CodeInspection,
     /// Exposes procedures from the
@@ -82,6 +85,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
             AccountComponentInterface::NoteCreator => "Note Creator".to_string(),
             AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
+            AccountComponentInterface::NonFungibleFaucet => "Non-Fungible Faucet".to_string(),
             AccountComponentInterface::CodeInspection => "Code Inspection".to_string(),
             AccountComponentInterface::Authority => "Authority".to_string(),
             AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),

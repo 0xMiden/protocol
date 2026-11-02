@@ -17,13 +17,14 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{NonFungibleAsset, TokenSymbol};
+use miden_protocol::transaction::LogTopic;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
 use super::{
     Description,
-    ExternalLink,
-    LogoURI,
+    ExternalUri,
+    LogoUri,
     NonFungibleFaucetError,
     TokenMetadata,
     TokenMetadataError,
@@ -34,7 +35,7 @@ use crate::account::account_component_package;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::TokenPolicyManager;
+use crate::account::policies::{MinBurnAmount, TokenPolicyManager};
 use crate::account::wallets::BasicWallet;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -200,8 +201,14 @@ procedure_root!(
 /// A faucet without a [`TokenBaseUri`] has private token metadata, and [`token_uri`] returns
 /// `None` for its assets.
 ///
+/// Updating the contract URI or the token base URI emits a transaction log whose content is the new
+/// value, under [`contract_uri_updated_topic`] or [`token_base_uri_updated_topic`], so readers know
+/// to refetch the collection or token metadata.
+///
 /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
 /// [`token_uri`]: NonFungibleFaucet::token_uri
+/// [`contract_uri_updated_topic`]: NonFungibleFaucet::contract_uri_updated_topic
+/// [`token_base_uri_updated_topic`]: NonFungibleFaucet::token_base_uri_updated_topic
 #[derive(Debug, Clone)]
 pub struct NonFungibleFaucet {
     symbol: TokenSymbol,
@@ -217,7 +224,7 @@ impl NonFungibleFaucet {
     ///
     /// Required setters: [`name`], [`symbol`]. Optional string fields default to `None`;
     /// mutability flags default to `false`. The collection metadata pointer is named
-    /// `contract_uri` (it reuses the shared `external_link` storage). Setting [`token_base_uri`]
+    /// `contract_uri` (it reuses the shared `external_uri` storage). Setting [`token_base_uri`]
     /// makes the faucet's token metadata public.
     ///
     /// # Errors
@@ -233,8 +240,8 @@ impl NonFungibleFaucet {
         name: TokenName,
         symbol: TokenSymbol,
         description: Option<Description>,
-        logo_uri: Option<LogoURI>,
-        contract_uri: Option<ExternalLink>,
+        logo_uri: Option<LogoUri>,
+        contract_uri: Option<ExternalUri>,
         token_base_uri: Option<TokenBaseUri>,
         #[builder(default)] is_description_mutable: bool,
         #[builder(default)] is_logo_uri_mutable: bool,
@@ -253,9 +260,9 @@ impl NonFungibleFaucet {
             metadata = metadata.with_logo_uri_mutable(is_logo_uri_mutable);
         }
         if let Some(link) = contract_uri {
-            metadata = metadata.with_external_link(link, is_contract_uri_mutable);
+            metadata = metadata.with_external_uri(link, is_contract_uri_mutable);
         } else {
-            metadata = metadata.with_external_link_mutable(is_contract_uri_mutable);
+            metadata = metadata.with_external_uri_mutable(is_contract_uri_mutable);
         }
 
         let token_base_uri = TokenBaseUriConfig::new(token_base_uri, is_token_base_uri_mutable)?;
@@ -343,6 +350,23 @@ impl NonFungibleFaucet {
         token_base_uri::token_base_uri_slot(index)
     }
 
+    /// Returns the topic of the log that `set_contract_uri` emits when the contract URI changes.
+    ///
+    /// The contract URI is stored as the shared external URI, so this is the same topic as
+    /// [`TokenMetadata::external_uri_updated_topic`]. The log's content is the new contract URI.
+    pub fn contract_uri_updated_topic() -> LogTopic {
+        TokenMetadata::external_uri_updated_topic()
+    }
+
+    /// Returns the topic of the log that `set_token_base_uri` emits when the token base URI
+    /// changes.
+    ///
+    /// The log's content is the new token base URI, decodable with
+    /// [`TokenBaseUri::try_from_words`].
+    pub fn token_base_uri_updated_topic() -> LogTopic {
+        token_base_uri::token_base_uri_updated_topic()
+    }
+
     /// Returns the token symbol.
     pub fn symbol(&self) -> &TokenSymbol {
         &self.symbol
@@ -359,14 +383,14 @@ impl NonFungibleFaucet {
     }
 
     /// Returns the optional logo URI.
-    pub fn logo_uri(&self) -> Option<&LogoURI> {
+    pub fn logo_uri(&self) -> Option<&LogoUri> {
         self.metadata.logo_uri()
     }
 
     /// Returns the optional collection metadata pointer (`contract_uri`, stored in the shared
-    /// `external_link` slot).
-    pub fn contract_uri(&self) -> Option<&ExternalLink> {
-        self.metadata.external_link()
+    /// `external_uri` slot).
+    pub fn contract_uri(&self) -> Option<&ExternalUri> {
+        self.metadata.external_uri()
     }
 
     /// Returns the base URI of the public token metadata, or `None` if the faucet's token
@@ -542,6 +566,15 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 // FACTORY
 // ================================================================================================
 
+/// Returns `true` if `token_policy_manager` registers the [`MinBurnAmount`] burn policy, either as
+/// the active policy or as a reserved alternative that `set_burn_policy` can activate later.
+///
+/// The policy reads the first element of the asset value as an amount. For an NFT that element is
+/// part of a hash, so the check is meaningless and can make some NFTs impossible to burn.
+fn registers_min_burn_amount_policy(token_policy_manager: &TokenPolicyManager) -> bool {
+    token_policy_manager.allowed_burn_policies().contains(&MinBurnAmount::root())
+}
+
 /// Creates a new **user-account** non-fungible faucet authenticated by a single signature.
 /// The account's auth component is the sole gate for authority-protected setters
 /// ([`Authority::AuthControlled`] is installed directly).
@@ -555,6 +588,9 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_singlesig_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -566,6 +602,9 @@ pub fn create_singlesig_user_non_fungible_faucet(
     // `super::registers_owner_only_policy`.
     if registers_owner_only_policy(&token_policy_manager) {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     AccountBuilder::new(init_seed)
@@ -588,6 +627,9 @@ pub fn create_singlesig_user_non_fungible_faucet(
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_multisig_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -599,6 +641,9 @@ pub fn create_multisig_user_non_fungible_faucet(
     // `super::registers_owner_only_policy`.
     if registers_owner_only_policy(&token_policy_manager) {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     AccountBuilder::new(init_seed)
@@ -621,6 +666,9 @@ pub fn create_multisig_user_non_fungible_faucet(
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
 /// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
 /// `Ownable2Step` component, so such a policy would abort on every dispatch.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_guarded_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -632,6 +680,9 @@ pub fn create_guarded_user_non_fungible_faucet(
     // `super::registers_owner_only_policy`.
     if registers_owner_only_policy(&token_policy_manager) {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     AccountBuilder::new(init_seed)
@@ -664,6 +715,9 @@ pub fn create_guarded_user_non_fungible_faucet(
 /// `token_policy_manager` registers an owner-gated mint or burn policy while `access_control` is
 /// [`AccessControl::Rbac`], which installs no `Ownable2Step` component for the policy to read the
 /// owner from.
+///
+/// Returns [`NonFungibleFaucetError::MinBurnAmountPolicyNotSupported`] if `token_policy_manager`
+/// registers the fungible-only [`MinBurnAmount`] burn policy.
 pub fn create_network_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -677,6 +731,9 @@ pub fn create_network_non_fungible_faucet(
         && !matches!(access_control, AccessControl::Ownable2Step { .. })
     {
         return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+    if registers_min_burn_amount_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();

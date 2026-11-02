@@ -44,8 +44,8 @@ pub struct TransactionLog {
 }
 
 impl TransactionLog {
-    /// The maximum number of content words in a transaction log (8 KiB).
-    pub const MAX_NUM_WORDS: usize = 256;
+    /// The maximum number of content words in a transaction log (2 KiB).
+    pub const MAX_NUM_WORDS: usize = 64;
 
     /// Hash domain for individual transaction log commitments.
     const DOMAIN: Felt = ProtocolDomainRegistry::TransactionLog.as_felt();
@@ -171,8 +171,8 @@ impl TransactionLogs {
     /// The maximum number of transaction logs emitted by a single transaction.
     pub const MAX_COUNT: usize = 64;
 
-    /// The maximum combined content size, in words (16 KiB), excluding log metadata.
-    pub const MAX_NUM_WORDS: usize = 512;
+    /// The maximum combined content size, in words (2 KiB), excluding log metadata.
+    pub const MAX_NUM_WORDS: usize = 64;
 
     /// Hash domain for ordered collections of transaction logs.
     const DOMAIN: Felt = ProtocolDomainRegistry::TransactionLogs.as_felt();

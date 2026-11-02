@@ -12,6 +12,7 @@ use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
 use crate::{
+    DoubleWord,
     Felt,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_OUTPUT_NOTES_PER_BATCH,
@@ -159,11 +160,8 @@ impl BatchKernel {
     /// - `BLOCK_COMMITMENT` is the commitment of the batch's reference block.
     /// - `BATCH_ID` is the batch's [`BatchId`].
     pub fn build_input_stack(block_commitment: Word, batch_id: BatchId) -> StackInputs {
-        let mut inputs: Vec<Felt> = Vec::with_capacity(8);
-        inputs.extend_from_slice(block_commitment.as_elements());
-        inputs.extend_from_slice(batch_id.as_word().as_elements());
-
-        StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
+        let inputs = DoubleWord::new(block_commitment, batch_id.as_word());
+        StackInputs::new(inputs.as_elements()).expect("number of stack inputs should be <= 16")
     }
 
     // ADVICE BUILDER

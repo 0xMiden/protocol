@@ -42,7 +42,7 @@ const TRANSACTION_TYPE_HASH: [u8; 32] = [
     0x60, 0x60, 0xc1, 0xfe, 0xa0, 0x1f, 0xff, 0x7f, 0x86, 0xa0, 0xcd, 0x79, 0x6c, 0xaf, 0x2b, 0x63,
 ];
 
-/// Must match `SIGNATURE_KEY_DOMAIN` in the MASM transaction-summary adapter.
+/// Must match `SIGNATURE_KEY_DOMAIN` in `miden::standards::auth::signature`.
 const SIGNATURE_KEY_DOMAIN: u64 = u64::from_le_bytes(*b"EIP712\0\0");
 
 /// A 32-byte EIP-712 signing digest.

@@ -2,13 +2,6 @@ use alloc::vec::Vec;
 
 use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
 use crate::protocol_config::NextProtocolConfig;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Hasher, Word, ZERO};
 
 // BLOCK HEADER
@@ -30,8 +23,8 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `account_root` is a commitment to account database.
 /// - `nullifier_root` is a commitment to the nullifier database.
 /// - `note_root` is a commitment to all notes created in the current block.
-/// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
-///   block.
+/// - `transactions_commitment` is a commitment to the set of transaction IDs which affected
+///   accounts in the block.
 /// - `validator_config` is the set of validator public keys authorized to sign the *next* block,
 ///   together with the quorum, see [`ValidatorConfig`] for more details.
 /// - `fee_parameters` are the parameters defining the base fees, see [`FeeParameters`] for more
@@ -52,7 +45,7 @@ pub struct BlockHeader {
     account_root: Word,
     nullifier_root: Word,
     note_root: Word,
-    tx_commitment: Word,
+    transactions_commitment: Word,
     validator_config: ValidatorConfig,
     fee_parameters: FeeParameters,
     protocol_config_commitment: Word,
@@ -85,7 +78,7 @@ impl BlockHeader {
         account_root: Word,
         nullifier_root: Word,
         note_root: Word,
-        tx_commitment: Word,
+        transactions_commitment: Word,
         validator_config: ValidatorConfig,
         fee_parameters: FeeParameters,
         protocol_config_commitment: Word,
@@ -101,7 +94,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
-            tx_commitment,
+            transactions_commitment,
             &validator_config,
             &fee_parameters,
             protocol_config_commitment,
@@ -125,7 +118,7 @@ impl BlockHeader {
             account_root,
             nullifier_root,
             note_root,
-            tx_commitment,
+            transactions_commitment,
             validator_config,
             fee_parameters,
             protocol_config_commitment,
@@ -208,8 +201,8 @@ impl BlockHeader {
     /// The commitment is computed as sequential hash of (`transaction_id`, `account_id`) tuples.
     /// This makes it possible for the verifier to link transaction IDs to the accounts which
     /// they were executed against.
-    pub fn tx_commitment(&self) -> Word {
-        self.tx_commitment
+    pub fn transactions_commitment(&self) -> Word {
+        self.transactions_commitment
     }
 
     /// Returns a reference to the [`FeeParameters`] in this header.
@@ -258,7 +251,7 @@ impl BlockHeader {
     ///     CHAIN_COMMITMENT,
     ///     ACCOUNT_ROOT,
     ///     NULLIFIER_ROOT,
-    ///     TX_COMMITMENT,
+    ///     TRANSACTIONS_COMMITMENT,
     ///     PROTOCOL_CONFIG_COMMITMENT,
     ///     VALIDATOR_CONFIG_COMMITMENT,
     ///     NEXT_PROTOCOL_CONFIG_COMMITMENT,
@@ -283,7 +276,7 @@ impl BlockHeader {
             self.chain_commitment,
             self.account_root,
             self.nullifier_root,
-            self.tx_commitment,
+            self.transactions_commitment,
             &self.validator_config,
             &self.fee_parameters,
             self.protocol_config_commitment,
@@ -368,7 +361,7 @@ impl BlockHeader {
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
-        tx_commitment: Word,
+        transactions_commitment: Word,
         validator_config: &ValidatorConfig,
         fee_parameters: &FeeParameters,
         protocol_config_commitment: Word,
@@ -381,7 +374,7 @@ impl BlockHeader {
         elements.extend_from_slice(chain_commitment.as_elements());
         elements.extend_from_slice(account_root.as_elements());
         elements.extend_from_slice(nullifier_root.as_elements());
-        elements.extend_from_slice(tx_commitment.as_elements());
+        elements.extend_from_slice(transactions_commitment.as_elements());
         elements.extend_from_slice(protocol_config_commitment.as_elements());
         elements.extend(validator_config.to_commitment());
         elements.extend(Self::compute_next_protocol_config_commitment(next_protocol_config));
@@ -413,16 +406,10 @@ impl BlockHeader {
         validator_config: ValidatorConfig,
     ) -> Self {
         use crate::block::{BlockBody, FeeParameters};
-        use crate::transaction::OrderedTransactionHeaders;
 
-        let body = BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        );
+        let body = BlockBody::default();
         let note_root = body.compute_block_note_tree().root();
-        let tx_commitment = body.transactions().commitment();
+        let transactions_commitment = body.compute_transactions_commitment();
 
         BlockHeader::new(
             prev_block_commitment,
@@ -431,95 +418,13 @@ impl BlockHeader {
             Word::empty(),
             Word::empty(),
             note_root,
-            tx_commitment,
+            transactions_commitment,
             validator_config,
             FeeParameters::new(500),
             Word::empty(),
             None,
             0,
         )
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BlockHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self {
-            version,
-            prev_block_commitment,
-            block_num,
-            chain_commitment,
-            account_root,
-            nullifier_root,
-            note_root,
-            tx_commitment,
-            validator_config,
-            fee_parameters,
-            protocol_config_commitment,
-            next_protocol_config,
-            timestamp,
-            // Don't serialize sub commitment and commitment as they can be derived.
-            sub_commitment: _,
-            commitment: _,
-        } = self;
-
-        version.write_into(target);
-        prev_block_commitment.write_into(target);
-        block_num.write_into(target);
-        chain_commitment.write_into(target);
-        account_root.write_into(target);
-        nullifier_root.write_into(target);
-        note_root.write_into(target);
-        tx_commitment.write_into(target);
-        validator_config.write_into(target);
-        fee_parameters.write_into(target);
-        protocol_config_commitment.write_into(target);
-        next_protocol_config.write_into(target);
-        timestamp.write_into(target);
-    }
-}
-
-impl Deserializable for BlockHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let version = u8::read_from(source)?;
-
-        if version != Self::VERSION_1 {
-            return Err(DeserializationError::InvalidValue(format!(
-                "block version is {} but only version {} is supported",
-                version,
-                Self::VERSION_1,
-            )));
-        }
-
-        let prev_block_commitment = source.read()?;
-        let block_num = source.read()?;
-        let chain_commitment = source.read()?;
-        let account_root = source.read()?;
-        let nullifier_root = source.read()?;
-        let note_root = source.read()?;
-        let tx_commitment = source.read()?;
-        let validator_config = source.read()?;
-        let fee_parameters = source.read()?;
-        let protocol_config_commitment = source.read()?;
-        let next_protocol_config = <Option<NextProtocolConfig>>::read_from(source)?;
-        let timestamp = source.read()?;
-
-        Ok(Self::new(
-            prev_block_commitment,
-            block_num,
-            chain_commitment,
-            account_root,
-            nullifier_root,
-            note_root,
-            tx_commitment,
-            validator_config,
-            fee_parameters,
-            protocol_config_commitment,
-            next_protocol_config,
-            timestamp,
-        ))
     }
 }
 
@@ -551,22 +456,6 @@ impl FeeParameters {
     /// Returns the base fee capturing the cost for the verification of a transaction.
     pub fn verification_base_fee(&self) -> u32 {
         self.verification_base_fee
-    }
-}
-
-impl Serializable for FeeParameters {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self { verification_base_fee } = self;
-
-        verification_base_fee.write_into(target);
-    }
-}
-
-impl Deserializable for FeeParameters {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let verification_base_fee = source.read()?;
-
-        Ok(Self::new(verification_base_fee))
     }
 }
 
@@ -605,31 +494,11 @@ pub(crate) enum ParentValidationError {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use miden_core::Word;
     use rand::random;
 
     use super::*;
-
-    #[test]
-    fn block_header_deserialization_rejects_unsupported_version() {
-        let error = BlockHeader::read_from_bytes(&[0]).unwrap_err();
-
-        assert_matches!(error, DeserializationError::InvalidValue(message) => {
-            assert!(message.contains("block version is 0"));
-        });
-    }
-
-    #[test]
-    fn test_serde() {
-        let chain_commitment = random::<Word>();
-        let note_root = random::<Word>();
-        let header = BlockHeader::mock(0, Some(chain_commitment), Some(note_root), &[]);
-        let serialized = header.to_bytes();
-        let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
-
-        assert_eq!(deserialized, header);
-    }
+    use crate::utils::serde::{Deserializable, Serializable};
 
     /// Returns `header` with a protocol upgrade scheduled for block 42.
     fn with_scheduled_upgrade(header: &BlockHeader) -> BlockHeader {
@@ -643,7 +512,7 @@ mod tests {
             header.account_root(),
             header.nullifier_root(),
             header.note_root(),
-            header.tx_commitment(),
+            header.transactions_commitment(),
             header.validator_config().clone(),
             header.fee_parameters().clone(),
             header.protocol_config_commitment(),
@@ -653,15 +522,12 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_upgrade_round_trips_and_changes_the_commitment() {
+    fn scheduled_upgrade_changes_the_commitment() {
         let without_upgrade = BlockHeader::mock(0, None, None, &[]);
         let with_upgrade = with_scheduled_upgrade(&without_upgrade);
 
         assert_eq!(without_upgrade.next_protocol_config_commitment(), Word::empty());
         assert_ne!(with_upgrade.commitment(), without_upgrade.commitment());
-
-        let deserialized = BlockHeader::read_from_bytes(&with_upgrade.to_bytes()).unwrap();
-        assert_eq!(deserialized, with_upgrade);
     }
 
     /// The header's element encoding is the single definition of the block data layout, used by

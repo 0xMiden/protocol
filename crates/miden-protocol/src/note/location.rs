@@ -1,13 +1,6 @@
 use miden_crypto::merkle::SparseMerklePath;
 
-use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    NoteError,
-    Serializable,
-};
+use super::NoteError;
 use crate::block::BlockNumber;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::note::NoteId;
@@ -98,35 +91,3 @@ impl NoteInclusionProof {
 
 // SERIALIZATION
 // ================================================================================================
-
-impl Serializable for NoteLocation {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.block_num);
-        target.write_u16(self.block_note_tree_index);
-    }
-}
-
-impl Deserializable for NoteLocation {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block_num = source.read()?;
-        let block_note_tree_index = source.read_u16()?;
-
-        Ok(Self { block_num, block_note_tree_index })
-    }
-}
-
-impl Serializable for NoteInclusionProof {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.location.write_into(target);
-        self.note_path.write_into(target);
-    }
-}
-
-impl Deserializable for NoteInclusionProof {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let location = NoteLocation::read_from(source)?;
-        let note_path = SparseMerklePath::read_from(source)?;
-
-        Ok(Self { location, note_path })
-    }
-}

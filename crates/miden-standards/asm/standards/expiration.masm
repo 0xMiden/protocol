@@ -19,10 +19,11 @@ pub const DEFAULT_EXPIRATION_BLOCK_DELTA = 20
 #!
 #! A procedure that reads mutable, security-sensitive state exposed through FPI must call
 #! this in the execution path that reads the state; a procedure needing a custom expiration delta
-#! can call [`tx::update_expiration_block_delta`] directly. Policy dispatchers deliberately leave
-#! the expiration delta to the invoked policy. The transaction-wide expiration delta can only
-#! decrease, so several procedures may safely apply different expiration deltas in the same
-#! transaction.
+#! can call [`tx::update_expiration_block_delta`] directly. The transaction-wide expiration delta
+#! can only decrease, so several procedures may safely apply different expiration deltas in the
+#! same transaction. The mint and burn policy dispatchers deliberately leave the expiration delta
+#! to the invoked policy, while the transfer policy dispatcher applies the default itself, so a
+#! transfer policy can tighten the limit but not relax it.
 #!
 #! Inputs:  []
 #! Outputs: []

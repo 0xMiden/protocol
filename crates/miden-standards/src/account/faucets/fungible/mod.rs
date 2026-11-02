@@ -20,9 +20,9 @@ use miden_protocol::{Felt, Word};
 
 use super::{
     Description,
-    ExternalLink,
+    ExternalUri,
     FungibleFaucetError,
-    LogoURI,
+    LogoUri,
     TokenMetadata,
     TokenMetadataError,
     TokenName,
@@ -101,16 +101,16 @@ procedure_root!(
 );
 
 procedure_root!(
-    FUNGIBLE_FAUCET_SET_EXTERNAL_LINK,
+    FUNGIBLE_FAUCET_SET_EXTERNAL_URI,
     FUNGIBLE_FAUCET_LIBRARY_PATH,
-    FungibleFaucet::SET_EXTERNAL_LINK_PROC_NAME,
+    FungibleFaucet::SET_EXTERNAL_URI_PROC_NAME,
     FungibleFaucet::code()
 );
 
 /// An [`AccountComponent`] implementing a fungible faucet.
 ///
 /// This component bundles the asset minting/burning procedures and the token metadata
-/// (name, description, logo URI, external link) together. Whether the faucet behaves like a
+/// (name, description, logo URI, external URI) together. Whether the faucet behaves like a
 /// "basic" public faucet or a network-style faucet is a function of the surrounding account
 /// configuration (account type, auth component, access control component, and policy manager
 /// configuration), not of the faucet component itself.
@@ -152,7 +152,7 @@ impl FungibleFaucet {
     /// ```
     /// # use miden_protocol::asset::{AssetAmount, TokenSymbol};
     /// # use miden_standards::account::faucets::FungibleFaucet;
-    /// # use miden_standards::account::faucets::{Description, LogoURI, TokenName};
+    /// # use miden_standards::account::faucets::{Description, LogoUri, TokenName};
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let faucet = FungibleFaucet::builder()
     ///     .name(TokenName::new("My Token")?)
@@ -161,7 +161,7 @@ impl FungibleFaucet {
     ///     .max_supply(AssetAmount::from(1_000_000u32))
     ///     .token_supply(AssetAmount::from(100u32))
     ///     .description(Description::new("A test token")?)
-    ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
+    ///     .logo_uri(LogoUri::new("https://example.com/logo.png")?)
     ///     .build()?;
     /// # Ok(())
     /// # }
@@ -179,11 +179,11 @@ impl FungibleFaucet {
         max_supply: AssetAmount,
         #[builder(default)] token_supply: AssetAmount,
         description: Option<Description>,
-        logo_uri: Option<LogoURI>,
-        external_link: Option<ExternalLink>,
+        logo_uri: Option<LogoUri>,
+        external_uri: Option<ExternalUri>,
         #[builder(default)] is_description_mutable: bool,
         #[builder(default)] is_logo_uri_mutable: bool,
-        #[builder(default)] is_external_link_mutable: bool,
+        #[builder(default)] is_external_uri_mutable: bool,
         #[builder(default)] is_max_supply_mutable: bool,
     ) -> Result<FungibleFaucet, FungibleFaucetError> {
         let mut metadata = TokenMetadata::new(name);
@@ -197,10 +197,10 @@ impl FungibleFaucet {
         } else {
             metadata = metadata.with_logo_uri_mutable(is_logo_uri_mutable);
         }
-        if let Some(link) = external_link {
-            metadata = metadata.with_external_link(link, is_external_link_mutable);
+        if let Some(link) = external_uri {
+            metadata = metadata.with_external_uri(link, is_external_uri_mutable);
         } else {
-            metadata = metadata.with_external_link_mutable(is_external_link_mutable);
+            metadata = metadata.with_external_uri_mutable(is_external_uri_mutable);
         }
         metadata = metadata.with_max_supply_mutable(is_max_supply_mutable);
 
@@ -228,7 +228,7 @@ impl FungibleFaucet {
     const SET_MAX_SUPPLY_PROC_NAME: &'static str = "set_max_supply";
     const SET_DESCRIPTION_PROC_NAME: &'static str = "set_description";
     const SET_LOGO_URI_PROC_NAME: &'static str = "set_logo_uri";
-    const SET_EXTERNAL_LINK_PROC_NAME: &'static str = "set_external_link";
+    const SET_EXTERNAL_URI_PROC_NAME: &'static str = "set_external_uri";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -302,9 +302,9 @@ impl FungibleFaucet {
         *FUNGIBLE_FAUCET_SET_LOGO_URI
     }
 
-    /// Returns the procedure root of the `set_external_link` account procedure. Authority-gated.
-    pub fn set_external_link_root() -> AccountProcedureRoot {
-        *FUNGIBLE_FAUCET_SET_EXTERNAL_LINK
+    /// Returns the procedure root of the `set_external_uri` account procedure. Authority-gated.
+    pub fn set_external_uri_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_EXTERNAL_URI
     }
 
     /// Returns the [`StorageSlotName`] holding the token config word
@@ -344,13 +344,13 @@ impl FungibleFaucet {
     }
 
     /// Returns the optional logo URI.
-    pub fn logo_uri(&self) -> Option<&LogoURI> {
+    pub fn logo_uri(&self) -> Option<&LogoUri> {
         self.metadata.logo_uri()
     }
 
-    /// Returns the optional external link.
-    pub fn external_link(&self) -> Option<&ExternalLink> {
-        self.metadata.external_link()
+    /// Returns the optional external URI.
+    pub fn external_uri(&self) -> Option<&ExternalUri> {
+        self.metadata.external_uri()
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
@@ -359,7 +359,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability
-    /// config + description + logo URI + external link).
+    /// config + description + logo URI + external URI).
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
@@ -415,9 +415,9 @@ impl FungibleFaucet {
         self
     }
 
-    /// Sets whether the external link can be updated by the owner.
-    pub fn with_external_link_mutable(mut self, mutable: bool) -> Self {
-        self.metadata = self.metadata.with_external_link_mutable(mutable);
+    /// Sets whether the external URI can be updated by the owner.
+    pub fn with_external_uri_mutable(mut self, mutable: bool) -> Self {
+        self.metadata = self.metadata.with_external_uri_mutable(mutable);
         self
     }
 
@@ -491,7 +491,7 @@ impl TryFrom<&AccountStorage> for FungibleFaucet {
     type Error = FungibleFaucetError;
 
     /// Reconstructs [`FungibleFaucet`] by reading all relevant storage slots: the token
-    /// config word, name, mutability config, description, logo URI, and external link.
+    /// config word, name, mutability config, description, logo URI, and external URI.
     fn try_from(storage: &AccountStorage) -> Result<Self, Self::Error> {
         let token_config_word = storage.get_item(Self::token_config_slot()).map_err(|err| {
             TokenMetadataError::StorageLookupFailed {
