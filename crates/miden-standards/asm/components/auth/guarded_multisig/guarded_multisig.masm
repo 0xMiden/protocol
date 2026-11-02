@@ -2,6 +2,7 @@
 #
 # See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
+use miden::protocol::active_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
@@ -77,11 +78,14 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.signature::estimate_multisig_authentication_cycles
     # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
-    # use the signed block for the fee note.
-    dup.5 movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+    # derive the fee note's serial number from the signed block and the initial nonce.
+    exec.active_account::get_nonce movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, initial_nonce, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
-    exec.fee::pay_fee drop
+    dup.6 movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, initial_nonce, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    exec.fee::pay_fee drop drop
     # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     # Authenticate the transaction with the approvers and the guardian and record it for replay

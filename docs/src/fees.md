@@ -21,7 +21,7 @@ There are two distinct quantities involved in paying a fee:
 
 Nothing at the protocol level validates the fee note. The authentication procedure (via `pay_fee`) is currently the only place the paid amount is checked against the computed fee.
 
-`pay_fee` takes a `serial_number_block` argument and passes it to `create_and_fund_fee_note` to derive the fee note's serial number. Multisig accounts pass the block bound by the signed summary; other standard auth components pass the execution reference block. This lets multisig approvals execute against a newer reference block when the account nonce, fee amount, and other signed effects remain unchanged. Fee computation and foreign account reads still use the execution reference block.
+`pay_fee` takes `serial_number_block` and `initial_nonce` arguments and passes them to `create_and_fund_fee_note` to derive the fee note's serial number. Multisig accounts pass the block bound by the signed summary; other standard auth components pass the execution reference block. The nonce is the account's nonce at the start of the transaction, read by the caller before it is incremented. This lets multisig approvals execute against a newer reference block when the account nonce, fee amount, and other signed effects remain unchanged. Fee computation and foreign account reads still use the execution reference block.
 
 ## How fees are paid
 
