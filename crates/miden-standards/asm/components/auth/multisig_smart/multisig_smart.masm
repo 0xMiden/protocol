@@ -22,7 +22,7 @@ pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spendi
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
-#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
+#!   Advice map: { AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
 #!   Operand stack: []
 #!
@@ -38,10 +38,11 @@ pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spendi
 @auth_script
 pub proc auth_tx_multisig_smart(auth_args: word)
     exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
+    # this component does not pay the transaction fee yet, so the conversion info and the max fee
+    # are unused
+    dropw movup.2 drop
     # => [bound_block_num, approval_expiration_block_num, SALT]
 
     # reject an expired approval before any signature is verified.

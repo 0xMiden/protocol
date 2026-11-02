@@ -25,7 +25,7 @@ Nothing at the protocol level validates the fee note. The authentication procedu
 
 ## How fees are paid
 
-- The account’s authentication procedure computes the fee via `compute_fee` and creates a TX_FEE note funded from the account’s vault with the native fee asset, before the transaction summary is created - so the fee note and the vault withdrawal are covered by the transaction signature. Standard auth components do this automatically via the pay_fee procedures in the `miden::standards::fee` module.
+- The account’s authentication procedure computes the fee via `compute_fee` and creates a TX_FEE note funded from the account’s vault with the native fee asset, before the transaction summary is created - so the fee note and the vault withdrawal are covered by the transaction signature. Standard auth components do this automatically via the pay_fee procedures in the `miden::standards::fee` module. The multisig components are the exception: they pay the fee after verifying the approver signatures and instead bind a fee cap, the `max_fee` of their auth args, into the summary, rejecting a transaction whose fee and network note sponsorships together exceed it, so approvals collected over a long period stay valid when the fee changes.
 - Users should ensure their account’s vault holds sufficient balance of the native fee asset to cover the fee. If it does not, or if the conversion info committed for a non-zero fee is missing or is not the native one, the transaction fails during the authentication procedure.
 - On chains with a zero `verification_base_fee`, no fee note is created and no conversion info is required.
 

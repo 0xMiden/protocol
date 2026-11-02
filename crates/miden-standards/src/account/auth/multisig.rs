@@ -12,6 +12,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::asset::AssetAmount;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::AccountError;
@@ -146,14 +147,19 @@ impl AuthMultisigConfig {
 ///
 /// # Fees
 ///
-/// Before authenticating, `auth_tx_multisig` pays the transaction fee via
+/// After verifying the approver signatures, `auth_tx_multisig` pays the transaction fee via
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
 /// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
 /// conversion info from the auth args must name the reference block's fee asset at rate 1/1 (see
 /// [`FeeConversionInfo::one_to_one`](super::FeeConversionInfo::one_to_one)). On chains with a
-/// zero verification base fee no note is created. The fee note is created before the transaction
-/// summary, so it is covered by the approver signatures.
+/// zero verification base fee no note is created.
+///
+/// The fee note is created after the transaction summary, so the approvers do not sign the exact
+/// fee, which is only known when the transaction executes. They sign the fee cap set with
+/// [`MultisigAuthArgs::with_max_fee`] instead, and the transaction fails if the fee and the
+/// sponsorships of its network output notes together exceed it. Signatures collected over a long
+/// period therefore stay valid when the fee changes, as long as it stays within the cap.
 ///
 /// # Expiration
 ///
@@ -410,14 +416,15 @@ impl From<AuthMultisig> for AccountComponent {
 /// The inputs the multisig authentication components receive through the transaction's auth args.
 ///
 /// ```text
-/// AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO]
+/// AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO]
 /// ```
 ///
-/// where `BLOCK_WORD` is `[bound_block_num, approval_expiration_block_num, 0, 0]`.
+/// where `PARAMS_WORD` is `[bound_block_num, approval_expiration_block_num, max_fee, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MultisigAuthArgs {
     bound_block_num: BlockNumber,
     approval_expiration_block_num: Option<BlockNumber>,
+    max_fee: AssetAmount,
     salt: Word,
     conversion_info: Option<FeeConversionInfo>,
 }
@@ -437,10 +444,14 @@ impl MultisigAuthArgs {
     /// `salt` is bound by the transaction summary and is what makes otherwise identical
     /// transactions distinguishable, which is what the replay protection of the multisig
     /// components relies on. It should be chosen at random.
+    ///
+    /// The max fee defaults to zero, which only allows fee-free transactions; see
+    /// [`Self::with_max_fee`].
     pub fn new(bound_block_num: BlockNumber, salt: Word) -> Self {
         Self {
             bound_block_num,
             approval_expiration_block_num: None,
+            max_fee: AssetAmount::ZERO,
             salt,
             conversion_info: None,
         }
@@ -481,6 +492,19 @@ impl MultisigAuthArgs {
         self
     }
 
+    /// Returns new multisig auth args capping the fees the transaction may pay at `max_fee`,
+    /// denominated in the native fee asset.
+    ///
+    /// The cap is bound by the transaction summary, so the approvers sign it instead of the exact
+    /// fee, which is only known when the transaction executes. The fee-paying multisig components
+    /// pay the fee after verifying the signatures and abort if the transaction fee and the
+    /// sponsorships of its network output notes together exceed the cap.
+    #[must_use]
+    pub fn with_max_fee(mut self, max_fee: AssetAmount) -> Self {
+        self.max_fee = max_fee;
+        self
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -500,6 +524,11 @@ impl MultisigAuthArgs {
         self.salt
     }
 
+    /// Returns the maximum fee the transaction may pay, in the native fee asset.
+    pub fn max_fee(&self) -> AssetAmount {
+        self.max_fee
+    }
+
     /// Returns the fee conversion info, or `None` if none was committed - in which case the fee
     /// payment aborts on fee-charging chains.
     pub fn conversion_info(&self) -> Option<FeeConversionInfo> {
@@ -515,7 +544,12 @@ impl SequentialCommit for MultisigAuthArgs {
         let approval_expiration = self.approval_expiration_block_num.map_or(Felt::ZERO, Felt::from);
 
         let mut elements = Vec::with_capacity(3 * WORD_SIZE);
-        elements.extend([Felt::from(self.bound_block_num), approval_expiration, ZERO, ZERO]);
+        elements.extend([
+            Felt::from(self.bound_block_num),
+            approval_expiration,
+            Felt::from(self.max_fee),
+            ZERO,
+        ]);
         elements.extend(self.salt.iter());
         elements.extend(conversion_info.iter());
         elements

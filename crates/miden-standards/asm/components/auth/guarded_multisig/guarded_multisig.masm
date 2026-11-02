@@ -6,8 +6,6 @@ use miden::protocol::active_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
-use miden::standards::auth::signature
-use miden::standards::fee
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -20,9 +18,8 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! Authenticate a transaction with multi-signature support and optional guardian verification,
 #! paying the transaction fee in the process.
 #!
-#! The fee is paid as in the multisig component, before the transaction summary is created, so
-#! the fee note is covered by the approver and guardian signatures. The cycle estimate counts the
-#! guardian as one more signer.
+#! The fee is paid as in the multisig component, after the approver and guardian signatures are
+#! verified, and must stay within the max fee the summary binds.
 #!
 #! The guardian must not be an approver, otherwise a single signature would satisfy both the
 #! multisig and the guardian check, so this procedure re-checks the invariant that
@@ -32,7 +29,7 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
-#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
+#!   Advice map: { AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
 #!   Operand stack: []
 #!
@@ -44,67 +41,77 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! - the approval expired at or before the transaction reference block, see
 #!   `multisig::assert_approval_not_expired`.
 #! - the configured guardian public key is one of the approver public keys.
+#! - the transaction fee and the sponsored fees exceed the max fee, see
+#!   `multisig::pay_fee_within_max_fee`.
 #!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # reject an expired approval before any signature is verified.
     # ---------------------------------------------------------------------------------------------
 
     dup.5 exec.tx::get_reference_block_number
-    # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+    # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
-    exec.multisig::assert_approval_not_expired movdn.10
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    exec.multisig::assert_approval_not_expired movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
     # check a guardian rotation before the fee note exists, since a rotation must not create notes
     exec.guardian::assert_rotation_policy movdn.11
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, is_rotation, approval_expiration_delta]
 
-    # Pay the transaction fee before the summary is created so that the TX_FEE note and the
-    # vault withdrawal funding it are covered by the approver and guardian signatures.
+    # Keep the fee payment inputs below the summary inputs and the rotation flag: the fee is paid
+    # after the signatures are verified, and the fee note's serial number uses the signed block
+    # and the initial nonce, which must be read before auth_tx increments it.
     # ---------------------------------------------------------------------------------------------
 
-    exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+    dup.6 movdn.12
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, is_rotation, max_fee, approval_expiration_delta]
 
-    # count the guardian as a signer; this overestimates a guardian rotation, which skips it
-    add.1
-    # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+    exec.active_account::get_nonce movdn.12
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, is_rotation, initial_nonce, max_fee, approval_expiration_delta]
 
-    exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+    dup.4 movdn.12
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, is_rotation, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
 
-    # derive the fee note's serial number from the signed block and the initial nonce.
-    exec.active_account::get_nonce movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, initial_nonce, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+    movdn.11 movdn.11 movdn.11 movdn.11
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT, is_rotation, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
 
-    dup.6 movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, initial_nonce, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
-
-    exec.fee::pay_fee drop drop
-    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
-
-    # Authenticate the transaction with the approvers and the guardian and record it for replay
-    # protection.
+    # Authenticate the transaction with the approvers and the guardian.
     # ---------------------------------------------------------------------------------------------
 
     exec.multisig::auth_tx
-    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta, is_rotation]
+    # => [TX_SUMMARY_COMMITMENT, is_rotation, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
 
-    dupw movup.9
-    # => [is_rotation, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    dupw movup.8
+    # => [is_rotation, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
 
     exec.guardian::verify_signature
-    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    # => [TX_SUMMARY_COMMITMENT, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
 
     exec.guardian::get_guardian_public_key
-    # => [GUARDIAN_PUBLIC_KEY, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    # => [GUARDIAN_PUBLIC_KEY, TX_SUMMARY_COMMITMENT, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
 
     exec.multisig::assert_not_approver_public_key
+    # => [TX_SUMMARY_COMMITMENT, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
+
+    # Pay the transaction fee now that the transaction is authorized, and assert it stays within
+    # the max fee the approvers signed.
+    # ---------------------------------------------------------------------------------------------
+
+    movdnw.2
+    # => [CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    exec.multisig::pay_fee_within_max_fee
+    # => [approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    # Record the transaction for replay protection.
+    # ---------------------------------------------------------------------------------------------
+
+    movdn.4
     # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.multisig::record_and_assert_new_tx

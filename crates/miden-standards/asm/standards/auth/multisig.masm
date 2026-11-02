@@ -1,5 +1,5 @@
 use {Approver} from miden::standards::auth::signature
-use {AccountProcedureRoot, BlockNumber} from miden::protocol::types
+use {AccountProcedureRoot, AssetAmount, BlockNumber} from miden::protocol::types
 # The MASM code of the Multi-Signature Authentication Component.
 #
 # See the `AuthMultisig` Rust type's documentation for more details.
@@ -9,8 +9,10 @@ use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
 use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
+use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::auth
 use miden::standards::auth::signature
+use miden::standards::fee
 use {ConversionInfo} from miden::standards::fee
 use miden::core::mem
 use miden::core::word
@@ -33,8 +35,9 @@ const IS_SIGNER_FOUND_LOC=0
 const CURRENT_SIGNER_INDEX_LOC=1
 
 # resolve_auth_args locals: the three words of the auth args preimage in hashing order.
-const AUTH_ARGS_BLOCK_LOC=0
+const AUTH_ARGS_BOUND_BLOCK_LOC=0
 const AUTH_ARGS_APPROVAL_EXPIRATION_LOC=1
+const AUTH_ARGS_MAX_FEE_LOC=2
 const AUTH_ARGS_SALT_LOC=4
 const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
@@ -100,6 +103,13 @@ pub const MAX_NUM_APPROVERS = 64
 # Number of words in the auth args preimage.
 const AUTH_ARGS_NUM_WORDS = 3
 
+# Estimated upper bound on the number of cycles a multisig authentication flow spends after
+# pay_fee returns: the max fee check, the replay-protection recording (a storage map write) and
+# the approval expiration update. Overestimation is cheap: the fee grows with ilog2 of the cycle
+# count, so a <2x overshoot costs at most one verification_base_fee unit. Guarded by the
+# fee-payment regression tests.
+const MULTISIG_POST_FEE_CYCLES = 4096
+
 # ERRORS
 # =================================================================================================
 
@@ -131,9 +141,13 @@ const ERR_AUTH_ARGS_PREIMAGE_MISSING = "the advice map holds no preimage for the
 
 const ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32 = "the block numbers in the multisig auth args must be u32 values"
 
+const ERR_AUTH_ARGS_MAX_FEE_NOT_ASSET_AMOUNT = "the max fee in the multisig auth args must be a valid fungible asset amount"
+
 const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval expired at or before the transaction reference block"
 
 const ERR_MULTISIG_APPROVAL_BLOCKS_NOT_U32 = "the reference block and approval expiration block numbers must be u32 values"
+
+const ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE = "the transaction fee and the sponsored fees exceed the max fee bound by the multisig auth args"
 
 const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
 
@@ -825,17 +839,20 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
-#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
+#!   Advice map: { AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
-#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #!
 #! Where:
 #! - AUTH_ARGS is the sequential hash of the three preimage words.
-#! - BLOCK_WORD is [bound_block_num, approval_expiration_block_num, 0, 0].
+#! - PARAMS_WORD is [bound_block_num, approval_expiration_block_num, max_fee, 0].
 #! - bound_block_num is the number of the block the transaction summary binds.
 #! - approval_expiration_block_num is the first reference block at which the approvers'
 #!   signatures are no longer valid, or 0 if the approval does not expire. See
 #!   `assert_approval_not_expired`.
+#! - max_fee is the maximum fee the transaction may pay, in the native fee asset. It is bound
+#!   into the transaction summary (see `auth_tx`), so the approvers sign a fee cap rather than
+#!   the exact fee.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
 #!   in; pay_fee accepts only the reference block's fee asset at rate 1/1. It is the empty word
@@ -845,19 +862,20 @@ end
 #! - the advice map holds no preimage for the auth args.
 #! - the preimage does not hash to the auth args.
 #! - bound_block_num or approval_expiration_block_num is not a u32.
+#! - max_fee is not a valid fungible asset amount.
 #!
 #! Invocation: exec
 @locals(12)
 pub proc resolve_auth_args(auth_args: word)
-    -> (ConversionInfo, BlockNumber, BlockNumber, word)
+    -> (ConversionInfo, BlockNumber, BlockNumber, AssetAmount, word)
     adv.has_mapkey adv_push assert.err=ERR_AUTH_ARGS_PREIMAGE_MISSING
     # => [AUTH_ARGS]
 
     adv.push_mapval
     # OS => [AUTH_ARGS]
-    # AS => [BLOCK_WORD, SALT, CONVERSION_INFO]
+    # AS => [PARAMS_WORD, SALT, CONVERSION_INFO]
 
-    locaddr.AUTH_ARGS_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
+    locaddr.AUTH_ARGS_BOUND_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
     # => [num_words, write_ptr, AUTH_ARGS]
 
     exec.mem::pipe_preimage_to_memory drop
@@ -866,14 +884,20 @@ pub proc resolve_auth_args(auth_args: word)
     padw loc_loadw_le.AUTH_ARGS_SALT_LOC
     # => [SALT]
 
-    loc_load.AUTH_ARGS_APPROVAL_EXPIRATION_LOC loc_load.AUTH_ARGS_BLOCK_LOC
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    loc_load.AUTH_ARGS_MAX_FEE_LOC
+    # => [max_fee, SALT]
+
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_AUTH_ARGS_MAX_FEE_NOT_ASSET_AMOUNT
+    # => [max_fee, SALT]
+
+    loc_load.AUTH_ARGS_APPROVAL_EXPIRATION_LOC loc_load.AUTH_ARGS_BOUND_BLOCK_LOC
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     u32assert2.err=ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     padw loc_loadw_le.AUTH_ARGS_CONVERSION_INFO_LOC
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 end
 
 #! Asserts that the multisig approval has not expired and returns the expiration delta to apply.
@@ -964,6 +988,47 @@ pub proc apply_approval_expiration(approval_expiration_delta: u16)
     end
 end
 
+#! Pays the transaction fee of an authorized transaction and asserts that it stays within the max
+#! fee the approvers signed.
+#!
+#! This runs after `auth_tx`, so neither the TX_FEE note nor the sponsorship notes of the
+#! transaction's network output notes are covered by the signatures. Instead, the sum of the paid
+#! fee and the sponsored fees is asserted to not exceed max_fee, which the transaction summary
+#! binds. See `miden::standards::fee::pay_fee` for the fee payment itself.
+#!
+#! Inputs:  [CONVERSION_INFO, serial_number_block, initial_nonce, max_fee]
+#! Outputs: []
+#!
+#! Where:
+#! - CONVERSION_INFO, serial_number_block and initial_nonce are as described in
+#!   `miden::standards::fee::pay_fee`.
+#! - max_fee is the maximum fee the transaction may pay, in the native fee asset.
+#!
+#! Panics if:
+#! - the fee payment fails (propagates the panics of `miden::standards::fee::pay_fee`).
+#! - the paid fee and the sponsored fees together exceed max_fee.
+#!
+#! Invocation: exec
+pub proc pay_fee_within_max_fee(
+    conversion_info: ConversionInfo,
+    serial_number_block: BlockNumber,
+    initial_nonce: felt,
+    max_fee: AssetAmount
+)
+    push.MULTISIG_POST_FEE_CYCLES
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, initial_nonce, max_fee]
+
+    exec.fee::pay_fee
+    # => [fee_amount, total_sponsored_fee_amount, max_fee]
+
+    # both amounts are valid asset amounts, so their sum cannot wrap the field
+    add
+    # => [total_fee_amount, max_fee]
+
+    gte assert.err=ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE
+    # => []
+end
+
 #! Authenticate a transaction using the signature scheme specified by scheme_id
 #! with multi-signature support
 #!
@@ -980,7 +1045,7 @@ end
 #!
 #! ```text
 #! [
-#!     [version, expiration_delta << 32 || bound_block_num, approval_expiration_block_num, 0],
+#!     [version, expiration_delta << 32 || bound_block_num, approval_expiration_block_num, max_fee],
 #!     SALT,
 #!     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
 #!     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
@@ -993,7 +1058,7 @@ end
 #! `assert_approval_not_expired`.
 #!
 #! Inputs:
-#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -1006,6 +1071,9 @@ end
 #! - bound_block_num is the number of the block the transaction summary binds.
 #! - approval_expiration_block_num is the first reference block at which the approvers'
 #!   signatures are no longer valid, or 0 if the approval does not expire.
+#! - max_fee is the maximum fee the transaction may pay, bound as the summary's second user
+#!   parameter so the approvers sign a fee cap rather than the exact fee. The fee-paying
+#!   components enforce it after the signatures are verified.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
@@ -1018,15 +1086,13 @@ end
 pub proc auth_tx(
     bound_block_num: BlockNumber,
     approval_expiration_block_num: BlockNumber,
+    max_fee: AssetAmount,
     salt: word
 )
     exec.native_account::incr_nonce drop
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # ------ Computing transaction summary ------
-
-    push.0 movdn.2
-    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
     exec.auth::get_tx_summary_commitment
     # => [TX_SUMMARY_COMMITMENT]
