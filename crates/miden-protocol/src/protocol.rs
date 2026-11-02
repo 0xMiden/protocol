@@ -36,6 +36,20 @@ impl ProtocolLib {
     }
 }
 
+#[cfg(any(feature = "testing", test))]
+impl ProtocolLib {
+    const UTILS_PACKAGE_BYTES: &'static [u8] =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-protocol-utils.masp"));
+
+    /// Returns the internal utilities of the kernels and the protocol library as a [`Package`]
+    /// linkable under the `miden::protocol_utils` namespace, so that they can be tested directly.
+    pub fn utils_package() -> Package {
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(Self::UTILS_PACKAGE_BYTES)
+            .expect("protocol utils masp should be well-formed")
+    }
+}
+
 impl AsRef<Package> for ProtocolLib {
     fn as_ref(&self) -> &Package {
         self.0.as_ref()

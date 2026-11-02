@@ -1,7 +1,24 @@
 use miden::core::mem
+use miden::core::word
 use miden::core::crypto::hashes::poseidon2
 
 use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MEM_NUM_WORDS_NOT_U32 = "number of words to pipe to memory must be a u32"
+
+const ERR_MEM_WORDS_NOT_STRICTLY_SORTED = "words must be strictly sorted in ascending order"
+
+# CONSTANTS
+# =================================================================================================
+
+# The number of field elements in a double word.
+const DOUBLE_WORD_NUM_ELEMENTS = 8
+
+# PUBLIC PROCEDURES
+# =================================================================================================
 
 #! Writes `num_elements` elements from the advice stack to memory starting at `dest_ptr` and returns
 #! their commitment.
@@ -61,4 +78,212 @@ pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>
 
     movup.4 drop
     # => [COMPUTED_COMMITMENT]
+end
+
+#! Writes `num_words` words from the advice stack to memory starting at `write_ptr` and returns
+#! their commitment, while it asserts that the words are unique and sorted.
+#!
+#! The words are sorted in ascending order as defined by `word::lt`. The commitment is equal to
+#! `Poseidon2::merge_many` over the words, which makes it compatible with commitments over sorted
+#! lists of words, e.g. `MastForest::interface_commitment`.
+#!
+#! Inputs:
+#!   Operand stack: [num_words, write_ptr]
+#!   Advice stack:  [WORD_0, ..., WORD_n]
+#! Outputs:
+#!   Operand stack: [COMMITMENT, end_ptr]
+#!
+#! Where:
+#! - num_words is the number of words to write.
+#! - write_ptr is the word-aligned memory address at which the words are written.
+#! - COMMITMENT is the commitment over the written words.
+#! - end_ptr is the memory address immediately after the written words.
+#!
+#! Panics if:
+#! - num_words is not a u32.
+#! - the words are not unique and sorted in ascending order.
+#!
+#! Invocation: exec
+pub proc pipe_strictly_sorted_words_to_memory(
+    num_words: u32,
+    write_ptr: ptr<word>
+) -> (word, ptr<word>)
+    u32assert.err=ERR_MEM_NUM_WORDS_NOT_U32
+    # => [num_words, write_ptr]
+
+    # a final word without a pair is absorbed with padding after the loop
+    dup is_odd dup movdn.3
+    # => [needs_padding, num_words, write_ptr, needs_padding]
+
+    # num_even_words = num_words - needs_padding
+    sub
+    # => [num_even_words, needs_padding, num_words, write_ptr, needs_padding]
+
+    # compute the end ptr of the even-word region
+    mul.WORD_NUM_ELEMENTS dup.1 add
+    # => [end_ptr, write_ptr, needs_padding]
+
+    swap dup movdn.2
+    # => [write_ptr, end_ptr, start_ptr, needs_padding]
+
+    # set the first capacity element to 4 for an odd number of words and 0 for an even number
+    dup.3 mul.WORD_NUM_ELEMENTS push.0.0.0 movup.3 padw padw
+    # => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, start_ptr, needs_padding]
+
+    dup.13 dup.13 neq
+    # => [should_loop, RATE0, RATE1, CAPACITY, write_ptr, end_ptr, start_ptr, needs_padding]
+
+    while.true
+        adv_pipe
+        # => [WORD_0, WORD_1, CAPACITY, write_ptr', end_ptr, start_ptr, needs_padding]
+
+        # assert WORD_0 < WORD_1
+        dupw dupw.2 exec.word::lt assert.err=ERR_MEM_WORDS_NOT_STRICTLY_SORTED
+        # => [WORD_0, WORD_1, CAPACITY, write_ptr', end_ptr, start_ptr, needs_padding]
+
+        # WORD_0 has a previous word if start_ptr != write_ptr - 8
+        dup.12 sub.DOUBLE_WORD_NUM_ELEMENTS dup.15 neq
+        # => [has_previous_word, WORD_0, WORD_1, CAPACITY, write_ptr', end_ptr, start_ptr,
+        #     needs_padding]
+
+        if.true
+            # the previous word is located before WORD_0, which is located at write_ptr' - 8
+            dup.12 sub.12 exec.assert_previous_word_lower
+            # => [WORD_0, WORD_1, CAPACITY, write_ptr', end_ptr, start_ptr, needs_padding]
+        end
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY, write_ptr', end_ptr, start_ptr, needs_padding]
+
+        dup.13 dup.13 neq
+        # => [should_loop, RATE0, RATE1, CAPACITY, write_ptr', end_ptr, start_ptr,
+        #     needs_padding]
+    end
+    # => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, start_ptr, needs_padding]
+
+    movup.13 drop movup.14
+    # => [needs_padding, RATE0, RATE1, CAPACITY, write_ptr, start_ptr]
+
+    if.true
+        # Poseidon2 uses overwrite mode, so the rate is replaced with the final word and padding
+        swapw dropw adv_loadw
+        # => [WORD, CAPACITY, write_ptr, start_ptr]
+
+        # WORD has a previous word if start_ptr != write_ptr
+        dup.9 dup.9 neq
+        # => [has_previous_word, WORD, CAPACITY, write_ptr, start_ptr]
+
+        if.true
+            dup.8 sub.WORD_NUM_ELEMENTS exec.assert_previous_word_lower
+            # => [WORD, CAPACITY, write_ptr, start_ptr]
+        end
+
+        # store the final word and advance write_ptr
+        movup.8 dup add.WORD_NUM_ELEMENTS movdn.5 mem_storew_le movup.4 movdn.8
+        # => [WORD, CAPACITY, write_ptr', start_ptr]
+
+        padw swapw exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY, write_ptr', start_ptr]
+    end
+
+    exec.poseidon2::squeeze_digest
+    # => [COMMITMENT, end_ptr, start_ptr]
+
+    movup.5 drop
+    # => [COMMITMENT, end_ptr]
+end
+
+#! Writes `num_pairs` (KEY, VALUE) pairs from the advice stack to memory starting at `write_ptr`
+#! and returns their commitment, while it asserts that the keys are unique and sorted.
+#!
+#! The keys must be unique and sorted in ascending order as defined by `word::lt`. The values are
+#! not checked. The commitment is equal to `Poseidon2::merge_many` over the words of all pairs.
+#!
+#! Inputs:
+#!   Operand stack: [num_pairs, write_ptr]
+#!   Advice stack:  [KEY_0, VALUE_0, ..., KEY_n, VALUE_n]
+#! Outputs:
+#!   Operand stack: [COMMITMENT, end_ptr]
+#!
+#! Where:
+#! - num_pairs is the number of key-value pairs to write.
+#! - write_ptr is the word-aligned memory address at which the pairs are written.
+#! - COMMITMENT is the commitment over the written pairs.
+#! - end_ptr is the memory address immediately after the written pairs.
+#!
+#! Panics if:
+#! - num_pairs is not a u32.
+#! - the keys are not unique and sorted in ascending order.
+#!
+#! Invocation: exec
+pub proc pipe_strictly_sorted_key_value_pairs_to_memory(
+    num_pairs: u32,
+    write_ptr: ptr<word>
+) -> (word, ptr<word>)
+    u32assert.err=ERR_MEM_NUM_WORDS_NOT_U32
+    # => [num_pairs, write_ptr]
+
+    mul.DOUBLE_WORD_NUM_ELEMENTS dup.1 add
+    # => [end_ptr, write_ptr]
+
+    swap dup movdn.2
+    # => [write_ptr, end_ptr, start_ptr]
+
+    # the number of elements is a multiple of 8, so the capacity is zero
+    padw padw padw
+    # => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, start_ptr]
+
+    dup.13 dup.13 neq
+    # => [should_loop, RATE0, RATE1, CAPACITY, write_ptr, end_ptr, start_ptr]
+
+    while.true
+        adv_pipe
+        # => [KEY, VALUE, CAPACITY, write_ptr', end_ptr, start_ptr]
+
+        # KEY has a previous key if start_ptr != write_ptr - 8
+        dup.12 sub.DOUBLE_WORD_NUM_ELEMENTS dup.15 neq
+        # => [has_previous_key, KEY, VALUE, CAPACITY, write_ptr', end_ptr, start_ptr]
+
+        if.true
+            # the previous key is located one pair before KEY, which is located at
+            # write_ptr' - 8
+            dup.12 sub.16 exec.assert_previous_word_lower
+            # => [KEY, VALUE, CAPACITY, write_ptr', end_ptr, start_ptr]
+        end
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY, write_ptr', end_ptr, start_ptr]
+
+        dup.13 dup.13 neq
+        # => [should_loop, RATE0, RATE1, CAPACITY, write_ptr', end_ptr, start_ptr]
+    end
+    # => [RATE0, RATE1, CAPACITY, end_ptr, end_ptr, start_ptr]
+
+    exec.poseidon2::squeeze_digest
+    # => [COMMITMENT, end_ptr, end_ptr, start_ptr]
+
+    movup.5 drop movup.5 drop
+    # => [COMMITMENT, end_ptr]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts that the word at previous_ptr is lower than WORD.
+#!
+#! Inputs:  [previous_ptr, WORD]
+#! Outputs: [WORD]
+#!
+#! Where:
+#! - previous_ptr is the memory address of the previous word.
+#! - WORD is the word that must be greater than the previous word.
+#!
+#! Panics if:
+#! - the previous word is not lower than WORD.
+proc assert_previous_word_lower(previous_ptr: ptr<word>, current_word: word) -> word
+    padw movup.4 mem_loadw_le
+    # => [PREVIOUS_WORD, WORD]
+
+    dupw.1 exec.word::lt assert.err=ERR_MEM_WORDS_NOT_STRICTLY_SORTED
+    # => [WORD]
 end
