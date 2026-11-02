@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -23,6 +24,7 @@ use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 mod bundle;
 mod checker_utils;
 mod error;
+mod fee;
 mod standards_errors;
 
 use bundle::{NoteBundler, NoteBundles};
@@ -34,7 +36,7 @@ pub use checker_utils::{
     SuccessfulNote,
 };
 pub use error::{FeeError, SponsorshipRejectionError};
-use standards_errors::ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET;
+use fee::fee_error;
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -89,9 +91,10 @@ where
     /// anything is executed: one whose feature note is absent and which the account may not
     /// reclaim, and one naming another FEE_SPONSORSHIP note as its feature note.
     ///
-    /// A sponsorship carrying an asset other than the one the account collects fees in fails fee
-    /// collection, which takes its whole bundle down: the feature note is then reported as
-    /// [`NoteFailure::Fee`].
+    /// A bundle whose fee the account could not collect fails as a whole, with its feature note
+    /// reported as [`NoteFailure::Fee`]: when a sponsorship carries an asset other than the one the
+    /// account collects fees in, when the account has no fee for the feature note, or when the
+    /// sponsorships do not cover the fee, which is reported with the fee they provide.
     ///
     /// # Errors
     ///
@@ -164,7 +167,7 @@ where
             .prepare_tx_inputs(
                 target_account_id,
                 block_ref,
-                InputNotes::new_unchecked(vec![note]),
+                InputNotes::new_unchecked(vec![note.clone()]),
                 tx_args,
             )
             .await
@@ -191,7 +194,7 @@ where
                     // execution failed during the epilogue
                     TransactionCheckerError::EpilogueExecution {
                         error: epilogue_error, ..
-                    } => Ok(handle_epilogue_error(epilogue_error)),
+                    } => Ok(handle_epilogue_error(note.note(), epilogue_error)),
                 }
             },
         }
@@ -254,7 +257,6 @@ where
                         .expect("every candidate note belongs to a bundle");
                     let blamed_idx = bundle
                         .notes()
-                        .iter()
                         .position(|note| note.id() == failed_note_id)
                         .expect("the bundle holds the failed note");
                     failed_notes.extend(bundle.failed_notes(
@@ -310,7 +312,7 @@ where
 
             for idx in 0..remaining_bundles.bundles().len() {
                 let bundle = remaining_bundles.bundles()[idx].clone();
-                let bundle_notes = bundle.notes().to_vec();
+                let bundle_notes: Vec<Note> = bundle.notes().cloned().collect();
                 let candidate_notes: Vec<Note> =
                     successful_notes.iter().chain(&bundle_notes).cloned().collect();
 
@@ -341,13 +343,15 @@ where
                         break;
                     },
                     Err(error) => {
-                        // This combination failed, so the whole bundle is rejected. Blame the note
-                        // the executor pointed at, when it pointed at one of the bundle's notes;
-                        // an epilogue failure blames no particular note, so it falls to the note
-                        // heading the bundle, the one the rest of the bundle is bound to.
-                        let (blamed_idx, num_cycles) = match &error {
+                        // This combination failed, so the whole bundle is rejected. Decide which
+                        // note of the bundle takes the failure and how it is reported; the rest
+                        // of the bundle is reported as its collateral.
+                        let (blamed_idx, failure) = match error {
+                            // A note failed while executing: blame it, when it is one of the
+                            // bundle's notes rather than one of the already accepted ones.
                             TransactionCheckerError::NoteExecution {
                                 failed_note_index,
+                                error,
                                 failed_note_cycle_count,
                                 ..
                             } => (
@@ -355,27 +359,35 @@ where
                                     .checked_sub(successful_notes.len())
                                     .filter(|idx| *idx < bundle_notes.len())
                                     .unwrap_or(0),
-                                *failed_note_cycle_count,
+                                NoteFailure::Blamed {
+                                    error,
+                                    num_cycles: failed_note_cycle_count,
+                                },
                             ),
-                            _ => (0, None),
+                            // The epilogue failed, which points at no particular note: blame the
+                            // feature note, the one the rest of the bundle is bound to.
+                            TransactionCheckerError::EpilogueExecution { error, .. } => {
+                                let failure = match bundle.fee_error(&error) {
+                                    // The account could not collect the bundle's fee, which this
+                                    // bundle alone is responsible for, since it is the only one
+                                    // this execution added: report it with the fee details.
+                                    Some(reason) => NoteFailure::Fee { reason, error },
+                                    // The epilogue failed for another reason.
+                                    None => NoteFailure::Blamed { error, num_cycles: None },
+                                };
+                                (0, failure)
+                            },
+                            // The prologue failed, or the transaction inputs could not be
+                            // prepared: no note ran, so blame the feature note.
+                            other => {
+                                (0, NoteFailure::Blamed { error: other.into(), num_cycles: None })
+                            },
                         };
 
                         // Record every note of the bundle (overwriting previous failures for the
                         // relevant notes), so the reported notes always account for all inputs.
                         // Only the blamed note owns the error; the rest failed with its bundle.
-                        // A sponsorship carrying another asset than the account collects fees in
-                        // fails fee collection, which is reported with that reason.
-                        let failure = if is_wrong_fee_asset(&error) {
-                            NoteFailure::Fee {
-                                reason: FeeError::WrongFeeAsset,
-                                error: error.into(),
-                            }
-                        } else {
-                            NoteFailure::Blamed { error: error.into(), num_cycles }
-                        };
-                        let failed_bundle = bundle.failed_notes(blamed_idx, failure);
-
-                        for failed_note in failed_bundle {
+                        for failed_note in bundle.failed_notes(blamed_idx, failure) {
                             failed_note_index.insert(failed_note.note().id(), failed_note);
                         }
                     },
@@ -512,9 +524,16 @@ where
 ///
 /// The goal of this helper function is to handle the cases where the account couldn't consume the
 /// note because of some epilogue check failure, e.g. absence of the authenticator.
-pub(super) fn handle_epilogue_error(
+fn handle_epilogue_error(
+    note: &Note,
     epilogue_error: TransactionExecutorError,
 ) -> NoteConsumptionStatus {
+    // A note checked on its own has no FEE_SPONSORSHIP notes bound to it, which a fee-collecting
+    // account reports as a fee it cannot collect.
+    if let Some(fee_error) = fee_error(&epilogue_error, note, &[]) {
+        return NoteConsumptionStatus::NeverConsumable(Box::new(fee_error));
+    }
+
     match epilogue_error {
         // `Unauthorized` is returned for the multisig accounts if the transaction doesn't have
         // enough signatures.
@@ -526,19 +545,6 @@ pub(super) fn handle_epilogue_error(
             // consumed if the authentication is provided.
             NoteConsumptionStatus::ConsumableWithAuthorization
         },
-        // TODO: apply additional checks to get the verbose error reason
         _ => NoteConsumptionStatus::UnconsumableConditions,
     }
-}
-
-/// Returns `true` if the failed execution `error` failed fee collection because a FEE_SPONSORSHIP
-/// note carried an asset other than the one the account collects fees in.
-fn is_wrong_fee_asset(error: &TransactionCheckerError) -> bool {
-    matches!(
-        error,
-        TransactionCheckerError::EpilogueExecution {
-            error: TransactionExecutorError::TransactionProgramExecutionFailed(execution_error),
-            ..
-        } if ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET.matches_execution_error(execution_error)
-    )
 }
