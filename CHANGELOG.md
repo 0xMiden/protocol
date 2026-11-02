@@ -21,6 +21,8 @@
 
 ### Changes
 
+- [BREAKING] The multisig auth components now verify the approver signatures before paying the transaction fee and bind a fee cap (`MultisigAuthArgs::with_max_fee`) into the transaction summary instead of the exact fee, rejecting a transaction whose fee and network note sponsorships exceed it ([#3332](https://github.com/0xMiden/protocol/issues/3332)).
+- [BREAKING] `fee::pay_fee` now takes the account's initial nonce and also returns the paid fee amount, and `signature::estimate_multisig_authentication_cycles` was removed ([#3332](https://github.com/0xMiden/protocol/issues/3332)).
 - [BREAKING] Moved the EIP-712 transaction-summary adapter from `miden::standards::auth::eip712_transaction_summary` to `miden::standards::auth::eip712::transaction_summary` and removed its public `compute_signature_key` procedure ([#4091](https://github.com/0xMiden/protocol/pull/4091)).
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
 - Reduced transaction log content limits to 64 words per log and per transaction ([#4093](https://github.com/0xMiden/protocol/pull/4093)).
