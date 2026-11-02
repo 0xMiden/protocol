@@ -27,14 +27,20 @@ const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
 // construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
-// policy code and the fee schedule keyed by note script roots.
+// policy code and the fee schedule keyed by note script roots, for the rename of the
+// `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
+// slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
+// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, for the
+// logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the root
+// of the config note script that calls them, and for the bound on converted amounts in
+// `fee::convert_amount`, which changes the auth component's `pay_fee` code.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([4534348979270934076, 17230383663070444934, 1553267028069005390, 18266567295424494501])";
+    "Word([5162996465510048755, 2094439739736683357, 6936787768993976662, 17230760176016600422])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([5985247414370833437, 8669829549864745211, 10671821069579465352, 6686762991184928428])";
+    "Word([4330151583663897892, 1076998090470432129, 2457291820389870476, 9246314450693933979])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([17271432023237151271, 683563277854396599, 15516754376063234744, 5577544190383212581])";
-const GOLDEN_ACCOUNT_ID: &str = "0x3385e78c12696f712cf451b6163e09";
+    "Word([11934322787388200008, 12740576829291714277, 8409363599569151088, 3187457418425219326])";
+const GOLDEN_ACCOUNT_ID: &str = "0xf10557781db4fbf15678c813fadd2d";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.
@@ -152,7 +158,8 @@ fn crate_root_account_carries_the_policed_asset_callback_flag() {
 /// `max_supply`, so the deployed `set_max_supply` admin function stays operable. This is the
 /// POSITIVE lock that replaces the removed `ImmutableMaxSupply` runtime reject — a constructor that
 /// built the faucet immutable would flip the flag felt and fail here. The `mutability_config` word
-/// layout is `[is_desc, is_logo, is_extlink, is_max_supply]`, so the max-supply flag is element 3.
+/// layout is `[is_desc, is_logo, is_external_uri, is_max_supply]`, so the max-supply flag is
+/// element 3.
 #[test]
 fn crate_root_faucet_max_supply_is_mutable_by_construction() {
     const MUTABILITY_CONFIG_SLOT: &str = "miden::standards::faucets::mutability_config";

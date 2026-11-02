@@ -543,10 +543,10 @@ The faucet contributes the full standard `FungibleFaucet` slot set (25 value slo
 |-----------|-----------|----------------|---------|
 | `token_config` | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard fungible faucet token configuration |
 | `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. Part of the AggLayer metadata hash preimage |
-| `mutability_config` | Value | Boolean flags | Whether description / logo URI / external link / max supply may be updated. All `false` for AggLayer faucets |
+| `mutability_config` | Value | Boolean flags | Whether description / logo URI / external URI / max supply may be updated. All `false` for AggLayer faucets |
 | `token_description_0` .. `_6` | Value | Fixed-width string chunks | Optional description; empty for AggLayer faucets |
 | `logo_uri_0` .. `_6` | Value | Fixed-width string chunks | Optional logo URI; empty for AggLayer faucets |
-| `external_link_0` .. `_6` | Value | Fixed-width string chunks | Optional external link; empty for AggLayer faucets |
+| `external_uri_0` .. `_6` | Value | Fixed-width string chunks | Optional external URI; empty for AggLayer faucets |
 
 Conversion metadata (origin token address, origin network, scale, metadata hash) is **not** stored
 here. It lives on the bridge in `faucet_metadata_map`, written at registration time (see

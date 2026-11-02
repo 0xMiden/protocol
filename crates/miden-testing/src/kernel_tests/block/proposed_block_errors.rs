@@ -4,18 +4,35 @@ use std::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::crypto::merkle::MerklePath;
-use miden_protocol::MAX_BATCHES_PER_BLOCK;
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteInclusionProof, NoteType};
+use miden_protocol::{MAX_BATCHES_PER_BLOCK, Word};
 use miden_tx::LocalTransactionProver;
+use rstest::rstest;
 
 use crate::kernel_tests::batch::proposed_batch::setup_circular_note_dependency_test;
 use crate::kernel_tests::block::utils::MockChainBlockExt;
 use crate::utils::create_p2any_note;
 use crate::{Auth, MockChain};
+
+fn with_reference_block_commitment(batch: &ProvenBatch, commitment: Word) -> ProvenBatch {
+    ProvenBatch::new_unchecked(
+        batch.id(),
+        commitment,
+        batch.reference_block_num(),
+        batch.account_updates().clone(),
+        batch.input_notes().clone(),
+        batch.output_notes().to_vec(),
+        batch.batch_expiration_block_num(),
+        batch.transactions().clone(),
+        batch.proof().clone(),
+    )
+    .expect("batch expiration block number should remain valid")
+}
 
 /// Tests that too many batches produce an error.
 #[tokio::test]
@@ -272,6 +289,80 @@ async fn proposed_block_fails_on_missing_batch_reference_block() -> anyhow::Resu
     Ok(())
 }
 
+/// Tests that a batch whose reference commitment does not match the immediate parent produces an
+/// error.
+#[tokio::test]
+async fn proposed_block_fails_on_immediate_parent_batch_reference_commitment_mismatch()
+-> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let chain = builder.build()?;
+
+    let proven_tx = chain.create_authenticated_notes_proven_tx(account, []).await?;
+    let batch = chain.create_batch(vec![proven_tx])?;
+    let forged_commitment = Word::from([1_u32, 2, 3, 4]);
+    assert_ne!(forged_commitment, batch.reference_block_commitment());
+
+    let batch = with_reference_block_commitment(&batch, forged_commitment);
+    let block_inputs = chain.get_block_inputs([&batch])?;
+    let error = ProposedBlock::new(block_inputs, vec![batch.clone()]).unwrap_err();
+
+    assert_matches!(
+        error,
+        ProposedBlockError::BatchReferenceBlockCommitmentMismatch {
+            reference_block_num,
+            batch_id,
+            actual_block_commitment,
+            expected_block_commitment,
+        } if reference_block_num == batch.reference_block_num()
+            && batch_id == batch.id()
+            && actual_block_commitment == forged_commitment
+            && expected_block_commitment == chain.latest_block_header().commitment()
+    );
+
+    Ok(())
+}
+
+/// Tests that a batch whose reference commitment does not match an older authenticated block
+/// produces an error.
+#[tokio::test]
+async fn proposed_block_fails_on_historical_batch_reference_commitment_mismatch()
+-> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let mut chain = builder.build()?;
+
+    let proven_tx = chain.create_authenticated_notes_proven_tx(account, []).await?;
+    let batch = chain.create_batch(vec![proven_tx])?;
+
+    // Advance the chain so that the batch's reference block is authenticated by the partial
+    // blockchain instead of being the immediate parent.
+    chain.prove_next_block()?;
+    assert_ne!(batch.reference_block_num(), chain.latest_block_header().block_num());
+
+    let forged_commitment = Word::from([1_u32, 2, 3, 4]);
+    assert_ne!(forged_commitment, batch.reference_block_commitment());
+
+    let batch = with_reference_block_commitment(&batch, forged_commitment);
+    let block_inputs = chain.get_block_inputs([&batch])?;
+    let error = ProposedBlock::new(block_inputs, vec![batch.clone()]).unwrap_err();
+
+    assert_matches!(
+        error,
+        ProposedBlockError::BatchReferenceBlockCommitmentMismatch {
+            reference_block_num,
+            batch_id,
+            actual_block_commitment,
+            expected_block_commitment,
+        } if reference_block_num == batch.reference_block_num()
+            && batch_id == batch.id()
+            && actual_block_commitment == forged_commitment
+            && expected_block_commitment == chain.block_header(0).commitment()
+    );
+
+    Ok(())
+}
+
 /// Tests that duplicate input notes across batches produce an error.
 #[tokio::test]
 async fn proposed_block_fails_on_duplicate_input_note() -> anyhow::Result<()> {
@@ -499,6 +590,52 @@ async fn proposed_block_fails_on_missing_nullifier_witness() -> anyhow::Result<(
     let error = ProposedBlock::new(invalid_block_inputs, batches.clone()).unwrap_err();
     assert_matches!(error, ProposedBlockError::NullifierProofMissing(nullifier) => {
         assert_eq!(nullifier, p2id_note.nullifier());
+    });
+
+    Ok(())
+}
+
+/// Tests that witnesses unrelated to the block's input notes are rejected, even if already spent.
+#[rstest]
+#[tokio::test]
+async fn proposed_block_fails_on_surplus_nullifier_witness(
+    #[values(false, true)] include_batch: bool,
+    #[values(false, true)] surplus_spent: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let note0 =
+        builder.add_p2any_note(account0.id(), NoteType::Public, [FungibleAsset::mock(42)])?;
+    let note1 =
+        builder.add_p2any_note(account1.id(), NoteType::Public, [FungibleAsset::mock(50)])?;
+    let mut chain = builder.build()?;
+
+    let surplus_tx =
+        chain.create_authenticated_notes_proven_tx(account0.id(), [note0.id()]).await?;
+    let surplus_batch = chain.create_batch(vec![surplus_tx.clone()])?;
+    if surplus_spent {
+        chain.add_pending_proven_transaction(surplus_tx);
+        chain.prove_next_block()?;
+    }
+    let surplus_inputs = chain.get_block_inputs([&surplus_batch])?;
+    let surplus_witness = surplus_inputs.nullifier_witnesses()[&note0.nullifier()].clone();
+
+    let batches = if include_batch {
+        let tx = chain.create_authenticated_notes_proven_tx(account1.id(), [note1.id()]).await?;
+        vec![chain.create_batch(vec![tx])?]
+    } else {
+        Vec::new()
+    };
+    let mut block_inputs = chain.get_block_inputs(&batches)?;
+    assert_eq!(block_inputs.nullifier_witnesses().len(), usize::from(include_batch));
+    block_inputs
+        .nullifier_witnesses_mut()
+        .insert(note0.nullifier(), surplus_witness);
+
+    let error = ProposedBlock::new(block_inputs, batches).unwrap_err();
+    assert_matches!(error, ProposedBlockError::UnexpectedNullifierWitness(nullifier) => {
+        assert_eq!(nullifier, note0.nullifier());
     });
 
     Ok(())

@@ -1,17 +1,8 @@
-use alloc::string::ToString;
-
 use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::vm::ExecutionProof;
 
 // PROVEN BLOCK ERROR
@@ -96,12 +87,6 @@ pub struct ProvenBlock {
     signatures: BlockSignatures,
 
     /// The execution proof of the block kernel over this block.
-    // TODO: The block kernel takes BATCHES_COMMITMENT as a public input, but this struct carries
-    // neither that commitment nor the `BatchId`s it is built from, so the claim the proof attests
-    // to cannot be reconstructed here. Recomputing the batch IDs additionally needs the per-batch
-    // grouping of `body.transactions()`, which is flattened away. Add the batch IDs and that
-    // grouping to this struct or to `BlockBody` so the proof can be tied back to the block's data:
-    // https://github.com/0xMiden/protocol/issues/1706
     proof: ExecutionProof,
 }
 
@@ -256,8 +241,8 @@ impl ProvenBlock {
     ///
     /// Involves non-trivial computation of the body's transaction commitment.
     fn validate_tx_commitment(&self) -> Result<(), ProvenBlockError> {
-        let header_tx_commitment = self.header.tx_commitment();
-        let body_tx_commitment = self.body.transactions().commitment();
+        let header_tx_commitment = self.header.transactions_commitment();
+        let body_tx_commitment = self.body.compute_transactions_commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(ProvenBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
         } else {
@@ -279,57 +264,16 @@ impl ProvenBlock {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for ProvenBlock {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.header.write_into(target);
-        self.body.write_into(target);
-        self.signatures.write_into(target);
-        self.proof.write_into(target);
-    }
-}
-
-impl Deserializable for ProvenBlock {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block = Self {
-            header: BlockHeader::read_from(source)?,
-            body: BlockBody::read_from(source)?,
-            signatures: BlockSignatures::read_from(source)?,
-            proof: ExecutionProof::read_from(source)?,
-        };
-
-        block
-            .validate_proof()
-            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
-
-        Ok(block)
-    }
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
-
     use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
 
     use super::*;
     use crate::Word;
     use crate::block::ValidatorConfig;
-    use crate::transaction::OrderedTransactionHeaders;
-
-    fn empty_body() -> BlockBody {
-        BlockBody::new_unchecked(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        )
-    }
 
     /// Builds block 1 linked to `parent` and signed by `signers` over the validator set
     /// `parent_keys` committed to by the parent. Here we only confirm `ProvenBlock::validate`
@@ -344,7 +288,7 @@ mod tests {
         let signatures = parent_keys.sign_all(signers, header.commitment());
         ProvenBlock::new_unchecked(
             header,
-            empty_body(),
+            BlockBody::default(),
             signatures,
             crate::testing::dummy_execution_proof(),
         )
@@ -375,15 +319,9 @@ mod tests {
             crate::testing::dummy_deferred_execution_proof(),
             crate::testing::dummy_precompile_execution_proof(),
         ] {
-            let error =
-                ProvenBlock::new(header.clone(), body.clone(), signatures.clone(), proof.clone())
-                    .unwrap_err();
+            let error = ProvenBlock::new(header.clone(), body.clone(), signatures.clone(), proof)
+                .unwrap_err();
             assert!(matches!(error, ProvenBlockError::BlockProofContainsPrecompiles));
-
-            let block =
-                ProvenBlock::new_unchecked(header.clone(), body.clone(), signatures.clone(), proof);
-            let error = ProvenBlock::read_from_bytes(&block.to_bytes()).unwrap_err();
-            assert!(matches!(error, DeserializationError::InvalidValue(_)));
         }
     }
 
@@ -400,7 +338,7 @@ mod tests {
         let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
         let block = ProvenBlock::new_unchecked(
             header,
-            empty_body(),
+            BlockBody::default(),
             signatures,
             crate::testing::dummy_execution_proof(),
         );

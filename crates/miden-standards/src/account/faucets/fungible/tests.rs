@@ -343,7 +343,7 @@ fn get_faucet_procedures() {
     let _set_max_supply_root = FungibleFaucet::set_max_supply_root();
     let _set_description_root = FungibleFaucet::set_description_root();
     let _set_logo_uri_root = FungibleFaucet::set_logo_uri_root();
-    let _set_external_link_root = FungibleFaucet::set_external_link_root();
+    let _set_external_uri_root = FungibleFaucet::set_external_uri_root();
     let _set_mint_policy_root = TokenPolicyManager::set_mint_policy_root();
     let _set_burn_policy_root = TokenPolicyManager::set_burn_policy_root();
     let _set_send_policy_root = TokenPolicyManager::set_send_policy_root();

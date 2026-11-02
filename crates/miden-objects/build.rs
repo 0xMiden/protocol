@@ -73,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".blockchain.SignedBlock",
             ".blockchain.BlockBody",
             ".blockchain.OutputNoteBatch",
+            ".blockchain.BatchTransactions",
             ".blockchain.IndexedOutputNote",
             ".blockchain.BlockAccountUpdate",
             ".transaction.BatchAccountUpdate",

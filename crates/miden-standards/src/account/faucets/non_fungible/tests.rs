@@ -29,8 +29,10 @@ use crate::account::access::AccessControl;
 use crate::account::auth::{Approver, AuthSingleSig, GuardianConfig};
 use crate::account::faucets::test_utils::{
     allow_all_policy_manager,
+    min_burn_amount_policy_manager,
     mint_burn_only_policy_manager,
     owner_only_mint_policy_manager,
+    reserved_min_burn_amount_policy_manager,
 };
 use crate::account::faucets::{NonFungibleFaucetError, TokenName};
 use crate::account::fees::FeePolicyManager;
@@ -162,8 +164,11 @@ fn token_uri_is_token_base_uri_followed_by_token_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Builds one faucet with each user-account factory: single-sig, multisig and guarded.
-fn user_faucets(token_policy_manager: TokenPolicyManager) -> [Account; 3] {
+/// Builds one faucet with each factory: the single-sig, multisig and guarded user factories, and
+/// the network factory.
+fn faucets_from_every_factory(
+    token_policy_manager: TokenPolicyManager,
+) -> [Result<Account, NonFungibleFaucetError>; 4] {
     let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
         AuthScheme::Falcon512Poseidon2,
@@ -176,35 +181,38 @@ fn user_faucets(token_policy_manager: TokenPolicyManager) -> [Account; 3] {
             )
         })
         .collect();
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
 
-    let singlesig = create_singlesig_user_non_fungible_faucet(
-        [31u8; 32],
-        sample_faucet(),
-        AuthSingleSig::new(approver),
-        token_policy_manager.clone(),
-        AccountType::Private,
-    )
-    .unwrap();
-
-    let multisig = create_multisig_user_non_fungible_faucet(
-        [33u8; 32],
-        sample_faucet(),
-        user_faucet_multisig(approvers.clone(), 2).unwrap(),
-        token_policy_manager.clone(),
-        AccountType::Private,
-    )
-    .unwrap();
-
-    let guarded = create_guarded_user_non_fungible_faucet(
-        [34u8; 32],
-        sample_faucet(),
-        user_faucet_guarded(approvers, 2, GuardianConfig::new(approver)).unwrap(),
-        token_policy_manager,
-        AccountType::Private,
-    )
-    .unwrap();
-
-    [singlesig, multisig, guarded]
+    [
+        create_singlesig_user_non_fungible_faucet(
+            [31u8; 32],
+            sample_faucet(),
+            AuthSingleSig::new(approver),
+            token_policy_manager.clone(),
+            AccountType::Private,
+        ),
+        create_multisig_user_non_fungible_faucet(
+            [33u8; 32],
+            sample_faucet(),
+            user_faucet_multisig(approvers.clone(), 2).unwrap(),
+            token_policy_manager.clone(),
+            AccountType::Private,
+        ),
+        create_guarded_user_non_fungible_faucet(
+            [34u8; 32],
+            sample_faucet(),
+            user_faucet_guarded(approvers, 2, GuardianConfig::new(approver)).unwrap(),
+            token_policy_manager.clone(),
+            AccountType::Private,
+        ),
+        create_network_non_fungible_faucet(
+            [32u8; 32],
+            sample_faucet(),
+            AccessControl::Ownable2Step { owner },
+            token_policy_manager,
+            FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        ),
+    ]
 }
 
 /// Every non-fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID
@@ -216,20 +224,22 @@ fn non_fungible_faucet_factories_encode_transfer_policy_callback_flag(
     #[case] token_policy_manager: TokenPolicyManager,
     #[case] expected_flag: AssetCallbackFlag,
 ) {
-    for user in user_faucets(token_policy_manager.clone()) {
-        assert_eq!(user.id().asset_callback_flag(), expected_flag);
+    for faucet in faucets_from_every_factory(token_policy_manager) {
+        assert_eq!(faucet.unwrap().id().asset_callback_flag(), expected_flag);
     }
+}
 
-    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
-    let network = create_network_non_fungible_faucet(
-        [32u8; 32],
-        sample_faucet(),
-        AccessControl::Ownable2Step { owner },
-        token_policy_manager,
-        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
-    )
-    .unwrap();
-    assert_eq!(network.id().asset_callback_flag(), expected_flag);
+/// The `min_burn_amount` burn policy reads the asset value as an amount, which is meaningless for
+/// an NFT, so every factory must reject it, whether it is active or only reserved.
+#[rstest::rstest]
+#[case::active(min_burn_amount_policy_manager())]
+#[case::reserved(reserved_min_burn_amount_policy_manager())]
+fn non_fungible_faucet_factories_reject_min_burn_amount_policy(
+    #[case] token_policy_manager: TokenPolicyManager,
+) {
+    for faucet in faucets_from_every_factory(token_policy_manager) {
+        assert_matches!(faucet, Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported));
+    }
 }
 
 /// `compute_asset_commitment` is deterministic and salt-sensitive.

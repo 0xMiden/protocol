@@ -1,5 +1,6 @@
 //! Tests for the `FAUCET_METADATA_CONFIG` standard note, which dispatches the
-//! [`miden_standards::account::faucets::FungibleFaucet`] metadata setters from a note.
+//! [`miden_standards::account::faucets::FungibleFaucet`] and
+//! [`miden_standards::account::faucets::NonFungibleFaucet`] metadata setters from a note.
 //!
 //! The suite covers the note itself: that each variant dispatches to the matching setter, and that
 //! the script's own guards reject malformed storage. The setters' own behaviour — the advice-map
@@ -11,7 +12,14 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
-use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
+use miden_standards::account::faucets::{
+    Description,
+    ExternalUri,
+    FungibleFaucet,
+    LogoUri,
+    NonFungibleFaucet,
+    TokenBaseUri,
+};
 use miden_standards::errors::standards::{
     ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
@@ -23,7 +31,14 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
-use super::{INITIAL_MAX_SUPPLY, consume_note, create_faucet, metadata, owner_id};
+use super::{
+    INITIAL_MAX_SUPPLY,
+    consume_note,
+    create_faucet,
+    create_nft_faucet,
+    metadata,
+    owner_id,
+};
 use crate::into_private_note;
 
 // HELPERS
@@ -72,6 +87,11 @@ fn max_supply(faucet: &Account) -> anyhow::Result<AssetAmount> {
     Ok(FungibleFaucet::try_from(faucet.storage())?.max_supply())
 }
 
+/// Reads the non-fungible faucet's token base URI back from its storage.
+fn token_base_uri(faucet: &Account) -> anyhow::Result<Option<TokenBaseUri>> {
+    Ok(NonFungibleFaucet::try_from(faucet.storage())?.token_base_uri().cloned())
+}
+
 // TESTS — DISPATCH
 // ================================================================================================
 
@@ -100,7 +120,7 @@ async fn set_max_supply_dispatch() -> anyhow::Result<()> {
 }
 
 /// Variants `1`, `2` and `3` dispatch to `set_description`, `set_logo_uri` and
-/// `set_external_link`, each writing its own field.
+/// `set_external_uri`, each writing its own field.
 ///
 /// The three run against the same faucet in sequence, so a variant wired to the wrong setter shows
 /// up as a field that did not change — or as one that changed twice.
@@ -113,8 +133,8 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let description = Description::new("dispatched through the config note")?;
-    let logo_uri = LogoURI::new("https://example.com/dispatched.png")?;
-    let external_link = ExternalLink::new("https://example.com/dispatched")?;
+    let logo_uri = LogoUri::new("https://example.com/dispatched.png")?;
+    let external_uri = ExternalUri::new("https://example.com/dispatched")?;
 
     let notes = [
         config_note(
@@ -132,7 +152,7 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
         config_note(
             owner,
             faucet.id(),
-            FaucetMetadataConfig::SetExternalLink { external_link: external_link.clone() },
+            FaucetMetadataConfig::SetExternalUri { external_uri: external_uri.clone() },
             4,
         )?,
     ];
@@ -145,7 +165,33 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
     let metadata = metadata(&updated)?;
     assert_eq!(metadata.description(), Some(&description));
     assert_eq!(metadata.logo_uri(), Some(&logo_uri));
-    assert_eq!(metadata.external_link(), Some(&external_link));
+    assert_eq!(metadata.external_uri(), Some(&external_uri));
+
+    Ok(())
+}
+
+/// Variant `4` dispatches to `set_token_base_uri`, which only a non-fungible faucet exposes.
+#[tokio::test]
+async fn set_token_base_uri_dispatch() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let faucet = create_nft_faucet(owner, true)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(faucet.clone())?;
+    let mock_chain = builder.build()?;
+
+    let new_token_base_uri = TokenBaseUri::new("ipfs://bafy-dispatched/")?;
+    let note = config_note(
+        owner,
+        faucet.id(),
+        FaucetMetadataConfig::SetTokenBaseUri {
+            token_base_uri: new_token_base_uri.clone(),
+        },
+        10,
+    )?;
+
+    let updated = consume_note(&mock_chain, &faucet, &note).await?;
+
+    assert_eq!(token_base_uri(&updated)?, Some(new_token_base_uri));
 
     Ok(())
 }

@@ -219,7 +219,7 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
-            padded_core_side: 16_384,
+            padded_core_side: 32_768,
             padded_chiplets: 8_192,
             padded_poseidon2: 32_768,
         },

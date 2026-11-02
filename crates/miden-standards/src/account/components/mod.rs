@@ -13,7 +13,7 @@ use crate::account::auth::{
     AuthTxFeeCollector,
     NoAuth,
 };
-use crate::account::faucets::FungibleFaucet;
+use crate::account::faucets::{FungibleFaucet, NonFungibleFaucet};
 use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
 use crate::account::note_creator::NoteCreator;
@@ -28,6 +28,7 @@ pub enum StandardAccountComponent {
     BasicWallet,
     NoteCreator,
     FungibleFaucet,
+    NonFungibleFaucet,
     CodeInspection,
     Authority,
     Ownable2Step,
@@ -49,6 +50,7 @@ impl StandardAccountComponent {
             Self::BasicWallet => BasicWallet::code(),
             Self::NoteCreator => NoteCreator::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
+            Self::NonFungibleFaucet => NonFungibleFaucet::code(),
             Self::CodeInspection => CodeInspection::code(),
             Self::Authority => Authority::code(),
             Self::Ownable2Step => Ownable2Step::code(),
@@ -90,6 +92,9 @@ impl StandardAccountComponent {
                 },
                 Self::FungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
+                },
+                Self::NonFungibleFaucet => {
+                    component_interface_vec.push(AccountComponentInterface::NonFungibleFaucet)
                 },
                 Self::CodeInspection => {
                     component_interface_vec.push(AccountComponentInterface::CodeInspection)
@@ -139,6 +144,7 @@ impl StandardAccountComponent {
         // of the basic wallet's, so a full wallet must claim it first to avoid misdetection.
         Self::NoteCreator.extract_component(procedures_set, component_interface_vec);
         Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::NonFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::CodeInspection.extract_component(procedures_set, component_interface_vec);
         Self::Authority.extract_component(procedures_set, component_interface_vec);
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);

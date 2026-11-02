@@ -1,14 +1,5 @@
-use alloc::string::ToString;
-
 use super::ProtocolConfigError;
 use crate::block::BlockNumber;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Hasher, Word, ZERO};
 
 // NEXT PROTOCOL CONFIG
@@ -76,25 +67,6 @@ impl NextProtocolConfig {
 // SERIALIZATION
 // ================================================================================================
 
-impl Serializable for NextProtocolConfig {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self { effective_from, protocol_config } = self;
-
-        effective_from.write_into(target);
-        protocol_config.write_into(target);
-    }
-}
-
-impl Deserializable for NextProtocolConfig {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let effective_from = source.read()?;
-        let protocol_config = source.read()?;
-
-        Self::new(effective_from, protocol_config)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -121,16 +93,5 @@ mod tests {
     fn new_rejects_genesis() {
         let error = NextProtocolConfig::new(BlockNumber::GENESIS, Word::empty()).unwrap_err();
         assert_matches!(error, ProtocolConfigError::NextConfigEffectiveAtGenesis);
-    }
-
-    #[test]
-    fn serde_round_trip() -> anyhow::Result<()> {
-        let next = NextProtocolConfig::new(BlockNumber::from(42u32), random::<Word>())?;
-
-        let deserialized = NextProtocolConfig::read_from_bytes(&next.to_bytes())
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
-
-        assert_eq!(next, deserialized);
-        Ok(())
     }
 }

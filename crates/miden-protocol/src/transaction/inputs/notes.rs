@@ -233,9 +233,6 @@ fn build_input_note_commitment<T: ToInputNoteCommitments>(notes: &[T]) -> Word {
 // INPUT NOTE
 // ================================================================================================
 
-const AUTHENTICATED: u8 = 0;
-const UNAUTHENTICATED: u8 = 1;
-
 /// An input note for a transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputNote {
@@ -324,39 +321,6 @@ impl ToInputNoteCommitments for &InputNote {
 
 // SERIALIZATION
 // ------------------------------------------------------------------------------------------------
-
-impl Serializable for InputNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            Self::Authenticated { note, proof } => {
-                target.write(AUTHENTICATED);
-                target.write(note);
-                target.write(proof);
-            },
-            Self::Unauthenticated { note } => {
-                target.write(UNAUTHENTICATED);
-                target.write(note);
-            },
-        }
-    }
-}
-
-impl Deserializable for InputNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        match source.read_u8()? {
-            AUTHENTICATED => {
-                let note = Note::read_from(source)?;
-                let proof = NoteInclusionProof::read_from(source)?;
-                Ok(Self::Authenticated { note, proof })
-            },
-            UNAUTHENTICATED => {
-                let note = Note::read_from(source)?;
-                Ok(Self::Unauthenticated { note })
-            },
-            v => Err(DeserializationError::InvalidValue(format!("invalid input note type: {v}"))),
-        }
-    }
-}
 
 // TESTS
 // ================================================================================================

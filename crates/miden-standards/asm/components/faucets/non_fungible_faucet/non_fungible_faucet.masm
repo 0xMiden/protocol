@@ -27,15 +27,15 @@ pub use {
 pub use {has_procedure} from miden::standards::inspection::code_inspection
 
 # Token metadata: mandatory name + optional description, logo, contract URI.
-# The shared `external_link` field is surfaced under the NFT-specific name `contract_uri`
-# (the OpenSea-style collection metadata pointer); it reuses the shared external_link storage.
+# The shared `external_uri` field is surfaced under the NFT-specific name `contract_uri`
+# (the OpenSea-style collection metadata pointer); it reuses the shared external URI storage.
 pub use {
     get_mutability_config,
     get_name,
     is_description_mutable,
-    is_external_link_mutable as is_contract_uri_mutable,
+    is_external_uri_mutable as is_contract_uri_mutable,
     is_logo_uri_mutable,
     set_description,
-    set_external_link as set_contract_uri,
+    set_external_uri as set_contract_uri,
     set_logo_uri,
 } from miden::standards::faucets

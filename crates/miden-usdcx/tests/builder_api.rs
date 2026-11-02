@@ -288,7 +288,7 @@ fn production_components_carry_is_paused_slot() -> Result<()> {
 }
 
 /// The production metadata mutability config permits maximum-supply updates while keeping the
-/// description, logo URI, and external link immutable. This matters because the standard faucet
+/// description, logo URI, and external URI immutable. This matters because the standard faucet
 /// metadata configuration note dispatches all four actions from one allowlisted script root.
 #[test]
 fn production_components_carry_mutability_config_slot() -> Result<()> {

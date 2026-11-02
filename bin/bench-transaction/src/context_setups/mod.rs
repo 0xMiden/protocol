@@ -212,6 +212,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeRbacConfigNetwork => {
             network_config::tx_consume_rbac_config_note_network()
         },
+        ExecutionBenchmark::ConsumeAuthorityConfigNetwork => {
+            network_config::tx_consume_authority_config_note_network()
+        },
         ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork => {
             network_config::tx_consume_network_account_config_note_network()
         },
@@ -384,13 +387,13 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<MockTr
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
         &[fungible_asset_1],
-        NoteType::Private,
+        NoteType::Public,
     )?;
     let note_2 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
         &[fungible_asset_2],
-        NoteType::Private,
+        NoteType::Public,
     )?;
 
     let mock_chain = builder.build()?;
