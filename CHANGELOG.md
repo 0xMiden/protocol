@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Added the `AuthHotColdGuardian` auth component with hot, cold and guardian key categories, where all hot keys together count once, device management requires the cold key and the guardian co-signs every transaction, and registered it in `StandardAccountComponent` and `AccountComponentInterface` ([#4107](https://github.com/0xMiden/protocol/issues/4107)).
 - Added spending limits to `AuthMultisigSmart`: a window budget in a base asset, priced through the price oracle, that fails a transaction exceeding it regardless of the signature count.
 - Added the `AUTHORITY_CONFIG` note (`AuthorityConfigNote`), which freezes or unfreezes the `Authority` component's gated surface or assigns a procedure's role on the account that consumes it ([#4118](https://github.com/0xMiden/protocol/pull/4118)).
 - Added the `tx::add_log_from_memory` helper procedure to emit transaction logs from content in memory ([#4092](https://github.com/0xMiden/protocol/pull/4092)).
