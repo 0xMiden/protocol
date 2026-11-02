@@ -43,6 +43,12 @@ const PAY_FEE_CYCLES = 8192
 const POST_AUTH_EPILOGUE_BASE_CYCLES = 4096
 const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
 
+# Estimated upper bound on the number of cycles a pay_fee flow spends per sponsorship note it
+# creates (serial number derivation, note creation, vault withdrawal and funding) plus that note's
+# share of the epilogue, charged by estimate_fee for the notes a later pay_fee flow would create.
+# Guarded by the fee-payment regression tests.
+const SPONSORSHIP_NOTE_CYCLES = 4096
+
 # Exclusive upper bound of the high u32 limb of a converted fee amount. Bounding the high limb
 # by 2^31 bounds the recombined amount by 2^63, so it can be recombined into a felt without
 # field overflow before fungible_asset::create validates it against the maximum asset amount.
@@ -324,6 +330,51 @@ pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, initial_nonc
 
     exec.output_note::add_asset
     # => []
+end
+
+#! Estimates the fee a pay_fee flow would pay for this transaction without creating any note.
+#!
+#! Prices the network output notes the way pay_fee sponsors them (see
+#! fees::estimate_network_note_sponsorships) and computes the transaction fee via compute_fee,
+#! charging on top of num_extra_cycles the cycles pay_fee would spend creating the sponsorship
+#! notes and the margins pay_fee applies. The estimate is an upper bound of what pay_fee pays as
+#! long as the caller's num_extra_cycles bounds the cycles spent between this call and the
+#! pay_fee flow.
+#!
+#! Inputs:  [num_extra_cycles]
+#! Outputs: [fee_amount, total_sponsored_fee_amount]
+#!
+#! Where:
+#! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
+#!   the pay_fee flow computes the fee, e.g. signature verification, plus what it would pass to
+#!   pay_fee.
+#! - fee_amount is the estimated transaction fee.
+#! - total_sponsored_fee_amount is the estimated total amount of the sponsorship notes.
+#!
+#! Panics if:
+#! - the sponsorship pricing fails (propagates the panics of
+#!   fees::estimate_network_note_sponsorships).
+#! - num_extra_cycles (plus internal margins) is not a u32 or the total cycle count exceeds the
+#!   maximum cycle count.
+#!
+#! Invocation: exec
+pub proc estimate_fee(num_extra_cycles: felt) -> (felt, felt)
+    exec.fees::estimate_network_note_sponsorships
+    # => [num_sponsored_notes, total_sponsored_fee_amount, num_extra_cycles]
+
+    # charge the creation of the sponsorship notes a pay_fee flow would perform
+    mul.SPONSORSHIP_NOTE_CYCLES movup.2 add
+    # => [num_extra_cycles, total_sponsored_fee_amount]
+
+    exec.apply_cycle_margins
+    # => [num_estimated_extra_cycles, total_sponsored_fee_amount]
+
+    # no output notes are excluded from the fee computation
+    padw movup.4
+    # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, total_sponsored_fee_amount]
+
+    exec.tx::compute_fee
+    # => [fee_amount, total_sponsored_fee_amount]
 end
 
 #! Computes the transaction fee and pays it by creating and funding a public TX_FEE note.

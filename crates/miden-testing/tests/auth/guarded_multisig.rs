@@ -1160,27 +1160,28 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
+    // no max fee is set, so the auth procedure estimates it, counting the guardian as a signer
     let auth_args = MultisigAuthArgs::new(
         mock_chain.latest_block_header().block_num(),
         Word::from([Felt::from(5u32); 4]),
     )
-    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id))
-    .with_max_fee(AssetAmount::new(MAX_FEE)?);
-    let mock_tx_builder = mock_chain
-        .build_transaction(multisig_account.id())
-        .multisig_auth_args(auth_args);
+    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
 
-    let tx_summary = mock_tx_builder
-        .clone()
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
         .build()?
         .execute()
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
+    let signed_auth_args = auth_args.with_max_fee_from_summary(&tx_summary)?;
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
-    let mut signed_builder = mock_tx_builder;
+    let mut signed_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(signed_auth_args);
     for (public_key, authenticator) in public_keys.iter().zip(&authenticators) {
         let signature =
             authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
