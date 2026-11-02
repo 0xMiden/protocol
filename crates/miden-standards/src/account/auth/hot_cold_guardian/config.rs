@@ -1,0 +1,345 @@
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use miden_protocol::account::AccountProcedureRoot;
+use miden_protocol::errors::AccountError;
+
+use super::HotColdPolicy;
+use crate::account::auth::{Approver, GuardianConfig};
+
+// CONSTANTS
+// ================================================================================================
+
+/// The user key categories: hot and cold. Thresholds count signed categories, so this is the
+/// highest threshold a policy can require.
+pub const NUM_USER_CATEGORIES: u32 = 2;
+
+/// The maximum number of hot keys. Together with the cold and the guardian key this stays within
+/// the signer set size the multisig fee estimate is calibrated for.
+pub const MAX_NUM_HOT_KEYS: usize = 62;
+
+/// The default threshold in signed categories: any one user category plus the guardian.
+pub const DEFAULT_THRESHOLD: u32 = 1;
+
+/// The number of blocks in an hour, assuming a 3 second block time.
+pub const BLOCKS_PER_HOUR: u32 = 1200;
+
+/// The shortest delay an account may configure: 24 hours, so that a cold key kept elsewhere can
+/// be reached before a delayed action executes.
+pub const MIN_DELAY_FLOOR_BLOCKS: u32 = 24 * BLOCKS_PER_HOUR;
+
+/// The default delay: 2 days.
+pub const DEFAULT_MIN_DELAY_BLOCKS: u32 = 48 * BLOCKS_PER_HOUR;
+
+/// The longest delay an account may configure: 7 days, so that self-custody is not put in
+/// question.
+pub const MAX_DELAY_BLOCKS: u32 = 7 * 24 * BLOCKS_PER_HOUR;
+
+/// The default number of blocks a proposal transaction stays includable after its reference block.
+pub const DEFAULT_PROPOSE_EXPIRATION_DELTA: u16 = 20;
+
+// DELAY CONFIG
+// ================================================================================================
+
+/// The delay configuration of [`AuthHotColdGuardian`](super::AuthHotColdGuardian).
+///
+/// A single delay applies to every delayed action of the account. `min_delay` is the number of
+/// blocks a proposal waits before it can execute, bounded by [`MIN_DELAY_FLOOR_BLOCKS`] and
+/// [`MAX_DELAY_BLOCKS`]. `propose_expiration_delta` bounds how many blocks after its reference
+/// block a proposal transaction stays includable. `cancel_threshold` is the minimum number of
+/// signed categories a cancellation needs.
+///
+/// The configuration is stored on chain as `[min_delay, propose_expiration_delta,
+/// cancel_threshold, 0]`. The delayed-execution flows themselves are not part of this component
+/// yet; the configuration is stored so adding them needs no storage change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HotColdDelayConfig {
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    cancel_threshold: u32,
+}
+
+impl HotColdDelayConfig {
+    /// Creates a new delay configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `min_delay` is outside `MIN_DELAY_FLOOR_BLOCKS..=MAX_DELAY_BLOCKS`,
+    /// if `propose_expiration_delta` is zero or if `cancel_threshold` is zero or exceeds
+    /// [`NUM_USER_CATEGORIES`].
+    pub fn new(
+        min_delay: u32,
+        propose_expiration_delta: u16,
+        cancel_threshold: u32,
+    ) -> Result<Self, AccountError> {
+        if min_delay < MIN_DELAY_FLOOR_BLOCKS {
+            return Err(AccountError::other("min_delay is below the minimum delay"));
+        }
+        if min_delay > MAX_DELAY_BLOCKS {
+            return Err(AccountError::other("min_delay exceeds the maximum delay"));
+        }
+        if propose_expiration_delta == 0 {
+            return Err(AccountError::other("propose_expiration_delta must be non-zero"));
+        }
+        if cancel_threshold == 0 {
+            return Err(AccountError::other("cancel_threshold must be non-zero"));
+        }
+        if cancel_threshold > NUM_USER_CATEGORIES {
+            return Err(AccountError::other(
+                "cancel_threshold cannot exceed the number of user key categories",
+            ));
+        }
+        Ok(Self {
+            min_delay,
+            propose_expiration_delta,
+            cancel_threshold,
+        })
+    }
+
+    /// Returns the default configuration: a 2 day delay, a 20 block proposal window and a
+    /// cancellation threshold of one category.
+    pub fn default_delay() -> Self {
+        Self {
+            min_delay: DEFAULT_MIN_DELAY_BLOCKS,
+            propose_expiration_delta: DEFAULT_PROPOSE_EXPIRATION_DELTA,
+            cancel_threshold: 1,
+        }
+    }
+
+    pub const fn min_delay(&self) -> u32 {
+        self.min_delay
+    }
+
+    pub const fn propose_expiration_delta(&self) -> u16 {
+        self.propose_expiration_delta
+    }
+
+    pub const fn cancel_threshold(&self) -> u32 {
+        self.cancel_threshold
+    }
+}
+
+// COMPONENT CONFIG
+// ================================================================================================
+
+/// Configuration for the [`AuthHotColdGuardian`](super::AuthHotColdGuardian) component.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthHotColdGuardianConfig {
+    hot_keys: Vec<Approver>,
+    cold_key: Approver,
+    guardian_config: GuardianConfig,
+    delay_config: HotColdDelayConfig,
+    procedure_policies: Vec<(AccountProcedureRoot, HotColdPolicy)>,
+}
+
+impl AuthHotColdGuardianConfig {
+    /// Creates a new configuration from the hot keys, the cold key, the guardian and the delay
+    /// configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are no hot keys or more than [`MAX_NUM_HOT_KEYS`], or if a public
+    /// key appears in more than one category.
+    pub fn new(
+        hot_keys: Vec<Approver>,
+        cold_key: Approver,
+        guardian_config: GuardianConfig,
+        delay_config: HotColdDelayConfig,
+    ) -> Result<Self, AccountError> {
+        if hot_keys.is_empty() {
+            return Err(AccountError::other("at least one hot key is required"));
+        }
+        if hot_keys.len() > MAX_NUM_HOT_KEYS {
+            return Err(AccountError::other(
+                "number of hot keys exceeds the maximum hot key set size",
+            ));
+        }
+
+        let mut public_keys = BTreeSet::new();
+        for approver in hot_keys
+            .iter()
+            .chain(core::iter::once(&cold_key))
+            .chain(core::iter::once(&guardian_config.approver()))
+        {
+            if !public_keys.insert(approver.pub_key()) {
+                return Err(AccountError::other(
+                    "a public key may belong to only one key category",
+                ));
+            }
+        }
+
+        Ok(Self {
+            hot_keys,
+            cold_key,
+            guardian_config,
+            delay_config,
+            procedure_policies: Vec::new(),
+        })
+    }
+
+    /// Attaches policies for procedures other than the component's own, e.g. the procedures of a
+    /// wallet installed next to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a procedure root appears more than once.
+    pub fn with_proc_policies(
+        mut self,
+        proc_policies: Vec<(AccountProcedureRoot, HotColdPolicy)>,
+    ) -> Result<Self, AccountError> {
+        validate_proc_policies(&proc_policies)?;
+        self.procedure_policies = proc_policies;
+        Ok(self)
+    }
+
+    pub fn hot_keys(&self) -> &[Approver] {
+        &self.hot_keys
+    }
+
+    pub fn cold_key(&self) -> Approver {
+        self.cold_key
+    }
+
+    pub fn guardian_config(&self) -> GuardianConfig {
+        self.guardian_config
+    }
+
+    pub fn delay_config(&self) -> HotColdDelayConfig {
+        self.delay_config
+    }
+
+    pub fn default_threshold(&self) -> u32 {
+        DEFAULT_THRESHOLD
+    }
+
+    pub fn procedure_policies(&self) -> &[(AccountProcedureRoot, HotColdPolicy)] {
+        &self.procedure_policies
+    }
+}
+
+/// Rejects duplicate procedure roots in a policy map.
+pub(super) fn validate_proc_policies(
+    proc_policies: &[(AccountProcedureRoot, HotColdPolicy)],
+) -> Result<(), AccountError> {
+    let mut policy_roots = BTreeSet::new();
+    for (proc_root, _) in proc_policies {
+        if !policy_roots.insert(*proc_root) {
+            return Err(AccountError::other(
+                "duplicate procedure roots are not allowed in the procedure policy map",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+    use alloc::vec;
+
+    use miden_protocol::account::auth::AuthSecretKey;
+
+    use super::*;
+
+    fn approver() -> Approver {
+        let key = AuthSecretKey::new_ecdsa_k256_keccak();
+        Approver::new(key.public_key().to_commitment(), key.auth_scheme())
+    }
+
+    #[test]
+    fn delay_config_rejects_out_of_range_values() {
+        let below = HotColdDelayConfig::new(MIN_DELAY_FLOOR_BLOCKS - 1, 20, 1).unwrap_err();
+        assert!(below.to_string().contains("below the minimum delay"));
+
+        let above = HotColdDelayConfig::new(MAX_DELAY_BLOCKS + 1, 20, 1).unwrap_err();
+        assert!(above.to_string().contains("exceeds the maximum delay"));
+
+        let zero_delta = HotColdDelayConfig::new(MIN_DELAY_FLOOR_BLOCKS, 0, 1).unwrap_err();
+        assert!(zero_delta.to_string().contains("propose_expiration_delta must be non-zero"));
+
+        let zero_cancel = HotColdDelayConfig::new(MIN_DELAY_FLOOR_BLOCKS, 20, 0).unwrap_err();
+        assert!(zero_cancel.to_string().contains("cancel_threshold must be non-zero"));
+
+        let cancel_above = HotColdDelayConfig::new(MIN_DELAY_FLOOR_BLOCKS, 20, 3).unwrap_err();
+        assert!(
+            cancel_above
+                .to_string()
+                .contains("cannot exceed the number of user key categories")
+        );
+
+        assert!(HotColdDelayConfig::new(MAX_DELAY_BLOCKS, 20, 2).is_ok());
+    }
+
+    #[test]
+    fn config_rejects_empty_hot_keys() {
+        let err = AuthHotColdGuardianConfig::new(
+            vec![],
+            approver(),
+            GuardianConfig::new(approver()),
+            HotColdDelayConfig::default_delay(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("at least one hot key is required"));
+    }
+
+    #[test]
+    fn config_rejects_too_many_hot_keys() {
+        let hot_keys = (0..=MAX_NUM_HOT_KEYS).map(|_| approver()).collect();
+        let err = AuthHotColdGuardianConfig::new(
+            hot_keys,
+            approver(),
+            GuardianConfig::new(approver()),
+            HotColdDelayConfig::default_delay(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("exceeds the maximum hot key set size"));
+    }
+
+    #[test]
+    fn config_rejects_a_key_in_two_categories() {
+        let shared = approver();
+
+        let hot_is_cold = AuthHotColdGuardianConfig::new(
+            vec![shared],
+            shared,
+            GuardianConfig::new(approver()),
+            HotColdDelayConfig::default_delay(),
+        )
+        .unwrap_err();
+        assert!(hot_is_cold.to_string().contains("only one key category"));
+
+        let cold_is_guardian = AuthHotColdGuardianConfig::new(
+            vec![approver()],
+            shared,
+            GuardianConfig::new(shared),
+            HotColdDelayConfig::default_delay(),
+        )
+        .unwrap_err();
+        assert!(cold_is_guardian.to_string().contains("only one key category"));
+
+        let duplicate_hot = AuthHotColdGuardianConfig::new(
+            vec![shared, shared],
+            approver(),
+            GuardianConfig::new(approver()),
+            HotColdDelayConfig::default_delay(),
+        )
+        .unwrap_err();
+        assert!(duplicate_hot.to_string().contains("only one key category"));
+    }
+
+    #[test]
+    fn config_rejects_duplicate_policy_roots() {
+        let root = AccountProcedureRoot::from_raw([1u32, 2, 3, 4].into());
+        let policy = HotColdPolicy::new(1).unwrap();
+        let err = AuthHotColdGuardianConfig::new(
+            vec![approver()],
+            approver(),
+            GuardianConfig::new(approver()),
+            HotColdDelayConfig::default_delay(),
+        )
+        .unwrap()
+        .with_proc_policies(vec![(root, policy), (root, policy)])
+        .unwrap_err();
+        assert!(err.to_string().contains("duplicate procedure roots"));
+    }
+}

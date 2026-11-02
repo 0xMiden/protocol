@@ -14,6 +14,7 @@ use miden_standards::account::access::{
 };
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
+    AuthHotColdGuardian,
     AuthMultisig,
     AuthMultisigSmart,
     AuthNetworkAccount,
@@ -53,6 +54,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (PausableManager::NAME, PausableManager::component_metadata()),
         (RoleBasedAccessControl::NAME, RoleBasedAccessControl::component_metadata()),
         (AuthGuardedMultisig::NAME, AuthGuardedMultisig::component_metadata()),
+        (AuthHotColdGuardian::NAME, AuthHotColdGuardian::component_metadata()),
         (AuthMultisig::NAME, AuthMultisig::component_metadata()),
         (AuthMultisigSmart::NAME, AuthMultisigSmart::component_metadata()),
         (AuthNetworkAccount::NAME, AuthNetworkAccount::component_metadata()),
