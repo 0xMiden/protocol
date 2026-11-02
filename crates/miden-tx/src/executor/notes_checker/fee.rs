@@ -1,13 +1,13 @@
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
-use miden_standards::errors::standards::{
+
+use super::bundle::{NoteBundle, SponsorshipInput};
+use super::error::FeeError;
+use super::standards_errors::{
     ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
 };
-
-use super::bundle::{NoteBundle, SponsorshipInput};
-use super::error::FeeError;
 use crate::TransactionExecutorError;
 
 impl NoteBundle {

@@ -25,6 +25,7 @@ mod bundle;
 mod checker_utils;
 mod error;
 mod fee;
+mod standards_errors;
 
 use bundle::{NoteBundler, NoteBundles};
 pub use checker_utils::{
