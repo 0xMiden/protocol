@@ -1,6 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
-use {TX_ADD_LOG_OFFSET, TX_GET_LOGS_COMMITMENT_OFFSET} from miden::protocol::kernel_proc_offsets
+use {TX_ADD_LOG_OFFSET, TX_CREATE_CODE_PATCH_OFFSET, TX_GET_LOGS_COMMITMENT_OFFSET}
+    from miden::protocol::kernel_proc_offsets
 use {
     AccountId,
     AccountProcedureRoot,
@@ -546,4 +547,41 @@ pub proc get_logs_commitment() -> word
 
     swapdw dropw dropw swapw dropw
     # => [LOGS_COMMITMENT]
+end
+
+#! Creates the code patch of the transaction.
+#!
+#! The host builds the code patch from the public code that the transaction created so far and
+#! from the announced procedure roots (see `code_patch::announce_root`). A public note that is
+#! created afterwards must have its script root in the code patch, so its root must be announced
+#! before this call.
+#!
+#! Calling this before `compute_fee` makes the fee cover the verification of the code patch. The
+#! returned counts let the caller restrict the size of the code patch, e.g. for network accounts.
+#!
+#! Inputs:  []
+#! Outputs: [num_existing_procs, num_created_procs, num_dependencies]
+#!
+#! Where:
+#! - num_existing_procs is the number of top-level procedure roots that are present in the code
+#!   tree.
+#! - num_created_procs is the number of procedure roots that the transaction adds to the code tree.
+#! - num_dependencies is the number of present procedure roots that the created procedures
+#!   reference.
+#!
+#! Panics if:
+#! - it is not called from the authentication procedure of the native account.
+#! - the code patch was already created.
+#! - the code patch is invalid or does not cover the code that the transaction created so far.
+#!
+#! Invocation: exec
+pub proc create_code_patch() -> (u32, u32, u32)
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.TX_CREATE_CODE_PATCH_OFFSET syscall.exec_kernel_proc
+    # => [num_existing_procs, num_created_procs, num_dependencies, pad(13)]
+
+    movdn.15 movdn.15 movdn.15 dropw dropw dropw drop
+    # => [num_existing_procs, num_created_procs, num_dependencies]
 end

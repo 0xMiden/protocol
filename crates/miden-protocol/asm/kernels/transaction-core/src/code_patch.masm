@@ -1,79 +1,278 @@
 use {Bool} from miden::protocol_utils::types
-use {
-    CodeWitnessKind,
-    CodeWitnessVerificationHint,
-    CREATED_PROCS_WITNESS_KIND,
-    DEPENDENCIES_WITNESS_KIND,
-    NEW_WITNESS_VERIFICATION_HINT,
-    PRESENT_TOP_LEVEL_WITNESS_KIND,
-    ProcedureRoot,
-} from miden::tx_kernel_core::types
+use {ProcedureRoot} from miden::tx_kernel_core::types
 use miden::protocol_utils::account_id
+use miden::protocol_utils::mem
 use miden::tx_kernel_core::memory
+use {CREATED_PROCS_LIST_PTR, DEPENDENCIES_LIST_PTR, EXISTING_PROCS_LIST_PTR}
+    from miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 use {NOTE_TYPE_PUBLIC} from miden::tx_kernel_core::note
+use {MAX_CODE_PATCH_ROOTS, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 use miden::core::collections::smt
+use miden::core::collections::sorted_array
 use miden::core::word
 
 # ERRORS
 # =================================================================================================
 
-const ERR_CODE_PATCH_INVALID_HINT =
-    "code patch hint must be a code witness verification hint with a u32 index"
+const ERR_CODE_PATCH_CREATED_OUTSIDE_AUTH =
+    "code patch can only be created during the authentication procedure"
 
-const ERR_CODE_PATCH_HINT_INDEX_OUT_OF_BOUNDS =
-    "code patch hint index must be less than the number of roots in the list"
+const ERR_CODE_PATCH_ALREADY_CREATED = "code patch can only be created once"
 
-const ERR_CODE_PATCH_HINT_ROOT_MISMATCH =
-    "procedure root at the code patch hint index does not match the hinted procedure root"
+const ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED =
+    "number of procedure roots in a code patch list exceeds the maximum of 512"
 
-const ERR_CODE_PATCH_NUM_REFERENCED_NOT_U32 = "number of referenced procedure roots must be a u32"
+const ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH =
+    "presence of procedure root in the code tree does not match its code patch list"
+
+const ERR_CODE_PATCH_TOP_LEVEL_ROOT_MISSING =
+    "top-level procedure root must be in the existing or created procedures of the code patch"
+
+# CONSTANTS
+# =================================================================================================
+
+# The expected presence in the code tree of the procedure roots of a code patch list.
+const PRESENT = 1
+const ABSENT = 0
 
 # EVENTS
 # =================================================================================================
 
-# Event emitted before the kernel verifies a top-level procedure root.
-const CODE_BEFORE_PROC_ROOT_VERIFIED_EVENT = event("miden::protocol::code::before_proc_root_verified")
+# Event emitted before the kernel creates the code patch.
+const CODE_PATCH_BEFORE_CREATED_EVENT = event("miden::protocol::code_patch::before_created")
 
 # PUBLIC PROCEDURES
 # =================================================================================================
 
-#! Verifies the top-level procedure roots that the transaction created before the auth procedure.
+#! Creates the code patch of the transaction from the procedure roots that the host provides.
 #!
-#! These are the procedure roots of the code of a new public account and the script roots of the
-#! public output notes created so far. The auth procedure must not change these, so that the code
-#! patch is complete when the auth procedure executes. See `verify_top_level_root` for details.
+#! The code patch consists of three lists of procedure roots:
+#! - EXISTING_PROCS: the top-level procedure roots that are present in the code tree.
+#! - CREATED_PROCS: the procedure roots that are absent from the code tree.
+#! - DEPENDENCIES: the present procedure roots that a created procedure references.
 #!
-#! TODO: verify the procedures that `account::upgrade` adds (see the code tree follow-ups).
+#! The top-level procedure roots are the script roots of the public output notes and the
+#! procedure roots of the code of a new public account. Each of them must be in EXISTING_PROCS or
+#! CREATED_PROCS. This procedure asserts this for the code that the transaction created so far, so
+#! that the fee covers the check. The epilogue asserts it for the public notes that are created
+#! afterwards (see `assert_later_output_notes_in_code_patch`). Thus, such a note must have its script
+#! root in one of these lists, e.g. by announcing the root to the host before.
+#!
+#! The kernel cannot read MAST, so it cannot check that the host provides all referenced
+#! procedures. Instead, the node checks that the code patch is complete.
+#!
+#! The code witnesses are provided through the merkle store and the advice map.
+#!
+#! TODO(#4006): assert that the procedures that `account::upgrade` adds are in the code patch and
+#! that it was called before this procedure (e.g. by restricting it to be called before auth).
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Advice stack: [
+#!     num_existing_procs, [EXISTING_PROC_ROOT*],
+#!     num_created_procs, [CREATED_PROC_ROOT*],
+#!     num_dependencies, [DEPENDENCY_ROOT*]
+#!   ]
+#! Outputs:
+#!   Operand stack: [num_existing_procs, num_created_procs, num_dependencies]
+#!
+#! Where:
+#! - num_* is the number of procedure roots in the respective list.
+#! - each list is unique and sorted in ascending order (see `mem::pipe_strictly_sorted_words_to_memory`).
+#!
+#! Panics if:
+#! - the authentication procedure is not executing.
+#! - the code patch was already created.
+#! - a list is invalid (see `load_code_patch_list`).
+#! - a top-level procedure root of the code that the transaction created so far is in neither
+#!   EXISTING_PROCS nor CREATED_PROCS.
+pub proc create() -> (u32, u32, u32)
+    exec.memory::is_epilogue_auth_in_progress assert.err=ERR_CODE_PATCH_CREATED_OUTSIDE_AUTH
+    exec.memory::is_code_patch_created assertz.err=ERR_CODE_PATCH_ALREADY_CREATED
+    # => []
+
+    emit.CODE_PATCH_BEFORE_CREATED_EVENT
+    exec.memory::set_code_patch_created
+    # => []
+
+    push.PRESENT push.EXISTING_PROCS_LIST_PTR exec.load_code_patch_list
+    # => [num_existing_procs]
+
+    push.ABSENT push.CREATED_PROCS_LIST_PTR exec.load_code_patch_list
+    # => [num_created_procs, num_existing_procs]
+
+    push.PRESENT push.DEPENDENCIES_LIST_PTR exec.load_code_patch_list
+    # => [num_dependencies, num_created_procs, num_existing_procs]
+
+    exec.assert_new_account_code_in_code_patch
+    # => [num_dependencies, num_created_procs, num_existing_procs]
+
+    # the epilogue checks the notes that are created after this point
+    exec.memory::get_num_output_notes dup exec.memory::set_code_patch_num_checked_notes
+    # => [num_output_notes, num_dependencies, num_created_procs, num_existing_procs]
+
+    push.0 exec.assert_output_notes_in_code_patch
+    # => [num_dependencies, num_created_procs, num_existing_procs]
+
+    swap.2
+    # => [num_existing_procs, num_created_procs, num_dependencies]
+end
+
+#! Asserts that the script roots of the public output notes that were created after the code patch
+#! are in EXISTING_PROCS or CREATED_PROCS.
 #!
 #! Inputs:  []
 #! Outputs: []
-pub proc verify_before_auth()
-    exec.verify_new_account_code
-    # => []
+#!
+#! Panics if:
+#! - the checks of `assert_output_notes_in_code_patch` fail.
+pub proc assert_later_output_notes_in_code_patch()
+    exec.memory::get_num_output_notes exec.memory::get_code_patch_num_checked_notes
+    # => [num_checked_notes, num_output_notes]
 
-    exec.memory::get_num_output_notes
-    # => [num_output_notes]
-
-    dup neq.0
-    # => [should_loop, num_output_notes]
-
-    while.true
-        sub.1
-        # => [note_idx]
-
-        dup exec.verify_output_note
-        # => [note_idx]
-
-        dup neq.0
-        # => [should_loop, note_idx]
-    end
-
-    drop
+    exec.assert_output_notes_in_code_patch
     # => []
 end
 
-#! Verifies the script root of the output note with the provided index if the note is public.
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Loads a code patch list from the advice stack and verifies the code witness of each of its
+#! procedure roots.
+#!
+#! Inputs:
+#!   Operand stack: [list_ptr, is_present]
+#!   Advice stack: [num_procedure_roots, [PROC_ROOT*]]
+#! Outputs:
+#!   Operand stack: [num_procedure_roots]
+#!
+#! Where:
+#! - list_ptr is the memory address at which the code patch list begins.
+#! - is_present is 1 if the procedure roots in the list must be present in the code tree, 0 if they
+#!   must be absent.
+#! - num_procedure_roots is the number of procedure roots in the list.
+#!
+#! Panics if:
+#! - num_procedure_roots exceeds MAX_CODE_PATCH_ROOTS.
+#! - the procedure roots are not unique and sorted.
+#! - a code witness is invalid or the presence of a procedure root does not match is_present.
+proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool) -> u32
+    adv_push
+    u32assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
+    dup u32lte.MAX_CODE_PATCH_ROOTS assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
+    # => [num_procedure_roots, list_ptr, is_present]
+
+    dup dup.2 exec.memory::set_code_patch_num_procedure_roots
+    # => [num_procedure_roots, list_ptr, is_present]
+
+    dup.1 exec.memory::get_code_patch_roots_ptr dup.1
+    # => [num_procedure_roots, roots_ptr, num_procedure_roots, list_ptr, is_present]
+
+    exec.mem::pipe_strictly_sorted_words_to_memory
+    # => [COMMITMENT, roots_end_ptr, num_procedure_roots, list_ptr, is_present]
+
+    # TODO(#4006): use the commitments of CREATED_PROCS and DEPENDENCIES for the code patch
+    # commitment.
+    dropw
+    # => [roots_end_ptr, num_procedure_roots, list_ptr, is_present]
+
+    movup.2 exec.memory::get_code_patch_roots_ptr
+    # => [root_ptr, roots_end_ptr, num_procedure_roots, is_present]
+
+    dup.1 dup.1 neq
+    # => [should_loop, root_ptr, roots_end_ptr, num_procedure_roots, is_present]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [PROC_ROOT, root_ptr, roots_end_ptr, num_procedure_roots, is_present]
+
+        exec.verify_witness
+        # => [is_root_present, root_ptr, roots_end_ptr, num_procedure_roots, is_present]
+
+        dup.4 eq assert.err=ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
+        # => [root_ptr, roots_end_ptr, num_procedure_roots, is_present]
+
+        add.WORD_NUM_ELEMENTS
+        # => [root_ptr', roots_end_ptr, num_procedure_roots, is_present]
+
+        dup.1 dup.1 neq
+        # => [should_loop, root_ptr', roots_end_ptr, num_procedure_roots, is_present]
+    end
+
+    drop drop swap drop
+    # => [num_procedure_roots]
+end
+
+#! Asserts that the script roots of the public output notes in the provided index range are in
+#! EXISTING_PROCS or CREATED_PROCS.
+#!
+#! Inputs:  [start_note_idx, end_note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - start_note_idx is the index of the first output note to check.
+#! - end_note_idx is the index after the last output note to check.
+#!
+#! Panics if:
+#! - the checks of `assert_output_note_in_code_patch` fail.
+proc assert_output_notes_in_code_patch(start_note_idx: u16, end_note_idx: u16)
+    dup.1 dup.1 neq
+    # => [should_loop, note_idx, end_note_idx]
+
+    while.true
+        dup exec.assert_output_note_in_code_patch
+        # => [note_idx, end_note_idx]
+
+        add.1 dup.1 dup.1 neq
+        # => [should_loop, note_idx + 1, end_note_idx]
+    end
+
+    drop drop
+    # => []
+end
+
+#! Asserts that the procedure roots of the native account code are in the code patch if the
+#! account is new and public.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a procedure root is in neither EXISTING_PROCS nor CREATED_PROCS.
+proc assert_new_account_code_in_code_patch()
+    exec.memory::get_native_account_id drop exec.account_id::is_public
+    # => [is_public]
+
+    exec.memory::is_new_account and
+    # => [is_new_public_account]
+
+    if.true
+        exec.memory::get_num_account_procedures
+        # => [num_procedures]
+
+        # enter the loop unconditionally because an account has at least two procedures
+        do
+            sub.1
+            # => [proc_idx]
+
+            padw dup.4 exec.memory::get_account_procedure_ptr mem_loadw_le
+            # => [PROC_ROOT, proc_idx]
+
+            exec.assert_top_level_root_in_code_patch
+            # => [proc_idx]
+        while
+            dup neq.0
+            # => [should_loop, proc_idx]
+        end
+
+        drop
+        # => []
+    end
+end
+
+#! Asserts that the script root of the output note with the provided index is in the code patch if
+#! the note is public.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: []
@@ -83,8 +282,8 @@ end
 #!
 #! Panics if:
 #! - the recipient preimage in the advice map is invalid (see `note::get_recipient_preimage`).
-#! - the verification of the script root fails (see `verify_top_level_root`).
-pub proc verify_output_note(note_idx: u16)
+#! - the script root is in neither EXISTING_PROCS nor CREATED_PROCS.
+proc assert_output_note_in_code_patch(note_idx: u16)
     exec.memory::get_output_note_ptr
     # => [note_ptr]
 
@@ -101,7 +300,7 @@ pub proc verify_output_note(note_idx: u16)
         exec.note::get_recipient_preimage swapw dropw
         # => [SCRIPT_ROOT]
 
-        exec.verify_top_level_root
+        exec.assert_top_level_root_in_code_patch
         # => []
     else
         drop
@@ -109,71 +308,7 @@ pub proc verify_output_note(note_idx: u16)
     end
 end
 
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Verifies the procedure roots of the native account code if the account is new and public.
-#!
-#! Inputs:  []
-#! Outputs: []
-proc verify_new_account_code()
-    exec.memory::get_native_account_id drop exec.account_id::is_public
-    # => [is_public]
-
-    exec.memory::is_new_account and
-    # => [is_new_public_account]
-
-    if.true
-        exec.memory::get_num_account_procedures
-        # => [num_procedures]
-
-        # the body executes at least once, which is safe because an account has at least two
-        # procedures
-        do
-            sub.1
-            # => [proc_idx]
-
-            padw dup.4 exec.memory::get_account_procedure_ptr mem_loadw_le
-            # => [PROC_ROOT, proc_idx]
-
-            exec.verify_top_level_root
-            # => [proc_idx]
-        while
-            dup neq.0
-            # => [should_loop, proc_idx]
-        end
-
-        drop
-        # => []
-    end
-end
-
-#! Verifies a top-level procedure root and puts it into one of the code patch lists.
-#!
-#! A top-level procedure root is the script root of a public output note or a procedure root of
-#! the code of a new public account. The host answers the emitted event through the advice stack.
-#! It either proves that the root was verified before, or it provides the code witness of the root
-#! and, if the root is absent, the procedures that its code references:
-#!
-#!   [index, hint]
-#!   if hint requests a new witness and PROC_ROOT is absent:
-#!     [num_referenced]
-#!     num_referenced times: [REFERENCED_PROC_ROOT, index, hint]
-#!
-#! The values are listed in the order in which the kernel reads them, and index and hint are the
-#! hint of the root (see `read_code_witness_verification_hint`). The witnesses are provided through
-#! the merkle store and the advice map.
-#!
-#! The kernel cannot read MAST, so it cannot check that the host provides all referenced
-#! procedures. Instead, the node checks that the code patch is complete.
-#!
-#! The root is put into the following list:
-#! - an absent root into the CREATED_PROCS_WITNESS_KIND list.
-#! - a present root into the PRESENT_TOP_LEVEL_WITNESS_KIND list, because the code patch does not
-#!   need it.
-#!
-#! The referenced procedures are verified in the same way, but a present referenced procedure goes
-#! into the DEPENDENCIES_WITNESS_KIND list (see `verify_referenced_root`).
+#! Asserts that a top-level procedure root is in EXISTING_PROCS or CREATED_PROCS.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: []
@@ -182,162 +317,55 @@ end
 #! - PROC_ROOT is the top-level procedure root.
 #!
 #! Panics if:
-#! - a hint is invalid (see `read_code_witness_verification_hint` and `verify_existing_code_witness`).
-#! - a code witness is invalid.
-#! - a code patch list exceeds the maximum number of procedure roots.
-proc verify_top_level_root(proc_root: ProcedureRoot)
-    emit.CODE_BEFORE_PROC_ROOT_VERIFIED_EVENT
-    exec.read_code_witness_verification_hint
-    # => [hint, index, PROC_ROOT]
-
-    dup eq.NEW_WITNESS_VERIFICATION_HINT
-    # => [is_new_witness, hint, index, PROC_ROOT]
+#! - the procedure root is in neither list.
+proc assert_top_level_root_in_code_patch(proc_root: ProcedureRoot)
+    # the regular case is a present top-level root, so search EXISTING_PROCS first
+    push.EXISTING_PROCS_LIST_PTR exec.find_in_code_patch_list
+    # => [is_existing_proc, PROC_ROOT]
 
     if.true
-        drop drop dupw exec.verify_witness
-        # => [is_present, PROC_ROOT]
-
-        if.true
-            push.PRESENT_TOP_LEVEL_WITNESS_KIND exec.memory::append_code_patch_root
-            # => []
-        else
-            push.CREATED_PROCS_WITNESS_KIND exec.memory::append_code_patch_root
-            # => []
-
-            exec.verify_referenced_roots
-            # => []
-        end
+        dropw
+        # => []
     else
-        exec.verify_existing_code_witness drop dropw
+        push.CREATED_PROCS_LIST_PTR exec.find_in_code_patch_list
+        # => [is_created_proc, PROC_ROOT]
+
+        assert.err=ERR_CODE_PATCH_TOP_LEVEL_ROOT_MISSING dropw
         # => []
     end
 end
 
-#! Verifies the procedures that an absent top-level procedure root references.
+#! Returns whether a procedure root is in the code patch list.
 #!
-#! Inputs:
-#!   Operand stack: []
-#!   Advice stack: [num_referenced, [REFERENCED_PROC_ROOT, index, hint]*]
-#! Outputs:
-#!   Operand stack: []
+#! Inputs:  [list_ptr, PROC_ROOT]
+#! Outputs: [is_found, PROC_ROOT]
 #!
 #! Where:
-#! - num_referenced is the number of referenced procedure roots.
-#! - REFERENCED_PROC_ROOT is a referenced procedure root.
-#! - index and hint are the hint for the referenced procedure root (see
-#!   `read_code_witness_verification_hint`).
-#!
-#! Panics if:
-#! - num_referenced is not a u32.
-#! - a hint is invalid (see `read_code_witness_verification_hint`).
-#! - the verification of a referenced root fails (see `verify_referenced_root`).
-proc verify_referenced_roots()
-    adv_push u32assert.err=ERR_CODE_PATCH_NUM_REFERENCED_NOT_U32
-    # => [num_remaining]
-
-    dup neq.0
-    # => [should_loop, num_remaining]
-
-    while.true
-        padw adv_loadw exec.read_code_witness_verification_hint
-        # => [hint, index, REFERENCED_PROC_ROOT, num_remaining]
-
-        exec.verify_referenced_root
-        # => [num_remaining]
-
-        sub.1 dup neq.0
-        # => [should_loop, num_remaining - 1]
-    end
-
-    drop
-    # => []
-end
-
-#! Verifies a procedure root that a created procedure references and puts it into one of the code
-#! patch lists.
-#!
-#! The root is put into the following list:
-#! - an absent root into the CREATED_PROCS_WITNESS_KIND list.
-#! - a present root into the DEPENDENCIES_WITNESS_KIND list. This includes a root that is already
-#!   in the PRESENT_TOP_LEVEL_WITNESS_KIND list, because the code patch must commit to it as a
-#!   dependency.
-#!
-#! Inputs:  [hint, index, PROC_ROOT]
-#! Outputs: []
-#!
-#! Where:
-#! - hint and index are the hint for the procedure root (see
-#!   `read_code_witness_verification_hint`).
-#! - PROC_ROOT is the referenced procedure root.
-#!
-#! Panics if:
-#! - the hint is invalid (see `verify_existing_code_witness`).
-#! - the code witness is invalid.
-#! - a code patch list exceeds the maximum number of procedure roots.
-proc verify_referenced_root(
-    hint: CodeWitnessVerificationHint,
-    index: u32,
+#! - list_ptr is the memory address at which the code patch list begins.
+#! - PROC_ROOT is the procedure root to search for.
+#! - is_found is 1 if the list contains PROC_ROOT, 0 otherwise.
+proc find_in_code_patch_list(
+    list_ptr: ptr<ProcedureRoot>,
     proc_root: ProcedureRoot
-)
-    dup eq.NEW_WITNESS_VERIFICATION_HINT
-    # => [is_new_witness, hint, index, PROC_ROOT]
+) -> (Bool, ProcedureRoot)
+    movdn.4 dupw movup.8
+    # => [list_ptr, PROC_ROOT, PROC_ROOT]
 
-    if.true
-        drop drop dupw exec.verify_witness
-        # => [is_present, PROC_ROOT]
+    dup exec.memory::get_code_patch_num_procedure_roots mul.WORD_NUM_ELEMENTS
+    # => [roots_length, list_ptr, PROC_ROOT, PROC_ROOT]
 
-        push.CREATED_PROCS_WITNESS_KIND push.DEPENDENCIES_WITNESS_KIND movup.2
-        # => [is_present, dependencies_kind, created_procs_kind, PROC_ROOT]
+    swap exec.memory::get_code_patch_roots_ptr dup movdn.2 add swap
+    # => [roots_ptr, roots_end_ptr, PROC_ROOT, PROC_ROOT]
 
-        # If is_present dependencies_kind remains.
-        # If !is_present created_procs_kind remains.
-        cdrop
-        # => [witness_kind, PROC_ROOT]
+    movdn.5 movdn.5
+    # => [PROC_ROOT, roots_ptr, roots_end_ptr, PROC_ROOT]
 
-        exec.memory::append_code_patch_root
-        # => []
-    else
-        # A root in the created procedures or dependencies list is already part of the code patch.
-        # A root in the present top-level list is not and we must add the root to the dependencies,
-        # so the code patch commits to it.
-        exec.verify_existing_code_witness eq.PRESENT_TOP_LEVEL_WITNESS_KIND
-        # => [is_present_top_level, PROC_ROOT]
+    # the list was asserted to be sorted when it was loaded
+    exec.sorted_array::find_word
+    # => [is_found, root_ptr, roots_ptr, roots_end_ptr, PROC_ROOT]
 
-        if.true
-            push.DEPENDENCIES_WITNESS_KIND exec.memory::append_code_patch_root
-            # => []
-        else
-            dropw
-            # => []
-        end
-    end
-end
-
-#! Reads the hint for a procedure root from the advice stack.
-#!
-#! Inputs:
-#!   Operand stack: []
-#!   Advice stack: [index, hint]
-#! Outputs:
-#!   Operand stack: [hint, index]
-#!
-#! Where:
-#! - hint is the verification hint of the root.
-#! - index is the index of the root in the code patch list that contains it. It is unused for
-#!   NEW_WITNESS_VERIFICATION_HINT. It is not bounded here, because
-#!   `verify_existing_code_witness` asserts that it is less than the number of roots in the list,
-#!   which is at most MAX_CODE_PATCH_ROOTS.
-#!
-#! Panics if:
-#! - hint is not a code witness verification hint.
-#! - index is not a u32.
-proc read_code_witness_verification_hint() -> (CodeWitnessVerificationHint, u32)
-    adv_push adv_push
-    # => [hint, index]
-
-    u32assert2.err=ERR_CODE_PATCH_INVALID_HINT
-    dup u32lte.NEW_WITNESS_VERIFICATION_HINT assert.err=ERR_CODE_PATCH_INVALID_HINT
-    # => [hint, index]
+    movdn.3 drop drop drop
+    # => [is_found, PROC_ROOT]
 end
 
 #! Verifies the code witness of a procedure root against the code tree root of the reference block.
@@ -361,49 +389,4 @@ proc verify_witness(proc_root: ProcedureRoot) -> Bool
     # the code tree only contains the empty word and the value of present procedure roots
     exec.word::eqz not
     # => [is_present]
-end
-
-#! Asserts that a procedure root is at the hinted index of a code patch list.
-#!
-#! The caller must make sure that hint is not NEW_WITNESS_VERIFICATION_HINT, so that the hint is
-#! the kind of the code patch list that contains the root.
-#!
-#! Inputs:  [hint, index, PROC_ROOT]
-#! Outputs: [witness_kind, PROC_ROOT]
-#!
-#! Where:
-#! - hint is the verification hint of the root.
-#! - index is the index of the root in the code patch list.
-#! - PROC_ROOT is the procedure root.
-#! - witness_kind is the kind of the code patch list that contains the root.
-#!
-#! Panics if:
-#! - index is not less than the number of roots in the list.
-#! - the root at the index is not PROC_ROOT.
-proc verify_existing_code_witness(
-    hint: CodeWitnessVerificationHint,
-    index: u32,
-    proc_root: ProcedureRoot
-) -> (CodeWitnessKind, ProcedureRoot)
-    dup exec.memory::get_code_patch_list_ptr
-    # => [list_ptr, witness_kind, index, PROC_ROOT]
-
-    dup.2 dup.1 exec.memory::get_code_patch_num_roots
-    # => [num_roots, index, list_ptr, witness_kind, index, PROC_ROOT]
-
-    # assert index < num_roots
-    u32lt assert.err=ERR_CODE_PATCH_HINT_INDEX_OUT_OF_BOUNDS
-    # => [list_ptr, witness_kind, index, PROC_ROOT]
-
-    movup.2 exec.memory::get_code_patch_root
-    # => [STORED_PROC_ROOT, witness_kind, PROC_ROOT]
-
-    movup.4 movdn.8
-    # => [STORED_PROC_ROOT, PROC_ROOT, witness_kind]
-
-    dupw.1 assert_eqw.err=ERR_CODE_PATCH_HINT_ROOT_MISMATCH
-    # => [PROC_ROOT, witness_kind]
-
-    movup.4
-    # => [witness_kind, PROC_ROOT]
 end

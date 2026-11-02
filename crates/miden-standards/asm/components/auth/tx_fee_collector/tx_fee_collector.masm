@@ -92,6 +92,12 @@ pub proc auth_tx_fee_collector(auth_args: AuthArgs)
         # => [pad(16)]
     end
 
+    # Create the code patch after the P2ID note, so that it covers the note's script.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.tx::create_code_patch drop drop drop
+    # => [pad(16)]
+
     # Assert the account is unchanged.
     # ---------------------------------------------------------------------------------------------
 

@@ -2432,9 +2432,11 @@ async fn transaction_executor_account_code_using_custom_package() -> anyhow::Res
 async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     let source_code = "
         use miden::protocol::native_account
+        use miden::protocol::tx
 
         @auth_script
         pub proc auth_incr_nonce_twice
+            exec.tx::create_code_patch drop drop drop
             exec.native_account::incr_nonce drop
             exec.native_account::incr_nonce drop
         end

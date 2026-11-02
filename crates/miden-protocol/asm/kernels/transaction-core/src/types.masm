@@ -10,29 +10,6 @@ pub type Commitment = word
 #! The MAST root of a procedure.
 pub type ProcedureRoot = word
 
-#! The kind of a verified procedure root. Each kind has its own code patch list in kernel memory.
-pub enum CodeWitnessKind : u8 {
-    #! A procedure root that is absent from the code tree.
-    CREATED_PROCS_WITNESS_KIND = 0,
-    #! A present procedure root that a created procedure references.
-    DEPENDENCIES_WITNESS_KIND = 1,
-    #! A present top-level procedure root.
-    PRESENT_TOP_LEVEL_WITNESS_KIND = 2,
-}
-
-#! The hint with which the host answers the verification of a procedure root. The host either
-#! requests that the kernel verifies the code witness of the root, or gives the kind of the code
-#! patch list that contains the root.
-#!
-#! NEW_WITNESS_VERIFICATION_HINT must stay the highest hint, because the kernel uses it as the
-#! upper bound of valid hints.
-pub enum CodeWitnessVerificationHint : u8 {
-    CREATED_PROCS_VERIFICATION_HINT = CREATED_PROCS_WITNESS_KIND,
-    DEPENDENCIES_VERIFICATION_HINT = DEPENDENCIES_WITNESS_KIND,
-    PRESENT_TOP_LEVEL_VERIFICATION_HINT = PRESENT_TOP_LEVEL_WITNESS_KIND,
-    NEW_WITNESS_VERIFICATION_HINT = 3,
-}
-
 #! Poseidon2 sponge state in operand-stack order.
 pub type HasherState = struct { rate0: word, rate1: word, capacity: word }
 

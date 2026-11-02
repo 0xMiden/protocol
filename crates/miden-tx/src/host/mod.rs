@@ -12,7 +12,7 @@ mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
 mod code_patch;
-use code_patch::{CodePatchTracker, CodeRootVerification, referenced_procedures};
+use code_patch::{CodePatchLists, referenced_procedures};
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
@@ -135,11 +135,15 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// top-level procedure roots of the code patch.
     new_public_account_procedures: Vec<ProcedureRoot>,
 
-    /// The recipients of the output notes that the transaction is expected to create.
-    expected_output_recipients: Vec<NoteRecipient>,
+    /// The code tree of the reference block that tracks the available code witnesses.
+    code_tree: PartialCodeTree,
 
-    /// Answers the code witness verification requests of the kernel.
-    code_patch: CodePatchTracker,
+    /// The top-level procedure roots that the transaction announced for the code patch, e.g. the
+    /// script roots of notes that it creates after the code patch.
+    announced_procedure_roots: BTreeSet<ProcedureRoot>,
+
+    /// Whether the kernel created the code patch.
+    is_code_patch_created: bool,
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
@@ -162,10 +166,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
-        expected_output_recipients: &[NoteRecipient],
     ) -> Result<Self, TransactionKernelError> {
-        let expected_output_recipients = expected_output_recipients.to_vec();
-
         let new_public_account_procedures = if account.is_new() && account.id().is_public() {
             account.code().procedure_roots().map(ProcedureRoot::from_raw).collect()
         } else {
@@ -195,8 +196,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             input_notes,
             block_commitments,
             new_public_account_procedures,
-            expected_output_recipients,
-            code_patch: CodePatchTracker::new(code_tree),
+            code_tree,
+            announced_procedure_roots: BTreeSet::new(),
+            is_code_patch_created: false,
             core_lib_handlers,
         })
     }
@@ -670,12 +672,7 @@ where
 
     /// Returns the code tree of the reference block that tracks the available code witnesses.
     pub fn code_tree(&self) -> &PartialCodeTree {
-        self.code_patch.code_tree()
-    }
-
-    /// Returns `true` if the code witness of the procedure root is available.
-    pub fn has_code_witness(&self, procedure_root: &ProcedureRoot) -> bool {
-        self.code_patch.has_witness(procedure_root)
+        &self.code_tree
     }
 
     /// Adds the provided code witnesses to the available code witnesses.
@@ -687,155 +684,102 @@ where
         &mut self,
         witnesses: impl IntoIterator<Item = CodeWitness>,
     ) -> Result<(), TransactionKernelError> {
-        self.code_patch.add_witnesses(witnesses)
+        for witness in witnesses {
+            self.code_tree
+                .track_procedure(witness)
+                .map_err(TransactionKernelError::InvalidCodeWitness)?;
+        }
+
+        Ok(())
     }
 
-    /// Returns `true` if the verification of the top-level procedure root needs a code witness
-    /// that is not available.
-    ///
-    /// This uses the same rule as [`Self::on_code_before_proc_root_verified`] to determine the
-    /// needed witnesses, so that the witnesses that the kernel verified are sufficient to
-    /// execute the transaction again.
+    /// Handles the announcement of a top-level procedure root for the code patch.
     ///
     /// # Errors
     ///
-    /// Returns an error if the presence of a procedure root cannot be determined.
-    pub fn is_code_witness_missing(
-        &self,
+    /// Returns an error if the code patch was already created, because the announced root would
+    /// not be part of it.
+    pub fn on_code_patch_root_announced(
+        &mut self,
         procedure_root: ProcedureRoot,
-    ) -> Result<bool, TransactionKernelError> {
-        if self.code_patch.is_verified(&procedure_root) {
-            return Ok(false);
-        }
-        if !self.has_code_witness(&procedure_root) {
-            return Ok(true);
-        }
-        if self.code_patch.is_present(&procedure_root)? {
-            return Ok(false);
+    ) -> Result<(), TransactionKernelError> {
+        if self.is_code_patch_created {
+            return Err(TransactionKernelError::CodePatchRootAnnouncedAfterCreation(
+                procedure_root,
+            ));
         }
 
-        // A referenced procedure without a witness is missing, so the walk does not descend into
-        // it.
-        let referenced_procedures = referenced_procedures(
-            procedure_root,
-            |root| self.resolve_procedure_mast(root),
-            |root| Ok(self.has_code_witness(&root) && self.needs_referenced_procedures(root)?),
-            false,
-        )?;
+        self.announced_procedure_roots.insert(procedure_root);
 
-        Ok(referenced_procedures.iter().any(|root| !self.has_code_witness(root)))
+        Ok(())
     }
 
-    /// Returns the code witness requests for all top-level procedure roots that the host can see
-    /// and whose witnesses are missing, starting with the provided procedure root.
-    ///
-    /// The top-level procedure roots are the procedures of a new public account and the script
-    /// roots of the public output notes created so far and of the expected output notes that the
-    /// transaction did not create yet, e.g. notes that the auth procedure creates. Requesting the
-    /// witnesses in bulk avoids a request per root.
-    ///
-    /// The note type of an expected output note is unknown before the note is created, so the
-    /// request can contain the script roots of private notes. The expected output notes that the
-    /// transaction created before are left out, so that the data store does not learn the scripts
-    /// of their private notes.
+    /// Returns the code witness requests for all top-level procedure roots of the code patch.
     ///
     /// Each request contains all procedures that the host can reach from the top-level root,
     /// because the host does not know yet which of them are present.
     ///
     /// # Errors
     ///
-    /// Returns an error if the presence of a procedure root cannot be determined.
-    pub fn code_witness_requests(
-        &self,
-        procedure_root: ProcedureRoot,
-    ) -> Result<Vec<CodeWitnessRequest>, TransactionKernelError> {
-        let note_scripts =
-            self.public_output_note_scripts().chain(self.pending_expected_note_scripts());
-        let top_level_roots = [procedure_root]
+    /// Returns an error if the MAST of a reachable procedure cannot be walked.
+    pub fn code_witness_requests(&self) -> Result<Vec<CodeWitnessRequest>, TransactionKernelError> {
+        self.code_patch_top_level_roots()
             .into_iter()
-            .chain(self.new_public_account_procedures.iter().copied())
-            .chain(
-                note_scripts.map(|note_script| ProcedureRoot::from_raw(note_script.root().into())),
-            );
+            .map(|top_level_root| {
+                let referenced_procedures = referenced_procedures(
+                    top_level_root,
+                    |procedure_root| self.resolve_procedure_mast(procedure_root),
+                    |_| Ok(true),
+                    false,
+                )?;
 
-        let mut requested_roots = BTreeSet::new();
-        let mut requests = Vec::new();
-        for top_level_root in top_level_roots {
-            if !requested_roots.insert(top_level_root)
-                || self.code_patch.is_verified(&top_level_root)
-            {
-                continue;
-            }
-
-            if !self.is_code_witness_missing(top_level_root)? {
-                continue;
-            }
-
-            let referenced_procedures = referenced_procedures(
-                top_level_root,
-                |root| self.resolve_procedure_mast(root),
-                |_| Ok(true),
-                false,
-            )?;
-            requests.push(CodeWitnessRequest::new(
-                top_level_root,
-                referenced_procedures.into_iter().collect(),
-            ));
-        }
-
-        Ok(requests)
+                Ok(CodeWitnessRequest::new(
+                    top_level_root,
+                    referenced_procedures.into_iter().collect(),
+                ))
+            })
+            .collect()
     }
 
-    /// Handles the verification of a top-level procedure root by the kernel.
+    /// Handles the creation of the code patch by the kernel.
+    ///
+    /// Returns the advice that the kernel reads and the code witnesses that it verifies.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - a code witness that the kernel needs is not available.
     /// - the MAST of an absent procedure is not available.
-    pub fn on_code_before_proc_root_verified(
+    pub fn on_code_patch_before_created(
         &mut self,
-        procedure_root: ProcedureRoot,
-    ) -> Result<CodeRootVerification, TransactionKernelError> {
-        let referenced_procedures =
-            if self.code_patch.needs_referenced_procedures(&procedure_root)? {
-                referenced_procedures(
-                    procedure_root,
-                    |root| self.resolve_procedure_mast(root),
-                    |root| self.needs_referenced_procedures(root),
-                    true,
-                )?
-            } else {
-                Vec::new()
-            };
+    ) -> Result<(Vec<AdviceMutation>, Vec<CodeWitness>), TransactionKernelError> {
+        let lists = CodePatchLists::new(
+            self.code_patch_top_level_roots(),
+            &self.code_tree,
+            |procedure_root| self.resolve_procedure_mast(procedure_root),
+        )?;
+        let advice_and_witnesses = lists.into_advice(&self.code_tree)?;
 
-        self.code_patch.verify_top_level_root(procedure_root, referenced_procedures)
+        self.is_code_patch_created = true;
+
+        Ok(advice_and_witnesses)
     }
 
-    /// Returns `true` if the walk over the referenced procedures descends into the code of the
-    /// procedure root.
+    /// Returns the top-level procedure roots of the code patch.
     ///
-    /// The code of a present procedure is already registered, and the procedures that the code of
-    /// a verified procedure references were verified with it, so the walk stops at both.
-    fn needs_referenced_procedures(
-        &self,
-        procedure_root: ProcedureRoot,
-    ) -> Result<bool, TransactionKernelError> {
-        self.code_patch.needs_referenced_procedures(&procedure_root)
-    }
+    /// These are the procedures of a new public account, the script roots of the public output
+    /// notes created so far and the announced procedure roots.
+    fn code_patch_top_level_roots(&self) -> BTreeSet<ProcedureRoot> {
+        let note_script_roots = self
+            .public_output_note_scripts()
+            .map(|note_script| ProcedureRoot::from_raw(note_script.root().into()));
 
-    /// Returns the scripts of the expected output notes that the transaction did not create yet.
-    fn pending_expected_note_scripts(&self) -> impl Iterator<Item = &NoteScript> {
-        let created_recipients = self
-            .output_notes
-            .values()
-            .map(OutputNoteBuilder::recipient_digest)
-            .collect::<BTreeSet<_>>();
-
-        self.expected_output_recipients
+        self.new_public_account_procedures
             .iter()
-            .filter(move |recipient| !created_recipients.contains(&recipient.digest()))
-            .map(NoteRecipient::script)
+            .copied()
+            .chain(note_script_roots)
+            .chain(self.announced_procedure_roots.iter().copied())
+            .collect()
     }
 
     /// Returns the scripts of the public output notes created so far.
@@ -849,9 +793,9 @@ where
     /// Returns the MAST forest and the node of the procedure with the provided root, if
     /// available.
     ///
-    /// The MAST is searched in the MAST stores and the scripts of the output notes and the
-    /// expected output notes. A node that only references the procedure is not its MAST, e.g. the
-    /// entrypoint of a note script that references a library procedure.
+    /// The MAST is searched in the MAST stores and the scripts of the output notes. A node that
+    /// only references the procedure is not its MAST, e.g. the entrypoint of a note script that
+    /// references a library procedure.
     fn resolve_procedure_mast(
         &self,
         procedure_root: ProcedureRoot,
@@ -867,7 +811,6 @@ where
             .output_notes
             .values()
             .filter_map(|note_builder| note_builder.recipient().map(NoteRecipient::script))
-            .chain(self.expected_output_recipients.iter().map(NoteRecipient::script))
             .filter(|note_script| Word::from(note_script.root()) == procedure_root)
             .map(|note_script| (note_script.mast(), note_script.entrypoint()));
 

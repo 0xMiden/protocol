@@ -20,7 +20,6 @@ use {
 use {
     AccountData,
     AccountMetadata,
-    CodeWitnessKind,
     Commitment,
     InputNoteData,
     LinkMapEntry,
@@ -47,9 +46,6 @@ const ERR_ACCOUNT_STACK_UNDERFLOW =
 
 const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT =
     "creation of a foreign context against the native account is forbidden"
-
-const ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED =
-    "number of procedure roots in a code patch list exceeds the maximum of 512"
 
 const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED = "number of link map entries exceeds maximum"
 
@@ -399,16 +395,28 @@ const OUTPUT_NOTE_ASSETS_OFFSET = 40
 # CODE PATCH
 # -------------------------------------------------------------------------------------------------
 
-# The memory address at which the code patch section begins. The section contains one list per
-# kind of verified procedure root, each laid out as:
-# [[num_roots, 0, 0, 0], PROC_ROOT_0, PROC_ROOT_1, ...].
+# The memory address at which the code patch section begins. The section contains a word with the
+# state of the code patch, followed by one list per kind of procedure root.
 const CODE_PATCH_SECTION_PTR = 17825792
+
+# The memory address at which the flag that indicates whether the code patch was created is stored.
+const CODE_PATCH_CREATED_FLAG_PTR = CODE_PATCH_SECTION_PTR
+
+# The memory address at which the number of output notes is stored that existed when the code patch
+# was created.
+const CODE_PATCH_NUM_CHECKED_NOTES_PTR = CODE_PATCH_SECTION_PTR + 1
 
 # The offset of the first procedure root relative to the start of a code patch list.
 const CODE_PATCH_LIST_ROOTS_OFFSET = WORD_NUM_ELEMENTS
 
 # The length of the memory interval that a code patch list occupies.
 const CODE_PATCH_LIST_LENGTH = CODE_PATCH_LIST_ROOTS_OFFSET + MAX_CODE_PATCH_ROOTS * WORD_NUM_ELEMENTS
+
+# The memory addresses at which the code patch lists begin.
+# Each list is laid out as [[num_procedure_roots, 0, 0, 0], PROC_ROOT_0, PROC_ROOT_1, ...].
+pub const EXISTING_PROCS_LIST_PTR = CODE_PATCH_SECTION_PTR + WORD_NUM_ELEMENTS
+pub const CREATED_PROCS_LIST_PTR = EXISTING_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH
+pub const DEPENDENCIES_LIST_PTR = CREATED_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -2404,91 +2412,83 @@ end
 # CODE PATCH
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the memory address at which the code patch list of the provided kind begins.
+#! Returns whether the code patch was created.
 #!
-#! Inputs:  [witness_kind]
-#! Outputs: [list_ptr]
+#! Inputs:  []
+#! Outputs: [is_code_patch_created]
 #!
 #! Where:
-#! - witness_kind is the kind of the procedure roots in the code patch list.
-#! - list_ptr is the memory address at which the list begins. The number of procedure roots in
-#!   the list is stored at this address.
-pub proc get_code_patch_list_ptr(witness_kind: CodeWitnessKind) -> ptr<felt>
-    mul.CODE_PATCH_LIST_LENGTH add.CODE_PATCH_SECTION_PTR
+#! - is_code_patch_created is 1 if the code patch was created, 0 otherwise.
+pub proc is_code_patch_created() -> Bool
+    mem_load.CODE_PATCH_CREATED_FLAG_PTR
+end
+
+#! Marks the code patch as created.
+#!
+#! Inputs:  []
+#! Outputs: []
+pub proc set_code_patch_created()
+    push.1 mem_store.CODE_PATCH_CREATED_FLAG_PTR
+end
+
+#! Returns the number of output notes that existed when the code patch was created.
+#!
+#! Inputs:  []
+#! Outputs: [num_checked_notes]
+#!
+#! Where:
+#! - num_checked_notes is the number of output notes whose script roots were checked against the
+#!   code patch when it was created.
+pub proc get_code_patch_num_checked_notes() -> u16
+    mem_load.CODE_PATCH_NUM_CHECKED_NOTES_PTR
+end
+
+#! Sets the number of output notes that existed when the code patch was created.
+#!
+#! Inputs:  [num_checked_notes]
+#! Outputs: []
+#!
+#! Where:
+#! - num_checked_notes is the number of output notes whose script roots were checked against the
+#!   code patch when it was created.
+pub proc set_code_patch_num_checked_notes(num_checked_notes: u16)
+    mem_store.CODE_PATCH_NUM_CHECKED_NOTES_PTR
 end
 
 #! Returns the number of procedure roots in the code patch list.
 #!
 #! Inputs:  [list_ptr]
-#! Outputs: [num_roots]
+#! Outputs: [num_procedure_roots]
 #!
 #! Where:
 #! - list_ptr is the memory address at which the code patch list begins.
-#! - num_roots is the number of procedure roots in the list.
-pub proc get_code_patch_num_roots(list_ptr: ptr<felt>) -> u32
+#! - num_procedure_roots is the number of procedure roots in the list.
+pub proc get_code_patch_num_procedure_roots(list_ptr: ptr<ProcedureRoot>) -> u32
     mem_load
 end
 
 #! Sets the number of procedure roots in the code patch list.
 #!
-#! Inputs:  [list_ptr, num_roots]
+#! Inputs:  [list_ptr, num_procedure_roots]
 #! Outputs: []
 #!
 #! Where:
 #! - list_ptr is the memory address at which the code patch list begins.
-#! - num_roots is the new number of procedure roots in the list.
-proc set_code_patch_num_roots(list_ptr: ptr<felt>, num_roots: u32)
+#! - num_procedure_roots is the number of procedure roots in the list.
+pub proc set_code_patch_num_procedure_roots(list_ptr: ptr<ProcedureRoot>, num_procedure_roots: u32)
     mem_store
 end
 
-#! Returns the procedure root with the provided index from the code patch list.
+#! Returns the memory address at which the procedure roots of the code patch list begin.
 #!
-#! Inputs:  [root_idx, list_ptr]
-#! Outputs: [PROC_ROOT]
+#! Inputs:  [list_ptr]
+#! Outputs: [roots_ptr]
 #!
 #! Where:
-#! - root_idx is the index of the procedure root in the list.
 #! - list_ptr is the memory address at which the code patch list begins.
-#! - PROC_ROOT is the procedure root at the index.
-pub proc get_code_patch_root(root_idx: u32, list_ptr: ptr<felt>) -> ProcedureRoot
-    mul.WORD_NUM_ELEMENTS add add.CODE_PATCH_LIST_ROOTS_OFFSET
-    # => [root_ptr]
-
-    padw movup.4 mem_loadw_le
-    # => [PROC_ROOT]
-end
-
-#! Appends a procedure root to the code patch list of the provided kind.
-#!
-#! Inputs:  [witness_kind, PROC_ROOT]
-#! Outputs: []
-#!
-#! Where:
-#! - witness_kind is the kind of the procedure root.
-#! - PROC_ROOT is the procedure root.
-#!
-#! Panics if:
-#! - the list already contains the maximum number of procedure roots.
-pub proc append_code_patch_root(witness_kind: CodeWitnessKind, proc_root: ProcedureRoot)
-    exec.get_code_patch_list_ptr
-    # => [list_ptr, PROC_ROOT]
-
-    dup exec.get_code_patch_num_roots
-    # => [num_roots, list_ptr, PROC_ROOT]
-
-    dup u32lt.MAX_CODE_PATCH_ROOTS assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
-    # => [num_roots, list_ptr, PROC_ROOT]
-
-    # increment num_roots
-    dup add.1 dup.2 exec.set_code_patch_num_roots
-    # => [num_roots, list_ptr, PROC_ROOT]
-
-    # append procedure root
-    mul.WORD_NUM_ELEMENTS add add.CODE_PATCH_LIST_ROOTS_OFFSET
-    # => [root_ptr, PROC_ROOT]
-
-    mem_storew_le dropw
-    # => []
+#! - roots_ptr is the memory address of the first procedure root in the list.
+pub proc get_code_patch_roots_ptr(list_ptr: ptr<ProcedureRoot>) -> ptr<ProcedureRoot>
+    add.CODE_PATCH_LIST_ROOTS_OFFSET
 end
 
 # LINK MAP

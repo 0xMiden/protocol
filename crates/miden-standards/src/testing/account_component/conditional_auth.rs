@@ -12,6 +12,7 @@ static CONDITIONAL_AUTH_CODE: LazyLock<String> = LazyLock::new(|| {
     format!(
         r#"
         use miden::protocol::native_account
+        use miden::protocol::tx
 
         const WRONG_ARGS="{ERR_WRONG_ARGS_MSG}"
 
@@ -24,6 +25,8 @@ static CONDITIONAL_AUTH_CODE: LazyLock<String> = LazyLock::new(|| {
             push.97 assert_eq.err=WRONG_ARGS
             push.98 assert_eq.err=WRONG_ARGS
             push.99 assert_eq.err=WRONG_ARGS
+
+            exec.tx::create_code_patch drop drop drop
 
             # Last element is the incr_nonce_flag.
             if.true

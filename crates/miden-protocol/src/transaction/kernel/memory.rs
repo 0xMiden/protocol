@@ -1,10 +1,11 @@
 use miden_core::program::KernelDescriptor;
 
-// TYPE ALIASES
-// ================================================================================================
 use crate::WORD_SIZE;
 use crate::account::AccountHeader;
 use crate::block::code_tree::CodePatch;
+
+// TYPE ALIASES
+// ================================================================================================
 
 pub type MemoryAddress = u32;
 pub type MemoryOffset = u32;
@@ -33,7 +34,7 @@ pub type StorageSlot = u8;
 // | Input notes                 | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)     |
 // |                             |               |                  | + 1024 input notes max, 1024 elements each  |
 // | Output notes                | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each   |
-// | Code patch                  | 17_825_792    | 6_156            | 3 lists of 512 procedure roots max          |
+// | Code patch                  | 17_825_792    | 6_160            | created flag + 3 lists of 512 roots max     |
 // | Link Map Memory             | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs        |
 
 // Relative layout of one account
@@ -554,6 +555,12 @@ pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 40;
 /// its layout.
 pub const CODE_PATCH_SECTION_PTR: MemoryAddress = 17_825_792;
 
+/// The memory address of the flag that indicates whether the code patch was created.
+pub const CODE_PATCH_CREATED_FLAG_PTR: MemoryAddress = CODE_PATCH_SECTION_PTR;
+
+/// The memory address of the number of output notes that existed when the code patch was created.
+pub const CODE_PATCH_NUM_CHECKED_NOTES_PTR: MemoryAddress = CODE_PATCH_SECTION_PTR + 1;
+
 /// The offset of the first procedure root relative to the start of a code patch list.
 pub const CODE_PATCH_LIST_ROOTS_OFFSET: MemoryOffset = WORD_SIZE as MemoryOffset;
 
@@ -562,10 +569,9 @@ pub const CODE_PATCH_LIST_LENGTH: MemoryOffset =
     CODE_PATCH_LIST_ROOTS_OFFSET + (CodePatch::MAX_ROOTS * WORD_SIZE) as MemoryOffset;
 
 /// The memory addresses at which the code patch lists begin.
-pub const CREATED_PROCS_LIST_PTR: MemoryAddress = CODE_PATCH_SECTION_PTR;
+pub const EXISTING_PROCS_LIST_PTR: MemoryAddress = CODE_PATCH_SECTION_PTR + WORD_SIZE as u32;
+pub const CREATED_PROCS_LIST_PTR: MemoryAddress = EXISTING_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH;
 pub const DEPENDENCIES_LIST_PTR: MemoryAddress = CREATED_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH;
-pub const PRESENT_TOP_LEVEL_LIST_PTR: MemoryAddress =
-    DEPENDENCIES_LIST_PTR + CODE_PATCH_LIST_LENGTH;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------

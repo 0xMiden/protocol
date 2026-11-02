@@ -28,6 +28,9 @@ const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT =
 
 const ERR_EPILOGUE_NONCE_CANNOT_BE_0 = "nonce cannot be 0 after an account-creating transaction"
 
+const ERR_EPILOGUE_CODE_PATCH_NOT_CREATED =
+    "authentication procedure must create the code patch"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -260,8 +263,8 @@ end
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
-#! - verifies the code witnesses of the public code that the transaction created so far.
 #! - invokes the native account's authentication procedure.
+#! - asserts that the code patch covers the public code that the transaction created.
 #! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment and the hash of the transaction logs commitment and
 #!   expiration block number.
@@ -294,19 +297,13 @@ end
 #!   replayability. A tx changes the chain state if it either consumes 1 or more input notes or by
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
+#! - the authentication procedure did not create the code patch.
+#! - the code patch does not cover the public code of the transaction (see
+#!   `code_patch::assert_later_output_notes_in_code_patch`).
 @locals(8)
 pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitment)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
-
-    # ------ Verify the code witnesses ------
-
-    # Verify code witnesses for new account code and all notes created so far. This happens before
-    # the auth procedure so the cycles incurred by witness verification are included if the auth
-    # procedure computes the fee and to allow auth procedures to constrain the number of verified
-    # witnesses (e.g. network accounts).
-    exec.code_patch::verify_before_auth
-    # => []
 
     # ------ Execute the account's authentication procedure ------
 
@@ -317,6 +314,16 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitme
     exec.memory::get_native_account_nonce
     # => [nonce]
     eq.0 assertz.err=ERR_EPILOGUE_NONCE_CANNOT_BE_0
+
+    # ------ Assert that the code patch covers the public code ------
+
+    # The code patch should have been created.
+    exec.memory::is_code_patch_created assert.err=ERR_EPILOGUE_CODE_PATCH_NOT_CREATED
+    # => []
+
+    # Assert all output notes created after the patch was created are in the patch.
+    exec.code_patch::assert_later_output_notes_in_code_patch
+    # => []
 
     # ------ Apply the account code upgrade ------
 

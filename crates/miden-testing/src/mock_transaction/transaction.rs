@@ -18,8 +18,6 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness, CodeWitnessRequest};
 use miden_protocol::block::{BlockHeader, BlockNumber};
-#[cfg(test)]
-use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
@@ -171,16 +169,14 @@ impl MockTransaction {
         self.execute_code_inner(code, true, Some(response), None).await
     }
 
-    /// Same as [`MockTransaction::execute_code`], but overrides the host hint for the verification
-    /// of `procedure_root` with `[index, hint_kind]`.
-    pub(crate) async fn execute_code_with_code_root_hint(
+    /// Same as [`MockTransaction::execute_code`], but overrides the advice stack response to the
+    /// creation of the code patch.
+    pub(crate) async fn execute_code_with_code_patch_response(
         &self,
         code: &str,
-        procedure_root: ProcedureRoot,
-        response: [Felt; 2],
+        response: Vec<Felt>,
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, None, Some((procedure_root, response)))
-            .await
+        self.execute_code_inner(code, true, None, Some(response)).await
     }
 
     async fn execute_code_inner(
@@ -188,13 +184,14 @@ impl MockTransaction {
         code: &str,
         is_lazy_loading_enabled: bool,
         input_note_index_response: Option<[Felt; 2]>,
-        code_root_hint_response: Option<(ProcedureRoot, [Felt; 2])>,
+        code_patch_response: Option<Vec<Felt>>,
     ) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
 
         use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
         use miden_protocol::assembly::{Assembler, SourceManager};
         use miden_protocol::asset::Asset;
+        use miden_protocol::note::NoteRecipient;
         use miden_protocol::transaction::TransactionKernel;
         use miden_standards::code_builder::CodeBuilder;
         use miden_tx::auth::UnreachableAuth;
@@ -266,13 +263,15 @@ impl MockTransaction {
             &PartialAccount::from(self.account()),
             tx_inputs.input_notes().clone(),
             self,
-            ScriptMastForestStore::default(),
+            ScriptMastForestStore::new(
+                None,
+                tx_inputs.tx_args().output_note_recipients().iter().map(NoteRecipient::script),
+            ),
             account_procedure_idx_map,
             None,
             ref_block,
             block_commitments,
-            tx_inputs.code_tree().clone(),
-            tx_inputs.tx_args().output_note_recipients(),
+            tx_inputs.block_header().code_tree_root(),
             self.source_manager(),
         )
         .expect("partial account from a full account should contain its complete storage");
@@ -286,8 +285,8 @@ impl MockTransaction {
         if let Some(response) = input_note_index_response {
             mock_host.set_input_note_index_response(response);
         }
-        if let Some((procedure_root, response)) = code_root_hint_response {
-            mock_host.set_code_root_hint_response(procedure_root, response);
+        if let Some(response) = code_patch_response {
+            mock_host.set_code_patch_response(response);
         }
 
         CodeExecutor::new(mock_host)

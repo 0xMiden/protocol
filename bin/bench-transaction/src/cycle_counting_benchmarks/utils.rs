@@ -203,12 +203,12 @@ mod tests {
             name: "consume single P2ID note with Falcon signing",
             padded_core_side: 131_072,
             padded_chiplets: 16_384,
-            padded_poseidon2: 65_536,
+            padded_poseidon2: 131_072,
         },
         ScenarioExpectation {
             name: "consume single P2ID note with ECDSA signing",
-            padded_core_side: 16_384,
-            padded_chiplets: 8_192,
+            padded_core_side: 32_768,
+            padded_chiplets: 16_384,
             padded_poseidon2: 32_768,
         },
         ScenarioExpectation {
@@ -220,7 +220,7 @@ mod tests {
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
             padded_core_side: 32_768,
-            padded_chiplets: 8_192,
+            padded_chiplets: 16_384,
             padded_poseidon2: 32_768,
         },
         ScenarioExpectation {

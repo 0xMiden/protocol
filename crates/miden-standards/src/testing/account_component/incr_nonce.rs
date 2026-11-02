@@ -7,9 +7,11 @@ use crate::code_builder::CodeBuilder;
 
 const INCR_NONCE_AUTH_CODE: &str = "
     use miden::protocol::native_account
+    use miden::protocol::tx
 
     @auth_script
     pub proc auth_incr_nonce
+        exec.tx::create_code_patch drop drop drop
         exec.native_account::incr_nonce drop
     end
 ";

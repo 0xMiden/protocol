@@ -549,12 +549,16 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
+      use miden::protocol::tx
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
       @auth_script
       pub proc auth_abort_tx
           dropw
+          # => [pad(16)]
+
+          exec.tx::create_code_patch drop drop drop
           # => [pad(16)]
 
           exec.::miden::protocol::native_account::incr_nonce
@@ -646,6 +650,9 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           dropw
           # => [pad(16)]
 
+          exec.tx::create_code_patch drop drop drop
+          # => [pad(16)]
+
           push.42 exec.tx::update_expiration_block_delta
           # => [pad(16)]
 
@@ -712,6 +719,9 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
       @auth_script
       pub proc auth_abort_tx
           dropw
+          # => [pad(16)]
+
+          exec.tx::create_code_patch drop drop drop
           # => [pad(16)]
 
           exec.::miden::protocol::native_account::incr_nonce drop
@@ -794,6 +804,9 @@ async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<(
           dropw
           # => [pad(16)]
 
+          exec.tx::create_code_patch drop drop drop
+          # => [pad(16)]
+
           exec.::miden::protocol::native_account::incr_nonce drop
           # => [pad(16)]
 
@@ -874,6 +887,9 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
       @auth_script
       pub proc auth_abort_tx
           dropw
+          # => [pad(16)]
+
+          exec.tx::create_code_patch drop drop drop
           # => [pad(16)]
 
           exec.::miden::protocol::native_account::incr_nonce drop

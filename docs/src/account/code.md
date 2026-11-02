@@ -23,6 +23,8 @@ An account's code is typically the result of merging multiple [account component
 
 Authenticating a transaction, and therefore the changes to the account, is done with an _authentication procedure_. Every account's code must provide exactly one authentication procedure. It is automatically called during the transaction epilogue, i.e. after all note scripts and the transaction script have been executed.
 
+The authentication procedure must also create the code patch of the transaction with `tx::create_code_patch`, usually through `fee::pay_fee`. Otherwise, the transaction fails. A public note that the procedure creates after the code patch must have its script root announced before with `code_patch::announce_root`.
+
 Such an authentication procedure typically inspects the transaction and then decides whether a signature is required to authenticate the changes. It does this by:
 
 - checking which account procedures have been called

@@ -161,11 +161,14 @@ pub(crate) enum TransactionEvent {
         attachment: NoteAttachment,
     },
 
-    /// The data necessary to answer the verification of a top-level procedure root.
-    CodeBeforeProcRootVerified {
-        /// The top-level procedure root that the kernel verifies.
+    /// A top-level procedure root that the transaction announced for the code patch.
+    CodePatchRootAnnounced {
+        /// The announced top-level procedure root.
         procedure_root: ProcedureRoot,
     },
+
+    /// The kernel requests the procedure roots of the code patch.
+    CodePatchBeforeCreated,
 
     /// A lookup that resolves an input note ID to its index through the advice provider.
     InputNoteIndexLookup {
@@ -541,10 +544,14 @@ impl TransactionEvent {
                 Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
             },
 
-            TransactionEventId::CodeBeforeProcRootVerified => {
+            TransactionEventId::CodePatchRootAnnounced => {
                 // Expected stack state: [event, PROC_ROOT]
                 let procedure_root = ProcedureRoot::from_raw(process.get_stack_word(1));
-                Some(TransactionEvent::CodeBeforeProcRootVerified { procedure_root })
+                Some(TransactionEvent::CodePatchRootAnnounced { procedure_root })
+            },
+
+            TransactionEventId::CodePatchBeforeCreated => {
+                Some(TransactionEvent::CodePatchBeforeCreated)
             },
 
             TransactionEventId::InputNoteIndexLookup => {

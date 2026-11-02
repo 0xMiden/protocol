@@ -17,15 +17,16 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 /// The procedures a transaction creates, i.e. the code it adds to the
 /// [`CodeTree`](super::CodeTree) and its code registry, and the procedures it depends on.
 ///
-/// The created procedures are equal to the procedure roots of the contained [`MastForest`]. They
-/// are retained separately to keep tx kernel emission order.
+/// The created procedures are the procedure roots of the contained [`MastForest`]. The
+/// dependencies are the procedures that the external nodes of the forest reference and that the
+/// transaction proves present in the code tree. A present top-level root, e.g. a note script root,
+/// is a dependency only if a created procedure references it.
 ///
-/// The dependencies are the procedures that the external nodes of the forest reference and that
-/// the transaction proves present in the code tree. The host selects them, so they are committed
-/// to and must match the external nodes exactly. This rejects missing dependencies and extra ones,
-/// which would only add cost. A top-level root that is already present, e.g. a note script root,
-/// is not a dependency, since the transaction kernel selects it and the transaction proof already
-/// attests to its presence.
+/// Both lists are sorted, so their commitments are the interface and dependency commitments of the
+/// forest and are equal to the commitments over the strictly sorted lists of the transaction kernel
+/// (TODO(#4006): the kernel does not output them yet). Hence, the procedure roots and the external
+/// nodes must each be unique, since a duplicate would make the forest commitments differ from the
+/// kernel's.
 ///
 /// A dependency must not be a created procedure, i.e. an external node must not reference a
 /// created procedure. Building the forest with [`MastForest::merge`] replaces such references with
@@ -34,39 +35,14 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 /// created procedure a separate root, which adds a code tree entry that the account pays for.
 ///
 /// Every node of the forest must be reachable from a created procedure. The commitments do not
-/// cover unreachable nodes, so they could add arbitrary data to the registry without changing the
-/// commitment, or add an external node that adds an extra dependency.
-///
-/// Both lists are kept in the order in which the transaction kernel commits to them. This is why
-/// the commitments cannot reuse [`MastForest::interface_commitment`] and
-/// [`MastForest::dependency_commitment`]: these hash the digests in sorted order, which the
-/// transaction kernel would have to sort to reproduce.
-///
-/// The commitment to created procedures ([`Self::created_commitment`]) is the sequential hash of:
-/// ```text
-/// [CREATED_PROC_ROOT_0, ..., CREATED_PROC_ROOT_N].
-/// ```
-///
-/// The commitment to dependencies ([`Self::dependencies_commitment`]) is the sequential hash of:
-/// ```text
-/// [DEPENDENCY_PROC_ROOT_0, ..., DEPENDENCY_PROC_ROOT_N].
-/// ```
-///
-/// The commitment to the patch ([`Self::commitment`]) is the hash of:
-/// ```text
-/// [CREATED_COMMITMENT, DEPENDENCIES_COMMITMENT].
-/// ```
+/// cover the code of unreachable nodes, so they could add arbitrary data to the registry without
+/// changing the commitment.
 ///
 /// The advice map of the forest must be empty. Advice is expected to be removed from
 /// [`MastForest`], so the code tree and its registry do not commit to or store it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodePatch {
-    created_procedures: Vec<ProcedureRoot>,
-    dependencies: Vec<ProcedureRoot>,
     mast: Arc<MastForest>,
-
-    created_commitment: Word,
-    dependencies_commitment: Word,
     commitment: CodePatchCommitment,
 }
 
@@ -83,89 +59,42 @@ impl CodePatch {
     /// Domain separator for the patch commitment.
     const DOMAIN: Felt = ProtocolDomainRegistry::CodePatch.as_felt();
 
-    /// Domain separator for the created procedures commitment.
-    const CREATED_DOMAIN: Felt = ProtocolDomainRegistry::CodePatchCreated.as_felt();
-
-    /// Domain separator for the dependencies commitment.
-    const DEPENDENCIES_DOMAIN: Felt = ProtocolDomainRegistry::CodePatchDependencies.as_felt();
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`CodePatch`] from the created procedures, the dependencies and the MAST
-    /// forest that contains them.
+    /// Creates a new [`CodePatch`] from the MAST forest of the created procedures.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the number of created procedures or dependencies exceeds [`Self::MAX_ROOTS`].
-    /// - a created procedure or a dependency is duplicated.
-    /// - a dependency is also a created procedure.
-    /// - a created procedure is not a procedure root of the forest.
-    /// - a procedure root of the forest is not a created procedure.
-    /// - a node of the forest is not reachable from a created procedure.
-    /// - an external node of the forest does not reference a dependency.
-    /// - a dependency is not referenced by an external node of the forest.
+    /// - the number of procedure roots or external nodes of the forest exceeds [`Self::MAX_ROOTS`].
+    /// - a procedure root or an external node digest of the forest is duplicated.
+    /// - an external node references a procedure root of the forest.
+    /// - a node of the forest is not reachable from a procedure root.
     /// - the advice map of the forest is not empty.
     /// - the serialized forest exceeds [`Self::MAX_SIZE`].
-    pub fn new(
-        created_procedures: Vec<ProcedureRoot>,
-        dependencies: Vec<ProcedureRoot>,
-        mast: Arc<MastForest>,
-    ) -> Result<Self, CodePatchError> {
-        if created_procedures.len() > Self::MAX_ROOTS {
-            return Err(CodePatchError::TooManyCreatedProcedures(created_procedures.len()));
+    pub fn new(mast: Arc<MastForest>) -> Result<Self, CodePatchError> {
+        let num_created_procedures = mast.procedure_roots().len();
+        if num_created_procedures > Self::MAX_ROOTS {
+            return Err(CodePatchError::TooManyCreatedProcedures(num_created_procedures));
         }
 
-        if dependencies.len() > Self::MAX_ROOTS {
-            return Err(CodePatchError::TooManyDependencies(dependencies.len()));
+        let num_dependencies = external_node_digests(&mast).count();
+        if num_dependencies > Self::MAX_ROOTS {
+            return Err(CodePatchError::TooManyDependencies(num_dependencies));
         }
 
-        let unique_created_procedures = unique_procedure_roots(&created_procedures)
+        let created_procedures = unique_procedure_roots(mast.procedure_digests())
             .map_err(CodePatchError::DuplicateCreatedProcedure)?;
-        let unique_dependencies =
-            unique_procedure_roots(&dependencies).map_err(CodePatchError::DuplicateDependency)?;
+        let dependencies = unique_procedure_roots(external_node_digests(&mast))
+            .map_err(CodePatchError::DuplicateDependency)?;
 
-        if let Some(created_dependency) =
-            unique_created_procedures.intersection(&unique_dependencies).next()
-        {
+        if let Some(created_dependency) = created_procedures.intersection(&dependencies).next() {
             return Err(CodePatchError::DependencyIsCreatedProcedure(*created_dependency));
-        }
-
-        let forest_roots: BTreeSet<ProcedureRoot> =
-            mast.procedure_digests().map(ProcedureRoot::from_raw).collect();
-
-        if let Some(unknown_procedure) = unique_created_procedures.difference(&forest_roots).next()
-        {
-            return Err(CodePatchError::CreatedProcedureNotInMastForest(*unknown_procedure));
-        }
-
-        if let Some(missing_procedure) = forest_roots.difference(&unique_created_procedures).next()
-        {
-            return Err(CodePatchError::MastForestRootNotCreated(*missing_procedure));
         }
 
         if let Some(unreachable_node) = find_unreachable_node(&mast) {
             return Err(CodePatchError::UnreachableMastNode(unreachable_node));
-        }
-
-        let external_references: BTreeSet<ProcedureRoot> = mast
-            .nodes()
-            .iter()
-            .filter(|node| node.is_external())
-            .map(|node| ProcedureRoot::from_raw(node.digest()))
-            .collect();
-
-        if let Some(undeclared_reference) =
-            external_references.difference(&unique_dependencies).next()
-        {
-            return Err(CodePatchError::ExternalNodeNotDependency(*undeclared_reference));
-        }
-
-        if let Some(unreferenced_dependency) =
-            unique_dependencies.difference(&external_references).next()
-        {
-            return Err(CodePatchError::DependencyNotExternalNode(*unreferenced_dependency));
         }
 
         if !mast.advice_map().is_empty() {
@@ -180,47 +109,23 @@ impl CodePatch {
             return Err(CodePatchError::SizeLimitExceeded { size: serialized_mast.len() });
         }
 
-        Ok(Self::new_unchecked(created_procedures, dependencies, mast))
+        Ok(Self::new_unchecked(mast))
     }
 
-    /// Creates a new [`CodePatch`] from its parts without validation.
-    fn new_unchecked(
-        created_procedures: Vec<ProcedureRoot>,
-        dependencies: Vec<ProcedureRoot>,
-        mast: Arc<MastForest>,
-    ) -> Self {
-        let created_commitment = if created_procedures.is_empty() {
+    /// Creates a new [`CodePatch`] from the MAST forest without validation.
+    fn new_unchecked(mast: Arc<MastForest>) -> Self {
+        let commitment = if mast.procedure_roots().is_empty() {
             Word::empty()
         } else {
-            Hasher::hash_elements_in_domain(
-                &procedure_root_elements(&created_procedures),
-                Self::CREATED_DOMAIN,
+            Hasher::merge_in_domain(
+                &[mast.interface_commitment(), mast.dependency_commitment()],
+                Self::DOMAIN,
             )
         };
-
-        let dependencies_commitment = if dependencies.is_empty() {
-            Word::empty()
-        } else {
-            Hasher::hash_elements_in_domain(
-                &procedure_root_elements(&dependencies),
-                Self::DEPENDENCIES_DOMAIN,
-            )
-        };
-
-        let commitment = if created_commitment.is_empty() && dependencies_commitment.is_empty() {
-            Word::empty()
-        } else {
-            Hasher::merge_in_domain(&[created_commitment, dependencies_commitment], Self::DOMAIN)
-        };
-        let commitment = CodePatchCommitment::from_raw(commitment);
 
         Self {
-            created_procedures,
-            dependencies,
             mast,
-            created_commitment,
-            dependencies_commitment,
-            commitment,
+            commitment: CodePatchCommitment::from_raw(commitment),
         }
     }
 
@@ -232,44 +137,38 @@ impl CodePatch {
         &self.mast
     }
 
-    /// Returns an iterator over the created procedure roots in kernel order.
-    pub fn created_procedures(&self) -> impl Iterator<Item = ProcedureRoot> + '_ {
-        self.created_procedures.iter().copied()
+    /// Returns an iterator over the created procedure roots in ascending order.
+    pub fn created_procedures(&self) -> impl Iterator<Item = ProcedureRoot> + use<> {
+        sorted_procedure_roots(self.mast.procedure_digests()).into_iter()
     }
 
-    /// Returns an iterator over the dependencies in kernel order.
-    pub fn dependencies(&self) -> impl Iterator<Item = ProcedureRoot> + '_ {
-        self.dependencies.iter().copied()
+    /// Returns an iterator over the dependencies in ascending order.
+    pub fn dependencies(&self) -> impl Iterator<Item = ProcedureRoot> + use<> {
+        sorted_procedure_roots(external_node_digests(&self.mast)).into_iter()
     }
 
-    /// Returns `true` if the patch creates no procedures and has no dependencies.
+    /// Returns `true` if the patch creates no procedures.
+    ///
+    /// Such a patch has no dependencies either, since every node is reachable from a created
+    /// procedure.
     pub fn is_empty(&self) -> bool {
-        self.created_procedures.is_empty() && self.dependencies.is_empty()
+        self.mast.procedure_roots().is_empty()
     }
 
-    /// Returns the elements the created procedures commitment is computed from: the created
-    /// procedure roots in kernel order.
-    pub fn to_created_elements(&self) -> Vec<Felt> {
-        procedure_root_elements(&self.created_procedures)
-    }
-
-    /// Returns the elements the dependencies commitment is computed from: the dependencies in
-    /// kernel order.
-    pub fn to_dependencies_elements(&self) -> Vec<Felt> {
-        procedure_root_elements(&self.dependencies)
-    }
-
-    /// Returns the commitment to the created procedures, or [`Word::empty`] if there are none.
+    /// Returns the commitment to the created procedures.
     pub fn created_commitment(&self) -> Word {
-        self.created_commitment
+        self.mast.interface_commitment()
     }
 
-    /// Returns the commitment to the dependencies, or [`Word::empty`] if there are none.
+    /// Returns the commitment to the dependencies.
     pub fn dependencies_commitment(&self) -> Word {
-        self.dependencies_commitment
+        self.mast.dependency_commitment()
     }
 
     /// Returns the commitment to this patch, or [`Word::empty`] for an empty patch.
+    ///
+    /// The commitment is the domain-separated merge of [`Self::created_commitment`] and
+    /// [`Self::dependencies_commitment`].
     pub fn commitment(&self) -> CodePatchCommitment {
         self.commitment
     }
@@ -277,7 +176,7 @@ impl CodePatch {
 
 impl Default for CodePatch {
     fn default() -> Self {
-        Self::new_unchecked(Vec::new(), Vec::new(), Arc::new(MastForest::new()))
+        Self::new_unchecked(Arc::new(MastForest::new()))
     }
 }
 
@@ -297,14 +196,24 @@ impl Display for CodePatchCommitment {
 // HELPERS
 // ================================================================================================
 
-/// Returns the set of procedure roots, or the first duplicated procedure root.
+/// Returns an iterator over the digests of the external nodes of the forest.
+fn external_node_digests(mast: &MastForest) -> impl Iterator<Item = Word> + '_ {
+    mast.nodes().iter().filter(|node| node.is_external()).map(|node| node.digest())
+}
+
+/// Returns the procedure roots of the digests, which iterate in ascending order.
+fn sorted_procedure_roots(digests: impl Iterator<Item = Word>) -> BTreeSet<ProcedureRoot> {
+    digests.map(ProcedureRoot::from_raw).collect()
+}
+
+/// Returns the set of procedure roots of the digests, or the first duplicated procedure root.
 fn unique_procedure_roots(
-    procedure_roots: &[ProcedureRoot],
+    digests: impl Iterator<Item = Word>,
 ) -> Result<BTreeSet<ProcedureRoot>, ProcedureRoot> {
     let mut unique_roots = BTreeSet::new();
-    for procedure_root in procedure_roots {
-        if !unique_roots.insert(*procedure_root) {
-            return Err(*procedure_root);
+    for procedure_root in digests.map(ProcedureRoot::from_raw) {
+        if !unique_roots.insert(procedure_root) {
+            return Err(procedure_root);
         }
     }
 
@@ -335,16 +244,6 @@ fn find_unreachable_node(mast: &MastForest) -> Option<Word> {
         .map(|(node, _)| node.digest())
 }
 
-/// Returns the procedure roots as a sequence of field elements.
-fn procedure_root_elements(procedure_roots: &[ProcedureRoot]) -> Vec<Felt> {
-    let mut elements = Vec::with_capacity(procedure_roots.len() * Word::NUM_ELEMENTS);
-    for procedure_root in procedure_roots {
-        elements.extend_from_slice(procedure_root.as_elements());
-    }
-
-    elements
-}
-
 // TESTS
 // ================================================================================================
 
@@ -353,7 +252,7 @@ mod tests {
     use alloc::vec;
 
     use assert_matches::assert_matches;
-    use miden_core::mast::{BasicBlockNodeBuilder, MastNode};
+    use miden_core::mast::{BasicBlockNodeBuilder, ExternalNodeBuilder, MastNode};
     use miden_core::operations::Operation;
     use rstest::rstest;
 
@@ -377,59 +276,78 @@ mod tests {
         end
     ";
 
-    fn library_forest() -> Arc<MastForest> {
-        assemble_test_package("test-code-patch", "test::code_patch", LIBRARY_SOURCE)
+    const NO_DEPENDENCIES_SOURCE: &str = "
+        pub proc foo
+            push.1 drop
+        end
+
+        pub proc bar
+            push.2 drop
+        end
+    ";
+
+    fn assemble_forest(source: &str) -> Arc<MastForest> {
+        assemble_test_package("test-code-patch", "test::code_patch", source)
             .mast_forest()
             .clone()
     }
 
-    fn forest_roots(mast: &MastForest) -> Vec<ProcedureRoot> {
-        mast.procedure_digests().map(ProcedureRoot::from_raw).collect()
+    /// Returns the basic block `push.value`, which has a distinct digest for every `value`.
+    fn push_block(value: u32) -> anyhow::Result<MastNode> {
+        Ok(BasicBlockNodeBuilder::new(vec![Operation::Push(Felt::from_u32(value))])
+            .build()?
+            .into())
+    }
+
+    /// Returns the sorted digests as a sequence of field elements.
+    fn sorted_elements(digests: impl Iterator<Item = Word>) -> Vec<Felt> {
+        let mut sorted_digests: Vec<Word> = digests.collect();
+        sorted_digests.sort();
+        sorted_digests.iter().flat_map(|digest| digest.as_elements().to_vec()).collect()
     }
 
     #[test]
     fn empty_patch_has_empty_commitment() -> anyhow::Result<()> {
-        let patch = CodePatch::new(Vec::new(), Vec::new(), Arc::new(MastForest::new()))?;
+        let patch = CodePatch::new(Arc::new(MastForest::new()))?;
 
         assert!(patch.is_empty());
-        assert!(patch.to_created_elements().is_empty());
-        assert!(patch.to_dependencies_elements().is_empty());
-        assert_eq!(patch.created_commitment(), Word::empty());
-        assert_eq!(patch.dependencies_commitment(), Word::empty());
+        assert_eq!(patch.created_procedures().count(), 0);
+        assert_eq!(patch.dependencies().count(), 0);
         assert_eq!(patch.commitment().as_word(), Word::empty());
         assert_eq!(patch, CodePatch::default());
 
         Ok(())
     }
 
-    #[test]
-    fn commitment_covers_created_procedures_and_dependencies() -> anyhow::Result<()> {
-        let mast = library_forest();
-        let [proc0, proc1] = <[ProcedureRoot; 2]>::try_from(forest_roots(&mast))
-            .map_err(|roots| anyhow::anyhow!("expected two forest roots, got {}", roots.len()))?;
-        let external_procedure = ProcedureRoot::from_raw(EXTERNAL_DIGEST);
+    /// Pins the commitments to the sequential hash of the sorted roots, which the transaction
+    /// kernel computes.
+    #[rstest]
+    #[case::with_dependencies(LIBRARY_SOURCE, vec![EXTERNAL_DIGEST])]
+    #[case::without_dependencies(NO_DEPENDENCIES_SOURCE, Vec::new())]
+    fn commitments_are_hashes_of_sorted_roots(
+        #[case] source: &str,
+        #[case] expected_dependencies: Vec<Word>,
+    ) -> anyhow::Result<()> {
+        let mast = assemble_forest(source);
+        let patch = CodePatch::new(mast.clone())?;
 
-        // Unsorted kernel order.
-        let created_procedures = vec![proc1, proc0];
-        let dependencies = vec![external_procedure];
-        let patch = CodePatch::new(created_procedures.clone(), dependencies.clone(), mast)?;
-
-        let expected_created_elements: Vec<Felt> =
-            created_procedures.iter().flat_map(|root| root.as_elements().to_vec()).collect();
-        let expected_dependencies_elements: Vec<Felt> =
-            dependencies.iter().flat_map(|root| root.as_elements().to_vec()).collect();
+        let mut expected_created_procedures: Vec<ProcedureRoot> =
+            mast.procedure_digests().map(ProcedureRoot::from_raw).collect();
+        expected_created_procedures.sort();
         let expected_created_commitment =
-            Hasher::hash_elements_in_domain(&expected_created_elements, CodePatch::CREATED_DOMAIN);
-        let expected_dependencies_commitment = Hasher::hash_elements_in_domain(
-            &expected_dependencies_elements,
-            CodePatch::DEPENDENCIES_DOMAIN,
-        );
+            Hasher::hash_elements(&sorted_elements(mast.procedure_digests()));
+        let expected_dependencies_commitment =
+            Hasher::hash_elements(&sorted_elements(expected_dependencies.iter().copied()));
 
         assert!(!patch.is_empty());
-        assert_eq!(patch.created_procedures().collect::<Vec<_>>(), created_procedures);
-        assert_eq!(patch.dependencies().collect::<Vec<_>>(), dependencies);
-        assert_eq!(patch.to_created_elements(), expected_created_elements);
-        assert_eq!(patch.to_dependencies_elements(), expected_dependencies_elements);
+        assert_eq!(patch.created_procedures().collect::<Vec<_>>(), expected_created_procedures);
+        assert_eq!(
+            patch.dependencies().collect::<Vec<_>>(),
+            expected_dependencies
+                .into_iter()
+                .map(ProcedureRoot::from_raw)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(patch.created_commitment(), expected_created_commitment);
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);
         assert_eq!(
@@ -443,147 +361,56 @@ mod tests {
         Ok(())
     }
 
-    #[rstest]
-    #[case::created_procedures(CodePatch::MAX_ROOTS + 1, 0)]
-    #[case::dependencies(0, CodePatch::MAX_ROOTS + 1)]
-    fn new_rejects_too_many_roots(
-        #[case] num_created_procedures: usize,
-        #[case] num_dependencies: usize,
-    ) {
-        let root = ProcedureRoot::from_raw(EXTERNAL_DIGEST);
-        let created_procedures = vec![root; num_created_procedures];
-        let dependencies = vec![root; num_dependencies];
-
-        let error = CodePatch::new(created_procedures, dependencies, Arc::new(MastForest::new()))
-            .unwrap_err();
-        if num_created_procedures > CodePatch::MAX_ROOTS {
-            assert_matches!(
-                error,
-                CodePatchError::TooManyCreatedProcedures(count) if count == num_created_procedures
-            );
-        } else {
-            assert_matches!(
-                error,
-                CodePatchError::TooManyDependencies(count) if count == num_dependencies
-            );
+    #[test]
+    fn new_rejects_too_many_created_procedures() -> anyhow::Result<()> {
+        let num_roots = CodePatch::MAX_ROOTS + 1;
+        let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
+        let mut roots = Vec::with_capacity(num_roots);
+        for value in 0..num_roots {
+            roots.push(nodes.push(push_block(u32::try_from(value)?)?)?);
         }
+        let mast = MastForest::from_raw_parts(nodes, roots, AdviceMap::default())?;
+
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
+        assert_matches!(
+            error,
+            CodePatchError::TooManyCreatedProcedures(count) if count == num_roots
+        );
+
+        Ok(())
     }
 
     #[test]
-    fn new_rejects_duplicate_created_procedure() {
-        let mast = library_forest();
-        let mut created_procedures = forest_roots(&mast);
-        let duplicate_procedure = created_procedures[0];
-        created_procedures.push(duplicate_procedure);
+    fn new_rejects_too_many_dependencies() -> anyhow::Result<()> {
+        let num_external_nodes = CodePatch::MAX_ROOTS + 1;
+        let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
+        for value in 0..num_external_nodes {
+            let digest = ProcedureRoot::mock(u32::try_from(value)?).as_word();
+            nodes.push(ExternalNodeBuilder::new(digest).build().into())?;
+        }
+        let root = nodes.push(push_block(0)?)?;
+        let mast = MastForest::from_raw_parts(nodes, vec![root], AdviceMap::default())?;
 
-        let error = CodePatch::new(created_procedures, Vec::new(), mast).unwrap_err();
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
+        assert_matches!(
+            error,
+            CodePatchError::TooManyDependencies(count) if count == num_external_nodes
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_rejects_duplicate_created_procedure() -> anyhow::Result<()> {
+        let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
+        let node_id = nodes.push(push_block(0)?)?;
+        let mast = MastForest::from_raw_parts(nodes, vec![node_id, node_id], AdviceMap::default())?;
+        let duplicate_procedure = ProcedureRoot::from_raw(mast[node_id].digest());
+
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(
             error,
             CodePatchError::DuplicateCreatedProcedure(root) if root == duplicate_procedure
-        );
-    }
-
-    #[test]
-    fn new_rejects_duplicate_dependency() {
-        let mast = library_forest();
-        let external_procedure = ProcedureRoot::from_raw(EXTERNAL_DIGEST);
-        let dependencies = vec![external_procedure, external_procedure];
-
-        let error = CodePatch::new(forest_roots(&mast), dependencies, mast).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::DuplicateDependency(root) if root == external_procedure
-        );
-    }
-
-    #[test]
-    fn new_rejects_dependency_that_is_created_procedure() {
-        let mast = library_forest();
-        let created_procedures = forest_roots(&mast);
-        let created_dependency = created_procedures[0];
-
-        let error = CodePatch::new(created_procedures, vec![created_dependency], mast).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::DependencyIsCreatedProcedure(root) if root == created_dependency
-        );
-    }
-
-    #[test]
-    fn new_rejects_dependency_that_is_not_external_node() {
-        let mast = library_forest();
-        let unreferenced_dependency = ProcedureRoot::mock(0);
-        let dependencies = vec![ProcedureRoot::from_raw(EXTERNAL_DIGEST), unreferenced_dependency];
-
-        let error = CodePatch::new(forest_roots(&mast), dependencies, mast).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::DependencyNotExternalNode(root) if root == unreferenced_dependency
-        );
-    }
-
-    #[test]
-    fn new_rejects_external_node_that_is_not_dependency() {
-        let mast = library_forest();
-        let external_procedure = ProcedureRoot::from_raw(EXTERNAL_DIGEST);
-
-        let error = CodePatch::new(forest_roots(&mast), Vec::new(), mast).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::ExternalNodeNotDependency(root) if root == external_procedure
-        );
-    }
-
-    #[test]
-    fn new_rejects_created_procedure_not_in_forest() {
-        let unknown_procedure = ProcedureRoot::mock(0);
-        let mast = library_forest();
-        let mut created_procedures = forest_roots(&mast);
-        created_procedures.push(unknown_procedure);
-
-        let error = CodePatch::new(created_procedures, Vec::new(), mast).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::CreatedProcedureNotInMastForest(root) if root == unknown_procedure
-        );
-    }
-
-    #[test]
-    fn new_rejects_forest_root_that_is_not_created() {
-        let mast = library_forest();
-        let mut created_procedures = forest_roots(&mast);
-        let missing_procedure = created_procedures.pop().expect("forest should have roots");
-
-        let error = CodePatch::new(created_procedures, Vec::new(), mast).unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::MastForestRootNotCreated(root) if root == missing_procedure
-        );
-    }
-
-    #[test]
-    fn new_rejects_unreachable_node() -> anyhow::Result<()> {
-        let library = library_forest();
-        let foo = forest_roots(&library)[0];
-        let foo_node_id = library
-            .find_procedure_root(foo.as_word())
-            .ok_or_else(|| anyhow::anyhow!("foo should be a procedure root"))?;
-        // Drop `bar` from the roots, so that it and its external node become unreachable.
-        let mast = MastForest::from_raw_parts(
-            library.nodes().to_vec().try_into()?,
-            vec![foo_node_id],
-            AdviceMap::default(),
-        )?;
-
-        let error = CodePatch::new(
-            vec![foo],
-            vec![ProcedureRoot::from_raw(EXTERNAL_DIGEST)],
-            Arc::new(mast),
-        )
-        .unwrap_err();
-        assert_matches!(
-            error,
-            CodePatchError::UnreachableMastNode(digest) if digest == EXTERNAL_DIGEST
         );
 
         Ok(())
@@ -595,11 +422,36 @@ mod tests {
         let (mast, _) = create_external_node_forest(external_digest);
         let external_root = ProcedureRoot::from_raw(external_digest);
 
-        let error = CodePatch::new(vec![external_root], Vec::new(), Arc::new(mast)).unwrap_err();
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(
             error,
-            CodePatchError::ExternalNodeNotDependency(root) if root == external_root
+            CodePatchError::DependencyIsCreatedProcedure(root) if root == external_root
         );
+    }
+
+    #[test]
+    fn new_rejects_unreachable_node() -> anyhow::Result<()> {
+        let library = assemble_forest(LIBRARY_SOURCE);
+        let foo_node_id = library
+            .procedure_roots()
+            .iter()
+            .copied()
+            .find(|&node_id| !matches!(library[node_id], MastNode::Call(_)))
+            .ok_or_else(|| anyhow::anyhow!("foo should be a procedure root"))?;
+        // Drop `bar` from the roots, so that it and its external node become unreachable.
+        let mast = MastForest::from_raw_parts(
+            library.nodes().to_vec().try_into()?,
+            vec![foo_node_id],
+            AdviceMap::default(),
+        )?;
+
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
+        assert_matches!(
+            error,
+            CodePatchError::UnreachableMastNode(digest) if digest == EXTERNAL_DIGEST
+        );
+
+        Ok(())
     }
 
     #[test]
@@ -609,7 +461,7 @@ mod tests {
         advice_map.insert(Hasher::hash_elements(&value), value);
         let mast = MastForest::new().with_advice_map(advice_map);
 
-        let error = CodePatch::new(Vec::new(), Vec::new(), Arc::new(mast)).unwrap_err();
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(error, CodePatchError::AdviceMapNotEmpty);
     }
 
@@ -621,9 +473,8 @@ mod tests {
         let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
         let node_id = nodes.push(BasicBlockNodeBuilder::new(operations).build()?.into())?;
         let mast = MastForest::from_raw_parts(nodes, vec![node_id], AdviceMap::default())?;
-        let mast = Arc::new(mast);
 
-        let error = CodePatch::new(forest_roots(&mast), Vec::new(), mast).unwrap_err();
+        let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(
             error,
             CodePatchError::SizeLimitExceeded { size } if size > CodePatch::MAX_SIZE as usize

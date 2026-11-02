@@ -1,4 +1,4 @@
-//! Tests the verification of code witnesses by the transaction kernel.
+//! Tests the creation of the code patch by the transaction kernel.
 
 use alloc::collections::BTreeSet;
 use alloc::format;
@@ -6,14 +6,26 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_processor::ExecutionOutput;
-use miden_protocol::account::{Account, AccountCode, AccountType};
+use miden_processor::{ExecutionError, ExecutionOutput};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountCode,
+    AccountComponent,
+    AccountType,
+};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
-    ERR_CODE_PATCH_HINT_INDEX_OUT_OF_BOUNDS,
-    ERR_CODE_PATCH_HINT_ROOT_MISMATCH,
-    ERR_CODE_PATCH_INVALID_HINT,
+    ERR_CODE_PATCH_ALREADY_CREATED,
+    ERR_CODE_PATCH_CREATED_OUTSIDE_AUTH,
+    ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED,
+    ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH,
+    ERR_CODE_PATCH_TOP_LEVEL_ROOT_MISSING,
+    ERR_EPILOGUE_CODE_PATCH_NOT_CREATED,
+    ERR_MEM_WORDS_NOT_STRICTLY_SORTED,
     ERR_NOTE_INVALID_RECIPIENT_PREIMAGE,
 };
 use miden_protocol::note::{Note, NoteType};
@@ -23,31 +35,38 @@ use miden_protocol::transaction::memory::{
     CODE_PATCH_LIST_ROOTS_OFFSET,
     CREATED_PROCS_LIST_PTR,
     DEPENDENCIES_LIST_PTR,
+    EXISTING_PROCS_LIST_PTR,
     MemoryAddress,
-    PRESENT_TOP_LEVEL_LIST_PTR,
 };
 use miden_protocol::{Felt, ProtocolLib, WORD_SIZE, Word};
 use miden_standards::StandardsLib;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account_code::MockAccountCodeExt;
 use miden_standards::testing::note::NoteBuilder;
-use miden_tx::TransactionExecutor;
 use miden_tx::auth::UnreachableAuth;
+use miden_tx::{TransactionExecutor, TransactionKernelError};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
 use super::ExecutionOutputExt;
 use crate::mock_transaction::TestTransactionBuilder;
-use crate::{AccountState, Auth, MockChain, assert_execution_error};
+use crate::{
+    AccountState,
+    Auth,
+    MockChain,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
 
 // TESTS
 // ================================================================================================
 
-/// Present note scripts go into the present top-level list and absent note scripts into the list
-/// of created procedures, together with the procedures they reference. Repeated roots and private
-/// notes do not change the lists.
+/// Present note scripts go into the existing procedures and absent note scripts into the created
+/// procedures, together with the procedures they reference. Repeated roots and private notes do not
+/// change the lists.
 #[tokio::test]
 async fn note_scripts_are_put_into_code_patch_lists() -> anyhow::Result<()> {
     let p2id_note = create_p2id_note(1)?;
@@ -63,53 +82,64 @@ async fn note_scripts_are_put_into_code_patch_lists() -> anyhow::Result<()> {
     let exec_output = TestTransactionBuilder::with_existing_mock_account()
         .expected_output_notes(notes.iter().cloned().map(RawOutputNote::Full).collect())
         .build()?
-        .execute_code(&verify_note_scripts_code(&notes))
+        .execute_code(&create_code_patch_code(&notes, &[], &[]))
         .await?;
 
     assert_eq!(
-        code_patch_list(&exec_output, PRESENT_TOP_LEVEL_LIST_PTR),
-        [script_root(&p2id_note)]
+        code_patch_list(&exec_output, EXISTING_PROCS_LIST_PTR),
+        BTreeSet::from([script_root(&p2id_note)])
     );
     assert_eq!(
         code_patch_list(&exec_output, CREATED_PROCS_LIST_PTR),
-        [script_root(&custom_note)]
+        BTreeSet::from([script_root(&custom_note)])
     );
     assert_eq!(
         code_patch_list(&exec_output, DEPENDENCIES_LIST_PTR),
-        [protocol_procedure("miden::protocol::active_account::get_id")?]
+        BTreeSet::from([protocol_procedure("miden::protocol::active_account::get_id")?])
     );
+    assert_eq!(code_patch_counts(&exec_output), [1, 1, 1]);
+
+    Ok(())
+}
+
+/// `tx::create_code_patch` returns the sizes of the code patch lists in the documented order.
+#[tokio::test]
+async fn create_code_patch_returns_list_sizes() -> anyhow::Result<()> {
+    // one present note script and two absent note scripts that reference three present procedures
+    let notes = [
+        create_p2id_note(1)?,
+        create_custom_note(ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 2)?,
+        create_custom_note(ACCOUNT_STATE_SCRIPT, NoteType::Public, 3)?,
+    ];
+
+    let exec_output = TestTransactionBuilder::with_existing_mock_account()
+        .expected_output_notes(notes.iter().cloned().map(RawOutputNote::Full).collect())
+        .build()?
+        .execute_code(&create_code_patch_code_with(
+            &notes,
+            &[],
+            &[],
+            "exec.protocol_tx::create_code_patch",
+        ))
+        .await?;
+
+    assert_eq!(code_patch_counts(&exec_output), [1, 2, 3]);
 
     Ok(())
 }
 
 /// The data store receives one request for the missing witnesses. It does not contain the script
-/// of a private note that the transaction created before, so that the data store does not learn
-/// it.
+/// of a private note, so that the data store does not learn it.
 #[tokio::test]
-async fn bulk_request_leaves_out_created_private_notes() -> anyhow::Result<()> {
+async fn bulk_request_leaves_out_private_notes() -> anyhow::Result<()> {
     let private_note = create_custom_note(ACTIVE_NOTE_SCRIPT, NoteType::Private, 1)?;
     let public_note = create_custom_note(ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 2)?;
     let notes = [private_note, public_note.clone()];
 
-    let create_notes = notes
-        .iter()
-        .map(|note| {
-            format!(
-                "
-                push.{recipient}
-                push.{note_type}
-                push.{tag}
-                call.::mock::account::create_note
-                drop dropw drop
-                ",
-                recipient = note.recipient().digest(),
-                note_type = Felt::from(note.metadata().note_type()),
-                tag = Felt::from(note.metadata().tag()),
-            )
-        })
-        .collect::<String>();
-    let tx_script = CodeBuilder::with_mock_packages()
-        .compile_tx_script(format!("@transaction_script\npub proc main\n{create_notes}\nend"))?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        "@transaction_script\npub proc main\n{}\nend",
+        create_notes_code(&notes)
+    ))?;
 
     let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
@@ -136,36 +166,37 @@ async fn bulk_request_leaves_out_created_private_notes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A present top-level root that an absent note script references goes into the dependencies.
+/// A present top-level root that an absent note script references is also a dependency.
 #[tokio::test]
 async fn referenced_present_top_level_root_is_a_dependency() -> anyhow::Result<()> {
     let p2id_note = create_p2id_note(1)?;
     let custom_note = create_custom_note(P2ID_REFERENCING_SCRIPT, NoteType::Public, 2)?;
-    // The kernel verifies the notes from the last to the first, so the P2ID script is verified as
-    // a top-level root before the custom note references it.
     let notes = [custom_note.clone(), p2id_note.clone()];
 
     let exec_output = TestTransactionBuilder::with_existing_mock_account()
         .expected_output_notes(notes.iter().cloned().map(RawOutputNote::Full).collect())
         .build()?
-        .execute_code(&verify_note_scripts_code(&notes))
+        .execute_code(&create_code_patch_code(&notes, &[], &[]))
         .await?;
 
     assert_eq!(
-        code_patch_list(&exec_output, PRESENT_TOP_LEVEL_LIST_PTR),
-        [script_root(&p2id_note)]
+        code_patch_list(&exec_output, EXISTING_PROCS_LIST_PTR),
+        BTreeSet::from([script_root(&p2id_note)])
     );
     assert_eq!(
         code_patch_list(&exec_output, CREATED_PROCS_LIST_PTR),
-        [script_root(&custom_note)]
+        BTreeSet::from([script_root(&custom_note)])
     );
-    assert_eq!(code_patch_list(&exec_output, DEPENDENCIES_LIST_PTR), [script_root(&p2id_note)]);
+    assert_eq!(
+        code_patch_list(&exec_output, DEPENDENCIES_LIST_PTR),
+        BTreeSet::from([script_root(&p2id_note)])
+    );
 
     Ok(())
 }
 
 /// An absent procedure that an absent note script references is a created procedure, and the
-/// kernel also verifies the procedures that it references.
+/// procedures that it references are also part of the code patch.
 #[tokio::test]
 async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -188,12 +219,12 @@ async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<
         .build_transaction(account.id())
         .expected_output_note(RawOutputNote::Full(note.clone()))
         .build()?
-        .execute_code(&verify_note_scripts_code(core::slice::from_ref(&note)))
+        .execute_code(&create_code_patch_code(core::slice::from_ref(&note), &[], &[]))
         .await?;
 
     assert_eq!(
         code_patch_list(&exec_output, CREATED_PROCS_LIST_PTR),
-        [script_root(&note), mock_procedure]
+        BTreeSet::from([script_root(&note), mock_procedure])
     );
     let dependencies = code_patch_list(&exec_output, DEPENDENCIES_LIST_PTR);
     assert!(
@@ -206,13 +237,13 @@ async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<
     Ok(())
 }
 
-/// The procedures of a new public account are verified, while those of a new private account are
-/// not.
+/// The procedures of a new public account are top-level roots, while those of a new private
+/// account are not.
 #[rstest::rstest]
 #[case::public(AccountType::Public)]
 #[case::private(AccountType::Private)]
 #[tokio::test]
-async fn new_account_procedures_are_verified_if_public(
+async fn new_account_procedures_are_top_level_roots_if_public(
     #[case] account_type: AccountType,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -228,11 +259,12 @@ async fn new_account_procedures_are_verified_if_public(
     let exec_output = mock_chain
         .build_transaction(account.clone())
         .build()?
-        .execute_code(&verify_note_scripts_code(&[]))
+        .execute_code(&create_code_patch_code(&[], &[], &[]))
         .await?;
 
-    let mut verified_roots = code_patch_list(&exec_output, PRESENT_TOP_LEVEL_LIST_PTR);
-    verified_roots.extend(code_patch_list(&exec_output, CREATED_PROCS_LIST_PTR));
+    let mut top_level_roots = code_patch_list(&exec_output, EXISTING_PROCS_LIST_PTR);
+    let created_procedures = code_patch_list(&exec_output, CREATED_PROCS_LIST_PTR);
+    top_level_roots.extend(created_procedures.iter().copied());
 
     if account_type.is_public() {
         let procedure_roots = account
@@ -240,46 +272,285 @@ async fn new_account_procedures_are_verified_if_public(
             .procedure_roots()
             .map(ProcedureRoot::from_raw)
             .collect::<BTreeSet<_>>();
-        assert_eq!(verified_roots.into_iter().collect::<BTreeSet<_>>(), procedure_roots);
-        for procedure_root in code_patch_list(&exec_output, CREATED_PROCS_LIST_PTR) {
+        assert_eq!(top_level_roots, procedure_roots);
+        for procedure_root in created_procedures {
             assert!(!mock_chain.code_tree().contains(&procedure_root));
         }
     } else {
-        assert!(verified_roots.is_empty());
+        assert!(top_level_roots.is_empty());
         assert!(code_patch_list(&exec_output, DEPENDENCIES_LIST_PTR).is_empty());
     }
 
     Ok(())
 }
 
-/// The kernel rejects a hint that does not point to the hinted root in a code patch list.
+/// A note that is created after the code patch is covered only if its script root was announced.
 #[rstest::rstest]
-#[case::invalid_list(0, 4, ERR_CODE_PATCH_INVALID_HINT)]
-#[case::index_out_of_bounds(1, 2, ERR_CODE_PATCH_HINT_INDEX_OUT_OF_BOUNDS)]
-#[case::root_mismatch(0, 2, ERR_CODE_PATCH_HINT_ROOT_MISMATCH)]
+#[case::announced(true)]
+#[case::not_announced(false)]
 #[tokio::test]
-async fn invalid_hint_is_rejected(
-    #[case] index: u32,
-    #[case] hint_kind: u32,
-    #[case] expected_error: miden_protocol::errors::MasmError,
+async fn announced_root_covers_note_created_after_code_patch(
+    #[case] is_announced: bool,
 ) -> anyhow::Result<()> {
-    // The kernel verifies the notes from the last to the first. The script of the last note is
-    // verified as a present top-level root, so the present top-level list contains one root when
-    // the kernel reads the hint for the first note.
+    let note = create_p2id_note(1)?;
+    let announced_roots = if is_announced {
+        Vec::from([script_root(&note)])
+    } else {
+        Vec::new()
+    };
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute_code(&create_code_patch_code(&[], &announced_roots, core::slice::from_ref(&note)))
+        .await;
+
+    if is_announced {
+        let exec_output = result?;
+        assert_eq!(
+            code_patch_list(&exec_output, EXISTING_PROCS_LIST_PTR),
+            BTreeSet::from([script_root(&note)])
+        );
+    } else {
+        assert_execution_error!(result, ERR_CODE_PATCH_TOP_LEVEL_ROOT_MISSING);
+    }
+
+    Ok(())
+}
+
+/// An authentication procedure can create a note with an absent script after the code patch, if it
+/// announces the script root. The executor gets the MAST of the script from the expected output
+/// notes, so the data store does not need it.
+#[tokio::test]
+async fn auth_procedure_creates_announced_note_after_code_patch() -> anyhow::Result<()> {
+    let note = create_custom_note(ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 1)?;
+    let auth_source = format!(
+        "
+        use miden::protocol::code_patch
+        use miden::protocol::native_account
+        use miden::protocol::output_note
+        use miden::protocol::tx
+
+        @auth_script
+        pub proc auth
+            push.{script_root} exec.code_patch::announce_root
+            exec.tx::create_code_patch drop drop drop
+
+            push.{recipient} push.{note_type} push.{tag}
+            exec.output_note::create drop
+
+            exec.native_account::incr_nonce drop
+            dropw dropw dropw dropw
+        end
+        ",
+        script_root = script_root(&note).as_word(),
+        recipient = note.recipient().digest(),
+        note_type = Felt::from(note.metadata().note_type()),
+        tag = Felt::from(note.metadata().tag()),
+    );
+    let auth_code =
+        CodeBuilder::default().compile_component_code("mock::announcing_auth", &auth_source)?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("mock::announcing_auth"),
+    )?;
+    let account = AccountBuilder::new([43; 32])
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    let executed_tx = TestTransactionBuilder::new(account)
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute()
+        .await?;
+
+    assert!(executed_tx.tx_inputs().code_tree().contains(&script_root(&note)).is_ok());
+
+    Ok(())
+}
+
+/// The host rejects a root that is announced after the code patch was created, because the code
+/// patch cannot cover it anymore.
+#[tokio::test]
+async fn root_announced_after_code_patch_is_rejected() -> anyhow::Result<()> {
+    let code = "
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::code_patch
+        use miden::tx_kernel_core::memory
+        use miden::protocol::code_patch as protocol_code_patch
+
+        begin
+            exec.prologue::prepare_transaction
+            push.1 exec.memory::set_epilogue_auth_in_progress_flag
+            exec.code_patch::create drop drop drop
+            push.1.2.3.4 exec.protocol_code_patch::announce_root
+        end
+    ";
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .build()?
+        .execute_code(code)
+        .await;
+
+    assert_execution_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::CodePatchRootAnnouncedAfterCreation(_))
+            )
+    );
+
+    Ok(())
+}
+
+/// The kernel rejects code patch lists that are not unique and sorted, have the wrong presence in
+/// the code tree, are too long, or do not cover a top-level root.
+///
+/// The transaction creates a P2ID note, whose script is present, and a custom note, whose script
+/// is absent and references a present protocol procedure.
+#[rstest::rstest]
+#[case::unsorted(InvalidLists::Unsorted, ERR_MEM_WORDS_NOT_STRICTLY_SORTED)]
+#[case::duplicate(InvalidLists::Duplicate, ERR_MEM_WORDS_NOT_STRICTLY_SORTED)]
+#[case::absent_existing_proc(
+    InvalidLists::AbsentExistingProc,
+    ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
+)]
+#[case::present_created_proc(
+    InvalidLists::PresentCreatedProc,
+    ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
+)]
+#[case::absent_dependency(
+    InvalidLists::AbsentDependency,
+    ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
+)]
+#[case::too_many_roots(InvalidLists::TooManyRoots, ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED)]
+#[case::missing_top_level_root(
+    InvalidLists::MissingTopLevelRoot,
+    ERR_CODE_PATCH_TOP_LEVEL_ROOT_MISSING
+)]
+#[tokio::test]
+async fn invalid_code_patch_lists_are_rejected(
+    #[case] invalid_lists: InvalidLists,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let p2id_note = create_p2id_note(1)?;
     let custom_note = create_custom_note(ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 2)?;
-    let notes = [custom_note.clone(), create_p2id_note(1)?];
+    let notes = [p2id_note.clone(), custom_note.clone()];
+
+    let present_root = script_root(&p2id_note);
+    let absent_root = script_root(&custom_note);
+    let dependency = protocol_procedure("miden::protocol::active_account::get_id")?;
+    let [lower_present_root, higher_present_root] = sorted([present_root, dependency]);
+
+    let response = match invalid_lists {
+        InvalidLists::Unsorted => code_patch_lists_advice([
+            &[higher_present_root, lower_present_root],
+            &[absent_root],
+            &[dependency],
+        ]),
+        InvalidLists::Duplicate => {
+            code_patch_lists_advice([&[present_root, present_root], &[absent_root], &[dependency]])
+        },
+        InvalidLists::AbsentExistingProc => code_patch_lists_advice([
+            &sorted([present_root, absent_root]),
+            &[absent_root],
+            &[dependency],
+        ]),
+        InvalidLists::PresentCreatedProc => code_patch_lists_advice([
+            &[present_root],
+            &sorted([absent_root, present_root]),
+            &[dependency],
+        ]),
+        InvalidLists::AbsentDependency => code_patch_lists_advice([
+            &[present_root],
+            &[absent_root],
+            &sorted([dependency, absent_root]),
+        ]),
+        InvalidLists::TooManyRoots => Vec::from([Felt::from(513u32)]),
+        InvalidLists::MissingTopLevelRoot => {
+            code_patch_lists_advice([&[], &[absent_root], &[dependency]])
+        },
+    };
 
     let result = TestTransactionBuilder::with_existing_mock_account()
         .expected_output_notes(notes.iter().cloned().map(RawOutputNote::Full).collect())
         .build()?
-        .execute_code_with_code_root_hint(
-            &verify_note_scripts_code(&notes),
-            script_root(&custom_note),
-            [Felt::from(index), Felt::from(hint_kind)],
-        )
+        .execute_code_with_code_patch_response(&create_code_patch_code(&notes, &[], &[]), response)
         .await;
 
     assert_execution_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// The kernel creates the code patch only once and only during the authentication procedure.
+#[rstest::rstest]
+#[case::outside_auth("exec.code_patch::create drop drop drop", ERR_CODE_PATCH_CREATED_OUTSIDE_AUTH)]
+#[case::twice(
+    "push.1 exec.memory::set_epilogue_auth_in_progress_flag
+     exec.code_patch::create drop drop drop
+     exec.code_patch::create drop drop drop",
+    ERR_CODE_PATCH_ALREADY_CREATED
+)]
+#[tokio::test]
+async fn code_patch_creation_is_restricted(
+    #[case] create_code_patch: &str,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let code = format!(
+        "
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::code_patch
+        use miden::tx_kernel_core::memory
+
+        begin
+            exec.prologue::prepare_transaction
+            {create_code_patch}
+        end
+        "
+    );
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .build()?
+        .execute_code(&code)
+        .await;
+
+    assert_execution_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// The epilogue rejects a transaction whose authentication procedure does not create the code
+/// patch.
+#[tokio::test]
+async fn auth_procedure_must_create_code_patch() -> anyhow::Result<()> {
+    let auth_code = CodeBuilder::default().compile_component_code(
+        "mock::no_code_patch_auth",
+        "
+        use miden::protocol::native_account
+
+        @auth_script
+        pub proc auth
+            exec.native_account::incr_nonce drop
+        end
+        ",
+    )?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("mock::no_code_patch_auth"),
+    )?;
+    let account = AccountBuilder::new([42; 32])
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_EPILOGUE_CODE_PATCH_NOT_CREATED);
 
     Ok(())
 }
@@ -295,16 +566,33 @@ async fn invalid_recipient_preimage_is_rejected() -> anyhow::Result<()> {
         .collect();
 
     // The note is not an expected output note, so the advice map contains only the invalid
-    // preimage of its recipient.
+    // preimage of its recipient. The root is announced, so that the host does not need the
+    // recipient to create the code patch.
     let result = TestTransactionBuilder::with_existing_mock_account()
         .add_advice_map_entry(note.recipient().digest(), invalid_preimage)
         .build()?
-        .execute_code(&verify_note_scripts_code(&[note]))
+        .execute_code(&create_code_patch_code(
+            &[],
+            &[script_root(&note)],
+            core::slice::from_ref(&note),
+        ))
         .await;
 
     assert_execution_error!(result, ERR_NOTE_INVALID_RECIPIENT_PREIMAGE);
 
     Ok(())
+}
+
+/// The invalid code patch lists of `invalid_code_patch_lists_are_rejected`.
+#[derive(Debug, Clone, Copy)]
+enum InvalidLists {
+    Unsorted,
+    Duplicate,
+    AbsentExistingProc,
+    PresentCreatedProc,
+    AbsentDependency,
+    TooManyRoots,
+    MissingTopLevelRoot,
 }
 
 // HELPERS
@@ -317,6 +605,17 @@ const ACTIVE_ACCOUNT_SCRIPT: &str = "
     @note_script
     pub proc main
         exec.active_account::get_id drop drop
+    end
+";
+
+/// A note script that references two procedures of the protocol library.
+const ACCOUNT_STATE_SCRIPT: &str = "
+    use miden::protocol::active_account
+
+    @note_script
+    pub proc main
+        exec.active_account::get_nonce drop
+        exec.active_account::get_code_commitment dropw
     end
 ";
 
@@ -373,10 +672,79 @@ fn create_custom_note(code: &str, note_type: NoteType, seed: u64) -> anyhow::Res
         .build()?)
 }
 
-/// Returns the code that creates the provided notes and verifies the top-level roots of the
-/// transaction.
-fn verify_note_scripts_code(notes: &[Note]) -> String {
-    let create_notes = notes
+/// Returns the code that creates the code patch as the authentication procedure would and asserts
+/// that it covers the top-level roots of the transaction.
+///
+/// `notes_before` are created before the code patch and `notes_after` afterwards. The script roots
+/// in `announced_roots` are announced before the code patch is created. The counts of the code
+/// patch lists remain on the stack.
+///
+/// The mock host does not handle the note events, so the script roots of the public notes in
+/// `notes_before` are also announced, as the host would learn them from these events.
+fn create_code_patch_code(
+    notes_before: &[Note],
+    announced_roots: &[ProcedureRoot],
+    notes_after: &[Note],
+) -> String {
+    create_code_patch_code_with(
+        notes_before,
+        announced_roots,
+        notes_after,
+        "exec.code_patch::create",
+    )
+}
+
+/// Same as [`create_code_patch_code`], but creates the code patch with the provided call.
+fn create_code_patch_code_with(
+    notes_before: &[Note],
+    announced_roots: &[ProcedureRoot],
+    notes_after: &[Note],
+    create_code_patch: &str,
+) -> String {
+    let public_note_roots =
+        notes_before.iter().filter(|note| note.metadata().is_public()).map(script_root);
+    let announce_roots = announced_roots
+        .iter()
+        .copied()
+        .chain(public_note_roots)
+        .map(|root| {
+            format!("push.{root} exec.protocol_code_patch::announce_root\n", root = root.as_word())
+        })
+        .collect::<String>();
+
+    format!(
+        "
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::code_patch
+        use miden::tx_kernel_core::memory
+        use miden::protocol::code_patch as protocol_code_patch
+        use miden::protocol::tx as protocol_tx
+        use miden::core::sys
+
+        begin
+            exec.prologue::prepare_transaction
+            {create_notes_before}
+            {announce_roots}
+
+            # the code patch can only be created during the authentication procedure
+            push.1 exec.memory::set_epilogue_auth_in_progress_flag
+            {create_code_patch}
+            # => [num_existing_procs, num_created_procs, num_dependencies]
+            push.0 exec.memory::set_epilogue_auth_in_progress_flag
+
+            {create_notes_after}
+            exec.code_patch::assert_later_output_notes_in_code_patch
+            exec.sys::truncate_stack
+        end
+        ",
+        create_notes_before = create_notes_code(notes_before),
+        create_notes_after = create_notes_code(notes_after),
+    )
+}
+
+/// Returns the code that creates the provided notes through the mock account.
+fn create_notes_code(notes: &[Note]) -> String {
+    notes
         .iter()
         .map(|note| {
             format!(
@@ -392,26 +760,30 @@ fn verify_note_scripts_code(notes: &[Note]) -> String {
                 tag = Felt::from(note.metadata().tag()),
             )
         })
-        .collect::<String>();
+        .collect()
+}
 
-    format!(
-        "
-        use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::code_patch
-        use miden::core::sys
+/// Returns the advice stack of code patch lists in the layout that the kernel reads.
+fn code_patch_lists_advice(lists: [&[ProcedureRoot]; 3]) -> Vec<Felt> {
+    lists
+        .into_iter()
+        .flat_map(|list| {
+            core::iter::once(Felt::from(list.len() as u32))
+                .chain(list.iter().flat_map(|root| root.as_word()))
+        })
+        .collect()
+}
 
-        begin
-            exec.prologue::prepare_transaction
-            {create_notes}
-            exec.code_patch::verify_before_auth
-            exec.sys::truncate_stack
-        end
-        "
-    )
+/// Returns the counts of the code patch lists that `create_code_patch_code` leaves on the stack.
+fn code_patch_counts(exec_output: &ExecutionOutput) -> [u64; 3] {
+    [0, 1, 2].map(|idx| exec_output.get_stack_element(idx).as_canonical_u64())
 }
 
 /// Returns the procedure roots in the code patch list at the provided memory address.
-fn code_patch_list(exec_output: &ExecutionOutput, list_ptr: MemoryAddress) -> Vec<ProcedureRoot> {
+fn code_patch_list(
+    exec_output: &ExecutionOutput,
+    list_ptr: MemoryAddress,
+) -> BTreeSet<ProcedureRoot> {
     let num_roots = exec_output.get_kernel_mem_element(list_ptr).as_canonical_u64() as u32;
     (0..num_roots)
         .map(|root_idx| {
@@ -434,4 +806,10 @@ fn protocol_procedure(path: &str) -> anyhow::Result<ProcedureRoot> {
         .get_procedure_root_by_path(path)
         .map(ProcedureRoot::from_raw)
         .with_context(|| format!("protocol library should export {path}"))
+}
+
+/// Returns the procedure roots in ascending order.
+fn sorted<const N: usize>(mut procedure_roots: [ProcedureRoot; N]) -> [ProcedureRoot; N] {
+    procedure_roots.sort();
+    procedure_roots
 }

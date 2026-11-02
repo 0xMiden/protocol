@@ -171,6 +171,12 @@ pub proc auth_network_transaction(auth_args: word)
     #     is_fee_asset_id_match, sponsor_unlimited, pad(16)]
 
     exec.fee::pay_fee
+    # => [sponsored_fee_amount, num_existing_procs, num_created_procs, num_dependencies,
+    #     collected_fee_amount, is_fee_asset_id_match, sponsor_unlimited, pad(16)]
+
+    # TODO: restrict the size of the code patch (see the network accounts section of the code tree
+    # design).
+    movdn.3 drop drop drop
     # => [sponsored_fee_amount, collected_fee_amount, is_fee_asset_id_match, sponsor_unlimited, pad(16)]
 
     # ---- Reject sponsoring more than was collected when the setting is enabled ----

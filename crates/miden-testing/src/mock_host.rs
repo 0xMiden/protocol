@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, Felt, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
-use miden_protocol::code::ProcedureRoot;
 use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::{EventId, EventName};
 use miden_protocol::{CoreLibrary, Word};
@@ -42,9 +41,9 @@ pub(crate) struct MockHost<'store> {
     /// Overrides the input-note index response for tests that exercise host-claim validation.
     input_note_index_response: Option<[Felt; 2]>,
 
-    /// Overrides the hint for the verification of a procedure root for tests that exercise
-    /// host-claim validation.
-    code_root_hint_response: Option<(ProcedureRoot, [Felt; 2])>,
+    /// Overrides the advice stack response to the creation of the code patch for tests that
+    /// exercise host-claim validation.
+    code_patch_response: Option<Vec<Felt>>,
 }
 
 impl<'store> MockHost<'store> {
@@ -63,7 +62,8 @@ impl<'store> MockHost<'store> {
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
-                &TransactionEventId::CodeBeforeProcRootVerified,
+                &TransactionEventId::CodePatchBeforeCreated,
+                &TransactionEventId::CodePatchRootAnnounced,
                 &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
@@ -75,7 +75,7 @@ impl<'store> MockHost<'store> {
             exec_host,
             handled_events,
             input_note_index_response: None,
-            code_root_hint_response: None,
+            code_patch_response: None,
         }
     }
 
@@ -84,13 +84,10 @@ impl<'store> MockHost<'store> {
         self.input_note_index_response = Some(response);
     }
 
-    /// Overrides the hint for the verification of `procedure_root` with `[index, hint_kind]`.
-    pub fn set_code_root_hint_response(
-        &mut self,
-        procedure_root: ProcedureRoot,
-        response: [Felt; 2],
-    ) {
-        self.code_root_hint_response = Some((procedure_root, response));
+    /// Overrides the code patch lists in the response to the creation of the code patch. The code
+    /// witnesses are still those of the real lists.
+    pub fn set_code_patch_response(&mut self, response: Vec<Felt>) {
+        self.code_patch_response = Some(response);
     }
 
     // Adds the transaction events needed for Lazy loading to the set of handled events.
@@ -149,11 +146,15 @@ impl<'store> Host for MockHost<'store> {
                 return Ok(vec![AdviceMutation::extend_advice_stack_with(response)]);
             }
 
-            if event_id == TransactionEventId::CodeBeforeProcRootVerified.event_id()
-                && let Some((procedure_root, response)) = self.code_root_hint_response
-                && process.get_stack_word(1) == procedure_root.as_word()
+            // The real handler provides the code witnesses, and only its lists are replaced.
+            if event_id == TransactionEventId::CodePatchBeforeCreated.event_id()
+                && let Some(response) = self.code_patch_response.clone()
             {
-                return Ok(vec![AdviceMutation::extend_advice_stack_with(response)]);
+                let mut mutations = self.exec_host.on_event(process).await?;
+                mutations
+                    .retain(|mutation| !matches!(mutation, AdviceMutation::ExtendStack { .. }));
+                mutations.push(AdviceMutation::extend_advice_stack_with(response));
+                return Ok(mutations);
             }
 
             // If the host should handle the event, delegate to the tx executor host.

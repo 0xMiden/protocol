@@ -154,6 +154,7 @@ async fn test_auth_procedure_called_from_wrong_context(
 async fn test_call_tracking_across_tx_script_and_auth_procedure() -> anyhow::Result<()> {
     let component_src = "
         use miden::protocol::native_account
+        use miden::protocol::tx
 
         # called from the transaction script during the main phase -> must be tracked
         @account_procedure
@@ -173,6 +174,8 @@ async fn test_call_tracking_across_tx_script_and_auth_procedure() -> anyhow::Res
 
         @auth_script
         pub proc auth
+            exec.tx::create_code_patch drop drop drop
+
             # invoke `proc_from_auth` via `call` so its gated call is attributed to it (index != 0)
             call.proc_from_auth
 

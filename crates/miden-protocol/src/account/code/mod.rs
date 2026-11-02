@@ -523,7 +523,7 @@ mod tests {
     use crate::account::{AccountComponent, AccountProcedureRoot};
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
-    use crate::testing::assembler::assemble_test_package;
+    use crate::testing::assembler::{assemble_test_package, assemble_test_package_with_protocol};
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     #[test]
@@ -620,13 +620,15 @@ mod tests {
     ) -> anyhow::Result<()> {
         // Same body as the auth procedure of NoopAuthComponent, so it has the same MAST root.
         let duplicate_of_auth = "
+            use miden::protocol::tx
+
             @account_procedure
             pub proc noop
-                push.0 drop
+                exec.tx::create_code_patch drop drop drop
             end
         ";
         let duplicate_component = AccountComponent::new(
-            assemble_test_package(
+            assemble_test_package_with_protocol(
                 "test-account-code-duplicate-auth-root",
                 "test::duplicate_auth_root",
                 duplicate_of_auth,

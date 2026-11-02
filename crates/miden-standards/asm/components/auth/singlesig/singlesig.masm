@@ -75,7 +75,7 @@ pub proc auth_tx(auth_args: word)
     exec.tx::get_reference_block_number movdn.5
     # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, scheme_id, pad(12)]
 
-    exec.fee::pay_fee drop
+    exec.fee::pay_fee dropw
     # => [scheme_id, pad(12)]
 
     # Fetch public key commitment from storage.

@@ -20,6 +20,7 @@ use {
 use {Commitment, InputNoteData} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
+use miden::tx_kernel_core::code_patch
 use miden::tx_kernel_core::account_update
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::faucet
@@ -2242,4 +2243,30 @@ pub proc tx_get_logs_commitment(padding: [felt; 16]) -> (word, [felt; 12])
 
     swapw dropw
     # => [LOGS_COMMITMENT, pad(12)]
+end
+
+#! Creates the code patch of the transaction.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [num_existing_procs, num_created_procs, num_dependencies, pad(13)]
+#!
+#! Where:
+#! - num_existing_procs, num_created_procs and num_dependencies are the number of procedure roots
+#!   in the lists of the code patch (see `code_patch::create`).
+#!
+#! Panics if:
+#! - the current active account is not the native account of the transaction.
+#! - the code patch cannot be created (see `code_patch::create`).
+#!
+#! Invocation: dynexec
+pub proc tx_create_code_patch(padding: [felt; 16]) -> (u32, u32, u32, [felt; 13])
+    # check that this procedure was executed against the native account, so that a foreign
+    # procedure cannot create the code patch
+    exec.memory::assert_native_account
+
+    exec.code_patch::create
+    # => [num_existing_procs, num_created_procs, num_dependencies, pad(16)]
+
+    movup.3 drop movup.3 drop movup.3 drop
+    # => [num_existing_procs, num_created_procs, num_dependencies, pad(13)]
 end

@@ -197,12 +197,19 @@ Transaction procedures manage transaction-level operations including note creati
 | `get_fee_asset_id`              | Returns the ID of the asset that fees are paid in.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[FEE_ASSET_ID]`                                                                                                 | Any     |
 | `add_log`                       | Emits a transaction log from the active authenticated account. The advice map must contain the content under its commitment.<br/><br/>**Inputs:** `[topic_suffix, topic_prefix, CONTENT_COMMITMENT]`<br/>**Outputs:** `[]` | Account |
 | `add_log_from_memory`           | Emits a transaction log from content in memory, computing its commitment and inserting the content into the advice map.<br/><br/>**Inputs:** `[topic_suffix, topic_prefix, num_words, content_ptr]`<br/>**Outputs:** `[]` | Account |
+| `create_code_patch`             | Creates the code patch of the transaction. Every authentication procedure must call it, usually through `fee::pay_fee`. Public notes created afterwards must have their script root announced before (see `code_patch::announce_root`).<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[num_existing_procs, num_created_procs, num_dependencies]` | Auth    |
 
 ### Foreign procedure invocation and expiration
 
 `execute_foreign_procedure` reads the foreign account's state at the transaction reference block, which is chosen by the executor. The foreign account commitment is not a transaction public input and is not revalidated against the foreign account's current on-chain state at inclusion, so a foreign read may be outdated.
 
 Any FPI-callable procedure that reads mutable, security-sensitive state must set an expiration delta in the execution path that reads that state. For the full rule and rationale, see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).
+
+## Code Patch Procedures (`miden::protocol::code_patch`)
+
+| Procedure       | Description                                                                                                                                                                                                                  | Context |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `announce_root` | Announces a top-level procedure root to the host before `tx::create_code_patch`, e.g. the script root of a public note that is created after the code patch.<br/><br/>**Inputs:** `[PROC_ROOT]`<br/>**Outputs:** `[]` | Any     |
 
 ## Faucet Procedures (`miden::protocol::faucet`)
 

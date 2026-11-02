@@ -1018,6 +1018,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let auth_code = format!(
         "
     use miden::protocol::native_account
+    use miden::protocol::tx
     use {{AUTH_UNAUTHORIZED_EVENT}} from miden::protocol::auth
 
     {TEST_ACCOUNT_CONVENIENCE_WRAPPERS}
@@ -1026,6 +1027,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     #! Outputs: [pad(16)]
     @auth_script
     pub proc auth_test
+        exec.tx::create_code_patch drop drop drop
         exec.native_account::incr_nonce drop
         # => [[AUTH_ARGS], pad(12)]
 
@@ -1183,12 +1185,14 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 // existed when the kernel epilogue still produced the delta commitment.
 const DELTA_CHECK_AUTH_CODE: &str = r#"
     use miden::protocol::native_account
+    use miden::protocol::tx
     use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 
     #! Inputs:  [[should_emit, 0, 0, 0], pad(12)]
     #! Outputs: [pad(16)]
     @auth_script
     pub proc auth_incr_nonce_with_delta_check
+        exec.tx::create_code_patch drop drop drop
         exec.native_account::incr_nonce drop
         # => [[should_emit, 0, 0, 0], pad(12)]
 

@@ -72,11 +72,16 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         "
         use miden::tx_kernel_core::prologue
         use miden::tx_kernel_core::epilogue
+        use miden::protocol::code_patch
         use miden::protocol::output_note
         use miden::core::sys
 
         begin
             exec.prologue::prepare_transaction
+
+            # the mock host does not handle the note events, so the script root of the public note
+            # is announced for the code patch instead
+            push.{script_root} exec.code_patch::announce_root
 
             push.{recipient}
             push.{note_type}
@@ -95,6 +100,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         ",
+        script_root = Word::from(output_note_1.script().root()),
         recipient = output_note_1.recipient().digest(),
         note_type = Felt::from(output_note_1.metadata().note_type()),
         tag = Felt::from(output_note_1.metadata().tag()),

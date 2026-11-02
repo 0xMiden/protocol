@@ -12,6 +12,7 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::CodePatch;
+use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -336,9 +337,13 @@ where
         let (stack_inputs, tx_advice_inputs) = TransactionKernel::prepare_inputs(tx_inputs);
         let input_notes = tx_inputs.input_notes();
 
+        // the scripts of the expected output notes let the host compute the procedures that the
+        // code patch needs for notes that are created after it
         let script_mast_store = ScriptMastForestStore::new(
             tx_inputs.tx_script(),
-            input_notes.iter().map(|n| n.note().script()),
+            input_notes.iter().map(|n| n.note().script()).chain(
+                tx_inputs.tx_args().output_note_recipients().iter().map(NoteRecipient::script),
+            ),
         );
 
         // Insert all available account's code into the procedure index map (native and foreign).
@@ -360,8 +365,7 @@ where
             self.authenticator,
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
-            tx_inputs.code_tree().clone(),
-            tx_inputs.tx_args().output_note_recipients(),
+            tx_inputs.block_header().code_tree_root(),
             self.source_manager.clone(),
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;

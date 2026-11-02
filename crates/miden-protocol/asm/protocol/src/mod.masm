@@ -8,6 +8,7 @@ pub mod active_account
 pub mod active_note
 pub mod asset
 pub mod auth
+pub mod code_patch
 pub mod constants
 pub mod faucet
 pub mod input_note

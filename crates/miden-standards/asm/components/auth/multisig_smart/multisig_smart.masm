@@ -44,6 +44,11 @@ pub proc auth_tx_multisig_smart(auth_args: word)
     dropw
     # => [bound_block_num, approval_expiration_block_num, SALT]
 
+    # this component does not pay the fee, which would create the code patch, so it creates the
+    # code patch itself before the transaction summary
+    exec.tx::create_code_patch drop drop drop
+    # => [bound_block_num, approval_expiration_block_num, SALT]
+
     # reject an expired approval before any signature is verified.
     dup.1 exec.tx::get_reference_block_number
     # => [reference_block_num, approval_expiration_block_num, bound_block_num, approval_expiration_block_num, SALT]

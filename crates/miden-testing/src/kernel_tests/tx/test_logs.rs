@@ -151,6 +151,7 @@ async fn add_log_from_memory(
                 @auth_script
                 @locals({num_locals})
                 pub proc auth
+                    exec.tx::create_code_patch drop drop drop
                     {store_content}
                     push.101.102.103.104
                     # => [CALLER_WORD]
@@ -331,6 +332,8 @@ async fn transaction_proofs_bind_logs(#[case] account_type: AccountType) -> anyh
             use miden::protocol::native_account
             @auth_script
             pub proc auth
+                exec.tx::create_code_patch drop drop drop
+
                 # Both transaction log APIs must preserve the caller's deeper stack.
                 push.101.102.103.104.105.106.107.108
                 push.{content_commitment} push.29.17 exec.tx::add_log
@@ -628,6 +631,7 @@ async fn signing_summary_cannot_omit_transaction_logs() -> anyhow::Result<()> {
 
             @auth_script
             pub proc authenticate
+                exec.tx::create_code_patch drop drop drop
                 dropw exec.native_account::incr_nonce drop
                 # => []
 

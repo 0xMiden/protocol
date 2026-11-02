@@ -11,7 +11,6 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::PartialCodeTree;
-use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
@@ -55,7 +54,6 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
-        expected_output_recipients: &[NoteRecipient],
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -65,7 +63,6 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             code_tree,
-            expected_output_recipients,
         )?;
 
         Ok(Self { base_host })
@@ -214,11 +211,15 @@ where
                 Ok(self.base_host.on_input_note_index_lookup(note_id))
             },
 
+            TransactionEvent::CodePatchRootAnnounced { procedure_root } => {
+                self.base_host.on_code_patch_root_announced(procedure_root).map(|_| Vec::new())
+            },
+
             // The code witnesses are in the transaction inputs at proving time.
-            TransactionEvent::CodeBeforeProcRootVerified { procedure_root } => self
+            TransactionEvent::CodePatchBeforeCreated => self
                 .base_host
-                .on_code_before_proc_root_verified(procedure_root)
-                .map(|verification| verification.into_parts().0),
+                .on_code_patch_before_created()
+                .map(|(mutations, _witnesses)| mutations),
 
             TransactionEvent::AuthRequest { tx_summary_or_signature, .. } => {
                 if let TxSummaryOrSignature::Signature(signature) = tx_summary_or_signature {

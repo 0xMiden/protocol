@@ -45,7 +45,7 @@ pub proc auth_no_auth(auth_args: AuthArgs)
     exec.tx::get_reference_block_number movdn.5
     # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, pad(16)]
 
-    exec.fee::pay_fee drop
+    exec.fee::pay_fee dropw
     # => [pad(16)]
 
     # check if the account state has changed

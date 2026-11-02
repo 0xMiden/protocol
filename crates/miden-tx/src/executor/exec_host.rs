@@ -19,8 +19,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::{CodeWitness, PartialCodeTree};
-use miden_protocol::code::ProcedureRoot;
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness, PartialCodeTree};
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
@@ -128,8 +127,7 @@ where
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
-        code_tree: PartialCodeTree,
-        expected_output_recipients: &[NoteRecipient],
+        code_tree_root: CodeTreeRoot,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
@@ -139,8 +137,7 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-            code_tree,
-            expected_output_recipients,
+            PartialCodeTree::new(code_tree_root),
         )?;
 
         Ok(Self {
@@ -232,17 +229,15 @@ where
         Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
     }
 
-    /// Handles the verification of a top-level procedure root by the kernel.
+    /// Handles the creation of the code patch by the kernel.
     ///
-    /// If the code witness of the root is missing, the host requests the witnesses of all
-    /// top-level roots that it can see in one request (see
-    /// [`TransactionBaseHost::code_witness_requests`]).
-    async fn on_code_before_proc_root_verified(
+    /// The host starts without code witnesses, so it requests the witnesses of all top-level roots
+    /// of the code patch in one request (see [`TransactionBaseHost::code_witness_requests`]).
+    async fn on_code_patch_before_created(
         &mut self,
-        procedure_root: ProcedureRoot,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        if self.base_host.is_code_witness_missing(procedure_root)? {
-            let requests = self.base_host.code_witness_requests(procedure_root)?;
+        let requests = self.base_host.code_witness_requests()?;
+        if !requests.is_empty() {
             let code_tree_root = self.base_host.code_tree().root();
             let witnesses = self
                 .base_host
@@ -256,8 +251,7 @@ where
             self.base_host.add_code_witnesses(witnesses)?;
         }
 
-        let (mutations, witnesses) =
-            self.base_host.on_code_before_proc_root_verified(procedure_root)?.into_parts();
+        let (mutations, witnesses) = self.base_host.on_code_patch_before_created()?;
         self.lazy_loaded_data.code_witnesses.extend(witnesses);
 
         Ok(mutations)
@@ -721,8 +715,12 @@ where
                     Ok(self.base_host.on_input_note_index_lookup(note_id))
                 },
 
-                TransactionEvent::CodeBeforeProcRootVerified { procedure_root } => {
-                    self.on_code_before_proc_root_verified(procedure_root).await
+                TransactionEvent::CodePatchRootAnnounced { procedure_root } => {
+                    self.base_host.on_code_patch_root_announced(procedure_root).map(|_| Vec::new())
+                },
+
+                TransactionEvent::CodePatchBeforeCreated => {
+                    self.on_code_patch_before_created().await
                 },
 
                 TransactionEvent::AuthRequest {

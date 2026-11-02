@@ -355,6 +355,10 @@ pub enum TransactionKernelError {
     },
     #[error("MAST of procedure root {0} is not available to compute the procedures it references")]
     MissingProcedureMast(ProcedureRoot),
+    #[error(
+        "procedure root {0} was announced after the code patch was created, so the code patch does not cover it"
+    )]
+    CodePatchRootAnnouncedAfterCreation(ProcedureRoot),
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]

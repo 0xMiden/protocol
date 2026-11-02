@@ -1,0 +1,27 @@
+# EVENTS
+# =================================================================================================
+
+#! The event to announce a top-level procedure root to the host.
+pub const CODE_PATCH_ROOT_ANNOUNCED_EVENT = event("miden::protocol::code_patch::root_announced")
+
+# PROCEDURES
+# =================================================================================================
+
+#! Announces a top-level procedure root to the host before the code patch is created.
+#!
+#! A public note that is created after `tx::create_code_patch`, e.g. the fee note, must have its
+#! script root in the code patch. The host learns such roots only through this announcement.
+#!
+#! The kernel does not read the announced roots, because the epilogue asserts that the code patch
+#! covers the public code of the transaction.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - PROC_ROOT is the top-level procedure root, e.g. the script root of a note.
+#!
+#! Invocation: exec
+pub proc announce_root(proc_root: word)
+    emit.CODE_PATCH_ROOT_ANNOUNCED_EVENT dropw
+end

@@ -4,6 +4,7 @@ use miden::core::math::u128
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::asset
+use miden::protocol::code_patch
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
@@ -30,14 +31,13 @@ pub type ConversionInfo = word
 
 # Estimated upper bound on the number of cycles a pay_fee flow spends after the kernel's
 # compute_fee call returns: rate conversion, fee-asset construction, serial-number derivation,
-# recipient computation, note creation (including the verification of the code witness of the fee
-# note script, which assumes that the script is registered) and funding. Guarded by the
-# fee-payment regression tests.
+# recipient computation, note creation and funding. Guarded by the fee-payment regression tests.
 const PAY_FEE_CYCLES = 8192
 
 # Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure
 # returns: output vault build, output notes commitment, account patch and final account
-# commitments. The cost scales with the number of output notes (measured ~330 cycles per
+# commitments, and the code patch check of the notes created after the code patch (e.g. the fee
+# note). The cost scales with the number of output notes (measured ~330 cycles per
 # asset-less note; ~1k-2k base for note-less transactions), so the estimate is computed as
 # BASE + PER_NOTE * (num_output_notes + 1), counting the fee note itself. Note that the per-note
 # figure is measured on asset-less notes; notes carrying many assets cost more, so asset-heavy
@@ -358,8 +358,12 @@ end
 #! in the cycle estimate and the fee. This prices each network note through its target account's
 #! fee policy via an FPI call, which requires that target to be provisioned as a foreign account.
 #!
+#! Before computing the fee, this also creates the code patch (see tx::create_code_patch), so the
+#! fee covers its verification. The TX_FEE note is created afterwards, so its script root is
+#! announced first.
+#!
 #! Inputs:  [num_extra_cycles, CONVERSION_INFO, serial_number_block]
-#! Outputs: [total_sponsored_fee_amount]
+#! Outputs: [total_sponsored_fee_amount, num_existing_procs, num_created_procs, num_dependencies]
 #!
 #! Where:
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
@@ -369,8 +373,11 @@ end
 #! - serial_number_block is the block number used to derive the fee note's serial number.
 #! - total_sponsored_fee_amount is the total amount the sponsorship step moved into sponsorship
 #!   notes.
+#! - num_existing_procs, num_created_procs and num_dependencies are the sizes of the code patch
+#!   (see tx::create_code_patch).
 #!
 #! Panics if:
+#! - the code patch cannot be created (see tx::create_code_patch).
 #! - the sponsorship step fails (propagates the panics of
 #!   fees::create_network_note_sponsorships, e.g. a target's fee policy is unset/unreachable or
 #!   the vault underfunds a sponsored amount).
@@ -383,7 +390,7 @@ end
 #! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
-pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo, serial_number_block: BlockNumber) -> felt
+pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo, serial_number_block: BlockNumber) -> (felt, u32, u32, u32)
     # sponsor any network output notes before the fee is computed, so the sponsorship notes
     # this creates are counted by both the cycle estimate and compute_fee.
     exec.tx::get_fee_asset_id
@@ -395,57 +402,71 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo, serial
     movdn.6
     # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
 
+    # The fee note script root is announced even if the fee turns out to be zero and no fee note
+    # is created, because the fee is unknown before the code patch exists.
+    procref.tx_fee::main exec.code_patch::announce_root
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
+
+    # Create the code patch before the fee is computed, so the fee covers its verification.
+    exec.tx::create_code_patch
+    # => [num_existing_procs, num_created_procs, num_dependencies, num_extra_cycles, CONVERSION_INFO,
+    #     serial_number_block, total_sponsored_fee_amount]
+
+    movdn.9 movdn.9 movdn.9
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount,
+    #     num_existing_procs, num_created_procs, num_dependencies]
+
     exec.apply_cycle_margins
-    # => [num_estimated_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
+    # => [num_estimated_extra_cycles, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
     # no output notes are excluded from the fee computation
     padw movup.4
     # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, CONVERSION_INFO,
-    #     serial_number_block, total_sponsored_fee_amount]
+    #     serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
     exec.tx::compute_fee
-    # => [fee_amount, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount]
+    # => [fee_amount, CONVERSION_INFO, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
     dup eq.0
     if.true
         # a zero fee requires no fee note
         drop dropw drop
-        # => [total_sponsored_fee_amount]
+        # => [total_sponsored_fee_amount, code_patch_sizes(3)]
     else
         movdn.4
-        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount]
+        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         # a non-zero fee requires committed conversion info
         exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
-        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount]
+        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         # pin the payment to the native fee asset at 1-to-1 rate
         dupw exec.native_conversion_info assert_eqw.err=ERR_FEE_CONVERSION_INFO_NOT_NATIVE
-        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount]
+        # => [CONVERSION_INFO, fee_amount, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         # convert the fee amount into the payment asset's amount
         # (CONVERSION_INFO reads [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den])
         movup.2 movup.3 movup.4
         # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix,
-        #     serial_number_block, total_sponsored_fee_amount]
+        #     serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         movup.2 swap
         # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix,
-        #     serial_number_block, total_sponsored_fee_amount]
+        #     serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         exec.convert_amount
-        # => [payment_amount, faucet_id_suffix, faucet_id_prefix, serial_number_block, total_sponsored_fee_amount]
+        # => [payment_amount, faucet_id_suffix, faucet_id_prefix, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         movdn.2
-        # => [faucet_id_suffix, faucet_id_prefix, payment_amount, serial_number_block, total_sponsored_fee_amount]
+        # => [faucet_id_suffix, faucet_id_prefix, payment_amount, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         exec.fungible_asset::create
-        # => [ASSET_ID, ASSET_VALUE, serial_number_block, total_sponsored_fee_amount]
+        # => [ASSET_ID, ASSET_VALUE, serial_number_block, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         movup.8
-        # => [serial_number_block, ASSET_ID, ASSET_VALUE, total_sponsored_fee_amount]
+        # => [serial_number_block, ASSET_ID, ASSET_VALUE, total_sponsored_fee_amount, code_patch_sizes(3)]
 
         exec.create_and_fund_fee_note
-        # => [total_sponsored_fee_amount]
+        # => [total_sponsored_fee_amount, code_patch_sizes(3)]
     end
 end

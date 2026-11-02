@@ -5,6 +5,7 @@ use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::CodePatch;
+use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{
     AccountInputs,
     InputNote,
@@ -160,9 +161,13 @@ impl LocalTransactionProver {
             mast_store.load_account_code(foreign_account.code());
         }
 
+        // the scripts of the expected output notes let the host compute the procedures that the
+        // code patch needs for notes that are created after it
         let script_mast_store = ScriptMastForestStore::new(
             tx_inputs.tx_script(),
-            tx_inputs.input_notes().iter().map(|n| n.note().script()),
+            tx_inputs.input_notes().iter().map(|n| n.note().script()).chain(
+                tx_inputs.tx_args().output_note_recipients().iter().map(NoteRecipient::script),
+            ),
         );
 
         let account_procedure_index_map = AccountProcedureIndexMap::new(
@@ -179,7 +184,7 @@ impl LocalTransactionProver {
         // inputs carry the MAST of the code patch.
         let code_tree = tx_inputs.code_tree().clone();
 
-        let (partial_account, ref_block, _, input_notes, tx_args) = tx_inputs.into_parts();
+        let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
@@ -188,7 +193,6 @@ impl LocalTransactionProver {
             script_mast_store,
             account_procedure_index_map,
             code_tree,
-            tx_args.output_note_recipients(),
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 

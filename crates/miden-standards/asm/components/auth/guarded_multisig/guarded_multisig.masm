@@ -81,7 +81,7 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     dup.5 movdn.5
     # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
-    exec.fee::pay_fee drop
+    exec.fee::pay_fee dropw
     # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     # Authenticate the transaction with the approvers and the guardian and record it for replay
