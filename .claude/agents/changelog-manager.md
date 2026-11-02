@@ -20,9 +20,9 @@ You receive a prompt like: `Check changelog for PR #N (URL)`
    ```
    gh pr view <N> --json labels --jq '.labels[].name'
    ```
-2. Check if the PR already adds a changelog entry:
+2. Check if the PR already adds a changelog entry (editing an existing one doesn't count):
    ```
-   gh pr diff <N> --name-only | grep -q '^\.changelog/unreleased/'
+   gh api --paginate repos/0xMiden/protocol/pulls/<N>/files --jq '.[] | select(.status == "added") | .filename' | grep -q '^\.changelog/unreleased/'
    ```
 
 If either condition is met, output `SKIP: already handled` and stop.
