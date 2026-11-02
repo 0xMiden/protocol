@@ -12,8 +12,9 @@ pub const P2IDE_CONSUMPTION_CYCLES: u32 = 58645;
 /// Cycles of consuming a SWAP note: public payback 24026 (maximum), private payback 23523.
 pub const SWAP_CONSUMPTION_CYCLES: u32 = 24026;
 
-/// Cycles of consuming a PSWAP note: full fill 27234, partial fill 31534 (maximum).
-pub const PSWAP_CONSUMPTION_CYCLES: u32 = 31534;
+/// Cycles of consuming a PSWAP note: full fill, private payback 26681, partial fill, private
+/// payback 30989, full fill, public payback 27399, partial fill, public payback 31700 (maximum).
+pub const PSWAP_CONSUMPTION_CYCLES: u32 = 31700;
 
 /// Cycles of consuming a MINT note: fungible faucet 36599, non-fungible faucet 40683 (maximum).
 pub const MINT_CONSUMPTION_CYCLES: u32 = 40683;
