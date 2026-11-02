@@ -10,7 +10,7 @@ if [ "${NO_CHANGELOG_LABEL}" = "true" ]; then
 else
     # a changelog check is required
     # fail if no entry was added
-    if [ -z "$(git diff --name-only --diff-filter=A "origin/${BASE_REF}" -- "${CHANGELOG_DIR}/*.md")" ]; then
+    if [ -z "$(git diff --name-only --diff-filter=A "origin/${BASE_REF}" -- ":(glob)${CHANGELOG_DIR}/*.md")" ]; then
         >&2 echo "Changes should come with an entry in \"${CHANGELOG_DIR}/\" (see
 \".changelog/README.md\"). This behavior can be overridden by using the \"no changelog\"
 label, which is used for changes that are trivial / explicitly stated not to require a

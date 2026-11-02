@@ -17,7 +17,7 @@ PRs that don't need an entry get the `no changelog` label.
 Before creating the GitHub release, run the following and commit the result:
 
 ```sh
-./scripts/prepare-changelog.sh <tag>
+./scripts/prepare-changelog.py <tag>
 ```
 
 It moves the entries into `.changelog/<tag>/<PR>.md` and adds their PR links, taking each PR number from the
