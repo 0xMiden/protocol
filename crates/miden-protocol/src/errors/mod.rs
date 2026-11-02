@@ -68,9 +68,7 @@ use crate::{
     NOTE_MAX_SIZE,
 };
 
-#[cfg(any(feature = "testing", test))]
 mod masm_error;
-#[cfg(any(feature = "testing", test))]
 pub use masm_error::MasmError;
 
 /// The errors from the MASM code of the transaction kernel.
