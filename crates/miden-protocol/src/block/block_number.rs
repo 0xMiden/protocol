@@ -23,8 +23,16 @@ impl BlockNumber {
     /// The block height of the genesis block.
     pub const GENESIS: Self = Self(0);
 
+    /// The block height of the first block after genesis.
+    pub const ONE: Self = Self(1);
+
     /// The maximum block number.
     pub const MAX: Self = Self(u32::MAX);
+
+    /// Creates the [`BlockNumber`] with the provided `block_number` value.
+    pub const fn new(block_number: u32) -> Self {
+        BlockNumber(block_number)
+    }
 
     /// Returns the previous block number
     pub fn parent(self) -> Option<BlockNumber> {
