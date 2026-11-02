@@ -1,0 +1,79 @@
+[package]
+name              = "miden-standards-auth-hot-cold-guardian"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::hot_cold_guardian"
+path      = "hot_cold_guardian.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Authentication with hot, cold and guardian key categories, where all hot keys together count once"
+name        = "miden::standards::auth::hot_cold_guardian"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Category configuration"
+name        = "miden::standards::auth::hot_cold_guardian::config"
+# Word layout: [default_threshold, num_hot_keys, 0, 0]
+type = [
+  { name = "default_threshold", type = "u32" },
+  { name = "num_hot_keys", type = "u32" },
+  { type = "void" },
+  { type = "void" },
+]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Hot public keys"
+name        = "miden::standards::auth::hot_cold_guardian::hot_public_keys"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Hot scheme IDs"
+name        = "miden::standards::auth::hot_cold_guardian::hot_scheme_ids"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Cold public key"
+name        = "miden::standards::auth::hot_cold_guardian::cold_public_key"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Cold scheme ID"
+name        = "miden::standards::auth::hot_cold_guardian::cold_scheme_id"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Executed transactions"
+name        = "miden::standards::auth::multisig::executed_transactions"
+type        = { key = "word", value = "bool" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Procedure policies (proc_root => [immediate_threshold, 0, flags, 0]); thresholds count signed key categories"
+name        = "miden::standards::auth::hot_cold_guardian::procedure_policies"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Delay configuration"
+name = "miden::standards::auth::hot_cold_guardian::delay_config"
+type = [
+  { name = "min_delay", type = "u32" },
+  { name = "propose_expiration_delta", type = "u16" },
+  { name = "cancel_threshold", type = "u32" },
+  { type = "void" },
+]
+
+[[package.metadata.account-component.storage.slots]]
+description = "Guardian public key"
+name        = "miden::standards::auth::guardian::pub_key"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Guardian scheme ID"
+name        = "miden::standards::auth::guardian::scheme"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
