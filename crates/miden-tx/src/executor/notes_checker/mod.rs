@@ -12,7 +12,6 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
-use miden_standards::errors::standards::ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET;
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::{ProgramExecutor, TransactionExecutor};
@@ -24,6 +23,7 @@ use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 mod bundle;
 mod checker_utils;
 mod error;
+mod standards_errors;
 
 use bundle::{NoteBundler, NoteBundles};
 pub use checker_utils::{
@@ -34,6 +34,7 @@ pub use checker_utils::{
     SuccessfulNote,
 };
 pub use error::{FeeError, SponsorshipRejectionError};
+use standards_errors::ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET;
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================

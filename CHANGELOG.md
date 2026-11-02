@@ -55,7 +55,7 @@
 - Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
 - [BREAKING] `NoteConsumptionChecker` now rejects unconsumable `FEE_SPONSORSHIP` notes without executing them and drops a failing note together with its sponsorships, reporting a bundle whose sponsorship carries the wrong fee asset as `NoteFailure::Fee`; renamed `FailedNote::error` to `execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - Added `FeeSponsorshipNote::check_reclaim`, and `StandardNote::is_consumable` now decides a lone `FEE_SPONSORSHIP` note by its reclaim rules ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
-- `MasmError` and the `miden_standards::errors::standards` error constants are now available without the `testing` feature, so code can recognize why a standards procedure failed ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+- `MasmError` is now available without the `testing` feature, so code can recognize why a MASM procedure failed ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
 - [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
 - [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
