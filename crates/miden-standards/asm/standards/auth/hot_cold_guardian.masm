@@ -1,0 +1,1366 @@
+# The MASM code of the Hot/Cold/Guardian Authentication Component.
+#
+# Three key categories authorize an account: hot keys (one per device, any one of them counts and
+# several never count more than one), a single cold key (offline, the most trusted key) and the
+# guardian key (co-signs every transaction, holds no authority of its own). Procedure policies are
+# counted in signed categories: hot contributes at most one, cold at most one.
+#
+# See the `AuthHotColdGuardian` Rust type's documentation for more details.
+
+use {Approver, PublicKeyCommitment, SignatureMessage, SignatureScheme} from miden::standards::auth::signature
+use {SignatureThreshold} from miden::standards::auth::multisig
+use {AccountProcedureRoot, BlockNumber, Bool} from miden::protocol::types
+use miden::protocol::active_account
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
+use miden::protocol::native_account
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
+use miden::standards::auth
+use miden::standards::auth::guardian
+use miden::standards::auth::multisig_smart
+use miden::standards::auth::signature
+use miden::core::word
+use {ZERO_WORD} from miden::standards::utils
+
+pub type HotColdPolicy = struct {
+    immediate_threshold: SignatureThreshold,
+    flags: u16
+}
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage Slots
+#
+# - CONFIG_SLOT:
+#   [default_threshold, num_hot_keys, 0, 0]
+#
+# - HOT_PUBLIC_KEYS_SLOT (map):
+#   HOT_KEY_MAP_KEY => HOT_PUBLIC_KEY
+#   where HOT_KEY_MAP_KEY = [key_index, 0, 0, 0]
+#
+# - HOT_SCHEME_IDS_SLOT (map):
+#   HOT_KEY_MAP_KEY => [scheme_id, 0, 0, 0]
+#
+# - COLD_PUBLIC_KEY_SLOT (map):
+#   CATEGORY_MAP_KEY => COLD_PUBLIC_KEY
+#
+# - COLD_SCHEME_ID_SLOT (map):
+#   CATEGORY_MAP_KEY => [scheme_id, 0, 0, 0]
+#
+# - PROCEDURE_POLICIES_SLOT (map):
+#   PROC_ROOT => [immediate_threshold, 0, flags, 0]
+#   where flags packs the note restrictions (bits 0..1) and the cold-required bit (bit 8)
+#
+# - DELAY_CONFIG_SLOT:
+#   [min_delay, propose_expiration_delta, cancel_threshold, 0]
+#
+# The guardian key lives in the guardian module's slots and the executed-transactions set in the
+# multisig module's slot.
+
+# The default threshold in signed categories and the number of hot keys:
+# [default_threshold, num_hot_keys, 0, 0].
+pub const CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::config")
+
+# Map entries: [key_index, 0, 0, 0] => HOT_PUBLIC_KEY
+pub const HOT_PUBLIC_KEYS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_public_keys")
+
+# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
+pub const HOT_SCHEME_IDS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_scheme_ids")
+
+# Single-entry map: CATEGORY_MAP_KEY => COLD_PUBLIC_KEY
+pub const COLD_PUBLIC_KEY_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_public_key")
+
+# Single-entry map: CATEGORY_MAP_KEY => [scheme_id, 0, 0, 0]
+pub const COLD_SCHEME_ID_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_scheme_id")
+
+# Map entries: PROC_ROOT => [immediate_threshold, 0, flags, 0]
+pub const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::hot_cold_guardian::procedure_policies")
+
+# The delay configuration used by the delayed-execution flows:
+# [min_delay, propose_expiration_delta, cancel_threshold, 0].
+pub const DELAY_CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::delay_config")
+
+# Single-entry storage map key where the cold key is stored, the same key the guardian uses.
+const CATEGORY_MAP_KEY = ZERO_WORD
+
+# The user key categories: hot and cold. Thresholds count signed categories, so no threshold can
+# exceed this value.
+pub const NUM_USER_CATEGORIES = 2
+
+# The maximum number of hot keys. Together with the cold and the guardian key this stays within
+# the signer set size the multisig fee estimate is calibrated for (MAX_NUM_APPROVERS).
+pub const MAX_NUM_HOT_KEYS = 62
+
+# Policy flags: the note restrictions occupy bits 0..1 (see multisig_smart) and the cold-required
+# bit, which makes the immediate path additionally require the cold category, is bit 8.
+const NOTE_RESTRICTION_MASK = 3
+const COLD_REQUIRED_FLAG = 256
+const POLICY_FLAGS_MASK = 259
+
+# Bounds on the account delay, in blocks, assuming a 3 second block time: at least 24 hours so
+# that a cold key kept elsewhere can be reached, at most 7 days so that self-custody is not put in
+# question.
+const MIN_DELAY_FLOOR_BLOCKS = 28800
+const MAX_DELAY_BLOCKS = 201600
+
+# ERRORS
+# =================================================================================================
+
+const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
+
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
+
+const ERR_NUM_HOT_KEYS_NOT_U32 = "number of hot keys must be u32"
+
+const ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS = "number of hot keys must be between 1 and the maximum hot key set size"
+
+const ERR_HOT_KEY_COUNTS_NOT_U32 = "initial and new number of hot keys must be u32"
+
+const ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32 = "number of hot keys and hot key index must be u32"
+
+const ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS = "hot key index must be less than the number of hot keys"
+
+const ERR_DUPLICATE_HOT_PUBLIC_KEY = "duplicate hot public keys are not allowed"
+
+const ERR_HOT_KEY_IS_COLD_KEY = "hot public key must not equal the cold public key"
+
+const ERR_HOT_KEY_IS_GUARDIAN_KEY = "hot public key must not equal the guardian public key"
+
+const ERR_COLD_KEY_IS_GUARDIAN_KEY = "cold public key must not equal the guardian public key"
+
+const ERR_PUBLIC_KEY_IS_HOT_KEY = "public key must not be a hot public key"
+
+const ERR_GUARDIAN_KEY_IS_USER_KEY = "guardian public key must not equal a hot or cold public key"
+
+const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
+
+const ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "procedure threshold exceeds the number of user key categories"
+
+const ERR_POLICY_FLAGS_NOT_U32 = "procedure policy flags must be u32"
+
+const ERR_INVALID_POLICY_FLAGS = "procedure policy flags may only set note restrictions and cold required"
+
+const ERR_POLICY_FLAGS_REQUIRE_THRESHOLD = "procedure policy flags require an immediate threshold"
+
+const ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY = "cold required applies only to a single-category immediate threshold"
+
+const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
+
+const ERR_MIN_DELAY_BELOW_FLOOR = "min_delay is below the minimum delay"
+
+const ERR_MIN_DELAY_ABOVE_CAP = "min_delay exceeds the maximum delay"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+
+const ERR_CANCEL_THRESHOLD_NOT_U32 = "cancel_threshold must be u32"
+
+const ERR_CANCEL_THRESHOLD_ZERO = "cancel_threshold must be non-zero"
+
+const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "cancel_threshold exceeds the number of user key categories"
+
+# LOCAL ADDRESSES (update_hot_keys)
+# =================================================================================================
+
+const NEW_NUM_HOT_KEYS_LOC = 0
+const INIT_NUM_HOT_KEYS_LOC = 1
+
+# LOCAL ADDRESSES (assert_hot_keys_valid)
+# =================================================================================================
+
+const VALID_OUTER_INDEX_LOC = 0
+const VALID_INNER_INDEX_LOC = 1
+
+# LOCAL ADDRESSES (rotate_cold_key)
+# =================================================================================================
+
+const ROTATE_COLD_SCHEME_ID_LOC = 0
+
+# LOCAL ADDRESSES (set_procedure_policy)
+# =================================================================================================
+
+const IMMEDIATE_THRESHOLD_LOC = 0
+const POLICY_FLAGS_LOC = 1
+
+# LOCAL ADDRESSES (is_hot_key)
+# =================================================================================================
+
+const IS_HOT_KEY_FOUND_LOC = 0
+const HOT_KEY_INDEX_LOC = 1
+
+# LOCAL ADDRESSES (compute_called_proc_policy)
+# =================================================================================================
+
+const DEFAULT_THRESHOLD_LOC = 0
+
+# LOCAL ADDRESSES (auth_tx)
+# =================================================================================================
+
+const AUTH_TX_IMMEDIATE_THRESHOLD_LOC = 0
+const AUTH_TX_COLD_REQUIRED_LOC = 1
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Replaces the hot key set.
+#!
+#! The default threshold is kept, so the configuration only carries the number of hot keys. The
+#! keys are read from the advice provider without an inline hash check: every value written below
+#! via set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which is part of the
+#! TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration produces a
+#! summary the current signers never signed.
+#!
+#! Inputs:
+#!   Operand stack: [HOT_KEYS_CONFIG_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     HOT_KEYS_CONFIG_COMMITMENT =>
+#!     [ HOT_CONFIG, PUB_KEY_N, SCHEME_ID_N, PUB_KEY_N-1, SCHEME_ID_N-1, ..., PUB_KEY_0, SCHEME_ID_0 ]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - HOT_CONFIG is the word [num_hot_keys, 0, 0, 0].
+#! - PUB_KEY_i is the public key commitment of the i-th hot key.
+#! - SCHEME_ID_i is the word [scheme_id, 0, 0, 0] of the i-th hot key.
+#!
+#! Panics if:
+#! - num_hot_keys is not a u32 value, zero or greater than MAX_NUM_HOT_KEYS.
+#! - any scheme id word is malformed or carries an unsupported scheme.
+#! - two hot keys are equal, or a hot key equals the cold or the guardian key.
+#!
+#! Locals:
+#! 0: new_num_hot_keys
+#! 1: init_num_hot_keys
+#!
+#! Invocation: call
+@locals(2)
+@account_procedure
+pub proc update_hot_keys(hot_keys_config_commitment: word)
+    adv.push_mapval
+    # => [HOT_KEYS_CONFIG_COMMITMENT, pad(12)]
+
+    adv_loadw
+    # => [HOT_CONFIG, pad(12)]
+
+    dup loc_store.NEW_NUM_HOT_KEYS_LOC
+    # => [HOT_CONFIG, pad(12)]
+
+    dup exec.assert_num_hot_keys_in_bounds
+    # => [HOT_CONFIG, pad(12)]
+
+    # keep the default threshold and remember the initial number of hot keys for the cleanup
+    exec.get_current_config
+    # => [default_threshold, init_num_hot_keys, HOT_CONFIG, pad(12)]
+
+    swap loc_store.INIT_NUM_HOT_KEYS_LOC
+    # => [default_threshold, num_hot_keys, 0, 0, 0, pad(12)]
+
+    movup.4 drop
+    # => [default_threshold, num_hot_keys, 0, 0, pad(12)]
+
+    push.CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, NEW_CONFIG, pad(12)]
+
+    exec.native_account::set_item
+    # => [OLD_CONFIG, pad(12)]
+
+    dropw
+    # => [pad(12)]
+
+    loc_load.NEW_NUM_HOT_KEYS_LOC
+    # => [num_hot_keys, pad(12)]
+
+    # num_hot_keys was asserted non-zero above, so enter the loop unconditionally
+    push.1
+    while.true
+        sub.1
+        # => [i-1, pad(12)]
+
+        dup exec.signature::create_approver_map_key
+        # => [HOT_KEY_MAP_KEY, i-1, pad(12)]
+
+        padw adv_loadw
+        # => [PUB_KEY, HOT_KEY_MAP_KEY, i-1, pad(12)]
+
+        swapw
+        # => [HOT_KEY_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        push.HOT_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        # override OLD_VALUE with SCHEME_ID_WORD
+        adv_loadw
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        exec.signature::assert_supported_scheme_word
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        dup.4 exec.signature::create_approver_map_key
+        # => [HOT_KEY_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        push.HOT_SCHEME_IDS_SLOT[0..2]
+        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, HOT_KEY_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        dropw
+        # => [i-1, pad(12)]
+
+        dup neq.0
+        # => [is_non_zero, i-1, pad(12)]
+    end
+    # => [0, pad(12)]
+
+    drop
+    # => [pad(12)]
+
+    loc_load.NEW_NUM_HOT_KEYS_LOC
+    exec.assert_hot_keys_valid
+    # => [pad(12)]
+
+    loc_load.NEW_NUM_HOT_KEYS_LOC loc_load.INIT_NUM_HOT_KEYS_LOC
+    # => [init_num_hot_keys, new_num_hot_keys, pad(12)]
+
+    exec.cleanup_hot_key_mapping
+    # => [pad(12)]
+end
+
+#! Replaces the cold key.
+#!
+#! Inputs:  [new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
+#! Outputs: [pad(11)]
+#!
+#! Where:
+#! - new_cold_scheme_id is the signature scheme id of the new cold key.
+#! - NEW_COLD_PUBLIC_KEY is the public key commitment of the new cold key.
+#!
+#! Panics if:
+#! - new_cold_scheme_id is not a supported scheme.
+#! - NEW_COLD_PUBLIC_KEY equals the guardian key or one of the hot keys.
+#!
+#! Locals:
+#! 0: new_cold_scheme_id
+#!
+#! Invocation: call
+@locals(1)
+@account_procedure
+pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_key: PublicKeyCommitment)
+    dup exec.signature::assert_supported_scheme
+    # => [new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    loc_store.ROTATE_COLD_SCHEME_ID_LOC
+    # => [NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    # the cold key must stay distinct from the other categories, read from the current state so a
+    # key change made earlier in this transaction is covered
+    dupw exec.guardian::get_guardian_public_key exec.word::eq
+    # => [is_guardian_key, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    assertz.err=ERR_COLD_KEY_IS_GUARDIAN_KEY
+    # => [NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    dupw exec.assert_not_hot_public_key
+    # => [NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    push.CATEGORY_MAP_KEY
+    # => [CATEGORY_MAP_KEY, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, CATEGORY_MAP_KEY, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    exec.native_account::set_map_item
+    # => [OLD_COLD_PUBLIC_KEY, pad(11)]
+
+    dropw
+    # => [pad(11)]
+
+    loc_load.ROTATE_COLD_SCHEME_ID_LOC
+    # => [new_cold_scheme_id, pad(11)]
+
+    push.0.0.0 movup.3
+    # => [NEW_COLD_SCHEME_ID_WORD, pad(11)]
+
+    push.CATEGORY_MAP_KEY
+    # => [CATEGORY_MAP_KEY, NEW_COLD_SCHEME_ID_WORD, pad(11)]
+
+    push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, CATEGORY_MAP_KEY, NEW_COLD_SCHEME_ID_WORD, pad(11)]
+
+    exec.native_account::set_map_item
+    # => [OLD_COLD_SCHEME_ID_WORD, pad(11)]
+
+    dropw
+    # => [pad(11)]
+end
+
+#! Sets or clears the policy of an account procedure.
+#!
+#! Rewriting a policy weakens whatever it protects, so this procedure should carry a policy at
+#! least as strong as the strongest policy in the map.
+#!
+#! Inputs:  [immediate_threshold, flags, PROC_ROOT, pad(10)]
+#! Outputs: [pad(10)]
+#!
+#! Where:
+#! - immediate_threshold is the number of signed categories the procedure requires, or 0 to clear
+#!   the policy.
+#! - flags packs the note restrictions (bits 0..1, as in multisig_smart) and the cold-required bit
+#!   (bit 8), which makes the immediate path additionally require the cold category.
+#! - PROC_ROOT is the root of the account procedure whose policy is being updated.
+#!
+#! Panics if:
+#! - immediate_threshold or flags is not a u32 value.
+#! - immediate_threshold exceeds NUM_USER_CATEGORIES.
+#! - flags sets a bit other than the note restrictions and the cold-required bit.
+#! - flags is non-zero while immediate_threshold is zero.
+#! - the cold-required bit is set while immediate_threshold is not 1 (with both categories the
+#!   cold key is required anyway).
+#! - PROC_ROOT is not one of the account's procedures.
+#!
+#! Locals:
+#! 0: immediate_threshold
+#! 1: flags
+#!
+#! Invocation: call
+@locals(2)
+@account_procedure
+pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedureRoot)
+    loc_store.IMMEDIATE_THRESHOLD_LOC
+    # => [flags, PROC_ROOT, pad(10)]
+
+    loc_store.POLICY_FLAGS_LOC
+    # => [PROC_ROOT, pad(10)]
+
+    loc_load.IMMEDIATE_THRESHOLD_LOC eq.0
+    # => [is_cleared, PROC_ROOT, pad(10)]
+
+    if.true
+        # the all-zero word marks a cleared policy, so it must not carry flags
+        loc_load.POLICY_FLAGS_LOC eq.0 assert.err=ERR_POLICY_FLAGS_REQUIRE_THRESHOLD
+        # => [PROC_ROOT, pad(10)]
+    else
+        # 1 <= immediate_threshold <= NUM_USER_CATEGORIES
+        loc_load.IMMEDIATE_THRESHOLD_LOC push.NUM_USER_CATEGORIES
+        # => [num_user_categories, immediate_threshold, PROC_ROOT, pad(10)]
+
+        u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
+        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+        # => [PROC_ROOT, pad(10)]
+
+        # flags may only set the note restriction bits and the cold-required bit
+        loc_load.POLICY_FLAGS_LOC u32assert.err=ERR_POLICY_FLAGS_NOT_U32
+        # => [flags, PROC_ROOT, pad(10)]
+
+        dup u32and.POLICY_FLAGS_MASK eq assert.err=ERR_INVALID_POLICY_FLAGS
+        # => [PROC_ROOT, pad(10)]
+
+        # cold required only makes sense for a single-category threshold
+        loc_load.POLICY_FLAGS_LOC u32and.COLD_REQUIRED_FLAG neq.0
+        # => [is_cold_required, PROC_ROOT, pad(10)]
+
+        loc_load.IMMEDIATE_THRESHOLD_LOC eq.1 not
+        # => [is_multi_category, is_cold_required, PROC_ROOT, pad(10)]
+
+        and assertz.err=ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY
+        # => [PROC_ROOT, pad(10)]
+    end
+
+    dupw exec.active_account::has_procedure
+    # => [is_account_procedure, PROC_ROOT, pad(10)]
+
+    assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT, pad(10)]
+
+    # write [immediate_threshold, 0, flags, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]
+    push.0 loc_load.POLICY_FLAGS_LOC push.0 loc_load.IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, 0, flags, 0, PROC_ROOT, pad(10)]
+
+    swapw
+    # => [PROC_ROOT, POLICY_WORD, pad(10)]
+
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    # => [policies_slot_suffix, policies_slot_prefix, PROC_ROOT, POLICY_WORD, pad(10)]
+
+    exec.native_account::set_map_item
+    # => [OLD_POLICY_WORD, pad(10)]
+
+    dropw
+    # => [pad(10)]
+end
+
+#! Sets the delay configuration used by the delayed-execution flows.
+#!
+#! Inputs:  [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+#! Outputs: [pad(13)]
+#!
+#! Where:
+#! - min_delay is the number of blocks a proposal waits before it can execute.
+#! - propose_expiration_delta bounds how many blocks after its reference block a proposal
+#!   transaction stays includable.
+#! - cancel_threshold is the minimum number of signed categories a cancellation needs.
+#!
+#! Panics if:
+#! - min_delay is not a u32 value, below MIN_DELAY_FLOOR_BLOCKS or above MAX_DELAY_BLOCKS.
+#! - propose_expiration_delta is not a u32 value, zero or above MAX_EXPIRATION_BLOCK_DELTA.
+#! - cancel_threshold is not a u32 value, zero or above NUM_USER_CATEGORIES.
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_delay_config(
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    cancel_threshold: SignatureThreshold
+)
+    # MIN_DELAY_FLOOR_BLOCKS <= min_delay <= MAX_DELAY_BLOCKS
+    u32assert.err=ERR_MIN_DELAY_NOT_U32
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    dup push.MIN_DELAY_FLOOR_BLOCKS u32lt assertz.err=ERR_MIN_DELAY_BELOW_FLOOR
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    dup push.MAX_DELAY_BLOCKS u32gt assertz.err=ERR_MIN_DELAY_ABOVE_CAP
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    # 0 < propose_expiration_delta <= MAX_EXPIRATION_BLOCK_DELTA
+    swap u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
+
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
+
+    dup push.MAX_EXPIRATION_BLOCK_DELTA u32gt assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
+
+    # 0 < cancel_threshold <= NUM_USER_CATEGORIES
+    movup.2 u32assert.err=ERR_CANCEL_THRESHOLD_NOT_U32
+    # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
+
+    dup eq.0 assertz.err=ERR_CANCEL_THRESHOLD_ZERO
+    # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
+
+    dup push.NUM_USER_CATEGORIES u32gt assertz.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+    # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
+
+    movup.2
+    # => [min_delay, cancel_threshold, propose_expiration_delta, pad(13)]
+
+    swap
+    # => [cancel_threshold, min_delay, propose_expiration_delta, pad(13)]
+
+    movdn.2
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    push.0 movdn.3
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0, pad(13)]
+
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [delay_slot_suffix, delay_slot_prefix, DELAY_CONFIG, pad(13)]
+
+    exec.native_account::set_item
+    # => [OLD_DELAY_CONFIG, pad(13)]
+
+    dropw
+    # => [pad(13)]
+end
+
+#! Returns the number of hot keys from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [num_hot_keys, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_num_hot_keys() -> u8
+    exec.get_initial_config
+    # => [default_threshold, num_hot_keys, pad(16)]
+
+    drop
+    # => [num_hot_keys, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [num_hot_keys, pad(15)]
+end
+
+#! Returns the default threshold, in signed categories, from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [default_threshold, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_default_threshold() -> SignatureThreshold
+    exec.get_initial_config
+    # => [default_threshold, num_hot_keys, pad(16)]
+
+    swap drop
+    # => [default_threshold, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [default_threshold, pad(15)]
+end
+
+#! Returns the hot key stored at `index` from the account's initial state.
+#!
+#! Inputs:  [index, pad(15)]
+#! Outputs: [PUB_KEY, scheme_id, pad(11)]
+#!
+#! Panics if:
+#! - index is not a u32 value.
+#! - index is greater than or equal to the number of hot keys.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_hot_key_at(index: u32) -> Approver
+    dup exec.get_initial_config drop
+    # => [num_hot_keys, index, index, pad(15)]
+
+    u32assert2.err=ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32
+    u32lt assert.err=ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS
+    # => [index, pad(15)]
+
+    dup exec.signature::create_approver_map_key
+    # => [HOT_KEY_MAP_KEY, index, pad(15)]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, index, pad(15)]
+
+    exec.native_account::get_initial_map_item
+    # => [PUB_KEY, index, pad(15)]
+
+    movup.4 exec.signature::create_approver_map_key
+    # => [HOT_KEY_MAP_KEY, PUB_KEY, pad(15)]
+
+    push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, pad(15)]
+
+    exec.native_account::get_initial_map_item
+    # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(15)]
+
+    movdn.7 drop drop drop
+    # => [PUB_KEY, scheme_id, pad(15)]
+
+    # truncate the stack
+    repeat.4 movup.5 drop end
+    # => [PUB_KEY, scheme_id, pad(11)]
+end
+
+#! Returns the cold key from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [PUB_KEY, scheme_id, pad(11)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_cold_key() -> Approver
+    push.CATEGORY_MAP_KEY
+    # => [CATEGORY_MAP_KEY, pad(16)]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, CATEGORY_MAP_KEY, pad(16)]
+
+    exec.native_account::get_initial_map_item
+    # => [PUB_KEY, pad(16)]
+
+    push.CATEGORY_MAP_KEY
+    # => [CATEGORY_MAP_KEY, PUB_KEY, pad(16)]
+
+    push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, CATEGORY_MAP_KEY, PUB_KEY, pad(16)]
+
+    exec.native_account::get_initial_map_item
+    # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(16)]
+
+    movdn.7 drop drop drop
+    # => [PUB_KEY, scheme_id, pad(16)]
+
+    # truncate the stack
+    repeat.5 movup.5 drop end
+    # => [PUB_KEY, scheme_id, pad(11)]
+end
+
+#! Returns 1 if PUB_KEY is one of the hot keys in the account's initial state, else 0.
+#!
+#! Inputs:  [PUB_KEY, pad(12)]
+#! Outputs: [is_hot_key, pad(15)]
+#!
+#! Locals:
+#! 0: is_hot_key_found
+#! 1: hot_key_index
+#!
+#! Invocation: call
+@locals(2)
+@account_procedure
+pub proc is_hot_key(pub_key: PublicKeyCommitment) -> Bool
+    push.0 loc_store.IS_HOT_KEY_FOUND_LOC
+    # => [PUB_KEY, pad(12)]
+
+    exec.get_initial_config drop
+    # => [num_hot_keys, PUB_KEY, pad(12)]
+
+    dup neq.0
+    # => [has_remaining_keys, num_hot_keys, PUB_KEY, pad(12)]
+
+    while.true
+        sub.1
+        # => [i-1, PUB_KEY, pad(12)]
+
+        dup loc_store.HOT_KEY_INDEX_LOC
+        # => [i-1, PUB_KEY, pad(12)]
+
+        exec.signature::create_approver_map_key
+        # => [HOT_KEY_MAP_KEY, PUB_KEY, pad(12)]
+
+        push.HOT_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, pad(12)]
+
+        exec.native_account::get_initial_map_item
+        # => [CURRENT_PUB_KEY, PUB_KEY, pad(12)]
+
+        dupw.1 exec.word::eq
+        # => [is_pub_key_match, PUB_KEY, pad(12)]
+
+        loc_store.IS_HOT_KEY_FOUND_LOC
+        # => [PUB_KEY, pad(12)]
+
+        loc_load.HOT_KEY_INDEX_LOC
+        # => [i-1, PUB_KEY, pad(12)]
+
+        dup neq.0
+        # => [has_remaining_keys, i-1, PUB_KEY, pad(12)]
+
+        loc_load.IS_HOT_KEY_FOUND_LOC not
+        # => [not_found, has_remaining_keys, i-1, PUB_KEY, pad(12)]
+
+        and
+        # => [should_loop, i-1, PUB_KEY, pad(12)]
+    end
+    # => [i, PUB_KEY, pad(12)]
+
+    drop dropw
+    # => [pad(12)]
+
+    loc_load.IS_HOT_KEY_FOUND_LOC
+    # => [is_hot_key, pad(12)]
+end
+
+#! Returns the policy of PROC_ROOT from the account's initial state.
+#!
+#! Inputs:  [PROC_ROOT, pad(12)]
+#! Outputs: [immediate_threshold, flags, pad(12)]
+#!
+#! Where:
+#! - immediate_threshold is the number of signed categories the procedure requires, or 0 when the
+#!   procedure has no policy.
+#! - flags packs the note restrictions (bits 0..1) and the cold-required bit (bit 8).
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_procedure_policy(proc_root: AccountProcedureRoot) -> HotColdPolicy
+    exec.get_initial_policy
+    # => [immediate_threshold, flags, pad(12)]
+end
+
+#! Returns the delay configuration from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_delay_config() -> (u32, u16, SignatureThreshold)
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [delay_slot_suffix, delay_slot_prefix, pad(16)]
+
+    exec.native_account::get_initial_item
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0, pad(16)]
+
+    movup.3 drop
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(16)]
+
+    # truncate the stack
+    repeat.3 movup.3 drop end
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+end
+
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Authenticates a transaction with the hot, cold and guardian key categories.
+#!
+#! The transaction summary this procedure builds has the layout documented on
+#! `miden::standards::auth::multisig::auth_tx`. The guardian signature is always required. The
+#! called procedures' policies yield the number of signed categories the transaction needs and
+#! whether the cold category must be among them; the hot and cold signatures over the summary are
+#! then verified and counted per category.
+#!
+#! Inputs:
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
+#! Outputs:
+#!   Operand stack: [TX_SUMMARY_COMMITMENT]
+#!
+#! Where:
+#! - bound_block_num, approval_expiration_block_num and SALT are as described in
+#!   `miden::standards::auth::multisig::auth_tx`.
+#!
+#! Panics if:
+#! - a valid guardian signature is missing.
+#! - the note restrictions of a called procedure are violated.
+#! - fewer categories signed than the called procedures require, or the cold category is required
+#!   and did not sign.
+#!
+#! Locals:
+#! 0: immediate_threshold
+#! 1: cold_required
+#!
+#! Invocation: exec
+@locals(2)
+pub proc auth_tx(
+    bound_block_num: BlockNumber,
+    approval_expiration_block_num: BlockNumber,
+    salt: word
+) -> word
+    exec.native_account::incr_nonce drop
+    # => [bound_block_num, approval_expiration_block_num, SALT]
+
+    # ------ Computing transaction summary ------
+
+    push.0 movdn.2
+    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
+
+    exec.auth::get_tx_summary_commitment
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying the guardian signature ------
+    # The guardian co-signs every transaction; nothing is exempt in this component.
+    dupw push.0 exec.guardian::verify_signature
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Computing the requirements from the procedure policies ------
+    exec.get_initial_config swap drop
+    # => [default_threshold, TX_SUMMARY_COMMITMENT]
+
+    exec.compute_called_proc_policy
+    # => [immediate_threshold, flags, TX_SUMMARY_COMMITMENT]
+
+    loc_store.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
+    # => [flags, TX_SUMMARY_COMMITMENT]
+
+    dup u32and.NOTE_RESTRICTION_MASK exec.multisig_smart::enforce_note_restrictions
+    # => [flags, TX_SUMMARY_COMMITMENT]
+
+    u32and.COLD_REQUIRED_FLAG neq.0 loc_store.AUTH_TX_COLD_REQUIRED_LOC
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying the user signatures per category ------
+    exec.verify_category_signatures
+    # => [hot_signed, cold_signed, TX_SUMMARY_COMMITMENT]
+
+    # cold_ok = cold_signed OR NOT cold_required
+    dup.1 loc_load.AUTH_TX_COLD_REQUIRED_LOC not or
+    # => [cold_ok, hot_signed, cold_signed, TX_SUMMARY_COMMITMENT]
+
+    movdn.2 add
+    # => [num_signed_categories, cold_ok, TX_SUMMARY_COMMITMENT]
+
+    loc_load.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, num_signed_categories, cold_ok, TX_SUMMARY_COMMITMENT]
+
+    u32assert2 u32gte
+    # => [reaches_threshold, cold_ok, TX_SUMMARY_COMMITMENT]
+
+    and not
+    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        emit.AUTH_UNAUTHORIZED_EVENT
+        push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+    end
+    # => [TX_SUMMARY_COMMITMENT]
+end
+
+#! Verifies the hot and cold signatures over MSG and reports which categories signed.
+#!
+#! Hot counts once however many of its keys signed; cold counts once when its key signed. Keys are
+#! read from the initial state by `signature::verify_signatures`, so the keys present before the
+#! transaction authorize a key change.
+#!
+#! Inputs:  [MSG]
+#! Outputs: [hot_signed, cold_signed, MSG]
+#!
+#! Where:
+#! - MSG is the transaction message.
+#! - hot_signed is 1 if at least one hot key signed, else 0.
+#! - cold_signed is 1 if the cold key signed, else 0.
+#!
+#! Invocation: exec
+pub proc verify_category_signatures(msg: SignatureMessage) -> (Bool, Bool, SignatureMessage)
+    exec.get_initial_config drop
+    # => [num_hot_keys, MSG]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, MSG]
+
+    push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, MSG]
+
+    exec.signature::verify_signatures
+    # => [num_hot_signatures, MSG]
+
+    neq.0 movdn.4
+    # => [MSG, hot_signed]
+
+    push.1
+    # => [1, MSG, hot_signed]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, 1, MSG, hot_signed]
+
+    push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, 1, MSG, hot_signed]
+
+    exec.signature::verify_signatures
+    # => [num_cold_signatures, MSG, hot_signed]
+
+    eq.1 movup.5
+    # => [hot_signed, cold_signed, MSG]
+end
+
+#! Asserts that the guardian key is neither the cold key nor one of the hot keys.
+#!
+#! Reads the current account state, so a key change performed by this transaction is covered.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the guardian public key equals the cold public key or a hot public key.
+#!
+#! Invocation: exec
+pub proc assert_guardian_not_user_key()
+    exec.guardian::get_guardian_public_key
+    # => [GUARDIAN_PUBLIC_KEY]
+
+    dupw exec.get_current_cold_public_key exec.word::eq
+    # => [is_cold_key, GUARDIAN_PUBLIC_KEY]
+
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
+    # => [GUARDIAN_PUBLIC_KEY]
+
+    exec.get_current_config drop
+    # => [i = num_hot_keys, GUARDIAN_PUBLIC_KEY]
+
+    dup neq.0
+    # => [should_loop, i, GUARDIAN_PUBLIC_KEY]
+
+    while.true
+        sub.1
+        # => [i, GUARDIAN_PUBLIC_KEY]
+
+        dup movdn.5
+        # => [i, GUARDIAN_PUBLIC_KEY, i]
+
+        exec.get_hot_public_key
+        # => [HOT_PUBLIC_KEY, GUARDIAN_PUBLIC_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, GUARDIAN_PUBLIC_KEY, i]
+
+        assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
+        # => [GUARDIAN_PUBLIC_KEY, i]
+
+        movup.4
+        # => [i, GUARDIAN_PUBLIC_KEY]
+
+        dup neq.0
+        # => [should_loop, i, GUARDIAN_PUBLIC_KEY]
+    end
+    # => [0, GUARDIAN_PUBLIC_KEY]
+
+    drop dropw
+    # => []
+end
+
+#! Returns the default threshold and the number of hot keys from the account's initial state.
+#!
+#! Inputs:  []
+#! Outputs: [default_threshold, num_hot_keys]
+#!
+#! Invocation: exec
+pub proc get_initial_config() -> (SignatureThreshold, u8)
+    push.CONFIG_SLOT[0..2]
+    exec.native_account::get_initial_item
+    # => [default_threshold, num_hot_keys, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [default_threshold, num_hot_keys]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the default threshold and the number of hot keys from the current account state.
+#!
+#! Inputs:  []
+#! Outputs: [default_threshold, num_hot_keys]
+#!
+#! Invocation: exec
+proc get_current_config() -> (SignatureThreshold, u8)
+    push.CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [default_threshold, num_hot_keys, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [default_threshold, num_hot_keys]
+end
+
+#! Returns the policy word fields of PROC_ROOT from the account's initial state.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [immediate_threshold, flags]
+#!
+#! Invocation: exec
+proc get_initial_policy(proc_root: AccountProcedureRoot) -> HotColdPolicy
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    exec.native_account::get_initial_map_item
+    # => [immediate_threshold, 0, flags, 0]
+
+    movup.3 drop swap drop
+    # => [immediate_threshold, flags]
+end
+
+#! Returns the hot public key stored at `index` in the current account state.
+#!
+#! Inputs:  [index]
+#! Outputs: [HOT_PUBLIC_KEY]
+#!
+#! Invocation: exec
+proc get_hot_public_key(index: u32) -> PublicKeyCommitment
+    exec.signature::create_approver_map_key
+    # => [HOT_KEY_MAP_KEY]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [HOT_PUBLIC_KEY]
+end
+
+#! Returns the cold public key from the current account state.
+#!
+#! Inputs:  []
+#! Outputs: [COLD_PUBLIC_KEY]
+#!
+#! Invocation: exec
+proc get_current_cold_public_key() -> PublicKeyCommitment
+    push.CATEGORY_MAP_KEY
+    # => [CATEGORY_MAP_KEY]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, CATEGORY_MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [COLD_PUBLIC_KEY]
+end
+
+#! Asserts that the number of hot keys is between 1 and MAX_NUM_HOT_KEYS.
+#!
+#! Inputs:  [num_hot_keys]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_hot_keys is not a u32 value.
+#! - num_hot_keys is zero or greater than MAX_NUM_HOT_KEYS.
+#!
+#! Invocation: exec
+proc assert_num_hot_keys_in_bounds(num_hot_keys: u32)
+    dup u32assert.err=ERR_NUM_HOT_KEYS_NOT_U32
+    # => [num_hot_keys, num_hot_keys]
+
+    eq.0 assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
+    # => [num_hot_keys]
+
+    push.MAX_NUM_HOT_KEYS u32gt assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
+    # => []
+end
+
+#! Asserts that the `num_hot_keys` hot public keys in the current account state are pairwise
+#! distinct and that none of them equals the cold or the guardian public key.
+#!
+#! Reads the current account state, so it validates the keys just written by the caller.
+#!
+#! Inputs:  [num_hot_keys]
+#! Outputs: []
+#!
+#! Panics if:
+#! - two hot public keys are equal.
+#! - a hot public key equals the cold or the guardian public key.
+#!
+#! Cost: O(num_hot_keys^2) map reads.
+#!
+#! Invocation: exec
+@locals(2)
+proc assert_hot_keys_valid(num_hot_keys: u32)
+    dup neq.0
+    # => [outer_continue, num_hot_keys]
+
+    while.true
+        sub.1
+        # => [i]
+
+        dup loc_store.VALID_OUTER_INDEX_LOC
+        # => [i]
+
+        dup exec.get_hot_public_key
+        # => [PK_I, i]
+
+        dupw exec.get_current_cold_public_key exec.word::eq
+        # => [is_cold_key, PK_I, i]
+
+        assertz.err=ERR_HOT_KEY_IS_COLD_KEY
+        # => [PK_I, i]
+
+        dupw exec.guardian::get_guardian_public_key exec.word::eq
+        # => [is_guardian_key, PK_I, i]
+
+        assertz.err=ERR_HOT_KEY_IS_GUARDIAN_KEY
+        # => [PK_I, i]
+
+        movup.4
+        # => [i, PK_I]
+
+        dup neq.0
+        # => [inner_continue, i, PK_I]
+
+        while.true
+            sub.1
+            # => [j, PK_I]
+
+            dup loc_store.VALID_INNER_INDEX_LOC
+            exec.get_hot_public_key
+            # => [PK_J, PK_I]
+
+            dupw.1 exec.word::eq
+            # => [is_equal, PK_I]
+
+            assertz.err=ERR_DUPLICATE_HOT_PUBLIC_KEY
+            # => [PK_I]
+
+            loc_load.VALID_INNER_INDEX_LOC
+            # => [j, PK_I]
+
+            dup neq.0
+            # => [inner_continue, j, PK_I]
+        end
+        # => [0, PK_I]
+
+        drop dropw
+        # => []
+
+        loc_load.VALID_OUTER_INDEX_LOC
+        # => [i]
+
+        dup neq.0
+        # => [outer_continue, i]
+    end
+
+    drop
+    # => []
+end
+
+#! Asserts that PUB_KEY is not one of the hot public keys in the current account state.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: []
+#!
+#! Panics if:
+#! - PUB_KEY equals one of the hot public keys.
+#!
+#! Invocation: exec
+proc assert_not_hot_public_key(pub_key: PublicKeyCommitment)
+    exec.get_current_config drop
+    # => [i = num_hot_keys, PUB_KEY]
+
+    dup neq.0
+    # => [should_loop, i, PUB_KEY]
+
+    while.true
+        sub.1
+        # => [i, PUB_KEY]
+
+        dup movdn.5
+        # => [i, PUB_KEY, i]
+
+        exec.get_hot_public_key
+        # => [HOT_PUBLIC_KEY, PUB_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, PUB_KEY, i]
+
+        assertz.err=ERR_PUBLIC_KEY_IS_HOT_KEY
+        # => [PUB_KEY, i]
+
+        movup.4
+        # => [i, PUB_KEY]
+
+        dup neq.0
+        # => [should_loop, i, PUB_KEY]
+    end
+    # => [0, PUB_KEY]
+
+    drop dropw
+    # => []
+end
+
+#! Clears the hot key entries in the range [new_num_hot_keys, init_num_hot_keys) from both hot
+#! key maps.
+#!
+#! Inputs:  [init_num_hot_keys, new_num_hot_keys]
+#! Outputs: []
+#!
+#! Panics if:
+#! - init_num_hot_keys or new_num_hot_keys is not a u32 value.
+#!
+#! Invocation: exec
+proc cleanup_hot_key_mapping(init_num_hot_keys: u32, new_num_hot_keys: u32)
+    dup.1 dup.1
+    u32assert2.err=ERR_HOT_KEY_COUNTS_NOT_U32
+    u32lt
+    # => [should_loop, i = init_num_hot_keys, new_num_hot_keys]
+
+    while.true
+        sub.1
+        # => [i-1, new_num_hot_keys]
+
+        # clear scheme id at HOT_KEY_MAP_KEY(i-1)
+        dup exec.signature::create_approver_map_key
+        # => [HOT_KEY_MAP_KEY, i-1, new_num_hot_keys]
+
+        padw swapw
+        # => [HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
+
+        push.HOT_SCHEME_IDS_SLOT[0..2]
+        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_hot_keys]
+
+        dropw
+        # => [i-1, new_num_hot_keys]
+
+        # clear public key at HOT_KEY_MAP_KEY(i-1)
+        dup exec.signature::create_approver_map_key
+        # => [HOT_KEY_MAP_KEY, i-1, new_num_hot_keys]
+
+        padw swapw
+        # => [HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
+
+        push.HOT_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_hot_keys]
+
+        dropw
+        # => [i-1, new_num_hot_keys]
+
+        dup.1 dup.1
+        u32lt
+        # => [should_loop, i-1, new_num_hot_keys]
+    end
+
+    drop drop
+    # => []
+end
+
+#! Computes the requirements of the called procedures.
+#!
+#! Iterates over all account procedures and, for those that were called in this transaction,
+#! accumulates the highest immediate threshold (max) and the union of their flags (or). A called
+#! procedure without a policy contributes `default_threshold`, which closes the privilege
+#! escalation where a transaction mixing a low-policy procedure with an unpolicied high-impact one
+#! could otherwise be authorized at the lower threshold. The auth procedure (index 0) is excluded.
+#!
+#! Inputs:  [default_threshold]
+#! Outputs: [immediate_threshold, flags]
+#!
+#! Where:
+#! - default_threshold is the account's configured default threshold in signed categories.
+#! - immediate_threshold is the max across all called non-auth procedures, or `default_threshold`
+#!   when no non-auth procedure was called.
+#! - flags is the union of the called procedures' flags.
+#!
+#! Locals:
+#! 0: default_threshold
+#!
+#! Invocation: exec
+@locals(1)
+proc compute_called_proc_policy(default_threshold: SignatureThreshold) -> HotColdPolicy
+    loc_store.DEFAULT_THRESHOLD_LOC
+    # => []
+
+    push.0 push.0 exec.active_account::get_num_procedures
+    # => [proc_index, immediate_acc=0, flags_acc=0]
+
+    dup neq.0
+    # => [should_continue, proc_index, immediate_acc, flags_acc]
+    while.true
+        sub.1
+        # => [proc_index, immediate_acc, flags_acc]
+
+        # procedure index 0 is the auth procedure and never contributes
+        dup neq.0
+        # => [is_non_auth, proc_index, immediate_acc, flags_acc]
+
+        dup.1 exec.active_account::get_procedure_root
+        # => [PROC_ROOT, is_non_auth, proc_index, immediate_acc, flags_acc]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, is_non_auth, proc_index, immediate_acc, flags_acc]
+
+        and
+        # => [should_process, proc_index, immediate_acc, flags_acc]
+
+        if.true
+            dup exec.active_account::get_procedure_root
+            # => [PROC_ROOT, proc_index, immediate_acc, flags_acc]
+
+            exec.get_initial_policy
+            # => [immediate, flags, proc_index, immediate_acc, flags_acc]
+
+            # flags_acc' = flags_acc OR flags
+            movup.4 movup.2 u32or movdn.3
+            # => [immediate, proc_index, immediate_acc, new_flags]
+
+            # an unpolicied procedure contributes the default threshold
+            loc_load.DEFAULT_THRESHOLD_LOC exec.multisig_smart::compute_tx_threshold
+            # => [contribution, proc_index, immediate_acc, new_flags]
+
+            # immediate_acc' = max(immediate_acc, contribution)
+            movup.2 u32max
+            # => [new_immediate, proc_index, new_flags]
+
+            swap
+            # => [proc_index, new_immediate, new_flags]
+        end
+
+        dup neq.0
+        # => [should_continue, proc_index, immediate_acc, flags_acc]
+    end
+
+    drop
+    # => [immediate_acc, flags_acc]
+
+    # a transaction that calls no non-auth procedure costs the default threshold
+    loc_load.DEFAULT_THRESHOLD_LOC exec.multisig_smart::compute_tx_threshold
+    # => [immediate_threshold, flags]
+end
