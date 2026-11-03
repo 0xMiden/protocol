@@ -35,7 +35,10 @@ use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
 /// cover unreachable nodes, so they could add arbitrary data to the registry without changing the
 /// commitment, or add an external node that adds an extra dependency.
 ///
-/// Both lists are kept in the order in which the transaction kernel commits to them.
+/// Both lists are kept in the order in which the transaction kernel commits to them. This is why
+/// the commitments cannot reuse [`MastForest::interface_commitment`] and
+/// [`MastForest::dependency_commitment`]: these hash the digests in sorted order, which the
+/// transaction kernel would have to sort to reproduce.
 ///
 /// The commitment to created procedures ([`Self::created_commitment`]) is the sequential hash of:
 /// ```text
