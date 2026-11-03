@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+Later releases are recorded in [`.changelog/`](.changelog/) and on the [GitHub releases page](https://github.com/0xMiden/protocol/releases).
 
 ### Features
 
@@ -19,6 +19,7 @@
 - [BREAKING] `set_external_uri` (exposed as `set_contract_uri` on NFT faucets) and `set_token_base_uri` now emit a transaction log carrying the new value, so readers know to refetch the metadata it points to ([#4117](https://github.com/0xMiden/protocol/issues/4117)).
 - Added the NFT standard spec (`crates/miden-standards/specs/nft.md`), starting with the `contract_uri` collection metadata ([#4015](https://github.com/0xMiden/protocol/issues/4015)).
 - [BREAKING] Added the `SetTokenBaseUri` variant to `FaucetMetadataConfig`, dispatching the `NonFungibleFaucet` `set_token_base_uri` setter through `FaucetMetadataConfigNote`, whose script root changes ([#4115](https://github.com/0xMiden/protocol/issues/4115)).
+## v0.18.0 (2026-10-20)
 
 ### Changes
 
@@ -36,73 +37,14 @@
 - [BREAKING] Renamed `LogoURI` to `LogoUri` and `ExternalLink` to `ExternalUri`, along with the matching `external_link` names in the faucet builders, `TokenMetadata`, `FaucetMetadataConfig`, the MASM faucet procedures and the faucet storage slots ([#4067](https://github.com/0xMiden/protocol/issues/4067)).
 - [BREAKING] Removed Winterfell serialization for `TransactionHeader`, `OrderedTransactionHeaders`, `ProvenBatch`, `OrderedBatches`, `ProposedBlock`, `BlockBody`, `SignedBlock` and `ProvenBlock` ([#4105](https://github.com/0xMiden/protocol/pull/4105)).
 - [BREAKING] Removed Winterfell serialization for `BlockInputs`, `BlockHeader`, `ValidatorConfig`, `FeeParameters`, `NextProtocolConfig`, `PartialBlockchain`, `NullifierWitness`, `NullifierTree`, `NoteInclusionProof`, `NoteLocation`, `BlockNumber` and `InputNote` ([#4127](https://github.com/0xMiden/protocol/pull/4127)).
+- [BREAKING] Upgraded the Miden VM and crypto crates from v0.35 to v0.36, with v0.36.1 in the lockfile. Updated MASM core library dependencies to v0.36. Generated packages use debug information format v4, and block header inclusion checks inherit stricter MMR proof verification.
 
-### Fixes
-
-- `ProposedBlock` now rejects surplus nullifier witnesses, preventing nullifier state updates for notes the block does not consume ([#4122](https://github.com/0xMiden/protocol/pull/4122)).
-- `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
-- The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
-- The transfer policy dispatcher now limits the transaction's expiration and applies the pause check before reading the active policy root, so both apply when no send or receive policy is active ([#3881](https://github.com/0xMiden/protocol/pull/3881)).
-- [BREAKING] The non-fungible faucet factories now reject a token policy manager that registers the fungible-only `min_burn_amount` burn policy ([#4035](https://github.com/0xMiden/protocol/issues/4035)).
-- [BREAKING] `ProposedBlock` now rejects a batch whose reference block commitment does not match the canonical block at that height ([#4124](https://github.com/0xMiden/protocol/pull/4124)).
-
-## v0.17.0-pre.1 (2026-09-05)
-## v1.0.0-rc.1 (TBD)
+## v0.17.1 (2026-10-06)
 
 ### Features
 
-- Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
-- Added delayed execution to `AuthMultisigSmart`: `propose_transaction` records a proposal with a single approver signature, `cancel_transaction_proposal` cancels it for good with signatures over `AuthMultisigSmart::cancel_signing_message` from at least `cancel_threshold` approvers and no fewer than signed the proposal (a cancelled commitment can neither be re-proposed nor executed through the timelock), and the proposed transaction executes through the timelock once the chain reaches `reference_block + propose_expiration_delta + min_delay`, carrying an approval expiration in its `MultisigAuthArgs`. The auth procedure selects the execution path from the verified signatures, so a proposal only opens the delayed path and never blocks immediate execution ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
-- Added `DelayedExecutionPolicy` (`min_delay` and `propose_expiration_delta` in blocks, `cancel_threshold`, the floor of the cancellation quorum, in signatures), updatable on chain via `update_delayed_execution_policy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
-- Added `AuthMultisigSmart::update_signers_and_threshold_root`, `AuthMultisigSmart::update_delayed_execution_policy_root` and `AuthMultisigSmart::set_procedure_policy_root` so procedure policies can guard approver rotation, delay-policy updates and policy edits; `set_procedure_policy` rejects the delay-action procedures, whose policies would be ignored ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
-- Added `StandardsDomainRegistry` with the `MultisigSmartCancelProposal` domain of the smart multisig cancel message ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
-
-### Changes
-
-- Added canonical protobuf transport for transaction logs and their commitments, with private log contents retained in local execution data ([#3904](https://github.com/0xMiden/protocol/pull/3904)).
-- [BREAKING] Removed Winterfell serialization for `TransactionSummary` and `SigningInputs` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
-- [BREAKING] Made logs required when constructing transaction outputs, effects, summaries, and proven transactions; added `TransactionEffects::builder()`. Renamed reference-block summary helpers to `create_default_tx_summary` and `get_default_tx_summary_commitment`, and explicit-block helpers to `create_tx_summary` and `get_tx_summary_commitment` ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
-
-- [BREAKING] Added authenticated transaction log emission with FPI emitter attribution and transaction log commitments bound to proofs, transaction IDs, and signing summaries ([#3903](https://github.com/0xMiden/protocol/pull/3903)).
-- Added transaction logs to execution outputs, with commitment-only submission for private accounts ([#3902](https://github.com/0xMiden/protocol/pull/3902)).
-- Added Rust transaction log types with two felt topics, bounded content, cached two stage commitments, and submission formats that carry complete public transaction logs or only a commitment to private transaction logs ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
-- [BREAKING] Removed Winterfell serialization for `ProvenTransaction`, `ExecutedTransaction`, and `TransactionOutputs`; use canonical transaction protobuf messages for transport.
-- [BREAKING] Renamed `create_user_non_fungible_faucet` to `create_singlesig_user_non_fungible_faucet`, added `create_multisig_user_non_fungible_faucet` and `create_guarded_user_non_fungible_faucet`, and made all three install `BasicWallet` so the faucet can hold the native fee asset ([#4014](https://github.com/0xMiden/protocol/issues/4014)).
-- [BREAKING] Upgraded the Miden VM and crypto crate family from v0.35 to v0.36.0, including MASM core-library dependencies. Generated packages use debug-info format v4, and block-header inclusion checks inherit stricter MMR proof verification ([#4053](https://github.com/0xMiden/protocol/pull/4053)).
-- [BREAKING] Migrated `MockChain` snapshots to Protobuf with `to_bytes` and `try_from_bytes`, including pending batches. Removed Winterfell serialization for `MockChain`, `MockChainNote`, and mock authenticators. `MockChainNote::Private` now stores a `PrivateOutputNote` and its inclusion proof. Regenerate existing snapshots.
-- [BREAKING] Removed salt from P2ID note storage and its Rust APIs ([#4013](https://github.com/0xMiden/protocol/pull/4013)).
-- [BREAKING] `MockTransactionBuilder::authenticated_input_note` and `MockChain::get_transaction_inputs` now accept a full `Note` via `MockTransactionNoteInput` to consume private notes as authenticated inputs ([#4007](https://github.com/0xMiden/protocol/pull/4007)).
-- Added `ProtocolDomainRegistry` as the single source of truth for protocol hash domains ([#4008](https://github.com/0xMiden/protocol/pull/4008)).
-- [BREAKING] Removed full private note state from `MockChain` genesis ([#4042](https://github.com/0xMiden/protocol/pull/4042)).
-- [BREAKING] `PriceOracle::get_conversion_rate` no longer returns a `has_conversion_rate` flag. It returns the rate's `last_updated` timestamp in its place, and a `last_updated` of 0 means the pair cannot be priced ([#3842](https://github.com/0xMiden/protocol/issues/3842)).
-- [BREAKING] Moved `ConversionRate` and `ConversionRateError` from `miden_standards::account::oracle` to `miden_standards::utils` ([#3841](https://github.com/0xMiden/protocol/issues/3841)).
-- [BREAKING] `AuthMultisigSmartConfig::new` and `Auth::MultisigSmart` now require a `DelayedExecutionPolicy` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
-- [BREAKING] `multisig_smart` accepts delay-only procedure policies again (`ProcedurePolicyExecutionMode::DelayOnly`), and `ProcedurePolicy::immediate_threshold` now returns an `Option` ([#3044](https://github.com/0xMiden/protocol/pull/3044)).
-- [BREAKING] Added an on-chain `token_base_uri` to `NonFungibleFaucet` that marks its token metadata as public, with the `set_token_base_uri` setter and a `token_uri` helper ([#4011](https://github.com/0xMiden/protocol/issues/4011)).
-- Renamed `make update-note-costs` to `make update-generated`, which regenerates the note cost tables and `bench-tx.json` together and is run only when the cost drift guard fails ([#3727](https://github.com/0xMiden/protocol/pull/3727)).
-- Keyed `bench-tx.json`'s per-note cycle counts by note label instead of note commitment, and added `total_cycles` to each scenario ([#3726](https://github.com/0xMiden/protocol/pull/3726)).
-
-### Fixes
-
-- `SwapNote` and `PswapNote` builders now reject zero-amount offered or requested assets ([#4044](https://github.com/0xMiden/protocol/pull/4044)).
-- [BREAKING] `NoteConsumptionChecker::check_notes_consumability` now rejects input notes with duplicate nullifiers via the new `NoteCheckerError::TransactionInputs` variant. Removed `From<Vec<Note>> for InputNotes<InputNote>` and changed `TransactionInputs::set_input_notes` to take `InputNotes<InputNote>` ([#4005](https://github.com/0xMiden/protocol/pull/4005)).
-- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
-- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
-- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
-- Added `PartialAccount::add_asset_witness` and `PartialAccount::add_storage_map_witness`, and `PartialStorageMap`, `PartialVault`, `StorageMapWitness` and `AssetWitness` no longer track entries with empty values ([#4017](https://github.com/0xMiden/protocol/pull/4017)).
-- [BREAKING] Replaced `TransactionInputs::new` and `TransactionInputs::try_from_parts` with `TransactionInputs::builder` ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
-- [BREAKING] Removed `TransactionInputs` and `ExecutedTransaction` serialization implementations ([#4021](https://github.com/0xMiden/protocol/pull/4021)).
-- [BREAKING] `LocalTransactionProver::prove` now takes a `TransactionWitness` with the transaction inputs, final account header and expiration block number, and rejects a witness that does not match the execution ([#1286](https://github.com/0xMiden/protocol/issues/1286)).
-- [BREAKING] `TransactionInputs` now stores the note scripts the executor resolved during execution ([#4030](https://github.com/0xMiden/protocol/pull/4030)).
-- [BREAKING] `TransactionInputs` now stores the signatures generated during execution, keyed by the new `SignatureKey` ([#4031](https://github.com/0xMiden/protocol/pull/4031)).
-- [BREAKING] `TransactionInputs` now stores the foreign accounts as `AccountInputs` instead of their code and slot names, and the executor no longer fetches foreign accounts the inputs already contain ([#4032](https://github.com/0xMiden/protocol/pull/4032)).
-- [BREAKING] The executor now adds lazy-loaded asset and storage map witnesses to the partial accounts in `TransactionInputs`, and `TransactionInputs::with_asset_witnesses` is replaced by `add_asset_witnesses` ([#4033](https://github.com/0xMiden/protocol/pull/4033)).
-- [BREAKING] `TransactionInputs` no longer stores the recorded advice inputs, since its typed lazy-loaded data is enough to re-execute and prove the transaction ([#4034](https://github.com/0xMiden/protocol/pull/4034)).
-- [BREAKING] `TransactionArgs` now stores output note recipients and signatures as typed data instead of in its advice inputs, and `TransactionArgs::from_parts` takes them as parameters ([#4048](https://github.com/0xMiden/protocol/pull/4048)).
-
-### Fixes
-
-- [BREAKING] Added `BoundSignature`, which binds a signature to its `SignatureKey` and replaces `Signature::to_encoded_signature` with an infallible encoding, so unrecoverable ECDSA signatures are rejected instead of causing a panic ([#4045](https://github.com/0xMiden/protocol/pull/4045)).
+- Added `TokenPolicyManagerV2`, whose transfer callbacks ignore the pause state so a paused fee faucet does not block fee payments ([#3997](https://github.com/0xMiden/protocol/pull/3997)).
+- Added the `policy_manager` input to `XReserveStablecoinBuilder` to build the xUSDC faucet with `TokenPolicyManagerV2`, and `upgrade_to_token_policy_manager_v2` to upgrade an existing V1 faucet in place ([#3997](https://github.com/0xMiden/protocol/pull/3997)).
 
 ## v0.17.0 (2026-10-01)
 
@@ -150,7 +92,6 @@
 - [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
-- [BREAKING] Moved account component metadata from Rust into a `[package.metadata.account-component]` table in each component's `miden-project.toml`, embedding it into the compiled `.masp` package and removing the now-redundant `*_slot_schema` accessors ([#3587](https://github.com/0xMiden/protocol/pull/3587)).
 - [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name, and `account_builder` now takes `TokenName` / `TokenSymbol` / `AssetAmount` rather than `&str` / `Felt` ([#3525](https://github.com/0xMiden/protocol/pull/3525)).
 - [BREAKING] Updated `NoteScript::from_package` and `TransactionScript::from_package` to reject executable packages with the new `MastForestScriptError::ExecutablePackage`, so scripts are identified only by their `@note_script` / `@transaction_script` attribute ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
 - [BREAKING] Updated `AccountComponent::from_package` to take `Package` by value ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
