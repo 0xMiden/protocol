@@ -31,6 +31,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
+use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
     BlockAccountUpdate,
@@ -45,6 +46,7 @@ use miden_protocol::block::{
     ProvenBlock,
     ValidatorConfig,
 };
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
@@ -52,8 +54,10 @@ use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
+use miden_protocol::vm::PackageExport;
+use miden_protocol::{CoreLibrary, MAX_OUTPUT_NOTES_PER_BATCH, ProtocolLib, Word};
+use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
@@ -261,6 +265,7 @@ impl MockChainBuilder {
         let chain_commitment = Blockchain::new().commitment();
         let account_root = account_tree.root();
         let nullifier_root = NullifierTree::<Smt>::default().root();
+        let code_tree = default_code_tree()?;
         let note_root = note_tree.root();
         let tx_commitment = body.compute_transactions_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
@@ -284,6 +289,7 @@ impl MockChainBuilder {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree.root(),
             note_root,
             tx_commitment,
             validator_config.clone(),
@@ -315,6 +321,7 @@ impl MockChainBuilder {
         MockChain::from_genesis_block(
             genesis_block,
             account_tree,
+            code_tree,
             self.account_authenticators,
             validator_secret_keys,
             protocol_config,
@@ -965,4 +972,34 @@ impl Default for MockChainBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Returns the code tree with the procedures of the default libraries that other code can
+/// reference.
+fn default_code_tree() -> anyhow::Result<CodeTree> {
+    let exec_kernel_proc = TransactionKernel::package()
+        .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+        .context("transaction kernel should export exec_kernel_proc")?;
+    let libraries = [
+        CoreLibrary::default().package(),
+        ProtocolLib::default().package(),
+        StandardsLib::default().package(),
+    ];
+
+    // Libraries can re-export procedures of other libraries, so roots must be deduplicated.
+    let mut procedure_roots = BTreeSet::from([ProcedureRoot::from_raw(exec_kernel_proc)]);
+    for library in libraries {
+        procedure_roots.extend(
+            library
+                .manifest
+                .exports()
+                .filter_map(PackageExport::as_procedure)
+                .map(|export| ProcedureRoot::from_raw(export.digest)),
+        );
+    }
+
+    CodeTree::with_entries(procedure_roots).context("failed to create genesis code tree")
 }

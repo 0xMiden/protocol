@@ -195,38 +195,41 @@ const BLOCK_METADATA_NUMBER_PTR = BLOCK_METADATA_PTR + 1
 const BLOCK_METADATA_TIMESTAMP_PTR = BLOCK_METADATA_PTR + 2
 
 # The memory address at which the previous block commitment is stored
-const PREV_BLOCK_COMMITMENT_PTR = 2004
+const PREV_BLOCK_COMMITMENT_PTR = BLOCK_METADATA_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the chain commitment is stored
-const CHAIN_COMMITMENT_PTR = 2008
+const CHAIN_COMMITMENT_PTR = PREV_BLOCK_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the account root is stored
-const ACCT_DB_ROOT_PTR = 2012
+const ACCT_DB_ROOT_PTR = CHAIN_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the nullifier root is stored
-const NULLIFIER_ROOT_PTR = 2016
+const NULLIFIER_ROOT_PTR = ACCT_DB_ROOT_PTR + WORD_NUM_ELEMENTS
+
+# The memory address at which the code tree root is stored
+const CODE_TREE_ROOT_PTR = NULLIFIER_ROOT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the tx commitment is stored
-const TX_COMMITMENT_PTR = 2020
+const TX_COMMITMENT_PTR = CODE_TREE_ROOT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the protocol config commitment is stored
-const PROTOCOL_CONFIG_COMMITMENT_PTR = 2024
+const PROTOCOL_CONFIG_COMMITMENT_PTR = TX_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the validator config commitment is stored
-const VALIDATOR_CONFIG_COMMITMENT_PTR = 2028
+const VALIDATOR_CONFIG_COMMITMENT_PTR = PROTOCOL_CONFIG_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the next protocol config commitment is stored
-const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR = 2032
+const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR = VALIDATOR_CONFIG_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the fee parameters are stored.
 # [verification_base_fee, 0, 0, 0]
-const FEE_PARAMETERS_PTR = 2036
+const FEE_PARAMETERS_PTR = NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 
 # The memory address at which the verification base fee is stored.
 const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR
 
-# The memory address at which the note root is stored
-const NOTE_ROOT_PTR = 2040
+# The memory address at which the note root is stored (offset by padding).
+const NOTE_ROOT_PTR = FEE_PARAMETERS_PTR + 2 * WORD_NUM_ELEMENTS
 
 # PROTOCOL CONFIG
 # -------------------------------------------------------------------------------------------------
@@ -898,6 +901,17 @@ end
 #! - NULLIFIER_ROOT is the nullifier root of the transaction reference block.
 pub proc get_nullifier_db_root() -> Commitment
     padw mem_loadw_le.NULLIFIER_ROOT_PTR
+end
+
+#! Returns the code tree root of the transaction reference block.
+#!
+#! Inputs:  []
+#! Outputs: [CODE_TREE_ROOT]
+#!
+#! Where:
+#! - CODE_TREE_ROOT is the code tree root of the transaction reference block.
+pub proc get_code_tree_root() -> Commitment
+    padw mem_loadw_le.CODE_TREE_ROOT_PTR
 end
 
 #! Returns the tx commitment of the transaction reference block.

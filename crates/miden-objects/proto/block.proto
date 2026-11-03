@@ -33,12 +33,13 @@ message BlockHeader {
   primitives.Word chain_commitment = 5;
   primitives.Word account_root = 6;
   primitives.Word nullifier_root = 7;
-  primitives.Word note_root = 8;
-  primitives.Word tx_commitment = 9;
-  ValidatorConfig validator_config = 10;
-  FeeParameters fee_parameters = 11;
-  primitives.Word protocol_config_commitment = 12;
-  optional NextProtocolConfig next_protocol_config = 13;
+  primitives.Word code_tree_root = 8;
+  primitives.Word note_root = 9;
+  primitives.Word tx_commitment = 10;
+  ValidatorConfig validator_config = 11;
+  FeeParameters fee_parameters = 12;
+  primitives.Word protocol_config_commitment = 13;
+  optional NextProtocolConfig next_protocol_config = 14;
 }
 
 message BlockAccountUpdate {

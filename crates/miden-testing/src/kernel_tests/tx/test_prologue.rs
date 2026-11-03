@@ -36,6 +36,7 @@ use miden_protocol::transaction::memory::{
     BLOCK_NUMBER_IDX,
     BLOCK_VERSION_IDX,
     CHAIN_COMMITMENT_PTR,
+    CODE_TREE_ROOT_PTR,
     FEE_ASSET_ID_PTR,
     FEE_PARAMETERS_PTR,
     GLOBAL_ACCOUNT_ID_PREFIX_PTR,
@@ -345,6 +346,12 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTran
         exec_output.get_kernel_mem_word(NULLIFIER_DB_ROOT_PTR),
         inputs.tx_inputs().block_header().nullifier_root(),
         "The nullifier db root should be stored at the NULLIFIER_DB_ROOT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(CODE_TREE_ROOT_PTR),
+        inputs.tx_inputs().block_header().code_tree_root().as_word(),
+        "The code tree root should be stored at the CODE_TREE_ROOT_PTR"
     );
 
     assert_eq!(

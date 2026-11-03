@@ -160,6 +160,7 @@ fn dummy_block_header(
         base.chain_commitment(),
         base.account_root(),
         base.nullifier_root(),
+        base.code_tree_root(),
         base.note_root(),
         base.transactions_commitment(),
         base.validator_config().clone(),

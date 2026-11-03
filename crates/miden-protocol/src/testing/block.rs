@@ -5,6 +5,7 @@ use rand::random;
 use crate::Word;
 use crate::account::Account;
 use crate::block::account_tree::{AccountIdKey, AccountTree};
+use crate::block::code_tree::CodeTreeRoot;
 use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorConfig};
 use crate::protocol_config::ProtocolConfig;
 use crate::testing::random_secret_key::random_secret_key;
@@ -39,6 +40,7 @@ impl BlockHeader {
             prev_block_commitment,
             chain_commitment,
             nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             timestamp,
@@ -46,6 +48,7 @@ impl BlockHeader {
             let prev_block_commitment = random::<Word>();
             let chain_commitment = chain_commitment.unwrap_or(random::<Word>());
             let nullifier_root = random::<Word>();
+            let code_tree_root = CodeTreeRoot::from_raw(random::<Word>());
             let note_root = note_root.unwrap_or(random::<Word>());
             let tx_commitment = random::<Word>();
             let timestamp = random::<u32>();
@@ -54,6 +57,7 @@ impl BlockHeader {
                 prev_block_commitment,
                 chain_commitment,
                 nullifier_root,
+                code_tree_root,
                 note_root,
                 tx_commitment,
                 timestamp,
@@ -65,6 +69,7 @@ impl BlockHeader {
             prev_block_commitment,
             chain_commitment,
             nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             timestamp,
@@ -73,6 +78,7 @@ impl BlockHeader {
                 Default::default(),
                 chain_commitment.unwrap_or_default(),
                 Default::default(),
+                CodeTreeRoot::from_raw(Default::default()),
                 note_root.unwrap_or_default(),
                 Default::default(),
                 Default::default(),
@@ -85,6 +91,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             validator_config,
