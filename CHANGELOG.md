@@ -6,21 +6,6 @@ Later releases are recorded in [`.changelog/`](.changelog/) and on the [GitHub r
 
 ### Changes
 
-- [BREAKING] The multisig auth components now verify the approver signatures before paying the transaction fee and bind a fee cap into the transaction summary instead of the exact fee, either estimated on the unsigned execution with a margin (`MultisigAuthArgs::with_fee_margin_percent`) or set with `MultisigAuthArgs::with_max_fee`, rejecting a transaction whose fee and network note sponsorships exceed it ([#3332](https://github.com/0xMiden/protocol/issues/3332)).
-- [BREAKING] `fee::pay_fee` now takes the account's initial nonce and also returns the paid fee amount, and the new `fee::estimate_fee` computes both without creating notes ([#3332](https://github.com/0xMiden/protocol/issues/3332)).
-- [BREAKING] Moved the EIP-712 transaction-summary adapter from `miden::standards::auth::eip712_transaction_summary` to `miden::standards::auth::eip712::transaction_summary` and removed its public `compute_signature_key` procedure ([#4091](https://github.com/0xMiden/protocol/pull/4091)).
-- Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
-- Reduced transaction log content limits to 64 words per log and per transaction ([#4093](https://github.com/0xMiden/protocol/pull/4093)).
-- [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
-- Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
-- [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
-- [BREAKING] `BlockBody` now groups its transactions by batch, so the block's `BatchesCommitment` can be derived from it ([#4079](https://github.com/0xMiden/protocol/pull/4079)).
-- Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
-- [BREAKING] `AccountComponentCode` no longer carries the account component metadata section of its package, leaving `AccountComponent` as the only holder of the metadata ([#4086](https://github.com/0xMiden/protocol/pull/4086)).
-- Introduced the `DoubleWord` newtype (8 `Felt`s) and used it internally to replace ad-hoc `[Felt; 8]` / `Vec<Felt>` representations ([#3319](https://github.com/0xMiden/protocol/pull/3319)).
-- [BREAKING] Renamed `LogoURI` to `LogoUri` and `ExternalLink` to `ExternalUri`, along with the matching `external_link` names in the faucet builders, `TokenMetadata`, `FaucetMetadataConfig`, the MASM faucet procedures and the faucet storage slots ([#4067](https://github.com/0xMiden/protocol/issues/4067)).
-- [BREAKING] Removed Winterfell serialization for `TransactionHeader`, `OrderedTransactionHeaders`, `ProvenBatch`, `OrderedBatches`, `ProposedBlock`, `BlockBody`, `SignedBlock` and `ProvenBlock` ([#4105](https://github.com/0xMiden/protocol/pull/4105)).
-- [BREAKING] Removed Winterfell serialization for `BlockInputs`, `BlockHeader`, `ValidatorConfig`, `FeeParameters`, `NextProtocolConfig`, `PartialBlockchain`, `NullifierWitness`, `NullifierTree`, `NoteInclusionProof`, `NoteLocation`, `BlockNumber` and `InputNote` ([#4127](https://github.com/0xMiden/protocol/pull/4127)).
 - [BREAKING] Upgraded the Miden VM and crypto crates from v0.35 to v0.36, with v0.36.1 in the lockfile. Updated MASM core library dependencies to v0.36. Generated packages use debug information format v4, and block header inclusion checks inherit stricter MMR proof verification.
 
 ## v0.17.1 (2026-10-06)
