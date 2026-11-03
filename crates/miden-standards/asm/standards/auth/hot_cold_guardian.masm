@@ -94,11 +94,11 @@ const NOTE_RESTRICTION_MASK = 3
 const COLD_REQUIRED_FLAG = 256
 const POLICY_FLAGS_MASK = 259
 
-# Bounds on the account delay, in blocks, assuming a 3 second block time: at least 24 hours so
-# that a cold key kept elsewhere can be reached, at most 7 days so that self-custody is not put in
-# question.
+# The shortest account delay, in blocks, assuming a 3 second block time: 24 hours, so that a cold
+# key kept elsewhere can be reached before a delayed action executes. There is no upper bound: the
+# immediate path stays available to both categories plus the guardian, so a long delay never locks
+# the account.
 const MIN_DELAY_FLOOR_BLOCKS = 28800
-const MAX_DELAY_BLOCKS = 201600
 
 # ERRORS
 # =================================================================================================
@@ -130,8 +130,6 @@ const ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY = "cold required applies only to a
 const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
 
 const ERR_MIN_DELAY_BELOW_FLOOR = "min_delay is below the minimum delay"
-
-const ERR_MIN_DELAY_ABOVE_CAP = "min_delay exceeds the maximum delay"
 
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
 
@@ -485,7 +483,7 @@ end
 #! - cancel_threshold is the minimum number of signed categories a cancellation needs.
 #!
 #! Panics if:
-#! - min_delay is not a u32 value, below MIN_DELAY_FLOOR_BLOCKS or above MAX_DELAY_BLOCKS.
+#! - min_delay is not a u32 value or below MIN_DELAY_FLOOR_BLOCKS.
 #! - propose_expiration_delta is not a u32 value, zero or above MAX_EXPIRATION_BLOCK_DELTA.
 #! - cancel_threshold is not a u32 value, zero or above NUM_USER_CATEGORIES.
 #!
@@ -496,14 +494,11 @@ pub proc update_delay_config(
     propose_expiration_delta: u16,
     cancel_threshold: SignatureThreshold
 )
-    # MIN_DELAY_FLOOR_BLOCKS <= min_delay <= MAX_DELAY_BLOCKS
+    # min_delay >= MIN_DELAY_FLOOR_BLOCKS
     u32assert.err=ERR_MIN_DELAY_NOT_U32
     # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
 
     dup push.MIN_DELAY_FLOOR_BLOCKS u32lt assertz.err=ERR_MIN_DELAY_BELOW_FLOOR
-    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
-
-    dup push.MAX_DELAY_BLOCKS u32gt assertz.err=ERR_MIN_DELAY_ABOVE_CAP
     # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
 
     # 0 < propose_expiration_delta <= MAX_EXPIRATION_BLOCK_DELTA

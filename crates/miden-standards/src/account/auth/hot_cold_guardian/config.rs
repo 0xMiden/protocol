@@ -31,10 +31,6 @@ pub const MIN_DELAY_FLOOR_BLOCKS: u32 = 24 * BLOCKS_PER_HOUR;
 /// The default delay: 2 days.
 pub const DEFAULT_MIN_DELAY_BLOCKS: u32 = 48 * BLOCKS_PER_HOUR;
 
-/// The longest delay an account may configure: 7 days, so that self-custody is not put in
-/// question.
-pub const MAX_DELAY_BLOCKS: u32 = 7 * 24 * BLOCKS_PER_HOUR;
-
 /// The default number of blocks a proposal transaction stays includable after its reference block.
 pub const DEFAULT_PROPOSE_EXPIRATION_DELTA: u16 = 20;
 
@@ -44,10 +40,11 @@ pub const DEFAULT_PROPOSE_EXPIRATION_DELTA: u16 = 20;
 /// The delay configuration of [`AuthHotColdGuardian`](super::AuthHotColdGuardian).
 ///
 /// A single delay applies to every delayed action of the account. `min_delay` is the number of
-/// blocks a proposal waits before it can execute, bounded by [`MIN_DELAY_FLOOR_BLOCKS`] and
-/// [`MAX_DELAY_BLOCKS`]. `propose_expiration_delta` bounds how many blocks after its reference
-/// block a proposal transaction stays includable. `cancel_threshold` is the minimum number of
-/// signed categories a cancellation needs.
+/// blocks a proposal waits before it can execute, at least [`MIN_DELAY_FLOOR_BLOCKS`] with no upper
+/// bound, since the immediate path stays available to both categories plus the guardian.
+/// `propose_expiration_delta` bounds how many blocks after its reference block a proposal
+/// transaction stays includable. `cancel_threshold` is the minimum number of signed categories a
+/// cancellation needs.
 ///
 /// The configuration is stored on chain as `[min_delay, propose_expiration_delta,
 /// cancel_threshold, 0]`. The delayed-execution flows themselves are not part of this component
@@ -64,8 +61,8 @@ impl HotColdDelayConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `min_delay` is outside `MIN_DELAY_FLOOR_BLOCKS..=MAX_DELAY_BLOCKS`,
-    /// if `propose_expiration_delta` is zero or if `cancel_threshold` is zero or exceeds
+    /// Returns an error if `min_delay` is below [`MIN_DELAY_FLOOR_BLOCKS`], if
+    /// `propose_expiration_delta` is zero or if `cancel_threshold` is zero or exceeds
     /// [`NUM_USER_CATEGORIES`].
     pub fn new(
         min_delay: u32,
@@ -74,9 +71,6 @@ impl HotColdDelayConfig {
     ) -> Result<Self, AccountError> {
         if min_delay < MIN_DELAY_FLOOR_BLOCKS {
             return Err(AccountError::other("min_delay is below the minimum delay"));
-        }
-        if min_delay > MAX_DELAY_BLOCKS {
-            return Err(AccountError::other("min_delay exceeds the maximum delay"));
         }
         if propose_expiration_delta == 0 {
             return Err(AccountError::other("propose_expiration_delta must be non-zero"));
@@ -251,9 +245,6 @@ mod tests {
         let below = HotColdDelayConfig::new(MIN_DELAY_FLOOR_BLOCKS - 1, 20, 1).unwrap_err();
         assert!(below.to_string().contains("below the minimum delay"));
 
-        let above = HotColdDelayConfig::new(MAX_DELAY_BLOCKS + 1, 20, 1).unwrap_err();
-        assert!(above.to_string().contains("exceeds the maximum delay"));
-
         let zero_delta = HotColdDelayConfig::new(MIN_DELAY_FLOOR_BLOCKS, 0, 1).unwrap_err();
         assert!(zero_delta.to_string().contains("propose_expiration_delta must be non-zero"));
 
@@ -267,7 +258,7 @@ mod tests {
                 .contains("cannot exceed the number of user key categories")
         );
 
-        assert!(HotColdDelayConfig::new(MAX_DELAY_BLOCKS, 20, 2).is_ok());
+        assert!(HotColdDelayConfig::new(u32::MAX, 20, 2).is_ok());
     }
 
     #[test]
