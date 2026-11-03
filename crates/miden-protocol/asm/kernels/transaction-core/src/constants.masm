@@ -1,7 +1,8 @@
 # CONSTANTS
 # =================================================================================================
 
-pub use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
+pub use {DOUBLE_WORD_NUM_ELEMENTS, MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS}
+    from miden::protocol_utils::constants
 
 # The maximum number of storage items associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
@@ -20,6 +21,15 @@ pub const MAX_OUTPUT_NOTES_PER_TX = 1024
 
 # The number of field elements per account procedure data entry (procedure MAST root).
 pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
+
+#! The number of field elements in an account header.
+pub const ACCOUNT_HEADER_NUM_ELEMENTS = 4 * WORD_NUM_ELEMENTS
+
+#! The number of field elements contributed by each note to the input notes commitment.
+pub const INPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS = DOUBLE_WORD_NUM_ELEMENTS
+
+#! The number of field elements contributed by each note to the output notes commitment.
+pub const OUTPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS = DOUBLE_WORD_NUM_ELEMENTS
 
 # Generic Felt-sequence Eidos chaining words for the prologue's fixed-length preimages.
 pub const EIDOS_INIT_CHAINING_WORD_8 = [

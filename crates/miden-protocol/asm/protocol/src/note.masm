@@ -29,7 +29,7 @@ const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT =
 #! This procedure checks that the provided number of note storage items is within limits and then computes
 #! the commitment.
 #!
-#! If the number of note storage items is 0, the procedure returns the canonical Eidos empty hash.
+#! If the number of note storage items is 0, the procedure returns the empty hash.
 #!
 #! Inputs:  [storage_ptr, num_storage_items]
 #! Outputs: [STORAGE_COMMITMENT]

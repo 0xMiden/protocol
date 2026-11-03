@@ -1,3 +1,14 @@
+//! Protocol Eidos domain assignments.
+//!
+//! A domain tag packs an 8-bit namespace, a 16-bit local ID, and an 8-bit version. The domain ID
+//! consists of the namespace and local ID, so it is the full tag shifted right by eight bits.
+//! For example, the account-patch tag is `0x02000000` and its domain ID is `0x020000`.
+//!
+//! The initializer receives the full domain tag encoded as a Felt. The `*_SELECTOR` constants
+//! expose that value for existing callers. A zero version byte in the tag delegates versioning to
+//! the payload schema. Patch and delta payloads carry their layout version in the first element of
+//! a nonempty preimage. Numbered domain tags carry their construction version in the tag itself.
+
 use miden_core::Felt;
 use miden_crypto::hash::eidos::domain::{
     DELEGATED_VERSIONING,
@@ -20,7 +31,7 @@ miden_crypto::eidos_domain_registry! {
     /// payloads start with the layout version as one Felt; empty objects use an empty payload.
     /// The code-upgrade advice key uses a numbered hash construction over a code commitment.
     ///
-    /// The MASM selectors must match these domain tags.
+    /// The domain tags used in MASM must match these assignments.
     pub registry ProtocolDomainRegistry {
         namespace: namespace::MIDEN_PROTOCOL;
         domains: {

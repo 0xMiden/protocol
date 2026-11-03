@@ -114,7 +114,7 @@ impl AccountUpdateTracker {
         &mut self.storage
     }
 
-    /// Returns the number of 8-Felt body blocks in the account patch commitment.
+    /// Returns the number of double words in the account patch commitment body.
     ///
     /// This excludes the fixed metadata header block. The transaction kernel asks the host for
     /// this value before initializing Eidos, then proves it by counting the blocks it actually
@@ -130,7 +130,7 @@ impl AccountUpdateTracker {
         )
     }
 
-    /// Returns the number of 8-Felt body blocks in the account delta commitment.
+    /// Returns the number of double words in the account delta commitment body.
     ///
     /// This excludes the fixed metadata header block. The vault-delta section is derived from the
     /// tracked initial/final asset values instead of the accumulated delta events, because those

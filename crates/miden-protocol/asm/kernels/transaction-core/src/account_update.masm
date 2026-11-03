@@ -7,7 +7,8 @@ use miden::tx_kernel_core::memory
 use miden::core::crypto::hashes::eidos
 use miden::core::word
 use {ASSET_SIZE, COMPOSITION_NONE} from miden::tx_kernel_core::asset
-use {STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE} from miden::tx_kernel_core::constants
+use {DOUBLE_WORD_NUM_ELEMENTS, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE}
+    from miden::tx_kernel_core::constants
 use {
     ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR,
     ACCOUNT_UPDATE_ASSET_PTR,
@@ -63,7 +64,7 @@ const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT =
 # CONSTANTS
 # =================================================================================================
 
-# Eidos chaining-word bases for the registered patch and delta selectors. The runtime message
+# eidos chaining-word bases for the registered patch and delta domain tags. The runtime message
 # length is added to the second element.
 const ACCOUNT_DELTA_INIT_CHAINING_WORD_BASE = [
     13503953893981159680,
@@ -78,8 +79,8 @@ const ACCOUNT_PATCH_INIT_CHAINING_WORD_BASE = [
     6620516959492505600
 ]
 
-# Commitments to empty account delta and patch sequences. Each constant is
-# `compress(init(selector, [0, 0, 0]), [0; 8])`, the canonical empty Felt-sequence schedule.
+# commitments to empty account delta and patch sequences. Each constant is
+# `compress(init(domain_tag, [0, 0, 0]), [0; 8])`, the empty Felt-sequence schedule.
 const EMPTY_ACCOUNT_DELTA_COMMITMENT = [
     8292991568228380395,
     1876249661191940156,
@@ -169,7 +170,7 @@ pub proc compute_patch_commitment() -> Commitment
     # => [num_body_blocks]
 
     # the advised count excludes the fixed metadata header block
-    add.1 mul.8
+    add.1 mul.DOUBLE_WORD_NUM_ELEMENTS
     # => [num_elements]
 
     push.ACCOUNT_PATCH_INIT_CHAINING_WORD_BASE
@@ -255,7 +256,7 @@ pub proc compute_delta_commitment() -> Commitment
     # => [num_body_blocks]
 
     # the advised count excludes the fixed metadata header block
-    add.1 mul.8
+    add.1 mul.DOUBLE_WORD_NUM_ELEMENTS
     # => [num_elements]
 
     push.ACCOUNT_DELTA_INIT_CHAINING_WORD_BASE
@@ -316,8 +317,8 @@ end
 #!
 #! The balance starts at the negated advised count. The u32 message-length check bounds that count
 #! below 2^29, and the transaction cycle limit places the same bound on the number of blocks the
-#! kernel can emit. The final balance is therefore zero exactly
-#! when the two counts agree; field wraparound cannot make unequal counts compare equal.
+#! kernel can emit. The final balance is therefore zero exactly when the two counts agree; field
+#! wraparound cannot make unequal counts compare equal.
 #!
 #! Inputs:  [num_blocks]
 #! Outputs: []
@@ -344,7 +345,7 @@ proc compress_commitment_body_block(state: eidos::State) -> eidos::Digest
     mem_store.ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR
 end
 
-#! Prepares a patch or delta chaining word from its selector base and message length.
+#! Prepares a patch or delta chaining word from its domain tag base and message length.
 #!
 #! Inputs:  [CHAINING_WORD_BASE, num_elements]
 #! Outputs: [CHAINING_WORD]
@@ -810,7 +811,6 @@ proc commit_asset_delta(chaining_word: eidos::ChainingValue) -> eidos::ChainingV
 end
 
 #! Compresses a trailer that commits to the number of assets affected by the given delta operation.
-#! The trailer is included even when num_assets is zero.
 #!
 #! Inputs:  [delta_op, num_assets, CHAINING_WORD]
 #! Outputs: [CHAINING_WORD]

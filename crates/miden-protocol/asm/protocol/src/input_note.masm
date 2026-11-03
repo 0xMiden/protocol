@@ -456,7 +456,7 @@ end
 #! Where:
 #! - note_index is the index of the input note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
-#!   attachments uses the canonical Eidos empty hash.
+#!   attachments uses the empty hash.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.

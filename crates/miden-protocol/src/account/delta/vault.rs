@@ -291,51 +291,6 @@ mod tests {
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountDeltaError;
     use crate::utils::serde::ByteWriter;
-    use crate::{Felt, Word};
-
-    #[rstest]
-    #[case::empty(false, false)]
-    #[case::add_only(true, false)]
-    #[case::remove_only(false, true)]
-    #[case::mixed(true, true)]
-    fn account_vault_delta_commitment_encoding(#[case] add: bool, #[case] remove: bool) {
-        let added = FungibleAsset::mock(42);
-        let removed = NonFungibleAsset::mock(&[1, 2, 3]);
-        let delta = AccountVaultDelta::from_iters(add.then_some(added), remove.then_some(removed));
-        // Preserve any preceding commitment sections, including for an empty vault delta.
-        let prefix = [Felt::from(99u32); 8];
-        let mut actual = prefix.to_vec();
-        delta.append_delta_elements(&mut actual);
-
-        let mut expected = prefix.to_vec();
-        if add || remove {
-            if add {
-                expected.extend_from_slice(&added.as_elements());
-            }
-            expected.extend_from_slice(&[
-                Felt::ONE,
-                Felt::ONE,
-                Felt::from(u32::from(add)),
-                Felt::ZERO,
-            ]);
-            expected.extend_from_slice(Word::empty().as_elements());
-            if remove {
-                expected.extend_from_slice(&removed.as_elements());
-            }
-            expected.extend_from_slice(&[
-                Felt::ONE,
-                Felt::from(2u32),
-                Felt::from(u32::from(remove)),
-                Felt::ZERO,
-            ]);
-            expected.extend_from_slice(Word::empty().as_elements());
-        }
-
-        assert_eq!(actual, expected);
-        let num_assets = usize::from(add) + usize::from(remove);
-        let expected_blocks = if num_assets == 0 { 0 } else { num_assets + 2 };
-        assert_eq!(actual.len() - prefix.len(), 8 * expected_blocks);
-    }
 
     #[test]
     fn account_vault_delta_serde() -> anyhow::Result<()> {

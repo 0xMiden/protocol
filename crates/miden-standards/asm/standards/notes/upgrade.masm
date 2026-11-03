@@ -182,10 +182,10 @@ proc insert_code_into_advice_map(new_code_commitment: word)
     # compute the domain-separated advice map key over the four elements of the commitment
     push.CODE_UPGRADE_ADVICE_MAP_KEY_NUM_ELEMENTS.CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN
     exec.eidos::init_chaining_word_in_domain
-    # => [CV, NEW_CODE_COMMITMENT, end_ptr]
+    # => [CHAINING_WORD, NEW_CODE_COMMITMENT, end_ptr]
 
     padw movupw.2
-    # => [NEW_CODE_COMMITMENT, EMPTY_WORD, CV, end_ptr]
+    # => [NEW_CODE_COMMITMENT, EMPTY_WORD, CHAINING_WORD, end_ptr]
 
     exec.eidos::compress exec.eidos::digest
     # => [KEY, end_ptr]

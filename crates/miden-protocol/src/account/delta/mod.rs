@@ -12,7 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{ACCOUNT_DELTA_COMMITMENT_DOMAIN, Felt, Hasher, Word};
+use crate::{ACCOUNT_DELTA_COMMITMENT_DOMAIN, DoubleWord, Felt, Hasher, Word};
 
 mod delta_op;
 pub use delta_op::AssetDeltaOperation;
@@ -143,14 +143,15 @@ impl AccountDelta {
             return 0;
         }
 
-        8 * (1 + Self::commitment_body_block_count(
-            self.vault.num_assets(),
-            &self.storage,
-            !self.code.is_empty(),
-        ))
+        DoubleWord::NUM_ELEMENTS
+            * (1 + Self::commitment_body_block_count(
+                self.vault.num_assets(),
+                &self.storage,
+                !self.code.is_empty(),
+            ))
     }
 
-    /// Returns the number of eight-Felt commitment body blocks for the given delta components.
+    /// Returns the number of double words in the commitment body for the given delta components.
     ///
     /// This excludes the metadata header. `num_changed_assets` counts unequal initial/final vault
     /// values, so callers can compute the length before the kernel emits its per-asset deltas.
@@ -175,7 +176,7 @@ impl AccountDelta {
     /// empty and is appended to in the following way. A structurally empty delta has an empty
     /// preimage and commits to the canonical Eidos hash of an empty sequence in the delta domain.
     /// Any non-empty delta, including one which only changes the nonce, includes the header below.
-    /// Whenever sorting is expected, it is that of a [`Word`]. The registered delta selector is
+    /// Whenever sorting is expected, it is that of a [`Word`]. The delta domain tag is
     /// bound into Eidos's initial chaining word.
     ///
     /// - Append `[[version = 1, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
@@ -249,7 +250,7 @@ impl AccountDelta {
     ///   changed slot in the delta, a domain separator is hashed into the delta. The domain
     ///   separator is always at the same index in each layout so it cannot be maliciously crafted
     ///   (see below for an example). These separators only need to be unique _within_ a delta or
-    ///   patch, since their registered Eidos selectors already separate the two objects.
+    ///   patch, since their registered Eidos domain tags already separate the two objects.
     /// - Storage value slots:
     ///   - since value slots are only included in the patch if their value has changed when the
     ///     operation is `Update`, there is no ambiguity between a value slot being set to
@@ -289,7 +290,7 @@ impl AccountDelta {
     ///   in the asset ID, or the added/removed asset counts and the fixed 0.
     /// - This leaves only the domain separator and the patch_op to differentiate these two deltas.
     ///
-    /// Delta and patch commitments use distinct registered Eidos selectors, so they are separated
+    /// Delta and patch commitments use distinct registered Eidos domain tags, so they are separated
     /// independently of their layout versions and payload structure.
     ///
     /// ### Number of Changed Entries
@@ -376,7 +377,7 @@ impl AccountDelta {
 impl SequentialCommit for AccountDelta {
     type Commitment = Word;
 
-    /// Computes the commitment to the delta under its registered Eidos selector.
+    /// Computes the commitment to the delta under its registered Eidos domain tag.
     ///
     /// See [AccountDelta::to_commitment()] for more details.
     fn to_commitment(&self) -> Word {
@@ -600,9 +601,9 @@ mod tests {
             (delta.to_commitment(), 0x0200_0100, delta_preimage),
             (patch.to_commitment(), 0x0200_0000, patch_preimage),
         ] {
-            let cv =
+            let chaining_word =
                 Hasher::init_chaining_word_with_tag(DomainTag::from_u32(tag).unwrap(), [8, 0, 0]);
-            assert_eq!(actual, Hasher::compress(cv, preimage));
+            assert_eq!(actual, Hasher::compress(chaining_word, preimage));
         }
 
         assert_ne!(delta.to_commitment(), Word::empty());

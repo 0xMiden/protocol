@@ -30,7 +30,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{ACCOUNT_PATCH_COMMITMENT_DOMAIN, Felt, Hasher, Word};
+use crate::{ACCOUNT_PATCH_COMMITMENT_DOMAIN, DoubleWord, Felt, Hasher, Word};
 
 /// An [`AccountPatch`] describes the new absolute state of an account after one or more
 /// transactions, in contrast to an [`AccountDelta`](crate::account::AccountDelta), which describes
@@ -255,14 +255,15 @@ impl AccountPatch {
             return 0;
         }
 
-        8 * (1 + Self::commitment_body_block_count(
-            self.vault.num_assets(),
-            &self.storage,
-            !self.code.is_empty(),
-        ))
+        DoubleWord::NUM_ELEMENTS
+            * (1 + Self::commitment_body_block_count(
+                self.vault.num_assets(),
+                &self.storage,
+                !self.code.is_empty(),
+            ))
     }
 
-    /// Returns the number of eight-Felt commitment body blocks for the given patch components.
+    /// Returns the number of double words in the commitment body for the given patch components.
     ///
     /// This excludes the metadata header. `num_changed_assets` is the number of changed vault
     /// entries, and `has_code` indicates whether the patch includes new or upgraded account code.
@@ -296,7 +297,7 @@ impl AccountPatch {
     /// empty and is appended to in the following way. A structurally empty patch has an empty
     /// preimage and commits to the canonical Eidos hash of an empty sequence in the patch domain.
     /// Any non-empty patch, including one which only changes the nonce, includes the header below.
-    /// Whenever sorting is expected, it is that of a [`Word`]. The registered patch selector is
+    /// Whenever sorting is expected, it is that of a [`Word`]. The patch domain tag is
     /// bound into Eidos's initial chaining word. This distinguishes a patch commitment from a delta
     /// commitment, whose headers are otherwise identically shaped.
     ///
@@ -311,8 +312,8 @@ impl AccountPatch {
     ///       of the asset (for updates) or the empty word (for removals).
     ///   - If any assets changed, append `[[domain = 1, num_changed_assets, 0, 0], EMPTY_WORD]`,
     ///     where `num_changed_assets` is the number of assets that were appended. This is the same
-    ///     domain as the delta asset section uses, since the registered Eidos selector prevents an
-    ///     asset delta and an asset patch from producing the same commitment.
+    ///     domain as the delta asset section uses, since the registered Eidos domain tag prevents
+    ///     an asset delta and an asset patch from producing the same commitment.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
     ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
     ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
@@ -393,7 +394,7 @@ impl AccountPatch {
 impl SequentialCommit for AccountPatch {
     type Commitment = Word;
 
-    /// Computes the commitment to the patch under its registered Eidos selector.
+    /// Computes the commitment to the patch under its registered Eidos domain tag.
     ///
     /// See [AccountPatch::to_commitment()] for more details.
     fn to_commitment(&self) -> Word {

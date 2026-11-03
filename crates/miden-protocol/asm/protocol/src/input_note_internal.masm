@@ -487,7 +487,7 @@ end
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
 #! - note_index is the index of the input note.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
-#!   attachments uses the canonical Eidos empty hash.
+#!   attachments uses the empty hash.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.

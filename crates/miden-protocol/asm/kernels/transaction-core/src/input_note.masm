@@ -244,8 +244,7 @@ end
 #! Returns a commitment to the removed assets and stores them in the advice map under that
 #! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
 #! the assets that remained in the note at the time of the call, i.e. excluding assets that were
-#! already removed. If no assets remain, the commitment is the canonical Eidos hash of an empty
-#! Felt sequence.
+#! already removed. If no assets remain, the commitment is the empty hash.
 #!
 #! The note's initial assets info (see get_initial_assets_info) is not affected by this procedure.
 #!
