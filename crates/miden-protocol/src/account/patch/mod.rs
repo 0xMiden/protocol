@@ -281,8 +281,8 @@ impl AccountPatch {
     ///
     /// This is very similar to
     /// [`AccountDelta::to_commitment`](crate::account::AccountDelta::to_commitment). See its docs
-    /// for the rationale, security aspects, and other details. The layouts differ as follows:
-    /// - the patch uses layout version 1, while the delta uses layout version 2.
+    /// for the rationale, security aspects, and other details. Both use layout version 1. The
+    /// layouts differ as follows:
     /// - the patch includes the new nonce rather than the nonce delta.
     /// - The patch includes the new absolute asset values ([`AccountVaultPatch`]) while the delta
     ///   includes the relative asset changes

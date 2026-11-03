@@ -102,8 +102,8 @@ const DOMAIN_MAP = 3
 #! The domain of the account code in a delta or patch commitment.
 const DOMAIN_CODE = 4
 
-#! The delta layout version with both operation trailers for every nonempty vault delta.
-const DELTA_VERSION_2 = 2
+#! The version of the delta commitment layout.
+const DELTA_VERSION_1 = 1
 
 #! The version of the patch commitment layout.
 const PATCH_VERSION_1 = 1
@@ -270,7 +270,7 @@ pub proc compute_delta_commitment() -> Commitment
     # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CHAINING_WORD]
 
     # the delta of the nonce is equal to was_nonce_incremented
-    exec.was_nonce_incremented push.DELTA_VERSION_2
+    exec.was_nonce_incremented push.DELTA_VERSION_1
     # => [delta_version, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CHAINING_WORD]
     # => [METADATA, EMPTY_WORD, CHAINING_WORD]
 
