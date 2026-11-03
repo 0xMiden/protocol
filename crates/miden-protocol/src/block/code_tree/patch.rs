@@ -400,17 +400,50 @@ mod tests {
         let dependencies = vec![external_procedure];
         let patch = CodePatch::new(created_procedures.clone(), dependencies.clone(), mast)?;
 
-        let expected_created_elements: Vec<Felt> =
-            created_procedures.iter().flat_map(|root| root.as_elements().to_vec()).collect();
-        let expected_dependencies_elements: Vec<Felt> =
-            dependencies.iter().flat_map(|root| root.as_elements().to_vec()).collect();
-        let expected_created_commitment = Hasher::hash_elements_in_domain(
-            &expected_created_elements,
-            CODE_PATCH_CREATED_COMMITMENT_DOMAIN,
+        // Fixed vector for the two library roots in kernel order and dependency [1, 2, 3, 4].
+        // Derived with one Eidos compression for each explicitly framed preimage:
+        // created tag 0x02000601, parameters [8, 0, 0]; dependencies tag 0x02000701,
+        // parameters [4, 0, 0] with a zero-padded block; patch tag 0x02000501, parameters
+        // [8, 0, 0], over the created and dependencies commitments in that order.
+        // Keep the inputs and digests literal to pin domain assignments and length framing.
+        let expected_created_elements = [
+            5924179417901287869,
+            3063183626587674507,
+            3110626517104731578,
+            4576316698794766387,
+            704962795892426094,
+            6172467141135382418,
+            1828274680893116784,
+            4357732438113602944,
+        ]
+        .map(|value| Felt::new(value).unwrap());
+        let expected_dependencies_elements = [1u32, 2, 3, 4].map(Felt::from_u32);
+        let expected_created_commitment = Word::new(
+            [
+                3235677904141501656,
+                4657854546210839904,
+                6525028472509008394,
+                6123698806472996928,
+            ]
+            .map(|value| Felt::new(value).unwrap()),
         );
-        let expected_dependencies_commitment = Hasher::hash_elements_in_domain(
-            &expected_dependencies_elements,
-            CODE_PATCH_DEPENDENCIES_COMMITMENT_DOMAIN,
+        let expected_dependencies_commitment = Word::new(
+            [
+                5843248214206595811,
+                4860416556620351956,
+                1109889660301851541,
+                2793235227166396526,
+            ]
+            .map(|value| Felt::new(value).unwrap()),
+        );
+        let expected_patch_commitment = Word::new(
+            [
+                6738478284053848311,
+                2291822776632684562,
+                4872460543993284663,
+                1612098534848268240,
+            ]
+            .map(|value| Felt::new(value).unwrap()),
         );
 
         assert!(!patch.is_empty());
@@ -420,16 +453,7 @@ mod tests {
         assert_eq!(patch.to_dependencies_elements(), expected_dependencies_elements);
         assert_eq!(patch.created_commitment(), expected_created_commitment);
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);
-        assert_eq!(
-            patch.commitment().as_word(),
-            Hasher::hash_elements_in_domain(
-                Word::words_as_elements(&[
-                    expected_created_commitment,
-                    expected_dependencies_commitment
-                ]),
-                CODE_PATCH_COMMITMENT_DOMAIN
-            )
-        );
+        assert_eq!(patch.commitment().as_word(), expected_patch_commitment);
 
         Ok(())
     }
