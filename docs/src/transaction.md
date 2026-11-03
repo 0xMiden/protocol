@@ -203,43 +203,46 @@ proving. Empty transaction logs commit to zero, so the presence of transaction l
 Local execution data and standard signing summaries retain complete transaction logs, including in
 debug output. Remote provers and validators that decrypt execution witnesses can access this data.
 
-### Batch and block delivery
+### Batch and block bodies
+
+`ProvenBatch` and `BlockBody` contain complete public logs in a `PublicTransactionLogs` collection.
+There is one entry per public native-account transaction, including empty collections, in transaction
+order. Private native-account transactions have no entries, even when a public foreign account emits
+logs for them. Emission order and duplicate logs are preserved.
 
 Transaction headers retain `logs_commitment`. Transaction IDs bind this commitment, and the existing
-batch ID and block transaction commitment bind the ordered transaction IDs. No separate log root is
-needed. Proven batches and block bodies contain these headers, without public or private log payloads.
+batch ID and block transaction commitment bind the ordered transaction IDs. Embedding the payloads
+changes the serialized bodies but does not change any commitment algorithm or add a separate log root.
 
-Public payloads can be delivered independently in a `PublicTransactionLogBundle`. The bundle commits
-to the entire transaction sequence and contains one entry per public native account transaction,
-including empty lists, in transaction order. Private transactions have no entries, including when
-they emit logs through public foreign accounts. Duplicate logs within a transaction are preserved.
+Ordinary batch proving retains public logs from the full transactions. Ordinary block construction
+preserves header grouping and concatenates logs in the same batch order. Checked constructors and protobuf domain
+construction reject missing, extra, reordered, private-associated, or commitment-mismatched entries.
+A full body with missing public logs is invalid even if its header commitment is correct. Canonical
+protobuf requires the public-log message field; private-only batches and empty blocks encode a
+present empty collection.
 
-`LocalBatchProver::prove_with_logs` returns a proven batch and its bundle. Alternatively,
-`PublicTransactionLogBundle::from_batch` extracts the bundle before proving consumes the proposal.
-`ProposedBlock::into_header_body_and_logs` accepts one bundle per batch and returns the header, body,
-and combined public logs separately. It rejects missing, reordered, or mismatched bundles.
+Aggregate construction limits include private transactions and empty public collections:
 
-Canonical protobuf defines a separate `PublicTransactionLogBundle` message. Untrusted bytes should
-use its `decode_for_batch` or `decode_for_block` methods, which bound the encoded size and entry frames
-before allocation and check completeness against the supplied headers. These headers must come from
-an independently authenticated batch or block. Node ingestion that promises log availability must
-use this complete-bundle validation; ordinary block validation does not require the bundle.
+- Batch: 1,024 transaction headers, 4,096 public records, and 65,536 content words.
+- Block: 65,536 transaction headers, 65,536 public records, and 524,288 content words.
 
-These Rust delivery checks do not add recursive verification to the skeleton batch/block MASM
-kernels. Node storage, replication, retention, and query APIs must handle bundles separately. Dropping
-a bundle leaves the block valid but prevents reconstructing its public logs from that block alone.
+These are body/proposal constraints, not optional delivery budgets. Batch limits are checked before
+proving; combined block limits are checked before converting a proposal into a body. The transaction
+count limit is distinct from the account count limit. Existing per-transaction limits still apply.
 
-Delivery limits are separate from block validity and are enforced by the Rust bundle APIs:
+For untrusted raw protobuf bytes, use `ProvenBatch::decode_bounded`, `BlockBody::decode_bounded`, or
+`SignedBlock::decode_bounded` on the canonical `miden_objects::proto` message type, followed by normal
+field decoding and domain construction/verification. These methods scan the embedded log fields
+without allocating their contents before delegating to Prost. They cap each entry frame at 16 KiB and
+the complete encoded log field at 4 MiB per batch or 32 MiB per block, including framing, metadata,
+and unknown fields. They also reject duplicate log fields and exhausted record/content budgets before
+reading another record/payload frame. Signed-block decoding applies the same checks to its nested body.
 
-| Resource | Batch bundle | Block bundle |
-| --- | ---: | ---: |
-| Transactions, including private and empty | 1,024 | 65,536 |
-| Public logs | 4,096 | 65,536 |
-| Content words | 65,536 | 524,288 |
-| Encoded protobuf bytes | 4 MiB | 32 MiB |
-
-The bounded decoder additionally limits each transaction entry frame to 16 KiB, including metadata
-and unknown fields. The existing per-transaction content and log-count limits still apply.
+Generated Prost/gRPC decoding alone does not provide these preallocation checks. Downstream transports
+still need whole-message limits for proofs, notes, and other fields. Domain validation after decoding
+cannot undo prior allocations. Log consistency does not authenticate the enclosing batch or block and
+does not add recursive verification to the skeleton batch/block kernels. Node storage, retention, and
+query APIs remain separate concerns.
 
 ### Limits
 

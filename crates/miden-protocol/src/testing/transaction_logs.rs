@@ -33,7 +33,8 @@ impl crate::transaction::PublicTransactionLogs {
 
     /// Creates empty public collections for fixture headers whose public log commitments are empty.
     ///
-    /// Panics if a public header commits to nonempty logs or headers repeat transaction IDs.
+    /// Duplicate fixture headers share one entry so owner-validation tests can reject them.
+    /// Panics if a public header commits to nonempty logs.
     pub fn mock(headers: &crate::transaction::OrderedTransactionHeaders) -> Self {
         let mut ids = alloc::collections::BTreeSet::new();
         let headers = crate::transaction::OrderedTransactionHeaders::new_unchecked(

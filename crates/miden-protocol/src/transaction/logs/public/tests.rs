@@ -124,6 +124,9 @@ fn block_body_preserves_public_logs() {
     let (headers, logs) = batches.into_transactions_and_logs();
     let body = crate::block::BlockBody::new(vec![], vec![], vec![], headers, logs).unwrap();
     assert_eq!(body.public_logs().entries(), expected);
+    assert_eq!(body.transactions().len(), 2);
+    assert_eq!(body.transactions()[0].as_slice().len(), 1);
+    assert_eq!(body.transactions()[1].as_slice().len(), 2);
 }
 
 #[rstest::rstest]
@@ -158,7 +161,10 @@ fn embedded_logs_preserve_commitments() {
     let first = headers(vec![header(1, true, &logs), header(2, false, &logs)]);
     let second = headers(vec![header(3, true, &TransactionLogs::default())]);
     let batches = OrderedBatches::new(vec![batch(first), batch(second)]);
-    let transactions = batches.to_transactions();
+    let (transactions, public_logs) = batches.clone().into_transactions_and_logs();
+    let body =
+        crate::block::BlockBody::new(vec![], vec![], vec![], transactions, public_logs).unwrap();
+    assert_eq!(body.compute_batches_commitment().as_word(), batches.to_commitment());
     let mut rng = ChaCha20Rng::from_seed([42; 32]);
     let key = SigningKey::with_rng(&mut rng);
     let block = BlockHeader::new(
@@ -168,21 +174,26 @@ fn embedded_logs_preserve_commitments() {
         Word::empty(),
         Word::empty(),
         Word::empty(),
-        transactions.commitment(),
+        body.compute_transactions_commitment(),
         ValidatorConfig::from_signers(&[key]),
         FeeParameters::new(500),
         Word::empty(),
         None,
         1234,
     );
-    let actual: Vec<_> = transactions
-        .as_slice()
+    let actual: Vec<_> = body
+        .transactions()
         .iter()
+        .flat_map(OrderedTransactionHeaders::as_slice)
         .map(|tx| tx.id().to_hex())
         .chain(batches.as_slice().iter().map(|batch| batch.id().to_hex()))
         .chain(
-            [batches.to_commitment(), transactions.commitment(), block.commitment()]
-                .map(|word| word.to_hex()),
+            [
+                batches.to_commitment(),
+                body.compute_transactions_commitment(),
+                block.commitment(),
+            ]
+            .map(|word| word.to_hex()),
         )
         .collect();
     assert_eq!(

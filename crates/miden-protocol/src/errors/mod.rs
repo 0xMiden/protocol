@@ -1469,7 +1469,7 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
-    #[error("invalid public transaction log bundle")]
+    #[error("invalid public transaction logs")]
     TransactionLogs(#[from] crate::transaction::TransactionLogError),
     #[error("transaction batch must contain at least one transaction")]
     EmptyTransactionBatch,
@@ -1570,7 +1570,7 @@ pub enum BlockOutputError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBlockError {
-    #[error("invalid public transaction log bundle")]
+    #[error("invalid public transaction logs")]
     TransactionLogs(#[from] crate::transaction::TransactionLogError),
     #[error("block must contain at least one transaction batch")]
     EmptyBlock,
