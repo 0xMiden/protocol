@@ -43,7 +43,7 @@ shear: ## Runs cargo-shear to find unused or misplaced dependencies
 
 .PHONY: typos-check
 typos-check: ## Runs spellchecker
-	typos
+	typos . .changelog
 
 .PHONY: toml
 toml: ## Runs Format for all TOML files

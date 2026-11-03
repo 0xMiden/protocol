@@ -1,5 +1,4 @@
-use super::{CodeWitness, PRESENT_VALUE};
-use crate::Word;
+use super::{CodeTreeRoot, CodeWitness, PRESENT_VALUE};
 use crate::code::ProcedureRoot;
 use crate::crypto::merkle::smt::PartialSmt;
 use crate::errors::CodeTreeError;
@@ -17,8 +16,8 @@ pub struct PartialCodeTree(PartialSmt);
 impl PartialCodeTree {
     /// Creates a new partial code tree with the provided root that does not track any procedure
     /// roots.
-    pub fn new(root: Word) -> Self {
-        PartialCodeTree(PartialSmt::new(root))
+    pub fn new(root: CodeTreeRoot) -> Self {
+        PartialCodeTree(PartialSmt::new(root.as_word()))
     }
 
     /// Returns a new [`PartialCodeTree`] instantiated with the provided witnesses.
@@ -36,8 +35,8 @@ impl PartialCodeTree {
     }
 
     /// Returns the root of the tree.
-    pub fn root(&self) -> Word {
-        self.0.root()
+    pub fn root(&self) -> CodeTreeRoot {
+        CodeTreeRoot::from_raw(self.0.root())
     }
 
     /// Returns `true` if the procedure root is present in the tree, `false` otherwise.

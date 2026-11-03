@@ -9,6 +9,7 @@ use super::{
 use crate::Word;
 use crate::account::AccountPatch;
 use crate::block::BlockNumber;
+use crate::block::code_tree::CodePatch;
 
 // TRANSACTION EFFECTS
 // ================================================================================================
@@ -26,6 +27,7 @@ pub struct TransactionEffects {
     ref_block_commitment: Word,
     expiration_block_num: BlockNumber,
     logs: TransactionLogs,
+    code_patch: CodePatch,
 }
 
 #[bon::bon]
@@ -35,7 +37,8 @@ impl TransactionEffects {
 
     /// Returns new [`TransactionEffects`] instantiated from the provided data.
     ///
-    /// The [`TransactionId`] is computed from the account state, note, and logs commitments.
+    /// The [`TransactionId`] is computed from the account state, note, logs and code patch
+    /// commitments.
     #[builder]
     pub fn new(
         initial_state_commitment: Word,
@@ -47,6 +50,7 @@ impl TransactionEffects {
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
         logs: TransactionLogs,
+        code_patch: CodePatch,
     ) -> Self {
         let transaction_id = TransactionId::new(
             initial_state_commitment,
@@ -54,6 +58,7 @@ impl TransactionEffects {
             input_notes.commitment(),
             output_notes.commitment(),
             logs.commitment(),
+            code_patch.commitment(),
         );
 
         Self {
@@ -67,6 +72,7 @@ impl TransactionEffects {
             ref_block_commitment,
             expiration_block_num,
             logs,
+            code_patch,
         }
     }
 
@@ -81,6 +87,11 @@ impl TransactionEffects {
     /// Returns the commitment included in the transaction ID and proof.
     pub fn logs_commitment(&self) -> Word {
         self.logs.commitment()
+    }
+
+    /// Returns the code patch of the transaction.
+    pub fn code_patch(&self) -> &CodePatch {
+        &self.code_patch
     }
 
     /// Returns the unique identifier of the transaction that produced these effects.
@@ -141,6 +152,7 @@ impl From<&ExecutedTransaction> for TransactionEffects {
             .ref_block_commitment(tx.block_header().commitment())
             .expiration_block_num(tx.expiration_block_num())
             .logs(tx.logs().clone())
+            .code_patch(tx.code_patch().clone())
             .build()
     }
 }
