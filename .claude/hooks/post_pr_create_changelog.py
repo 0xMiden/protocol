@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Post-PR-create hook: spawns a changelog-manager agent to classify
-the PR diff and decide whether a CHANGELOG.md entry or "no changelog"
-label is needed. Outputs actionable instructions to the main agent via
-hookSpecificOutput.
-
-The agent is responsible for locating the correct unreleased section
-in CHANGELOG.md. This hook does not pre-resolve a version.
+the PR diff and decide whether a `.changelog/unreleased/` entry or
+"no changelog" label is needed. Outputs actionable instructions to the
+main agent via hookSpecificOutput.
 """
 
 from __future__ import annotations
@@ -91,9 +88,12 @@ def main() -> None:
         # suggested entry body.
         entry = _extract_changelog_entry(result.stdout)
         _emit_context(
-            f"Changelog entry needed for PR #{pr_number}. Add the following "
-            "to CHANGELOG.md under the appropriate unreleased section (read "
-            f"the file to locate it), then commit and push:\n\n{entry}"
+            f"Changelog entry needed for PR #{pr_number}. Create "
+            "`.changelog/unreleased/<name>.md`, where `<name>` is the last "
+            "`/`-separated part of the branch name (e.g. `fix-foo` for "
+            "`mmagician-claude/fix-foo`). If that file already exists or the "
+            "name is all digits, pick another short name for the change. Give "
+            f"it the following content, then commit and push:\n\n{entry}"
         )
         sys.exit(2)
 
@@ -110,9 +110,9 @@ def _find_verdict_line(stdout: str) -> str | None:
 
 
 def _extract_changelog_entry(stdout: str) -> str:
-    """Return the body of the `CHANGELOG:` block — i.e. everything from
-    the `CHANGELOG: ` prefix onward, with that prefix stripped on the
-    first line, preserving subsequent lines verbatim.
+    """Return the body of the `CHANGELOG:` block — i.e. everything after
+    the `CHANGELOG:` line (plus any text on that line after the prefix),
+    preserving subsequent lines verbatim.
     """
     lines = stdout.splitlines()
     out: list[str] = []
@@ -120,7 +120,9 @@ def _extract_changelog_entry(stdout: str) -> str:
     for line in lines:
         if not found:
             if line.startswith("CHANGELOG:"):
-                out.append(line[len("CHANGELOG:") :].lstrip(" "))
+                rest = line[len("CHANGELOG:") :].strip()
+                if rest:
+                    out.append(rest)
                 found = True
             continue
         out.append(line)
@@ -140,8 +142,8 @@ def _emit_context(message: str) -> None:
 def _emit_warning(pr_number: str, stdout: str, stderr: str) -> None:
     warning = (
         f"WARNING: changelog-manager produced no verdict for PR #{pr_number}. "
-        "Decide manually: add a CHANGELOG.md entry under the appropriate "
-        "unreleased section, or apply the 'no changelog' label via: gh pr "
+        "Decide manually: add an entry to `.changelog/unreleased/`, "
+        "or apply the 'no changelog' label via: gh pr "
         f"edit {pr_number} --add-label 'no changelog'"
     )
     if stderr.strip():

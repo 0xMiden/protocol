@@ -462,7 +462,7 @@ mod tests {
         ];
 
         let manager = pricer.basic_constant_fee_policy_manager(roots).unwrap();
-        assert_eq!(manager.active_fee_policy(), BasicConstantFeePolicy::root());
+        assert_eq!(manager.initial_fee_policy(), BasicConstantFeePolicy::root());
         assert_eq!(manager.fee_asset_id(), pricer.fee_asset_id());
     }
 
