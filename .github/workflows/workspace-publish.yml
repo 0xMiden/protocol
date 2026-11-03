@@ -7,7 +7,8 @@ on:
 permissions:
   contents: read
 
-# Node actions must use the updated system CA bundle.
+# Until the runner's own Node is 24.22.1 or later, Node actions must use the system CA bundle,
+# which distrusts the compromised eMudhra CAs (https://emudhra.we-have-a-problem.com/).
 env:
   NODE_OPTIONS: --use-openssl-ca
   SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
@@ -22,12 +23,9 @@ jobs:
       id-token: write # Required for OIDC token exchange
 
     steps:
-      # Remove once the runner image ships the eMudhra distrust
-      # (https://emudhra.we-have-a-problem.com/).
-      - name: Update CA certificates
+      # Fail on an image without the fixed bundle, e.g. after a rollback. Remove with NODE_OPTIONS.
+      - name: Check CA certificates
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ca-certificates
           dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
             ge 20260816ubuntu0.24.04.1
 
@@ -75,10 +73,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - name: Update CA certificates
+      - name: Check CA certificates
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ca-certificates
           dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
             ge 20260816ubuntu0.24.04.1
       - name: Checkout repository
@@ -131,3 +127,31 @@ jobs:
         run: |
           set -e
           gh release upload ${RELEASE_TAG} miden-tx-kernel.masp miden-protocol.masp miden-standards.masp miden-standards-components.tar.gz --clobber
+
+  # Fill the GitHub release page with the `.changelog/<tag>/` entries.
+  release-notes:
+    name: set release notes from the changelog entries
+    if: ${{ github.repository_owner == '0xMiden' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check CA certificates
+        run: |
+          dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" \
+            ge 20260816ubuntu0.24.04.1
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      # Built in a step without `GH_TOKEN`, so no entry content can read the token.
+      - name: Build release notes
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: ./scripts/release-notes.sh "${RELEASE_TAG}" > notes.md
+      - name: Set release notes
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${RELEASE_TAG}" --notes-file notes.md
