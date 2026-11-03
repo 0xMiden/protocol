@@ -474,10 +474,17 @@ async fn empty_hash_helpers_preserve_minimum_stack_depth(
             source_manager.clone(),
         )
         .unwrap();
+    let constants = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(
+            Some(Path::new("miden::protocol_utils::constants")),
+            include_str!("../../../../miden-protocol/asm/protocol_utils/src/constants.masm"),
+            source_manager.clone(),
+        )
+        .unwrap();
     let assembler: Assembler = CodeBuilder::with_kernel_core_package(source_manager).into();
     let helpers = assembler
         .clone()
-        .assemble_library("empty-preimage-helpers", module, None::<&str>)
+        .assemble_library("empty-preimage-helpers", module, [constants])
         .unwrap();
     let program = assembler
         .with_package(Arc::from(helpers), Linkage::Static)

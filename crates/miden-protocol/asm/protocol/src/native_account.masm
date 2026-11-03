@@ -118,8 +118,7 @@ end
 #! auth procedures are allowed to increment the nonce, a non-empty delta can only be computed from
 #! the auth procedure.
 #!
-#! An empty delta commits to the canonical Eidos hash of an empty Felt sequence in the account
-#! delta domain.
+#! An empty delta commits to the empty hash in the account-delta domain.
 #!
 #! During an account-creating transaction (when the initial nonce is 0), this procedure will not
 #! return the canonical empty-delta commitment even if the initial storage commitment and the

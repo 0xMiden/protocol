@@ -16,6 +16,7 @@ use {
     EIDOS_INIT_CHAINING_WORD_16,
     EIDOS_INIT_CHAINING_WORD_24,
     EIDOS_INIT_CHAINING_WORD_48,
+    INPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS,
     WORD_NUM_ELEMENTS,
 } from miden::tx_kernel_core::constants
 use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::tx_kernel_core::asset
@@ -1227,7 +1228,7 @@ proc process_input_notes_data()
         exec.eidos::empty_felt_sequence_digest
         # => [INPUT_NOTES_COMMITMENT, idx, num_notes]
     else
-        dup.1 mul.8 exec.eidos::init_chaining_word
+        dup.1 mul.INPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS exec.eidos::init_chaining_word
         # => [CHAINING_WORD, idx, num_notes]
 
         # The nonempty branch always processes at least one note.

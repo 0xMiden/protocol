@@ -3,7 +3,8 @@ use {Commitment, InputNoteData, OutputNoteData} from miden::tx_kernel_core::type
 use miden::core::crypto::hashes::eidos
 
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
-use {NOTE_MEM_SIZE, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
+use {NOTE_MEM_SIZE, OUTPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS, WORD_NUM_ELEMENTS}
+    from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
 
 pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, validate_metadata, metadata_into_version}
@@ -74,7 +75,7 @@ end
 #! Computes the commitment to the output note's attachments.
 #!
 #! The commitment is the sequential hash over the individual attachment commitments. An empty
-#! attachment list uses the canonical Eidos empty hash.
+#! attachment list uses the empty hash.
 #!
 #! Inputs:  [note_ptr]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
@@ -109,8 +110,7 @@ end
 #! Computes the assets commitment of the output note located at the specified memory address.
 #!
 #! The hash is computed as a sequential hash of the assets contained in the note. Each asset fills
-#! one Eidos block. If the note contains no assets, ASSET_COMMITMENT is the canonical Eidos empty
-#! hash.
+#! one double word. If the note contains no assets, ASSET_COMMITMENT is the empty hash.
 #!
 #! Recomputation of the assets commitment is performed only if the assets commitment dirty flag is
 #! set to 1. Otherwise the commitment stored in the output note data memory segment is returned.
@@ -214,52 +214,55 @@ pub proc compute_output_notes_commitment() -> Commitment
         exec.eidos::empty_felt_sequence_digest
         # => [OUTPUT_NOTES_COMMITMENT, current_index, num_notes]
     else
-        # One 8-Felt block per note; only the chaining word is live between iterations.
-        dup.1 mul.8 exec.eidos::init_chaining_word
-        # => [CV, current_index, num_notes]
+        # one double word per note; only the chaining word is live between iterations
+        dup.1 mul.OUTPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS exec.eidos::init_chaining_word
+        # => [CHAINING_WORD, current_index, num_notes]
 
         # The nonempty branch always processes at least one note.
         push.1
-        # => [has_more_notes, CV, current_index, num_notes]
+        # => [has_more_notes, CHAINING_WORD, current_index, num_notes]
 
         # loop and hash output notes
         while.true
             dup.4 exec.memory::get_output_note_ptr
-            # => [current_note_ptr, CV, current_index, num_notes]
+            # => [current_note_ptr, CHAINING_WORD, current_index, num_notes]
 
             # compute and save output note details commitment to memory (this also computes the
             # note's asset commitment)
             dup exec.compute_output_note_details_commitment
-            # => [NOTE_DETAILS_COMMITMENT, current_note_ptr, CV, current_index, num_notes]
+            # => [NOTE_DETAILS_COMMITMENT, current_note_ptr, CHAINING_WORD, current_index,
+            #     num_notes]
 
             # compute attachments commitment
             dup.4 exec.compute_attachments_commitment
             # => [ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT, current_note_ptr,
-            #     CV, current_index, num_notes]
+            #     CHAINING_WORD, current_index, num_notes]
 
             movup.8 exec.memory::get_output_note_metadata
             # => [NOTE_METADATA, ATTACHMENTS_COMMITMENT, NOTE_DETAILS_COMMITMENT,
-            #     CV, current_index, num_notes]
+            #     CHAINING_WORD, current_index, num_notes]
 
             # compute hash(NOTE_METADATA || ATTACHMENTS_COMMITMENT)
             exec.eidos::hash_double_word
-            # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, CV, current_index, num_notes]
+            # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, CHAINING_WORD, current_index,
+            #     num_notes]
 
             # move note details commitment to the top of the stack
             swapw
-            # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, CV, current_index, num_notes]
+            # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, CHAINING_WORD, current_index,
+            #     num_notes]
 
-            # The block words are dead after compression; keep only the updated chaining value.
+            # the block words are dead after compression; keep only the updated chaining word
             exec.eidos::compress dropw dropw
-            # => [CV, current_index, num_notes]
+            # => [CHAINING_WORD, current_index, num_notes]
 
             # increment current_index
             movup.4 add.1 movdn.4
-            # => [CV, current_index + 1, num_notes]
+            # => [CHAINING_WORD, current_index + 1, num_notes]
 
             # continue looping if current_index != num_notes
             dup.5 dup.5 neq
-            # => [should_loop, CV, current_index + 1, num_notes]
+            # => [should_loop, CHAINING_WORD, current_index + 1, num_notes]
         end
         # => [OUTPUT_NOTES_COMMITMENT, current_index + 1, num_notes]
     end

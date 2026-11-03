@@ -209,7 +209,7 @@ impl AccountStoragePatch {
     // COMMITMENT
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the number of eight-Felt blocks in the storage commitment section.
+    /// Returns the number of double words in the storage commitment section.
     pub(in crate::account) fn commitment_body_block_count(&self) -> usize {
         let value_slot_blocks = self.values().count();
         let map_slot_blocks = self.maps().map(|(_slot_name, map_patch)| {

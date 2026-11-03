@@ -1,5 +1,6 @@
 use miden::core::mem
 use miden::core::crypto::hashes::eidos
+use {DOUBLE_WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 
 #! Writes `num_elements` elements from the advice stack to memory starting at `dest_ptr` and returns
 #! their commitment.
@@ -7,8 +8,8 @@ use miden::core::crypto::hashes::eidos
 #! The elements committed to are an arbitrary-length list, so their count need not be
 #! word-aligned. For efficiency, the commitment is computed using `pipe_double_words_to_memory`,
 #! which requires that the elements must already be on the advice stack and that they are padded to
-#! the next multiple of 8 (e.g. via `adv.push_mapvaln.8`). The exact logical length is bound into
-#! the Eidos chaining word, so these zeros only fill unused lanes of the final physical block.
+#! the next double-word boundary (e.g. via `adv.push_mapvaln.8`). The exact logical length is bound
+#! into the Eidos chaining word, so these zeros only fill unused lanes of the final double word.
 #!
 #! Inputs:
 #!   Operand stack: [num_elements, dest_ptr]
@@ -18,6 +19,7 @@ use miden::core::crypto::hashes::eidos
 #!
 #! Where:
 #! - num_elements is the number of elements to write, matching the number of committed elements.
+#!   It must be a valid u32. The caller must check this precondition.
 #! - dest_ptr is the memory pointer at which the elements are written.
 #! - COMPUTED_COMMITMENT is the commitment over the written elements.
 #!
@@ -31,9 +33,9 @@ pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>
         movup.4 drop movup.4 drop
         # => [COMPUTED_COMMITMENT]
     else
-        dup u32lt.9
+        dup u32lte.DOUBLE_WORD_NUM_ELEMENTS
         if.true
-            # A short preimage occupies exactly one padded advice block.
+            # a short preimage occupies exactly one padded advice double word
             exec.eidos::init
             # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, dest_ptr]
 
@@ -42,8 +44,8 @@ pub proc pipe_elements_preimage_to_memory(num_elements: u32, dest_ptr: ptr<felt>
             movup.4 drop
             # => [COMPUTED_COMMITMENT]
         else
-            # Round the physical range up to a complete 8-Felt block.
-            dup u32divmod.8 neq.0 add mul.8
+            # round the physical range up to a complete double word
+            dup u32divmod.DOUBLE_WORD_NUM_ELEMENTS neq.0 add mul.DOUBLE_WORD_NUM_ELEMENTS
             # => [padded_num_elements, num_elements, dest_ptr]
 
             # compute end_ptr = dest_ptr + padded_num_elements

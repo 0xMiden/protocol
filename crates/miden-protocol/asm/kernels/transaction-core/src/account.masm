@@ -19,8 +19,13 @@ use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::eidos
 use miden::core::mem
 use miden::core::word
-use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE}
-    from miden::tx_kernel_core::constants
+use {
+    ACCOUNT_HEADER_NUM_ELEMENTS,
+    ACCOUNT_PROCEDURE_DATA_LENGTH,
+    EMPTY_SMT_ROOT,
+    STORAGE_SLOT_TYPE_MAP,
+    STORAGE_SLOT_TYPE_VALUE,
+} from miden::tx_kernel_core::constants
 use {
     ACCOUNT_DATA_LENGTH,
     ACCT_ID_PREFIX_OFFSET,
@@ -316,14 +321,14 @@ pub proc compute_commitment() -> Commitment
 
     # prepare the stack for computing the account commitment
     exec.memory::get_active_account_data_ptr
-    push.16 exec.eidos::init_chaining_word padw padw
-    # => [BLOCK_LO, BLOCK_HI, CV, account_data_ptr]
+    push.ACCOUNT_HEADER_NUM_ELEMENTS exec.eidos::init_chaining_word padw padw
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, account_data_ptr]
 
     # stream account data and compute sequential hash. We perform two `mem_stream` operations
     # because the account data consists of exactly 4 words.
     mem_stream exec.eidos::compress
     mem_stream exec.eidos::compress
-    # => [BLOCK_LO, BLOCK_HI, CV, account_data_ptr']
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, account_data_ptr']
 
     # extract account commitment
     exec.eidos::digest
@@ -1020,28 +1025,28 @@ pub proc validate_seed()
     # initialize the 16-Felt Eidos chain and place the code commitment in the high block word
     push.16 exec.eidos::init_chaining_word
     exec.memory::get_account_code_commitment
-    # => [CODE_COMMITMENT, CV]
+    # => [CODE_COMMITMENT, CHAINING_WORD]
 
     # push the advice map key at which the seed is located
     exec.memory::get_native_account_id
     exec.create_id_key
-    # => [ACCOUNT_ID_KEY, CODE_COMMITMENT, CV]
+    # => [ACCOUNT_ID_KEY, CODE_COMMITMENT, CHAINING_WORD]
 
     # overwrite ACCOUNT_ID_KEY with the SEED
     adv.push_mapval adv_loadw
-    # => [SEED, CODE_COMMITMENT, CV]
+    # => [SEED, CODE_COMMITMENT, CHAINING_WORD]
 
     # compress the first block (SEED, CODE_COMMITMENT)
     exec.eidos::compress
-    # => [BLOCK_LO, BLOCK_HI, CV]
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD]
 
     # discard the block words while retaining the chaining word
     dropw dropw
-    # => [CV]
+    # => [CHAINING_WORD]
 
     # compress the second block (STORAGE_COMMITMENT, EMPTY_WORD)
     padw exec.memory::get_account_storage_commitment
-    # => [STORAGE_COMMITMENT, EMPTY_WORD, CV]
+    # => [STORAGE_COMMITMENT, EMPTY_WORD, CHAINING_WORD]
 
     exec.eidos::compress
     exec.eidos::digest
@@ -1428,10 +1433,11 @@ pub proc save_account_storage_data(storage_commitment: Commitment)
 
         # Initialize Eidos with the exact storage length.
         dup.1 dup.1 sub exec.eidos::init
-        # OS => [BLOCK_LO, BLOCK_HI, CV, acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
+        # OS => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, acct_storage_slots_ptr, end_ptr,
+        #        STORAGE_COMMITMENT]
 
         exec.mem::pipe_double_words_to_memory
-        # OS => [BLOCK_LO, BLOCK_HI, CV, end_ptr', STORAGE_COMMITMENT]
+        # OS => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, end_ptr', STORAGE_COMMITMENT]
         # AS => []
 
         exec.eidos::digest
@@ -1508,7 +1514,7 @@ pub proc save_account_procedure_data(code_section_ptr: ptr<felt>, code_commitmen
 
     # read the data from advice stack to memory and hash
     exec.mem::pipe_words_to_memory
-    # OS => [BLOCK_LO, BLOCK_HI, CV, end_ptr', CODE_COMMITMENT]
+    # OS => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, end_ptr', CODE_COMMITMENT]
     # AS => []
 
     # extract the digest
@@ -2211,11 +2217,11 @@ proc refresh_storage_commitment()
 
             # Initialize Eidos with the exact storage length.
             dup.1 dup.1 sub exec.eidos::init
-            # => [BLOCK_LO, BLOCK_HI, CV, start_ptr, end_ptr]
+            # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, start_ptr, end_ptr]
 
             # hash elements from memory
             exec.eidos::absorb_double_words_from_memory
-            # => [BLOCK_LO, BLOCK_HI, CV, start_ptr, end_ptr]
+            # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, start_ptr, end_ptr]
 
             # extract the digest
             exec.eidos::digest

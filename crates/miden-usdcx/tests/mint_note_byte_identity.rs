@@ -22,6 +22,7 @@
 //!
 //! These anchors include Eidos-derived script roots and commitments. When updating them, check
 //! changes to the hash construction separately from changes to the encoded payload and layout.
+//! The preimage helper's comparison also contributes to the P2ID script root.
 //!
 //! The vector payload is used verbatim except for `remoteToken`, which is spliced to a
 //! deterministic PUBLIC faucet id: the routing attachment can only bind a public network account,
@@ -59,22 +60,22 @@ struct Anchors {
 /// `mi-pos-empty-hookdata` + the `att-1` attestation.
 const GOLDEN_EMPTY_HOOKDATA: Anchors = Anchors {
     vector: "mi-pos-empty-hookdata",
-    note_id: "0x21f43c0fe146ca0100ffe664f44da558f9dc29c381910f650ec2316e8b65fd7e",
-    nullifier: "0xbee37a860a831f3520e051253bfe1858ff292fa9f40c7b6062f8024f335fbe01",
-    recipient_digest: "Word([6632881772933522571, 2408508421586866190, 96217328938346544, 6870170412818628113])",
+    note_id: "0xe6ff1d0a3648ab4f15cf940159604c2b9df7a131c1bc9d12e8946176c31acf0e",
+    nullifier: "0x2893b4aefe31924ce0bce91c90a14d4c6fcf63bacefb1047df2810fdf39f392f",
+    recipient_digest: "Word([6758481967045201216, 3791184530696598535, 5983761967060819242, 6671592998816826551])",
     attachments_commitment: "Word([5661111867499177825, 2923926434820544258, 6679953047267677016, 763025464783040115])",
-    serialized: "844 bytes, digest Word([4374011731114696230, 7200190640885989355, 8941074561371541987, 2031556705042103067])",
+    serialized: "844 bytes, digest Word([8840620395292409700, 8460908841955938979, 4062702923582257007, 7151040854073894037])",
     attachments: "[scheme=4 words=16, scheme=2 words=1]",
 };
 
 /// `mi-pos-hookdata` (ten bytes of hookData) + the `att-2` attestation.
 const GOLDEN_HOOKDATA: Anchors = Anchors {
     vector: "mi-pos-hookdata",
-    note_id: "0x388201b1eff7e63d0421dd18ff630a5d6a34909ab63d9946826d52930b5ff038",
-    nullifier: "0xc7a7cecb8018e612c025950a8d7f876df156748df7757f2ce71852e651a13f6b",
-    recipient_digest: "Word([6752815955733235293, 3624475616553573217, 2840873228004840643, 6606754072001301488])",
+    note_id: "0xdf6d7e9df8db7053839ac1632f593c3b06095d1c10137d6dbe54647871ee847b",
+    nullifier: "0x262b1cb14f2ac51f0690d4991af3302dda14b0fd19c0b12ff738bb3e8d6dfd6f",
+    recipient_digest: "Word([3907715902939382351, 4599133700223543160, 605503866402665869, 9038860559949045042])",
     attachments_commitment: "Word([4978777390342552391, 6821606125771635309, 7722612748984997245, 22007125817184150])",
-    serialized: "876 bytes, digest Word([6722730734256171573, 1470494999539100356, 6246252080396496054, 6270215514800204842])",
+    serialized: "876 bytes, digest Word([2544594594666949946, 2506426865763950395, 8225812802246097573, 7061031707423733340])",
     attachments: "[scheme=4 words=17, scheme=2 words=1]",
 };
 

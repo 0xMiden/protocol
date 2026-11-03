@@ -521,7 +521,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(Vec::new())
     }
 
-    /// Pushes the number of 8-Felt body blocks in the account patch commitment onto the advice
+    /// Pushes the number of double words in the account patch commitment body onto the advice
     /// stack.
     pub fn on_account_push_patch_commitment_body_block_count(
         &self,
@@ -536,7 +536,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(num_blocks)])])
     }
 
-    /// Pushes the number of 8-Felt body blocks in the account delta commitment onto the advice
+    /// Pushes the number of double words in the account delta commitment body onto the advice
     /// stack.
     pub fn on_account_push_delta_commitment_body_block_count(
         &self,
