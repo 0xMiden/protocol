@@ -4,6 +4,7 @@ use {
     NoteRecipient,
     NoteScriptRoot,
     NoteStorageCommitment,
+    NoteType,
 } from miden::protocol_utils::types
 use miden::core::crypto::hashes::poseidon2
 
@@ -73,6 +74,36 @@ pub proc metadata_into_version(metadata: NoteMetadata) -> u8
 
     u32and.NOTE_METADATA_VERSION_MASK
     # => [version]
+end
+
+#! Extracts the note type from the provided metadata.
+#!
+#! The note type is encoded as a single bit at the 6th position from the right side (LSB) of the
+#! first felt of the metadata, where 0 = Private and 1 = Public.
+#!
+#! Inputs:  [METADATA]
+#! Outputs: [note_type]
+#!
+#! Where:
+#! - METADATA is the metadata of a note, laid out on the stack as
+#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
+#!   The first felt (sender_id_suffix_type_version) has the following bit layout:
+#!   [sender_id_suffix (56 bits) | reserved (1 bit) | note_type (1 bit) | version (6 bits)]
+#! - note_type is the type of the note (0 for private, 1 for public).
+#!
+#! Invocation: exec
+pub proc metadata_into_note_type(metadata: NoteMetadata) -> NoteType
+    movdn.3 drop drop drop
+    # => [sender_id_suffix_type_version]
+
+    u32split swap drop
+    # => [lo32]
+
+    u32shr.6
+    # => [shifted]
+
+    u32and.1
+    # => [note_type]
 end
 
 #! Extracts the reserved bit from the provided metadata.
