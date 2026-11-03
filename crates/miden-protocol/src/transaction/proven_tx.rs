@@ -15,6 +15,7 @@ use crate::transaction::{
     Nullifier,
     OutputNote,
     OutputNotes,
+    TransactionCommitments,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -247,13 +248,14 @@ impl ProvenTransaction {
             }
         }
 
-        let id = TransactionId::new(
+        let id = TransactionId::new(TransactionCommitments::new(
             account_update.initial_state_commitment(),
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
             log_details.commitment(),
-        );
+        ));
+
         Ok(Self {
             log_details,
             id,

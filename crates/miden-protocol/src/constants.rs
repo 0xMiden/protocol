@@ -49,6 +49,12 @@ const _: () = assert!(MAX_INPUT_NOTES_PER_BATCH >= MAX_INPUT_NOTES_PER_TX);
 /// The maximum number of accounts that can be updated in a single batch.
 pub const MAX_ACCOUNTS_PER_BATCH: usize = 1024;
 
+/// The maximum number of transactions that can be included in a single batch.
+///
+/// Must match `MAX_TRANSACTIONS_PER_BATCH` in `asm/kernels/batch/lib/memory.masm`, which sizes the
+/// kernel's per-transaction memory regions.
+pub const MAX_TRANSACTIONS_PER_BATCH: usize = 1024;
+
 // BLOCK
 // ================================================================================================
 

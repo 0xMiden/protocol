@@ -3,6 +3,7 @@ use super::{
     InputNote,
     InputNotes,
     RawOutputNotes,
+    TransactionCommitments,
     TransactionId,
     TransactionLogs,
 };
@@ -48,13 +49,13 @@ impl TransactionEffects {
         expiration_block_num: BlockNumber,
         logs: TransactionLogs,
     ) -> Self {
-        let transaction_id = TransactionId::new(
+        let transaction_id = TransactionId::new(TransactionCommitments::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
             logs.commitment(),
-        );
+        ));
 
         Self {
             transaction_id,

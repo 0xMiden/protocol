@@ -12,6 +12,7 @@ use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 /// [`LocalBatchProver::prove`](crate::LocalBatchProver::prove). It carries the witnesses proving
 /// needs: the batch kernel's VM witness and the portable precompile witnesses of the batch's
 /// transactions in transaction order.
+#[derive(Debug)]
 pub struct ExecutedBatch {
     proposed_batch: ProposedBatch,
     witness: VmWitness,
