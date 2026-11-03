@@ -238,6 +238,7 @@ mod tests {
                     reference.block_num() + 1,
                     dummy_execution_proof(),
                     log_details,
+                    Default::default(),
                 )
                 .unwrap(),
             ));

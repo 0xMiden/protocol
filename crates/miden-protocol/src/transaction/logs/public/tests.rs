@@ -1,6 +1,7 @@
 use super::*;
 use crate::Word;
 use crate::batch::{OrderedBatches, ProvenBatch};
+use crate::block::code_tree::CodePatch;
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -22,6 +23,7 @@ fn header(seed: u32, public: bool, logs: &TransactionLogs) -> TransactionHeader 
         InputNotes::default(),
         vec![],
         logs.commitment(),
+        CodePatch::default().commitment(),
     )
     .unwrap()
 }
@@ -153,9 +155,11 @@ fn embedded_logs_preserve_commitments() {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
+    use crate::block::code_tree::CodeTree;
     use crate::block::{BlockHeader, FeeParameters, ValidatorConfig};
     use crate::crypto::SequentialCommit;
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+    use crate::crypto::merkle::smt::Smt;
 
     let logs = TransactionLogs::new(vec![TransactionLog::mock(1)]).unwrap();
     let first = headers(vec![header(1, true, &logs), header(2, false, &logs)]);
@@ -173,6 +177,7 @@ fn embedded_logs_preserve_commitments() {
         Word::empty(),
         Word::empty(),
         Word::empty(),
+        CodeTree::<Smt>::default().root(),
         Word::empty(),
         body.compute_transactions_commitment(),
         ValidatorConfig::from_signers(&[key]),
@@ -196,17 +201,18 @@ fn embedded_logs_preserve_commitments() {
             .map(|word| word.to_hex()),
         )
         .collect();
+    // Baseline includes the upstream code-patch commitment and empty code-tree root.
     assert_eq!(
         actual,
         [
-            "0x1a0aa1dbc5d96d8d7605770a308bbd10eb054ca0157ecda72777ff225f2847df",
-            "0x99b9277c38543218c245109fb0fd17b596ab2c10f94a75486961689dc9f789c5",
-            "0x653c2a15819b4df9b0d045f5ee6057b8618c8fc147d623bcb8a9ebc0bdc63606",
-            "0x1dcae8787c787c4094ffc7008849098ff22c913b2cffbbb2de26d72e96aa0260",
-            "0x2cfa600b5f889f668b27c471586074d064ef1f5234e900d05ed5591162e2878d",
-            "0xdb87e02da20bac5bfa24e2c16526f3b3d6f40cb1ad8b1857120e3bd9655a2ce8",
-            "0x89b017ac78a42b2cbea32e2c4221a23f86a0f0ae7766a807b33b5f4ebfce41a1",
-            "0xc144699926a73ccf34c836a1a2c673cf8dc4a76fa129e66671131dc03a8553cc"
+            "0xc74558e2e9e86192d49a0579c545d6db3ddbb7a85a9b31c136ee7035b2e1ffe6",
+            "0x80ff8be6343d57daf2743f41adff45bd766b17f1b0dc9208955fdfb395030410",
+            "0x2da04a4c294fcf8e6a7f0c01583fd2f2b3499449a58b07e87fbab3e0ce0400ba",
+            "0xeb96f7fb3518c0da190253191f70ded5e509c8a34703f1da757bcd1855d112d7",
+            "0xc4ea288c66f2fb3fe13e0e6c922fba9044a03468190c3af1f32c94d41e3ff79f",
+            "0x6d272412d571ab822400d41c608da9cb2d672230093f3afbe167dc9fd9d13bf5",
+            "0x7ed1aedead6a64f22f8b74cef73f96fdb91bd85bd6ebe56d933fdcfd5109472e",
+            "0xde56918d2eb7d0eac2dd9c69579c0fe746df6da87d8160af82b65d24aa8ee2d9"
         ]
     );
 }
@@ -296,8 +302,16 @@ fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bo
     let a_logs = TransactionLogs::new(vec![TransactionLog::mock(1)]).unwrap();
     let b_logs = TransactionLogs::new(vec![TransactionLog::mock(2)]).unwrap();
     let tx = |logs: &TransactionLogs| {
-        TransactionHeader::new(id, state, state, InputNotes::default(), vec![], logs.commitment())
-            .unwrap()
+        TransactionHeader::new(
+            id,
+            state,
+            state,
+            InputNotes::default(),
+            vec![],
+            logs.commitment(),
+            CodePatch::default().commitment(),
+        )
+        .unwrap()
     };
     let a = tx(&a_logs);
     let b = tx(&b_logs);
