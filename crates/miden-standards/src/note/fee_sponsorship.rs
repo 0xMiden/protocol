@@ -811,7 +811,7 @@ mod tests {
             .feature_note_id(feature_note_id())
             .asset(fee_asset())
             .maybe_reclaim_height(reclaim_height.map(BlockNumber::from))
-            .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+            .generate_serial_number(&mut EidosRandomCoin::new(Word::empty()))
             .build()
             .unwrap();
 
