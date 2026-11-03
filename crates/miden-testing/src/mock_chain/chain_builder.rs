@@ -128,7 +128,6 @@ pub struct MockChainBuilder {
     notes: Vec<RawOutputNote>,
     rng: RandomCoin,
     validator_signing_keys: Option<Vec<SigningKey>>,
-    register_default_libraries: bool,
     // Fee parameters.
     fee_faucet_id: AccountId,
     verification_base_fee: u32,
@@ -147,9 +146,6 @@ impl MockChainBuilder {
     ///
     /// By default, three random validator signing keys are generated when building the chain.
     /// Use [`Self::validator_signing_keys`] to supply the keys instead.
-    ///
-    /// By default, the genesis code tree contains the default libraries, see
-    /// [`Self::without_default_libraries`].
     pub fn new() -> Self {
         let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into().expect("account ID should be valid");
 
@@ -159,7 +155,6 @@ impl MockChainBuilder {
             notes: Vec::new(),
             rng: RandomCoin::new(Default::default()),
             validator_signing_keys: None,
-            register_default_libraries: true,
             fee_faucet_id,
             verification_base_fee: 0,
         }
@@ -213,16 +208,6 @@ impl MockChainBuilder {
     /// [`ValidatorConfig::MAX_VALIDATORS`].
     pub fn validator_signing_keys(mut self, keys: Vec<SigningKey>) -> Self {
         self.validator_signing_keys = Some(keys);
-        self
-    }
-
-    /// Starts the chain with an empty [`CodeTree`].
-    ///
-    /// By default, the genesis code tree contains the procedures of the default libraries that
-    /// other code can reference: `exec_kernel_proc` and the exported procedures of the core,
-    /// protocol and standards libraries.
-    pub fn without_default_libraries(mut self) -> Self {
-        self.register_default_libraries = false;
         self
     }
 
@@ -280,11 +265,7 @@ impl MockChainBuilder {
         let chain_commitment = Blockchain::new().commitment();
         let account_root = account_tree.root();
         let nullifier_root = NullifierTree::<Smt>::default().root();
-        let code_tree = if self.register_default_libraries {
-            default_code_tree()?
-        } else {
-            CodeTree::default()
-        };
+        let code_tree = default_code_tree()?;
         let note_root = note_tree.root();
         let tx_commitment = body.compute_transactions_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
