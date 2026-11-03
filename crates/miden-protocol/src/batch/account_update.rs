@@ -242,6 +242,7 @@ mod tests {
         StorageSlotName,
     };
     use crate::block::BlockNumber;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::BatchAccountUpdateError;
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use crate::testing::add_component::AddComponent;
@@ -305,6 +306,7 @@ mod tests {
             BlockNumber::from(2),
             dummy_execution_proof(),
             TransactionLogDetails::Public(TransactionLogs::default()),
+            CodePatch::default(),
         )
         .unwrap()
     }

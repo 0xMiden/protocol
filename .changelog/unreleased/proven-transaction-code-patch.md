@@ -1,0 +1,1 @@
+[BREAKING] The transaction kernel now outputs a code patch commitment and a hash of the logs commitment and expiration block number, and `ProvenTransaction` and `TransactionId` now include the `CodePatch`.

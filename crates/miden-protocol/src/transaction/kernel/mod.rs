@@ -7,6 +7,7 @@ use crate::account::{AccountHeader, AccountId};
 use crate::assembly::debuginfo::SourceManagerSync;
 use crate::assembly::{Assembler, DefaultSourceManager, Linkage};
 use crate::block::BlockNumber;
+use crate::block::code_tree::{CodePatch, CodePatchCommitment};
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
@@ -274,66 +275,48 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     LOGS_COMMITMENT,
-    ///     expiration_block_num,
+    ///     CODE_PATCH_COMMITMENT,
+    ///     LOGS_EXPIRATION_COMMITMENT,
     /// ]
     /// ```
     ///
     /// Where:
-    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
-    ///   delta commitment.
-    /// - expiration_block_num is the block number at which the transaction will expire.
+    ///   patch commitment.
+    /// - CODE_PATCH_COMMITMENT is the commitment to the [`CodePatch`] of the transaction.
+    /// - LOGS_EXPIRATION_COMMITMENT is the hash of the transaction logs commitment and the
+    ///   expiration word `[expiration_block_num, 0, 0, 0]`, where expiration_block_num is the block
+    ///   number at which the transaction will expire.
     pub fn build_output_stack(
         final_account_commitment: Word,
-        account_delta_commitment: Word,
+        account_patch_commitment: Word,
         output_notes_commitment: Word,
+        code_patch_commitment: CodePatchCommitment,
         expiration_block_num: BlockNumber,
         logs_commitment: Word,
     ) -> StackOutputs {
         let account_update_commitment =
-            Hasher::merge(&[final_account_commitment, account_delta_commitment]);
+            Hasher::merge(&[final_account_commitment, account_patch_commitment]);
+        let logs_expiration_commitment =
+            Hasher::merge(&[logs_commitment, Self::expiration_word(expiration_block_num)]);
 
-        let mut outputs: Vec<Felt> = Vec::with_capacity(13);
+        let mut outputs: Vec<Felt> = Vec::with_capacity(Word::NUM_ELEMENTS * 4);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
-        outputs.extend(logs_commitment);
-        outputs.push(Felt::from(expiration_block_num));
+        outputs.extend(code_patch_commitment.as_word());
+        outputs.extend(logs_expiration_commitment);
 
-        StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
+        StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
     }
 
     /// Extracts transaction output data from the provided stack outputs.
     ///
-    /// The data on the stack is expected to be arranged as follows:
-    ///
-    /// ```text
-    /// [
-    ///     OUTPUT_NOTES_COMMITMENT,
-    ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     LOGS_COMMITMENT,
-    ///     expiration_block_num,
-    /// ]
-    /// ```
-    ///
-    /// Where:
-    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
-    /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
-    /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
-    ///   delta commitment.
-    /// - tx_expiration_block_num is the block height at which the transaction will become expired,
-    ///   defined by the sum of the execution block ref and the transaction's block expiration delta
-    ///   (if set during transaction execution).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Indices 13..16 on the stack are not zeroes.
-    /// - Overflow addresses are not empty.
+    /// Returns the output notes commitment, account update commitment, code patch commitment and
+    /// logs expiration commitment. See [`Self::build_output_stack`] for the stack layout.
     pub fn parse_output_stack(
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> Result<(Word, Word, BlockNumber, Word), TransactionOutputError> {
+    ) -> (Word, Word, CodePatchCommitment, Word) {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -342,35 +325,21 @@ impl TransactionKernel {
             .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
 
-        let logs_commitment = stack
-            .get_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX)
-            .expect("logs_commitment (third word) missing");
+        let code_patch_commitment = stack
+            .get_word(TransactionOutputs::CODE_PATCH_COMMITMENT_WORD_IDX)
+            .map(CodePatchCommitment::from_raw)
+            .expect("code_patch_commitment (third word) missing");
 
-        let expiration_block_num = stack
-            .get_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .expect("tx_expiration_block_num missing");
+        let logs_expiration_commitment = stack
+            .get_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX)
+            .expect("logs_expiration_commitment (fourth word) missing");
 
-        let expiration_block_num = u32::try_from(expiration_block_num.as_canonical_u64())
-            .map_err(|_| {
-                TransactionOutputError::OutputStackInvalid(
-                    "expiration block number should be smaller than u32::MAX".into(),
-                )
-            })?
-            .into();
-
-        // Make sure that indices 13..16 are zeros.
-        if stack.as_slice()[13..].iter().any(|element| *element != Felt::ZERO) {
-            return Err(TransactionOutputError::OutputStackInvalid(
-                "indices 13..16 on the output stack should be ZERO".into(),
-            ));
-        }
-
-        Ok((
+        (
             output_notes_commitment,
             account_update_commitment,
-            expiration_block_num,
-            logs_commitment,
-        ))
+            code_patch_commitment,
+            logs_expiration_commitment,
+        )
     }
 
     // TRANSACTION OUTPUT PARSER
@@ -378,45 +347,40 @@ impl TransactionKernel {
 
     /// Returns [TransactionOutputs] constructed from the provided output stack and advice map.
     ///
-    /// The output stack is expected to be arranged as follows:
+    /// See [`Self::build_output_stack`] for the layout of the output stack.
     ///
-    /// ```text
-    /// [
-    ///     OUTPUT_NOTES_COMMITMENT,
-    ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     LOGS_COMMITMENT,
-    ///     expiration_block_num,
-    /// ]
-    /// ```
-    ///
-    /// Where:
-    /// - LOGS_COMMITMENT is the commitment to all transaction logs emitted by the transaction.
-    /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
-    /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and the account
-    ///   delta commitment of the account that the transaction is being executed against.
-    /// - tx_expiration_block_num is the block height at which the transaction will become expired,
-    ///   defined by the sum of the execution block ref and the transaction's block expiration delta
-    ///   (if set during transaction execution).
-    ///
-    /// The actual data describing the new account state and output notes is expected to be located
-    /// in the provided advice map under keys `OUTPUT_NOTES_COMMITMENT` and
-    /// `ACCOUNT_UPDATE_COMMITMENT`, where the final data for the account state is located under
-    /// `FINAL_ACCOUNT_COMMITMENT`.
+    /// The actual data describing the new account state, output notes and the expiration block
+    /// number is expected to be located in the provided advice map under keys
+    /// `OUTPUT_NOTES_COMMITMENT`, `ACCOUNT_UPDATE_COMMITMENT` and `LOGS_EXPIRATION_COMMITMENT`,
+    /// where the final account header is located under `FINAL_ACCOUNT_COMMITMENT`.
     pub fn from_transaction_parts(
         stack: &StackOutputs,
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
         logs: TransactionLogs,
+        code_patch: CodePatch,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
         let (
             output_notes_commitment,
             account_update_commitment,
-            expiration_block_num,
-            logs_commitment,
-        ) = Self::parse_output_stack(stack)?;
+            code_patch_commitment,
+            logs_expiration_commitment,
+        ) = Self::parse_output_stack(stack);
+
+        let (logs_commitment, expiration_block_num) =
+            Self::parse_logs_expiration_commitment(logs_expiration_commitment, advice_inputs)?;
 
         if logs.commitment() != logs_commitment {
             return Err(TransactionOutputError::LogsCommitmentInconsistent);
+        }
+
+        // TODO(#4006): read the code patch from the advice map under CODE_PATCH_COMMITMENT once
+        // the transaction kernel builds the code patch.
+        if code_patch.commitment() != code_patch_commitment {
+            return Err(TransactionOutputError::CodePatchCommitmentInconsistent {
+                actual: code_patch.commitment(),
+                expected: code_patch_commitment,
+            });
         }
 
         let (final_account_commitment, account_patch_commitment) =
@@ -446,6 +410,7 @@ impl TransactionKernel {
             output_notes,
             expiration_block_num,
             logs,
+            code_patch,
         ))
     }
 
@@ -481,6 +446,61 @@ impl TransactionKernel {
         }
 
         Ok((final_account_commitment, account_patch_commitment))
+    }
+
+    /// Returns the logs commitment and expiration block number extracted from the logs expiration
+    /// commitment.
+    fn parse_logs_expiration_commitment(
+        logs_expiration_commitment: Word,
+        advice_inputs: &AdviceInputs,
+    ) -> Result<(Word, BlockNumber), TransactionOutputError> {
+        let logs_expiration_data =
+            advice_inputs.map().get(&logs_expiration_commitment).ok_or_else(|| {
+                TransactionOutputError::LogsExpirationCommitment(
+                    "failed to find LOGS_EXPIRATION_COMMITMENT in advice map".into(),
+                )
+            })?;
+
+        let logs_expiration =
+            DoubleWord::try_from(logs_expiration_data.as_ref()).map_err(|_| {
+                TransactionOutputError::LogsExpirationCommitment(
+                    "expected logs expiration commitment advice map entry to contain exactly 8 elements"
+                        .into(),
+                )
+            })?;
+        let (logs_commitment, expiration_word) = logs_expiration.into_tuple();
+
+        let computed_logs_expiration_commitment =
+            Hasher::merge(&[logs_commitment, expiration_word]);
+
+        if computed_logs_expiration_commitment != logs_expiration_commitment {
+            let err_message = format!(
+                "transaction outputs logs expiration commitment {logs_expiration_commitment} but commitment computed from its advice map entries was {computed_logs_expiration_commitment}"
+            );
+            return Err(TransactionOutputError::LogsExpirationCommitment(err_message.into()));
+        }
+
+        let expiration_block_num = u32::try_from(expiration_word[0].as_canonical_u64())
+            .map(BlockNumber::from)
+            .map_err(|_| {
+                TransactionOutputError::LogsExpirationCommitment(
+                    "expiration block number should be smaller than u32::MAX".into(),
+                )
+            })?;
+
+        if Self::expiration_word(expiration_block_num) != expiration_word {
+            return Err(TransactionOutputError::LogsExpirationCommitment(
+                "expiration word should contain zeros after the expiration block number".into(),
+            ));
+        }
+
+        Ok((logs_commitment, expiration_block_num))
+    }
+
+    /// Returns the word the expiration block number is committed to in the logs expiration
+    /// commitment.
+    fn expiration_word(expiration_block_num: BlockNumber) -> Word {
+        Word::new([Felt::from(expiration_block_num), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 
     // UTILITY METHODS

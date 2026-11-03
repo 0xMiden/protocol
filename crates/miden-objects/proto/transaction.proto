@@ -23,6 +23,7 @@ message TransactionHeader {
   repeated InputNoteCommitment input_notes = 5;
   repeated note.NoteHeader output_notes = 6;
   primitives.Word logs_commitment = 7;
+  primitives.Word code_patch_commitment = 8;
 }
 
 message PublicOutputNote {
@@ -61,6 +62,15 @@ message TxAccountUpdate {
   account.AccountUpdateDetails details = 5;
 }
 
+// The procedures a transaction adds to the code tree and the procedures it depends on.
+//
+// The commitments are not transmitted since they are recomputed on decoding.
+message CodePatch {
+  repeated primitives.Word created_procedures = 1;
+  repeated primitives.Word dependencies = 2;
+  primitives.MastForest mast = 3;
+}
+
 message ProvenTransaction {
   TxAccountUpdate account_update = 1;
   repeated InputNoteCommitment input_notes = 2;
@@ -71,6 +81,7 @@ message ProvenTransaction {
   primitives.ExecutionProof proof = 7;
   // Complete public logs or only a private commitment.
   TransactionLogDetails log_details = 8;
+  CodePatch code_patch = 9;
 }
 
 message TransactionScript {
