@@ -168,7 +168,7 @@ impl ProposedBlock {
         for batch in &batches {
             batch.public_logs().validate_for_batch(batch.transactions())?;
             // Distinct batches may overlap. The infallible body conversion must preserve the
-            // uniqueness required by both the flattened headers and their public-log associations.
+            // uniqueness required across all headers and their public-log associations.
             if batch
                 .transactions()
                 .as_slice()

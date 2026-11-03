@@ -173,7 +173,8 @@ impl crate::BuildUnchecked for BlockBody {
         let notes = self.output_note_batches.verify()?;
         let nullifiers = self.created_nullifiers.map(miden_protocol::note::Nullifier::from_raw);
         let transactions = self.transactions.build_unchecked()?;
-        let public_logs = crate::VerifyWith::verify_with(self.public_logs, transactions.as_slice())?;
+        let public_logs =
+            crate::VerifyWith::verify_with(self.public_logs, transactions.as_slice())?;
         Ok(Self::Output::new(updates, notes, nullifiers, transactions, public_logs)?)
     }
 }

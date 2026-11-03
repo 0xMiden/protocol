@@ -201,8 +201,7 @@ impl PublicTransactionLogs {
         if headers.clone().any(|header| !ids.insert(header.id())) {
             return Err(TransactionLogError::PublicLogsAssociationMismatch);
         }
-        let public_headers =
-            headers.filter(|header| header.account_id().is_public());
+        let public_headers = headers.filter(|header| header.account_id().is_public());
         if public_headers.clone().count() != self.entries.len() {
             return Err(TransactionLogError::PublicLogsAssociationMismatch);
         }

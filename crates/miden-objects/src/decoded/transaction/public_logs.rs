@@ -49,11 +49,7 @@ impl PublicTransactionLogs {
     }
 }
 
-use miden_protocol::transaction::{
-    PublicLogLimits,
-    TransactionLog,
-    TransactionLogError,
-};
+use miden_protocol::transaction::{PublicLogLimits, TransactionLog, TransactionLogError};
 use prost::Message;
 use prost::encoding::{DecodeContext, WireType, check_wire_type, decode_key, skip_field};
 
@@ -100,8 +96,9 @@ impl proto::blockchain::BlockBody {
 
     /// Decodes bytes after checking embedded public-log allocation budgets.
     ///
-    /// The encoded log field is capped at 32 MiB, including framing and unknown fields. Each entry
-    /// is capped at 16 KiB. Other fields require transport limits. This does not validate domain
+    /// Bounds the number of batch groups and counts transaction headers across all groups. The
+    /// encoded log field is capped at 32 MiB, including framing and unknown fields. Each entry is
+    /// capped at 16 KiB. Other fields require transport limits. This does not validate domain
     /// invariants or authenticate the block; use the normal decoded construction/verification path.
     ///
     /// # Errors

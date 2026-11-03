@@ -368,7 +368,11 @@ fn logged_owners() -> (miden_protocol::batch::ProvenBatch, miden_protocol::block
         dummy_execution_proof(),
     )
     .unwrap();
-    let body = BlockBody::new(vec![], vec![], vec![], vec![headers], public_logs).unwrap();
+    let grouped_headers = vec![
+        OrderedTransactionHeaders::new_unchecked(headers.as_slice()[..2].to_vec()),
+        OrderedTransactionHeaders::new_unchecked(headers.as_slice()[2..].to_vec()),
+    ];
+    let body = BlockBody::new(vec![], vec![], vec![], grouped_headers, public_logs).unwrap();
     (batch, body)
 }
 
@@ -395,11 +399,9 @@ fn embedded_logs_roundtrip_preserves_mixed_owners() {
     assert_eq!(entries[0].logs.as_ref().unwrap().logs.len(), 2);
     assert!(entries[1].logs.as_ref().unwrap().logs.is_empty());
     // A private transaction's commitment stays in its header and has no payload entry.
-    assert!(
-        entries.iter().all(
-            |entry| entry.transaction_id != Some(body.transactions()[0].as_slice()[1].id().into())
-        )
-    );
+    assert!(entries.iter().all(
+        |entry| entry.transaction_id != Some(body.transactions()[0].as_slice()[1].id().into())
+    ));
 }
 
 #[rstest]
