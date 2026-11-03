@@ -109,7 +109,8 @@ fn proven_batch_roundtrips_and_checks_proposal_agreement() {
     let proposal = proposal();
     let batch = proven(&proposal);
     let wire: proto::transaction::ProvenBatch = (&batch).into();
-    let wire = proto::transaction::ProvenBatch::decode(wire.encode_to_vec().as_slice()).unwrap();
+    let wire =
+        proto::transaction::ProvenBatch::decode_bounded(wire.encode_to_vec().as_slice()).unwrap();
     assert_eq!(wire.clone().decode_and_build_unchecked().unwrap(), batch);
     assert_eq!(wire.decode_and_verify_with(&proposal).unwrap(), batch);
 }
