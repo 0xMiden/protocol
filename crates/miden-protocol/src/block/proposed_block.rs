@@ -164,8 +164,19 @@ impl ProposedBlock {
 
         check_duplicate_batches(&batches)?;
         let mut num_transactions = 0usize;
+        let mut transaction_ids = BTreeSet::new();
         for batch in &batches {
             batch.public_logs().validate_for_batch(batch.transactions())?;
+            // Distinct batches may overlap. The infallible body conversion must preserve the
+            // uniqueness required by both the flattened headers and their public-log associations.
+            if batch
+                .transactions()
+                .as_slice()
+                .iter()
+                .any(|transaction| !transaction_ids.insert(transaction.id()))
+            {
+                return Err(TransactionLogError::PublicLogsAssociationMismatch.into());
+            }
             num_transactions = num_transactions
                 .checked_add(batch.transactions().as_slice().len())
                 .ok_or(TransactionLogError::PublicLogsLimitExceeded)?;

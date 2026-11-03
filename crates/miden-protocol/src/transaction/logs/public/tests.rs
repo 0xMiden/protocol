@@ -269,3 +269,84 @@ fn block_rejects_combined_public_logs_over_budget() {
         ))
     ));
 }
+
+#[rstest::rstest]
+#[case::public(true)]
+#[case::private(false)]
+fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bool) {
+    use crate::account::{AccountPatch, AccountUpdateDetails};
+    use crate::batch::BatchAccountUpdate;
+    use crate::block::{BlockHeader, BlockInputs, ProposedBlock};
+    use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
+    use crate::errors::ProposedBlockError;
+    use crate::transaction::PartialBlockchain;
+
+    let chain =
+        PartialBlockchain::new(PartialMmr::from_peaks(Mmr::default().peaks()), vec![]).unwrap();
+    let reference = BlockHeader::mock(0, Some(chain.peaks().hash_peaks()), None, &[]);
+    let timestamp = reference.timestamp().checked_add(1).unwrap();
+    let id = if public {
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE
+    } else {
+        ACCOUNT_ID_PRIVATE_SENDER
+    }
+    .try_into()
+    .unwrap();
+    let state = Word::from([1u32; 4]);
+    let a_logs = TransactionLogs::new(vec![TransactionLog::mock(1)]).unwrap();
+    let b_logs = TransactionLogs::new(vec![TransactionLog::mock(2)]).unwrap();
+    let tx = |logs: &TransactionLogs| {
+        TransactionHeader::new(id, state, state, InputNotes::default(), vec![], logs.commitment())
+            .unwrap()
+    };
+    let a = tx(&a_logs);
+    let b = tx(&b_logs);
+    let make_batch = |transactions: Vec<TransactionHeader>, entries| {
+        let headers = headers(transactions);
+        let logs =
+            PublicTransactionLogs::new(if public { entries } else { vec![] }, &headers).unwrap();
+        ProvenBatch::new(
+            reference.commitment(),
+            reference.block_num(),
+            [BatchAccountUpdate::new(
+                id,
+                state,
+                state,
+                if public {
+                    AccountUpdateDetails::Public(AccountPatch::empty(id))
+                } else {
+                    AccountUpdateDetails::Private
+                },
+            )
+            .unwrap()],
+            InputNotes::default(),
+            vec![],
+            2.into(),
+            headers,
+            logs,
+            dummy_execution_proof(),
+        )
+        .unwrap()
+    };
+    // Both batches pass their checked constructor and have different IDs, but share A.
+    let first = make_batch(vec![a.clone()], vec![(a.id(), a_logs.clone())]);
+    let second = make_batch(vec![a.clone(), b.clone()], vec![(a.id(), a_logs), (b.id(), b_logs)]);
+    assert_ne!(first.id(), second.id());
+    let inputs = BlockInputs::new(
+        reference,
+        chain,
+        Default::default(),
+        Default::default(),
+        Default::default(),
+    );
+    let result = ProposedBlock::new_at(inputs, vec![first, second], timestamp);
+    assert!(
+        matches!(
+            result,
+            Err(ProposedBlockError::TransactionLogs(
+                TransactionLogError::PublicLogsAssociationMismatch
+            ))
+        ),
+        "{result:?}"
+    );
+}
