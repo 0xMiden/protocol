@@ -5,6 +5,9 @@
 # guardian key (co-signs every transaction, holds no authority of its own). Procedure policies are
 # counted in signed categories: hot contributes at most one, cold at most one.
 #
+# The hot keys are an indexed key set (see `miden::standards::auth::key_set`), the cold key and
+# the guardian key single-entry maps.
+#
 # See the `AuthHotColdGuardian` Rust type's documentation for more details.
 
 use {Approver, PublicKeyCommitment, SignatureMessage, SignatureScheme} from miden::standards::auth::signature
@@ -16,6 +19,7 @@ use miden::protocol::native_account
 use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use miden::standards::auth
 use miden::standards::auth::guardian
+use miden::standards::auth::key_set
 use miden::standards::auth::multisig_smart
 use miden::standards::auth::signature
 use miden::core::word
@@ -114,8 +118,6 @@ const ERR_NUM_HOT_KEYS_NOT_U32 = "number of hot keys must be u32"
 
 const ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS = "number of hot keys must be between 1 and the maximum hot key set size"
 
-const ERR_HOT_KEY_COUNTS_NOT_U32 = "initial and new number of hot keys must be u32"
-
 const ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32 = "number of hot keys and hot key index must be u32"
 
 const ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS = "hot key index must be less than the number of hot keys"
@@ -168,12 +170,6 @@ const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "cancel_threshold exceeds th
 const NEW_NUM_HOT_KEYS_LOC = 0
 const INIT_NUM_HOT_KEYS_LOC = 1
 
-# LOCAL ADDRESSES (assert_hot_keys_valid)
-# =================================================================================================
-
-const VALID_OUTER_INDEX_LOC = 0
-const VALID_INNER_INDEX_LOC = 1
-
 # LOCAL ADDRESSES (rotate_cold_key)
 # =================================================================================================
 
@@ -184,12 +180,6 @@ const ROTATE_COLD_SCHEME_ID_LOC = 0
 
 const IMMEDIATE_THRESHOLD_LOC = 0
 const POLICY_FLAGS_LOC = 1
-
-# LOCAL ADDRESSES (is_hot_key)
-# =================================================================================================
-
-const IS_HOT_KEY_FOUND_LOC = 0
-const HOT_KEY_INDEX_LOC = 1
 
 # LOCAL ADDRESSES (compute_called_proc_policy)
 # =================================================================================================
@@ -274,62 +264,39 @@ pub proc update_hot_keys(hot_keys_config_commitment: word)
     loc_load.NEW_NUM_HOT_KEYS_LOC
     # => [num_hot_keys, pad(12)]
 
-    # num_hot_keys was asserted non-zero above, so enter the loop unconditionally
-    push.1
-    while.true
-        sub.1
-        # => [i-1, pad(12)]
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, pad(12)]
 
-        dup exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, i-1, pad(12)]
-
-        padw adv_loadw
-        # => [PUB_KEY, HOT_KEY_MAP_KEY, i-1, pad(12)]
-
-        swapw
-        # => [HOT_KEY_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        push.HOT_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        # override OLD_VALUE with SCHEME_ID_WORD
-        adv_loadw
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        exec.signature::assert_supported_scheme_word
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        dup.4 exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        push.HOT_SCHEME_IDS_SLOT[0..2]
-        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, HOT_KEY_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        dropw
-        # => [i-1, pad(12)]
-
-        dup neq.0
-        # => [is_non_zero, i-1, pad(12)]
-    end
-    # => [0, pad(12)]
-
-    drop
+    exec.key_set::write_from_advice
     # => [pad(12)]
 
-    loc_load.NEW_NUM_HOT_KEYS_LOC
-    exec.assert_hot_keys_valid
+    # the new hot keys must be distinct from each other and from the other categories, read from
+    # the current state so the keys just written are the ones validated
+    loc_load.NEW_NUM_HOT_KEYS_LOC push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, pad(12)]
+
+    exec.key_set::has_duplicate assertz.err=ERR_DUPLICATE_HOT_PUBLIC_KEY
+    # => [pad(12)]
+
+    exec.get_current_cold_public_key exec.contains_hot_key
+    # => [is_hot_key, pad(12)]
+
+    assertz.err=ERR_HOT_KEY_IS_COLD_KEY
+    # => [pad(12)]
+
+    exec.guardian::get_guardian_public_key exec.contains_hot_key
+    # => [is_hot_key, pad(12)]
+
+    assertz.err=ERR_HOT_KEY_IS_GUARDIAN_KEY
     # => [pad(12)]
 
     loc_load.NEW_NUM_HOT_KEYS_LOC loc_load.INIT_NUM_HOT_KEYS_LOC
     # => [init_num_hot_keys, new_num_hot_keys, pad(12)]
 
-    exec.cleanup_hot_key_mapping
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_hot_keys, new_num_hot_keys, pad(12)]
+
+    exec.key_set::cleanup
     # => [pad(12)]
 end
 
@@ -367,7 +334,10 @@ pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_ke
     assertz.err=ERR_COLD_KEY_IS_GUARDIAN_KEY
     # => [NEW_COLD_PUBLIC_KEY, pad(11)]
 
-    dupw exec.assert_not_hot_public_key
+    dupw exec.contains_hot_key
+    # => [is_hot_key, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    assertz.err=ERR_PUBLIC_KEY_IS_HOT_KEY
     # => [NEW_COLD_PUBLIC_KEY, pad(11)]
 
     push.CATEGORY_MAP_KEY
@@ -628,25 +598,10 @@ pub proc get_hot_key_at(index: u32) -> Approver
     u32lt assert.err=ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS
     # => [index, pad(15)]
 
-    dup exec.signature::create_approver_map_key
-    # => [HOT_KEY_MAP_KEY, index, pad(15)]
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, index, pad(15)]
 
-    push.HOT_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, index, pad(15)]
-
-    exec.native_account::get_initial_map_item
-    # => [PUB_KEY, index, pad(15)]
-
-    movup.4 exec.signature::create_approver_map_key
-    # => [HOT_KEY_MAP_KEY, PUB_KEY, pad(15)]
-
-    push.HOT_SCHEME_IDS_SLOT[0..2]
-    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, pad(15)]
-
-    exec.native_account::get_initial_map_item
-    # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(15)]
-
-    movdn.7 drop drop drop
+    exec.key_set::get_key_at
     # => [PUB_KEY, scheme_id, pad(15)]
 
     # truncate the stack
@@ -691,65 +646,18 @@ end
 #! Returns 1 if PUB_KEY is one of the hot keys in the account's initial state, else 0.
 #!
 #! Inputs:  [PUB_KEY, pad(12)]
-#! Outputs: [is_hot_key, pad(15)]
-#!
-#! Locals:
-#! 0: is_hot_key_found
-#! 1: hot_key_index
+#! Outputs: [is_hot_key, pad(12)]
 #!
 #! Invocation: call
-@locals(2)
 @account_procedure
 pub proc is_hot_key(pub_key: PublicKeyCommitment) -> Bool
-    push.0 loc_store.IS_HOT_KEY_FOUND_LOC
-    # => [PUB_KEY, pad(12)]
-
     exec.get_initial_config drop
     # => [num_hot_keys, PUB_KEY, pad(12)]
 
-    dup neq.0
-    # => [has_remaining_keys, num_hot_keys, PUB_KEY, pad(12)]
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, PUB_KEY, pad(12)]
 
-    while.true
-        sub.1
-        # => [i-1, PUB_KEY, pad(12)]
-
-        dup loc_store.HOT_KEY_INDEX_LOC
-        # => [i-1, PUB_KEY, pad(12)]
-
-        exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, PUB_KEY, pad(12)]
-
-        push.HOT_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, pad(12)]
-
-        exec.native_account::get_initial_map_item
-        # => [CURRENT_PUB_KEY, PUB_KEY, pad(12)]
-
-        dupw.1 exec.word::eq
-        # => [is_pub_key_match, PUB_KEY, pad(12)]
-
-        loc_store.IS_HOT_KEY_FOUND_LOC
-        # => [PUB_KEY, pad(12)]
-
-        loc_load.HOT_KEY_INDEX_LOC
-        # => [i-1, PUB_KEY, pad(12)]
-
-        dup neq.0
-        # => [has_remaining_keys, i-1, PUB_KEY, pad(12)]
-
-        loc_load.IS_HOT_KEY_FOUND_LOC not
-        # => [not_found, has_remaining_keys, i-1, PUB_KEY, pad(12)]
-
-        and
-        # => [should_loop, i-1, PUB_KEY, pad(12)]
-    end
-    # => [i, PUB_KEY, pad(12)]
-
-    drop dropw
-    # => [pad(12)]
-
-    loc_load.IS_HOT_KEY_FOUND_LOC
+    exec.key_set::is_key
     # => [is_hot_key, pad(12)]
 end
 
@@ -956,37 +864,10 @@ pub proc assert_guardian_not_user_key()
     assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
     # => [GUARDIAN_PUBLIC_KEY]
 
-    exec.get_current_config drop
-    # => [i = num_hot_keys, GUARDIAN_PUBLIC_KEY]
+    exec.contains_hot_key
+    # => [is_hot_key]
 
-    dup neq.0
-    # => [should_loop, i, GUARDIAN_PUBLIC_KEY]
-
-    while.true
-        sub.1
-        # => [i, GUARDIAN_PUBLIC_KEY]
-
-        dup movdn.5
-        # => [i, GUARDIAN_PUBLIC_KEY, i]
-
-        exec.get_hot_public_key
-        # => [HOT_PUBLIC_KEY, GUARDIAN_PUBLIC_KEY, i]
-
-        dupw.1 exec.word::eq
-        # => [is_match, GUARDIAN_PUBLIC_KEY, i]
-
-        assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
-        # => [GUARDIAN_PUBLIC_KEY, i]
-
-        movup.4
-        # => [i, GUARDIAN_PUBLIC_KEY]
-
-        dup neq.0
-        # => [should_loop, i, GUARDIAN_PUBLIC_KEY]
-    end
-    # => [0, GUARDIAN_PUBLIC_KEY]
-
-    drop dropw
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
     # => []
 end
 
@@ -1038,23 +919,6 @@ proc get_initial_policy(proc_root: AccountProcedureRoot) -> HotColdPolicy
     # => [immediate_threshold, flags]
 end
 
-#! Returns the hot public key stored at `index` in the current account state.
-#!
-#! Inputs:  [index]
-#! Outputs: [HOT_PUBLIC_KEY]
-#!
-#! Invocation: exec
-proc get_hot_public_key(index: u32) -> PublicKeyCommitment
-    exec.signature::create_approver_map_key
-    # => [HOT_KEY_MAP_KEY]
-
-    push.HOT_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY]
-
-    exec.active_account::get_map_item
-    # => [HOT_PUBLIC_KEY]
-end
-
 #! Returns the cold public key from the current account state.
 #!
 #! Inputs:  []
@@ -1070,6 +934,23 @@ proc get_current_cold_public_key() -> PublicKeyCommitment
 
     exec.active_account::get_map_item
     # => [COLD_PUBLIC_KEY]
+end
+
+#! Returns whether PUB_KEY is one of the hot keys in the current account state.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: [is_hot_key]
+#!
+#! Invocation: exec
+proc contains_hot_key(pub_key: PublicKeyCommitment) -> Bool
+    exec.get_current_config drop
+    # => [num_hot_keys, PUB_KEY]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, PUB_KEY]
+
+    exec.key_set::contains_key
+    # => [is_hot_key]
 end
 
 #! Asserts that the number of hot keys is between 1 and MAX_NUM_HOT_KEYS.
@@ -1090,195 +971,6 @@ proc assert_num_hot_keys_in_bounds(num_hot_keys: u32)
     # => [num_hot_keys]
 
     push.MAX_NUM_HOT_KEYS u32gt assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
-    # => []
-end
-
-#! Asserts that the `num_hot_keys` hot public keys in the current account state are pairwise
-#! distinct and that none of them equals the cold or the guardian public key.
-#!
-#! Reads the current account state, so it validates the keys just written by the caller.
-#!
-#! Inputs:  [num_hot_keys]
-#! Outputs: []
-#!
-#! Panics if:
-#! - two hot public keys are equal.
-#! - a hot public key equals the cold or the guardian public key.
-#!
-#! Cost: O(num_hot_keys^2) map reads.
-#!
-#! Invocation: exec
-@locals(2)
-proc assert_hot_keys_valid(num_hot_keys: u32)
-    dup neq.0
-    # => [outer_continue, num_hot_keys]
-
-    while.true
-        sub.1
-        # => [i]
-
-        dup loc_store.VALID_OUTER_INDEX_LOC
-        # => [i]
-
-        dup exec.get_hot_public_key
-        # => [PK_I, i]
-
-        dupw exec.get_current_cold_public_key exec.word::eq
-        # => [is_cold_key, PK_I, i]
-
-        assertz.err=ERR_HOT_KEY_IS_COLD_KEY
-        # => [PK_I, i]
-
-        dupw exec.guardian::get_guardian_public_key exec.word::eq
-        # => [is_guardian_key, PK_I, i]
-
-        assertz.err=ERR_HOT_KEY_IS_GUARDIAN_KEY
-        # => [PK_I, i]
-
-        movup.4
-        # => [i, PK_I]
-
-        dup neq.0
-        # => [inner_continue, i, PK_I]
-
-        while.true
-            sub.1
-            # => [j, PK_I]
-
-            dup loc_store.VALID_INNER_INDEX_LOC
-            exec.get_hot_public_key
-            # => [PK_J, PK_I]
-
-            dupw.1 exec.word::eq
-            # => [is_equal, PK_I]
-
-            assertz.err=ERR_DUPLICATE_HOT_PUBLIC_KEY
-            # => [PK_I]
-
-            loc_load.VALID_INNER_INDEX_LOC
-            # => [j, PK_I]
-
-            dup neq.0
-            # => [inner_continue, j, PK_I]
-        end
-        # => [0, PK_I]
-
-        drop dropw
-        # => []
-
-        loc_load.VALID_OUTER_INDEX_LOC
-        # => [i]
-
-        dup neq.0
-        # => [outer_continue, i]
-    end
-
-    drop
-    # => []
-end
-
-#! Asserts that PUB_KEY is not one of the hot public keys in the current account state.
-#!
-#! Inputs:  [PUB_KEY]
-#! Outputs: []
-#!
-#! Panics if:
-#! - PUB_KEY equals one of the hot public keys.
-#!
-#! Invocation: exec
-proc assert_not_hot_public_key(pub_key: PublicKeyCommitment)
-    exec.get_current_config drop
-    # => [i = num_hot_keys, PUB_KEY]
-
-    dup neq.0
-    # => [should_loop, i, PUB_KEY]
-
-    while.true
-        sub.1
-        # => [i, PUB_KEY]
-
-        dup movdn.5
-        # => [i, PUB_KEY, i]
-
-        exec.get_hot_public_key
-        # => [HOT_PUBLIC_KEY, PUB_KEY, i]
-
-        dupw.1 exec.word::eq
-        # => [is_match, PUB_KEY, i]
-
-        assertz.err=ERR_PUBLIC_KEY_IS_HOT_KEY
-        # => [PUB_KEY, i]
-
-        movup.4
-        # => [i, PUB_KEY]
-
-        dup neq.0
-        # => [should_loop, i, PUB_KEY]
-    end
-    # => [0, PUB_KEY]
-
-    drop dropw
-    # => []
-end
-
-#! Clears the hot key entries in the range [new_num_hot_keys, init_num_hot_keys) from both hot
-#! key maps.
-#!
-#! Inputs:  [init_num_hot_keys, new_num_hot_keys]
-#! Outputs: []
-#!
-#! Panics if:
-#! - init_num_hot_keys or new_num_hot_keys is not a u32 value.
-#!
-#! Invocation: exec
-proc cleanup_hot_key_mapping(init_num_hot_keys: u32, new_num_hot_keys: u32)
-    dup.1 dup.1
-    u32assert2.err=ERR_HOT_KEY_COUNTS_NOT_U32
-    u32lt
-    # => [should_loop, i = init_num_hot_keys, new_num_hot_keys]
-
-    while.true
-        sub.1
-        # => [i-1, new_num_hot_keys]
-
-        # clear scheme id at HOT_KEY_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, i-1, new_num_hot_keys]
-
-        padw swapw
-        # => [HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
-
-        push.HOT_SCHEME_IDS_SLOT[0..2]
-        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_hot_keys]
-
-        dropw
-        # => [i-1, new_num_hot_keys]
-
-        # clear public key at HOT_KEY_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, i-1, new_num_hot_keys]
-
-        padw swapw
-        # => [HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
-
-        push.HOT_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, EMPTY_WORD, i-1, new_num_hot_keys]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_hot_keys]
-
-        dropw
-        # => [i-1, new_num_hot_keys]
-
-        dup.1 dup.1
-        u32lt
-        # => [should_loop, i-1, new_num_hot_keys]
-    end
-
-    drop drop
     # => []
 end
 
