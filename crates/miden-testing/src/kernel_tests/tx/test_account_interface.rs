@@ -816,7 +816,7 @@ async fn check_note_consumability_static_analysis_fee_sponsorship(
         .asset(FungibleAsset::new(FungibleAsset::mock_issuer(), 10)?)
         .reclaimer(reclaimer)
         .maybe_reclaim_height(reclaim_height.map(BlockNumber::from))
-        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::empty()))
         .build()?
         .into();
     builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
