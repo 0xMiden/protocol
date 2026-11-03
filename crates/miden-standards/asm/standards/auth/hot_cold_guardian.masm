@@ -5,15 +5,13 @@
 # guardian key (co-signs every transaction, holds no authority of its own). Procedure policies are
 # counted in signed categories: hot contributes at most one, cold at most one.
 #
-# The hot keys are the account's multisig approvers: they live in the multisig module's threshold
-# configuration and approver slots, so that module's approver helpers apply to them unchanged. The
-# cold key and the guardian key are single-entry maps.
+# The hot keys are an indexed key set (see `miden::standards::auth::key_set`), the cold key and
+# the guardian key single-entry maps.
 #
 # See the `AuthHotColdGuardian` Rust type's documentation for more details.
 
 use {Approver, PublicKeyCommitment, SignatureMessage, SignatureScheme} from miden::standards::auth::signature
 use {SignatureThreshold} from miden::standards::auth::multisig
-use {APPROVER_PUBLIC_KEYS_SLOT, APPROVER_SCHEME_ID_SLOT, THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use {AccountProcedureRoot, BlockNumber, Bool} from miden::protocol::types
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
@@ -21,7 +19,7 @@ use miden::protocol::native_account
 use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use miden::standards::auth
 use miden::standards::auth::guardian
-use miden::standards::auth::multisig
+use miden::standards::auth::key_set
 use miden::standards::auth::multisig_smart
 use miden::standards::auth::signature
 use miden::core::word
@@ -37,15 +35,14 @@ pub type HotColdPolicy = struct {
 
 # Storage Slots
 #
-# - multisig::THRESHOLD_CONFIG_SLOT:
+# - CONFIG_SLOT:
 #   [default_threshold, num_hot_keys, 0, 0]
-#   where default_threshold counts signed categories, not hot keys
 #
-# - multisig::APPROVER_PUBLIC_KEYS_SLOT (map):
+# - HOT_PUBLIC_KEYS_SLOT (map):
 #   HOT_KEY_MAP_KEY => HOT_PUBLIC_KEY
 #   where HOT_KEY_MAP_KEY = [key_index, 0, 0, 0]
 #
-# - multisig::APPROVER_SCHEME_ID_SLOT (map):
+# - HOT_SCHEME_IDS_SLOT (map):
 #   HOT_KEY_MAP_KEY => [scheme_id, 0, 0, 0]
 #
 # - COLD_PUBLIC_KEY_SLOT (map):
@@ -63,6 +60,16 @@ pub type HotColdPolicy = struct {
 #
 # The guardian key lives in the guardian module's slots and the executed-transactions set in the
 # multisig module's slot.
+
+# The default threshold in signed categories and the number of hot keys:
+# [default_threshold, num_hot_keys, 0, 0].
+pub const CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::config")
+
+# Map entries: [key_index, 0, 0, 0] => HOT_PUBLIC_KEY
+pub const HOT_PUBLIC_KEYS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_public_keys")
+
+# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
+pub const HOT_SCHEME_IDS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_scheme_ids")
 
 # Single-entry map: CATEGORY_MAP_KEY => COLD_PUBLIC_KEY
 pub const COLD_PUBLIC_KEY_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_public_key")
@@ -85,7 +92,7 @@ const CATEGORY_MAP_KEY = ZERO_WORD
 pub const NUM_USER_CATEGORIES = 2
 
 # The maximum number of hot keys. Together with the cold and the guardian key this stays within
-# the signer set size the multisig fee estimate is calibrated for (multisig::MAX_NUM_APPROVERS).
+# the signer set size the multisig fee estimate is calibrated for (MAX_NUM_APPROVERS).
 pub const MAX_NUM_HOT_KEYS = 62
 
 # Policy flags: the note restrictions occupy bits 0..1 (see multisig_smart) and the cold-required
@@ -111,9 +118,21 @@ const ERR_NUM_HOT_KEYS_NOT_U32 = "number of hot keys must be u32"
 
 const ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS = "number of hot keys must be between 1 and the maximum hot key set size"
 
+const ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32 = "number of hot keys and hot key index must be u32"
+
+const ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS = "hot key index must be less than the number of hot keys"
+
+const ERR_DUPLICATE_HOT_PUBLIC_KEY = "duplicate hot public keys are not allowed"
+
+const ERR_HOT_KEY_IS_COLD_KEY = "hot public key must not equal the cold public key"
+
+const ERR_HOT_KEY_IS_GUARDIAN_KEY = "hot public key must not equal the guardian public key"
+
 const ERR_COLD_KEY_IS_GUARDIAN_KEY = "cold public key must not equal the guardian public key"
 
-const ERR_GUARDIAN_KEY_IS_COLD_KEY = "guardian public key must not equal the cold public key"
+const ERR_PUBLIC_KEY_IS_HOT_KEY = "public key must not be a hot public key"
+
+const ERR_GUARDIAN_KEY_IS_USER_KEY = "guardian public key must not equal a hot or cold public key"
 
 const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
 
@@ -231,7 +250,7 @@ pub proc update_hot_keys(hot_keys_config_commitment: word)
     movup.4 drop
     # => [default_threshold, num_hot_keys, 0, 0, pad(12)]
 
-    push.THRESHOLD_CONFIG_SLOT[0..2]
+    push.CONFIG_SLOT[0..2]
     # => [config_slot_suffix, config_slot_prefix, NEW_CONFIG, pad(12)]
 
     exec.native_account::set_item
@@ -240,71 +259,42 @@ pub proc update_hot_keys(hot_keys_config_commitment: word)
     dropw
     # => [pad(12)]
 
-    # write the new hot keys and their scheme ids, counting down from the last index
     loc_load.NEW_NUM_HOT_KEYS_LOC
     # => [num_hot_keys, pad(12)]
 
-    dup neq.0
-    while.true
-        sub.1
-        # => [i, pad(12)]
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, pad(12)]
 
-        dup exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, i, pad(12)]
-
-        padw adv_loadw
-        # => [PUB_KEY, HOT_KEY_MAP_KEY, i, pad(12)]
-
-        swapw
-        # => [HOT_KEY_MAP_KEY, PUB_KEY, i, pad(12)]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, HOT_KEY_MAP_KEY, PUB_KEY, i, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_PUB_KEY, i, pad(12)]
-
-        adv_loadw
-        # => [SCHEME_ID_WORD, i, pad(12)]
-
-        exec.signature::assert_supported_scheme_word
-        # => [SCHEME_ID_WORD, i, pad(12)]
-
-        dup.4 exec.signature::create_approver_map_key
-        # => [HOT_KEY_MAP_KEY, SCHEME_ID_WORD, i, pad(12)]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_slot_suffix, scheme_slot_prefix, HOT_KEY_MAP_KEY, SCHEME_ID_WORD, i, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_SCHEME_ID_WORD, i, pad(12)]
-
-        dropw
-        # => [i, pad(12)]
-
-        dup neq.0
-        # => [should_continue, i, pad(12)]
-    end
-    # => [0, pad(12)]
-
-    drop
+    exec.key_set::write_from_advice
     # => [pad(12)]
 
-    # the new hot keys must be distinct from each other and from the other categories; the multisig
-    # helpers read the current state, so they validate the keys just written
-    loc_load.NEW_NUM_HOT_KEYS_LOC exec.multisig::assert_unique_approver_public_keys
+    # the new hot keys must be distinct from each other and from the other categories, read from
+    # the current state so the keys just written are the ones validated
+    loc_load.NEW_NUM_HOT_KEYS_LOC push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, pad(12)]
+
+    exec.key_set::has_duplicate assertz.err=ERR_DUPLICATE_HOT_PUBLIC_KEY
     # => [pad(12)]
 
-    exec.get_current_cold_public_key exec.multisig::assert_not_approver_public_key
+    exec.get_current_cold_public_key exec.contains_hot_key
+    # => [is_hot_key, pad(12)]
+
+    assertz.err=ERR_HOT_KEY_IS_COLD_KEY
     # => [pad(12)]
 
-    exec.guardian::get_guardian_public_key exec.multisig::assert_not_approver_public_key
+    exec.guardian::get_guardian_public_key exec.contains_hot_key
+    # => [is_hot_key, pad(12)]
+
+    assertz.err=ERR_HOT_KEY_IS_GUARDIAN_KEY
     # => [pad(12)]
 
     loc_load.NEW_NUM_HOT_KEYS_LOC loc_load.INIT_NUM_HOT_KEYS_LOC
     # => [init_num_hot_keys, new_num_hot_keys, pad(12)]
 
-    exec.multisig::cleanup_pubkey_and_scheme_id_mapping
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_hot_keys, new_num_hot_keys, pad(12)]
+
+    exec.key_set::cleanup
     # => [pad(12)]
 end
 
@@ -342,7 +332,10 @@ pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_ke
     assertz.err=ERR_COLD_KEY_IS_GUARDIAN_KEY
     # => [NEW_COLD_PUBLIC_KEY, pad(11)]
 
-    dupw exec.multisig::assert_not_approver_public_key
+    dupw exec.contains_hot_key
+    # => [is_hot_key, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    assertz.err=ERR_PUBLIC_KEY_IS_HOT_KEY
     # => [NEW_COLD_PUBLIC_KEY, pad(11)]
 
     push.CATEGORY_MAP_KEY
@@ -543,6 +536,74 @@ pub proc update_delay_config(
     # => [pad(13)]
 end
 
+#! Returns the number of hot keys from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [num_hot_keys, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_num_hot_keys() -> u8
+    exec.get_initial_config
+    # => [default_threshold, num_hot_keys, pad(16)]
+
+    drop
+    # => [num_hot_keys, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [num_hot_keys, pad(15)]
+end
+
+#! Returns the default threshold, in signed categories, from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [default_threshold, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_default_threshold() -> SignatureThreshold
+    exec.get_initial_config
+    # => [default_threshold, num_hot_keys, pad(16)]
+
+    swap drop
+    # => [default_threshold, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [default_threshold, pad(15)]
+end
+
+#! Returns the hot key stored at `index` from the account's initial state.
+#!
+#! Inputs:  [index, pad(15)]
+#! Outputs: [PUB_KEY, scheme_id, pad(11)]
+#!
+#! Panics if:
+#! - index is not a u32 value.
+#! - index is greater than or equal to the number of hot keys.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_hot_key_at(index: u32) -> Approver
+    dup exec.get_initial_config drop
+    # => [num_hot_keys, index, index, pad(15)]
+
+    u32assert2.err=ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32
+    u32lt assert.err=ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS
+    # => [index, pad(15)]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, index, pad(15)]
+
+    exec.key_set::get_key_at
+    # => [PUB_KEY, scheme_id, pad(15)]
+
+    # truncate the stack
+    repeat.4 movup.5 drop end
+    # => [PUB_KEY, scheme_id, pad(11)]
+end
+
 #! Returns the cold key from the account's initial state.
 #!
 #! Inputs:  [pad(16)]
@@ -575,6 +636,24 @@ pub proc get_cold_key() -> Approver
     # truncate the stack
     repeat.5 movup.5 drop end
     # => [PUB_KEY, scheme_id, pad(11)]
+end
+
+#! Returns 1 if PUB_KEY is one of the hot keys in the account's initial state, else 0.
+#!
+#! Inputs:  [PUB_KEY, pad(12)]
+#! Outputs: [is_hot_key, pad(12)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc is_hot_key(pub_key: PublicKeyCommitment) -> Bool
+    exec.get_initial_config drop
+    # => [num_hot_keys, PUB_KEY, pad(12)]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, PUB_KEY, pad(12)]
+
+    exec.key_set::is_key
+    # => [is_hot_key, pad(12)]
 end
 
 #! Returns the policy of PROC_ROOT from the account's initial state.
@@ -670,7 +749,7 @@ pub proc auth_tx(
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Computing the requirements from the procedure policies ------
-    exec.multisig::get_initial_threshold_and_num_approvers swap drop
+    exec.get_initial_config swap drop
     # => [default_threshold, TX_SUMMARY_COMMITMENT]
 
     exec.compute_called_proc_policy
@@ -728,10 +807,16 @@ end
 #!
 #! Invocation: exec
 pub proc verify_category_signatures(msg: SignatureMessage) -> (Bool, Bool, SignatureMessage)
-    exec.multisig::get_initial_threshold_and_num_approvers drop
+    exec.get_initial_config drop
     # => [num_hot_keys, MSG]
 
-    exec.multisig::verify_signatures
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, MSG]
+
+    push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, MSG]
+
+    exec.signature::verify_signatures
     # => [num_hot_signatures, MSG]
 
     neq.0 movdn.4
@@ -771,11 +856,29 @@ pub proc assert_guardian_not_user_key()
     dupw exec.get_current_cold_public_key exec.word::eq
     # => [is_cold_key, GUARDIAN_PUBLIC_KEY]
 
-    assertz.err=ERR_GUARDIAN_KEY_IS_COLD_KEY
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
     # => [GUARDIAN_PUBLIC_KEY]
 
-    exec.multisig::assert_not_approver_public_key
+    exec.contains_hot_key
+    # => [is_hot_key]
+
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
     # => []
+end
+
+#! Returns the default threshold and the number of hot keys from the account's initial state.
+#!
+#! Inputs:  []
+#! Outputs: [default_threshold, num_hot_keys]
+#!
+#! Invocation: exec
+pub proc get_initial_config() -> (SignatureThreshold, u8)
+    push.CONFIG_SLOT[0..2]
+    exec.native_account::get_initial_item
+    # => [default_threshold, num_hot_keys, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [default_threshold, num_hot_keys]
 end
 
 # HELPER PROCEDURES
@@ -788,7 +891,7 @@ end
 #!
 #! Invocation: exec
 proc get_current_config() -> (SignatureThreshold, u8)
-    push.THRESHOLD_CONFIG_SLOT[0..2]
+    push.CONFIG_SLOT[0..2]
     exec.active_account::get_item
     # => [default_threshold, num_hot_keys, 0, 0]
 
@@ -826,6 +929,23 @@ proc get_current_cold_public_key() -> PublicKeyCommitment
 
     exec.active_account::get_map_item
     # => [COLD_PUBLIC_KEY]
+end
+
+#! Returns whether PUB_KEY is one of the hot keys in the current account state.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: [is_hot_key]
+#!
+#! Invocation: exec
+proc contains_hot_key(pub_key: PublicKeyCommitment) -> Bool
+    exec.get_current_config drop
+    # => [num_hot_keys, PUB_KEY]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, PUB_KEY]
+
+    exec.key_set::contains_key
+    # => [is_hot_key]
 end
 
 #! Asserts that the number of hot keys is between 1 and MAX_NUM_HOT_KEYS.

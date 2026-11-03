@@ -31,12 +31,14 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_COLD_KEY_IS_GUARDIAN_KEY,
     ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY,
-    ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
-    ERR_GUARDIAN_KEY_IS_COLD_KEY,
+    ERR_DUPLICATE_HOT_PUBLIC_KEY,
+    ERR_GUARDIAN_KEY_IS_USER_KEY,
+    ERR_HOT_KEY_IS_COLD_KEY,
+    ERR_HOT_KEY_IS_GUARDIAN_KEY,
     ERR_MIN_DELAY_BELOW_FLOOR,
     ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES,
-    ERR_PUBLIC_KEY_IS_APPROVER,
+    ERR_PUBLIC_KEY_IS_HOT_KEY,
 };
 use miden_testing::{
     Auth,
@@ -410,7 +412,7 @@ async fn test_hot_cold_guardian_hot_keys_count_once() -> anyhow::Result<()> {
 
     let tx = rotate_key_tx(&mock_chain, &account, "rotate_cold_key", &hot[2], 2)?;
     let result = tx.build()?.execute().await;
-    assert_transaction_executor_error!(result, ERR_PUBLIC_KEY_IS_APPROVER);
+    assert_transaction_executor_error!(result, ERR_PUBLIC_KEY_IS_HOT_KEY);
 
     // One hot key, the cold key and the guardian rotate the cold key.
     let tx = rotate_key_tx(&mock_chain, &account, "rotate_cold_key", &new_cold, 1)?;
@@ -456,12 +458,9 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
     // The new hot keys must be distinct from each other and from the other categories, and there
     // must be at least one.
     for (new_keys, expected_error) in [
-        (vec![new_hot_approvers[0], cold.approver()], ERR_PUBLIC_KEY_IS_APPROVER),
-        (vec![guardian.approver(), new_hot_approvers[0]], ERR_PUBLIC_KEY_IS_APPROVER),
-        (
-            vec![new_hot_approvers[0], new_hot_approvers[0]],
-            ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
-        ),
+        (vec![new_hot_approvers[0], cold.approver()], ERR_HOT_KEY_IS_COLD_KEY),
+        (vec![guardian.approver(), new_hot_approvers[0]], ERR_HOT_KEY_IS_GUARDIAN_KEY),
+        (vec![new_hot_approvers[0], new_hot_approvers[0]], ERR_DUPLICATE_HOT_PUBLIC_KEY),
         (vec![], ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS),
     ] {
         let tx = update_hot_keys_tx(&mock_chain, &account, &new_keys, 2)?;
@@ -477,13 +476,13 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        account.storage().get_item(AuthHotColdGuardian::threshold_config_slot())?,
+        account.storage().get_item(AuthHotColdGuardian::config_slot())?,
         Word::from([1u32, 3, 0, 0])
     );
     for (i, signer) in new_hot.iter().enumerate() {
         assert_eq!(
             account.storage().get_map_item(
-                AuthHotColdGuardian::approver_public_keys_slot(),
+                AuthHotColdGuardian::hot_public_keys_slot(),
                 StorageMapKey::from_index(i as u32)
             )?,
             signer.commitment_word()
@@ -502,7 +501,7 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
     account.apply_patch(executed.account_patch())?;
 
     assert_eq!(
-        account.storage().get_item(AuthHotColdGuardian::threshold_config_slot())?,
+        account.storage().get_item(AuthHotColdGuardian::config_slot())?,
         Word::from([1u32, 1, 0, 0])
     );
     for stale_index in 1..3u32 {
@@ -510,13 +509,13 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
         assert_eq!(
             account
                 .storage()
-                .get_map_item(AuthHotColdGuardian::approver_public_keys_slot(), key)?,
+                .get_map_item(AuthHotColdGuardian::hot_public_keys_slot(), key)?,
             Word::empty()
         );
         assert_eq!(
             account
                 .storage()
-                .get_map_item(AuthHotColdGuardian::approver_scheme_ids_slot(), key)?,
+                .get_map_item(AuthHotColdGuardian::hot_scheme_ids_slot(), key)?,
             Word::empty()
         );
     }
@@ -545,12 +544,10 @@ async fn test_hot_cold_guardian_update_guardian_public_key() -> anyhow::Result<(
     assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // The guardian key must stay distinct from the user keys, checked after authentication.
-    for (user_key, expected_error) in
-        [(&cold, ERR_GUARDIAN_KEY_IS_COLD_KEY), (&hot[1], ERR_PUBLIC_KEY_IS_APPROVER)]
-    {
+    for user_key in [&cold, &hot[1]] {
         let tx = rotate_key_tx(&mock_chain, &account, "update_guardian_public_key", user_key, 2)?;
         let result = sign_and_execute(tx, &[&hot[0], &cold, &guardian]).await?;
-        assert_transaction_executor_error!(result, expected_error);
+        assert_transaction_executor_error!(result, ERR_GUARDIAN_KEY_IS_USER_KEY);
     }
 
     // Both categories plus the guardian rotate the guardian.
