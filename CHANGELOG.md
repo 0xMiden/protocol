@@ -2,23 +2,6 @@
 
 Later releases are recorded in [`.changelog/`](.changelog/) and on the [GitHub releases page](https://github.com/0xMiden/protocol/releases).
 
-### Features
-
-- Added spending limits to `AuthMultisigSmart`: a window budget in a base asset, priced through the price oracle, that fails a transaction exceeding it regardless of the signature count.
-- Added the `AUTHORITY_CONFIG` note (`AuthorityConfigNote`), which freezes or unfreezes the `Authority` component's gated surface or assigns a procedure's role on the account that consumes it ([#4118](https://github.com/0xMiden/protocol/pull/4118)).
-- Added the `tx::add_log_from_memory` helper procedure to emit transaction logs from content in memory ([#4092](https://github.com/0xMiden/protocol/pull/4092)).
-- Added `WordSchema::display_word` to format a `Word` as a string according to the schema ([#4066](https://github.com/0xMiden/protocol/pull/4066)).
-- Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
-- Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
-- Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
-- Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
-- Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
-- Added `CodeTree`, `PartialCodeTree`, `CodeWitness` and `ProcedureRoot` to prove presence or absence of procedure roots in the blockchain ([#4062](https://github.com/0xMiden/protocol/pull/4062)).
-- Added `CodePatch` to describe the procedures a transaction creates and depends on ([#4101](https://github.com/0xMiden/protocol/pull/4101)).
-- [BREAKING] Added `NonFungibleFaucet` to `StandardAccountComponent` and `AccountComponentInterface`, so `AccountInterface::from_account` recognizes NFT faucets instead of reporting their procedures as custom ([#4036](https://github.com/0xMiden/protocol/issues/4036)).
-- [BREAKING] `set_external_uri` (exposed as `set_contract_uri` on NFT faucets) and `set_token_base_uri` now emit a transaction log carrying the new value, so readers know to refetch the metadata it points to ([#4117](https://github.com/0xMiden/protocol/issues/4117)).
-- Added the NFT standard spec (`crates/miden-standards/specs/nft.md`), starting with the `contract_uri` collection metadata ([#4015](https://github.com/0xMiden/protocol/issues/4015)).
-- [BREAKING] Added the `SetTokenBaseUri` variant to `FaucetMetadataConfig`, dispatching the `NonFungibleFaucet` `set_token_base_uri` setter through `FaucetMetadataConfigNote`, whose script root changes ([#4115](https://github.com/0xMiden/protocol/issues/4115)).
 ## v0.18.0 (2026-10-20)
 
 ### Changes
