@@ -298,8 +298,10 @@ impl TransactionKernel {
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::hash_double_word(&[final_account_commitment, account_patch_commitment]);
-        let logs_expiration_commitment =
-            Hasher::hash_double_word(&[logs_commitment, Self::expiration_word(expiration_block_num)]);
+        let logs_expiration_commitment = Hasher::hash_double_word(&[
+            logs_commitment,
+            Self::expiration_word(expiration_block_num),
+        ]);
 
         let mut outputs: Vec<Felt> = Vec::with_capacity(Word::NUM_ELEMENTS * 4);
         outputs.extend(output_notes_commitment);
@@ -471,7 +473,7 @@ impl TransactionKernel {
         let (logs_commitment, expiration_word) = logs_expiration.into_tuple();
 
         let computed_logs_expiration_commitment =
-            Hasher::merge(&[logs_commitment, expiration_word]);
+            Hasher::hash_double_word(&[logs_commitment, expiration_word]);
 
         if computed_logs_expiration_commitment != logs_expiration_commitment {
             let err_message = format!(

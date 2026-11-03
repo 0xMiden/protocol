@@ -31,7 +31,12 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
+use miden_protocol::transaction::{
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -50,7 +55,10 @@ use crate::{
 /// Returns the logs expiration commitment of a transaction without logs that expires at the
 /// provided block number.
 fn logs_expiration_commitment(expiration_block_num: u32) -> Word {
-    Hasher::merge(&[Word::empty(), Word::from([expiration_block_num, 0, 0, 0])])
+    Hasher::hash_double_word(&[
+        TransactionLogs::default().commitment(),
+        Word::from([expiration_block_num, 0, 0, 0]),
+    ])
 }
 
 /// Tests that the return values from the tx kernel main.masm program match the expected values.
@@ -142,11 +150,14 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         Word::empty(),
     );
 
-    let logs_commitment = Word::empty();
+    let logs_commitment = TransactionLogs::default().commitment();
     let expiration_word = Word::from([u32::MAX, 0, 0, 0]);
     let logs_expiration_commitment =
         exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX);
-    assert_eq!(logs_expiration_commitment, Hasher::merge(&[logs_commitment, expiration_word]),);
+    assert_eq!(
+        logs_expiration_commitment,
+        Hasher::hash_double_word(&[logs_commitment, expiration_word]),
+    );
 
     // The advice map must contain the logs commitment and the expiration word under the logs
     // expiration commitment.

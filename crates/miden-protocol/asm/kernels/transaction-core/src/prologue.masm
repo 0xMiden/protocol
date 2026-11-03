@@ -15,7 +15,7 @@ use {
     EIDOS_INIT_CHAINING_WORD_8,
     EIDOS_INIT_CHAINING_WORD_16,
     EIDOS_INIT_CHAINING_WORD_24,
-    EIDOS_INIT_CHAINING_WORD_40,
+    EIDOS_INIT_CHAINING_WORD_48,
     WORD_NUM_ELEMENTS,
 } from miden::tx_kernel_core::constants
 use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::tx_kernel_core::asset
@@ -920,10 +920,13 @@ proc process_note_assets(note_ptr: ptr<InputNoteData>)
         exec.eidos::empty_felt_sequence_digest
         # => [COMPUTED_ASSETS_COMMITMENT, assets_ptr, note_ptr]
     else
-        mul.ASSET_SIZE dup.1 add swap
-        # => [assets_ptr, assets_end_ptr, note_ptr]
+        mul.ASSET_SIZE
+        # => [num_elements, assets_ptr, note_ptr]
 
-        dup.1 dup.1 sub exec.eidos::init
+        dup dup.2 add movdn.2
+        # => [num_elements, assets_ptr, assets_end_ptr, note_ptr]
+
+        exec.eidos::init
         # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, assets_ptr, assets_end_ptr, note_ptr]
 
         exec.mem::pipe_double_words_to_memory

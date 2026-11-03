@@ -561,6 +561,7 @@ mod tests {
         StorageSlotName,
     };
     use crate::block::BlockNumber;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
@@ -746,6 +747,7 @@ mod tests {
             BlockNumber::from(2),
             crate::testing::dummy_execution_proof(),
             TransactionLogDetails::Private(Word::empty()),
+            CodePatch::default(),
         )
         .unwrap_err();
 

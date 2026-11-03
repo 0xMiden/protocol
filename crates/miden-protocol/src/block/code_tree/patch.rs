@@ -8,8 +8,13 @@ use miden_core::mast::MastNodeExt;
 use miden_crypto_derive::WordWrapper;
 
 use crate::code::ProcedureRoot;
+use crate::domain_registry::{
+    CODE_PATCH_COMMITMENT_DOMAIN,
+    CODE_PATCH_CREATED_COMMITMENT_DOMAIN,
+    CODE_PATCH_DEPENDENCIES_COMMITMENT_DOMAIN,
+};
 use crate::errors::CodePatchError;
-use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
+use crate::{Felt, Hasher, MastForest, Word};
 
 // CODE PATCH
 // ================================================================================================
@@ -76,15 +81,6 @@ impl CodePatch {
 
     /// The maximum size of a serialized patch in bytes (256 KiB).
     pub const MAX_SIZE: u32 = 2u32.pow(18);
-
-    /// Domain separator for the patch commitment.
-    const DOMAIN: Felt = ProtocolDomainRegistry::CodePatch.as_felt();
-
-    /// Domain separator for the created procedures commitment.
-    const CREATED_DOMAIN: Felt = ProtocolDomainRegistry::CodePatchCreated.as_felt();
-
-    /// Domain separator for the dependencies commitment.
-    const DEPENDENCIES_DOMAIN: Felt = ProtocolDomainRegistry::CodePatchDependencies.as_felt();
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -182,7 +178,7 @@ impl CodePatch {
         } else {
             Hasher::hash_elements_in_domain(
                 &procedure_root_elements(&created_procedures),
-                Self::CREATED_DOMAIN,
+                CODE_PATCH_CREATED_COMMITMENT_DOMAIN,
             )
         };
 
@@ -191,14 +187,17 @@ impl CodePatch {
         } else {
             Hasher::hash_elements_in_domain(
                 &procedure_root_elements(&dependencies),
-                Self::DEPENDENCIES_DOMAIN,
+                CODE_PATCH_DEPENDENCIES_COMMITMENT_DOMAIN,
             )
         };
 
         let commitment = if created_commitment.is_empty() && dependencies_commitment.is_empty() {
             Word::empty()
         } else {
-            Hasher::merge_in_domain(&[created_commitment, dependencies_commitment], Self::DOMAIN)
+            Hasher::hash_elements_in_domain(
+                Word::words_as_elements(&[created_commitment, dependencies_commitment]),
+                CODE_PATCH_COMMITMENT_DOMAIN,
+            )
         };
         let commitment = CodePatchCommitment::from_raw(commitment);
 
@@ -405,11 +404,13 @@ mod tests {
             created_procedures.iter().flat_map(|root| root.as_elements().to_vec()).collect();
         let expected_dependencies_elements: Vec<Felt> =
             dependencies.iter().flat_map(|root| root.as_elements().to_vec()).collect();
-        let expected_created_commitment =
-            Hasher::hash_elements_in_domain(&expected_created_elements, CodePatch::CREATED_DOMAIN);
+        let expected_created_commitment = Hasher::hash_elements_in_domain(
+            &expected_created_elements,
+            CODE_PATCH_CREATED_COMMITMENT_DOMAIN,
+        );
         let expected_dependencies_commitment = Hasher::hash_elements_in_domain(
             &expected_dependencies_elements,
-            CodePatch::DEPENDENCIES_DOMAIN,
+            CODE_PATCH_DEPENDENCIES_COMMITMENT_DOMAIN,
         );
 
         assert!(!patch.is_empty());
@@ -421,9 +422,12 @@ mod tests {
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);
         assert_eq!(
             patch.commitment().as_word(),
-            Hasher::merge_in_domain(
-                &[expected_created_commitment, expected_dependencies_commitment],
-                CodePatch::DOMAIN
+            Hasher::hash_elements_in_domain(
+                Word::words_as_elements(&[
+                    expected_created_commitment,
+                    expected_dependencies_commitment
+                ]),
+                CODE_PATCH_COMMITMENT_DOMAIN
             )
         );
 

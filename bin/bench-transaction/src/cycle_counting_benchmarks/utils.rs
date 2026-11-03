@@ -229,9 +229,9 @@ mod tests {
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
             padded_core: 32_768,
-            // Retain precomputed prologue chaining words while runtime initialization crosses
-            // this chiplet bracket.
-            padded_chiplets: 4_096,
+            // The code-tree block header and transaction outputs moved this trace above 4_096.
+            // Keep this bracket aligned with the VM consumer snapshot.
+            padded_chiplets: 8_192,
             padded_eidos_compression: 65_536,
             padded_byte_pair_lookup: 65_536,
         },
