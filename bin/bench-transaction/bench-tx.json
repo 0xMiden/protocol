@@ -2,7 +2,7 @@
   "consume single P2ID note with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 5617,
-    "total_cycles": 43870,
+    "total_cycles": 43869,
     "notes_processing": 2406,
     "note_execution": [
       {
@@ -12,11 +12,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 35806,
-      "auth_procedure": 34479
+      "total": 35805,
+      "auth_procedure": 34478
     },
     "trace": {
-      "core_rows": 43916,
+      "core_rows": 43915,
       "chiplets_rows": 5689,
       "eidos_compression_rows": 86016,
       "byte_pair_lookup_rows": 65536,
@@ -32,7 +32,7 @@
   "consume single P2ID note with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 5617,
-    "total_cycles": 14624,
+    "total_cycles": 14623,
     "notes_processing": 2406,
     "note_execution": [
       {
@@ -42,11 +42,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 6560,
-      "auth_procedure": 5233
+      "total": 6559,
+      "auth_procedure": 5232
     },
     "trace": {
-      "core_rows": 14670,
+      "core_rows": 14669,
       "chiplets_rows": 3216,
       "eidos_compression_rows": 42176,
       "byte_pair_lookup_rows": 65536,
@@ -62,7 +62,7 @@
   "consume two P2ID notes with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 6014,
-    "total_cycles": 46651,
+    "total_cycles": 46650,
     "notes_processing": 4990,
     "note_execution": [
       {
@@ -76,11 +76,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 35606,
-      "auth_procedure": 34379
+      "total": 35605,
+      "auth_procedure": 34378
     },
     "trace": {
-      "core_rows": 46697,
+      "core_rows": 46696,
       "chiplets_rows": 6579,
       "eidos_compression_rows": 86336,
       "byte_pair_lookup_rows": 65536,
@@ -96,7 +96,7 @@
   "consume two P2ID notes with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 6014,
-    "total_cycles": 17405,
+    "total_cycles": 17404,
     "notes_processing": 4990,
     "note_execution": [
       {
@@ -110,11 +110,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 6360,
-      "auth_procedure": 5133
+      "total": 6359,
+      "auth_procedure": 5132
     },
     "trace": {
-      "core_rows": 17451,
+      "core_rows": 17450,
       "chiplets_rows": 4106,
       "eidos_compression_rows": 42496,
       "byte_pair_lookup_rows": 65536,
@@ -130,16 +130,16 @@
   "create single P2ID note with Falcon signing": {
     "provenance": "producer_measured",
     "prologue": 2358,
-    "total_cycles": 41424,
+    "total_cycles": 41423,
     "notes_processing": 35,
     "note_execution": [],
     "tx_script_processing": 1883,
     "epilogue": {
-      "total": 37148,
-      "auth_procedure": 35051
+      "total": 37147,
+      "auth_procedure": 35050
     },
     "trace": {
-      "core_rows": 41470,
+      "core_rows": 41469,
       "chiplets_rows": 5250,
       "eidos_compression_rows": 80704,
       "byte_pair_lookup_rows": 65536,
@@ -155,16 +155,16 @@
   "create single P2ID note with ECDSA signing": {
     "provenance": "producer_measured",
     "prologue": 2358,
-    "total_cycles": 12178,
+    "total_cycles": 12177,
     "notes_processing": 35,
     "note_execution": [],
     "tx_script_processing": 1883,
     "epilogue": {
-      "total": 7902,
-      "auth_procedure": 5805
+      "total": 7901,
+      "auth_procedure": 5804
     },
     "trace": {
-      "core_rows": 12224,
+      "core_rows": 12223,
       "chiplets_rows": 2777,
       "eidos_compression_rows": 36864,
       "byte_pair_lookup_rows": 65536,
@@ -1084,7 +1084,7 @@
   "consume FEE_SPONSORSHIP note (reclaim)": {
     "provenance": "producer_measured",
     "prologue": 4349,
-    "total_cycles": 18193,
+    "total_cycles": 18192,
     "notes_processing": 3094,
     "note_execution": [
       {
@@ -1094,11 +1094,11 @@
     ],
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 10709,
-      "auth_procedure": 8440
+      "total": 10708,
+      "auth_procedure": 8439
     },
     "trace": {
-      "core_rows": 18239,
+      "core_rows": 18238,
       "chiplets_rows": 4135,
       "eidos_compression_rows": 49440,
       "byte_pair_lookup_rows": 65536,

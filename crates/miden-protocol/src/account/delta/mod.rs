@@ -52,12 +52,12 @@ impl AccountDelta {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Version 2 of the account delta commitment layout.
+    /// Version 1 of the account delta commitment layout.
     ///
     /// The version occupies the first element of the commitment header, so a reader can get it
-    /// before it interprets the rest of the commitment. Version 2 includes both asset operation
-    /// trailers whenever the vault delta is nonempty.
-    const VERSION_2: u8 = 2;
+    /// before it interprets the rest of the commitment. Nonempty vault deltas include both asset
+    /// operation trailers.
+    const VERSION_1: u8 = 1;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -178,7 +178,7 @@ impl AccountDelta {
     /// Whenever sorting is expected, it is that of a [`Word`]. The registered delta selector is
     /// bound into Eidos's initial chaining word.
     ///
-    /// - Append `[[version = 2, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
+    /// - Append `[[version = 1, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
     ///   id, `nonce_delta` is the value by which the nonce was incremented, and `version` is the
     ///   version of this layout.
@@ -397,7 +397,7 @@ impl SequentialCommit for AccountDelta {
 
         // Metadata
         elements.extend_from_slice(&[
-            Felt::from(Self::VERSION_2),
+            Felt::from(Self::VERSION_1),
             self.nonce_delta,
             self.account_id.suffix(),
             self.account_id.prefix().as_felt(),
@@ -592,8 +592,7 @@ mod tests {
             Felt::ZERO,
             Felt::ZERO,
         ];
-        let mut delta_preimage = patch_preimage;
-        delta_preimage[0] = Felt::from(2u8);
+        let delta_preimage = patch_preimage;
         assert_eq!(delta.to_elements(), delta_preimage);
         assert_eq!(patch.to_elements(), patch_preimage);
 
@@ -608,9 +607,14 @@ mod tests {
 
         assert_ne!(delta.to_commitment(), Word::empty());
         assert_ne!(delta.to_commitment(), patch.to_commitment());
+        let mut other_version_preimage = delta_preimage;
+        other_version_preimage[0] = Felt::from(2u8);
         assert_ne!(
             delta.to_commitment(),
-            Hasher::hash_elements_in_domain(&patch_preimage, ACCOUNT_DELTA_COMMITMENT_DOMAIN)
+            Hasher::hash_elements_in_domain(
+                &other_version_preimage,
+                ACCOUNT_DELTA_COMMITMENT_DOMAIN
+            )
         );
         assert_ne!(
             delta.to_commitment(),
