@@ -163,30 +163,7 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
-        let mut num_transactions = 0usize;
-        let mut transaction_ids = BTreeSet::new();
-        for batch in &batches {
-            batch.public_logs().validate_for_batch(batch.transactions())?;
-            // Distinct batches may overlap. The infallible body conversion must preserve the
-            // uniqueness required across all headers and their public-log associations.
-            if batch
-                .transactions()
-                .as_slice()
-                .iter()
-                .any(|transaction| !transaction_ids.insert(transaction.id()))
-            {
-                return Err(TransactionLogError::PublicLogsAssociationMismatch.into());
-            }
-            num_transactions = num_transactions
-                .checked_add(batch.transactions().as_slice().len())
-                .ok_or(TransactionLogError::PublicLogsLimitExceeded)?;
-        }
-        PublicLogLimits::BLOCK.check_logs(
-            num_transactions,
-            batches
-                .iter()
-                .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),
-        )?;
+        check_public_logs(&batches)?;
 
         // Check timestamp increases monotonically.
         // --------------------------------------------------------------------------------------------
@@ -643,6 +620,33 @@ fn check_duplicate_batches(batches: &[ProvenBatch]) -> Result<(), ProposedBlockE
     }
 
     Ok(())
+}
+
+fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
+    let mut num_transactions = 0usize;
+    let mut transaction_ids = BTreeSet::new();
+    for batch in batches {
+        batch.public_logs().validate_for_batch(batch.transactions())?;
+        // Distinct batches may overlap. The infallible body conversion must preserve the
+        // uniqueness required across all headers and their public-log associations.
+        if batch
+            .transactions()
+            .as_slice()
+            .iter()
+            .any(|transaction| !transaction_ids.insert(transaction.id()))
+        {
+            return Err(TransactionLogError::PublicLogsAssociationMismatch);
+        }
+        num_transactions = num_transactions
+            .checked_add(batch.transactions().as_slice().len())
+            .ok_or(TransactionLogError::PublicLogsLimitExceeded)?;
+    }
+    PublicLogLimits::BLOCK.check_logs(
+        num_transactions,
+        batches
+            .iter()
+            .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),
+    )
 }
 
 fn check_timestamp_increases_monotonically(
