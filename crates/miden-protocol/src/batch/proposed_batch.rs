@@ -16,7 +16,9 @@ use crate::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
+    PublicLogLimits,
     TransactionHeader,
+    TransactionLogDetails,
     TransactionVerifier,
 };
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
@@ -131,6 +133,14 @@ impl ProposedBatch {
         if transactions.is_empty() {
             return Err(ProposedBatchError::EmptyTransactionBatch);
         }
+
+        PublicLogLimits::BATCH.check_logs(
+            transactions.len(),
+            transactions.iter().filter_map(|tx| match tx.log_details() {
+                TransactionLogDetails::Public(logs) => Some(logs),
+                TransactionLogDetails::Private(_) => None,
+            }),
+        )?;
 
         let mut transaction_set = BTreeSet::new();
         for tx in transactions.iter() {

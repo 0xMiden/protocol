@@ -27,6 +27,8 @@ pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, T
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use logs::{
     LogTopic,
+    PublicLogLimits,
+    PublicTransactionLogs,
     TransactionLog,
     TransactionLogDetails,
     TransactionLogError,

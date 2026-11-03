@@ -203,6 +203,44 @@ proving. Empty transaction logs commit to zero, so the presence of transaction l
 Local execution data and standard signing summaries retain complete transaction logs, including in
 debug output. Remote provers and validators that decrypt execution witnesses can access this data.
 
+### Batch and block delivery
+
+Transaction headers retain `logs_commitment`. Transaction IDs bind this commitment, and the existing
+batch ID and block transaction commitment bind the ordered transaction IDs. No separate log root is
+needed. Proven batches and block bodies contain these headers, without public or private log payloads.
+
+Public payloads can be delivered independently in a `PublicTransactionLogBundle`. The bundle commits
+to the entire transaction sequence and contains one entry per public native account transaction,
+including empty lists, in transaction order. Private transactions have no entries, including when
+they emit logs through public foreign accounts. Duplicate logs within a transaction are preserved.
+
+`LocalBatchProver::prove_with_logs` returns a proven batch and its bundle. Alternatively,
+`PublicTransactionLogBundle::from_batch` extracts the bundle before proving consumes the proposal.
+`ProposedBlock::into_header_body_and_logs` accepts one bundle per batch and returns the header, body,
+and combined public logs separately. It rejects missing, reordered, or mismatched bundles.
+
+Canonical protobuf defines a separate `PublicTransactionLogBundle` message. Untrusted bytes should
+use its `decode_for_batch` or `decode_for_block` methods, which bound the encoded size and entry frames
+before allocation and check completeness against the supplied headers. These headers must come from
+an independently authenticated batch or block. Node ingestion that promises log availability must
+use this complete-bundle validation; ordinary block validation does not require the bundle.
+
+These Rust delivery checks do not add recursive verification to the skeleton batch/block MASM
+kernels. Node storage, replication, retention, and query APIs must handle bundles separately. Dropping
+a bundle leaves the block valid but prevents reconstructing its public logs from that block alone.
+
+Delivery limits are separate from block validity and are enforced by the Rust bundle APIs:
+
+| Resource | Batch bundle | Block bundle |
+| --- | ---: | ---: |
+| Transactions, including private and empty | 1,024 | 65,536 |
+| Public logs | 4,096 | 65,536 |
+| Content words | 65,536 | 524,288 |
+| Encoded protobuf bytes | 4 MiB | 32 MiB |
+
+The bounded decoder additionally limits each transaction entry frame to 16 KiB, including metadata
+and unknown fields. The existing per-transaction content and log-count limits still apply.
+
 ### Limits
 
 A transaction allows up to 64 transaction logs, with at most 64 content words per log and 64 content

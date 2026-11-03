@@ -22,7 +22,13 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{
+    OutputNote,
+    PartialBlockchain,
+    PublicLogLimits,
+    TransactionHeader,
+    TransactionLogError,
+};
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
 // PROPOSED BLOCK
@@ -157,6 +163,19 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
+        let mut num_transactions = 0usize;
+        for batch in &batches {
+            batch.public_logs().validate_for_batch(batch.transactions())?;
+            num_transactions = num_transactions
+                .checked_add(batch.transactions().as_slice().len())
+                .ok_or(TransactionLogError::PublicLogsLimitExceeded)?;
+        }
+        PublicLogLimits::BLOCK.check_logs(
+            num_transactions,
+            batches
+                .iter()
+                .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),
+        )?;
 
         // Check timestamp increases monotonically.
         // --------------------------------------------------------------------------------------------

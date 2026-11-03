@@ -3,6 +3,7 @@ use alloc::string::ToString;
 use miden_processor::ExecutionError;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::transaction::PublicTransactionLogs;
 use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
@@ -131,6 +132,7 @@ impl LocalBatchProver {
         proposed_batch: ProposedBatch,
         proof: ExecutionProof,
     ) -> Result<ProvenBatch, ProvenBatchError> {
+        let public_logs = PublicTransactionLogs::from_batch(&proposed_batch)?;
         let tx_headers = proposed_batch.transaction_headers();
         let (
             _transactions,
@@ -153,7 +155,109 @@ impl LocalBatchProver {
             output_notes,
             batch_expiration_block_num,
             tx_headers,
+            public_logs,
             proof,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use miden_protocol::Word;
+    use miden_protocol::account::{AccountId, AccountPatch, AccountUpdateDetails};
+    use miden_protocol::block::BlockHeader;
+    use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
+    use miden_protocol::testing::account_id::{
+        ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    };
+    use miden_protocol::testing::dummy_execution_proof;
+    use miden_protocol::transaction::{
+        InputNoteCommitment,
+        OutputNote,
+        PartialBlockchain,
+        ProvenTransaction,
+        TransactionLog,
+        TransactionLogDetails,
+        TransactionLogs,
+        TxAccountUpdate,
+    };
+
+    use super::*;
+
+    #[test]
+    fn proving_preserves_public_logs() {
+        let mut mmr = Mmr::default();
+        for number in 0..3 {
+            mmr.add(BlockHeader::mock(number, None, None, &[]).commitment()).unwrap();
+        }
+        let chain = PartialBlockchain::new(PartialMmr::from_peaks(mmr.peaks()), vec![]).unwrap();
+        let reference = BlockHeader::mock(3, Some(chain.peaks().hash_peaks()), None, &[]);
+        let log = TransactionLog::mock(1);
+        let logs = TransactionLogs::new(vec![log.clone(), log]).unwrap();
+        let mut txs = Vec::new();
+        for (private, initial, final_state, log_details) in [
+            (false, 1u32, 2u32, TransactionLogDetails::Public(logs.clone())),
+            (true, 4, 5, TransactionLogDetails::Private(Word::from([99u32; 4]))),
+            (false, 2, 3, TransactionLogDetails::Public(TransactionLogs::default())),
+        ] {
+            let id: AccountId = if private {
+                ACCOUNT_ID_PRIVATE_SENDER
+            } else {
+                ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE
+            }
+            .try_into()
+            .unwrap();
+            let (details, commitment) = if private {
+                (AccountUpdateDetails::Private, Word::empty())
+            } else {
+                let patch = AccountPatch::empty(id);
+                let commitment = patch.to_commitment();
+                (AccountUpdateDetails::Public(patch), commitment)
+            };
+            let update = TxAccountUpdate::new(
+                id,
+                Word::from([initial; 4]),
+                Word::from([final_state; 4]),
+                commitment,
+                details,
+            )
+            .unwrap();
+            txs.push(Arc::new(
+                ProvenTransaction::new(
+                    update,
+                    Vec::<InputNoteCommitment>::new(),
+                    Vec::<OutputNote>::new(),
+                    reference.block_num(),
+                    reference.commitment(),
+                    reference.block_num() + 1,
+                    dummy_execution_proof(),
+                    log_details,
+                )
+                .unwrap(),
+            ));
+        }
+        let expected = vec![(txs[0].id(), logs), (txs[2].id(), TransactionLogs::default())];
+        let proposal =
+            ProposedBatch::new_unverified(txs, reference, chain, BTreeMap::new()).unwrap();
+        let expected_id = proposal.id();
+        // Ordinary and dummy proving share this constructor after proof generation.
+        let batch = LocalBatchProver::build_proven_batch(proposal.clone(), dummy_execution_proof())
+            .unwrap();
+        assert_eq!(batch.id(), expected_id);
+        assert_eq!(batch.public_logs().entries(), expected);
+        assert_eq!(
+            LocalBatchProver::default()
+                .prove_dummy(proposal)
+                .unwrap()
+                .public_logs()
+                .entries(),
+            expected
+        );
     }
 }

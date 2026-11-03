@@ -22,3 +22,37 @@ impl TransactionLog {
         .expect("mock log content must fit the per-log limit")
     }
 }
+
+impl crate::transaction::PublicTransactionLogs {
+    /// Creates empty public collections for grouped block fixture headers.
+    pub fn mock_for_block(headers: &[crate::transaction::OrderedTransactionHeaders]) -> Self {
+        Self::mock(&crate::transaction::OrderedTransactionHeaders::new_unchecked(
+            headers.iter().flat_map(|batch| batch.as_slice()).cloned().collect(),
+        ))
+    }
+
+    /// Creates empty public collections for fixture headers whose public log commitments are empty.
+    ///
+    /// Panics if a public header commits to nonempty logs or headers repeat transaction IDs.
+    pub fn mock(headers: &crate::transaction::OrderedTransactionHeaders) -> Self {
+        let mut ids = alloc::collections::BTreeSet::new();
+        let headers = crate::transaction::OrderedTransactionHeaders::new_unchecked(
+            headers
+                .as_slice()
+                .iter()
+                .filter(|header| ids.insert(header.id()))
+                .cloned()
+                .collect(),
+        );
+        Self::new(
+            headers
+                .as_slice()
+                .iter()
+                .filter(|header| header.account_id().is_public())
+                .map(|header| (header.id(), crate::transaction::TransactionLogs::default()))
+                .collect(),
+            &headers,
+        )
+        .expect("fixture headers should have empty public log commitments and unique IDs")
+    }
+}

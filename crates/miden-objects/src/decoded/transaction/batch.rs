@@ -73,6 +73,9 @@ impl crate::BuildUnchecked for ProvenBatch {
         let inputs = self.input_notes.build_unchecked()?;
         let outputs = self.output_notes.verify()?;
         let transactions = self.transactions.build_unchecked()?;
+        let transactions =
+            miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions);
+        let public_logs = crate::VerifyWith::verify_with(self.public_logs, &transactions)?;
         Ok(Self::Output::new(
             self.reference_block_commitment,
             unwrap_infallible(self.reference_block_num.verify()),
@@ -80,7 +83,8 @@ impl crate::BuildUnchecked for ProvenBatch {
             miden_protocol::transaction::InputNotes::new_unchecked(inputs),
             outputs,
             unwrap_infallible(self.expiration_block_num.verify()),
-            miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions),
+            transactions,
+            public_logs,
             self.proof,
         )?)
     }
