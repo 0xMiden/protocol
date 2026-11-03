@@ -17,25 +17,26 @@ description = "Authentication with hot, cold and guardian key categories, where 
 name        = "miden::standards::auth::hot_cold_guardian"
 version     = "1.0.0"
 
+# The hot keys are the multisig approvers: the threshold configuration and the approver maps are
+# the multisig module's slots, with `threshold` counting signed key categories.
 [[package.metadata.account-component.storage.slots]]
-description = "Category configuration"
-name        = "miden::standards::auth::hot_cold_guardian::config"
-# Word layout: [default_threshold, num_hot_keys, 0, 0]
+description = "Threshold configuration"
+name = "miden::standards::auth::multisig::threshold_config"
 type = [
-  { name = "default_threshold", type = "u32" },
-  { name = "num_hot_keys", type = "u32" },
+  { name = "threshold", type = "u32" },
+  { name = "num_approvers", type = "u32" },
   { type = "void" },
   { type = "void" },
 ]
 
 [[package.metadata.account-component.storage.slots]]
-description = "Hot public keys"
-name        = "miden::standards::auth::hot_cold_guardian::hot_public_keys"
+description = "Hot public keys, stored as the multisig approvers"
+name        = "miden::standards::auth::multisig::approver_public_keys"
 type        = { key = "u32", value = "miden::standards::auth::pub_key" }
 
 [[package.metadata.account-component.storage.slots]]
-description = "Hot scheme IDs"
-name        = "miden::standards::auth::hot_cold_guardian::hot_scheme_ids"
+description = "Hot scheme IDs, stored as the multisig approver schemes"
+name        = "miden::standards::auth::multisig::approver_schemes"
 type        = { key = "u32", value = "miden::standards::auth::scheme" }
 
 [[package.metadata.account-component.storage.slots]]

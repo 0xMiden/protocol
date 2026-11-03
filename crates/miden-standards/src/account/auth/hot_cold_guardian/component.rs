@@ -14,9 +14,15 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
-// The executed-transactions slot is shared with the multisig components so the replay
-// protection helper of the multisig MASM module can be reused.
-use super::super::multisig::EXECUTED_TRANSACTIONS_SLOT_NAME;
+// The hot keys live in the multisig approver slots and the executed-transactions slot is
+// shared with the multisig components, so the approver and replay-protection helpers of the
+// multisig MASM module can be reused.
+use super::super::multisig::{
+    APPROVER_PUBKEYS_SLOT_NAME,
+    APPROVER_SCHEME_ID_SLOT_NAME,
+    EXECUTED_TRANSACTIONS_SLOT_NAME,
+    THRESHOLD_CONFIG_SLOT_NAME,
+};
 use super::config::validate_proc_policies;
 use super::{AuthHotColdGuardianConfig, HotColdDelayConfig, HotColdPolicy};
 use crate::account::account_component_package;
@@ -74,21 +80,6 @@ procedure_root!(
 // CONSTANTS
 // ================================================================================================
 
-static CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::hot_cold_guardian::config")
-        .expect("storage slot name should be valid")
-});
-
-static HOT_PUBLIC_KEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::hot_cold_guardian::hot_public_keys")
-        .expect("storage slot name should be valid")
-});
-
-static HOT_SCHEME_IDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::hot_cold_guardian::hot_scheme_ids")
-        .expect("storage slot name should be valid")
-});
-
 static COLD_PUBLIC_KEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::hot_cold_guardian::cold_public_key")
         .expect("storage slot name should be valid")
@@ -131,6 +122,14 @@ static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Delayed execution (proposing an action with the hot category and executing it after the
 /// configured delay unless the cold key cancels it) is not part of this component yet; its delay
 /// configuration is stored so adding it needs no storage change.
+///
+/// # Storage
+///
+/// The hot keys are stored as the account's multisig approvers, in the threshold configuration
+/// and approver slots of [`AuthMultisig`](super::super::AuthMultisig), so the multisig module's
+/// approver procedures (`get_threshold_and_num_approvers`, `get_signer_at`, `is_signer`) apply to
+/// them unchanged. The `threshold` in that configuration is the default threshold in signed
+/// categories.
 ///
 /// # Auth args
 ///
@@ -277,19 +276,20 @@ impl AuthHotColdGuardian {
         *HOT_COLD_GUARDIAN_UPDATE_DELAY_CONFIG
     }
 
-    /// Returns the [`StorageSlotName`] holding `[default_threshold, num_hot_keys, 0, 0]`.
-    pub fn config_slot() -> &'static StorageSlotName {
-        &CONFIG_SLOT_NAME
+    /// Returns the [`StorageSlotName`] holding `[default_threshold, num_hot_keys, 0, 0]`, the
+    /// multisig threshold configuration slot.
+    pub fn threshold_config_slot() -> &'static StorageSlotName {
+        &THRESHOLD_CONFIG_SLOT_NAME
     }
 
-    /// Returns the [`StorageSlotName`] of the hot public key map.
-    pub fn hot_public_keys_slot() -> &'static StorageSlotName {
-        &HOT_PUBLIC_KEYS_SLOT_NAME
+    /// Returns the [`StorageSlotName`] of the hot public key map, the multisig approver map.
+    pub fn approver_public_keys_slot() -> &'static StorageSlotName {
+        &APPROVER_PUBKEYS_SLOT_NAME
     }
 
-    /// Returns the [`StorageSlotName`] of the hot scheme id map.
-    pub fn hot_scheme_ids_slot() -> &'static StorageSlotName {
-        &HOT_SCHEME_IDS_SLOT_NAME
+    /// Returns the [`StorageSlotName`] of the hot scheme id map, the multisig approver scheme map.
+    pub fn approver_scheme_ids_slot() -> &'static StorageSlotName {
+        &APPROVER_SCHEME_ID_SLOT_NAME
     }
 
     /// Returns the [`StorageSlotName`] of the single-entry cold public key map.
@@ -338,22 +338,23 @@ impl From<AuthHotColdGuardian> for AccountComponent {
         let config = component.config;
         let mut storage_slots = Vec::with_capacity(10);
 
-        // Config slot (value: [default_threshold, num_hot_keys, 0, 0])
+        // Threshold config slot (value: [default_threshold, num_hot_keys, 0, 0]): the multisig
+        // configuration, with the hot keys as approvers.
         storage_slots.push(StorageSlot::with_value(
-            AuthHotColdGuardian::config_slot().clone(),
+            AuthHotColdGuardian::threshold_config_slot().clone(),
             Word::from([config.default_threshold(), config.hot_keys().len() as u32, 0, 0]),
         ));
 
-        // Hot public keys slot (map)
+        // Hot public keys slot (map): the multisig approver public keys.
         let hot_public_key_entries = config.hot_keys().iter().enumerate().map(|(i, approver)| {
             (StorageMapKey::from_index(i as u32), Word::from(approver.pub_key()))
         });
         storage_slots.push(StorageSlot::with_map(
-            AuthHotColdGuardian::hot_public_keys_slot().clone(),
+            AuthHotColdGuardian::approver_public_keys_slot().clone(),
             StorageMap::with_entries(hot_public_key_entries).unwrap(),
         ));
 
-        // Hot scheme IDs slot (map)
+        // Hot scheme IDs slot (map): the multisig approver schemes.
         let hot_scheme_id_entries = config.hot_keys().iter().enumerate().map(|(i, approver)| {
             (
                 StorageMapKey::from_index(i as u32),
@@ -361,7 +362,7 @@ impl From<AuthHotColdGuardian> for AccountComponent {
             )
         });
         storage_slots.push(StorageSlot::with_map(
-            AuthHotColdGuardian::hot_scheme_ids_slot().clone(),
+            AuthHotColdGuardian::approver_scheme_ids_slot().clone(),
             StorageMap::with_entries(hot_scheme_id_entries).unwrap(),
         ));
 
@@ -473,18 +474,22 @@ mod tests {
         let storage = account.storage();
 
         assert_eq!(
-            storage.get_item(AuthHotColdGuardian::config_slot()).unwrap(),
+            storage.get_item(AuthHotColdGuardian::threshold_config_slot()).unwrap(),
             Word::from([1u32, 2, 0, 0])
         );
 
         for (i, hot_key) in hot_keys.iter().enumerate() {
             let key = StorageMapKey::from_index(i as u32);
             assert_eq!(
-                storage.get_map_item(AuthHotColdGuardian::hot_public_keys_slot(), key).unwrap(),
+                storage
+                    .get_map_item(AuthHotColdGuardian::approver_public_keys_slot(), key)
+                    .unwrap(),
                 Word::from(hot_key.pub_key())
             );
             assert_eq!(
-                storage.get_map_item(AuthHotColdGuardian::hot_scheme_ids_slot(), key).unwrap(),
+                storage
+                    .get_map_item(AuthHotColdGuardian::approver_scheme_ids_slot(), key)
+                    .unwrap(),
                 Word::from([hot_key.auth_scheme() as u32, 0, 0, 0])
             );
         }
