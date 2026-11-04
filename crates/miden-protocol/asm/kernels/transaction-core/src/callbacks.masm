@@ -25,12 +25,6 @@ pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT =
         "miden::protocol::faucet::callback::on_before_asset_added_to_note"
     )
 
-# ERRORS
-# ==================================================================================================
-
-const ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE =
-    "the faucet callback procedure root is not part of the faucet's account code"
-
 # PROCEDURES
 # ==================================================================================================
 
@@ -117,6 +111,9 @@ end
 #! - slot_id* is the ID of the slot that contains the callback procedure root.
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
+#!
+#! Panics if:
+#! - the callback procedure root is not part of the faucet's account code.
 @locals(4)
 proc invoke_callback(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
     exec.maybe_start_faucet_callback_context
@@ -129,7 +126,7 @@ proc invoke_callback(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
     # only invoke the callback if the procedure root is not the empty word
     if.true
         # verify the callback root is part of the faucet's account code before invoking it
-        dupw exec.account::has_procedure assert.err=ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE
+        dupw exec.account::assert_procedure_in_active_account drop
         # => [PROC_ROOT, ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # prepare for dyncall by storing procedure root in local memory
