@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use miden_processor::ExecutionError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -33,7 +34,6 @@ use miden_protocol::asset::{
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
-    ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE,
     ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
 };
@@ -46,6 +46,7 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
+use miden_tx::TransactionKernelError;
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
@@ -365,7 +366,11 @@ async fn test_faucet_with_invalid_callback_root_fails() -> anyhow::Result<()> {
 
     assert_transaction_executor_error!(
         result,
-        ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(root)) if *root == arbitrary_root
+            )
     );
 
     Ok(())
