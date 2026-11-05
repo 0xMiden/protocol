@@ -4,16 +4,14 @@
 //! consists of the namespace and local ID, so it is the full tag shifted right by eight bits.
 //! For example, the account-patch tag is `0x02000000` and its domain ID is `0x020000`.
 //!
-//! The initializer receives the full domain tag encoded as a Felt. The `*_SELECTOR` constants
-//! expose that value for existing callers. A zero version byte in the tag delegates versioning to
-//! the payload schema. Patch and delta payloads carry their layout version in the first element of
-//! a nonempty preimage. Numbered domain tags carry their construction version in the tag itself.
+//! The initializer receives the full domain tag encoded as a Felt. A zero version byte delegates
+//! versioning to the payload schema. Patch and delta payloads carry their layout version in the
+//! first element of a nonempty preimage. Numbered domain tags carry their construction version in
+//! the tag itself.
 
-use miden_core::Felt;
 use miden_crypto::hash::eidos::domain::{
     DELEGATED_VERSIONING,
     DomainVersion,
-    EidosDomain,
     FeltSequence,
     namespace,
 };
@@ -103,15 +101,3 @@ miden_crypto::eidos_domain_registry! {
         }
     }
 }
-
-/// Registered domain ID for account patch commitments.
-pub const ACCOUNT_PATCH_COMMITMENT_DOMAIN_ID: u32 = AccountPatchCommitmentDomain::TAG.as_u32() >> 8;
-
-/// Registered domain ID for account delta commitments.
-pub const ACCOUNT_DELTA_COMMITMENT_DOMAIN_ID: u32 = AccountDeltaCommitmentDomain::TAG.as_u32() >> 8;
-
-/// Account patch domain tag encoded as a field element.
-pub const ACCOUNT_PATCH_COMMITMENT_SELECTOR: Felt = AccountPatchCommitmentDomain::TAG.as_felt();
-
-/// Account delta domain tag encoded as a field element.
-pub const ACCOUNT_DELTA_COMMITMENT_SELECTOR: Felt = AccountDeltaCommitmentDomain::TAG.as_felt();
