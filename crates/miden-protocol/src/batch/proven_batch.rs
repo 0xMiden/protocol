@@ -118,7 +118,7 @@ impl ProvenBatch {
 
         validate_account_updates(&account_updates_by_id, transactions.as_slice())?;
         validate_notes(&input_notes, &output_notes)?;
-        public_logs.validate_for_batch(&transactions)?;
+        public_logs.validate(transactions.as_slice().iter())?;
 
         let id =
             BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));

@@ -7,7 +7,12 @@ use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
 };
 use crate::testing::dummy_execution_proof;
-use crate::transaction::{InputNotes, TransactionHeader, TransactionLog};
+use crate::transaction::{
+    InputNotes,
+    OrderedTransactionHeaders,
+    TransactionHeader,
+    TransactionLog,
+};
 
 fn header(seed: u32, public: bool, logs: &TransactionLogs) -> TransactionHeader {
     TransactionHeader::new(
@@ -46,7 +51,7 @@ fn batch(headers: OrderedTransactionHeaders) -> ProvenBatch {
             (tx.id(), logs)
         })
         .collect();
-    let logs = PublicTransactionLogs::new(entries, &headers).unwrap();
+    let logs = PublicTransactionLogs::new(entries, headers.as_slice().iter()).unwrap();
     ProvenBatch::new_unchecked(
         crate::batch::BatchId::from_ids(
             headers.as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
@@ -73,9 +78,9 @@ fn public_logs_match_native_public_headers() {
     let empty = header(3, true, &TransactionLogs::default());
     let entries = vec![(public.id(), logs), (empty.id(), TransactionLogs::default())];
     let all = headers(vec![public, private, empty]);
-    let public_logs = PublicTransactionLogs::new(entries.clone(), &all).unwrap();
+    let public_logs = PublicTransactionLogs::new(entries.clone(), all.as_slice().iter()).unwrap();
     assert_eq!(public_logs.entries(), entries);
-    public_logs.validate_for_batch(&all).unwrap();
+    public_logs.validate(all.as_slice().iter()).unwrap();
 }
 
 #[rstest::rstest]
@@ -105,7 +110,7 @@ fn rejects_invalid_public_logs(#[case] mutation: u8) {
         6 => entries[0].1 = TransactionLogs::default(),
         _ => unreachable!(),
     }
-    let error = PublicTransactionLogs::new(entries, &headers(all)).unwrap_err();
+    let error = PublicTransactionLogs::new(entries, headers(all).as_slice().iter()).unwrap_err();
     if mutation == 6 {
         assert!(matches!(error, TransactionLogError::PublicLogsCommitmentMismatch));
     } else {
@@ -131,23 +136,117 @@ fn block_body_preserves_public_logs() {
     assert_eq!(body.transactions()[1].as_slice().len(), 2);
 }
 
+const PUBLIC_RECORD_LIMIT: usize = 4096;
+
+fn log_limit_fixture(
+    start: u32,
+    count: usize,
+) -> (OrderedTransactionHeaders, Vec<(TransactionId, TransactionLogs)>) {
+    let mut transactions = Vec::new();
+    let mut entries = Vec::new();
+    let mut remaining = count;
+    while remaining != 0 {
+        let records = remaining.min(TransactionLogs::MAX_COUNT);
+        let logs = TransactionLogs::new(vec![TransactionLog::mock(1); records]).unwrap();
+        let tx = header(start + transactions.len() as u32, true, &logs);
+        entries.push((tx.id(), logs));
+        transactions.push(tx);
+        remaining -= records;
+    }
+    (headers(transactions), entries)
+}
+
+fn checked_batch(
+    reference: &crate::block::BlockHeader,
+    headers: OrderedTransactionHeaders,
+    public_logs: PublicTransactionLogs,
+) -> Result<ProvenBatch, crate::errors::ProvenBatchError> {
+    use crate::account::{AccountPatch, AccountUpdateDetails};
+    use crate::batch::BatchAccountUpdate;
+
+    let first = &headers.as_slice()[0];
+    let last = headers.as_slice().last().unwrap();
+    let update = BatchAccountUpdate::new(
+        first.account_id(),
+        first.initial_state_commitment(),
+        last.final_state_commitment(),
+        AccountUpdateDetails::Public(AccountPatch::empty(first.account_id())),
+    )
+    .unwrap();
+    ProvenBatch::new(
+        reference.commitment(),
+        reference.block_num(),
+        [update],
+        InputNotes::default(),
+        vec![],
+        reference.block_num() + 2,
+        headers,
+        public_logs,
+        dummy_execution_proof(),
+    )
+}
+
 #[rstest::rstest]
-#[case::batch(PublicLogLimits::BATCH)]
-#[case::block(PublicLogLimits::BLOCK)]
-fn aggregate_public_logs_limits(#[case] limits: PublicLogLimits) {
-    limits
-        .check(limits.transactions(), limits.logs(), limits.content_words())
-        .unwrap();
-    for (transactions, logs, words) in [
-        (limits.transactions() + 1, 0, 0),
-        (0, limits.logs() + 1, 0),
-        (0, 0, limits.content_words() + 1),
-    ] {
+#[case::exact(PUBLIC_RECORD_LIMIT)]
+#[case::over(PUBLIC_RECORD_LIMIT + 1)]
+fn public_logs_enforce_record_limit(#[case] count: usize) {
+    use crate::block::{BlockBody, BlockHeader};
+    use crate::errors::{BlockBodyError, ProvenBatchError};
+
+    let (headers, entries) = log_limit_fixture(1, count);
+    let result = PublicTransactionLogs::new(entries.clone(), headers.as_slice().iter());
+    // Bypass collection construction to exercise the checked owners' revalidation too.
+    let logs = PublicTransactionLogs { entries };
+    let batch_result =
+        checked_batch(&BlockHeader::mock(0, None, None, &[]), headers.clone(), logs.clone());
+    let body_result = BlockBody::new(vec![], vec![], vec![], vec![headers], logs);
+    if count == PUBLIC_RECORD_LIMIT {
+        result.unwrap();
+        batch_result.unwrap();
+        body_result.unwrap();
+    } else {
+        assert!(matches!(result, Err(TransactionLogError::PublicLogsLimitExceeded)));
         assert!(matches!(
-            limits.check(transactions, logs, words),
-            Err(TransactionLogError::PublicLogsLimitExceeded)
+            batch_result,
+            Err(ProvenBatchError::TransactionLogs(TransactionLogError::PublicLogsLimitExceeded))
+        ));
+        assert!(matches!(
+            body_result,
+            Err(BlockBodyError::TransactionLogs(TransactionLogError::PublicLogsLimitExceeded))
         ));
     }
+}
+
+#[test]
+fn zero_records_preserve_mixed_header_associations() {
+    // More entries than the removed batch header budget, but no public records.
+    let all = headers(
+        (1..=1025)
+            .map(|seed| header(seed, seed % 2 == 1, &TransactionLogs::default()))
+            .collect(),
+    );
+    let entries: Vec<_> = all
+        .as_slice()
+        .iter()
+        .filter(|tx| tx.account_id().is_public())
+        .map(|tx| (tx.id(), TransactionLogs::default()))
+        .collect();
+    let logs = PublicTransactionLogs::new(entries.clone(), all.as_slice().iter()).unwrap();
+    assert_eq!(logs.entries(), entries);
+    logs.validate(all.as_slice().iter()).unwrap();
+
+    let mut missing = entries.clone();
+    missing.pop();
+    assert!(matches!(
+        PublicTransactionLogs::new(missing, all.as_slice().iter()),
+        Err(TransactionLogError::PublicLogsAssociationMismatch)
+    ));
+    let mut private = entries;
+    private.insert(1, (all.as_slice()[1].id(), TransactionLogs::default()));
+    assert!(matches!(
+        PublicTransactionLogs::new(private, all.as_slice().iter()),
+        Err(TransactionLogError::PublicLogsAssociationMismatch)
+    ));
 }
 
 #[test]
@@ -217,63 +316,84 @@ fn embedded_logs_preserve_commitments() {
     );
 }
 
-#[test]
-fn block_rejects_combined_public_logs_over_budget() {
-    use crate::block::{BlockHeader, BlockInputs, ProposedBlock};
+#[rstest::rstest]
+#[case::exact(PUBLIC_RECORD_LIMIT)]
+#[case::over(PUBLIC_RECORD_LIMIT + 1)]
+fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
+    use crate::block::account_tree::{AccountIdKey, AccountTree};
+    use crate::block::{BlockBody, BlockHeader, BlockInputs, ProposedBlock};
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
+    use crate::crypto::merkle::smt::Smt;
     use crate::errors::ProposedBlockError;
     use crate::transaction::PartialBlockchain;
 
-    let logs =
-        TransactionLogs::new(vec![TransactionLog::mock(TransactionLogs::MAX_NUM_WORDS)]).unwrap();
-    let mut batches = Vec::new();
-    // Each batch exactly fills its word budget, while the ninth exceeds the block word budget.
-    for batch_index in 0..9 {
-        let headers = headers(
-            (0..PublicLogLimits::BATCH.transactions())
-                .map(|index| {
-                    header(
-                        (batch_index * PublicLogLimits::BATCH.transactions() + index + 1) as u32,
-                        true,
-                        &logs,
-                    )
-                })
-                .collect(),
-        );
-        let entries = headers.as_slice().iter().map(|header| (header.id(), logs.clone())).collect();
-        let public_logs = PublicTransactionLogs::new(entries, &headers).unwrap();
-        public_logs.validate_for_batch(&headers).unwrap();
-        batches.push(
-            ProvenBatch::new_unchecked(
-                crate::batch::BatchId::from_ids(
-                    headers.as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
-                ),
-                Word::empty(),
-                0.into(),
-                Default::default(),
-                InputNotes::default(),
-                vec![],
-                1.into(),
-                headers,
-                public_logs,
-                dummy_execution_proof(),
-            )
+    let chain =
+        PartialBlockchain::new(PartialMmr::from_peaks(Mmr::default().peaks()), vec![]).unwrap();
+    let (first_headers, first_entries) = log_limit_fixture(1, PUBLIC_RECORD_LIMIT / 2);
+    let initial = &first_headers.as_slice()[0];
+    let id = initial.account_id();
+    let tree = AccountTree::new(
+        Smt::with_entries([(AccountIdKey::from(id).as_word(), initial.initial_state_commitment())])
             .unwrap(),
-        );
-    }
+    )
+    .unwrap();
+    let template = BlockHeader::mock(0, Some(chain.peaks().hash_peaks()), None, &[]);
+    let reference = BlockHeader::new(
+        template.prev_block_commitment(),
+        template.block_num(),
+        template.chain_commitment(),
+        tree.root(),
+        template.nullifier_root(),
+        template.code_tree_root(),
+        template.note_root(),
+        template.transactions_commitment(),
+        template.validator_config().clone(),
+        template.fee_parameters().clone(),
+        template.protocol_config_commitment(),
+        None,
+        0,
+    );
+    let first_logs =
+        PublicTransactionLogs::new(first_entries, first_headers.as_slice().iter()).unwrap();
+    let next_seed = first_headers.as_slice().len() as u32 + 1;
+    let first = checked_batch(&reference, first_headers, first_logs).unwrap();
+    let (second_headers, second_entries) =
+        log_limit_fixture(next_seed, count - PUBLIC_RECORD_LIMIT / 2);
+    let second_logs =
+        PublicTransactionLogs::new(second_entries, second_headers.as_slice().iter()).unwrap();
+    let second = checked_batch(&reference, second_headers, second_logs).unwrap();
     let inputs = BlockInputs::new(
-        BlockHeader::mock(0, None, None, &[]),
-        PartialBlockchain::new(PartialMmr::from_peaks(Mmr::default().peaks()), vec![]).unwrap(),
-        Default::default(),
+        reference,
+        chain,
+        [(id, tree.open(id))].into(),
         Default::default(),
         Default::default(),
     );
-    assert!(matches!(
-        ProposedBlock::new_at(inputs, batches, 1),
-        Err(ProposedBlockError::TransactionLogs(
-            TransactionLogError::PublicLogsLimitExceeded
-        ))
-    ));
+    let result = ProposedBlock::new_at(inputs, vec![first, second], 1);
+    if count == PUBLIC_RECORD_LIMIT {
+        let body = BlockBody::from(result.unwrap());
+        assert_eq!(
+            body.public_logs()
+                .entries()
+                .iter()
+                .map(|(_, logs)| logs.num_logs())
+                .sum::<usize>(),
+            PUBLIC_RECORD_LIMIT
+        );
+        body.public_logs()
+            .validate(body.transactions().iter().flat_map(OrderedTransactionHeaders::as_slice))
+            .unwrap();
+    } else {
+        assert!(
+            matches!(
+                result,
+                Err(ProposedBlockError::TransactionLogs(
+                    TransactionLogError::PublicLogsLimitExceeded
+                ))
+            ),
+            "{result:?}"
+        );
+    }
 }
 
 #[rstest::rstest]
@@ -317,8 +437,11 @@ fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bo
     let b = tx(&b_logs);
     let make_batch = |transactions: Vec<TransactionHeader>, entries| {
         let headers = headers(transactions);
-        let logs =
-            PublicTransactionLogs::new(if public { entries } else { vec![] }, &headers).unwrap();
+        let logs = PublicTransactionLogs::new(
+            if public { entries } else { vec![] },
+            headers.as_slice().iter(),
+        )
+        .unwrap();
         ProvenBatch::new(
             reference.commitment(),
             reference.block_num(),

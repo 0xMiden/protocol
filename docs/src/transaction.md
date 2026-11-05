@@ -221,28 +221,21 @@ A full body with missing public logs is invalid even if its header commitment is
 protobuf requires the public-log message field; private-only batches and empty blocks encode a
 present empty collection.
 
-Aggregate construction limits include private transactions and empty public collections:
+Each `PublicTransactionLogs` collection permits at most 4,096 public records, for both batches and
+blocks. This counts individual records across transactions, not transaction entries or content words.
+Empty public collections and private transactions consume no public-record budget. Existing
+per-transaction and per-record limits still apply. Batch proposals check the count before proving;
+block proposals check the combined count before converting into a body.
 
-- Batch: 1,024 transaction headers, 4,096 public records, and 65,536 content words.
-- Block: 65,536 transaction headers, 65,536 public records, and 524,288 content words.
+This record limit does not bound the encoded size of a block. Decode canonical protobuf messages
+with the ordinary Prost decoder, then perform field decoding and domain construction/verification.
+These domain checks happen after decoding and do not provide preallocation protection. Consumers
+must configure whole-message size limits at their transport or input boundary. Protobuf's ordinary
+field-merging rules apply; domain validation checks the resulting log collection.
 
-These are body/proposal constraints, not optional delivery budgets. Batch limits are checked before
-proving; combined block limits are checked before converting a proposal into a body. The transaction
-count limit is distinct from the account count limit. Existing per-transaction limits still apply.
-
-For untrusted raw protobuf bytes, use `ProvenBatch::decode_bounded`, `BlockBody::decode_bounded`, or
-`SignedBlock::decode_bounded` on the canonical `miden_objects::proto` message type, followed by normal
-field decoding and domain construction/verification. These methods scan the embedded log fields
-without allocating their contents before delegating to Prost. They cap each entry frame at 16 KiB and
-the complete encoded log field at 4 MiB per batch or 32 MiB per block, including framing, metadata,
-and unknown fields. They also reject duplicate log fields and exhausted record/content budgets before
-reading another record/payload frame. Signed-block decoding applies the same checks to its nested body.
-
-Generated Prost/gRPC decoding alone does not provide these preallocation checks. Downstream transports
-still need whole-message limits for proofs, notes, and other fields. Domain validation after decoding
-cannot undo prior allocations. Log consistency does not authenticate the enclosing batch or block and
-does not add recursive verification to the skeleton batch/block kernels. Node storage, retention, and
-query APIs remain separate concerns.
+Log consistency does not authenticate the enclosing batch or block and does not add recursive
+verification to the skeleton batch/block kernels. Node storage, retention, and query APIs remain
+separate concerns.
 
 ### Limits
 

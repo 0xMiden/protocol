@@ -506,7 +506,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     let expected_transactions = vec![first.transactions().clone(), second.transactions().clone()];
     for batch in [first, second] {
         let encoded = proto::transaction::ProvenBatch::from(&batch).encode_to_vec();
-        let restored = proto::transaction::ProvenBatch::decode_bounded(&encoded)?
+        let restored = proto::transaction::ProvenBatch::decode(encoded.as_slice())?
             .decode_and_build_unchecked()?;
         assert_eq!(batch, restored);
         chain.add_pending_batch(restored);
@@ -516,7 +516,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     assert_eq!(block.body().public_logs().entries(), expected);
     let encoded = proto::blockchain::BlockBody::from(block.body()).encode_to_vec();
     let restored =
-        proto::blockchain::BlockBody::decode_bounded(&encoded)?.decode_and_build_unchecked()?;
+        proto::blockchain::BlockBody::decode(encoded.as_slice())?.decode_and_build_unchecked()?;
     assert_eq!(&restored, block.body());
     let restored_chain = MockChain::try_from_bytes(&chain.to_bytes())?;
     assert_eq!(restored_chain.latest_block().body().transactions(), expected_transactions);

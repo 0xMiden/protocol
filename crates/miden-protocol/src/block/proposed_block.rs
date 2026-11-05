@@ -25,7 +25,7 @@ use crate::protocol_config::NextProtocolConfig;
 use crate::transaction::{
     OutputNote,
     PartialBlockchain,
-    PublicLogLimits,
+    PublicTransactionLogs,
     TransactionHeader,
     TransactionLogError,
 };
@@ -623,10 +623,9 @@ fn check_duplicate_batches(batches: &[ProvenBatch]) -> Result<(), ProposedBlockE
 }
 
 fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
-    let mut num_transactions = 0usize;
     let mut transaction_ids = BTreeSet::new();
     for batch in batches {
-        batch.public_logs().validate_for_batch(batch.transactions())?;
+        batch.public_logs().validate(batch.transactions().as_slice().iter())?;
         // Distinct batches may overlap. The infallible body conversion must preserve the
         // uniqueness required across all headers and their public-log associations.
         if batch
@@ -637,12 +636,8 @@ fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError>
         {
             return Err(TransactionLogError::PublicLogsAssociationMismatch);
         }
-        num_transactions = num_transactions
-            .checked_add(batch.transactions().as_slice().len())
-            .ok_or(TransactionLogError::PublicLogsLimitExceeded)?;
     }
-    PublicLogLimits::BLOCK.check_logs(
-        num_transactions,
+    PublicTransactionLogs::check_num_logs(
         batches
             .iter()
             .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),

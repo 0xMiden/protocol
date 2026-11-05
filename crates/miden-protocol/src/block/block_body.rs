@@ -150,7 +150,7 @@ impl BlockBody {
             }
         }
 
-        public_logs.validate_for_block(&transactions)?;
+        public_logs.validate(transactions.iter().flat_map(OrderedTransactionHeaders::as_slice))?;
 
         Ok(Self::new_unchecked(
             updated_accounts,

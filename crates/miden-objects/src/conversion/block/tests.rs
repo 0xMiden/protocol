@@ -40,7 +40,7 @@ fn block_body_and_transaction_header_roundtrip() {
     .unwrap();
 
     let encoded = proto::blockchain::BlockBody::from(&body).encode_to_vec();
-    let message = proto::blockchain::BlockBody::decode_bounded(encoded.as_slice()).unwrap();
+    let message = proto::blockchain::BlockBody::decode(encoded.as_slice()).unwrap();
     assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), body);
 }
 

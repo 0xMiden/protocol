@@ -52,7 +52,7 @@ impl crate::transaction::PublicTransactionLogs {
                 .filter(|header| header.account_id().is_public())
                 .map(|header| (header.id(), crate::transaction::TransactionLogs::default()))
                 .collect(),
-            &headers,
+            headers.as_slice().iter(),
         )
         .expect("fixture headers should have empty public log commitments and unique IDs")
     }

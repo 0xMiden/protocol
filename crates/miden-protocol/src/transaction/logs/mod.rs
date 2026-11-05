@@ -16,7 +16,7 @@ mod details;
 pub use details::TransactionLogDetails;
 
 mod public;
-pub use public::{PublicLogLimits, PublicTransactionLogs};
+pub use public::PublicTransactionLogs;
 
 mod errors;
 pub use errors::TransactionLogError;
