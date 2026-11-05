@@ -18,7 +18,7 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::AccountError;
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word};
+use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word, ZERO};
 
 use super::{Approver, ApproverSet, FeeConversionInfo};
 use crate::account::account_component_package;
@@ -159,8 +159,9 @@ impl AuthMultisigConfig {
 /// The fee note is created after the transaction summary, so the approvers do not sign the exact
 /// fee, which is only known when the transaction executes. They sign a fee cap instead: unless
 /// the auth args set one with [`MultisigAuthArgs::with_max_fee`], the auth procedure estimates
-/// the fee without creating any note, scales it by [`MultisigAuthArgs::with_fee_margin_percent`]
-/// and binds the result, which the signed execution passes back. The transaction fails if the
+/// the fee without creating any note and binds the estimate, which the signed execution passes
+/// back, optionally scaled with [`MultisigAuthArgs::with_fee_margin_percent`]. The transaction
+/// fails if the
 /// fee and the sponsorships of its network output notes together exceed the cap. Signatures
 /// collected over a long period therefore stay valid when the fee changes, as long as it stays
 /// within the cap.
@@ -423,18 +424,17 @@ impl From<AuthMultisig> for AccountComponent {
 /// AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO]
 /// ```
 ///
-/// where `PARAMS_WORD` is `[bound_block_num, approval_expiration_block_num, max_fee,
-/// fee_margin_percent]`.
+/// where `PARAMS_WORD` is `[bound_block_num, approval_expiration_block_num, max_fee, 0]`.
 ///
 /// # Max fee
 ///
 /// The approvers sign a fee cap, bound into the transaction summary, rather than the exact fee,
 /// which is only known when the transaction executes. The cap is set in one of two ways:
 ///
-/// - With no max fee (the default), the auth procedure estimates the fee on the current execution,
-///   scales it by the fee margin percent and binds the result. This is what the unsigned execution
-///   run to obtain the summary does; [`Self::with_max_fee_from_summary`] reads the bound cap back
-///   for the signed execution.
+/// - With no max fee (the default), the auth procedure estimates the fee on the current execution
+///   and binds the estimate. This is what the unsigned execution run to obtain the summary does;
+///   [`Self::with_max_fee_from_summary`] reads the estimate back for the signed execution, and
+///   [`Self::with_fee_margin_percent`] adds a margin on top of it.
 /// - With a max fee, the auth procedure binds it as is and skips the estimate. The signed execution
 ///   must pass the cap the approvers signed, or its summary differs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,7 +442,6 @@ pub struct MultisigAuthArgs {
     bound_block_num: BlockNumber,
     approval_expiration_block_num: Option<BlockNumber>,
     max_fee: AssetAmount,
-    fee_margin_percent: u32,
     salt: Word,
     conversion_info: Option<FeeConversionInfo>,
 }
@@ -450,10 +449,10 @@ pub struct MultisigAuthArgs {
 /// The index of the max fee among the transaction summary's user parameters.
 const MAX_FEE_USER_PARAM_INDEX: usize = 1;
 
-impl MultisigAuthArgs {
-    /// The fee margin percent new auth args estimate the max fee with: the estimate itself.
-    pub const DEFAULT_FEE_MARGIN_PERCENT: u32 = 100;
+/// The fee margin is a percentage: 100 keeps the max fee as is.
+const FEE_MARGIN_PERCENT_DENOMINATOR: u128 = 100;
 
+impl MultisigAuthArgs {
     /// Creates new multisig auth args binding the summary to the given block.
     ///
     /// The signers approve a transaction summary that commits to `bound_block_num`, so the party
@@ -469,15 +468,12 @@ impl MultisigAuthArgs {
     /// transactions distinguishable, which is what the replay protection of the multisig
     /// components relies on. It should be chosen at random.
     ///
-    /// No max fee is set, so the auth procedure estimates it with a margin of
-    /// [`Self::DEFAULT_FEE_MARGIN_PERCENT`]; see [`Self::with_max_fee`] and
-    /// [`Self::with_fee_margin_percent`].
+    /// No max fee is set, so the auth procedure estimates it; see [`Self::with_max_fee`].
     pub fn new(bound_block_num: BlockNumber, salt: Word) -> Self {
         Self {
             bound_block_num,
             approval_expiration_block_num: None,
             max_fee: AssetAmount::ZERO,
-            fee_margin_percent: Self::DEFAULT_FEE_MARGIN_PERCENT,
             salt,
             conversion_info: None,
         }
@@ -531,15 +527,38 @@ impl MultisigAuthArgs {
         self
     }
 
-    /// Returns new multisig auth args whose estimated max fee is the estimated fee scaled by
-    /// `fee_margin_percent`: 100 binds the estimate itself, 150 adds half of it on top.
+    /// Returns new multisig auth args whose max fee is the current one scaled by
+    /// `fee_margin_percent`, rounded up: 150 adds half of it on top.
     ///
-    /// The margin only applies when the auth procedure estimates the max fee (see
-    /// [`Self::with_max_fee`]), which aborts on a zero margin.
-    #[must_use]
-    pub fn with_fee_margin_percent(mut self, fee_margin_percent: u32) -> Self {
-        self.fee_margin_percent = fee_margin_percent;
-        self
+    /// Typically applied to the estimate read with [`Self::with_max_fee_from_summary`]. Since the
+    /// summary binds the max fee, a scaled cap yields a different summary: execute the transaction
+    /// once more with the returned auth args to obtain the summary to sign.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `fee_margin_percent` is zero or the scaled max fee exceeds
+    /// [`AssetAmount::MAX`].
+    pub fn with_fee_margin_percent(self, fee_margin_percent: u32) -> Result<Self, AccountError> {
+        if fee_margin_percent == 0 {
+            return Err(AccountError::other("the fee margin percent must be non-zero"));
+        }
+
+        let scaled = (u128::from(self.max_fee.as_u64()) * u128::from(fee_margin_percent))
+            .div_ceil(FEE_MARGIN_PERCENT_DENOMINATOR);
+        let max_fee = u64::try_from(scaled)
+            .map_err(|err| {
+                AccountError::other_with_source("the scaled max fee does not fit into a u64", err)
+            })
+            .and_then(|scaled| {
+                AssetAmount::new(scaled).map_err(|err| {
+                    AccountError::other_with_source(
+                        "the scaled max fee exceeds the maximum asset amount",
+                        err,
+                    )
+                })
+            })?;
+
+        Ok(self.with_max_fee(max_fee))
     }
 
     /// Returns new multisig auth args carrying the max fee bound by `summary`, which an execution
@@ -589,12 +608,6 @@ impl MultisigAuthArgs {
         self.max_fee
     }
 
-    /// Returns the percentage the auth procedure scales its fee estimate by when it estimates
-    /// the max fee.
-    pub fn fee_margin_percent(&self) -> u32 {
-        self.fee_margin_percent
-    }
-
     /// Returns the fee conversion info, or `None` if none was committed - in which case the fee
     /// payment aborts on fee-charging chains.
     pub fn conversion_info(&self) -> Option<FeeConversionInfo> {
@@ -614,7 +627,7 @@ impl SequentialCommit for MultisigAuthArgs {
             Felt::from(self.bound_block_num),
             approval_expiration,
             Felt::from(self.max_fee),
-            Felt::from(self.fee_margin_percent),
+            ZERO,
         ]);
         elements.extend(self.salt.iter());
         elements.extend(conversion_info.iter());
@@ -784,5 +797,18 @@ mod tests {
 
         let err = AuthMultisig::new(config).unwrap_err();
         assert!(err.to_string().contains("exceeds the threshold"));
+    }
+
+    #[test]
+    fn fee_margin_percent_scales_the_max_fee() -> anyhow::Result<()> {
+        let auth_args = MultisigAuthArgs::new(BlockNumber::from(1u32), Word::default())
+            .with_max_fee(AssetAmount::new(10)?);
+
+        assert_eq!(auth_args.with_fee_margin_percent(150)?.max_fee().as_u64(), 15);
+        // rounds up
+        assert_eq!(auth_args.with_fee_margin_percent(101)?.max_fee().as_u64(), 11);
+        assert!(auth_args.with_fee_margin_percent(0).is_err());
+
+        Ok(())
     }
 }

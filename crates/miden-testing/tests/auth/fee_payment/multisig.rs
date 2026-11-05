@@ -18,7 +18,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_EXCEEDS_MAX_FEE,
     ERR_MULTISIG_APPROVAL_EXPIRED,
-    ERR_MULTISIG_FEE_MARGIN_ZERO,
     ERR_TX_ALREADY_EXECUTED,
 };
 use miden_standards::note::{FeeSponsorshipNote, P2idNote, TxFeeNote};
@@ -80,7 +79,7 @@ fn assert_auth_args_bound_as_user_params(
 
 /// Builds the auth args of a fee-paying multisig transaction: the given salt and a one-to-one
 /// conversion of the fee asset, bound to the chain's latest block. No max fee is set, so the auth
-/// procedure estimates it with the default margin.
+/// procedure estimates it.
 fn fee_paying_auth_args(mock_chain: &MockChain, salt: Word) -> anyhow::Result<MultisigAuthArgs> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
 
@@ -299,9 +298,7 @@ async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
     )?;
     let mut mock_chain = builder.build()?;
     let signed_block = mock_chain.latest_block_header().block_num();
-    // the margin leaves the later execution room for its extra cycles
-    let auth_args = fee_paying_auth_args(&mock_chain, Word::from([21u32, 22, 23, 24]))?
-        .with_fee_margin_percent(150);
+    let auth_args = fee_paying_auth_args(&mock_chain, Word::from([21u32, 22, 23, 24]))?;
 
     // The conditional loop increases the cycle count enough to reach a higher fee cycle bucket.
     // The script itself does not create notes or modify account state.
@@ -323,6 +320,21 @@ async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
         end
         "
     ))?;
+    let estimated_summary = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script.clone())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    // a margin leaves the later execution room for its extra cycles; the scaled cap changes the
+    // summary, so execute once more to obtain the summary to sign
+    let auth_args = auth_args
+        .with_max_fee_from_summary(&estimated_summary)?
+        .with_fee_margin_percent(150)?;
     let original_summary = mock_chain
         .build_transaction(account.id())
         .tx_script(tx_script.clone())
@@ -332,7 +344,6 @@ async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    let auth_args = auth_args.with_max_fee_from_summary(&original_summary)?;
     let original_msg = original_summary.to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(original_summary);
     let mut signatures = Vec::new();
@@ -576,10 +587,11 @@ async fn multisig_fee_payment_preserves_replay_protection(
     Ok(())
 }
 
-/// Without a max fee in the auth args, the auth procedure estimates the fee and binds it scaled by
-/// the fee margin percent, and the estimate covers the fee the signed execution pays.
+/// Without a max fee in the auth args, the auth procedure estimates the fee and binds the
+/// estimate, which covers the fee the signed execution pays; a margin applied off-chain scales the
+/// cap the next execution binds.
 #[tokio::test]
-async fn multisig_estimates_max_fee_with_margin() -> anyhow::Result<()> {
+async fn multisig_estimates_max_fee() -> anyhow::Result<()> {
     let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
     let fee_asset = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1_000_000)?;
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
@@ -588,60 +600,42 @@ async fn multisig_estimates_max_fee_with_margin() -> anyhow::Result<()> {
         [fee_asset.into()],
     )?;
     let mock_chain = builder.build()?;
-    let salt = Word::from([37u32, 38, 39, 40]);
+    let auth_args = fee_paying_auth_args(&mock_chain, Word::from([37u32, 38, 39, 40]))?;
 
-    let mut bound_max_fees = Vec::new();
-    for fee_margin_percent in [100, 200] {
-        let auth_args =
-            fee_paying_auth_args(&mock_chain, salt)?.with_fee_margin_percent(fee_margin_percent);
-        let tx_summary = mock_chain
-            .build_transaction(account.id())
-            .multisig_auth_args(auth_args)
-            .build()?
-            .execute()
-            .await
-            .unwrap_err()
-            .unwrap_unauthorized_err();
-        bound_max_fees.push(assert_auth_args_bound_as_user_params(&tx_summary, &auth_args)?);
-    }
-    let (estimate, doubled) = (bound_max_fees[0], bound_max_fees[1]);
+    let tx_summary = mock_chain
+        .build_transaction(account.id())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let estimate = assert_auth_args_bound_as_user_params(&tx_summary, &auth_args)?;
     assert!(estimate > AssetAmount::ZERO);
-    assert_eq!(doubled.as_u64(), 2 * estimate.as_u64());
+
+    // a margin applied off-chain scales the cap, which the next execution binds as is
+    let scaled_auth_args =
+        auth_args.with_max_fee_from_summary(&tx_summary)?.with_fee_margin_percent(200)?;
+    assert_eq!(scaled_auth_args.max_fee().as_u64(), 2 * estimate.as_u64());
+    let scaled_summary = mock_chain
+        .build_transaction(account.id())
+        .multisig_auth_args(scaled_auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    assert_auth_args_bound_as_user_params(&scaled_summary, &scaled_auth_args)?;
 
     // the signed execution pays at most the estimate
     let executed = execute_signed_multisig_tx(
         mock_chain
             .build_transaction(account.id())
-            .multisig_auth_args(fee_paying_auth_args(&mock_chain, salt)?.with_max_fee(estimate)),
+            .multisig_auth_args(auth_args.with_max_fee(estimate)),
         &signers,
     )
     .await??;
     assert!(assert_single_fee_note(&executed)?.amount() <= estimate);
-
-    Ok(())
-}
-
-/// Estimating the max fee with a zero fee margin is rejected.
-#[tokio::test]
-async fn multisig_rejects_zero_fee_margin_when_estimating() -> anyhow::Result<()> {
-    let (approver_set, _signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
-    let fee_asset = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1_000_000)?;
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet_with_assets(
-        Auth::Multisig { approver_set, proc_threshold_map: vec![] },
-        [fee_asset.into()],
-    )?;
-    let mock_chain = builder.build()?;
-
-    let auth_args = fee_paying_auth_args(&mock_chain, Word::from([41u32, 42, 43, 44]))?
-        .with_fee_margin_percent(0);
-    let result = mock_chain
-        .build_transaction(account.id())
-        .multisig_auth_args(auth_args)
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_MULTISIG_FEE_MARGIN_ZERO);
 
     Ok(())
 }

@@ -17,16 +17,16 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! Authenticate a transaction with multi-signature support, paying the transaction fee in the
 #! process.
 #!
-#! It resolves the AUTH_ARGS into the block the summary binds, the summary salt, the max fee, the
-#! fee margin and the fee conversion info, verifies the approver signatures against the
-#! transaction summary and only then pays the transaction fee by creating a public TX_FEE note
-#! (on chains with a zero verification base fee no note is created). The approvers thus sign the
-#! max fee the summary binds rather than the exact fee, so their signatures stay valid when the
-#! fee changes while they are being collected, and the transaction fails if the fee and the
-#! sponsorships of its network output notes together exceed the max fee.
-#! If the auth args carry no max fee, it is estimated on this execution and scaled by the fee
-#! margin (see `multisig::estimate_max_fee`): an unsigned execution thus reports a summary that
-#! binds the estimate, and the signed execution passes the estimate back through the auth args.
+#! It resolves the AUTH_ARGS into the block the summary binds, the summary salt, the max fee and
+#! the fee conversion info, verifies the approver signatures against the transaction summary and
+#! only then pays the transaction fee by creating a public TX_FEE note (on chains with a zero
+#! verification base fee no note is created). The approvers thus sign the max fee the summary
+#! binds rather than the exact fee, so their signatures stay valid when the fee changes while
+#! they are being collected, and the transaction fails if the fee and the sponsorships of its
+#! network output notes together exceed the max fee.
+#! If the auth args carry no max fee, it is estimated on this execution (see
+#! `multisig::estimate_max_fee`): an unsigned execution thus reports a summary that sets the max
+#! fee, and the signed execution passes that upper bound back through the auth args.
 #! The fee note's serial number uses the block bound by the summary and the initial nonce, so it
 #! stays unchanged at a newer execution reference block when the account nonce is unchanged.
 #!
@@ -44,44 +44,39 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! - the approval expired at or before the transaction reference block, see
 #!   `multisig::assert_approval_not_expired`.
 #! - the transaction fee and the sponsored fees exceed the max fee, see `fee::pay_bounded_fee`.
-#! - the max fee is estimated with a zero fee margin.
 #!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_multisig(auth_args: word)
     exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # reject an expired approval before any signature is verified.
     # ---------------------------------------------------------------------------------------------
 
     dup.5 exec.tx::get_reference_block_number
-    # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent, SALT]
+    # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
-    exec.multisig::assert_approval_not_expired movdn.12
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent, SALT, approval_expiration_delta]
+    exec.multisig::assert_approval_not_expired movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
-    # Estimate the max fee unless the auth args carry one: an unsigned execution binds the
-    # estimate into the summary, and the signed execution passes it back.
+    # Estimate the max fee unless the auth args carry one: an unsigned execution sets the estimate
+    # as the summary's max fee, and the signed execution passes it back.
     # ---------------------------------------------------------------------------------------------
 
-    movup.7
-    # => [fee_margin_percent, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
-
-    dup.7 eq.0
-    # => [is_max_fee_unset, fee_margin_percent, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+    dup.6 eq.0
+    # => [is_max_fee_unset, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
     if.true
+        # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, 0, SALT, approval_expiration_delta]
+
         exec.multisig::get_initial_threshold_and_num_approvers drop
-        # => [num_of_signers, fee_margin_percent, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+        # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, 0, SALT, approval_expiration_delta]
 
         exec.multisig::estimate_max_fee
         # => [max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, 0, SALT, approval_expiration_delta]
 
         swap.7 drop
-        # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
-    else
-        drop
         # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
     end
 

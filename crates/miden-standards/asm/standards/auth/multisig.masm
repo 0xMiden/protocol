@@ -39,7 +39,6 @@ const CURRENT_SIGNER_INDEX_LOC=1
 const AUTH_ARGS_BOUND_BLOCK_LOC=0
 const AUTH_ARGS_APPROVAL_EXPIRATION_LOC=1
 const AUTH_ARGS_MAX_FEE_LOC=2
-const AUTH_ARGS_FEE_MARGIN_LOC=3
 const AUTH_ARGS_SALT_LOC=4
 const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
@@ -112,9 +111,6 @@ const AUTH_ARGS_NUM_WORDS = 3
 # with ilog2 of the cycle count, so a <2x overshoot costs at most one verification_base_fee unit.
 pub const MULTISIG_POST_FEE_CYCLES = 4096
 
-# The fee margin in the auth args is a percentage: 100 binds the estimated fee itself.
-const FEE_MARGIN_PERCENT_DENOMINATOR = 100
-
 # ERRORS
 # =================================================================================================
 
@@ -148,13 +144,9 @@ const ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32 = "the block numbers in the multisig a
 
 const ERR_AUTH_ARGS_MAX_FEE_NOT_ASSET_AMOUNT = "the max fee in the multisig auth args must be a valid fungible asset amount"
 
-const ERR_AUTH_ARGS_FEE_MARGIN_NOT_U32 = "the fee margin percent in the multisig auth args must be a u32 value"
-
 const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval expired at or before the transaction reference block"
 
 const ERR_MULTISIG_APPROVAL_BLOCKS_NOT_U32 = "the reference block and approval expiration block numbers must be u32 values"
-
-const ERR_MULTISIG_FEE_MARGIN_ZERO = "the fee margin percent in the multisig auth args must be non-zero to estimate the max fee"
 
 const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
 
@@ -848,12 +840,11 @@ end
 #!   Operand stack: [AUTH_ARGS]
 #!   Advice map: { AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
-#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee,
-#!                   fee_margin_percent, SALT]
+#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #!
 #! Where:
 #! - AUTH_ARGS is the sequential hash of the three preimage words.
-#! - PARAMS_WORD is [bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent].
+#! - PARAMS_WORD is [bound_block_num, approval_expiration_block_num, max_fee, 0].
 #! - bound_block_num is the number of the block the transaction summary binds.
 #! - approval_expiration_block_num is the first reference block at which the approvers'
 #!   signatures are no longer valid, or 0 if the approval does not expire. See
@@ -861,8 +852,6 @@ end
 #! - max_fee is the maximum fee the transaction may pay, in the native fee asset. It is bound
 #!   into the transaction summary (see `auth_tx`), so the approvers sign a fee cap rather than
 #!   the exact fee. Zero asks the fee-paying components to estimate it, see `estimate_max_fee`.
-#! - fee_margin_percent scales the estimated fee into the max fee when max_fee is zero, and is
-#!   ignored otherwise.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
 #!   in; pay_fee accepts only the reference block's fee asset at rate 1/1. It is the empty word
@@ -873,12 +862,11 @@ end
 #! - the preimage does not hash to the auth args.
 #! - bound_block_num or approval_expiration_block_num is not a u32.
 #! - max_fee is not a valid fungible asset amount.
-#! - fee_margin_percent is not a u32.
 #!
 #! Invocation: exec
 @locals(12)
 pub proc resolve_auth_args(auth_args: word)
-    -> (ConversionInfo, BlockNumber, BlockNumber, AssetAmount, u32, word)
+    -> (ConversionInfo, BlockNumber, BlockNumber, AssetAmount, word)
     adv.has_mapkey adv_push assert.err=ERR_AUTH_ARGS_PREIMAGE_MISSING
     # => [AUTH_ARGS]
 
@@ -895,27 +883,20 @@ pub proc resolve_auth_args(auth_args: word)
     padw loc_loadw_le.AUTH_ARGS_SALT_LOC
     # => [SALT]
 
-    loc_load.AUTH_ARGS_FEE_MARGIN_LOC
-    # => [fee_margin_percent, SALT]
-
-    u32assert.err=ERR_AUTH_ARGS_FEE_MARGIN_NOT_U32
-    # => [fee_margin_percent, SALT]
-
     loc_load.AUTH_ARGS_MAX_FEE_LOC
-    # => [max_fee, fee_margin_percent, SALT]
+    # => [max_fee, SALT]
 
     dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_AUTH_ARGS_MAX_FEE_NOT_ASSET_AMOUNT
-    # => [max_fee, fee_margin_percent, SALT]
+    # => [max_fee, SALT]
 
     loc_load.AUTH_ARGS_APPROVAL_EXPIRATION_LOC loc_load.AUTH_ARGS_BOUND_BLOCK_LOC
-    # => [bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     u32assert2.err=ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32
-    # => [bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     padw loc_loadw_le.AUTH_ARGS_CONVERSION_INFO_LOC
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee,
-    #     fee_margin_percent, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 end
 
 #! Asserts that the multisig approval has not expired and returns the expiration delta to apply.
@@ -1010,44 +991,31 @@ end
 #!
 #! Estimates the fee a pay_fee flow run after the authentication would pay, without creating any
 #! note (see `miden::standards::fee::estimate_fee`), charging the cycles the authentication flow
-#! spends on up to num_of_signers signatures and the cycles spent after the fee is paid, and
-#! scales the estimated fee and sponsored fees by fee_margin_percent. An unsigned execution binds
-#! the result into the summary; the signed execution passes it back through the auth args, so
-#! the estimate runs once and the summary stays unchanged.
+#! spends on up to num_of_signers signatures and the cycles spent after the fee is paid. An
+#! unsigned execution sets the result as the max fee of the summary; the signed execution passes
+#! it back through the auth args, so the estimate runs once and the summary stays unchanged. Any
+#! margin on top of the estimate is applied off-chain before the signed execution.
 #!
-#! Inputs:  [num_of_signers, fee_margin_percent]
+#! Inputs:  [num_of_signers]
 #! Outputs: [max_fee]
 #!
 #! Where:
 #! - num_of_signers is the maximum number of signature verifications the authentication flow can
 #!   perform.
-#! - fee_margin_percent is the percentage the estimate is scaled by; 100 binds the estimate
-#!   itself.
-#! - max_fee is the estimated fee cap, in the native fee asset.
+#! - max_fee is the estimated fee and sponsored fees, in the native fee asset.
 #!
 #! Panics if:
-#! - fee_margin_percent is zero.
 #! - the fee estimate fails (propagates the panics of `miden::standards::fee::estimate_fee`).
-#! - the scaled estimate overflows a fungible asset amount.
 #!
 #! Invocation: exec
-pub proc estimate_max_fee(num_of_signers: u8, fee_margin_percent: u32) -> AssetAmount
-    dup.1 neq.0 assert.err=ERR_MULTISIG_FEE_MARGIN_ZERO
-    # => [num_of_signers, fee_margin_percent]
-
+pub proc estimate_max_fee(num_of_signers: u8) -> AssetAmount
     exec.signature::estimate_multisig_authentication_cycles add.MULTISIG_POST_FEE_CYCLES
-    # => [num_extra_cycles, fee_margin_percent]
+    # => [num_extra_cycles]
 
     exec.fee::estimate_fee
-    # => [fee_amount, total_sponsored_fee_amount, fee_margin_percent]
+    # => [fee_amount, total_sponsored_fee_amount]
 
     exec.fungible_asset::saturating_add_amount
-    # => [estimated_fee_amount, fee_margin_percent]
-
-    push.FEE_MARGIN_PERCENT_DENOMINATOR movdn.2
-    # => [estimated_fee_amount, fee_margin_percent, percent_denominator]
-
-    exec.fee::convert_amount
     # => [max_fee]
 end
 

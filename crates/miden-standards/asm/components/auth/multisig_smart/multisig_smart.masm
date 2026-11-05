@@ -38,11 +38,11 @@ pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spendi
 @auth_script
 pub proc auth_tx_multisig_smart(auth_args: word)
     exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, fee_margin_percent, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info, the max fee
-    # and the fee margin are unused
-    dropw movup.2 drop movup.2 drop
+    # this component does not pay the transaction fee yet, so the conversion info and the max fee
+    # are unused
+    dropw movup.2 drop
     # => [bound_block_num, approval_expiration_block_num, SALT]
 
     # reject an expired approval before any signature is verified.
