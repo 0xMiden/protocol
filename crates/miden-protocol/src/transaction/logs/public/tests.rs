@@ -89,7 +89,7 @@ fn public_logs_match_native_public_headers() {
 #[case::reordered(2)]
 #[case::duplicate_entry(3)]
 #[case::private_entry(4)]
-#[case::duplicate_header(5)]
+#[case::extra_header(5)]
 #[case::hash_mismatch(6)]
 fn rejects_invalid_public_logs(#[case] mutation: u8) {
     let logs = TransactionLogs::new(vec![TransactionLog::mock(1)]).unwrap();
@@ -116,6 +116,23 @@ fn rejects_invalid_public_logs(#[case] mutation: u8) {
     } else {
         assert!(matches!(error, TransactionLogError::PublicLogsAssociationMismatch));
     }
+}
+
+#[test]
+fn transaction_uniqueness_is_enforced_by_the_owner() {
+    let logs = TransactionLogs::new(vec![TransactionLog::mock(1)]).unwrap();
+    let tx = header(1, true, &logs);
+    let id = tx.id();
+    let all = headers(vec![tx.clone(), tx]);
+    let public_logs = PublicTransactionLogs::new(
+        vec![(id, logs.clone()), (id, logs)],
+        all.as_slice().iter(),
+    )
+    .unwrap();
+    assert!(matches!(
+        checked_batch(&BlockHeader::mock(0, None, None, &[]), all, public_logs),
+        Err(ProvenBatchError::DuplicateTransaction(duplicate)) if duplicate == id
+    ));
 }
 
 #[test]

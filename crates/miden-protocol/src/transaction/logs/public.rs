@@ -1,4 +1,3 @@
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use super::{TransactionLogDetails, TransactionLogError, TransactionLogs};
@@ -11,7 +10,7 @@ use crate::transaction::{TransactionHeader, TransactionId};
 /// transactions have none, even when they call public foreign accounts. Duplicate logs are
 /// retained. The enclosing batch/block headers already commit to these payloads; there is no
 /// separate root. Validation checks consistency with headers, not their authenticity. Owners
-/// must revalidate the association with their own headers.
+/// must revalidate the association with their own headers and enforce transaction uniqueness.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PublicTransactionLogs {
     entries: Vec<(TransactionId, TransactionLogs)>,
@@ -25,7 +24,7 @@ impl PublicTransactionLogs {
     /// Associates complete public logs with ordered transaction headers.
     ///
     /// # Errors
-    /// Rejects missing, extra, duplicated or reordered associations, private entries, and payloads
+    /// Rejects missing, extra or reordered associations, private entries, and payloads
     /// that do not match the header's log commitment, or more than [`Self::MAX_NUM_WORDS`] content
     /// words.
     pub fn new<'a>(
@@ -105,10 +104,6 @@ impl PublicTransactionLogs {
         &self,
         headers: impl Iterator<Item = &'a TransactionHeader> + Clone,
     ) -> Result<(), TransactionLogError> {
-        let mut ids = BTreeSet::new();
-        if headers.clone().any(|header| !ids.insert(header.id())) {
-            return Err(TransactionLogError::PublicLogsAssociationMismatch);
-        }
         let public_headers = headers.filter(|header| header.account_id().is_public());
         if public_headers.clone().count() != self.entries.len() {
             return Err(TransactionLogError::PublicLogsAssociationMismatch);

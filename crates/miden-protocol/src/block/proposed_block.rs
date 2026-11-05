@@ -625,8 +625,6 @@ fn check_duplicate_batches(batches: &[ProvenBatch]) -> Result<(), ProposedBlockE
 }
 
 fn check_duplicate_transactions(batches: &[ProvenBatch]) -> Result<(), ProposedBlockError> {
-    // Distinct batches may overlap. The infallible body conversion must preserve uniqueness
-    // across all transaction headers.
     let mut transaction_ids = BTreeSet::new();
     for transaction in batches.iter().flat_map(|batch| batch.transactions().as_slice()) {
         if !transaction_ids.insert(transaction.id()) {
@@ -637,9 +635,6 @@ fn check_duplicate_transactions(batches: &[ProvenBatch]) -> Result<(), ProposedB
 }
 
 fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
-    for batch in batches {
-        batch.public_logs().validate(batch.transactions().as_slice().iter())?;
-    }
     PublicTransactionLogs::check_num_content_words(
         batches
             .iter()
