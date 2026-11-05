@@ -640,7 +640,7 @@ fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError>
     for batch in batches {
         batch.public_logs().validate(batch.transactions().as_slice().iter())?;
     }
-    PublicTransactionLogs::check_num_logs(
+    PublicTransactionLogs::check_num_content_words(
         batches
             .iter()
             .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),

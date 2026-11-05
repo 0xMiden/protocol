@@ -136,7 +136,7 @@ fn block_body_preserves_public_logs() {
     assert_eq!(body.transactions()[1].as_slice().len(), 2);
 }
 
-const PUBLIC_RECORD_LIMIT: usize = 4096;
+const PUBLIC_WORD_LIMIT: usize = PublicTransactionLogs::MAX_NUM_WORDS;
 
 fn log_limit_fixture(
     start: u32,
@@ -146,8 +146,8 @@ fn log_limit_fixture(
     let mut entries = Vec::new();
     let mut remaining = count;
     while remaining != 0 {
-        let records = remaining.min(TransactionLogs::MAX_COUNT);
-        let logs = TransactionLogs::new(vec![TransactionLog::mock(1); records]).unwrap();
+        let records = remaining.min(TransactionLogs::MAX_NUM_WORDS);
+        let logs = TransactionLogs::new(vec![TransactionLog::mock(records)]).unwrap();
         let tx = header(start + transactions.len() as u32, true, &logs);
         entries.push((tx.id(), logs));
         transactions.push(tx);
@@ -187,9 +187,9 @@ fn checked_batch(
 }
 
 #[rstest::rstest]
-#[case::exact(PUBLIC_RECORD_LIMIT)]
-#[case::over(PUBLIC_RECORD_LIMIT + 1)]
-fn public_logs_enforce_record_limit(#[case] count: usize) {
+#[case::exact(PUBLIC_WORD_LIMIT)]
+#[case::over(PUBLIC_WORD_LIMIT + 1)]
+fn public_logs_enforce_word_limit(#[case] count: usize) {
     use crate::errors::BlockBodyError;
 
     let (headers, entries) = log_limit_fixture(1, count);
@@ -199,7 +199,7 @@ fn public_logs_enforce_record_limit(#[case] count: usize) {
     let batch_result =
         checked_batch(&BlockHeader::mock(0, None, None, &[]), headers.clone(), logs.clone());
     let body_result = BlockBody::new(vec![], vec![], vec![], vec![headers], logs);
-    if count == PUBLIC_RECORD_LIMIT {
+    if count == PUBLIC_WORD_LIMIT {
         result.unwrap();
         batch_result.unwrap();
         body_result.unwrap();
@@ -214,6 +214,15 @@ fn public_logs_enforce_record_limit(#[case] count: usize) {
             Err(BlockBodyError::TransactionLogs(TransactionLogError::PublicLogsLimitExceeded))
         ));
     }
+}
+
+#[test]
+fn zero_content_records_consume_no_word_budget() {
+    let logs =
+        TransactionLogs::new(vec![TransactionLog::mock(0); TransactionLogs::MAX_COUNT]).unwrap();
+    let all = headers((1..=65).map(|seed| header(seed, true, &logs)).collect());
+    let entries = all.as_slice().iter().map(|tx| (tx.id(), logs.clone())).collect();
+    PublicTransactionLogs::new(entries, all.as_slice().iter()).unwrap();
 }
 
 #[test]
@@ -315,8 +324,8 @@ fn embedded_logs_preserve_commitments() {
 }
 
 #[rstest::rstest]
-#[case::exact(PUBLIC_RECORD_LIMIT)]
-#[case::over(PUBLIC_RECORD_LIMIT + 1)]
+#[case::exact(PUBLIC_WORD_LIMIT)]
+#[case::over(PUBLIC_WORD_LIMIT + 1)]
 fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
     use crate::block::account_tree::{AccountIdKey, AccountTree};
     use crate::block::{BlockInputs, ProposedBlock};
@@ -327,7 +336,7 @@ fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
 
     let chain =
         PartialBlockchain::new(PartialMmr::from_peaks(Mmr::default().peaks()), vec![]).unwrap();
-    let (first_headers, first_entries) = log_limit_fixture(1, PUBLIC_RECORD_LIMIT / 2);
+    let (first_headers, first_entries) = log_limit_fixture(1, PUBLIC_WORD_LIMIT / 2);
     let initial = &first_headers.as_slice()[0];
     let id = initial.account_id();
     let tree = AccountTree::new(
@@ -356,7 +365,7 @@ fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
     let next_seed = first_headers.as_slice().len() as u32 + 1;
     let first = checked_batch(&reference, first_headers, first_logs).unwrap();
     let (second_headers, second_entries) =
-        log_limit_fixture(next_seed, count - PUBLIC_RECORD_LIMIT / 2);
+        log_limit_fixture(next_seed, count - PUBLIC_WORD_LIMIT / 2);
     let second_logs =
         PublicTransactionLogs::new(second_entries, second_headers.as_slice().iter()).unwrap();
     let second = checked_batch(&reference, second_headers, second_logs).unwrap();
@@ -368,15 +377,15 @@ fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
         Default::default(),
     );
     let result = ProposedBlock::new_at(inputs, vec![first, second], 1);
-    if count == PUBLIC_RECORD_LIMIT {
+    if count == PUBLIC_WORD_LIMIT {
         let body = BlockBody::from(result.unwrap());
         assert_eq!(
             body.public_logs()
                 .entries()
                 .iter()
-                .map(|(_, logs)| logs.num_logs())
+                .map(|(_, logs)| logs.num_content_words())
                 .sum::<usize>(),
-            PUBLIC_RECORD_LIMIT
+            PUBLIC_WORD_LIMIT
         );
         body.public_logs()
             .validate(body.transactions().iter().flat_map(OrderedTransactionHeaders::as_slice))

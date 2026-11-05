@@ -134,7 +134,7 @@ impl ProposedBatch {
             return Err(ProposedBatchError::EmptyTransactionBatch);
         }
 
-        PublicTransactionLogs::check_num_logs(transactions.iter().filter_map(|tx| {
+        PublicTransactionLogs::check_num_content_words(transactions.iter().filter_map(|tx| {
             match tx.log_details() {
                 TransactionLogDetails::Public(logs) => Some(logs),
                 TransactionLogDetails::Private(_) => None,

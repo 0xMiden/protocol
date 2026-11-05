@@ -18,14 +18,16 @@ pub struct PublicTransactionLogs {
 }
 
 impl PublicTransactionLogs {
-    /// Maximum number of public records across all transaction entries in a batch or block.
-    pub const MAX_COUNT: usize = 4096;
+    /// Maximum number of public log content words across all transaction entries in a batch or
+    /// block.
+    pub const MAX_NUM_WORDS: usize = 512 * TransactionLogs::MAX_NUM_WORDS;
 
     /// Associates complete public logs with ordered transaction headers.
     ///
     /// # Errors
     /// Rejects missing, extra, duplicated or reordered associations, private entries, and payloads
-    /// that do not match the header's log commitment, or more than [`Self::MAX_COUNT`] records.
+    /// that do not match the header's log commitment, or more than [`Self::MAX_NUM_WORDS`] content
+    /// words.
     pub fn new<'a>(
         entries: Vec<(TransactionId, TransactionLogs)>,
         headers: impl Iterator<Item = &'a TransactionHeader> + Clone,
@@ -38,7 +40,8 @@ impl PublicTransactionLogs {
     /// Copies public logs from the full transactions of a validated proposal.
     ///
     /// # Errors
-    /// Rejects more than [`Self::MAX_COUNT`] public records or inconsistent transaction headers.
+    /// Rejects more than [`Self::MAX_NUM_WORDS`] public log content words or inconsistent
+    /// transaction headers.
     pub fn from_batch(batch: &ProposedBatch) -> Result<Self, TransactionLogError> {
         let entries = batch
             .transactions()
@@ -69,28 +72,29 @@ impl PublicTransactionLogs {
         }
     }
 
-    /// Checks completeness, visibility, association, commitments and the public-record limit.
+    /// Checks completeness, visibility, association, commitments and the public-content-word limit.
     ///
     /// # Errors
-    /// Rejects an invalid association, payload hash, or more than [`Self::MAX_COUNT`] records.
+    /// Rejects an invalid association, payload hash, or more than [`Self::MAX_NUM_WORDS`] content
+    /// words.
     pub fn validate<'a>(
         &self,
         headers: impl Iterator<Item = &'a TransactionHeader> + Clone,
     ) -> Result<(), TransactionLogError> {
-        Self::check_num_logs(self.entries.iter().map(|(_, logs)| logs))?;
+        Self::check_num_content_words(self.entries.iter().map(|(_, logs)| logs))?;
         self.validate_entries(headers)
     }
 
-    /// Checks the combined record count before proving or concatenating collections.
-    pub(crate) fn check_num_logs<'a>(
+    /// Checks the combined content word count before proving or concatenating collections.
+    pub(crate) fn check_num_content_words<'a>(
         logs: impl IntoIterator<Item = &'a TransactionLogs>,
     ) -> Result<(), TransactionLogError> {
         let mut count = 0usize;
         for logs in logs {
             count = count
-                .checked_add(logs.num_logs())
+                .checked_add(logs.num_content_words())
                 .ok_or(TransactionLogError::PublicLogsLimitExceeded)?;
-            if count > Self::MAX_COUNT {
+            if count > Self::MAX_NUM_WORDS {
                 return Err(TransactionLogError::PublicLogsLimitExceeded);
             }
         }

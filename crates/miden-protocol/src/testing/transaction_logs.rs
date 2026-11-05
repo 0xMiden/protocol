@@ -40,7 +40,8 @@ impl PublicTransactionLogs {
     /// fields. Private headers remain unchanged. Callers must use the returned headers.
     ///
     /// # Panics
-    /// Panics if the templates contain invalid note associations or exceed the public-record limit.
+    /// Panics if the templates contain invalid note associations or exceed the public-content-word
+    /// limit.
     pub fn mock(headers: OrderedTransactionHeaders) -> (OrderedTransactionHeaders, Self) {
         let (mut batches, logs) = Self::mock_for_block(vec![headers]);
         (batches.remove(0), logs)
@@ -53,7 +54,8 @@ impl PublicTransactionLogs {
     /// headers remain unchanged and have no public log entry.
     ///
     /// # Panics
-    /// Panics if the templates contain invalid note associations or exceed the public-record limit.
+    /// Panics if the templates contain invalid note associations or exceed the public-content-word
+    /// limit.
     pub fn mock_for_block(
         batches: Vec<OrderedTransactionHeaders>,
     ) -> (Vec<OrderedTransactionHeaders>, Self) {

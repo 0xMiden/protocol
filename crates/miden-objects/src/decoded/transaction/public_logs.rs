@@ -12,7 +12,7 @@ use crate::decoded::VerificationError;
 use crate::{Verify, VerifyWith, proto};
 
 /// Checks completeness, visibility and payload commitments against the owner's transaction headers.
-/// This enforces the public-record limit but does not authenticate the headers.
+/// This enforces the public-content-word limit but does not authenticate the headers.
 impl VerifyWith<&OrderedTransactionHeaders> for PublicTransactionLogs {
     type Verified = VerifiedLogs;
     type Error = VerificationError;
