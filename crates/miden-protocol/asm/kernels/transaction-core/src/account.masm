@@ -2302,66 +2302,51 @@ end
 #!
 #! Returns 1 if the procedure is available on the active account and 0 otherwise.
 #!
+#! The procedures following the authentication procedure at index 0 are sorted and unique, which
+#! `validate_procedures` enforces for new accounts and code upgrades. They are searched with
+#! `sorted_array::find_word`, whose cost does not depend on the number of procedures, and the
+#! authentication procedure is only compared against when the root is not found among them.
+#!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [is_procedure_available]
 #!
 #! Where:
 #! - PROC_ROOT is the hash of the procedure of interest.
-#! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is 
+#! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is
 #!   available on the active account.
 pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
-    # get the end pointer of the procedure section (where we should stop iterating)
-    exec.memory::get_num_account_procedures
-    exec.memory::get_account_procedure_ptr
-    # => [end_ptr, PROC_ROOT]
+    # keep a copy of the root in case it has to be compared against the auth procedure root
+    dupw
+    # => [PROC_ROOT, PROC_ROOT]
 
-    # get the start pointer of the procedure section (where we will start iterating)
-    push.0 exec.memory::get_account_procedure_ptr
-    # => [start_ptr, end_ptr, PROC_ROOT]
+    # the sorted procedures span from the procedure at index 1 to the end of the procedure section
+    exec.memory::get_num_account_procedures exec.memory::get_account_procedure_ptr
+    push.1 exec.memory::get_account_procedure_ptr
+    # => [sorted_procs_start_ptr, procs_end_ptr, PROC_ROOT, PROC_ROOT]
 
-    # prepare the stack for the loop
-    movdn.5 movdn.5 push.0 movdn.6
-    # => [PROC_ROOT, start_ptr, end_ptr, is_procedure_available]
+    movdn.5 movdn.5
+    # => [PROC_ROOT, sorted_procs_start_ptr, procs_end_ptr, PROC_ROOT]
 
-    # push the flag to enter the loop: an account should have at least 2 procedures
-    push.1
-    # => [should_loop, PROC_ROOT, start_ptr, end_ptr, is_procedure_available]
+    exec.sorted_array::find_word
+    # => [is_found, proc_ptr, sorted_procs_start_ptr, procs_end_ptr, PROC_ROOT]
 
-    while.true
-        # => [PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available]
+    movdn.3 drop drop drop
+    # => [is_found, PROC_ROOT]
 
-        # load the root of the current procedure
-        padw dup.8 mem_loadw_le
-        # => [CURR_PROC_ROOT, PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available]
+    if.true
+        # push the flag before dropping the root: at the minimum stack depth of 16, dropw pads
+        # with zeros and a push afterwards would leave depth 17, but the enclosing syscall must
+        # return at exactly depth 16
+        push.1 movdn.4 dropw
+        # => [is_procedure_available = 1]
+    else
+        # the auth procedure is exempt from the sort order, so it is not covered by the search
+        push.0 exec.memory::get_account_procedure_ptr padw movup.4 mem_loadw_le
+        # => [AUTH_PROC_ROOT, PROC_ROOT]
 
-        # check whether the current root is equal to the provided root
-        dupw.1 exec.word::eq
-        # => [is_equal, PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available]
-
-        # update the is_procedure_available flag
-        movup.7 or movdn.6
-        # => [PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available']
-
-        # move the current procedure pointer
-        movup.4 add.ACCOUNT_PROCEDURE_DATA_LENGTH
-        # => [curr_proc_ptr + 4, PROC_ROOT, end_ptr, is_procedure_available']
-
-        # compute should_loop flag: we should continue iterating if
-        # !(is_procedure_available' || curr_proc_ptr + 4 == end_ptr), i.e. we didn't find the
-        # procedure and we didn't reach the end of the procedures memory block
-        dup dup.6 eq dup.7 or eq.0
-        # => [should_loop, curr_proc_ptr + 4, PROC_ROOT, end_ptr, is_procedure_available']
-
-        # rearrange the stack
-        swap movdn.5
-        # => [should_loop, PROC_ROOT, curr_proc_ptr + 4, end_ptr, is_procedure_available']
+        exec.word::eq
+        # => [is_procedure_available]
     end
-
-    # => [PROC_ROOT, curr_proc_ptr', end_ptr, is_procedure_available']
-
-    # clean the stack
-    dropw drop drop
-    # => [is_procedure_available']
 end
 
 #! Returns the key built from the provided account ID for use in the advice map or the account

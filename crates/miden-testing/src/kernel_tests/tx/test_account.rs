@@ -2460,8 +2460,32 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `has_procedure` finds the auth procedure at index 0 and the sorted procedures after it, and
+/// rejects absent roots that sort before, after and in between the sorted procedures.
+///
+/// `select_root` receives the account's procedure roots, auth procedure first and the rest sorted.
+#[rstest::rstest]
+#[case::auth_procedure(|roots: &[Word]| roots[0], true)]
+#[case::first_sorted_procedure(|roots: &[Word]| roots[1], true)]
+#[case::last_sorted_procedure(|roots: &[Word]| roots[roots.len() - 1], true)]
+#[case::absent_root_smaller_than_all(|_: &[Word]| Word::empty(), false)]
+#[case::absent_root_larger_than_all(|_: &[Word]| Word::from([-Felt::ONE; 4]), false)]
+#[case::absent_root_between_sorted_procedures(
+    |roots: &[Word]| {
+        // the least significant element has the least weight in the sort order, so incrementing it
+        // places the root right after the first sorted procedure
+        let mut root = roots[1];
+        root[0] += Felt::ONE;
+        assert!(roots[1] < root && root < roots[2], "root must sort between two procedures");
+        root
+    },
+    false
+)]
 #[tokio::test]
-async fn test_has_procedure() -> anyhow::Result<()> {
+async fn test_has_procedure(
+    #[case] select_root: fn(&[Word]) -> Word,
+    #[case] expected_available: bool,
+) -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
     let account = AccountBuilder::new(rand::random())
@@ -2470,34 +2494,36 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_script_code = r#"
+    let roots: Vec<Word> =
+        account.code().procedures().iter().map(|root| *root.mast_root()).collect();
+    let root = select_root(&roots);
+    assert_eq!(roots.contains(&root), expected_available, "test root does not match the case");
+
+    let assertion = if expected_available {
+        r#"assert.err="procedure should be reported as available""#
+    } else {
+        r#"assertz.err="procedure should be reported as unavailable""#
+    };
+
+    let tx_script_code = format!(
+        r#"
         use miden::core::sys
         use mock::account as mock_account
 
         @transaction_script
         pub proc main
-            # check that get_item procedure is available on the mock account
-            procref.mock_account::get_item
-            # => [GET_ITEM_ROOT]
+            push.{root}
+            # => [PROC_ROOT]
 
             call.mock_account::has_procedure
             # => [is_procedure_available, pad(15)]
 
-            # assert that the get_item is exposed
-            assert.err="get_item procedure should be exposed by the mock account"
-
-            # get some random word and assert that it is not exposed
-            push.5.3.15.686
-
-            call.mock_account::has_procedure
-            # => [is_procedure_available, pad(15)]
-
-            # assert that the procedure with some random root is not exposed
-            assertz.err="procedure with some random root should not be exposed by the mock account"
+            {assertion}
 
             exec.sys::truncate_stack
         end
-        "#;
+        "#
+    );
 
     // Compile the transaction script using the testing assembler with mock account
     let tx_script = CodeBuilder::with_mock_packages()

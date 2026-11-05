@@ -1,0 +1,1 @@
+The transaction kernel's `has_procedure` now finds a procedure root with a sorted lookup over the account's procedures instead of a linear scan, so its cost no longer grows with the number of procedures.
