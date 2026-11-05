@@ -67,7 +67,7 @@ fn assert_auth_args_bound_as_user_params(
     let salt = auth_args.salt();
     let params = *tx_summary.user_params().as_elements();
     assert_eq!(params[0], approval_expiration);
-    assert_eq!(params[2..], [salt[0], salt[1], salt[2], salt[3]]);
+    assert_eq!(&params[2..], salt.as_slice());
 
     let bound_max_fee = AssetAmount::try_from(params[1])?;
     if auth_args.max_fee() != AssetAmount::ZERO {

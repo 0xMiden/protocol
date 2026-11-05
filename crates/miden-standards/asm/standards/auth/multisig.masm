@@ -838,13 +838,14 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
-#!   Advice map: { AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO] }
+#!   Advice map: {
+#!     AUTH_ARGS: [[bound_block_num, approval_expiration_block_num, max_fee, 0], SALT, CONVERSION_INFO]
+#!   }
 #! Outputs:
 #!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #!
 #! Where:
 #! - AUTH_ARGS is the sequential hash of the three preimage words.
-#! - PARAMS_WORD is [bound_block_num, approval_expiration_block_num, max_fee, 0].
 #! - bound_block_num is the number of the block the transaction summary binds.
 #! - approval_expiration_block_num is the first reference block at which the approvers'
 #!   signatures are no longer valid, or 0 if the approval does not expire. See
@@ -872,7 +873,7 @@ pub proc resolve_auth_args(auth_args: word)
 
     adv.push_mapval
     # OS => [AUTH_ARGS]
-    # AS => [PARAMS_WORD, SALT, CONVERSION_INFO]
+    # AS => [[bound_block_num, approval_expiration_block_num, max_fee, 0], SALT, CONVERSION_INFO]
 
     locaddr.AUTH_ARGS_BOUND_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
     # => [num_words, write_ptr, AUTH_ARGS]

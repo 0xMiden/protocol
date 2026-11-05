@@ -421,10 +421,8 @@ impl From<AuthMultisig> for AccountComponent {
 /// The inputs the multisig authentication components receive through the transaction's auth args.
 ///
 /// ```text
-/// AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO]
+/// AUTH_ARGS: [[bound_block_num, approval_expiration_block_num, max_fee, 0], SALT, CONVERSION_INFO]
 /// ```
-///
-/// where `PARAMS_WORD` is `[bound_block_num, approval_expiration_block_num, max_fee, 0]`.
 ///
 /// # Max fee
 ///
@@ -514,13 +512,8 @@ impl MultisigAuthArgs {
         self
     }
 
-    /// Returns new multisig auth args capping the fees the transaction may pay at `max_fee`,
-    /// denominated in the native fee asset, instead of letting the auth procedure estimate it.
-    ///
-    /// The cap is bound by the transaction summary, so the approvers sign it instead of the exact
-    /// fee. The fee-paying multisig components pay the fee after verifying the signatures and
-    /// abort if the transaction fee and the sponsorships of its network output notes together
-    /// exceed the cap. A zero `max_fee` requests the estimate.
+    /// Returns new multisig auth args with the given max fee, in the native fee asset, which the
+    /// auth procedure binds instead of estimating one; a zero `max_fee` requests the estimate.
     #[must_use]
     pub fn with_max_fee(mut self, max_fee: AssetAmount) -> Self {
         self.max_fee = max_fee;

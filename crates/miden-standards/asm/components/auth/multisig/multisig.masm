@@ -32,7 +32,9 @@ pub use {is_signer} from miden::standards::auth::multisig
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
-#!   Advice map: { AUTH_ARGS: [PARAMS_WORD, SALT, CONVERSION_INFO] }
+#!   Advice map: {
+#!     AUTH_ARGS: [[bound_block_num, approval_expiration_block_num, max_fee, 0], SALT, CONVERSION_INFO]
+#!   }
 #! Outputs:
 #!   Operand stack: []
 #!
@@ -80,14 +82,10 @@ pub proc auth_tx_multisig(auth_args: word)
         # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
     end
 
-    # Keep the fee payment inputs below the summary inputs: the fee is paid after the signatures
-    # are verified, and the fee note's serial number uses the signed block and the initial nonce,
-    # which must be read before auth_tx increments it.
-    # ---------------------------------------------------------------------------------------------
-
     dup.6 movdn.11
     # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, max_fee, approval_expiration_delta]
 
+    # the fee note's serial number uses the initial nonce, read before auth_tx increments it
     exec.active_account::get_nonce movdn.11
     # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, initial_nonce, max_fee, approval_expiration_delta]
 
