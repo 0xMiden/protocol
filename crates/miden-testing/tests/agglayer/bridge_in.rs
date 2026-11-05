@@ -236,6 +236,7 @@ async fn test_bridge_in_claim_to_p2id(
         .expect("amount should scale successfully");
 
     let metadata_hash = leaf_data.metadata_hash;
+    let claim_data_keys = [proof_data.to_commitment(), leaf_data.to_commitment()];
     let claim_inputs = ClaimNoteStorage {
         proof_data,
         leaf_data,
@@ -327,14 +328,26 @@ async fn test_bridge_in_claim_to_p2id(
     // TX2: EXECUTE CLAIM NOTE AGAINST BRIDGE (validates proof, creates MINT note)
     // --------------------------------------------------------------------------------------------
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_mock_tx = mock_chain
+    let claim_tx_builder = mock_chain
         .build_transaction(bridge_account.id())
         .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
-        .authenticated_input_notes(claim_sponsorship.as_ref().map(Note::id))
-        .build()?;
+        .authenticated_input_notes(claim_sponsorship.as_ref().map(Note::id));
 
-    let claim_executed = claim_mock_tx
+    // The real CLAIM note must reject conflicting entries under either Rust-computed key.
+    for key in claim_data_keys {
+        let error = claim_tx_builder
+            .clone()
+            .add_advice_map_entry(key, vec![Felt::ZERO])
+            .build()?
+            .execute()
+            .await
+            .expect_err("a conflicting CLAIM advice-map entry must be rejected");
+        assert!(error.to_string().contains("already present in the advice map"));
+    }
+
+    let claim_executed = claim_tx_builder
+        .build()?
         .execute()
         .await
         .context("TX2: CLAIM note execution against bridge failed")?;

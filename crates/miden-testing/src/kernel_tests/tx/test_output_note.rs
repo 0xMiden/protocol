@@ -385,13 +385,19 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::add_attachment_from_memory
             # => []
 
-            # compute the output notes commitment
+            push.4.3.2.1
+            # => [CALLER_WORD]
+
+            # Compute once with dirty asset commitments, then with the refreshed cache.
             exec.tx::get_output_notes_commitment
-            # => [OUTPUT_NOTES_COMMITMENT]
+            # => [OUTPUT_NOTES_COMMITMENT, CALLER_WORD]
+
+            exec.tx::get_output_notes_commitment
+            # => [OUTPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CALLER_WORD]
 
             # truncate the stack
             exec.sys::truncate_stack
-            # => [OUTPUT_NOTES_COMMITMENT]
+            # => [OUTPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CALLER_WORD]
         end
         ",
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
@@ -461,6 +467,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     }
 
     assert_eq!(exec_output.get_stack_word(0), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word(4), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word(8), Word::from([1, 2, 3, 4u32]));
 
     Ok(())
 }
