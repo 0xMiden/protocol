@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use miden_protocol::transaction::{
     OrderedTransactionHeaders,
     PublicTransactionLogs as VerifiedLogs,
@@ -40,9 +42,7 @@ impl VerifyWith<&[OrderedTransactionHeaders]> for PublicTransactionLogs {
 }
 
 impl PublicTransactionLogs {
-    fn verify_entries(
-        self,
-    ) -> Result<alloc::vec::Vec<(TransactionId, TransactionLogs)>, VerificationError> {
+    fn verify_entries(self) -> Result<Vec<(TransactionId, TransactionLogs)>, VerificationError> {
         Ok(self.entries.try_map(|entry| -> Result<_, VerificationError> {
             Ok((
                 miden_protobuf::unwrap_infallible(entry.transaction_id.verify()),

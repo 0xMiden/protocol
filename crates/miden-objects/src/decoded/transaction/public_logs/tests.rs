@@ -1,16 +1,18 @@
 use alloc::vec;
 
+use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::BlockBody;
 use miden_protocol::transaction::TransactionLogError;
+use prost::Message;
 use rstest::rstest;
 
-use super::*;
 use crate::test_utils::error_source;
+use crate::{DecodeMessageExt, proto};
 
-fn logged_owners() -> (miden_protocol::batch::ProvenBatch, miden_protocol::block::BlockBody) {
+fn logged_owners() -> (ProvenBatch, BlockBody) {
     use miden_protocol::Word;
     use miden_protocol::account::{AccountId, AccountPatch, AccountUpdateDetails};
-    use miden_protocol::batch::{BatchAccountUpdate, ProvenBatch};
-    use miden_protocol::block::BlockBody;
+    use miden_protocol::batch::BatchAccountUpdate;
     use miden_protocol::block::code_tree::CodePatch;
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
@@ -107,9 +109,6 @@ fn logged_owners() -> (miden_protocol::batch::ProvenBatch, miden_protocol::block
 
 #[test]
 fn embedded_logs_roundtrip_preserves_mixed_owners() {
-    use prost::Message;
-
-    use crate::DecodeMessageExt;
     let (batch, body) = logged_owners();
     let wire = proto::transaction::ProvenBatch::from(&batch);
     let decoded = proto::transaction::ProvenBatch::decode(wire.encode_to_vec().as_slice())
@@ -141,9 +140,6 @@ fn embedded_logs_roundtrip_preserves_mixed_owners() {
 #[case::private_entry(4)]
 #[case::content_changed(5)]
 fn tampered_embedded_logs_are_rejected(#[case] mutation: u8) {
-    use prost::Message;
-
-    use crate::DecodeMessageExt;
     let (batch, body) = logged_owners();
     let mut wire_batch = proto::transaction::ProvenBatch::from(&batch);
     let entries = &mut wire_batch.public_logs.as_mut().unwrap().entries;
@@ -186,8 +182,6 @@ fn tampered_embedded_logs_are_rejected(#[case] mutation: u8) {
 
 #[test]
 fn checked_owners_revalidate_public_log_associations() {
-    use miden_protocol::batch::ProvenBatch;
-    use miden_protocol::block::BlockBody;
     use miden_protocol::errors::{BlockBodyError, ProvenBatchError};
     use miden_protocol::transaction::PublicTransactionLogs;
     let (batch, body) = logged_owners();

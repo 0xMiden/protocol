@@ -1,7 +1,9 @@
 use super::*;
 use crate::Word;
-use crate::batch::{OrderedBatches, ProvenBatch};
+use crate::batch::{BatchId, OrderedBatches, ProvenBatch};
 use crate::block::code_tree::CodePatch;
+use crate::block::{BlockBody, BlockHeader};
+use crate::errors::ProvenBatchError;
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -53,9 +55,7 @@ fn batch(headers: OrderedTransactionHeaders) -> ProvenBatch {
         .collect();
     let logs = PublicTransactionLogs::new(entries, headers.as_slice().iter()).unwrap();
     ProvenBatch::new_unchecked(
-        crate::batch::BatchId::from_ids(
-            headers.as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
-        ),
+        BatchId::from_ids(headers.as_slice().iter().map(|tx| (tx.id(), tx.account_id()))),
         Word::empty(),
         0.into(),
         Default::default(),
@@ -129,7 +129,7 @@ fn block_body_preserves_public_logs() {
     ]);
     let expected = vec![(public.id(), logs), (empty.id(), TransactionLogs::default())];
     let (headers, logs) = batches.into_transactions_and_logs();
-    let body = crate::block::BlockBody::new(vec![], vec![], vec![], headers, logs).unwrap();
+    let body = BlockBody::new(vec![], vec![], vec![], headers, logs).unwrap();
     assert_eq!(body.public_logs().entries(), expected);
     assert_eq!(body.transactions().len(), 2);
     assert_eq!(body.transactions()[0].as_slice().len(), 1);
@@ -157,10 +157,10 @@ fn log_limit_fixture(
 }
 
 fn checked_batch(
-    reference: &crate::block::BlockHeader,
+    reference: &BlockHeader,
     headers: OrderedTransactionHeaders,
     public_logs: PublicTransactionLogs,
-) -> Result<ProvenBatch, crate::errors::ProvenBatchError> {
+) -> Result<ProvenBatch, ProvenBatchError> {
     use crate::account::{AccountPatch, AccountUpdateDetails};
     use crate::batch::BatchAccountUpdate;
 
@@ -190,8 +190,7 @@ fn checked_batch(
 #[case::exact(PUBLIC_RECORD_LIMIT)]
 #[case::over(PUBLIC_RECORD_LIMIT + 1)]
 fn public_logs_enforce_record_limit(#[case] count: usize) {
-    use crate::block::{BlockBody, BlockHeader};
-    use crate::errors::{BlockBodyError, ProvenBatchError};
+    use crate::errors::BlockBodyError;
 
     let (headers, entries) = log_limit_fixture(1, count);
     let result = PublicTransactionLogs::new(entries.clone(), headers.as_slice().iter());
@@ -255,7 +254,7 @@ fn embedded_logs_preserve_commitments() {
     use rand_chacha::ChaCha20Rng;
 
     use crate::block::code_tree::CodeTree;
-    use crate::block::{BlockHeader, FeeParameters, ValidatorConfig};
+    use crate::block::{FeeParameters, ValidatorConfig};
     use crate::crypto::SequentialCommit;
     use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::crypto::merkle::smt::Smt;
@@ -265,8 +264,7 @@ fn embedded_logs_preserve_commitments() {
     let second = headers(vec![header(3, true, &TransactionLogs::default())]);
     let batches = OrderedBatches::new(vec![batch(first), batch(second)]);
     let (transactions, public_logs) = batches.clone().into_transactions_and_logs();
-    let body =
-        crate::block::BlockBody::new(vec![], vec![], vec![], transactions, public_logs).unwrap();
+    let body = BlockBody::new(vec![], vec![], vec![], transactions, public_logs).unwrap();
     assert_eq!(body.compute_batches_commitment().as_word(), batches.to_commitment());
     let mut rng = ChaCha20Rng::from_seed([42; 32]);
     let key = SigningKey::with_rng(&mut rng);
@@ -321,7 +319,7 @@ fn embedded_logs_preserve_commitments() {
 #[case::over(PUBLIC_RECORD_LIMIT + 1)]
 fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
     use crate::block::account_tree::{AccountIdKey, AccountTree};
-    use crate::block::{BlockBody, BlockHeader, BlockInputs, ProposedBlock};
+    use crate::block::{BlockInputs, ProposedBlock};
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::crypto::merkle::smt::Smt;
     use crate::errors::ProposedBlockError;
@@ -402,7 +400,7 @@ fn block_rejects_combined_public_logs_over_budget(#[case] count: usize) {
 fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bool) {
     use crate::account::{AccountPatch, AccountUpdateDetails};
     use crate::batch::BatchAccountUpdate;
-    use crate::block::{BlockHeader, BlockInputs, ProposedBlock};
+    use crate::block::{BlockInputs, ProposedBlock};
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::ProposedBlockError;
     use crate::transaction::PartialBlockchain;
