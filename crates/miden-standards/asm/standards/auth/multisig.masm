@@ -994,8 +994,13 @@ end
 #! note (see `miden::standards::fee::estimate_fee`), charging the cycles the authentication flow
 #! spends on up to num_of_signers signatures and the cycles spent after the fee is paid. An
 #! unsigned execution sets the result as the max fee of the summary; the signed execution passes
-#! it back through the auth args, so the estimate runs once and the summary stays unchanged. Any
-#! margin on top of the estimate is applied off-chain before the signed execution.
+#! it back through the auth args, so the summary stays unchanged. Any margin on top of the
+#! estimate is applied off-chain before the signed execution.
+#!
+#! Callers run this on every execution, not only when they need the estimate: pricing the network
+#! output notes reads their targets through FPI, which caps the transaction's expiration, and the
+#! summary binds that expiration. Skipping the estimate on the signed execution would change the
+#! summary.
 #!
 #! Inputs:  [num_of_signers]
 #! Outputs: [max_fee]

@@ -433,8 +433,8 @@ impl From<AuthMultisig> for AccountComponent {
 ///   and binds the estimate. This is what the unsigned execution run to obtain the summary does;
 ///   [`Self::with_max_fee_from_summary`] reads the estimate back for the signed execution, and
 ///   [`Self::with_fee_margin_percent`] adds a margin on top of it.
-/// - With a max fee, the auth procedure binds it as is and skips the estimate. The signed execution
-///   must pass the cap the approvers signed, or its summary differs.
+/// - With a max fee, the auth procedure binds it as is. The signed execution must pass the cap the
+///   approvers signed, or its summary differs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MultisigAuthArgs {
     bound_block_num: BlockNumber,
