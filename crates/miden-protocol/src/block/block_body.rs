@@ -359,6 +359,7 @@ mod tests {
         InputNotes,
         OrderedTransactionHeaders,
         OutputNote,
+        PublicTransactionLogs,
         RawOutputNote,
         TransactionHeader,
     };
@@ -458,9 +459,8 @@ mod tests {
             public_account_body_parts(&account, initial_state_commitment, final_state_commitment)?;
 
         {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(updated_accounts, vec![], vec![], embedded_headers, embedded_logs)
         }?;
 
@@ -476,9 +476,8 @@ mod tests {
         let account_commitment = account.to_commitment();
 
         let result = {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(updated_accounts, vec![], vec![], embedded_headers, embedded_logs)
         };
 
@@ -526,9 +525,8 @@ mod tests {
         ])];
 
         {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(vec![], vec![], created_nullifiers, embedded_headers, embedded_logs)
         }
         .unwrap();
@@ -560,9 +558,8 @@ mod tests {
         ])];
 
         {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(vec![], output_notes, vec![], embedded_headers, embedded_logs)
         }
         .unwrap();
@@ -587,9 +584,8 @@ mod tests {
         ])];
 
         {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(
                 vec![],
                 vec![vec![(0, into_output_note(output_note))]],
@@ -608,9 +604,8 @@ mod tests {
         let transactions = vec![];
 
         let result = {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(
                 vec![],
                 vec![],
@@ -633,9 +628,8 @@ mod tests {
         let transactions = vec![];
 
         let result = {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(
                 vec![],
                 vec![vec![(0, output_note.clone()), (1, output_note)]],
@@ -674,9 +668,8 @@ mod tests {
         ])];
 
         {
-            let embedded_headers = transactions;
-            let embedded_logs =
-                crate::transaction::PublicTransactionLogs::mock_for_block(&embedded_headers);
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
             BlockBody::new(
                 vec![],
                 vec![vec![(0, into_output_note(note.clone()))]],
@@ -726,7 +719,7 @@ mod tests {
     }
 
     fn body_with_batches(transactions: Vec<OrderedTransactionHeaders>) -> BlockBody {
-        let logs = crate::transaction::PublicTransactionLogs::mock_for_block(&transactions);
+        let (transactions, logs) = PublicTransactionLogs::mock_for_block(transactions);
         BlockBody::new(vec![], vec![], vec![], transactions, logs).unwrap()
     }
 

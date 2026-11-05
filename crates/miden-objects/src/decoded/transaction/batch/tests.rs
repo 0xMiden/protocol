@@ -21,6 +21,7 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
+    PublicTransactionLogs,
     TransactionLogDetails,
     TxAccountUpdate,
 };
@@ -70,8 +71,7 @@ fn proposal() -> ProposedBatch {
 fn proven(proposal: &ProposedBatch) -> ProvenBatch {
     {
         let embedded_headers = proposal.transaction_headers();
-        let embedded_logs =
-            miden_protocol::transaction::PublicTransactionLogs::mock(&embedded_headers);
+        let embedded_logs = PublicTransactionLogs::from_batch(proposal).unwrap();
         ProvenBatch::new(
             proposal.reference_block_header().commitment(),
             proposal.reference_block_header().block_num(),
