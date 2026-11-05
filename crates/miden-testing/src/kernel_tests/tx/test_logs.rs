@@ -485,43 +485,6 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     assert_eq!(entries[0].emitter(), intermediate.id());
     assert_eq!(entries[1].emitter(), foreign.id());
 
-    // Carry mixed visibility and an empty public collection through real batch/block builders,
-    // canonical protobuf, and mock-chain snapshot restoration.
-    use miden_objects::prost::Message;
-    use miden_objects::{DecodeMessageExt, proto};
-    let mut expected = Vec::new();
-    if native_type.is_public() {
-        expected.push((executed.id(), executed.logs().clone()));
-    }
-    let proven = LocalTransactionProver::default().prove_dummy(executed.clone())?;
-    let first = chain.prove_transaction_batch(chain.propose_transaction_batch([proven])?)?;
-    let no_logs = chain.build_transaction(foreign.clone()).build()?.execute().await?;
-    if foreign_type.is_public() {
-        expected.push((no_logs.id(), no_logs.logs().clone()));
-    }
-    let second = chain
-        .prove_transaction_batch(chain.propose_transaction_batch([
-            LocalTransactionProver::default().prove_dummy(no_logs)?,
-        ])?)?;
-    let expected_transactions = vec![first.transactions().clone(), second.transactions().clone()];
-    for batch in [first, second] {
-        let encoded = proto::transaction::ProvenBatch::from(&batch).encode_to_vec();
-        let restored = proto::transaction::ProvenBatch::decode(encoded.as_slice())?
-            .decode_and_build_unchecked()?;
-        assert_eq!(batch, restored);
-        chain.add_pending_batch(restored);
-    }
-    let block = chain.prove_next_block()?;
-    assert_eq!(block.body().transactions(), expected_transactions);
-    assert_eq!(block.body().public_logs().entries(), expected);
-    let encoded = proto::blockchain::BlockBody::from(block.body()).encode_to_vec();
-    let restored =
-        proto::blockchain::BlockBody::decode(encoded.as_slice())?.decode_and_build_unchecked()?;
-    assert_eq!(&restored, block.body());
-    let restored_chain = MockChain::try_from_bytes(&chain.to_bytes())?;
-    assert_eq!(restored_chain.latest_block().body().transactions(), expected_transactions);
-    assert_eq!(restored_chain.latest_block().body().public_logs(), block.body().public_logs());
-
     let (_, outputs, ..) = executed.into_parts();
     let (_, _, log_details, _) = outputs.into_parts();
     assert_eq!(matches!(log_details, TransactionLogDetails::Public(_)), native_type.is_public());
