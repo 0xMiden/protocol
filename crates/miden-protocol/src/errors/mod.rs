@@ -1590,6 +1590,9 @@ pub enum ProposedBlockError {
     #[error("batch {batch_id} appears twice in the block inputs")]
     DuplicateBatch { batch_id: BatchId },
 
+    #[error("transaction {0} appears in more than one batch")]
+    DuplicateTransaction(TransactionId),
+
     #[error(
         "batch {second_batch_id} consumes the note with nullifier {note_nullifier} that is also consumed by another batch {first_batch_id} in the block"
     )]

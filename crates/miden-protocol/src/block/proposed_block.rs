@@ -100,6 +100,7 @@ impl ProposedBlock {
     ///
     /// - The number of batches exceeds [`MAX_BATCHES_PER_BLOCK`].
     /// - There are duplicate batches, i.e. they have the same [`BatchId`].
+    /// - A transaction appears in more than one batch.
     /// - The expiration block number of any batch is less than the block number of the currently
     ///   proposed block.
     ///
@@ -163,6 +164,7 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
+        check_duplicate_transactions(&batches)?;
         check_public_logs(&batches)?;
 
         // Check timestamp increases monotonically.
@@ -622,20 +624,21 @@ fn check_duplicate_batches(batches: &[ProvenBatch]) -> Result<(), ProposedBlockE
     Ok(())
 }
 
-fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
+fn check_duplicate_transactions(batches: &[ProvenBatch]) -> Result<(), ProposedBlockError> {
+    // Distinct batches may overlap. The infallible body conversion must preserve uniqueness
+    // across all transaction headers.
     let mut transaction_ids = BTreeSet::new();
+    for transaction in batches.iter().flat_map(|batch| batch.transactions().as_slice()) {
+        if !transaction_ids.insert(transaction.id()) {
+            return Err(ProposedBlockError::DuplicateTransaction(transaction.id()));
+        }
+    }
+    Ok(())
+}
+
+fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
     for batch in batches {
         batch.public_logs().validate(batch.transactions().as_slice().iter())?;
-        // Distinct batches may overlap. The infallible body conversion must preserve the
-        // uniqueness required across all headers and their public-log associations.
-        if batch
-            .transactions()
-            .as_slice()
-            .iter()
-            .any(|transaction| !transaction_ids.insert(transaction.id()))
-        {
-            return Err(TransactionLogError::PublicLogsAssociationMismatch);
-        }
     }
     PublicTransactionLogs::check_num_logs(
         batches

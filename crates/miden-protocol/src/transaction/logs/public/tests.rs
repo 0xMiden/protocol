@@ -480,9 +480,7 @@ fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bo
     assert!(
         matches!(
             result,
-            Err(ProposedBlockError::TransactionLogs(
-                TransactionLogError::PublicLogsAssociationMismatch
-            ))
+            Err(ProposedBlockError::DuplicateTransaction(id)) if id == a.id()
         ),
         "{result:?}"
     );
