@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     InputNote,
@@ -88,7 +89,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (account_header, output_notes, log_details) = tx_outputs.into_parts();
+        let (account_header, output_notes, log_details, code_patch) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
         let output_notes: Vec<_> = output_notes
@@ -125,6 +126,7 @@ impl LocalTransactionProver {
             expiration_block_num,
             proof,
             log_details,
+            code_patch,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
@@ -205,6 +207,9 @@ impl LocalTransactionProver {
             output_notes,
             expiration_block_num,
             logs,
+            // TODO(#4006): take the code patch from the host once the transaction kernel builds
+            // it.
+            CodePatch::default(),
         );
 
         // The proof commits to the stack outputs, so checking them against the outputs binds the

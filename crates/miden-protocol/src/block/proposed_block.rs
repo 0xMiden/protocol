@@ -555,6 +555,8 @@ impl ProposedBlock {
         // updated based on the demand in the currently proposed block.
         let fee_parameters = prev_block_header.fee_parameters().clone();
         let protocol_config_commitment = prev_block_header.protocol_config_commitment();
+        // Blocks do not register code yet, so the code tree stays unchanged.
+        let code_tree_root = prev_block_header.code_tree_root();
 
         let header = BlockHeader::new(
             prev_block_commitment,
@@ -562,6 +564,7 @@ impl ProposedBlock {
             new_chain_commitment,
             new_account_root,
             new_nullifier_root,
+            code_tree_root,
             note_root,
             tx_commitment,
             next_validator_config,
