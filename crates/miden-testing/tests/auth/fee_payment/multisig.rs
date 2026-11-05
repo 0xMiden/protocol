@@ -1,18 +1,27 @@
 use core::num::NonZeroU32;
+use std::collections::BTreeSet;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
+use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::note::PartialNote;
+use miden_protocol::note::{Note, PartialNote};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionSummary};
 use miden_protocol::{Felt, Word, ZERO};
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::{
     Approver,
     ApproverSet,
     FeeConversionInfo,
     MultisigAuthArgs,
+    NetworkAccount,
     SponsorshipPolicy,
+};
+use miden_standards::account::fees::{
+    BasicConstantFeePolicy,
+    ConstantFeeManager,
+    FeePolicyManager,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -20,6 +29,7 @@ use miden_standards::errors::standards::{
     ERR_MULTISIG_APPROVAL_EXPIRED,
     ERR_TX_ALREADY_EXECUTED,
 };
+use miden_standards::note::config::ConstantFeePolicyConfigNote;
 use miden_standards::note::{FeeSponsorshipNote, P2idNote, TxFeeNote};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{Auth, MockChain, MockTransactionBuilder, assert_transaction_executor_error};
@@ -29,6 +39,7 @@ use rstest::rstest;
 
 use super::super::multisig::{MultisigAuthArgsExt, setup_keys_and_authenticators_with_scheme};
 use super::{VERIFICATION_BASE_FEE, assert_single_fee_note, sponsorship};
+use crate::consume_note;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -636,6 +647,115 @@ async fn multisig_estimates_max_fee() -> anyhow::Result<()> {
     )
     .await??;
     assert!(assert_single_fee_note(&executed)?.amount() <= estimate);
+
+    Ok(())
+}
+
+/// A target raising the price of a network note after the max fee was estimated cannot drain the
+/// account: the approvers' signatures still verify, since the summary binds the max fee rather
+/// than the sponsorship, but the inflated sponsorship no longer fits under it and the transaction
+/// fails.
+#[tokio::test]
+async fn multisig_rejects_sponsorship_inflated_after_estimating_max_fee() -> anyhow::Result<()> {
+    let mut rng = RandomCoin::new(Word::from([9u32, 10, 11, 12]));
+    let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    // a payload asset issued by a faucet other than the fee faucet, carried by the network note
+    let payload_asset: Asset = FungibleAsset::mock(50);
+    let fee_faucet_id: AccountId = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([70; 32]);
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let sponsor = builder.add_existing_wallet_with_assets(
+        Auth::Multisig { approver_set, proc_threshold_map: vec![] },
+        [sponsorship::fee_asset(1_000_000)?, payload_asset],
+    )?;
+
+    // the target prices the P2ID script root at FEE_AMOUNT and lets its owner reprice it through
+    // a ConstantFeePolicyConfigNote, which it consumes for free; it holds fee asset to pay its own
+    // fee for that consumption
+    let policy = BasicConstantFeePolicy::new()
+        .with_fee(P2idNote::script_root(), AssetAmount::new(sponsorship::FEE_AMOUNT)?)
+        .with_fee(ConstantFeePolicyConfigNote::script_root(), AssetAmount::ZERO);
+    let fee_policy_manager = FeePolicyManager::builder()
+        .active_fee_policy(policy.into())
+        .fee_faucet_id(fee_faucet_id)
+        .build();
+    let target = NetworkAccount::builder(
+        [2; 32],
+        BTreeSet::from([
+            P2idNote::script_root(),
+            FeeSponsorshipNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
+        ]),
+        fee_policy_manager,
+    )?
+    .with_component(Ownable2Step::new(owner))
+    .with_component(Authority::OwnerControlled)
+    .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
+    .with_assets([sponsorship::fee_asset(1_000_000)?])
+    .build_existing()?;
+    builder.add_account(target.clone())?;
+
+    // the owner's note repricing the P2ID script root twentyfold
+    let repricing_note = Note::from(
+        ConstantFeePolicyConfigNote::builder()
+            .sender(owner)
+            .target(target.id())
+            .note_script_root(P2idNote::script_root())
+            .fee_asset(FungibleAsset::new(fee_faucet_id, 20 * sponsorship::FEE_AMOUNT)?)
+            .serial_number(Word::from([1u32, 0, 0, 0]))
+            .build()?,
+    );
+    builder.add_output_note(RawOutputNote::Full(repricing_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // the approvers sign a summary whose max fee the auth procedure estimated at the current price
+    let network_note =
+        sponsorship::p2id_network_note(sponsor.id(), target.id(), payload_asset, &mut rng)?;
+    let tx_script = SendNotesTransactionScript::new(
+        &sponsor.code().interface(sponsor.id()),
+        &[PartialNote::from(network_note.clone())],
+    )?;
+    let auth_args = fee_paying_auth_args(&mock_chain, Word::from([45u32, 46, 47, 48]))?;
+    let tx_summary = mock_chain
+        .build_transaction(sponsor.id())
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(target.id())?])
+        .send_notes_script(&tx_script)
+        .expected_output_note(RawOutputNote::Full(network_note.clone()))
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let signed_auth_args = auth_args.with_max_fee_from_summary(&tx_summary)?;
+    let msg = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let mut signatures = Vec::new();
+    for (public_key, authenticator) in &signers {
+        let signature =
+            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
+        signatures.push((public_key.to_commitment(), signature));
+    }
+
+    // meanwhile the target raises the note's price
+    consume_note(&mut mock_chain, target.id(), &repricing_note).await?;
+
+    // the signatures still verify, but the sponsorship no longer fits under the signed max fee
+    let mut signed_builder = mock_chain
+        .build_transaction(sponsor.id())
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(target.id())?])
+        .send_notes_script(&tx_script)
+        .expected_output_note(RawOutputNote::Full(network_note))
+        .multisig_auth_args(signed_auth_args);
+    for (public_key_commitment, signature) in signatures {
+        signed_builder = signed_builder.add_signature(public_key_commitment, msg, signature);
+    }
+    let result = signed_builder.build()?.execute().await;
+    assert_transaction_executor_error!(result, ERR_FEE_EXCEEDS_MAX_FEE);
 
     Ok(())
 }
