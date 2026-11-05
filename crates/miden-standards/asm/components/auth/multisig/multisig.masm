@@ -5,6 +5,8 @@
 use miden::protocol::active_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
+use {MULTISIG_POST_FEE_CYCLES} from miden::standards::auth::multisig
+use miden::standards::fee
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -41,8 +43,7 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! - insufficient number of valid signatures (below threshold).
 #! - the approval expired at or before the transaction reference block, see
 #!   `multisig::assert_approval_not_expired`.
-#! - the transaction fee and the sponsored fees exceed the max fee, see
-#!   `multisig::pay_fee_within_max_fee`.
+#! - the transaction fee and the sponsored fees exceed the max fee, see `fee::pay_bounded_fee`.
 #! - the max fee is estimated with a zero fee margin.
 #!
 #! Invocation: call
@@ -114,7 +115,10 @@ pub proc auth_tx_multisig(auth_args: word)
     movdnw.2
     # => [CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
 
-    exec.multisig::pay_fee_within_max_fee
+    push.MULTISIG_POST_FEE_CYCLES
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    exec.fee::pay_bounded_fee
     # => [approval_expiration_delta, TX_SUMMARY_COMMITMENT]
 
     # Record the transaction for replay protection.

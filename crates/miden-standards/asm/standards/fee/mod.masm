@@ -6,7 +6,7 @@ use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
-use {Asset, BlockNumber} from miden::protocol::types
+use {Asset, AssetAmount, BlockNumber} from miden::protocol::types
 use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::assets::fungible_asset
 use miden::standards::fees
@@ -46,7 +46,6 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
 # Estimated upper bound on the number of cycles a pay_fee flow spends per sponsorship note it
 # creates (serial number derivation, note creation, vault withdrawal and funding) plus that note's
 # share of the epilogue, charged by estimate_fee for the notes a later pay_fee flow would create.
-# Guarded by the fee-payment regression tests.
 const SPONSORSHIP_NOTE_CYCLES = 4096
 
 # Exclusive upper bound of the high u32 limb of a converted fee amount. Bounding the high limb
@@ -77,6 +76,8 @@ const ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO = "fee conversion rate denominato
 const ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO = "fee conversion rate numerator must be non-zero"
 
 const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit into a fungible asset amount"
+
+const ERR_FEE_EXCEEDS_MAX_FEE = "the transaction fee and the sponsored fees exceed the max fee"
 
 # PROCEDURES
 # =================================================================================================
@@ -358,7 +359,7 @@ end
 #!   maximum cycle count.
 #!
 #! Invocation: exec
-pub proc estimate_fee(num_extra_cycles: felt) -> (felt, felt)
+pub proc estimate_fee(num_extra_cycles: u32) -> (AssetAmount, AssetAmount)
     exec.fees::estimate_network_note_sponsorships
     # => [num_sponsored_notes, total_sponsored_fee_amount, num_extra_cycles]
 
@@ -435,11 +436,11 @@ end
 #!
 #! Invocation: exec
 pub proc pay_fee(
-    num_extra_cycles: felt,
+    num_extra_cycles: u32,
     conversion_info: ConversionInfo,
     serial_number_block: BlockNumber,
     initial_nonce: felt
-) -> (felt, felt)
+) -> (AssetAmount, AssetAmount)
     # sponsor any network output notes before the fee is computed, so the sponsorship notes
     # this creates are counted by both the cycle estimate and compute_fee.
     exec.tx::get_fee_asset_id
@@ -519,4 +520,41 @@ pub proc pay_fee(
         exec.create_and_fund_fee_note
         # => [fee_amount, total_sponsored_fee_amount]
     end
+end
+
+#! Pays the transaction fee like pay_fee and asserts that the paid fee and the sponsored fees
+#! together do not exceed max_fee.
+#!
+#! This lets an authentication procedure pay the fee after the transaction was authorized against
+#! a fee cap rather than the exact fee: the TX_FEE note and the sponsorship notes are then not
+#! covered by the authorization, so the sum of what they carry is checked against the cap instead.
+#!
+#! Inputs:  [num_extra_cycles, CONVERSION_INFO, serial_number_block, initial_nonce, max_fee]
+#! Outputs: []
+#!
+#! Where:
+#! - num_extra_cycles, CONVERSION_INFO, serial_number_block and initial_nonce are as described in
+#!   pay_fee.
+#! - max_fee is the maximum amount the fee and the sponsorships may total, in the native fee asset.
+#!
+#! Panics if:
+#! - the fee payment fails (propagates the panics of pay_fee).
+#! - the paid fee and the sponsored fees together exceed max_fee.
+#!
+#! Invocation: exec
+pub proc pay_bounded_fee(
+    num_extra_cycles: u32,
+    conversion_info: ConversionInfo,
+    serial_number_block: BlockNumber,
+    initial_nonce: felt,
+    max_fee: AssetAmount
+)
+    exec.pay_fee
+    # => [fee_amount, total_sponsored_fee_amount, max_fee]
+
+    exec.fungible_asset::saturating_add_amount
+    # => [total_fee_amount, max_fee]
+
+    gte assert.err=ERR_FEE_EXCEEDS_MAX_FEE
+    # => []
 end

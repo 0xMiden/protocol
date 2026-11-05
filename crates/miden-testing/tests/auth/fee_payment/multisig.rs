@@ -16,8 +16,8 @@ use miden_standards::account::auth::{
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_EXCEEDS_MAX_FEE,
     ERR_MULTISIG_APPROVAL_EXPIRED,
-    ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE,
     ERR_MULTISIG_FEE_MARGIN_ZERO,
     ERR_TX_ALREADY_EXECUTED,
 };
@@ -404,7 +404,7 @@ async fn multisig_rejects_fee_exceeding_max_fee() -> anyhow::Result<()> {
         &signers,
     )
     .await?;
-    assert_transaction_executor_error!(result, ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE);
+    assert_transaction_executor_error!(result, ERR_FEE_EXCEEDS_MAX_FEE);
 
     Ok(())
 }
@@ -501,7 +501,7 @@ async fn multisig_max_fee_covers_sponsored_fees() -> anyhow::Result<()> {
         &signers,
     )
     .await?;
-    assert_transaction_executor_error!(result, ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE);
+    assert_transaction_executor_error!(result, ERR_FEE_EXCEEDS_MAX_FEE);
 
     Ok(())
 }

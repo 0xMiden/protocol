@@ -12,6 +12,7 @@ use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::auth
 use miden::standards::auth::signature
+use miden::standards::assets::fungible_asset
 use miden::standards::fee
 use {ConversionInfo} from miden::standards::fee
 use miden::core::mem
@@ -106,10 +107,10 @@ const AUTH_ARGS_NUM_WORDS = 3
 
 # Estimated upper bound on the number of cycles a multisig authentication flow spends after
 # pay_fee returns: the max fee check, the replay-protection recording (a storage map write) and
-# the approval expiration update. Overestimation is cheap: the fee grows with ilog2 of the cycle
-# count, so a <2x overshoot costs at most one verification_base_fee unit. Guarded by the
-# fee-payment regression tests.
-const MULTISIG_POST_FEE_CYCLES = 4096
+# the approval expiration update. The multisig components pass it as the num_extra_cycles of
+# fee::pay_bounded_fee and estimate_max_fee charges it. Overestimation is cheap: the fee grows
+# with ilog2 of the cycle count, so a <2x overshoot costs at most one verification_base_fee unit.
+pub const MULTISIG_POST_FEE_CYCLES = 4096
 
 # The fee margin in the auth args is a percentage: 100 binds the estimated fee itself.
 const FEE_MARGIN_PERCENT_DENOMINATOR = 100
@@ -152,8 +153,6 @@ const ERR_AUTH_ARGS_FEE_MARGIN_NOT_U32 = "the fee margin percent in the multisig
 const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval expired at or before the transaction reference block"
 
 const ERR_MULTISIG_APPROVAL_BLOCKS_NOT_U32 = "the reference block and approval expiration block numbers must be u32 values"
-
-const ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE = "the transaction fee and the sponsored fees exceed the max fee bound by the multisig auth args"
 
 const ERR_MULTISIG_FEE_MARGIN_ZERO = "the fee margin percent in the multisig auth args must be non-zero to estimate the max fee"
 
@@ -1042,8 +1041,7 @@ pub proc estimate_max_fee(num_of_signers: u8, fee_margin_percent: u32) -> AssetA
     exec.fee::estimate_fee
     # => [fee_amount, total_sponsored_fee_amount, fee_margin_percent]
 
-    # both amounts are valid asset amounts, so their sum cannot wrap the field
-    add
+    exec.fungible_asset::saturating_add_amount
     # => [estimated_fee_amount, fee_margin_percent]
 
     push.FEE_MARGIN_PERCENT_DENOMINATOR movdn.2
@@ -1051,47 +1049,6 @@ pub proc estimate_max_fee(num_of_signers: u8, fee_margin_percent: u32) -> AssetA
 
     exec.fee::convert_amount
     # => [max_fee]
-end
-
-#! Pays the transaction fee of an authorized transaction and asserts that it stays within the max
-#! fee the approvers signed.
-#!
-#! This runs after `auth_tx`, so neither the TX_FEE note nor the sponsorship notes of the
-#! transaction's network output notes are covered by the signatures. Instead, the sum of the paid
-#! fee and the sponsored fees is asserted to not exceed max_fee, which the transaction summary
-#! binds. See `miden::standards::fee::pay_fee` for the fee payment itself.
-#!
-#! Inputs:  [CONVERSION_INFO, serial_number_block, initial_nonce, max_fee]
-#! Outputs: []
-#!
-#! Where:
-#! - CONVERSION_INFO, serial_number_block and initial_nonce are as described in
-#!   `miden::standards::fee::pay_fee`.
-#! - max_fee is the maximum fee the transaction may pay, in the native fee asset.
-#!
-#! Panics if:
-#! - the fee payment fails (propagates the panics of `miden::standards::fee::pay_fee`).
-#! - the paid fee and the sponsored fees together exceed max_fee.
-#!
-#! Invocation: exec
-pub proc pay_fee_within_max_fee(
-    conversion_info: ConversionInfo,
-    serial_number_block: BlockNumber,
-    initial_nonce: felt,
-    max_fee: AssetAmount
-)
-    push.MULTISIG_POST_FEE_CYCLES
-    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, initial_nonce, max_fee]
-
-    exec.fee::pay_fee
-    # => [fee_amount, total_sponsored_fee_amount, max_fee]
-
-    # both amounts are valid asset amounts, so their sum cannot wrap the field
-    add
-    # => [total_fee_amount, max_fee]
-
-    gte assert.err=ERR_MULTISIG_FEE_EXCEEDS_MAX_FEE
-    # => []
 end
 
 #! Authenticate a transaction using the signature scheme specified by scheme_id

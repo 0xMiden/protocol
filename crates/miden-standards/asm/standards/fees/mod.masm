@@ -360,7 +360,7 @@ end
 #! - the target account's active fee policy is not set.
 #!
 #! Invocation: exec
-pub proc estimate_network_note_sponsorships() -> (felt, felt)
+pub proc estimate_network_note_sponsorships() -> (u16, AssetAmount)
     push.0.0
     # => [num_sponsored_notes = 0, total_sponsored_fee_amount = 0]
 

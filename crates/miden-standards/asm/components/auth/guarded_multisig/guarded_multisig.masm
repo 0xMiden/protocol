@@ -5,6 +5,8 @@
 use miden::protocol::active_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
+use {MULTISIG_POST_FEE_CYCLES} from miden::standards::auth::multisig
+use miden::standards::fee
 use miden::standards::auth::guardian
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
@@ -42,8 +44,7 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! - the approval expired at or before the transaction reference block, see
 #!   `multisig::assert_approval_not_expired`.
 #! - the configured guardian public key is one of the approver public keys.
-#! - the transaction fee and the sponsored fees exceed the max fee, see
-#!   `multisig::pay_fee_within_max_fee`.
+#! - the transaction fee and the sponsored fees exceed the max fee, see `fee::pay_bounded_fee`.
 #! - the max fee is estimated with a zero fee margin.
 #!
 #! Invocation: call
@@ -135,7 +136,10 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     movdnw.2
     # => [CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
 
-    exec.multisig::pay_fee_within_max_fee
+    push.MULTISIG_POST_FEE_CYCLES
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    exec.fee::pay_bounded_fee
     # => [approval_expiration_delta, TX_SUMMARY_COMMITMENT]
 
     # Record the transaction for replay protection.
