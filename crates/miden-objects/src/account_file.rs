@@ -3,6 +3,12 @@
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::path::Path;
+#[cfg(all(feature = "std", unix))]
+use std::{
+    fs::{OpenOptions, Permissions},
+    io::Write,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+};
 
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthSecretKey;
@@ -79,7 +85,7 @@ impl AccountFile {
     /// Writes the encoded file to the provided path.
     #[cfg(feature = "std")]
     pub fn write(&self, path: impl AsRef<Path>) -> Result<(), AccountFileError> {
-        std::fs::write(path, self.to_bytes()).map_err(AccountFileError::Io)
+        write_account_file(path.as_ref(), &self.to_bytes()).map_err(AccountFileError::Io)
     }
 
     /// Reads an [`AccountFile`] from the provided path.
@@ -93,6 +99,36 @@ impl AccountFile {
         let bytes = std::fs::read(path).map_err(AccountFileError::Io)?;
         Self::try_from_bytes(&bytes)
     }
+}
+
+#[cfg(all(feature = "std", unix))]
+fn write_account_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_account_file_with_permissions(path, bytes, |file| {
+        file.set_permissions(Permissions::from_mode(0o600))
+    })
+}
+
+#[cfg(all(feature = "std", unix))]
+fn write_account_file_with_permissions(
+    path: &Path,
+    bytes: &[u8],
+    set_permissions: impl FnOnce(&std::fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)?;
+
+    set_permissions(&file)?;
+    file.set_len(0)?;
+    file.write_all(bytes)
+}
+
+#[cfg(all(feature = "std", not(unix)))]
+fn write_account_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::write(path, bytes)
 }
 
 // ACCOUNT FILE ERROR
