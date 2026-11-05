@@ -251,14 +251,15 @@ fn rotate_key_tx<'a>(
     ))
 }
 
-/// Builds a `set_procedure_policy` transaction writing `[immediate_threshold, 0, flags, 0]` for
-/// `proc_root`.
+/// Builds a `set_procedure_policy` transaction writing
+/// `[immediate_threshold, 0, note_restrictions, cold_required]` for `proc_root`.
 fn set_procedure_policy_tx<'a>(
     mock_chain: &'a MockChain,
     account: &Account,
     proc_root: AccountProcedureRoot,
     immediate_threshold: u32,
-    flags: u32,
+    note_restrictions: u32,
+    cold_required: u32,
     salt_seed: u32,
 ) -> anyhow::Result<MockTransactionBuilder<'a>> {
     // `call.` does not consume operand-stack inputs, so the script drops what it pushed.
@@ -267,10 +268,11 @@ fn set_procedure_policy_tx<'a>(
         @transaction_script
         pub proc main
             push.{root}
-            push.{flags}
+            push.{cold_required}
+            push.{note_restrictions}
             push.{immediate_threshold}
             call.::miden::standards::components::auth::hot_cold_guardian::set_procedure_policy
-            drop drop dropw
+            drop drop drop dropw
         end
         ",
         root = proc_root.as_word(),
@@ -576,23 +578,21 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     let receive_asset_root = BasicWallet::receive_asset_root();
 
     // Invalid policies are rejected before authentication.
-    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 3, 0, 1)?;
+    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 3, 0, 0, 1)?;
     let result = tx.build()?.execute().await;
     assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES);
 
-    let cold_required = HotColdPolicy::new(1)?.with_cold_required()?.flags();
-    let tx =
-        set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, cold_required, 2)?;
+    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 1, 2)?;
     let result = tx.build()?.execute().await;
     assert_transaction_executor_error!(result, ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY);
 
     // A hot key plus the guardian cannot change policies.
-    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 3)?;
+    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 0, 3)?;
     let result = sign_and_execute(tx, &[&hot[0], &guardian]).await?;
     assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // Both categories plus the guardian require both categories for `receive_asset`.
-    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 3)?;
+    let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 0, 3)?;
     let executed = sign_and_execute(tx, &[&hot[0], &cold, &guardian]).await??;
     account.apply_patch(executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&executed)?;

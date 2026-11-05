@@ -605,7 +605,7 @@ end
 #! - note_restrictions is greater than NOTE_RESTRICTION_MAX.
 #!
 #! Invocation: exec
-proc assert_valid_note_restrictions(note_restrictions: u8)
+pub proc assert_valid_note_restrictions(note_restrictions: u8)
     u32assert.err=ERR_INVALID_NOTE_RESTRICTIONS
     # => [note_restrictions]
 
@@ -724,7 +724,7 @@ end
 #!     immediate or delay (i, d) -> (i,                     d)
 #!
 #! Invocation: exec
-proc compute_proc_policy_contribution(
+pub proc compute_proc_policy_contribution(
     immediate: SignatureThreshold,
     delayed: SignatureThreshold,
     default_threshold: SignatureThreshold

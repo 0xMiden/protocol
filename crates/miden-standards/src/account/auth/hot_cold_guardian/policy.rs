@@ -13,8 +13,9 @@ use crate::account::auth::multisig_smart::ProcedurePolicyNoteRestriction;
 /// for the cold key while the hot keys keep every other procedure at the default.
 ///
 /// The policy is encoded into the procedure-policy storage word as
-/// `[immediate_threshold, 0, flags, 0]`, where `flags` packs the note restrictions (bits 0..1)
-/// and the cold-required bit (bit 8). The second element is reserved for a delayed threshold.
+/// `[immediate_threshold, delayed_threshold, note_restrictions, cold_required]`: the layout of
+/// the smart multisig policies with the cold-required flag in the spare element. The delayed
+/// threshold is reserved for the delayed path and stays 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HotColdPolicy {
     immediate_threshold: u32,
@@ -23,9 +24,6 @@ pub struct HotColdPolicy {
 }
 
 impl HotColdPolicy {
-    /// The bit of the policy flags that marks the cold category as required.
-    const COLD_REQUIRED_FLAG: u32 = 1 << 8;
-
     /// Creates a policy requiring `immediate_threshold` signed categories.
     ///
     /// # Errors
@@ -87,19 +85,14 @@ impl HotColdPolicy {
         self.note_restrictions
     }
 
-    /// Returns the policy flags as stored on chain.
-    pub const fn flags(&self) -> u32 {
-        let cold_required = if self.cold_required {
-            Self::COLD_REQUIRED_FLAG
-        } else {
-            0
-        };
-        self.note_restrictions as u32 | cold_required
-    }
-
     /// Returns the storage word of the policy.
     pub fn to_word(self) -> Word {
-        Word::from([self.immediate_threshold, 0, self.flags(), 0])
+        Word::from([
+            self.immediate_threshold,
+            0,
+            self.note_restrictions as u32,
+            self.cold_required as u32,
+        ])
     }
 }
 
@@ -117,7 +110,7 @@ mod tests {
             .unwrap()
             .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes);
 
-        assert_eq!(policy.to_word(), [1u32, 0, 256 | 3, 0].into());
+        assert_eq!(policy.to_word(), [1u32, 0, 3, 1].into());
         assert_eq!(HotColdPolicy::new(2).unwrap().to_word(), [2u32, 0, 0, 0].into());
     }
 

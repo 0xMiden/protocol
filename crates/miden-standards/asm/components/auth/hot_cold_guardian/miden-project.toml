@@ -54,7 +54,7 @@ name        = "miden::standards::auth::multisig::executed_transactions"
 type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
-description = "Procedure policies (proc_root => [immediate_threshold, 0, flags, 0]); thresholds count signed key categories"
+description = "Procedure policies (proc_root => [immediate_threshold, delayed_threshold, note_restrictions, cold_required]); thresholds count signed key categories"
 name        = "miden::standards::auth::hot_cold_guardian::procedure_policies"
 type        = { key = "word", value = "word" }
 
