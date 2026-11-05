@@ -203,39 +203,7 @@ proving. Empty transaction logs commit to zero, so the presence of transaction l
 Local execution data and standard signing summaries retain complete transaction logs, including in
 debug output. Remote provers and validators that decrypt execution witnesses can access this data.
 
-### Batch and block bodies
-
-`ProvenBatch` and `BlockBody` contain complete public logs in a `PublicTransactionLogs` collection.
-There is one entry per public native-account transaction, including empty collections, in transaction
-order. Private native-account transactions have no entries, even when a public foreign account emits
-logs for them. Emission order and duplicate logs are preserved.
-
-Transaction headers retain `logs_commitment`. Transaction IDs bind this commitment, and the existing
-batch ID and block transaction commitment bind the ordered transaction IDs. Embedding the payloads
-changes the serialized bodies but does not change any commitment algorithm or add a separate log root.
-
-Ordinary batch proving retains public logs from the full transactions. Ordinary block construction
-preserves header grouping and concatenates logs in the same batch order. Checked constructors and protobuf domain
-construction reject missing, extra, reordered, private-associated, or commitment-mismatched entries.
-A full body with missing public logs is invalid even if its header commitment is correct. Canonical
-protobuf requires the public-log message field; private-only batches and empty blocks encode a
-present empty collection.
-
-Each `PublicTransactionLogs` collection permits at most 4,096 public records, for both batches and
-blocks. This counts individual records across transactions, not transaction entries or content words.
-Empty public collections and private transactions consume no public-record budget. Existing
-per-transaction and per-record limits still apply. Batch proposals check the count before proving;
-block proposals check the combined count before converting into a body.
-
-This record limit does not bound the encoded size of a block. Decode canonical protobuf messages
-with the ordinary Prost decoder, then perform field decoding and domain construction/verification.
-These domain checks happen after decoding and do not provide preallocation protection. Consumers
-must configure whole-message size limits at their transport or input boundary. Protobuf's ordinary
-field-merging rules apply; domain validation checks the resulting log collection.
-
-Log consistency does not authenticate the enclosing batch or block and does not add recursive
-verification to the skeleton batch/block kernels. Node storage, retention, and query APIs remain
-separate concerns.
+Public transaction logs are also included in [batch](batch.md) and [block](block.md) bodies.
 
 ### Limits
 
