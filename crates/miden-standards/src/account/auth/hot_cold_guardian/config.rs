@@ -133,7 +133,9 @@ impl AuthHotColdGuardianConfig {
     /// # Errors
     ///
     /// Returns an error if there are no hot keys or more than [`MAX_NUM_HOT_KEYS`], or if a public
-    /// key appears in more than one category.
+    /// key appears in more than one category. On chain only the guardian key is kept distinct from
+    /// the user keys (by the key-changing procedures); a repeated hot key, or a key used as both
+    /// hot and cold, is rejected here only.
     pub fn new(
         hot_keys: Vec<Approver>,
         cold_key: Approver,

@@ -3,23 +3,20 @@
 # See the `AuthHotColdGuardian` Rust type's documentation for more details.
 
 use miden::protocol::tx
-use miden::standards::auth::guardian
 use miden::standards::auth::hot_cold_guardian
 use miden::standards::auth::multisig
 use miden::standards::auth::signature
 use miden::standards::fee
 
-pub use {update_guardian_public_key} from miden::standards::auth::guardian
-
 pub use {update_hot_keys} from miden::standards::auth::hot_cold_guardian
 pub use {rotate_cold_key} from miden::standards::auth::hot_cold_guardian
+pub use {update_guardian_public_key} from miden::standards::auth::hot_cold_guardian
 pub use {set_procedure_policy} from miden::standards::auth::hot_cold_guardian
 pub use {update_delay_config} from miden::standards::auth::hot_cold_guardian
 pub use {get_num_hot_keys} from miden::standards::auth::hot_cold_guardian
 pub use {get_default_threshold} from miden::standards::auth::hot_cold_guardian
 pub use {get_hot_key_at} from miden::standards::auth::hot_cold_guardian
 pub use {get_cold_key} from miden::standards::auth::hot_cold_guardian
-pub use {is_hot_key} from miden::standards::auth::hot_cold_guardian
 pub use {get_procedure_policy} from miden::standards::auth::hot_cold_guardian
 pub use {get_delay_config} from miden::standards::auth::hot_cold_guardian
 
@@ -29,10 +26,6 @@ pub use {get_delay_config} from miden::standards::auth::hot_cold_guardian
 #! The fee is paid before the transaction summary is created, so the fee note is covered by the
 #! user and guardian signatures. The cycle estimate counts every hot key, the cold key and the
 #! guardian as signers.
-#!
-#! A guardian rotation must be the only procedure called and must not touch notes, as in the
-#! guarded multisig; unlike there, the guardian signature is still required, so rotating the
-#! guardian takes both user categories plus the guardian's consent.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -48,7 +41,6 @@ pub use {get_delay_config} from miden::standards::auth::hot_cold_guardian
 #!   require.
 #! - the approval expired at or before the transaction reference block, see
 #!   `multisig::assert_approval_not_expired`.
-#! - the configured guardian public key equals the cold key or one of the hot keys.
 #!
 #! Invocation: call
 @auth_script
@@ -63,11 +55,6 @@ pub proc auth_tx_hot_cold_guardian(auth_args: word)
     # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
 
     exec.multisig::assert_approval_not_expired movdn.10
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
-
-    # a guardian rotation must not create notes or be bundled with another procedure; the flag is
-    # not needed since the guardian signature is required either way
-    exec.guardian::assert_rotation_policy drop
     # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
     # Pay the transaction fee before the summary is created so that the TX_FEE note and the
@@ -96,9 +83,6 @@ pub proc auth_tx_hot_cold_guardian(auth_args: word)
     # ---------------------------------------------------------------------------------------------
 
     exec.hot_cold_guardian::auth_tx
-    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
-
-    exec.hot_cold_guardian::assert_guardian_not_user_key
     # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.multisig::record_and_assert_new_tx

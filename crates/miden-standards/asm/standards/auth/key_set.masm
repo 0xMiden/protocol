@@ -27,14 +27,8 @@ const SCHEME_SLOT_PREFIX_LOC = 1
 const PK_SLOT_SUFFIX_LOC = 2
 const PK_SLOT_PREFIX_LOC = 3
 
-# LOCAL ADDRESSES (has_duplicate)
-const OUTER_INDEX_LOC = 4
-const INNER_INDEX_LOC = 5
-const FOUND_LOC = 6
-
-# LOCAL ADDRESSES (search_key)
-const READ_INITIAL_LOC = 4
-const SEARCH_FOUND_LOC = 5
+# LOCAL ADDRESSES (contains_key)
+const FOUND_LOC = 4
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -198,112 +192,59 @@ pub proc cleanup(
     # => []
 end
 
-#! Returns whether any two of the first `num_keys` public keys in the set are equal.
+#! Returns whether PUB_KEY is one of the first `num_keys` public keys in the set.
 #!
-#! Reads the current account state, so it validates keys just written by the caller.
-#!
-#! Inputs:  [pk_slot_id_suffix, pk_slot_id_prefix, num_keys]
-#! Outputs: [has_duplicate]
-#!
-#! Cost: O(num_keys^2) map reads.
-#!
-#! Invocation: exec
-@locals(7)
-pub proc has_duplicate(pk_slot_id: StorageSlotId, num_keys: u32) -> Bool
-    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
-    push.0 loc_store.FOUND_LOC
-    # => [num_keys]
-
-    dup neq.0
-    # => [outer_continue, num_keys]
-
-    while.true
-        sub.1
-        # => [i]
-
-        dup loc_store.OUTER_INDEX_LOC
-        # => [i]
-
-        dup exec.signature::create_approver_map_key
-        loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
-        exec.active_account::get_map_item
-        # => [PK_I, i]
-
-        movup.4
-        # => [i, PK_I]
-
-        dup neq.0
-        # => [inner_continue, i, PK_I]
-
-        while.true
-            sub.1
-            # => [j, PK_I]
-
-            dup loc_store.INNER_INDEX_LOC
-            exec.signature::create_approver_map_key
-            loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
-            exec.active_account::get_map_item
-            # => [PK_J, PK_I]
-
-            dupw.1 exec.word::eq
-            # => [is_equal, PK_I]
-
-            loc_load.FOUND_LOC or loc_store.FOUND_LOC
-            # => [PK_I]
-
-            loc_load.INNER_INDEX_LOC
-            # => [j, PK_I]
-
-            dup neq.0
-            # => [inner_continue, j, PK_I]
-        end
-        # => [0, PK_I]
-
-        drop dropw
-        # => []
-
-        loc_load.OUTER_INDEX_LOC
-        # => [i]
-
-        dup neq.0
-        # => [outer_continue, i]
-    end
-
-    drop
-    # => []
-
-    loc_load.FOUND_LOC
-    # => [has_duplicate]
-end
-
-#! Returns whether PUB_KEY is one of the first `num_keys` public keys in the set, read from the
-#! current account state.
+#! Reads the current account state, so keys just written by the caller are covered.
 #!
 #! Inputs:  [pk_slot_id_suffix, pk_slot_id_prefix, num_keys, PUB_KEY]
 #! Outputs: [contains_key]
 #!
 #! Invocation: exec
+@locals(5)
 pub proc contains_key(pk_slot_id: StorageSlotId, num_keys: u32, pub_key: PublicKeyCommitment) -> Bool
-    push.0
-    # => [read_initial = 0, pk_slot_id_suffix, pk_slot_id_prefix, num_keys, PUB_KEY]
+    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
+    push.0 loc_store.FOUND_LOC
+    # => [i = num_keys, PUB_KEY]
 
-    exec.search_key
+    dup neq.0
+    # => [should_loop, i, PUB_KEY]
+
+    while.true
+        sub.1
+        # => [i, PUB_KEY]
+
+        # keep the loop index below PUB_KEY while the map key is built from its copy
+        dup movdn.5
+        # => [i, PUB_KEY, i]
+
+        exec.signature::create_approver_map_key
+        # => [MAP_KEY, PUB_KEY, i]
+
+        loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
+        # => [pk_slot_suffix, pk_slot_prefix, MAP_KEY, PUB_KEY, i]
+
+        exec.active_account::get_map_item
+        # => [KEY_I, PUB_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, PUB_KEY, i]
+
+        loc_load.FOUND_LOC or loc_store.FOUND_LOC
+        # => [PUB_KEY, i]
+
+        movup.4
+        # => [i, PUB_KEY]
+
+        dup neq.0
+        # => [should_loop, i, PUB_KEY]
+    end
+    # => [0, PUB_KEY]
+
+    drop dropw
+    # => []
+
+    loc_load.FOUND_LOC
     # => [contains_key]
-end
-
-#! Returns whether PUB_KEY is one of the first `num_keys` public keys in the set, read from the
-#! initial account state.
-#!
-#! Inputs:  [pk_slot_id_suffix, pk_slot_id_prefix, num_keys, PUB_KEY]
-#! Outputs: [is_key]
-#!
-#! Invocation: exec
-pub proc is_key(pk_slot_id: StorageSlotId, num_keys: u32, pub_key: PublicKeyCommitment) -> Bool
-    push.1
-    # => [read_initial = 1, pk_slot_id_suffix, pk_slot_id_prefix, num_keys, PUB_KEY]
-
-    exec.search_key
-    # => [is_key]
 end
 
 #! Returns the key stored at `index`, read from the initial account state.
@@ -337,74 +278,4 @@ pub proc get_key_at(scheme_slot_id: StorageSlotId, pk_slot_id: StorageSlotId, in
 
     movdn.7 drop drop drop
     # => [PUB_KEY, scheme_id]
-end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Searches the first `num_keys` public keys of the set for PUB_KEY.
-#!
-#! Inputs:  [read_initial, pk_slot_id_suffix, pk_slot_id_prefix, num_keys, PUB_KEY]
-#! Outputs: [found]
-#!
-#! Where:
-#! - read_initial selects the initial account state (1) or the current one (0).
-#!
-#! Invocation: exec
-@locals(6)
-proc search_key(
-    read_initial: Bool,
-    pk_slot_id: StorageSlotId,
-    num_keys: u32,
-    pub_key: PublicKeyCommitment
-) -> Bool
-    loc_store.READ_INITIAL_LOC
-    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
-    push.0 loc_store.SEARCH_FOUND_LOC
-    # => [i = num_keys, PUB_KEY]
-
-    dup neq.0
-    # => [should_loop, i, PUB_KEY]
-
-    while.true
-        sub.1
-        # => [i, PUB_KEY]
-
-        # keep the loop index below PUB_KEY while the map key is built from its copy
-        dup movdn.5
-        # => [i, PUB_KEY, i]
-
-        exec.signature::create_approver_map_key
-        # => [MAP_KEY, PUB_KEY, i]
-
-        loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
-        # => [pk_slot_suffix, pk_slot_prefix, MAP_KEY, PUB_KEY, i]
-
-        loc_load.READ_INITIAL_LOC
-        if.true
-            exec.native_account::get_initial_map_item
-        else
-            exec.active_account::get_map_item
-        end
-        # => [KEY_I, PUB_KEY, i]
-
-        dupw.1 exec.word::eq
-        # => [is_match, PUB_KEY, i]
-
-        loc_load.SEARCH_FOUND_LOC or loc_store.SEARCH_FOUND_LOC
-        # => [PUB_KEY, i]
-
-        movup.4
-        # => [i, PUB_KEY]
-
-        dup neq.0
-        # => [should_loop, i, PUB_KEY]
-    end
-    # => [0, PUB_KEY]
-
-    drop dropw
-    # => []
-
-    loc_load.SEARCH_FOUND_LOC
-    # => [found]
 end

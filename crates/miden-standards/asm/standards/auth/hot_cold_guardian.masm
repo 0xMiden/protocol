@@ -122,15 +122,9 @@ const ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32 = "number of hot keys and hot key index 
 
 const ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS = "hot key index must be less than the number of hot keys"
 
-const ERR_DUPLICATE_HOT_PUBLIC_KEY = "duplicate hot public keys are not allowed"
-
-const ERR_HOT_KEY_IS_COLD_KEY = "hot public key must not equal the cold public key"
-
 const ERR_HOT_KEY_IS_GUARDIAN_KEY = "hot public key must not equal the guardian public key"
 
 const ERR_COLD_KEY_IS_GUARDIAN_KEY = "cold public key must not equal the guardian public key"
-
-const ERR_PUBLIC_KEY_IS_HOT_KEY = "public key must not be a hot public key"
 
 const ERR_GUARDIAN_KEY_IS_USER_KEY = "guardian public key must not equal a hot or cold public key"
 
@@ -218,7 +212,7 @@ const AUTH_TX_COLD_REQUIRED_LOC = 1
 #! Panics if:
 #! - num_hot_keys is not a u32 value, zero or greater than MAX_NUM_HOT_KEYS.
 #! - any scheme id word is malformed or carries an unsupported scheme.
-#! - two hot keys are equal, or a hot key equals the cold or the guardian key.
+#! - a hot key equals the guardian key.
 #!
 #! Locals:
 #! 0: new_num_hot_keys
@@ -268,20 +262,8 @@ pub proc update_hot_keys(hot_keys_config_commitment: word)
     exec.key_set::write_from_advice
     # => [pad(12)]
 
-    # the new hot keys must be distinct from each other and from the other categories, read from
-    # the current state so the keys just written are the ones validated
-    loc_load.NEW_NUM_HOT_KEYS_LOC push.HOT_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, pad(12)]
-
-    exec.key_set::has_duplicate assertz.err=ERR_DUPLICATE_HOT_PUBLIC_KEY
-    # => [pad(12)]
-
-    exec.get_current_cold_public_key exec.contains_hot_key
-    # => [is_hot_key, pad(12)]
-
-    assertz.err=ERR_HOT_KEY_IS_COLD_KEY
-    # => [pad(12)]
-
+    # the guardian must stay independent of the user keys, read from the current state so the keys
+    # just written are the ones validated
     exec.guardian::get_guardian_public_key exec.contains_hot_key
     # => [is_hot_key, pad(12)]
 
@@ -309,7 +291,7 @@ end
 #!
 #! Panics if:
 #! - new_cold_scheme_id is not a supported scheme.
-#! - NEW_COLD_PUBLIC_KEY equals the guardian key or one of the hot keys.
+#! - NEW_COLD_PUBLIC_KEY equals the guardian key.
 #!
 #! Locals:
 #! 0: new_cold_scheme_id
@@ -324,18 +306,12 @@ pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_ke
     loc_store.ROTATE_COLD_SCHEME_ID_LOC
     # => [NEW_COLD_PUBLIC_KEY, pad(11)]
 
-    # the cold key must stay distinct from the other categories, read from the current state so a
-    # key change made earlier in this transaction is covered
+    # the guardian must stay independent of the user keys, read from the current state so a key
+    # change made earlier in this transaction is covered
     dupw exec.guardian::get_guardian_public_key exec.word::eq
     # => [is_guardian_key, NEW_COLD_PUBLIC_KEY, pad(11)]
 
     assertz.err=ERR_COLD_KEY_IS_GUARDIAN_KEY
-    # => [NEW_COLD_PUBLIC_KEY, pad(11)]
-
-    dupw exec.contains_hot_key
-    # => [is_hot_key, NEW_COLD_PUBLIC_KEY, pad(11)]
-
-    assertz.err=ERR_PUBLIC_KEY_IS_HOT_KEY
     # => [NEW_COLD_PUBLIC_KEY, pad(11)]
 
     push.CATEGORY_MAP_KEY
@@ -366,6 +342,52 @@ pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_ke
     # => [OLD_COLD_SCHEME_ID_WORD, pad(11)]
 
     dropw
+    # => [pad(11)]
+end
+
+#! Replaces the guardian key.
+#!
+#! The guardian must stay independent of the user keys, otherwise one key would satisfy a user
+#! category and the guardian at once. The new key is checked against the cold and the hot keys and
+#! then written by `guardian::update_guardian_public_key`.
+#!
+#! Inputs:  [new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY, pad(11)]
+#! Outputs: [pad(11)]
+#!
+#! Where:
+#! - new_guardian_scheme_id is the signature scheme id of the new guardian key.
+#! - NEW_GUARDIAN_PUBLIC_KEY is the public key commitment of the new guardian key.
+#!
+#! Panics if:
+#! - new_guardian_scheme_id is not a supported scheme.
+#! - NEW_GUARDIAN_PUBLIC_KEY equals the cold key or one of the hot keys.
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_guardian_public_key(
+    new_guardian_scheme_id: SignatureScheme,
+    new_guardian_public_key: PublicKeyCommitment
+)
+    movdn.4
+    # => [NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    # read the current state so a key change made earlier in this transaction is covered
+    dupw exec.get_current_cold_public_key exec.word::eq
+    # => [is_cold_key, NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
+    # => [NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    dupw exec.contains_hot_key
+    # => [is_hot_key, NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
+    # => [NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    movup.4
+    # => [new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY, pad(11)]
+
+    exec.guardian::update_guardian_public_key
     # => [pad(11)]
 end
 
@@ -638,24 +660,6 @@ pub proc get_cold_key() -> Approver
     # => [PUB_KEY, scheme_id, pad(11)]
 end
 
-#! Returns 1 if PUB_KEY is one of the hot keys in the account's initial state, else 0.
-#!
-#! Inputs:  [PUB_KEY, pad(12)]
-#! Outputs: [is_hot_key, pad(12)]
-#!
-#! Invocation: call
-@account_procedure
-pub proc is_hot_key(pub_key: PublicKeyCommitment) -> Bool
-    exec.get_initial_config drop
-    # => [num_hot_keys, PUB_KEY, pad(12)]
-
-    push.HOT_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, PUB_KEY, pad(12)]
-
-    exec.key_set::is_key
-    # => [is_hot_key, pad(12)]
-end
-
 #! Returns the policy of PROC_ROOT from the account's initial state.
 #!
 #! Inputs:  [PROC_ROOT, pad(12)]
@@ -836,34 +840,6 @@ pub proc verify_category_signatures(msg: SignatureMessage) -> (Bool, Bool, Signa
 
     eq.1 movup.5
     # => [hot_signed, cold_signed, MSG]
-end
-
-#! Asserts that the guardian key is neither the cold key nor one of the hot keys.
-#!
-#! Reads the current account state, so a key change performed by this transaction is covered.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the guardian public key equals the cold public key or a hot public key.
-#!
-#! Invocation: exec
-pub proc assert_guardian_not_user_key()
-    exec.guardian::get_guardian_public_key
-    # => [GUARDIAN_PUBLIC_KEY]
-
-    dupw exec.get_current_cold_public_key exec.word::eq
-    # => [is_cold_key, GUARDIAN_PUBLIC_KEY]
-
-    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
-    # => [GUARDIAN_PUBLIC_KEY]
-
-    exec.contains_hot_key
-    # => [is_hot_key]
-
-    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
-    # => []
 end
 
 #! Returns the default threshold and the number of hot keys from the account's initial state.
