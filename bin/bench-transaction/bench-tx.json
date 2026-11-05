@@ -600,12 +600,12 @@
   "consume MINT note (fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6196,
-    "total_cycles": 36956,
-    "notes_processing": 10691,
+    "total_cycles": 36285,
+    "notes_processing": 10020,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 10649
+        "cycles": 9978
       }
     ],
     "tx_script_processing": 41,
@@ -614,14 +614,14 @@
       "auth_procedure": 10567
     },
     "trace": {
-      "core_rows": 37002,
-      "chiplets_rows": 7888,
-      "eidos_compression_rows": 60544,
+      "core_rows": 36331,
+      "chiplets_rows": 7802,
+      "eidos_compression_rows": 60512,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 5464,
+        "hasher_rows": 5392,
         "bitwise_rows": 161,
-        "memory_rows": 2261,
+        "memory_rows": 2247,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
@@ -630,12 +630,12 @@
   "consume MINT note (non-fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6714,
-    "total_cycles": 40250,
-    "notes_processing": 12052,
+    "total_cycles": 39630,
+    "notes_processing": 11432,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 12010
+        "cycles": 11390
       }
     ],
     "tx_script_processing": 41,
@@ -644,14 +644,14 @@
       "auth_procedure": 10648
     },
     "trace": {
-      "core_rows": 40296,
-      "chiplets_rows": 8677,
-      "eidos_compression_rows": 64832,
+      "core_rows": 39676,
+      "chiplets_rows": 8600,
+      "eidos_compression_rows": 64800,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 6048,
+        "hasher_rows": 5984,
         "bitwise_rows": 149,
-        "memory_rows": 2478,
+        "memory_rows": 2465,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
