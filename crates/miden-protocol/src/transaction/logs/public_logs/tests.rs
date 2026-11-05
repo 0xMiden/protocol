@@ -124,11 +124,9 @@ fn transaction_uniqueness_is_enforced_by_the_owner() {
     let tx = header(1, true, &logs);
     let id = tx.id();
     let all = headers(vec![tx.clone(), tx]);
-    let public_logs = PublicTransactionLogs::new(
-        vec![(id, logs.clone()), (id, logs)],
-        all.as_slice().iter(),
-    )
-    .unwrap();
+    let public_logs =
+        PublicTransactionLogs::new(vec![(id, logs.clone()), (id, logs)], all.as_slice().iter())
+            .unwrap();
     assert!(matches!(
         checked_batch(&BlockHeader::mock(0, None, None, &[]), all, public_logs),
         Err(ProvenBatchError::DuplicateTransaction(duplicate)) if duplicate == id

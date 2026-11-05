@@ -76,7 +76,7 @@ impl PublicTransactionLogs {
     /// # Errors
     /// Rejects an invalid association, payload hash, or more than [`Self::MAX_NUM_WORDS`] content
     /// words.
-    pub fn validate<'a>(
+    pub(crate) fn validate<'a>(
         &self,
         headers: impl Iterator<Item = &'a TransactionHeader> + Clone,
     ) -> Result<(), TransactionLogError> {

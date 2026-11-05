@@ -15,8 +15,8 @@ pub use topic::LogTopic;
 mod details;
 pub use details::TransactionLogDetails;
 
-mod public;
-pub use public::PublicTransactionLogs;
+mod public_logs;
+pub use public_logs::PublicTransactionLogs;
 
 mod errors;
 pub use errors::TransactionLogError;
