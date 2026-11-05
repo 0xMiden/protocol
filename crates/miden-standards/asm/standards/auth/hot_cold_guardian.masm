@@ -5,8 +5,8 @@
 # guardian key (co-signs every transaction, holds no authority of its own). Procedure policies are
 # counted in signed categories: hot contributes at most one, cold at most one.
 #
-# The hot keys are an indexed key set (see `miden::standards::auth::key_set`), the cold key and
-# the guardian key single-entry maps.
+# The hot keys are an indexed key set (see `miden::standards::auth::key_set`), the cold key a
+# single-entry key set and the guardian key a single-entry map.
 #
 # See the `AuthHotColdGuardian` Rust type's documentation for more details.
 
@@ -23,7 +23,6 @@ use miden::standards::auth::key_set
 use miden::standards::auth::multisig_smart
 use miden::standards::auth::signature
 use miden::core::word
-use {ZERO_WORD} from miden::standards::utils
 
 pub type HotColdPolicy = struct {
     immediate_threshold: SignatureThreshold,
@@ -47,10 +46,10 @@ pub type HotColdPolicy = struct {
 #   HOT_KEY_MAP_KEY => [scheme_id, 0, 0, 0]
 #
 # - COLD_PUBLIC_KEY_SLOT (map):
-#   CATEGORY_MAP_KEY => COLD_PUBLIC_KEY
+#   [0, 0, 0, 0] => COLD_PUBLIC_KEY
 #
 # - COLD_SCHEME_ID_SLOT (map):
-#   CATEGORY_MAP_KEY => [scheme_id, 0, 0, 0]
+#   [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
 #
 # - PROCEDURE_POLICIES_SLOT (map):
 #   PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
@@ -72,10 +71,10 @@ pub const HOT_PUBLIC_KEYS_SLOT = word("miden::standards::auth::hot_cold_guardian
 # Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
 pub const HOT_SCHEME_IDS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_scheme_ids")
 
-# Single-entry map: CATEGORY_MAP_KEY => COLD_PUBLIC_KEY
+# Single-entry map: [0, 0, 0, 0] => COLD_PUBLIC_KEY
 pub const COLD_PUBLIC_KEY_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_public_key")
 
-# Single-entry map: CATEGORY_MAP_KEY => [scheme_id, 0, 0, 0]
+# Single-entry map: [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
 pub const COLD_SCHEME_ID_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_scheme_id")
 
 # Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
@@ -85,8 +84,8 @@ pub const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::hot_cold_guard
 # [min_delay, propose_expiration_delta, cancel_threshold, 0].
 pub const DELAY_CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::delay_config")
 
-# Single-entry storage map key where the cold key is stored, the same key the guardian uses.
-const CATEGORY_MAP_KEY = ZERO_WORD
+# The index of the cold key in its single-entry key set, the same map key the guardian uses.
+const COLD_KEY_INDEX = 0
 
 # The user key categories: hot and cold. Thresholds count signed categories, so no threshold can
 # exceed this value.
@@ -154,11 +153,6 @@ const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "cancel_threshold exceeds th
 
 const NEW_NUM_HOT_KEYS_LOC = 0
 const INIT_NUM_HOT_KEYS_LOC = 1
-
-# LOCAL ADDRESSES (rotate_cold_key)
-# =================================================================================================
-
-const ROTATE_COLD_SCHEME_ID_LOC = 0
 
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
@@ -247,13 +241,13 @@ pub proc update_hot_keys(hot_keys_config_commitment: word)
     dropw
     # => [pad(12)]
 
-    loc_load.NEW_NUM_HOT_KEYS_LOC
-    # => [num_hot_keys, pad(12)]
+    loc_load.NEW_NUM_HOT_KEYS_LOC loc_load.INIT_NUM_HOT_KEYS_LOC
+    # => [init_num_hot_keys, new_num_hot_keys, pad(12)]
 
     push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
-    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, pad(12)]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_hot_keys, new_num_hot_keys, pad(12)]
 
-    exec.key_set::write_from_advice
+    exec.key_set::replace_from_advice
     # => [pad(12)]
 
     # the guardian must stay independent of the user keys, read from the current state so the keys
@@ -262,15 +256,6 @@ pub proc update_hot_keys(hot_keys_config_commitment: word)
     # => [is_hot_key, pad(12)]
 
     assertz.err=ERR_HOT_KEY_IS_GUARDIAN_KEY
-    # => [pad(12)]
-
-    loc_load.NEW_NUM_HOT_KEYS_LOC loc_load.INIT_NUM_HOT_KEYS_LOC
-    # => [init_num_hot_keys, new_num_hot_keys, pad(12)]
-
-    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
-    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_hot_keys, new_num_hot_keys, pad(12)]
-
-    exec.key_set::cleanup
     # => [pad(12)]
 end
 
@@ -287,55 +272,27 @@ end
 #! - new_cold_scheme_id is not a supported scheme.
 #! - NEW_COLD_PUBLIC_KEY equals the guardian key.
 #!
-#! Locals:
-#! 0: new_cold_scheme_id
-#!
 #! Invocation: call
-@locals(1)
 @account_procedure
 pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_key: PublicKeyCommitment)
-    dup exec.signature::assert_supported_scheme
-    # => [new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
-
-    loc_store.ROTATE_COLD_SCHEME_ID_LOC
-    # => [NEW_COLD_PUBLIC_KEY, pad(11)]
+    movdn.4
+    # => [NEW_COLD_PUBLIC_KEY, new_cold_scheme_id, pad(11)]
 
     # the guardian must stay independent of the user keys, read from the current state so a key
     # change made earlier in this transaction is covered
     dupw exec.guardian::get_guardian_public_key exec.word::eq
-    # => [is_guardian_key, NEW_COLD_PUBLIC_KEY, pad(11)]
+    # => [is_guardian_key, NEW_COLD_PUBLIC_KEY, new_cold_scheme_id, pad(11)]
 
     assertz.err=ERR_COLD_KEY_IS_GUARDIAN_KEY
-    # => [NEW_COLD_PUBLIC_KEY, pad(11)]
+    # => [NEW_COLD_PUBLIC_KEY, new_cold_scheme_id, pad(11)]
 
-    push.CATEGORY_MAP_KEY
-    # => [CATEGORY_MAP_KEY, NEW_COLD_PUBLIC_KEY, pad(11)]
+    movup.4 push.COLD_KEY_INDEX
+    # => [cold_key_index, new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
 
-    push.COLD_PUBLIC_KEY_SLOT[0..2]
-    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, CATEGORY_MAP_KEY, NEW_COLD_PUBLIC_KEY, pad(11)]
+    push.COLD_PUBLIC_KEY_SLOT[0..2] push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, cold_key_index, new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
 
-    exec.native_account::set_map_item
-    # => [OLD_COLD_PUBLIC_KEY, pad(11)]
-
-    dropw
-    # => [pad(11)]
-
-    loc_load.ROTATE_COLD_SCHEME_ID_LOC
-    # => [new_cold_scheme_id, pad(11)]
-
-    push.0.0.0 movup.3
-    # => [NEW_COLD_SCHEME_ID_WORD, pad(11)]
-
-    push.CATEGORY_MAP_KEY
-    # => [CATEGORY_MAP_KEY, NEW_COLD_SCHEME_ID_WORD, pad(11)]
-
-    push.COLD_SCHEME_ID_SLOT[0..2]
-    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, CATEGORY_MAP_KEY, NEW_COLD_SCHEME_ID_WORD, pad(11)]
-
-    exec.native_account::set_map_item
-    # => [OLD_COLD_SCHEME_ID_WORD, pad(11)]
-
-    dropw
+    exec.key_set::set_key_at
     # => [pad(11)]
 end
 
@@ -634,25 +591,13 @@ end
 #! Invocation: call
 @account_procedure
 pub proc get_cold_key() -> Approver
-    push.CATEGORY_MAP_KEY
-    # => [CATEGORY_MAP_KEY, pad(16)]
+    push.COLD_KEY_INDEX
+    # => [cold_key_index, pad(16)]
 
-    push.COLD_PUBLIC_KEY_SLOT[0..2]
-    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, CATEGORY_MAP_KEY, pad(16)]
+    push.COLD_PUBLIC_KEY_SLOT[0..2] push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, cold_key_index, pad(16)]
 
-    exec.native_account::get_initial_map_item
-    # => [PUB_KEY, pad(16)]
-
-    push.CATEGORY_MAP_KEY
-    # => [CATEGORY_MAP_KEY, PUB_KEY, pad(16)]
-
-    push.COLD_SCHEME_ID_SLOT[0..2]
-    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, CATEGORY_MAP_KEY, PUB_KEY, pad(16)]
-
-    exec.native_account::get_initial_map_item
-    # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(16)]
-
-    movdn.7 drop drop drop
+    exec.key_set::get_key_at
     # => [PUB_KEY, scheme_id, pad(16)]
 
     # truncate the stack
@@ -910,13 +855,13 @@ end
 #!
 #! Invocation: exec
 proc get_current_cold_public_key() -> PublicKeyCommitment
-    push.CATEGORY_MAP_KEY
-    # => [CATEGORY_MAP_KEY]
+    push.COLD_KEY_INDEX
+    # => [cold_key_index]
 
     push.COLD_PUBLIC_KEY_SLOT[0..2]
-    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, CATEGORY_MAP_KEY]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, cold_key_index]
 
-    exec.active_account::get_map_item
+    exec.key_set::get_pub_key_at
     # => [COLD_PUBLIC_KEY]
 end
 
