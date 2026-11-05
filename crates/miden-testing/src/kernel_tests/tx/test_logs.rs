@@ -484,6 +484,7 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].emitter(), intermediate.id());
     assert_eq!(entries[1].emitter(), foreign.id());
+
     let (_, outputs, ..) = executed.into_parts();
     let (_, _, log_details, _) = outputs.into_parts();
     assert_eq!(matches!(log_details, TransactionLogDetails::Public(_)), native_type.is_public());
