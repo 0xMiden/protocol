@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.18.1 (Unreleased)
+
+### Fixes
+
+- Update the locked VM crates to 0.36.4, which provides core library package 0.36.3.
+- Update the arithmetic dependencies and Tokio to patched releases for RUSTSEC-2026-0385, RUSTSEC-2026-0387, and RUSTSEC-2026-0384.
+
 ## v0.18.0 (2026-10-20)
 
 ### Changes
