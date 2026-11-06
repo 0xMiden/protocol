@@ -86,6 +86,7 @@ mod current {
     };
     use miden_standards_current::account::auth::{
         AuthGuardedMultisig,
+        AuthHotColdGuardian,
         AuthMultisig,
         AuthMultisigSmart,
         AuthNetworkAccount,
@@ -127,6 +128,7 @@ mod current {
         AuthMultisig::code,
         AuthMultisigSmart::code,
         AuthGuardedMultisig::code,
+        AuthHotColdGuardian::code,
         AuthNetworkAccount::code,
         AuthTxFeeCollector::code,
         BurnAllowAll::code,
