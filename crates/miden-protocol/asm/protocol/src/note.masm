@@ -7,12 +7,11 @@ use {
     NoteSerialNumber,
     NoteStorageCommitment,
     NoteTag,
-    NoteType,
 } from miden::protocol::types
 use miden::protocol::account_id
 use miden::core::crypto::hashes::poseidon2
 
-pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, metadata_into_note_type, get_recipient_preimage}
     from miden::protocol_utils::note
 
 # ERRORS
@@ -217,36 +216,6 @@ pub proc metadata_into_attachment_schemes(metadata: NoteMetadata) -> (u16, u16, 
 
     movup.3 u32and.0xffff
     # => [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
-end
-
-#! Extracts the note type from the provided metadata.
-#!
-#! The note type is encoded as a single bit at the 6th position from the right side (LSB) of the
-#! first felt of the metadata, where 0 = Private and 1 = Public.
-#!
-#! Inputs:  [METADATA]
-#! Outputs: [note_type]
-#!
-#! Where:
-#! - METADATA is the metadata of a note, laid out on the stack as
-#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
-#!   The first felt (sender_id_suffix_type_version) has the following bit layout:
-#!   [sender_id_suffix (56 bits) | reserved (1 bit) | note_type (1 bit) | version (6 bits)]
-#! - note_type is the type of the note (0 for private, 1 for public).
-#!
-#! Invocation: exec
-pub proc metadata_into_note_type(metadata: NoteMetadata) -> NoteType
-    movdn.3 drop drop drop
-    # => [sender_id_suffix_type_version]
-
-    u32split swap drop
-    # => [lo32]
-
-    u32shr.6
-    # => [shifted]
-
-    u32and.1
-    # => [note_type]
 end
 
 #! Extracts the tag from the provided metadata.

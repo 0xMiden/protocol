@@ -16,6 +16,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::SourceManagerSync;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness, CodeWitnessRequest};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -52,6 +53,7 @@ pub struct MockTransaction {
     pub(super) expected_output_notes: Vec<Note>,
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
     pub(super) tx_inputs: TransactionInputs,
+    pub(super) code_tree: CodeTree,
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
@@ -426,6 +428,34 @@ impl DataStore for MockTransaction {
         script_root: NoteScriptRoot,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         async move { Ok(self.note_scripts.get(&script_root).cloned()) }
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        requests: Vec<CodeWitnessRequest>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        async move {
+            if self.code_tree.root() != code_tree_root {
+                return Err(DataStoreError::other(format!(
+                    "code tree has root {} but {code_tree_root} was requested",
+                    self.code_tree.root()
+                )));
+            }
+
+            let mut procedure_roots = BTreeSet::new();
+            for request in requests {
+                procedure_roots.insert(request.procedure_root());
+                if !self.code_tree.contains(&request.procedure_root()) {
+                    procedure_roots.extend(request.referenced_procedures());
+                }
+            }
+
+            Ok(procedure_roots
+                .iter()
+                .map(|procedure_root| self.code_tree.open(procedure_root))
+                .collect())
+        }
     }
 }
 
