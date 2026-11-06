@@ -671,6 +671,8 @@ impl CodeBuilder {
     pub fn with_mock_packages_with_source_manager(
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
+        use miden_protocol::ProtocolLib;
+
         use crate::testing::mock_util_package::mock_util_package;
 
         // Start with the builder linking against the transaction kernel, protocol package and
@@ -686,6 +688,9 @@ impl CodeBuilder {
         builder
             .link_static_package(&mock_util_package())
             .expect("failed to link mock util package");
+        builder
+            .link_static_package(&ProtocolLib::utils_package())
+            .expect("failed to link protocol utils package");
 
         builder
     }
