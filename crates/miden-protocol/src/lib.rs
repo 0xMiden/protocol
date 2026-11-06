@@ -36,6 +36,11 @@ pub use miden_core::mast::{MastForest, MastNodeId};
 pub use miden_core::prettier::PrettyPrint;
 pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};
 pub use miden_core_lib::CoreLibrary;
+/// The protocol's Eidos hash function.
+///
+/// Digests contain four 63-bit elements, giving 252 bits of support and a 126-bit generic
+/// collision-resistance ceiling. Their 32-byte encoding is not a uniform 256-bit string, and
+/// digest elements are not uniform samples of the full field.
 pub use miden_crypto::hash::eidos::Eidos as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};

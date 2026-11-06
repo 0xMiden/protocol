@@ -27,6 +27,10 @@ pub use partial::PartialNullifierTree;
 /// The tree guarantees that once a nullifier has been inserted into the tree, its block number does
 /// not change. Note that inserting the nullifier multiple times with the same block number is
 /// valid.
+///
+/// Eidos-derived nullifiers occupy the lower 2^63 leaf positions of the depth-64 tree because
+/// the index limb's high bit is zero. Distinct nullifiers can share an index; each leaf retains
+/// full nullifiers to distinguish them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NullifierTree<Backend = Smt> {
     smt: Backend,
