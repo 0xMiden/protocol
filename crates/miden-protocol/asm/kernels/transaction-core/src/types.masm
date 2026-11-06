@@ -7,6 +7,9 @@ use {AccountId, StorageSlotId} from ::miden::protocol_utils::types
 #! A cryptographic commitment or Merkle root.
 pub type Commitment = word
 
+#! The MAST root of a procedure.
+pub type ProcedureRoot = word
+
 #! Poseidon2 sponge state in operand-stack order.
 pub type HasherState = struct { rate0: word, rate1: word, capacity: word }
 

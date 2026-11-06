@@ -24,7 +24,12 @@ use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
-use miden_protocol::transaction::{AccountInputs, PartialBlockchain, TransactionInputs};
+use miden_protocol::transaction::{
+    AccountInputs,
+    PartialBlockchain,
+    RawOutputNote,
+    TransactionInputs,
+};
 use miden_standards::account::access::Authority;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -34,6 +39,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::note::P2idNote;
+use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
@@ -43,6 +49,8 @@ use miden_tx::{
     TransactionExecutor,
     TransactionMastStore,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 use crate::{AccountState, Auth, MockChain};
 
@@ -93,15 +101,30 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
             .asset(faucet_asset)
             .build()?,
     );
+    // The script of this public note is absent from the code tree, so the kernel also verifies the
+    // procedures that the script references.
+    let code_patch_note = NoteBuilder::new(native_account.id(), SmallRng::seed_from_u64(1))
+        .code(
+            "
+            use miden::protocol::active_account
+
+            @note_script
+            pub proc main
+                exec.active_account::get_id drop drop
+            end
+            ",
+        )
+        .build()?;
     let send_notes_script = SendNotesTransactionScript::new(
         &native_account.code_interface(),
-        &[PartialNote::from(output_note)],
+        &[PartialNote::from(output_note), PartialNote::from(code_patch_note.clone())],
     )?;
 
     let executed_tx = mock_chain
         .build_transaction(native_account.id())
         .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?])
         .send_notes_script(&send_notes_script)
+        .expected_output_note(RawOutputNote::Full(code_patch_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -119,6 +142,8 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
             .maps()
             .any(|map| map.get(&blocklist_key) == Some(Word::empty()))
     );
+    let code_patch_script_root = ProcedureRoot::from_raw(code_patch_note.script().root().into());
+    assert!(!tx_inputs.code_tree().contains(&code_patch_script_root)?);
 
     // Test that re-execution during proving works as well.
     // TODO: Remove this once prover re-execution is removed (https://github.com/0xMiden/protocol/issues/3852).
@@ -150,8 +175,9 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
 
 /// A data store that serves only the data in the given transaction inputs.
 ///
-/// Requests for witnesses fail, because the partial accounts in the inputs should already contain
-/// all witnesses the transaction needs.
+/// Requests for account witnesses fail, because the partial accounts in the inputs should already
+/// contain all witnesses the transaction needs. Code witnesses are served from the inputs, because
+/// the executor does not get the code tree of the inputs through `get_transaction_inputs`.
 struct TransactionInputsDataStore {
     tx_inputs: TransactionInputs,
     mast_store: TransactionMastStore,
@@ -236,15 +262,28 @@ impl DataStore for TransactionInputsDataStore {
         async move { Ok(note_script) }
     }
 
+    /// Returns the requested witnesses that the inputs contain.
     fn get_code_witnesses(
         &self,
         code_tree_root: CodeTreeRoot,
-        _procedure_roots: Vec<ProcedureRoot>,
+        procedure_roots: Vec<ProcedureRoot>,
     ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        let code_tree = self.tx_inputs.code_tree();
+        let witnesses = if code_tree.root() == code_tree_root {
+            procedure_roots
+                .iter()
+                .filter_map(|procedure_root| code_tree.open(procedure_root).ok())
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         async move {
-            Err(DataStoreError::other(format!(
-                "code witnesses of code tree {code_tree_root} were requested again"
-            )))
+            if witnesses.is_empty() {
+                return Err(DataStoreError::other(format!(
+                    "code witnesses of code tree {code_tree_root} are not in the inputs"
+                )));
+            }
+            Ok(witnesses)
         }
     }
 

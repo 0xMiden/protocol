@@ -101,6 +101,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
         dummy_word(8),
         account_code_upgrade,
+        vec![AccountCode::mock().mast()],
     );
 
     let message = proto::transaction::TransactionArgs::from(&args);

@@ -2,9 +2,12 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_processor::advice::AdviceMutation;
 use miden_processor::mast::{MastForest, MastNodeExt};
+use miden_protocol::Felt;
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::vm::AdviceMap;
 
 use crate::errors::TransactionKernelError;
 
@@ -131,6 +134,69 @@ impl CodePatchSource {
         Ok(code_patch)
     }
 }
+
+// CODE PATCH ADVICE
+// ================================================================================================
+
+/// Returns the advice that the kernel reads to load the code patch.
+///
+/// The lists are sorted, because the kernel asserts that they are unique and sorted. The advice
+/// stack layout is defined in `code_patch::load` in the transaction kernel.
+///
+/// # Errors
+///
+/// Returns an error if the code witness of a procedure root is not available in the code tree.
+pub(crate) fn code_patch_advice(
+    code_patch: &CodePatch,
+    code_tree: &PartialCodeTree,
+) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+    let lists = [
+        code_patch.created_procedures().collect::<Vec<_>>(),
+        code_patch.dependencies().collect(),
+    ];
+
+    let mut advice_stack = Vec::new();
+    for list in &lists {
+        advice_stack.push(Felt::from(list.len() as u32));
+        advice_stack.extend(list.iter().flat_map(|procedure_root| procedure_root.as_word()));
+    }
+
+    let mut mutations = code_witness_advice(lists.iter().flatten(), code_tree)?;
+    mutations.push(AdviceMutation::extend_advice_stack_with(advice_stack));
+
+    Ok(mutations)
+}
+
+/// Returns the advice that provides the code witnesses of the procedure roots through the merkle
+/// store and the advice map.
+///
+/// # Errors
+///
+/// Returns an error if the code witness of a procedure root is not available in the code tree.
+pub(crate) fn code_witness_advice<'root>(
+    procedure_roots: impl IntoIterator<Item = &'root ProcedureRoot>,
+    code_tree: &PartialCodeTree,
+) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+    let mut merkle_store_nodes = Vec::new();
+    let mut advice_map = AdviceMap::default();
+    for procedure_root in procedure_roots {
+        let witness = code_tree.open(procedure_root).map_err(|source| {
+            TransactionKernelError::MissingCodeWitness { procedure_root: *procedure_root, source }
+        })?;
+
+        let proof = witness.proof();
+        merkle_store_nodes.extend(proof.authenticated_nodes());
+        advice_map.insert(proof.leaf().hash(), proof.leaf().to_elements().collect::<Arc<[Felt]>>());
+    }
+
+    Ok(Vec::from([
+        AdviceMutation::extend_merkle_store(merkle_store_nodes),
+        AdviceMutation::extend_map(advice_map),
+    ]))
+}
+
+// HELPERS
+// ================================================================================================
 
 /// Returns `true` if the procedure root is present in the code tree.
 ///

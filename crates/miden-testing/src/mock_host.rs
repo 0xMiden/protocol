@@ -58,6 +58,8 @@ impl<'store> MockHost<'store> {
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
+                &TransactionEventId::CodePatchBeforeLoaded,
+                &TransactionEventId::CodePatchBeforeWitnessVerified,
                 &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,

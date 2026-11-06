@@ -10,6 +10,7 @@ use miden_processor::LoadedMastForest;
 use super::Felt;
 use crate::assembly::Path;
 use crate::assembly::mast::{MastForest, MastNodeId};
+use crate::code::ProcedureRoot;
 use crate::crypto::utils::{bytes_to_elements_with_padding, padded_elements_to_bytes};
 use crate::errors::NoteError;
 use crate::script::MastForestScript;
@@ -36,6 +37,12 @@ pub struct NoteScriptRoot(Word);
 impl From<NoteScriptRoot> for Word {
     fn from(root: NoteScriptRoot) -> Self {
         root.0
+    }
+}
+
+impl From<NoteScriptRoot> for ProcedureRoot {
+    fn from(root: NoteScriptRoot) -> Self {
+        ProcedureRoot::from_raw(root.as_word())
     }
 }
 

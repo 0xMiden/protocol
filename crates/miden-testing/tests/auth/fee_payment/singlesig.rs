@@ -1,5 +1,6 @@
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
@@ -17,6 +18,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::LocalTransactionProver;
 use rstest::rstest;
 
 use super::{
@@ -74,6 +76,17 @@ async fn execute_fee_paying_tx(
 // TESTS
 // ================================================================================================
 
+/// The prover provides the code witness of the fee note script, which the host does not know when
+/// it loads the code patch.
+#[tokio::test]
+async fn prove_singlesig_fee_note_with_witness_in_auth() -> anyhow::Result<()> {
+    let (executed_transaction, _) = execute_fee_paying_tx(AuthScheme::EcdsaK256Keccak).await?;
+
+    LocalTransactionProver::default().prove(executed_transaction)?;
+
+    Ok(())
+}
+
 /// The singlesig auth procedure pays the transaction fee by creating a TX_FEE note funded with
 /// the native fee asset, and the paid amount covers the fee required for the actual number of
 /// cycles the transaction took. This is the regression guard for the cycle-estimate constants.
@@ -90,6 +103,11 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
 
     assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
+
+    // the kernel verified the code witness of the fee note script, although the host did not
+    // know the script when it provided the code patch lists
+    let fee_script_root = ProcedureRoot::from_raw(TxFeeNote::script_root().into());
+    assert!(executed_transaction.tx_inputs().code_tree().contains(&fee_script_root)?);
 
     // the note carries exactly one asset: the native fee asset
     let assets = output_note.assets();
