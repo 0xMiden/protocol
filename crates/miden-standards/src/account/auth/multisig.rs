@@ -16,7 +16,7 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::AccountError;
-use miden_protocol::transaction::TransactionSummary;
+use miden_protocol::transaction::{TransactionSummary, TransactionSummaryUserParams};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word, ZERO};
 
@@ -431,8 +431,8 @@ impl From<AuthMultisig> for AccountComponent {
 ///
 /// - With no max fee (the default), the auth procedure estimates the fee on the current execution
 ///   and binds the estimate. This is what the unsigned execution run to obtain the summary does;
-///   [`Self::with_max_fee_from_summary`] reads the estimate back for the signed execution, and
-///   [`Self::with_fee_margin_percent`] adds a margin on top of it.
+///   [`Self::with_estimated_max_fee`] then yields the auth args of the signed execution and the
+///   summary to sign, with a margin on top of the estimate.
 /// - With a max fee, the auth procedure binds it as is. The signed execution must pass the cap the
 ///   approvers signed, or its summary differs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -574,6 +574,42 @@ impl MultisigAuthArgs {
                 })?;
 
         Ok(self.with_max_fee(max_fee))
+    }
+
+    /// Returns the auth args of the signed execution and the summary the approvers sign, from the
+    /// summary an execution without a max fee reported: the estimate it binds is scaled by
+    /// `fee_margin_percent` (see [`Self::with_fee_margin_percent`]) and set as the max fee of both.
+    ///
+    /// The returned summary is the reported one with only its max fee replaced, so no further
+    /// execution is needed before signing; executing with the returned auth args reproduces it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the max fee the summary binds is not a valid asset amount, or if the
+    /// margin is zero or scales it beyond [`AssetAmount::MAX`].
+    pub fn with_estimated_max_fee(
+        self,
+        summary: &TransactionSummary,
+        fee_margin_percent: u32,
+    ) -> Result<(Self, TransactionSummary), AccountError> {
+        let auth_args = self
+            .with_max_fee_from_summary(summary)?
+            .with_fee_margin_percent(fee_margin_percent)?;
+
+        let mut user_params = *summary.user_params().as_elements();
+        user_params[MAX_FEE_USER_PARAM_INDEX] = Felt::from(auth_args.max_fee());
+        let summary = TransactionSummary::new(
+            summary.account_delta().clone(),
+            summary.input_notes().clone(),
+            summary.output_notes().clone(),
+            summary.block_number(),
+            summary.block_commitment(),
+            summary.expiration_delta(),
+            TransactionSummaryUserParams::new(user_params),
+            summary.logs().clone(),
+        );
+
+        Ok((auth_args, summary))
     }
 
     // PUBLIC ACCESSORS

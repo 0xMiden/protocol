@@ -341,22 +341,11 @@ async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
         .unwrap_err()
         .unwrap_unauthorized_err();
 
-    // a margin leaves the later execution room for its extra cycles; the scaled cap changes the
-    // summary, so execute once more to obtain the summary to sign
-    let auth_args = auth_args
-        .with_max_fee_from_summary(&estimated_summary)?
-        .with_fee_margin_percent(150)?;
-    let original_summary = mock_chain
-        .build_transaction(account.id())
-        .tx_script(tx_script.clone())
-        .multisig_auth_args(auth_args)
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-        .unwrap_unauthorized_err();
+    // a margin leaves the later execution room for its extra cycles
+    let (auth_args, original_summary) =
+        auth_args.with_estimated_max_fee(&estimated_summary, 150)?;
     let original_msg = original_summary.to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(original_summary);
+    let signing_inputs = SigningInputs::TransactionSummary(Box::new(original_summary));
     let mut signatures = Vec::new();
     let mut signed_builder = mock_chain
         .build_transaction(account.id())
@@ -624,11 +613,11 @@ async fn multisig_estimates_max_fee() -> anyhow::Result<()> {
     let estimate = assert_auth_args_bound_as_user_params(&tx_summary, &auth_args)?;
     assert!(estimate > AssetAmount::ZERO);
 
-    // a margin applied off-chain scales the cap, which the next execution binds as is
-    let scaled_auth_args =
-        auth_args.with_max_fee_from_summary(&tx_summary)?.with_fee_margin_percent(200)?;
+    // a margin applied off-chain scales the cap; the summary to sign is derived without another
+    // execution and matches what an execution with the scaled cap reports
+    let (scaled_auth_args, scaled_summary) = auth_args.with_estimated_max_fee(&tx_summary, 200)?;
     assert_eq!(scaled_auth_args.max_fee().as_u64(), 2 * estimate.as_u64());
-    let scaled_summary = mock_chain
+    let reported_summary = mock_chain
         .build_transaction(account.id())
         .multisig_auth_args(scaled_auth_args)
         .build()?
@@ -636,7 +625,7 @@ async fn multisig_estimates_max_fee() -> anyhow::Result<()> {
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    assert_auth_args_bound_as_user_params(&scaled_summary, &scaled_auth_args)?;
+    assert_eq!(*reported_summary, scaled_summary);
 
     // the signed execution pays at most the estimate
     let executed = execute_signed_multisig_tx(
