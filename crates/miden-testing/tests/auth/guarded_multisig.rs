@@ -9,7 +9,7 @@ use miden_protocol::account::{
     AccountType,
     StorageMapKey,
 };
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -49,7 +49,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
-use super::fee_payment::{VERIFICATION_BASE_FEE, assert_single_fee_note, multisig_auth_estimate};
+use super::fee_payment::{MAX_FEE, VERIFICATION_BASE_FEE, assert_single_fee_note};
 use super::multisig::{
     MultisigAuthArgsExt,
     build_update_signers_config_vector,
@@ -1160,26 +1160,28 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
+    // no max fee is set, so the auth procedure estimates it, counting the guardian as a signer
     let auth_args = MultisigAuthArgs::new(
         mock_chain.latest_block_header().block_num(),
         Word::from([Felt::from(5u32); 4]),
     )
     .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
-    let mock_tx_builder = mock_chain
-        .build_transaction(multisig_account.id())
-        .multisig_auth_args(auth_args);
 
-    let tx_summary = mock_tx_builder
-        .clone()
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
         .build()?
         .execute()
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
+    let signed_auth_args = auth_args.with_max_fee_from_summary(&tx_summary)?;
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
-    let mut signed_builder = mock_tx_builder;
+    let mut signed_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(signed_auth_args);
     for (public_key, authenticator) in public_keys.iter().zip(&authenticators) {
         let signature =
             authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
@@ -1200,14 +1202,6 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
     assert_eq!(
         multisig_account.vault().get_balance(initial_fee_asset.id())?.as_u64(),
         initial_fee_asset.amount().as_u64() - paid_fee_asset.amount().as_u64()
-    );
-
-    // two approver signatures and the guardian signature are verified
-    let auth_procedure_cycles = executed_transaction.measurements().auth_procedure;
-    let auth_estimate = multisig_auth_estimate(3);
-    assert!(
-        auth_procedure_cycles <= auth_estimate,
-        "guarded multisig auth procedure took {auth_procedure_cycles} cycles, exceeding the estimate of {auth_estimate}",
     );
 
     Ok(())
@@ -1259,7 +1253,8 @@ async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> any
         mock_chain.latest_block_header().block_num(),
         Word::from([Felt::from(6u32); 4]),
     )
-    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
+    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id))
+    .with_max_fee(AssetAmount::new(MAX_FEE)?);
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_script)
