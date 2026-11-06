@@ -1843,29 +1843,29 @@ pub enum CodeTreeError {
 
 #[derive(Debug, Error)]
 pub enum CodePatchError {
+    #[error(
+        "code patch has {0} created procedures, which exceeds the maximum of {max}",
+        max = CodePatch::MAX_ROOTS
+    )]
+    TooManyCreatedProcedures(usize),
+
+    #[error(
+        "code patch has {0} dependencies, which exceeds the maximum of {max}",
+        max = CodePatch::MAX_ROOTS
+    )]
+    TooManyDependencies(usize),
+
     #[error("created procedure {0} of code patch is duplicated")]
     DuplicateCreatedProcedure(ProcedureRoot),
 
     #[error("dependency {0} of code patch is duplicated")]
     DuplicateDependency(ProcedureRoot),
 
-    #[error("created procedure {0} is not a procedure root of the code patch MAST forest")]
-    CreatedProcedureNotInMastForest(ProcedureRoot),
-
-    #[error("procedure root {0} of the code patch MAST forest is not a created procedure")]
-    MastForestRootNotCreated(ProcedureRoot),
-
     #[error("dependency {0} of code patch is also a created procedure")]
     DependencyIsCreatedProcedure(ProcedureRoot),
 
     #[error("node {0} of the code patch MAST forest is not reachable from a created procedure")]
     UnreachableMastNode(Word),
-
-    #[error("external node {0} of the code patch MAST forest is not a dependency")]
-    ExternalNodeNotDependency(ProcedureRoot),
-
-    #[error("dependency {0} is not an external node of the code patch MAST forest")]
-    DependencyNotExternalNode(ProcedureRoot),
 
     #[error(
         "code patch of size {size} bytes exceeds maximum patch size of {max_size} bytes",
