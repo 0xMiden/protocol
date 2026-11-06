@@ -35,14 +35,6 @@ pub enum ProtocolDomainRegistry {
 
     /// Domain of the [`CodePatch`](crate::block::code_tree::CodePatch) commitment.
     CodePatch = 0x02_0005,
-
-    /// Domain of the
-    /// [`CodePatch::created_commitment`](crate::block::code_tree::CodePatch::created_commitment).
-    CodePatchCreated = 0x02_0006,
-
-    /// Domain of the
-    /// [`CodePatch::dependencies_commitment`](crate::block::code_tree::CodePatch::dependencies_commitment).
-    CodePatchDependencies = 0x02_0007,
 }
 
 impl ProtocolDomainRegistry {
