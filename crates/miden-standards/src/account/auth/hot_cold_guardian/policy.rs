@@ -1,7 +1,7 @@
 use miden_protocol::Word;
 use miden_protocol::errors::AccountError;
 
-use super::config::NUM_USER_CATEGORIES;
+use super::config::NUM_USER_KEY_CATEGORIES;
 use crate::account::auth::multisig_smart::ProcedurePolicyNoteRestriction;
 
 /// The policy of an account procedure in [`AuthHotColdGuardian`](super::AuthHotColdGuardian).
@@ -28,12 +28,12 @@ impl HotColdPolicy {
     ///
     /// # Errors
     ///
-    /// Returns an error if the threshold is zero or exceeds [`NUM_USER_CATEGORIES`].
+    /// Returns an error if the threshold is zero or exceeds [`NUM_USER_KEY_CATEGORIES`].
     pub fn new(immediate_threshold: u32) -> Result<Self, AccountError> {
         if immediate_threshold == 0 {
             return Err(AccountError::other("procedure policy threshold must be at least 1"));
         }
-        if immediate_threshold > NUM_USER_CATEGORIES {
+        if immediate_threshold > NUM_USER_KEY_CATEGORIES {
             return Err(AccountError::other(
                 "procedure policy threshold cannot exceed the number of user key categories",
             ));

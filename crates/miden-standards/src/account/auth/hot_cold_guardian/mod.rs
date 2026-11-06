@@ -11,6 +11,6 @@ pub use config::{
     HotColdDelayConfig,
     MAX_NUM_HOT_KEYS,
     MIN_DELAY_FLOOR_BLOCKS,
-    NUM_USER_CATEGORIES,
+    NUM_USER_KEY_CATEGORIES,
 };
 pub use policy::HotColdPolicy;

@@ -12,13 +12,13 @@ use crate::account::auth::{Approver, GuardianConfig};
 
 /// The user key categories: hot and cold. Thresholds count signed categories, so this is the
 /// highest threshold a policy can require.
-pub const NUM_USER_CATEGORIES: u32 = 2;
+pub const NUM_USER_KEY_CATEGORIES: u32 = 2;
 
 /// The maximum number of hot keys. Together with the cold and the guardian key this stays within
 /// the signer set size the multisig fee estimate is calibrated for.
 pub const MAX_NUM_HOT_KEYS: usize = 62;
 
-/// The default threshold in signed categories: any one user category plus the guardian.
+/// The default threshold in signed categories: any one user key category plus the guardian.
 pub const DEFAULT_THRESHOLD: u32 = 1;
 
 /// The number of blocks in an hour, assuming a 3 second block time.
@@ -63,7 +63,7 @@ impl HotColdDelayConfig {
     ///
     /// Returns an error if `min_delay` is below [`MIN_DELAY_FLOOR_BLOCKS`], if
     /// `propose_expiration_delta` is zero or if `cancel_threshold` is zero or exceeds
-    /// [`NUM_USER_CATEGORIES`].
+    /// [`NUM_USER_KEY_CATEGORIES`].
     pub fn new(
         min_delay: u32,
         propose_expiration_delta: u16,
@@ -78,7 +78,7 @@ impl HotColdDelayConfig {
         if cancel_threshold == 0 {
             return Err(AccountError::other("cancel_threshold must be non-zero"));
         }
-        if cancel_threshold > NUM_USER_CATEGORIES {
+        if cancel_threshold > NUM_USER_KEY_CATEGORIES {
             return Err(AccountError::other(
                 "cancel_threshold cannot exceed the number of user key categories",
             ));

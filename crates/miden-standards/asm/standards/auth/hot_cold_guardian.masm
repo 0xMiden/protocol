@@ -84,12 +84,15 @@ pub const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::hot_cold_guard
 # [min_delay, propose_expiration_delta, cancel_threshold, 0].
 pub const DELAY_CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::delay_config")
 
-# The index of the cold key in its single-entry key set, the same map key the guardian uses.
+# The index of the cold key in its single-entry key set.
 const COLD_KEY_INDEX = 0
+
+# The number of keys in the cold key set.
+const NUM_COLD_KEYS = 1
 
 # The user key categories: hot and cold. Thresholds count signed categories, so no threshold can
 # exceed this value.
-pub const NUM_USER_CATEGORIES = 2
+pub const NUM_USER_KEY_CATEGORIES = 2
 
 # The maximum number of hot keys. Together with the cold and the guardian key this stays within
 # the signer set size the multisig fee estimate is calibrated for (MAX_NUM_APPROVERS).
@@ -358,7 +361,7 @@ end
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
 #!
 #! Panics if:
-#! - immediate_threshold is not a u32 value or exceeds NUM_USER_CATEGORIES.
+#! - immediate_threshold is not a u32 value or exceeds NUM_USER_KEY_CATEGORIES.
 #! - note_restrictions is not a u32 value or exceeds the note restriction range.
 #! - cold_required is neither 0 nor 1.
 #! - note_restrictions or cold_required is set while immediate_threshold is zero.
@@ -378,19 +381,19 @@ pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedure
     loc_store.IMMEDIATE_THRESHOLD_LOC
     # => [note_restrictions, cold_required, PROC_ROOT, pad(9)]
 
+    dup exec.multisig_smart::assert_valid_note_restrictions
+    # => [note_restrictions, cold_required, PROC_ROOT, pad(9)]
+
     loc_store.NOTE_RESTRICTIONS_LOC
     # => [cold_required, PROC_ROOT, pad(9)]
 
-    loc_store.COLD_REQUIRED_LOC
-    # => [PROC_ROOT, pad(9)]
-
-    loc_load.NOTE_RESTRICTIONS_LOC exec.multisig_smart::assert_valid_note_restrictions
-    # => [PROC_ROOT, pad(9)]
-
-    loc_load.COLD_REQUIRED_LOC u32assert.err=ERR_COLD_REQUIRED_NOT_BOOL
+    u32assert.err=ERR_COLD_REQUIRED_NOT_BOOL
     # => [cold_required, PROC_ROOT, pad(9)]
 
-    u32lte.1 assert.err=ERR_COLD_REQUIRED_NOT_BOOL
+    dup u32lte.1 assert.err=ERR_COLD_REQUIRED_NOT_BOOL
+    # => [cold_required, PROC_ROOT, pad(9)]
+
+    loc_store.COLD_REQUIRED_LOC
     # => [PROC_ROOT, pad(9)]
 
     loc_load.IMMEDIATE_THRESHOLD_LOC eq.0
@@ -404,16 +407,17 @@ pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedure
         assertz.err=ERR_POLICY_OPTIONS_REQUIRE_THRESHOLD
         # => [PROC_ROOT, pad(9)]
     else
-        # 1 <= immediate_threshold <= NUM_USER_CATEGORIES
-        loc_load.IMMEDIATE_THRESHOLD_LOC push.NUM_USER_CATEGORIES
-        # => [num_user_categories, immediate_threshold, PROC_ROOT, pad(9)]
+        # 1 <= immediate_threshold <= NUM_USER_KEY_CATEGORIES
+        loc_load.IMMEDIATE_THRESHOLD_LOC
+        # => [immediate_threshold, PROC_ROOT, pad(9)]
 
-        u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
-        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+        u32assert.err=ERR_PROC_THRESHOLD_NOT_U32
+        u32lte.NUM_USER_KEY_CATEGORIES assert.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES
         # => [PROC_ROOT, pad(9)]
 
-        # cold required only makes sense for a single-category threshold
-        loc_load.COLD_REQUIRED_LOC loc_load.IMMEDIATE_THRESHOLD_LOC eq.1 not
+        # cold required only makes sense for a single-category threshold; the threshold is either
+        # 1 or NUM_USER_KEY_CATEGORIES here
+        loc_load.COLD_REQUIRED_LOC loc_load.IMMEDIATE_THRESHOLD_LOC eq.NUM_USER_KEY_CATEGORIES
         # => [is_multi_category, cold_required, PROC_ROOT, pad(9)]
 
         and assertz.err=ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY
@@ -426,7 +430,9 @@ pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedure
     assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
     # => [PROC_ROOT, pad(9)]
 
-    # write [immediate_threshold, 0, note_restrictions, cold_required] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]
+    # write [immediate_threshold, 0, note_restrictions, cold_required] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]:
+    # the multisig_smart policy layout, with index 1 reserved for the delayed threshold and
+    # cold_required in the spare element, so the delayed path can be added without a storage change
     loc_load.COLD_REQUIRED_LOC loc_load.NOTE_RESTRICTIONS_LOC push.0 loc_load.IMMEDIATE_THRESHOLD_LOC
     # => [immediate_threshold, 0, note_restrictions, cold_required, PROC_ROOT, pad(9)]
 
@@ -457,7 +463,7 @@ end
 #! Panics if:
 #! - min_delay is not a u32 value or below MIN_DELAY_FLOOR_BLOCKS.
 #! - propose_expiration_delta is not a u32 value, zero or above MAX_EXPIRATION_BLOCK_DELTA.
-#! - cancel_threshold is not a u32 value, zero or above NUM_USER_CATEGORIES.
+#! - cancel_threshold is not a u32 value, zero or above NUM_USER_KEY_CATEGORIES.
 #!
 #! Invocation: call
 @account_procedure
@@ -470,7 +476,7 @@ pub proc update_delay_config(
     u32assert.err=ERR_MIN_DELAY_NOT_U32
     # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
 
-    dup push.MIN_DELAY_FLOOR_BLOCKS u32lt assertz.err=ERR_MIN_DELAY_BELOW_FLOOR
+    dup u32lt.MIN_DELAY_FLOOR_BLOCKS assertz.err=ERR_MIN_DELAY_BELOW_FLOOR
     # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
 
     # 0 < propose_expiration_delta <= MAX_EXPIRATION_BLOCK_DELTA
@@ -480,17 +486,17 @@ pub proc update_delay_config(
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
     # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
 
-    dup push.MAX_EXPIRATION_BLOCK_DELTA u32gt assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    dup u32gt.MAX_EXPIRATION_BLOCK_DELTA assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
     # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
 
-    # 0 < cancel_threshold <= NUM_USER_CATEGORIES
+    # 0 < cancel_threshold <= NUM_USER_KEY_CATEGORIES
     movup.2 u32assert.err=ERR_CANCEL_THRESHOLD_NOT_U32
     # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
 
     dup eq.0 assertz.err=ERR_CANCEL_THRESHOLD_ZERO
     # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
 
-    dup push.NUM_USER_CATEGORIES u32gt assertz.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+    dup u32gt.NUM_USER_KEY_CATEGORIES assertz.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES
     # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
 
     movup.2
@@ -780,19 +786,19 @@ pub proc verify_category_signatures(msg: SignatureMessage) -> (Bool, Bool, Signa
     neq.0 movdn.4
     # => [MSG, hot_signed]
 
-    push.1
-    # => [1, MSG, hot_signed]
+    push.NUM_COLD_KEYS
+    # => [num_cold_keys, MSG, hot_signed]
 
     push.COLD_PUBLIC_KEY_SLOT[0..2]
-    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, 1, MSG, hot_signed]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, num_cold_keys, MSG, hot_signed]
 
     push.COLD_SCHEME_ID_SLOT[0..2]
-    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, 1, MSG, hot_signed]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, num_cold_keys, MSG, hot_signed]
 
     exec.signature::verify_signatures
     # => [num_cold_signatures, MSG, hot_signed]
 
-    eq.1 movup.5
+    neq.0 movup.5
     # => [hot_signed, cold_signed, MSG]
 end
 
@@ -899,7 +905,7 @@ proc assert_num_hot_keys_in_bounds(num_hot_keys: u32)
     eq.0 assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
     # => [num_hot_keys]
 
-    push.MAX_NUM_HOT_KEYS u32gt assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
+    u32gt.MAX_NUM_HOT_KEYS assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
     # => []
 end
 
@@ -943,24 +949,18 @@ proc compute_called_proc_policy(
     push.0 push.0 push.0 push.0 exec.active_account::get_num_procedures
     # => [proc_index, immediate_acc=0, delayed_acc=0, restrictions_acc=0, cold_acc=0]
 
-    dup neq.0
+    # procedure index 0 is the auth procedure and never contributes, so the loop stops before it
+    dup neq.1
     # => [should_continue, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
     while.true
         sub.1
         # => [proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
 
-        # procedure index 0 is the auth procedure and never contributes
-        dup neq.0
-        # => [is_non_auth, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
-
-        dup.1 exec.active_account::get_procedure_root
-        # => [PROC_ROOT, is_non_auth, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+        dup exec.active_account::get_procedure_root
+        # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
 
         exec.native_account::was_procedure_called
-        # => [was_called, is_non_auth, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
-
-        and
-        # => [should_process, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+        # => [was_called, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
 
         if.true
             dup exec.active_account::get_procedure_root
@@ -995,7 +995,7 @@ proc compute_called_proc_policy(
             # => [proc_index, new_immediate, new_delayed, new_restrictions, new_cold]
         end
 
-        dup neq.0
+        dup neq.1
         # => [should_continue, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
     end
 
