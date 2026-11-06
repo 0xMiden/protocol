@@ -1,7 +1,7 @@
 use {BlockNumber} from miden::protocol::types
 use miden::protocol::native_account
 use miden::protocol::tx
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 
 pub mod eip712
@@ -203,7 +203,7 @@ pub proc hash_and_insert_tx_summary(
     block_commitment: word,
     logs_commitment: word
 ) -> word
-    # Save the seven words in hashing order, keeping the preimage for the advice map.
+    # save the seven words in hashing order, keeping the preimage for the advice map
     loc_storew_le.SUMMARY_PARAMS_HEAD_LOC dropw
     # => [PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
     #     BLOCK_COMMITMENT, LOGS_COMMITMENT]
@@ -227,12 +227,11 @@ pub proc hash_and_insert_tx_summary(
     loc_storew_le.SUMMARY_LOGS_LOC dropw
     # => []
 
-    # The preimage has 28 elements. hash_elements sets capacity to 28 % 8 and pads the last
-    # rate block, matching the Rust transaction summary commitment.
+    # hash all 28 elements with Eidos length framing, matching the Rust transaction summary
     push.TX_SUMMARY_NUM_ELEMENTS locaddr.SUMMARY_PARAMS_HEAD_LOC
     # => [start_ptr, num_elements]
 
-    exec.poseidon2::hash_elements
+    exec.eidos::hash_elements
     # => [TX_SUMMARY_COMMITMENT]
 
     # insert the preimage stored in the locals into the advice map keyed by the commitment

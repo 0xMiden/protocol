@@ -3,7 +3,6 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -12,6 +11,7 @@ use miden_protocol::account::{
     AccountType,
     RoleSymbol,
 };
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
@@ -80,7 +80,7 @@ fn authority_config_note(
     sender: AccountId,
     account: AccountId,
     config: AuthorityConfig,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = AuthorityConfigNote::builder()
         .sender(sender)
@@ -101,7 +101,7 @@ fn malformed_authority_config_note(
     sender: AccountId,
     target: AccountId,
     storage: Vec<Felt>,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(AuthorityConfigNote::script())
@@ -141,7 +141,7 @@ async fn freeze_then_unfreeze_dispatch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let freeze = authority_config_note(owner, account.id(), AuthorityConfig::Freeze, &mut rng)?;
     let frozen = execute_note_and_apply(&mock_chain, &account, &freeze).await?;
@@ -164,7 +164,7 @@ async fn non_owner_cannot_freeze() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = authority_config_note(non_owner, account.id(), AuthorityConfig::Freeze, &mut rng)?;
     let result = mock_chain
@@ -189,7 +189,7 @@ async fn set_procedure_role_dispatch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let freeze_root = Authority::freeze_root();
     let freezer = RoleSymbol::new("FREEZER")?;
@@ -242,7 +242,7 @@ async fn set_procedure_role_requires_rbac_controlled_authority() -> anyhow::Resu
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = authority_config_note(
         owner,
@@ -273,7 +273,7 @@ async fn unknown_variant_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // variant 99 is not a known action
     let note =
@@ -297,7 +297,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // a Freeze variant followed by a stray item instead of the single expected variant item
     let storage = vec![Felt::ZERO, Felt::ONE];
@@ -326,7 +326,7 @@ async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow:
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
     let note = malformed_authority_config_note(owner, account.id(), storage, &mut rng)?;
@@ -352,7 +352,7 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
     let mut builder = MockChain::builder();
     builder.add_account(decoy.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
@@ -382,7 +382,7 @@ async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = authority_config_note(owner, account.id(), AuthorityConfig::Freeze, &mut rng)?;
     let result = mock_chain

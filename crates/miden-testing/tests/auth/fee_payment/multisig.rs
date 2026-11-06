@@ -118,7 +118,7 @@ async fn execute_fee_paying_multisig_tx(
 /// ECDSA case additionally exercises the (large) overshoot of the Falcon-based per-signer bound
 /// for a cheaper scheme.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
@@ -151,7 +151,7 @@ async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Resu
 /// blocks.
 #[rstest]
 #[case::zero_fee(AuthScheme::EcdsaK256Keccak, 0, 9)]
-#[case::falcon_before_expiration(AuthScheme::Falcon512Poseidon2, VERIFICATION_BASE_FEE, 9)]
+#[case::falcon_before_expiration(AuthScheme::Falcon512Eidos, VERIFICATION_BASE_FEE, 9)]
 #[case::ecdsa_before_expiration(AuthScheme::EcdsaK256Keccak, VERIFICATION_BASE_FEE, 9)]
 #[case::ecdsa_at_expiration(AuthScheme::EcdsaK256Keccak, VERIFICATION_BASE_FEE, 10)]
 #[case::ecdsa_after_expiration(AuthScheme::EcdsaK256Keccak, VERIFICATION_BASE_FEE, 11)]
@@ -247,7 +247,7 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
 /// unchanged, but its asset amount and the vault withdrawal increase, so execution requires new
 /// signatures.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn multisig_rejects_original_signatures_when_fee_changes(
@@ -362,7 +362,7 @@ async fn multisig_rejects_original_signatures_when_fee_changes(
 /// transaction's fee note serial number and thus its summary commitment differ from the signed
 /// one, and the stale signatures fail verification.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn multisig_fee_payment_preserves_replay_protection(

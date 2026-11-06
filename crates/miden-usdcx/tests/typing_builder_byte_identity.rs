@@ -26,21 +26,17 @@ const SEED: [u8; 32] = [7u8; 32];
 const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
-// construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
-// policy code and the fee schedule keyed by note script roots, for the rename of the
-// `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
-// slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
-// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, for the
-// logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the root
-// of the config note script that calls them, and for the bound on converted amounts in
-// `fee::convert_amount`, which changes the auth component's `pay_fee` code.
+// construction paths deterministic. These commitments include the mint policy code and the fee
+// schedule keyed by note script roots. The fee-conversion bound also changes the authentication
+// code and the seed-derived account identity.
+// The preimage helper's comparison affects procedure roots and the note-script fee keys.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([5162996465510048755, 2094439739736683357, 6936787768993976662, 17230760176016600422])";
+    "Word([908466164085694477, 3645790855856035774, 6802588595656425936, 8045686795419542491])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([4330151583663897892, 1076998090470432129, 2457291820389870476, 9246314450693933979])";
+    "Word([7799755730770539829, 8852556139345090739, 3436491508159081147, 1527887730813880942])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([11934322787388200008, 12740576829291714277, 8409363599569151088, 3187457418425219326])";
-const GOLDEN_ACCOUNT_ID: &str = "0xf10557781db4fbf15678c813fadd2d";
+    "Word([8858573011609585531, 3583692118136842473, 6737041009492695339, 2715734966923451603])";
+const GOLDEN_ACCOUNT_ID: &str = "0x3577688a07d716f13a1cf79a852843";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

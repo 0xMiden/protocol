@@ -20,11 +20,12 @@ fn empty_collection() {
 #[test]
 fn empty_content_is_not_an_absent_log_or_zero_word_content() {
     let empty_content = TransactionLog::mock(0);
-    assert_eq!(empty_content.content_commitment(), Word::empty());
+    assert_eq!(empty_content.content_commitment(), Hasher::hash_elements::<Felt>(&[]));
 
     let mut zero_word_content = empty_content.clone();
     zero_word_content.content.push(Word::empty());
     assert_ne!(zero_word_content.content_commitment(), Word::empty());
+    assert_ne!(empty_content.content_commitment(), zero_word_content.content_commitment());
 
     let logs = TransactionLogs::new(vec![empty_content]).unwrap();
     assert!(!logs.is_empty());

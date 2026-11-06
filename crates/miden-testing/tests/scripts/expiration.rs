@@ -12,9 +12,8 @@ async fn expiration_tx_script_sets_expiration_from_tx_args() -> anyhow::Result<(
     const DELTA: NonZeroU16 = NonZeroU16::new(42).unwrap();
 
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     // Mirror how a real caller (client / node) attaches the script: convert the typed script into a

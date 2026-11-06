@@ -63,7 +63,9 @@ impl NoteTag {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The default note tag length for an account ID with local execution.
+    /// The default number of account-prefix bits selected for an account target tag.
+    ///
+    /// Eidos-generated account prefixes have a fixed high bit, so this selects 13 varying bits.
     pub const DEFAULT_ACCOUNT_TARGET_TAG_LENGTH: u8 = 14;
     /// The maximum number of bits that can be encoded into the tag for local accounts.
     pub const MAX_ACCOUNT_TARGET_TAG_LENGTH: u8 = 32;
@@ -89,6 +91,9 @@ impl NoteTag {
     ///
     /// The tag is a u32 constructed by taking the `tag_len` most significant bits of the account ID
     /// prefix and setting the remaining bits to zero.
+    /// For an Eidos-generated ID, a positive `tag_len` selects `tag_len - 1` varying bits because
+    /// the prefix's high bit is zero. In particular, the maximum length selects 31 varying bits.
+    /// These tags are best-effort filters and do not authenticate the intended recipient.
     ///
     /// # Errors
     ///

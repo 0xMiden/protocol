@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::RawOutputNote;
@@ -26,6 +25,7 @@ use miden_standards::note::{
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChain};
+use rand::RngExt;
 
 use super::VERIFICATION_BASE_FEE;
 
@@ -92,7 +92,7 @@ fn p2id_network_note(
     sender: AccountId,
     target: AccountId,
     asset: Asset,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let attachment = NetworkAccountTarget::new(target, NoteExecutionHint::Always)?;
     Ok(P2idNote::builder()
@@ -101,7 +101,7 @@ fn p2id_network_note(
         .asset(asset)
         .note_type(NoteType::Public)
         .attachment(attachment)
-        .serial_number(rng.draw_word())
+        .serial_number(rng.random())
         .build()?
         .into())
 }
@@ -114,7 +114,7 @@ fn p2id_network_note(
 /// carrying exactly the fee the target account's policy prices the note at.
 #[tokio::test]
 async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);
 
@@ -210,7 +210,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
 async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<()> {
     const NETWORK_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let payload_asset = FungibleAsset::mock(50).unwrap_fungible();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
@@ -313,7 +313,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
 async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> anyhow::Result<()> {
     const B_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
-    let mut rng = RandomCoin::new(Word::from([7u32, 8, 9, 10]));
+    let mut rng = EidosRandomCoin::new(Word::from([7u32, 8, 9, 10]));
     let payload_asset: Asset = FungibleAsset::mock(50);
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);

@@ -58,8 +58,8 @@ impl StorageMapKey {
 
     /// Hashes this raw map key to produce a [`StorageMapKeyHash`].
     ///
-    /// Storage map keys are hashed before being inserted into the SMT to ensure a uniform
-    /// key distribution.
+    /// Storage map keys are hashed before being inserted into the SMT to avoid clustering raw
+    /// keys. Eidos-derived indices occupy the lower 2^63 leaves of the depth-64 tree.
     pub fn hash(&self) -> StorageMapKeyHash {
         StorageMapKeyHash::from_raw(Hasher::hash_elements(self.0.as_elements()))
     }

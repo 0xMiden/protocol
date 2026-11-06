@@ -18,7 +18,6 @@ const DEFAULT_VALIDATOR_COUNT: usize = 3;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -49,6 +48,7 @@ use miden_protocol::block::{
 use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -126,7 +126,7 @@ pub struct MockChainBuilder {
     accounts: BTreeMap<AccountId, Account>,
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
-    rng: RandomCoin,
+    rng: EidosRandomCoin,
     validator_signing_keys: Option<Vec<SigningKey>>,
     // Fee parameters.
     fee_faucet_id: AccountId,
@@ -153,7 +153,7 @@ impl MockChainBuilder {
             accounts: BTreeMap::new(),
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
-            rng: RandomCoin::new(Default::default()),
+            rng: EidosRandomCoin::new(Default::default()),
             validator_signing_keys: None,
             fee_faucet_id,
             verification_base_fee: 0,
@@ -958,7 +958,7 @@ impl MockChainBuilder {
     /// Returns a mutable reference to the builder's RNG.
     ///
     /// This can be used when creating accounts or notes and randomness is required.
-    pub fn rng_mut(&mut self) -> &mut RandomCoin {
+    pub fn rng_mut(&mut self) -> &mut EidosRandomCoin {
         &mut self.rng
     }
 

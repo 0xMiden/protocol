@@ -1,13 +1,17 @@
 //! Transaction logs, submitted data, and their ordered commitment.
 //!
 //! Individual transaction logs and ordered collections use distinct hash domains,
-//! defined by [`ProtocolDomainRegistry::TransactionLog`] and
-//! [`ProtocolDomainRegistry::TransactionLogs`].
+//! defined by [`TRANSACTION_LOG_COMMITMENT_DOMAIN`] and
+//! [`TRANSACTION_LOGS_COMMITMENT_DOMAIN`].
 
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::crypto::SequentialCommit;
+use crate::domain_registry::{
+    TRANSACTION_LOG_COMMITMENT_DOMAIN,
+    TRANSACTION_LOGS_COMMITMENT_DOMAIN,
+};
 
 mod topic;
 pub use topic::LogTopic;
@@ -21,7 +25,7 @@ pub use errors::TransactionLogError;
 #[cfg(test)]
 mod tests;
 
-use crate::{Felt, Hasher, ProtocolDomainRegistry, Word};
+use crate::{Felt, Hasher, Word};
 
 // TRANSACTION LOG
 // ================================================================================================
@@ -46,9 +50,6 @@ pub struct TransactionLog {
 impl TransactionLog {
     /// The maximum number of content words in a transaction log (2 KiB).
     pub const MAX_NUM_WORDS: usize = 64;
-
-    /// Hash domain for individual transaction log commitments.
-    const DOMAIN: Felt = ProtocolDomainRegistry::TransactionLog.as_felt();
 
     /// Creates a transaction log with the provided emitter, topic, and content.
     ///
@@ -86,7 +87,7 @@ impl TransactionLog {
 
     /// Hashes the content as field elements.
     ///
-    /// The commitment of an empty content is [`Word::empty`].
+    /// Empty content uses the canonical Eidos hash of an empty Felt sequence.
     pub fn content_commitment(&self) -> Word {
         Hasher::hash_elements(Word::words_as_elements(&self.content))
     }
@@ -122,7 +123,7 @@ impl SequentialCommit for TransactionLog {
     }
 
     fn to_commitment(&self) -> Word {
-        Hasher::hash_elements_in_domain(&self.to_elements(), Self::DOMAIN)
+        Hasher::hash_elements_in_domain(&self.to_elements(), TRANSACTION_LOG_COMMITMENT_DOMAIN)
     }
 }
 
@@ -136,24 +137,24 @@ impl SequentialCommit for TransactionLog {
 ///
 /// # Commitment
 ///
-/// Uses Poseidon2 over field elements. Each transaction log commits to its emitter, topic, and
+/// Uses Eidos over field elements. Each transaction log commits to its emitter, topic, and
 /// content:
 ///
 /// ```text
 /// CONTENT_COMMITMENT = hash([CONTENT_WORD_0, CONTENT_WORD_1, ..., CONTENT_WORD_N])
 /// METADATA = [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix]
-/// LOG_COMMITMENT = hash([METADATA, CONTENT_COMMITMENT], ProtocolDomainRegistry::TransactionLog)
+/// LOG_COMMITMENT = hash([METADATA, CONTENT_COMMITMENT], TRANSACTION_LOG_COMMITMENT_DOMAIN)
 /// ```
 ///
 /// The collection commits to these log commitments in emission order:
 ///
 /// ```text
 /// hash([LOG_COMMITMENT_0, LOG_COMMITMENT_1, ..., LOG_COMMITMENT_N],
-///      ProtocolDomainRegistry::TransactionLogs)
+///      TRANSACTION_LOGS_COMMITMENT_DOMAIN)
 /// ```
 ///
-/// The domains are defined by [`ProtocolDomainRegistry::TransactionLog`] and
-/// [`ProtocolDomainRegistry::TransactionLogs`].
+/// The domains are defined by [`TRANSACTION_LOG_COMMITMENT_DOMAIN`] and
+/// [`TRANSACTION_LOGS_COMMITMENT_DOMAIN`].
 ///
 /// An empty collection has commitment [`Word::empty`]. The collection hash binds transaction log
 /// order and duplicate occurrences. The content hash binds content and length.
@@ -174,9 +175,6 @@ impl TransactionLogs {
     /// The maximum combined content size, in words (2 KiB), excluding log metadata.
     pub const MAX_NUM_WORDS: usize = 64;
 
-    /// Hash domain for ordered collections of transaction logs.
-    const DOMAIN: Felt = ProtocolDomainRegistry::TransactionLogs.as_felt();
-
     /// Creates a collection from the provided transaction logs in emission order.
     ///
     /// Returns an error if the count exceeds [`TransactionLogs::MAX_COUNT`] or the total content
@@ -191,8 +189,10 @@ impl TransactionLogs {
         }
         let mut result = Self { logs, commitment: Word::empty() };
         if !result.is_empty() {
-            result.commitment =
-                Hasher::hash_elements_in_domain(&result.to_elements(), Self::DOMAIN);
+            result.commitment = Hasher::hash_elements_in_domain(
+                &result.to_elements(),
+                TRANSACTION_LOGS_COMMITMENT_DOMAIN,
+            );
         }
         Ok(result)
     }

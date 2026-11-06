@@ -4,7 +4,6 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -19,6 +18,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
+use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
 use crate::note::NetworkAccountTarget;
@@ -175,9 +175,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> BurnNoteBuilder<burn_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -216,7 +216,7 @@ impl NoteConsumptionCost for BurnNote {
 mod tests {
     use miden_protocol::account::AccountType;
     use miden_protocol::asset::FungibleAsset;
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::note::NoteTag;
 
     use super::*;
@@ -235,7 +235,7 @@ mod tests {
     }
 
     fn build_burn_note(faucet_id: AccountId) -> BurnNote {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         BurnNote::builder()
             .sender(sender())
             .asset(FungibleAsset::new(faucet_id, 100).unwrap())

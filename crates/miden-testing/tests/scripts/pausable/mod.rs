@@ -10,7 +10,6 @@ mod config;
 
 use alloc::collections::BTreeMap;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -21,6 +20,7 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -641,7 +641,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
     "#;
     let burn_note_script = miden_standards::code_builder::CodeBuilder::default()
         .compile_note_script(burn_note_script_code)?;
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let burn_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .add_assets([Asset::from(burn_asset)])
@@ -713,7 +713,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
     );
     let set_max_supply_note_script = miden_standards::code_builder::CodeBuilder::default()
         .compile_note_script(&set_max_supply_note_code)?;
-    let mut rng = RandomCoin::new(Word::from([9u32, 8, 7, 6]));
+    let mut rng = EidosRandomCoin::new(Word::from([9u32, 8, 7, 6]));
     let set_max_supply_note = NoteBuilder::new(*OWNER_ID, &mut rng)
         .note_type(NoteType::Private)
         .script(set_max_supply_note_script)
