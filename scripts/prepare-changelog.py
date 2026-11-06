@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Moves the `.changelog/unreleased/` entries into `.changelog/<tag>/<PR>.md`, adding their PR links. The PR of
-an entry is its file name if that is a number, and otherwise the `(#N)` that GitHub appends to the subject of
-the squash commit that added the file. A file holding just the name of another entry adds its PR to the links
-of that entry instead.
+an entry is the `(#N)` that GitHub appends to the subject of the squash commit that added the file. A file
+holding just the name of another entry adds its PR to the links of that entry instead.
 """
 
 import re
@@ -16,13 +15,14 @@ PR_URL = "https://github.com/0xMiden/protocol/pull"
 
 
 def pr_of(path: Path) -> int:
-    if path.stem.isdigit():
-        return int(path.stem)
     log = ["git", "log", "--no-renames", "--diff-filter=A", "--format=%s", "--", str(path)]
     subject = subprocess.run(log, capture_output=True, text=True, check=True).stdout.partition("\n")[0]
     match = re.search(r"\(#(\d+)\)$", subject)
     if not match:
-        sys.exit(f'No PR number in "{subject}", the commit that added {path}. Rename it to <PR number>.md.')
+        sys.exit(
+            f'No PR number in "{subject}", the commit that added {path}. '
+            "Move its lines to .changelog/<tag>/<PR>.md by hand, with the PR link."
+        )
     return int(match[1])
 
 

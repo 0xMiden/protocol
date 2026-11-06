@@ -7,8 +7,9 @@ one line per entry:
 [BREAKING] Renamed `Foo` to `Bar`.
 ```
 
-The PR link is added at release. A PR that extends an entry still in `unreleased/` can instead add a file holding
-just that entry's file name without `.md` (e.g. `code-tree`), which adds its PR link to that entry.
+The PR link is added at release, so the file can be written before the PR exists. A PR that extends an entry
+still in `unreleased/` can instead add a file holding just that entry's file name without `.md` (e.g.
+`code-tree`), which adds its PR link to that entry.
 
 PRs that don't need an entry get the `no changelog` label.
 
