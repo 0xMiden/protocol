@@ -1,0 +1,1 @@
+[BREAKING] Added `set_delay_config` and `get_initial_delay_config` to `multisig_smart::delayed_execution` and used them in `hot_cold_guardian`, replacing `ERR_MIN_DELAY_ZERO` with `ERR_MIN_DELAY_BELOW_FLOOR` and renaming `ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS` to `ERR_CANCEL_THRESHOLD_EXCEEDS_MAX`.

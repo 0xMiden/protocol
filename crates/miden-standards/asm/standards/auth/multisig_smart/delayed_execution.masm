@@ -21,8 +21,9 @@ use {SignatureThreshold, THRESHOLD_CONFIG_SLOT} from miden::standards::auth::mul
 # `remove_tx_proposal`, `remove_tx_proposal_if_present`, `consume_tx_proposal`, the unlock
 # assertions and `cancel_signing_message`) takes the proposals map slot id as its first input, like
 # `native_account::get_map_item`, so that other components can keep a proposals map of their own
-# with it. The delay configuration getters and the account procedures are specific to this
-# component and read `DELAY_CONFIG_SLOT` and `TX_PROPOSALS_SLOT` themselves.
+# with it. The delay configuration layer (`set_delay_config`, `get_initial_delay_config`) takes the
+# delay configuration slot id the same way. The account procedures are specific to this component
+# and read `DELAY_CONFIG_SLOT` and `TX_PROPOSALS_SLOT` themselves.
 
 # CONSTANTS
 # =================================================================================================
@@ -39,6 +40,9 @@ pub const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_p
 # keeps the delayed path closed for its commitment for good.
 pub const CANCELLED_UNLOCK_BLOCK = 0xFFFFFFFF
 
+# The shortest delay this component accepts: min_delay must be non-zero.
+const MIN_DELAY_FLOOR_BLOCKS = 1
+
 # Domain of the cancel signing message.
 const CANCEL_PROPOSAL_DOMAIN = 0x028000
 
@@ -46,13 +50,13 @@ const CANCEL_PROPOSAL_DOMAIN = 0x028000
 # =================================================================================================
 
 const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
-const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
+const ERR_MIN_DELAY_BELOW_FLOOR = "min_delay is below the component's delay floor"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
 const ERR_CANCEL_THRESHOLD_NOT_U32 = "cancel_threshold must be u32"
 const ERR_CANCEL_THRESHOLD_ZERO = "cancel_threshold must be non-zero"
-const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS = "cancel_threshold exceeds the number of approvers"
+const ERR_CANCEL_THRESHOLD_EXCEEDS_MAX = "cancel_threshold exceeds the component's maximum"
 const ERR_BLOCK_NUMBERS_NOT_U32 = "reference and unlock block numbers must be u32"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
 const ERR_TX_PROPOSAL_CANCELLED = "tx proposal was cancelled"
@@ -88,17 +92,9 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #!   proposal uncancellable.
 #!
 #! Panics if:
-#! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
-#! - `propose_expiration_delta` is not a valid `u32` field element
-#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
-#! - `min_delay` is zero (`ERR_MIN_DELAY_ZERO`).
-#! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
-#! - `propose_expiration_delta` exceeds `MAX_EXPIRATION_BLOCK_DELTA`, the largest delta the kernel's
-#!   `tx::update_expiration_block_delta` accepts (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
-#! - `cancel_threshold` is not a valid `u32` field element (`ERR_CANCEL_THRESHOLD_NOT_U32`).
-#! - `cancel_threshold` is zero (`ERR_CANCEL_THRESHOLD_ZERO`).
-#! - `cancel_threshold` exceeds the current number of approvers
-#!   (`ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS`).
+#! - `min_delay` is zero (`ERR_MIN_DELAY_BELOW_FLOOR`).
+#! - `cancel_threshold` exceeds the current number of approvers (`ERR_CANCEL_THRESHOLD_EXCEEDS_MAX`).
+#! - the configuration is otherwise invalid, as described in `set_delay_config`.
 #!
 #! Invocation: call
 @account_procedure
@@ -107,57 +103,115 @@ pub proc update_delayed_execution_policy(
     propose_expiration_delta: u16,
     cancel_threshold: SignatureThreshold
 )
-    u32assert.err=ERR_MIN_DELAY_NOT_U32
-    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
-    # => [min_delay, propose_expiration_delta, cancel_threshold]
+    # the cancel quorum must be reachable by the approvers that exist when it is set
+    exec.get_current_num_approvers push.MIN_DELAY_FLOOR_BLOCKS
+    # => [min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold]
 
-    # Assert propose_expiration_delta != 0.
-    dup.1 u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [delay_slot_suffix, delay_slot_prefix, min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold]
+
+    exec.set_delay_config
+    # => []
+end
+
+#! Validates a delay configuration and writes it to the given slot.
+#!
+#! The configuration is stored as [min_delay, propose_expiration_delta, cancel_threshold, 0]. The
+#! bounds that differ between components are inputs, so that components with a delay configuration
+#! of their own validate it the same way.
+#!
+#! Inputs:  [delay_config_slot_id, min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold]
+#! Outputs: []
+#!
+#! Where:
+#! - delay_config_slot_id is the storage slot id of the delay configuration value slot.
+#! - min_delay_floor is the smallest min_delay the component accepts.
+#! - max_cancel_threshold is the largest cancel_threshold the component accepts.
+#! - min_delay, propose_expiration_delta and cancel_threshold are as described in
+#!   `update_delayed_execution_policy`.
+#!
+#! min_delay_floor is a bound set by the calling component and must be a u32 value; it is not
+#! validated here.
+#!
+#! Panics if:
+#! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
+#! - `min_delay` is below `min_delay_floor` (`ERR_MIN_DELAY_BELOW_FLOOR`).
+#! - `propose_expiration_delta` is not a valid `u32` field element
+#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
+#! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
+#! - `propose_expiration_delta` exceeds `MAX_EXPIRATION_BLOCK_DELTA`, the largest delta the kernel's
+#!   `tx::update_expiration_block_delta` accepts (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
+#! - `cancel_threshold` or `max_cancel_threshold` is not a valid `u32` field element
+#!   (`ERR_CANCEL_THRESHOLD_NOT_U32`).
+#! - `cancel_threshold` is zero (`ERR_CANCEL_THRESHOLD_ZERO`).
+#! - `cancel_threshold` exceeds `max_cancel_threshold` (`ERR_CANCEL_THRESHOLD_EXCEEDS_MAX`).
+#!
+#! Invocation: exec
+pub proc set_delay_config(
+    delay_config_slot_id: StorageSlotId,
+    min_delay_floor: u32,
+    max_cancel_threshold: SignatureThreshold,
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    cancel_threshold: SignatureThreshold
+)
+    # keep the slot id below the configuration until the write
+    movdn.6 movdn.6
+    # => [min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
+
+    # min_delay >= min_delay_floor
+    dup.2 u32assert.err=ERR_MIN_DELAY_NOT_U32
+    # => [min_delay, min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
+
+    swap u32gte assert.err=ERR_MIN_DELAY_BELOW_FLOOR
+    # => [max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
+
+    # 0 < propose_expiration_delta <= MAX_EXPIRATION_BLOCK_DELTA
+    dup.2 u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    # => [propose_expiration_delta, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
+
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
-    # => [propose_expiration_delta, min_delay, propose_expiration_delta, cancel_threshold]
+    # => [propose_expiration_delta, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
 
-    # Reject a delta the kernel's `tx::update_expiration_block_delta` would not accept here, rather
-    # than bricking the propose flow later.
+    # reject a delta the kernel's `tx::update_expiration_block_delta` would not accept, rather than
+    # bricking the propose flow later
     u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
-    # => [min_delay, propose_expiration_delta, cancel_threshold]
+    # => [max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
 
-    # Assert 0 < cancel_threshold <= current number of approvers, so the quorum is reachable by
-    # the approvers that exist when it is set.
-    exec.get_current_num_approvers
-    # => [num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
-
+    # 0 < cancel_threshold <= max_cancel_threshold
     dup.3
-    # => [cancel_threshold, num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+    # => [cancel_threshold, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
 
     u32assert2.err=ERR_CANCEL_THRESHOLD_NOT_U32
     dup eq.0 assertz.err=ERR_CANCEL_THRESHOLD_ZERO
-    # => [cancel_threshold, num_approvers, min_delay, propose_expiration_delta, cancel_threshold]
+    # => [cancel_threshold, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
 
-    u32gte assert.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS
-    # => [min_delay, propose_expiration_delta, cancel_threshold]
+    u32gte assert.err=ERR_CANCEL_THRESHOLD_EXCEEDS_MAX
+    # => [min_delay, propose_expiration_delta, cancel_threshold, delay_config_slot_id]
 
     push.0 movdn.3
-    # => [min_delay, propose_expiration_delta, cancel_threshold, 0]
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0, delay_config_slot_id]
 
-    push.DELAY_CONFIG_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, cancel_threshold, 0]
+    movup.5 movup.5
+    # => [delay_config_slot_id, min_delay, propose_expiration_delta, cancel_threshold, 0]
 
     exec.native_account::set_item
-    # => [OLD_WORD]
+    # => [OLD_DELAY_CONFIG]
 
     dropw
     # => []
 end
 
-#! Loads the delayed execution policy configuration from the initial `DELAY_CONFIG_SLOT`.
+#! Loads a delay configuration from the given slot in the account's initial state.
 #!
 #! Reads the transaction's initial storage state, so a policy update earlier in the same
 #! transaction does not affect the proposal that transaction records or consumes.
 #!
-#! Inputs:  []
+#! Inputs:  [delay_config_slot_id]
 #! Outputs: [min_delay, propose_expiration_delta, cancel_threshold]
 #!
 #! Where:
+#! - delay_config_slot_id is the storage slot id of the delay configuration value slot.
 #! - min_delay is the minimum number of blocks between the latest block a proposal transaction can
 #!   be included in and the reference block of the matching execute transaction.
 #! - propose_expiration_delta bounds how many blocks after its reference block a proposal
@@ -165,10 +219,9 @@ end
 #! - cancel_threshold is the floor of the cancellation quorum recorded on new proposals.
 #!
 #! Invocation: exec
-proc get_delay_config() -> (u32, u16, SignatureThreshold)
-    push.DELAY_CONFIG_SLOT[0..2]
-    # => [slot_prefix, slot_suffix]
-
+pub proc get_initial_delay_config(
+    delay_config_slot_id: StorageSlotId
+) -> (u32, u16, SignatureThreshold)
     exec.native_account::get_initial_item
     # => [min_delay, propose_expiration_delta, cancel_threshold, 0]
 
@@ -552,7 +605,7 @@ pub proc propose_transaction(tx_summary_commitment: word)
     dup neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    exec.get_delay_config
+    push.DELAY_CONFIG_SLOT[0..2] exec.get_initial_delay_config
     # => [min_delay, propose_expiration_delta, cancel_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     # ---- Bound the proposal transaction's validity window. ----
