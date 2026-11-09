@@ -440,3 +440,69 @@ def test_pre_pr_diff_base_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(pre_pr_review.subprocess, "run", fake_run)
     assert pre_pr_review._diff_base(None) == "origin/next"
+
+
+# pre_pr_review resolves the review base and head from the `gh pr create` args, so a PR
+# stacked on another PR (`--base`) or opened for another worktree's branch (`--head`) is
+# reviewed against the right range and in the right checkout.
+_WORKTREES = (
+    "worktree /repo\nHEAD abc\nbranch refs/heads/feature\n\n"
+    "worktree /repo-wt\nHEAD def\nbranch refs/heads/stacked\n"
+)
+
+
+def _fake_git(*, local_branch: bool = False):
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        if "symbolic-ref" in cmd:
+            return _fake_proc(stdout="origin/next\n")
+        if "worktree" in cmd:
+            return _fake_proc(stdout=_WORKTREES)
+        if "rev-parse" in cmd:
+            return _fake_proc(returncode=0 if local_branch else 1)
+        raise AssertionError(f"unexpected command {cmd}")
+
+    return fake_run
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ([], None),
+        (["--base", "feat"], "feat"),
+        (["-B", "feat"], "feat"),
+        (["--base=feat"], "feat"),
+        (["--title", "t", "--draft", "--base", "feat"], "feat"),
+        (["--base"], None),
+    ],
+)
+def test_pre_pr_flag_value(args: list[str], expected: str | None) -> None:
+    import pre_pr_review
+
+    assert pre_pr_review.flag_value(args, "--base", "-B") == expected
+
+
+@pytest.mark.parametrize(
+    ("args", "local_branch", "expected"),
+    [
+        # No flags: the default branch, the session checkout.
+        ([], False, ("origin/next", "HEAD", "/repo")),
+        # A stacked PR is reviewed against its base branch only.
+        (["--base", "feature"], False, ("origin/feature", "HEAD", "/repo")),
+        # A head checked out in a worktree is reviewed in that worktree.
+        (["--base", "feature", "--head", "stacked"], False, ("origin/feature", "HEAD", "/repo-wt")),
+        (["--head", "owner:stacked"], False, ("origin/next", "HEAD", "/repo-wt")),
+        # A head without a worktree is reviewed by ref.
+        (["--head", "other"], True, ("origin/next", "other", "/repo")),
+        (["--head", "other"], False, ("origin/next", "origin/other", "/repo")),
+    ],
+)
+def test_pre_pr_resolve_target(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    local_branch: bool,
+    expected: tuple[str, str, str],
+) -> None:
+    import pre_pr_review
+
+    monkeypatch.setattr(pre_pr_review.subprocess, "run", _fake_git(local_branch=local_branch))
+    assert pre_pr_review.resolve_target(args, "/repo") == expected
