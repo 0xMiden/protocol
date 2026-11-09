@@ -1,302 +1,134 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::mast::{
-    DenseMastForestBuilder,
-    ExternalNodeBuilder,
-    MastForest,
-    MastNodeExt,
-    MastNodeId,
-    build_node_with_remapped_ids,
-};
-use miden_protocol::Word;
+use miden_processor::mast::{MastForest, MastNodeExt};
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
 use miden_protocol::code::ProcedureRoot;
 
 use crate::errors::TransactionKernelError;
 
-// REFERENCED PROCEDURES
+mod procedure_extraction;
+use procedure_extraction::ExtractProcedures;
+
+// CODE PATCH SOURCE
 // ================================================================================================
 
-/// Returns the procedures that the code of the provided procedure root references, directly or
-/// indirectly.
+/// The code that a transaction can register, merged into one [`MastForest`].
 ///
-/// The host requests the code witnesses of these procedures before it knows which of them are
-/// present. Thus, the walk does not stop at present procedures. A procedure whose MAST is not
-/// available is in the result, but the walk does not continue into its code.
-///
-/// See [`build_code_patch`] for the requirements on `resolve_mast`.
-pub(crate) fn referenced_procedures(
-    procedure_root: ProcedureRoot,
-    resolve_mast: impl Fn(ProcedureRoot) -> Option<(Arc<MastForest>, MastNodeId)>,
-) -> BTreeSet<ProcedureRoot> {
-    let mut referenced_procedures = BTreeSet::new();
-    let mut pending_procedures = Vec::from([procedure_root]);
+/// The merge deduplicates nodes by digest and replaces an external node with the code of its
+/// procedure if another forest contains it. Thus, building the [`CodePatch`] does not need to
+/// follow references across forests.
+pub(crate) struct CodePatchSource {
+    mast_forest: MastForest,
+}
 
-    while let Some(pending_procedure) = pending_procedures.pop() {
-        let Some((mast_forest, procedure_node)) = resolve_mast(pending_procedure) else {
-            continue;
-        };
-
-        for reference in procedure_references(&mast_forest, procedure_node) {
-            if referenced_procedures.insert(reference) {
-                pending_procedures.push(reference);
-            }
+impl CodePatchSource {
+    /// Merges the provided forests into one source.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - a forest has advice map entries, because the code tree and its registry do not store
+    ///   advice.
+    /// - the forests cannot be merged.
+    pub(crate) fn new<'forest>(
+        mast_forests: impl IntoIterator<Item = &'forest MastForest>,
+    ) -> Result<Self, TransactionKernelError> {
+        let mast_forests = mast_forests.into_iter().collect::<Vec<_>>();
+        if mast_forests.iter().any(|mast_forest| !mast_forest.advice_map().is_empty()) {
+            return Err(TransactionKernelError::CodePatchAdvice);
         }
+
+        let (mast_forest, _) =
+            MastForest::merge(mast_forests).map_err(TransactionKernelError::CodePatchMastForest)?;
+
+        Ok(Self { mast_forest })
     }
 
-    referenced_procedures
-}
+    /// Returns the procedures whose code witnesses [`Self::build_code_patch`] needs.
+    ///
+    /// These are the procedure roots and the external nodes of the source. The caller must add
+    /// the top-level roots whose code is not in the source.
+    pub(crate) fn procedure_roots(&self) -> impl Iterator<Item = ProcedureRoot> + '_ {
+        let external_nodes = self
+            .mast_forest
+            .nodes()
+            .iter()
+            .filter(|node| node.is_external())
+            .map(MastNodeExt::digest);
 
-/// Returns the procedures that the code of the procedure with the provided root node references
-/// directly.
-fn procedure_references(
-    mast_forest: &MastForest,
-    procedure_node: MastNodeId,
-) -> BTreeSet<ProcedureRoot> {
-    let mut references = BTreeSet::new();
-    let mut visited_nodes = BTreeSet::new();
-    let mut pending_nodes = Vec::from([procedure_node]);
-
-    while let Some(pending_node) = pending_nodes.pop() {
-        if !visited_nodes.insert(pending_node) {
-            continue;
-        }
-
-        match node_reference(mast_forest, pending_node, procedure_node) {
-            Some(reference) => {
-                references.insert(reference);
-            },
-            None => mast_forest[pending_node].for_each_child(|child| pending_nodes.push(child)),
-        }
+        self.mast_forest
+            .local_procedure_digests()
+            .chain(external_nodes)
+            .map(ProcedureRoot::from_raw)
     }
 
-    references
-}
-
-/// Returns the procedure root that the node references, if the node is a reference in the code of
-/// the procedure with the provided root node.
-///
-/// A node is a reference if it is an external node or another procedure root of the forest. The
-/// assembler makes each compiled procedure a procedure root, and the MAST does not show which of
-/// them are exported. Thus, each procedure root is a separate procedure.
-fn node_reference(
-    mast_forest: &MastForest,
-    node_id: MastNodeId,
-    procedure_node: MastNodeId,
-) -> Option<ProcedureRoot> {
-    let node = &mast_forest[node_id];
-    let is_reference =
-        node_id != procedure_node && (node.is_external() || mast_forest.is_procedure_root(node_id));
-
-    is_reference.then(|| ProcedureRoot::from_raw(node.digest()))
-}
-
-// CODE PATCH CONSTRUCTION
-// ================================================================================================
-
-/// Builds the [`CodePatch`] of the provided top-level procedure roots.
-///
-/// The patch contains the code of each absent procedure that the top-level roots reach, as a
-/// procedure root. A reference to a present procedure becomes an external node, because its code
-/// is already registered. Thus, the walk stops at present procedures.
-///
-/// `resolve_mast` returns the MAST forest and the root node of the code of a procedure, if it is
-/// available. The node must not be an external node, because such a node only references the
-/// code. `resolve_mast` must also provide the procedures that a forest does not export, because
-/// code references each procedure root of a forest.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - the code witness of a top-level root or of a procedure that absent code references is not
-///   available. The kernel verifies the witness of each top-level root, so the host must have it.
-/// - the MAST of an absent procedure is not available.
-/// - the patch is not a valid [`CodePatch`], e.g. because it exceeds [`CodePatch::MAX_SIZE`].
-pub(crate) fn build_code_patch(
-    top_level_roots: &BTreeSet<ProcedureRoot>,
-    code_tree: &PartialCodeTree,
-    resolve_mast: impl Fn(ProcedureRoot) -> Option<(Arc<MastForest>, MastNodeId)>,
-) -> Result<CodePatch, TransactionKernelError> {
-    let mut patch_builder = CodePatchBuilder::new(code_tree, resolve_mast);
-
-    for top_level_root in top_level_roots {
-        if !is_present(code_tree, *top_level_root)? {
-            patch_builder.copy_procedure(*top_level_root)?;
-        }
-    }
-
-    patch_builder.build()
-}
-
-/// Copies the code of absent procedures into the MAST forest of a [`CodePatch`].
-struct CodePatchBuilder<'tree, ResolveMast> {
-    code_tree: &'tree PartialCodeTree,
-    resolve_mast: ResolveMast,
-    forest_builder: DenseMastForestBuilder,
-    /// The nodes of the patch forest by digest, so that each node is copied only once, also if
-    /// multiple source forests contain it.
-    copied_nodes: BTreeMap<Word, MastNodeId>,
-}
-
-/// A step of the post-order copy of a node.
-enum CopyStep {
-    /// Copies the children of the node, or makes the node an external node or a procedure.
-    Enter(SourceNode),
-    /// Copies the node after its children.
-    Exit(SourceNode),
-}
-
-/// A node of a source forest in the code of the procedure with the root node `procedure_node`.
-struct SourceNode {
-    mast_forest: Arc<MastForest>,
-    node_id: MastNodeId,
-    procedure_node: MastNodeId,
-}
-
-impl<'tree, ResolveMast> CodePatchBuilder<'tree, ResolveMast>
-where
-    ResolveMast: Fn(ProcedureRoot) -> Option<(Arc<MastForest>, MastNodeId)>,
-{
-    fn new(code_tree: &'tree PartialCodeTree, resolve_mast: ResolveMast) -> Self {
-        Self {
-            code_tree,
-            resolve_mast,
-            forest_builder: DenseMastForestBuilder::new(),
-            copied_nodes: BTreeMap::new(),
-        }
-    }
-
-    /// Copies the code of the absent procedure and of the absent procedures that it references.
-    fn copy_procedure(
-        &mut self,
-        procedure_root: ProcedureRoot,
-    ) -> Result<(), TransactionKernelError> {
-        let mut pending_steps = Vec::new();
-        self.enter_procedure(procedure_root, &mut pending_steps)?;
-
-        while let Some(step) = pending_steps.pop() {
-            match step {
-                CopyStep::Enter(source_node) => self.enter_node(source_node, &mut pending_steps)?,
-                CopyStep::Exit(source_node) => self.exit_node(&source_node)?,
+    /// Builds the [`CodePatch`] of the provided top-level procedure roots.
+    ///
+    /// The patch contains the code of each absent procedure that the top-level roots reach, as a
+    /// procedure root. A reference to a present procedure becomes an external node, because its
+    /// code is already registered, even if the source contains this code. A node is a reference
+    /// if it is an external node or a procedure root. The assembler makes each compiled procedure
+    /// a procedure root, and the MAST does not show which of them are exported. Thus, each
+    /// procedure root is a separate procedure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the code witness of a top-level root or of a procedure in [`Self::procedure_roots`] is not
+    ///   available. The kernel verifies the witness of each top-level root, so the host must have
+    ///   it.
+    /// - the code of an absent procedure is not in the source.
+    /// - the patch is not a valid [`CodePatch`], e.g. because it exceeds [`CodePatch::MAX_SIZE`].
+    pub(crate) fn build_code_patch(
+        &self,
+        top_level_roots: &BTreeSet<ProcedureRoot>,
+        code_tree: &PartialCodeTree,
+    ) -> Result<CodePatch, TransactionKernelError> {
+        // Look up the presence of each procedure of the source once, so that the extraction can
+        // decide which procedures to reference instead of copying.
+        let mut present_roots = BTreeSet::new();
+        for procedure_root in self.procedure_roots() {
+            if is_present(code_tree, procedure_root)? {
+                present_roots.insert(procedure_root.as_word());
             }
         }
 
-        Ok(())
-    }
-
-    /// Schedules the copy of an absent procedure, unless the patch already contains its code.
-    fn enter_procedure(
-        &mut self,
-        procedure_root: ProcedureRoot,
-        pending_steps: &mut Vec<CopyStep>,
-    ) -> Result<(), TransactionKernelError> {
-        if let Some(copied_node) = self.copied_nodes.get(&procedure_root.as_word()) {
-            self.forest_builder.mark_root(*copied_node);
-            return Ok(());
-        }
-
-        let (mast_forest, procedure_node) = (self.resolve_mast)(procedure_root)
-            .ok_or(TransactionKernelError::MissingProcedureMast(procedure_root))?;
-        pending_steps.push(CopyStep::Enter(SourceNode {
-            mast_forest,
-            node_id: procedure_node,
-            procedure_node,
-        }));
-
-        Ok(())
-    }
-
-    fn enter_node(
-        &mut self,
-        source_node: SourceNode,
-        pending_steps: &mut Vec<CopyStep>,
-    ) -> Result<(), TransactionKernelError> {
-        let SourceNode { mast_forest, node_id, procedure_node } = &source_node;
-
-        if let Some(reference) = node_reference(mast_forest, *node_id, *procedure_node) {
-            if !is_present(self.code_tree, reference)? {
-                return self.enter_procedure(reference, pending_steps);
+        // Only absent top-level roots add code. The source must contain their code.
+        let mut absent_top_level_nodes = Vec::new();
+        for top_level_root in top_level_roots {
+            if is_present(code_tree, *top_level_root)? {
+                continue;
             }
 
-            if !self.copied_nodes.contains_key(&reference.as_word()) {
-                let external_node = self
-                    .forest_builder
-                    .push_node(ExternalNodeBuilder::new(reference.as_word()))
-                    .map_err(TransactionKernelError::CodePatchMastForest)?;
-                self.copied_nodes.insert(reference.as_word(), external_node);
-            }
-
-            return Ok(());
+            let node_id = self
+                .mast_forest
+                .find_procedure_root(top_level_root.as_word())
+                .filter(|node_id| !self.mast_forest[*node_id].is_external())
+                .ok_or(TransactionKernelError::MissingProcedureMast(*top_level_root))?;
+            absent_top_level_nodes.push(node_id);
         }
 
-        let digest = mast_forest[*node_id].digest();
-        if let Some(copied_node) = self.copied_nodes.get(&digest) {
-            if node_id == procedure_node {
-                self.forest_builder.mark_root(*copied_node);
-            }
-            return Ok(());
-        }
-
-        let mut child_steps = Vec::new();
-        mast_forest[*node_id].for_each_child(|child| {
-            child_steps.push(CopyStep::Enter(SourceNode {
-                mast_forest: Arc::clone(mast_forest),
-                node_id: child,
-                procedure_node: *procedure_node,
-            }))
-        });
-
-        pending_steps.push(CopyStep::Exit(source_node));
-        pending_steps.extend(child_steps);
-
-        Ok(())
-    }
-
-    fn exit_node(&mut self, source_node: &SourceNode) -> Result<(), TransactionKernelError> {
-        let SourceNode { mast_forest, node_id, procedure_node } = source_node;
-        let node = &mast_forest[*node_id];
-        let digest = node.digest();
-
-        let mut child_mapping = BTreeMap::new();
-        let mut missing_child = None;
-        node.for_each_child(|child| match self.copied_nodes.get(&mast_forest[child].digest()) {
-            Some(copied_child) => {
-                child_mapping.insert(child, *copied_child);
-            },
-            None => missing_child = Some(mast_forest[child].digest()),
-        });
-        // unreachable, because the children are copied before their parent
-        if let Some(missing_child) = missing_child {
-            return Err(TransactionKernelError::other(format!(
-                "child {missing_child} of a code patch node was not copied before its parent"
-            )));
-        }
-
-        let node_builder =
-            build_node_with_remapped_ids(*node_id, node.clone(), mast_forest, &child_mapping)
-                .map_err(TransactionKernelError::CodePatchMastForest)?;
-        let copied_node = self
-            .forest_builder
-            .push_node(node_builder)
-            .map_err(TransactionKernelError::CodePatchMastForest)?;
-        self.copied_nodes.insert(digest, copied_node);
-
-        if node_id == procedure_node {
-            self.forest_builder.mark_root(copied_node);
-        }
-
-        Ok(())
-    }
-
-    fn build(self) -> Result<CodePatch, TransactionKernelError> {
+        // Copy the code that the absent top-level roots reach, and reference present procedures.
         let mast_forest = self
-            .forest_builder
-            .build()
+            .mast_forest
+            .extract_procedures(&absent_top_level_nodes, |digest| present_roots.contains(&digest))
             .map_err(TransactionKernelError::CodePatchMastForest)?;
+        let code_patch = CodePatch::new(Arc::new(mast_forest))
+            .map_err(TransactionKernelError::InvalidCodePatch)?;
 
-        CodePatch::new(Arc::new(mast_forest)).map_err(TransactionKernelError::InvalidCodePatch)
+        // The extraction keeps the external nodes of the source as dependencies. Such a node
+        // references a procedure whose code the source does not contain, so the procedure must be
+        // present.
+        if let Some(absent_dependency) = code_patch
+            .dependencies()
+            .find(|dependency| !present_roots.contains(&dependency.as_word()))
+        {
+            return Err(TransactionKernelError::MissingProcedureMast(absent_dependency));
+        }
+
+        Ok(code_patch)
     }
 }
 
@@ -325,7 +157,8 @@ mod tests {
     use miden_protocol::assembly::Path;
     use miden_protocol::block::code_tree::CodeTree;
     use miden_protocol::testing::assembler::assemble_test_package;
-    use miden_protocol::{CoreLibrary, ProtocolLib};
+    use miden_protocol::vm::AdviceMap;
+    use miden_protocol::{CoreLibrary, Felt, Hasher, ProtocolLib};
     use miden_standards::StandardsLib;
     use miden_standards::account::wallets::BasicWallet;
     use miden_standards::note::{P2idNote, P2ideNote};
@@ -389,18 +222,8 @@ mod tests {
         mast_forest.local_procedure_digests().map(ProcedureRoot::from_raw).collect()
     }
 
-    /// Returns a resolver that finds the code of a procedure root in the provided forests.
-    fn resolver(
-        mast_forests: Vec<Arc<MastForest>>,
-    ) -> impl Fn(ProcedureRoot) -> Option<(Arc<MastForest>, MastNodeId)> {
-        move |procedure_root| {
-            mast_forests.iter().find_map(|mast_forest| {
-                mast_forest
-                    .find_procedure_root(procedure_root.as_word())
-                    .filter(|node_id| !mast_forest[*node_id].is_external())
-                    .map(|node_id| (Arc::clone(mast_forest), node_id))
-            })
-        }
+    fn code_patch_source(mast_forests: &[Arc<MastForest>]) -> anyhow::Result<CodePatchSource> {
+        Ok(CodePatchSource::new(mast_forests.iter().map(Arc::as_ref))?)
     }
 
     /// Returns a partial tree of a tree with the present roots that tracks the provided roots.
@@ -421,14 +244,19 @@ mod tests {
         // helper is a separate procedure root of the forest
         assert_eq!(absent_roots.len(), 2);
 
+        let source = code_patch_source(&[main_forest])?;
+        let source_roots = source.procedure_roots().collect::<BTreeSet<_>>();
+        let mut expected_source_roots = absent_roots.clone();
+        expected_source_roots.insert(present_root());
+        assert_eq!(source_roots, expected_source_roots);
+
         let code_tree = partial_code_tree(
             [present_root(), unreferenced_root()],
-            absent_roots.iter().copied().chain([present_root(), unreferenced_root()]),
+            source_roots.iter().copied().chain([unreferenced_root()]),
         )?;
         let top_level_roots = BTreeSet::from([main_root, present_root(), unreferenced_root()]);
 
-        let code_patch =
-            build_code_patch(&top_level_roots, &code_tree, resolver(vec![main_forest]))?;
+        let code_patch = source.build_code_patch(&top_level_roots, &code_tree)?;
 
         assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
         // a present top-level root is in the patch only if absent code references it
@@ -453,11 +281,8 @@ mod tests {
                 .chain(local_roots(&other_forest)),
         )?;
 
-        let code_patch = build_code_patch(
-            &BTreeSet::from([main_root, other_root]),
-            &code_tree,
-            resolver(vec![main_forest, other_forest]),
-        )?;
+        let code_patch = code_patch_source(&[main_forest, other_forest])?
+            .build_code_patch(&BTreeSet::from([main_root, other_root]), &code_tree)?;
 
         assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
         assert_eq!(code_patch.created_procedures().count(), 3);
@@ -474,7 +299,7 @@ mod tests {
             [present_root()],
             local_roots(&main_forest).into_iter().chain([present_root()]),
         )?;
-        let result = build_code_patch(&top_level_roots, &code_tree, resolver(Vec::new()));
+        let result = code_patch_source(&[])?.build_code_patch(&top_level_roots, &code_tree);
         assert!(matches!(
             result,
             Err(TransactionKernelError::MissingProcedureMast(root)) if root == main_root
@@ -482,36 +307,66 @@ mod tests {
 
         // the leaf of the present root is not empty, so the partial tree cannot deduce it
         let code_tree = partial_code_tree([present_root()], local_roots(&main_forest))?;
-        let result = build_code_patch(&top_level_roots, &code_tree, resolver(vec![main_forest]));
+        let source = code_patch_source(&[main_forest])?;
+        let result = source.build_code_patch(&top_level_roots, &code_tree);
         assert!(matches!(
             result,
             Err(TransactionKernelError::MissingCodeWitness { procedure_root, .. })
                 if procedure_root == present_root()
         ));
 
+        // the external node of the present root has no code, so the root must be present
+        let code_tree = partial_code_tree([], source.procedure_roots())?;
+        let result = source.build_code_patch(&top_level_roots, &code_tree);
+        assert!(matches!(
+            result,
+            Err(TransactionKernelError::MissingProcedureMast(root)) if root == present_root()
+        ));
+
+        Ok(())
+    }
+
+    /// The forest of main contains the code of helper, but helper is present, so the patch
+    /// references it.
+    #[test]
+    fn present_procedure_root_is_referenced() -> anyhow::Result<()> {
+        let (main_forest, main_root) = assemble_procedure(&main_source(), "main")?;
+        let mut helper_roots = local_roots(&main_forest);
+        helper_roots.remove(&main_root);
+        let source = code_patch_source(&[main_forest])?;
+
+        let code_tree = partial_code_tree(
+            helper_roots.iter().copied().chain([present_root()]),
+            source.procedure_roots(),
+        )?;
+        let code_patch = source.build_code_patch(&BTreeSet::from([main_root]), &code_tree)?;
+
+        assert_eq!(code_patch.created_procedures().collect::<Vec<_>>(), [main_root]);
+        let mut expected_dependencies = helper_roots;
+        expected_dependencies.insert(present_root());
+        assert_eq!(code_patch.dependencies().collect::<BTreeSet<_>>(), expected_dependencies);
+
         Ok(())
     }
 
     #[test]
-    fn referenced_procedures_skip_missing_mast() -> anyhow::Result<()> {
-        let (main_forest, main_root) = assemble_procedure(&main_source(), "main")?;
-        let mut expected_references = local_roots(&main_forest);
-        expected_references.remove(&main_root);
-        expected_references.insert(present_root());
+    fn code_with_advice_is_rejected() {
+        let value = [Felt::ONE];
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(Hasher::hash_elements(&value), value.to_vec());
+        let mast_forest = Arc::new(MastForest::new().with_advice_map(advice_map));
 
-        // the walk does not descend into the present root, because its MAST is not available
-        let references = referenced_procedures(main_root, resolver(vec![main_forest]));
-        assert_eq!(references, expected_references);
-
-        assert!(referenced_procedures(main_root, resolver(Vec::new())).is_empty());
-
-        Ok(())
+        let result = code_patch_source(&[mast_forest]);
+        assert!(matches!(
+            result.map_err(|error| error.downcast::<TransactionKernelError>()),
+            Err(Ok(TransactionKernelError::CodePatchAdvice))
+        ));
     }
 
     #[test]
     fn empty_top_level_roots_give_empty_patch() -> anyhow::Result<()> {
         let code_tree = partial_code_tree([present_root()], [])?;
-        let code_patch = build_code_patch(&BTreeSet::new(), &code_tree, resolver(Vec::new()))?;
+        let code_patch = code_patch_source(&[])?.build_code_patch(&BTreeSet::new(), &code_tree)?;
 
         assert!(code_patch.is_empty());
         assert_eq!(code_patch, CodePatch::default());
@@ -548,12 +403,12 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let mut source_forests = library_forests.to_vec();
         source_forests.extend(note_scripts.iter().map(|note_script| note_script.mast()));
+        let source = code_patch_source(&source_forests)?;
 
         // the note scripts and the wallet procedure that they use are created
         let code_tree =
             partial_code_tree(registered_roots.iter().copied(), tracked_roots.iter().copied())?;
-        let code_patch =
-            build_code_patch(&note_script_roots, &code_tree, resolver(source_forests.clone()))?;
+        let code_patch = source.build_code_patch(&note_script_roots, &code_tree)?;
 
         let created_procedures = code_patch.created_procedures().collect::<BTreeSet<_>>();
         assert!(created_procedures.is_superset(&note_script_roots));
@@ -566,8 +421,7 @@ mod tests {
             registered_roots.iter().copied().chain([receive_asset_root]),
             tracked_roots.iter().copied(),
         )?;
-        let code_patch =
-            build_code_patch(&note_script_roots, &code_tree, resolver(source_forests))?;
+        let code_patch = source.build_code_patch(&note_script_roots, &code_tree)?;
 
         assert!(!code_patch.created_procedures().any(|root| root == receive_asset_root));
         assert!(code_patch.dependencies().any(|root| root == receive_asset_root));

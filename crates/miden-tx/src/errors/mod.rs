@@ -348,6 +348,8 @@ pub enum TransactionKernelError {
     },
     #[error("MAST of procedure root {0} is not available")]
     MissingProcedureMast(ProcedureRoot),
+    #[error("code to register must not have advice map entries")]
+    CodePatchAdvice,
     #[error("failed to build the MAST forest of the code patch")]
     CodePatchMastForest(#[source] MastForestError),
     #[error("code patch is invalid")]
