@@ -29,6 +29,7 @@ use miden_standards::account::auth::{
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_CANCEL_THRESHOLD_EXCEEDS_MAX,
     ERR_COLD_KEY_IS_GUARDIAN_KEY,
     ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY,
     ERR_GUARDIAN_KEY_IS_USER_KEY,
@@ -617,6 +618,10 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     let tx = update_delay_config_tx(&mock_chain, &account, MIN_DELAY_FLOOR_BLOCKS - 1, 20, 1, 5)?;
     let result = tx.build()?.execute().await;
     assert_transaction_executor_error!(result, ERR_MIN_DELAY_BELOW_FLOOR);
+
+    let tx = update_delay_config_tx(&mock_chain, &account, MIN_DELAY_FLOOR_BLOCKS, 20, 3, 50)?;
+    let result = tx.build()?.execute().await;
+    assert_transaction_executor_error!(result, ERR_CANCEL_THRESHOLD_EXCEEDS_MAX);
 
     let tx = update_delay_config_tx(&mock_chain, &account, MIN_DELAY_FLOOR_BLOCKS, 40, 2, 6)?;
     let result = sign_and_execute(tx, &[&hot[0], &guardian]).await?;

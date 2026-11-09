@@ -922,9 +922,13 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
-    ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_CANCEL_THRESHOLD_EXCEEDS_MAX,
+    ERR_CANCEL_THRESHOLD_ZERO,
     ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION,
+    ERR_MIN_DELAY_BELOW_FLOOR,
     ERR_PROC_POLICY_INVALID_MODE,
+    ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16,
+    ERR_PROPOSE_EXPIRATION_DELTA_ZERO,
     ERR_TX_ALREADY_PROPOSED,
     ERR_TX_NOT_PROPOSED,
     ERR_TX_PROPOSAL_CANCELLED,
@@ -1954,7 +1958,54 @@ async fn test_multisig_smart_update_policy_rejects_cancel_threshold_above_approv
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(result, ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+    assert_transaction_executor_error!(result, ERR_CANCEL_THRESHOLD_EXCEEDS_MAX);
+
+    Ok(())
+}
+
+/// `update_delayed_execution_policy` rejects each invalid configuration value.
+#[rstest]
+#[case::zero_min_delay(0, 2, 1, ERR_MIN_DELAY_BELOW_FLOOR)]
+#[case::zero_propose_expiration_delta(1, 0, 1, ERR_PROPOSE_EXPIRATION_DELTA_ZERO)]
+#[case::propose_expiration_delta_above_u16(1, 65536, 1, ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16)]
+#[case::zero_cancel_threshold(1, 2, 0, ERR_CANCEL_THRESHOLD_ZERO)]
+#[tokio::test]
+async fn test_multisig_smart_update_policy_rejects_invalid_config(
+    #[case] min_delay: u32,
+    #[case] propose_expiration_delta: u32,
+    #[case] cancel_threshold: u32,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    let script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{cancel_threshold}
+            push.{propose_expiration_delta}
+            push.{min_delay}
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop drop drop
+        end
+        ",
+    ))?;
+    let result = mock_chain
+        .build_transaction(account_id)
+        .tx_script(script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt(706),
+        ))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }
