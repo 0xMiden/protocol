@@ -322,18 +322,18 @@ fn embedded_logs_preserve_commitments() {
             .map(|word| word.to_hex()),
         )
         .collect();
-    // Baseline includes the upstream code-patch commitment and empty code-tree root.
+    // Eidos baseline includes the code-patch commitment and empty code-tree root.
     assert_eq!(
         actual,
         [
-            "0xc74558e2e9e86192d49a0579c545d6db3ddbb7a85a9b31c136ee7035b2e1ffe6",
-            "0x80ff8be6343d57daf2743f41adff45bd766b17f1b0dc9208955fdfb395030410",
-            "0x2da04a4c294fcf8e6a7f0c01583fd2f2b3499449a58b07e87fbab3e0ce0400ba",
-            "0xeb96f7fb3518c0da190253191f70ded5e509c8a34703f1da757bcd1855d112d7",
-            "0xc4ea288c66f2fb3fe13e0e6c922fba9044a03468190c3af1f32c94d41e3ff79f",
-            "0x6d272412d571ab822400d41c608da9cb2d672230093f3afbe167dc9fd9d13bf5",
-            "0x7ed1aedead6a64f22f8b74cef73f96fdb91bd85bd6ebe56d933fdcfd5109472e",
-            "0xde56918d2eb7d0eac2dd9c69579c0fe746df6da87d8160af82b65d24aa8ee2d9"
+            "0x5cb11cdf0528ab43fe5cfc63f253f25d74ecfd96ba57c91153ac69f7a8d05537",
+            "0x577957de0466922e904be7c499f102753cc512f549fa32394bcc6099bffdde28",
+            "0x10dd664b01772b32621cd6e9adca4e26141f2690fcc06b093686abd68f9ea120",
+            "0x72f293a93540767ab12e7d14197b861573a2b3be6eebc67ddea25bf579e4ad22",
+            "0x8779856e29b6624ce7ca1cd4570a8b7876c837a431d99761d8f5beb30923da78",
+            "0x5a551ff4c9ab413e0f9be3ba505bfa4911f50b10e955b43e15a9384fcb11a056",
+            "0xa6fb10de85ebaa199561ac156e2dbc38858227ad5eea9a1eafc4dd0854c43f5b",
+            "0x9d24785ce627cb2240ea5656cb580666d6d3186fdf59fc5aeac81ced2d372255"
         ]
     );
 }

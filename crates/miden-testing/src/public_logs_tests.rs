@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountType};
+use miden_protocol::{Felt, Hasher};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::LocalTransactionProver;
@@ -18,16 +18,19 @@ async fn public_logs_survive_builders_and_snapshot(
     #[case] first_type: AccountType,
     #[case] second_type: AccountType,
 ) -> anyhow::Result<()> {
+    let empty_commitment = Hasher::hash_elements::<Felt>(&[]);
     let component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "test::public_logs",
-            r"
-            use miden::protocol::tx
-            @account_procedure
-            pub proc emit_log
-                padw push.29.17 exec.tx::add_log
-            end
-            ",
+            format!(
+                r"
+                use miden::protocol::tx
+                @account_procedure
+                pub proc emit_log
+                    push.{empty_commitment} push.29.17 exec.tx::add_log
+                end
+                ",
+            ),
         )?,
         vec![],
         AccountComponentMetadata::mock("test::public_logs"),
@@ -60,7 +63,7 @@ async fn public_logs_survive_builders_and_snapshot(
     let executed = chain
         .build_transaction(first_account)
         .tx_script(script)
-        .add_advice_map_entry(Word::empty(), vec![])
+        .add_advice_map_entry(empty_commitment, vec![])
         .build()?
         .execute()
         .await?;
