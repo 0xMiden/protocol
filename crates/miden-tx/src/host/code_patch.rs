@@ -107,38 +107,27 @@ fn node_reference(
 /// code. `resolve_mast` must also provide the procedures that a forest does not export, because
 /// code references each procedure root of a forest.
 ///
-/// Also returns the present top-level roots that are not dependencies of the patch. The kernel
-/// finds the other present top-level roots in the dependencies, so it needs only one witness for
-/// each of them.
-///
 /// # Errors
 ///
 /// Returns an error if:
 /// - the code witness of a top-level root or of a procedure that absent code references is not
-///   available.
+///   available. The kernel verifies the witness of each top-level root, so the host must have it.
 /// - the MAST of an absent procedure is not available.
 /// - the patch is not a valid [`CodePatch`], e.g. because it exceeds [`CodePatch::MAX_SIZE`].
 pub(crate) fn build_code_patch(
     top_level_roots: &BTreeSet<ProcedureRoot>,
     code_tree: &PartialCodeTree,
     resolve_mast: impl Fn(ProcedureRoot) -> Option<(Arc<MastForest>, MastNodeId)>,
-) -> Result<(CodePatch, BTreeSet<ProcedureRoot>), TransactionKernelError> {
+) -> Result<CodePatch, TransactionKernelError> {
     let mut patch_builder = CodePatchBuilder::new(code_tree, resolve_mast);
-    let mut present_roots = BTreeSet::new();
 
     for top_level_root in top_level_roots {
-        if is_present(code_tree, *top_level_root)? {
-            present_roots.insert(*top_level_root);
-        } else {
+        if !is_present(code_tree, *top_level_root)? {
             patch_builder.copy_procedure(*top_level_root)?;
         }
     }
 
-    let code_patch = patch_builder.build()?;
-    let dependencies = code_patch.dependencies().collect::<BTreeSet<_>>();
-    let existing_procedures = present_roots.difference(&dependencies).copied().collect();
-
-    Ok((code_patch, existing_procedures))
+    patch_builder.build()
 }
 
 /// Copies the code of absent procedures into the MAST forest of a [`CodePatch`].
@@ -438,13 +427,12 @@ mod tests {
         )?;
         let top_level_roots = BTreeSet::from([main_root, present_root(), unreferenced_root()]);
 
-        let (code_patch, existing_procedures) =
+        let code_patch =
             build_code_patch(&top_level_roots, &code_tree, resolver(vec![main_forest]))?;
 
         assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
+        // a present top-level root is in the patch only if absent code references it
         assert_eq!(code_patch.dependencies().collect::<Vec<_>>(), [present_root()]);
-        // the kernel finds the present root that main references in the dependencies
-        assert_eq!(existing_procedures, BTreeSet::from([unreferenced_root()]));
 
         Ok(())
     }
@@ -465,7 +453,7 @@ mod tests {
                 .chain(local_roots(&other_forest)),
         )?;
 
-        let (code_patch, _) = build_code_patch(
+        let code_patch = build_code_patch(
             &BTreeSet::from([main_root, other_root]),
             &code_tree,
             resolver(vec![main_forest, other_forest]),
@@ -523,12 +511,10 @@ mod tests {
     #[test]
     fn empty_top_level_roots_give_empty_patch() -> anyhow::Result<()> {
         let code_tree = partial_code_tree([present_root()], [])?;
-        let (code_patch, existing_procedures) =
-            build_code_patch(&BTreeSet::new(), &code_tree, resolver(Vec::new()))?;
+        let code_patch = build_code_patch(&BTreeSet::new(), &code_tree, resolver(Vec::new()))?;
 
         assert!(code_patch.is_empty());
         assert_eq!(code_patch, CodePatch::default());
-        assert!(existing_procedures.is_empty());
 
         Ok(())
     }
@@ -566,7 +552,7 @@ mod tests {
         // the note scripts and the wallet procedure that they use are created
         let code_tree =
             partial_code_tree(registered_roots.iter().copied(), tracked_roots.iter().copied())?;
-        let (code_patch, existing_procedures) =
+        let code_patch =
             build_code_patch(&note_script_roots, &code_tree, resolver(source_forests.clone()))?;
 
         let created_procedures = code_patch.created_procedures().collect::<BTreeSet<_>>();
@@ -574,14 +560,13 @@ mod tests {
         assert!(created_procedures.contains(&receive_asset_root));
         assert!(created_procedures.is_subset(&local_roots(standards_forest)));
         assert!(code_patch.dependencies().all(|root| registered_roots.contains(&root)));
-        assert!(existing_procedures.is_empty());
 
         // a registered wallet procedure is a dependency
         let code_tree = partial_code_tree(
             registered_roots.iter().copied().chain([receive_asset_root]),
             tracked_roots.iter().copied(),
         )?;
-        let (code_patch, _) =
+        let code_patch =
             build_code_patch(&note_script_roots, &code_tree, resolver(source_forests))?;
 
         assert!(!code_patch.created_procedures().any(|root| root == receive_asset_root));
