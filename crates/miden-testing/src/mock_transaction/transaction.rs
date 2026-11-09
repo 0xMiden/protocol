@@ -16,8 +16,9 @@ use miden_protocol::account::{
 use miden_protocol::assembly::SourceManagerSync;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness, CodeWitnessRequest};
+use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
@@ -433,7 +434,7 @@ impl DataStore for MockTransaction {
     fn get_code_witnesses(
         &self,
         code_tree_root: CodeTreeRoot,
-        requests: Vec<CodeWitnessRequest>,
+        procedure_roots: Vec<ProcedureRoot>,
     ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
         async move {
             if self.code_tree.root() != code_tree_root {
@@ -441,14 +442,6 @@ impl DataStore for MockTransaction {
                     "code tree has root {} but {code_tree_root} was requested",
                     self.code_tree.root()
                 )));
-            }
-
-            let mut procedure_roots = BTreeSet::new();
-            for request in requests {
-                procedure_roots.insert(request.procedure_root());
-                if !self.code_tree.contains(&request.procedure_root()) {
-                    procedure_roots.extend(request.referenced_procedures());
-                }
             }
 
             Ok(procedure_roots

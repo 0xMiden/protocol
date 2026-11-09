@@ -16,8 +16,9 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetAmount, AssetId, AssetWitness, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness, CodeWitnessRequest};
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -236,7 +237,7 @@ impl DataStore for TransactionInputsDataStore {
     fn get_code_witnesses(
         &self,
         code_tree_root: CodeTreeRoot,
-        _requests: Vec<CodeWitnessRequest>,
+        _procedure_roots: Vec<ProcedureRoot>,
     ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
         async move {
             Err(DataStoreError::other(format!(

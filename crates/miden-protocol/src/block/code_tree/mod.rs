@@ -13,9 +13,6 @@ use crate::{Felt, Word};
 mod witness;
 pub use witness::CodeWitness;
 
-mod request;
-pub use request::CodeWitnessRequest;
-
 mod partial;
 pub use partial::PartialCodeTree;
 
