@@ -141,3 +141,14 @@ message TransactionLogDetails {
     TransactionLogs public = 2;
   }
 }
+
+// Public transaction logs embedded in batch and block bodies.
+message PublicTransactionLogEntry {
+  TransactionId transaction_id = 1;
+  TransactionLogs logs = 2;
+}
+
+message PublicTransactionLogs {
+  // One entry per public native account transaction, including empty log lists.
+  repeated PublicTransactionLogEntry entries = 1;
+}

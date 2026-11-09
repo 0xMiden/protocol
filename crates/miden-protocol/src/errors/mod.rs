@@ -650,6 +650,9 @@ pub enum BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum BlockBodyError {
+    /// Public log contents or aggregate limits are invalid.
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
     TooManyAccountUpdates(usize),
     #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
@@ -1342,6 +1345,9 @@ impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    /// Public log contents or aggregate limits are invalid.
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("failed to verify transaction {transaction_id} in transaction batch")]
     TransactionVerificationFailed {
         transaction_id: TransactionId,
@@ -1463,6 +1469,8 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("transaction batch must contain at least one transaction")]
     EmptyTransactionBatch,
     #[error("transaction {0} appears twice in the proven batch")]
@@ -1562,6 +1570,8 @@ pub enum BlockOutputError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBlockError {
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("block must contain at least one transaction batch")]
     EmptyBlock,
 
@@ -1579,6 +1589,9 @@ pub enum ProposedBlockError {
 
     #[error("batch {batch_id} appears twice in the block inputs")]
     DuplicateBatch { batch_id: BatchId },
+
+    #[error("transaction {0} appears in more than one batch")]
+    DuplicateTransaction(TransactionId),
 
     #[error(
         "batch {second_batch_id} consumes the note with nullifier {note_nullifier} that is also consumed by another batch {first_batch_id} in the block"

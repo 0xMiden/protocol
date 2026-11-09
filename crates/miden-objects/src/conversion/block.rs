@@ -81,6 +81,7 @@ impl From<&BlockBody> for proto::blockchain::BlockBody {
                 .map(|nullifier| nullifier.as_word().into())
                 .collect(),
             transactions: body.transactions().iter().map(Into::into).collect(),
+            public_logs: Some(body.public_logs().into()),
         }
     }
 }
