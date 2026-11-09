@@ -445,9 +445,8 @@ end
 #! - cancel_threshold is the minimum number of signed categories a cancellation needs.
 #!
 #! Panics if:
-#! - min_delay is below MIN_DELAY_FLOOR_BLOCKS.
-#! - cancel_threshold exceeds NUM_USER_KEY_CATEGORIES.
-#! - the configuration is otherwise invalid, as described in `delayed_execution::set_delay_config`.
+#! - the configuration is invalid (see `delayed_execution::set_delay_config`), with
+#!   MIN_DELAY_FLOOR_BLOCKS and NUM_USER_KEY_CATEGORIES as the bounds.
 #!
 #! Invocation: call
 @account_procedure
@@ -456,11 +455,8 @@ pub proc update_delay_config(
     propose_expiration_delta: u16,
     cancel_threshold: SignatureThreshold
 )
-    push.NUM_USER_KEY_CATEGORIES push.MIN_DELAY_FLOOR_BLOCKS
-    # => [min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
-
-    push.DELAY_CONFIG_SLOT[0..2]
-    # => [delay_slot_suffix, delay_slot_prefix, min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+    push.NUM_USER_KEY_CATEGORIES push.MIN_DELAY_FLOOR_BLOCKS push.DELAY_CONFIG_SLOT[0..2]
+    # => [delay_config_slot_id, min_delay_floor, max_cancel_threshold, min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
 
     exec.delayed_execution::set_delay_config
     # => [pad(13)]
