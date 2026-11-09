@@ -26,7 +26,6 @@ use miden::core::word
 
 pub type HotColdPolicy = struct {
     immediate_threshold: SignatureThreshold,
-    note_restrictions: u8,
     cold_required: Bool
 }
 
@@ -52,7 +51,7 @@ pub type HotColdPolicy = struct {
 #   [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
 #
 # - PROCEDURE_POLICIES_SLOT (map):
-#   PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
+#   PROC_ROOT => [immediate_threshold, delayed_threshold, cold_required, 0]
 #   where delayed_threshold is reserved for the delayed path and stays 0
 #
 # - DELAY_CONFIG_SLOT:
@@ -77,7 +76,7 @@ pub const COLD_PUBLIC_KEY_SLOT = word("miden::standards::auth::hot_cold_guardian
 # Single-entry map: [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
 pub const COLD_SCHEME_ID_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_scheme_id")
 
-# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
+# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, cold_required, 0]
 pub const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::hot_cold_guardian::procedure_policies")
 
 # The delay configuration used by the delayed-execution flows:
@@ -131,8 +130,6 @@ const ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "procedure threshold exceeds t
 
 const ERR_COLD_REQUIRED_NOT_BOOL = "cold required must be 0 or 1"
 
-const ERR_POLICY_OPTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions and cold required need an immediate threshold"
-
 const ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY = "cold required applies only to a single-category immediate threshold"
 
 const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
@@ -161,8 +158,7 @@ const INIT_NUM_HOT_KEYS_LOC = 1
 # =================================================================================================
 
 const IMMEDIATE_THRESHOLD_LOC = 0
-const NOTE_RESTRICTIONS_LOC = 1
-const COLD_REQUIRED_LOC = 2
+const COLD_REQUIRED_LOC = 1
 
 # LOCAL ADDRESSES (compute_called_proc_policy)
 # =================================================================================================
@@ -350,103 +346,80 @@ end
 #! Rewriting a policy weakens whatever it protects, so this procedure should carry a policy at
 #! least as strong as the strongest policy in the map.
 #!
-#! Inputs:  [immediate_threshold, note_restrictions, cold_required, PROC_ROOT, pad(9)]
-#! Outputs: [pad(9)]
+#! Inputs:  [immediate_threshold, cold_required, PROC_ROOT, pad(10)]
+#! Outputs: [pad(10)]
 #!
 #! Where:
 #! - immediate_threshold is the number of signed categories the procedure requires, or 0 to clear
 #!   the policy.
-#! - note_restrictions is the note restriction enum value, as in multisig_smart.
 #! - cold_required is 1 if the immediate path additionally requires the cold category, else 0.
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
 #!
 #! Panics if:
 #! - immediate_threshold is not a u32 value or exceeds NUM_USER_KEY_CATEGORIES.
-#! - note_restrictions is not a u32 value or exceeds the note restriction range.
 #! - cold_required is neither 0 nor 1.
-#! - note_restrictions or cold_required is set while immediate_threshold is zero.
 #! - cold_required is set while immediate_threshold is not 1 (with both categories the cold key is
-#!   required anyway).
+#!   required anyway, and a cleared policy cannot require it).
 #! - PROC_ROOT is not one of the account's procedures.
 #!
 #! Locals:
 #! 0: immediate_threshold
-#! 1: note_restrictions
-#! 2: cold_required
+#! 1: cold_required
 #!
 #! Invocation: call
-@locals(3)
+@locals(2)
 @account_procedure
 pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedureRoot)
     loc_store.IMMEDIATE_THRESHOLD_LOC
-    # => [note_restrictions, cold_required, PROC_ROOT, pad(9)]
-
-    dup exec.multisig_smart::assert_valid_note_restrictions
-    # => [note_restrictions, cold_required, PROC_ROOT, pad(9)]
-
-    loc_store.NOTE_RESTRICTIONS_LOC
-    # => [cold_required, PROC_ROOT, pad(9)]
+    # => [cold_required, PROC_ROOT, pad(10)]
 
     u32assert.err=ERR_COLD_REQUIRED_NOT_BOOL
-    # => [cold_required, PROC_ROOT, pad(9)]
+    # => [cold_required, PROC_ROOT, pad(10)]
 
     dup u32lte.1 assert.err=ERR_COLD_REQUIRED_NOT_BOOL
-    # => [cold_required, PROC_ROOT, pad(9)]
+    # => [cold_required, PROC_ROOT, pad(10)]
 
     loc_store.COLD_REQUIRED_LOC
-    # => [PROC_ROOT, pad(9)]
+    # => [PROC_ROOT, pad(10)]
 
-    loc_load.IMMEDIATE_THRESHOLD_LOC eq.0
-    # => [is_cleared, PROC_ROOT, pad(9)]
+    # 0 <= immediate_threshold <= NUM_USER_KEY_CATEGORIES, 0 clearing the policy
+    loc_load.IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, PROC_ROOT, pad(10)]
 
-    if.true
-        # the all-zero word marks a cleared policy, so it must not carry options
-        loc_load.NOTE_RESTRICTIONS_LOC loc_load.COLD_REQUIRED_LOC add
-        # => [has_options, PROC_ROOT, pad(9)]
+    u32assert.err=ERR_PROC_THRESHOLD_NOT_U32
+    dup u32lte.NUM_USER_KEY_CATEGORIES assert.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+    # => [immediate_threshold, PROC_ROOT, pad(10)]
 
-        assertz.err=ERR_POLICY_OPTIONS_REQUIRE_THRESHOLD
-        # => [PROC_ROOT, pad(9)]
-    else
-        # 1 <= immediate_threshold <= NUM_USER_KEY_CATEGORIES
-        loc_load.IMMEDIATE_THRESHOLD_LOC
-        # => [immediate_threshold, PROC_ROOT, pad(9)]
+    # cold required only makes sense for a single-category threshold
+    neq.1 loc_load.COLD_REQUIRED_LOC
+    # => [cold_required, is_not_single_category, PROC_ROOT, pad(10)]
 
-        u32assert.err=ERR_PROC_THRESHOLD_NOT_U32
-        u32lte.NUM_USER_KEY_CATEGORIES assert.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES
-        # => [PROC_ROOT, pad(9)]
-
-        # cold required only makes sense for a single-category threshold; the threshold is either
-        # 1 or NUM_USER_KEY_CATEGORIES here
-        loc_load.COLD_REQUIRED_LOC loc_load.IMMEDIATE_THRESHOLD_LOC eq.NUM_USER_KEY_CATEGORIES
-        # => [is_multi_category, cold_required, PROC_ROOT, pad(9)]
-
-        and assertz.err=ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY
-        # => [PROC_ROOT, pad(9)]
-    end
+    and assertz.err=ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY
+    # => [PROC_ROOT, pad(10)]
 
     dupw exec.active_account::has_procedure
-    # => [is_account_procedure, PROC_ROOT, pad(9)]
+    # => [is_account_procedure, PROC_ROOT, pad(10)]
 
     assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
-    # => [PROC_ROOT, pad(9)]
+    # => [PROC_ROOT, pad(10)]
 
-    # write [immediate_threshold, 0, note_restrictions, cold_required] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]:
-    # the multisig_smart policy layout, with index 1 reserved for the delayed threshold and
-    # cold_required in the spare element, so the delayed path can be added without a storage change
-    loc_load.COLD_REQUIRED_LOC loc_load.NOTE_RESTRICTIONS_LOC push.0 loc_load.IMMEDIATE_THRESHOLD_LOC
-    # => [immediate_threshold, 0, note_restrictions, cold_required, PROC_ROOT, pad(9)]
+    # write [immediate_threshold, 0, cold_required, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]; index 1
+    # is reserved for the delayed threshold so the delayed path can be added without a storage
+    # change
+    push.0 loc_load.COLD_REQUIRED_LOC push.0 loc_load.IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, 0, cold_required, 0, PROC_ROOT, pad(10)]
 
     swapw
-    # => [PROC_ROOT, POLICY_WORD, pad(9)]
+    # => [PROC_ROOT, POLICY_WORD, pad(10)]
 
     push.PROCEDURE_POLICIES_SLOT[0..2]
-    # => [policies_slot_suffix, policies_slot_prefix, PROC_ROOT, POLICY_WORD, pad(9)]
+    # => [policies_slot_suffix, policies_slot_prefix, PROC_ROOT, POLICY_WORD, pad(10)]
 
     exec.native_account::set_map_item
-    # => [OLD_POLICY_WORD, pad(9)]
+    # => [OLD_POLICY_WORD, pad(10)]
 
     dropw
-    # => [pad(9)]
+    # => [pad(10)]
 end
 
 #! Sets the delay configuration used by the delayed-execution flows.
@@ -614,23 +587,22 @@ end
 #! Returns the policy of PROC_ROOT from the account's initial state.
 #!
 #! Inputs:  [PROC_ROOT, pad(12)]
-#! Outputs: [immediate_threshold, note_restrictions, cold_required, pad(13)]
+#! Outputs: [immediate_threshold, cold_required, pad(14)]
 #!
 #! Where:
 #! - immediate_threshold is the number of signed categories the procedure requires, or 0 when the
 #!   procedure has no policy.
-#! - note_restrictions is the note restriction enum value, as in multisig_smart.
 #! - cold_required is 1 if the immediate path additionally requires the cold category, else 0.
 #!
 #! Invocation: call
 @account_procedure
 pub proc get_procedure_policy(proc_root: AccountProcedureRoot) -> HotColdPolicy
     exec.get_initial_policy
-    # => [immediate_threshold, delayed_threshold, note_restrictions, cold_required, pad(12)]
+    # => [immediate_threshold, delayed_threshold, cold_required, pad(13)]
 
     # the delayed path is not executed by this component
     swap drop
-    # => [immediate_threshold, note_restrictions, cold_required, pad(13)]
+    # => [immediate_threshold, cold_required, pad(14)]
 end
 
 #! Returns the delay configuration from the account's initial state.
@@ -677,7 +649,6 @@ end
 #!
 #! Panics if:
 #! - a valid guardian signature is missing.
-#! - the note restrictions of a called procedure are violated.
 #! - fewer categories signed than the called procedures require, or the cold category is required
 #!   and did not sign.
 #!
@@ -713,16 +684,13 @@ pub proc auth_tx(
     # => [default_threshold, TX_SUMMARY_COMMITMENT]
 
     exec.compute_called_proc_policy
-    # => [immediate_threshold, delayed_threshold, note_restrictions, cold_required, TX_SUMMARY_COMMITMENT]
+    # => [immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
 
     loc_store.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
-    # => [delayed_threshold, note_restrictions, cold_required, TX_SUMMARY_COMMITMENT]
+    # => [delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
 
     # only the immediate path is executed by this component
     drop
-    # => [note_restrictions, cold_required, TX_SUMMARY_COMMITMENT]
-
-    exec.multisig_smart::enforce_note_restrictions
     # => [cold_required, TX_SUMMARY_COMMITMENT]
 
     loc_store.AUTH_TX_COLD_REQUIRED_LOC
@@ -838,20 +806,23 @@ end
 #! Returns the policy word of PROC_ROOT from the account's initial state.
 #!
 #! Inputs:  [PROC_ROOT]
-#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
+#! Outputs: [immediate_threshold, delayed_threshold, cold_required]
 #!
 #! Where:
 #! - immediate_threshold and delayed_threshold are the thresholds per execution path, 0 for a
 #!   path the policy closes; both are 0 when the procedure has no policy.
-#! - note_restrictions and cold_required are as described in `set_procedure_policy`.
+#! - cold_required is as described in `set_procedure_policy`.
 #!
 #! Invocation: exec
 proc get_initial_policy(
     proc_root: AccountProcedureRoot
-) -> (SignatureThreshold, SignatureThreshold, u8, Bool)
+) -> (SignatureThreshold, SignatureThreshold, Bool)
     push.PROCEDURE_POLICIES_SLOT[0..2]
     exec.native_account::get_initial_map_item
-    # => [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
+    # => [immediate_threshold, delayed_threshold, cold_required, 0]
+
+    movup.3 drop
+    # => [immediate_threshold, delayed_threshold, cold_required]
 end
 
 #! Returns the cold public key from the current account state.
@@ -912,8 +883,8 @@ end
 #! Computes the requirements of the called procedures.
 #!
 #! Iterates over all account procedures and, for those that were called in this transaction,
-#! accumulates the highest threshold per execution path (max), the union of their note
-#! restrictions (or) and whether any of them requires the cold category (or). A called procedure
+#! accumulates the highest threshold per execution path (max) and whether any of them requires the
+#! cold category (or). A called procedure
 #! contributes its policy thresholds, UNREACHABLE_THRESHOLD for a path its policy closes, or
 #! `default_threshold` on both paths when it has no policy (see
 #! `multisig_smart::compute_proc_policy_contribution`); the default contribution closes the
@@ -925,14 +896,13 @@ end
 #! same so that the stored policies keep their meaning once the delayed path is added.
 #!
 #! Inputs:  [default_threshold]
-#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions, cold_required]
+#! Outputs: [immediate_threshold, delayed_threshold, cold_required]
 #!
 #! Where:
 #! - default_threshold is the account's configured default threshold in signed categories.
 #! - immediate_threshold and delayed_threshold are the max per path across all called non-auth
 #!   procedures, or `default_threshold` when no non-auth procedure was called; a path at
 #!   UNREACHABLE_THRESHOLD is closed for this transaction.
-#! - note_restrictions is the union of the called procedures' note restrictions.
 #! - cold_required is 1 if any called procedure requires the cold category.
 #!
 #! Locals:
@@ -942,70 +912,66 @@ end
 @locals(1)
 proc compute_called_proc_policy(
     default_threshold: SignatureThreshold
-) -> (SignatureThreshold, SignatureThreshold, u8, Bool)
+) -> (SignatureThreshold, SignatureThreshold, Bool)
     loc_store.DEFAULT_THRESHOLD_LOC
     # => []
 
-    push.0 push.0 push.0 push.0 exec.active_account::get_num_procedures
-    # => [proc_index, immediate_acc=0, delayed_acc=0, restrictions_acc=0, cold_acc=0]
+    push.0 push.0 push.0 exec.active_account::get_num_procedures
+    # => [proc_index, immediate_acc=0, delayed_acc=0, cold_acc=0]
 
     # procedure index 0 is the auth procedure and never contributes, so the loop stops before it
     dup neq.1
-    # => [should_continue, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+    # => [should_continue, proc_index, immediate_acc, delayed_acc, cold_acc]
     while.true
         sub.1
-        # => [proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+        # => [proc_index, immediate_acc, delayed_acc, cold_acc]
 
         dup exec.active_account::get_procedure_root
-        # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+        # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, cold_acc]
 
         exec.native_account::was_procedure_called
-        # => [was_called, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+        # => [was_called, proc_index, immediate_acc, delayed_acc, cold_acc]
 
         if.true
             dup exec.active_account::get_procedure_root
-            # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+            # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, cold_acc]
 
             exec.get_initial_policy
-            # => [immediate, delayed, restrictions, cold, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+            # => [immediate, delayed, cold, proc_index, immediate_acc, delayed_acc, cold_acc]
 
             # cold_acc' = cold_acc OR cold
-            movup.8 movup.4 or movdn.7
-            # => [immediate, delayed, restrictions, proc_index, immediate_acc, delayed_acc, restrictions_acc, new_cold]
-
-            # restrictions_acc' = restrictions_acc OR restrictions, the union of the restrictions
-            movup.6 movup.3 u32or movdn.5
-            # => [immediate, delayed, proc_index, immediate_acc, delayed_acc, new_restrictions, new_cold]
+            movup.6 movup.3 or movdn.5
+            # => [immediate, delayed, proc_index, immediate_acc, delayed_acc, new_cold]
 
             loc_load.DEFAULT_THRESHOLD_LOC movdn.2
-            # => [immediate, delayed, default_threshold, proc_index, immediate_acc, delayed_acc, new_restrictions, new_cold]
+            # => [immediate, delayed, default_threshold, proc_index, immediate_acc, delayed_acc, new_cold]
 
             exec.multisig_smart::compute_proc_policy_contribution
-            # => [immediate_contribution, delayed_contribution, proc_index, immediate_acc, delayed_acc, new_restrictions, new_cold]
+            # => [immediate_contribution, delayed_contribution, proc_index, immediate_acc, delayed_acc, new_cold]
 
             # immediate_acc' = max(immediate_acc, immediate_contribution)
             movup.3 u32max
-            # => [new_immediate, delayed_contribution, proc_index, delayed_acc, new_restrictions, new_cold]
+            # => [new_immediate, delayed_contribution, proc_index, delayed_acc, new_cold]
 
             # delayed_acc' = max(delayed_acc, delayed_contribution)
             swap movup.3 u32max
-            # => [new_delayed, new_immediate, proc_index, new_restrictions, new_cold]
+            # => [new_delayed, new_immediate, proc_index, new_cold]
 
             swap movup.2
-            # => [proc_index, new_immediate, new_delayed, new_restrictions, new_cold]
+            # => [proc_index, new_immediate, new_delayed, new_cold]
         end
 
         dup neq.1
-        # => [should_continue, proc_index, immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+        # => [should_continue, proc_index, immediate_acc, delayed_acc, cold_acc]
     end
 
     drop
-    # => [immediate_acc, delayed_acc, restrictions_acc, cold_acc]
+    # => [immediate_acc, delayed_acc, cold_acc]
 
     # a transaction that calls no non-auth procedure costs the default threshold on either path
     loc_load.DEFAULT_THRESHOLD_LOC exec.multisig_smart::compute_tx_threshold
-    # => [immediate_threshold, delayed_acc, restrictions_acc, cold_acc]
+    # => [immediate_threshold, delayed_acc, cold_acc]
 
     swap loc_load.DEFAULT_THRESHOLD_LOC exec.multisig_smart::compute_tx_threshold swap
-    # => [immediate_threshold, delayed_threshold, restrictions_acc, cold_acc]
+    # => [immediate_threshold, delayed_threshold, cold_acc]
 end

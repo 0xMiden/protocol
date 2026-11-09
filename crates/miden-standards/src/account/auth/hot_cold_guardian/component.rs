@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(policy_word(BasicWallet::receive_asset_root()), Word::from([2u32, 0, 0, 0]));
         assert_eq!(
             policy_word(AuthHotColdGuardian::update_hot_keys_root()),
-            Word::from([1u32, 0, 0, 1])
+            Word::from([1u32, 0, 1, 0])
         );
         assert_eq!(
             policy_word(AuthHotColdGuardian::rotate_cold_key_root()),
