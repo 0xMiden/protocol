@@ -929,6 +929,7 @@ use miden_standards::errors::standards::{
     ERR_PROC_POLICY_INVALID_MODE,
     ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16,
     ERR_PROPOSE_EXPIRATION_DELTA_ZERO,
+    ERR_PROPOSE_INSUFFICIENT_SIGNATURES,
     ERR_TX_ALREADY_PROPOSED,
     ERR_TX_NOT_PROPOSED,
     ERR_TX_PROPOSAL_CANCELLED,
@@ -1324,6 +1325,39 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled() -> anyhow::Result<
     let result = builder.build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+
+    Ok(())
+}
+
+/// A propose without signatures and a cancel of a commitment that was never proposed are rejected.
+#[rstest]
+#[case::propose_without_signatures("propose_transaction", &[], ERR_PROPOSE_INSUFFICIENT_SIGNATURES)]
+#[case::cancel_unproposed("cancel_transaction_proposal", &[0, 1], ERR_TX_NOT_PROPOSED)]
+#[tokio::test]
+async fn test_multisig_smart_delay_action_rejected(
+    #[case] proc_name: &str,
+    #[case] signer_indices: &[usize],
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    let result = execute_delay_action(
+        &mock_chain,
+        account_id,
+        proc_name,
+        Word::from([Felt::from(45u32); 4]),
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(312)),
+        signer_indices,
+        &public_keys,
+        &authenticators,
+    )
+    .await?;
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }

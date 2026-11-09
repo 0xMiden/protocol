@@ -22,7 +22,9 @@ use {SignatureThreshold, THRESHOLD_CONFIG_SLOT} from miden::standards::auth::mul
 # assertions and `cancel_signing_message`) takes the proposals map slot id as its first input, like
 # `native_account::get_map_item`, so that other components can keep a proposals map of their own
 # with it; `set_delay_config` and `get_initial_delay_config` take the delay config slot id the same
-# way. The account procedures read `DELAY_CONFIG_SLOT` and `TX_PROPOSALS_SLOT` themselves.
+# way, and `record_tx_proposal` and `cancel_tx_proposal` also take the number of verified signatures,
+# so components that count signatures differently can reuse them. The account procedures read
+# `DELAY_CONFIG_SLOT` and `TX_PROPOSALS_SLOT` and verify the approver signatures themselves.
 
 # CONSTANTS
 # =================================================================================================
@@ -536,46 +538,10 @@ end
 #! Invocation: call
 @account_procedure
 pub proc propose_transaction(tx_summary_commitment: word)
-    # ---- Verify at least one approver signature over the target commitment. ----
-    exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    exec.multisig::verify_signatures
+    exec.multisig::get_initial_threshold_and_num_approvers drop exec.multisig::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    dup neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    push.DELAY_CONFIG_SLOT[0..2] exec.get_initial_delay_config
-    # => [min_delay, propose_expiration_delta, cancel_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    # ---- Bound the proposal transaction's validity window. ----
-    dup.1 exec.tx::update_expiration_block_delta
-    # => [min_delay, propose_expiration_delta, cancel_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    # ---- min_cancel_sigs = max(cancel_threshold, num_verified_signatures). ----
-    # Cancelling must cost at least as many approvers as consented to the proposal, so a group
-    # smaller than the proposers cannot veto them; the configured threshold is the floor.
-    movup.3 movup.3 u32max movdn.2
-    # => [min_delay, propose_expiration_delta, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-
-    exec.compute_unlock_block
-    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-
-    push.TX_PROPOSALS_SLOT[0..2] exec.write_tx_proposal
-    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
-
-    # The write returns the entry it replaced; the abort reverts the overwrite. A cancelled record
-    # stays cancelled, so the (replayable) proposal signatures cannot re-open the delayed path for a
-    # vetoed commitment; any other non-zero unlock block means a live proposal already exists. A
-    # transaction that was already executed can still be proposed here; it is not worth an extra
-    # `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing it
-    # later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
-    movdn.2 drop drop
-    # => [old_unlock_block]
-
-    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
-    assertz.err=ERR_TX_ALREADY_PROPOSED
+    push.TX_PROPOSALS_SLOT[0..2] push.DELAY_CONFIG_SLOT[0..2] exec.record_tx_proposal
     # => []
 end
 
@@ -614,54 +580,109 @@ end
 #! Invocation: call
 @account_procedure
 pub proc cancel_transaction_proposal(tx_summary_commitment: word)
-    dupw push.TX_PROPOSALS_SLOT[0..2] exec.get_tx_proposal
-    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    dupw exec.cancel_signing_message
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT]
+
+    # the current approver count caps `min_cancel_sigs`
+    dup movdn.5 exec.multisig::verify_signatures movdn.4 dropw
+    # => [num_verified_signatures, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    push.TX_PROPOSALS_SLOT[0..2] exec.cancel_tx_proposal
+    # => []
+end
+
+#! Records a proposal for `TX_SUMMARY_COMMITMENT` backed by `num_verified_signatures`, as
+#! described in `propose_transaction`.
+#!
+#! The caller verifies the signatures, so the count must only include valid signatures over
+#! `TX_SUMMARY_COMMITMENT` by the initial signer set.
+#!
+#! Inputs:  [delay_config_slot_id, proposals_slot_id, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_verified_signatures is zero, or as described in `propose_transaction`.
+#!
+#! Invocation: exec
+pub proc record_tx_proposal(
+    delay_config_slot_id: StorageSlotId,
+    proposals_slot_id: StorageSlotId,
+    num_verified_signatures: u32,
+    tx_summary_commitment: word
+)
+    movup.2 movdn.8 movup.2 movdn.8
+    # => [delay_config_slot_id, num_verified_signatures, TX_SUMMARY_COMMITMENT, proposals_slot_id]
+
+    dup.2 neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
+    exec.get_initial_delay_config
+    # => [min_delay, propose_expiration_delta, cancel_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT, proposals_slot_id]
+
+    # ---- Bound the proposal transaction's validity window. ----
+    dup.1 exec.tx::update_expiration_block_delta
+
+    # ---- min_cancel_sigs = max(cancel_threshold, num_verified_signatures). ----
+    movup.3 movup.3 u32max movdn.2
+    # => [min_delay, propose_expiration_delta, min_cancel_sigs, TX_SUMMARY_COMMITMENT, proposals_slot_id]
+
+    exec.compute_unlock_block movup.8 movup.8 exec.write_tx_proposal
+    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
+
+    # The write returns the entry it replaced; the abort reverts the overwrite. A cancelled record
+    # stays cancelled, so the (replayable) proposal signatures cannot re-open the delayed path for a
+    # vetoed commitment; any other non-zero unlock block means a live proposal already exists. A
+    # transaction that was already executed can still be proposed here; it is not worth an extra
+    # `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing it
+    # later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
+    movdn.2 drop drop
+    # => [old_unlock_block]
+
+    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => []
+end
+
+#! Cancels the proposal for `TX_SUMMARY_COMMITMENT` with `num_verified_signatures`, requiring
+#! `min(min_cancel_sigs, max_cancel_sigs)` of them and at least one, as described in
+#! `cancel_transaction_proposal`.
+#!
+#! The caller verifies the signatures, so the count must only include valid signatures over the
+#! cancel message by the initial signer set.
+#!
+#! Inputs:  [proposals_slot_id, num_verified_signatures, max_cancel_sigs, TX_SUMMARY_COMMITMENT]
+#! Outputs: []
+#!
+#! Panics if:
+#! - as described in `cancel_transaction_proposal`.
+#!
+#! Invocation: exec
+pub proc cancel_tx_proposal(
+    proposals_slot_id: StorageSlotId,
+    num_verified_signatures: u32,
+    max_cancel_sigs: u32,
+    tx_summary_commitment: word
+)
+    movdn.7 movdn.7 movdn.5 movdn.5
+    # => [TX_SUMMARY_COMMITMENT, num_verified_signatures, max_cancel_sigs, proposals_slot_id]
+
+    dupw dup.11 dup.11 exec.get_tx_proposal
+    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT, num_verified_signatures, max_cancel_sigs, proposals_slot_id]
 
     dup neq.0 assert.err=ERR_TX_NOT_PROPOSED
-    # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
     # A cancelled record is final. A second cancellation would only rewrite it, so reject it with
     # an explicit error instead of spending signatures and a nonce on a no-op.
     eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
-    # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT, num_verified_signatures, max_cancel_sigs, proposals_slot_id]
 
-    # Keep the recorded fields for the cancelled record written below.
-    movdn.5 movdn.5
-    # => [TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
-
-    # ---- Verify cancellation signatures over the domain-separated cancel message. ----
-    dupw exec.cancel_signing_message
-    # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
-
-    exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
-
-    # `min_cancel_sigs` was stamped when the proposal was recorded; if the approver set shrank
-    # since, it may exceed the approvers that still exist, which would make the proposal
-    # uncancellable. Cap it by the current approver count.
-    dup dup.11 u32min
-    # => [required_cancel_sigs, num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
-
-    movdn.11
-    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs, required_cancel_sigs]
-
-    exec.multisig::verify_signatures
-    # => [num_verified_signatures, CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs, required_cancel_sigs]
-
-    movup.11 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
-    # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
-
-    dropw
-    # => [TX_SUMMARY_COMMITMENT, proposal_block, min_cancel_sigs]
+    # ---- 0 < min(min_cancel_sigs, max_cancel_sigs) <= num_verified_signatures. ----
+    dup.1 movup.8 u32min
+    dup neq.0 assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+    movup.7 swap u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+    # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT, proposals_slot_id]
 
     # ---- Mark the proposal cancelled, keeping its recorded fields. ----
-    movup.5 movup.5
-    # => [proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-
-    push.CANCELLED_UNLOCK_BLOCK
-    # => [cancelled_unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
-
-    push.TX_PROPOSALS_SLOT[0..2] exec.write_tx_proposal
+    push.CANCELLED_UNLOCK_BLOCK movup.8 movup.8 exec.write_tx_proposal
     # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
 
     drop drop drop
