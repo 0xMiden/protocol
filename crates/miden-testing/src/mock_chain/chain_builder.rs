@@ -258,6 +258,7 @@ impl MockChainBuilder {
             output_note_batches,
             Vec::new(),
             Vec::new(),
+            Default::default(),
         );
 
         let prev_block_commitment = Word::empty();

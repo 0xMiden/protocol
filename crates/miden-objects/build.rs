@@ -70,6 +70,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.TransactionLog",
             ".transaction.TransactionLogs",
             ".transaction.TransactionLogDetails",
+            ".transaction.PublicTransactionLogEntry",
+            ".transaction.PublicTransactionLogs",
             ".blockchain.SignedBlock",
             ".blockchain.BlockBody",
             ".blockchain.OutputNoteBatch",
