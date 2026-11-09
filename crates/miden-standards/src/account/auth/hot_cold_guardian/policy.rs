@@ -2,7 +2,6 @@ use miden_protocol::Word;
 use miden_protocol::errors::AccountError;
 
 use super::config::NUM_USER_KEY_CATEGORIES;
-use crate::account::auth::multisig_smart::ProcedurePolicyNoteRestriction;
 
 /// The policy of an account procedure in [`AuthHotColdGuardian`](super::AuthHotColdGuardian).
 ///
@@ -13,14 +12,12 @@ use crate::account::auth::multisig_smart::ProcedurePolicyNoteRestriction;
 /// for the cold key while the hot keys keep every other procedure at the default.
 ///
 /// The policy is encoded into the procedure-policy storage word as
-/// `[immediate_threshold, delayed_threshold, note_restrictions, cold_required]`: the layout of
-/// the smart multisig policies with the cold-required flag in the spare element. The delayed
-/// threshold is reserved for the delayed path and stays 0.
+/// `[immediate_threshold, delayed_threshold, cold_required, 0]`. The delayed threshold is reserved
+/// for the delayed path and stays 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HotColdPolicy {
     immediate_threshold: u32,
     cold_required: bool,
-    note_restrictions: ProcedurePolicyNoteRestriction,
 }
 
 impl HotColdPolicy {
@@ -41,7 +38,6 @@ impl HotColdPolicy {
         Ok(Self {
             immediate_threshold,
             cold_required: false,
-            note_restrictions: ProcedurePolicyNoteRestriction::None,
         })
     }
 
@@ -61,15 +57,6 @@ impl HotColdPolicy {
         Ok(self)
     }
 
-    /// Restricts the notes a transaction calling the procedure may consume or create.
-    pub const fn with_note_restriction(
-        mut self,
-        note_restrictions: ProcedurePolicyNoteRestriction,
-    ) -> Self {
-        self.note_restrictions = note_restrictions;
-        self
-    }
-
     /// Returns the number of signed categories the procedure requires.
     pub const fn immediate_threshold(&self) -> u32 {
         self.immediate_threshold
@@ -80,19 +67,9 @@ impl HotColdPolicy {
         self.cold_required
     }
 
-    /// Returns the note restrictions of the policy.
-    pub const fn note_restrictions(&self) -> ProcedurePolicyNoteRestriction {
-        self.note_restrictions
-    }
-
     /// Returns the storage word of the policy.
     pub fn to_word(self) -> Word {
-        Word::from([
-            self.immediate_threshold,
-            0,
-            self.note_restrictions as u32,
-            self.cold_required as u32,
-        ])
+        Word::from([self.immediate_threshold, 0, self.cold_required as u32, 0])
     }
 }
 
@@ -104,13 +81,9 @@ mod tests {
 
     #[test]
     fn hot_cold_policy_word_encoding_matches_storage_layout() {
-        let policy = HotColdPolicy::new(1)
-            .unwrap()
-            .with_cold_required()
-            .unwrap()
-            .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes);
+        let policy = HotColdPolicy::new(1).unwrap().with_cold_required().unwrap();
 
-        assert_eq!(policy.to_word(), [1u32, 0, 3, 1].into());
+        assert_eq!(policy.to_word(), [1u32, 0, 1, 0].into());
         assert_eq!(HotColdPolicy::new(2).unwrap().to_word(), [2u32, 0, 0, 0].into());
     }
 
