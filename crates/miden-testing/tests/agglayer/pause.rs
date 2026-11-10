@@ -11,11 +11,11 @@ use miden_agglayer::{
     RemoveGerNote,
     UpdateGerNote,
 };
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
 use miden_protocol::account::{AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -58,7 +58,7 @@ fn pause_config_note(
         PauseConfig::Pause => 41u32,
         PauseConfig::Unpause => 42u32,
     };
-    let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(seed); 4].into());
     Ok(AggLayerBridge::pause_note(action, sender, bridge_id, &mut rng)?)
 }
 
@@ -195,7 +195,7 @@ async fn pause_note_targeting_another_account_is_rejected() -> anyhow::Result<()
     let other_account = AccountIdBuilder::new()
         .account_type(AccountType::Public)
         .build_with_seed([9; 32]);
-    let mut rng = RandomCoin::new([Felt::from(45u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(45u32); 4].into());
     let note =
         AggLayerBridge::pause_note(PauseConfig::Pause, setup.pauser.id(), other_account, &mut rng)?;
 

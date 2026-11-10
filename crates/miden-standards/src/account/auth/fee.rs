@@ -119,7 +119,7 @@ pub fn commit_fee_conversion_info(
     value.extend(salt.iter());
     value.extend(info_word.iter());
 
-    (Hasher::merge(&[info_word, salt]), value)
+    (Hasher::hash_double_word(&[info_word, salt]), value)
 }
 
 // TESTS
@@ -162,7 +162,7 @@ mod tests {
 
         let (key, value) = commit_fee_conversion_info(payment_info, salt);
 
-        assert_eq!(key, Hasher::merge(&[payment_info.to_word(), salt]));
+        assert_eq!(key, Hasher::hash_double_word(&[payment_info.to_word(), salt]));
         assert_eq!(value.len(), 8);
         assert_eq!(&value[..4], salt.as_elements());
         assert_eq!(&value[4..], payment_info.to_word().as_elements());

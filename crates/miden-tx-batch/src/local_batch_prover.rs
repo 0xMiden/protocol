@@ -1,10 +1,10 @@
 use alloc::string::ToString;
 
 use miden_processor::ExecutionError;
+use miden_protocol::PROTOCOL_PROOF_HASH;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
 use miden_protocol::transaction::PublicTransactionLogs;
-use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
 use crate::ExecutedBatch;
@@ -24,15 +24,16 @@ pub struct LocalBatchProver {
 
 impl Default for LocalBatchProver {
     fn default() -> Self {
-        Self::new(Prover::new().with_hash_fn(Poseidon2))
+        Self::new(Prover::new())
     }
 }
 
 impl LocalBatchProver {
-    /// Creates a new [`LocalBatchProver`] instance.
+    /// Creates a new [`LocalBatchProver`] while preserving the supplied prover settings and using
+    /// the protocol proof hash.
     pub fn new(prover: Prover) -> Self {
         Self {
-            prover,
+            prover: prover.with_hash_fn(PROTOCOL_PROOF_HASH),
             skip_precompile_proof_generation: false,
         }
     }

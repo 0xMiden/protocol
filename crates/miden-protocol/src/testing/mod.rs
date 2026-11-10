@@ -1,3 +1,16 @@
+use alloc::vec::Vec;
+
+use miden_core::deferred::{
+    DEFERRED_AND_FRAME,
+    PrecompileWitness,
+    PrecompileWitnessEntry,
+    TRUE_DIGEST,
+    fold_deferred_root,
+};
+use miden_verifier::{ExecutionProof, PrecompileProof, PrecompileStatus, StarkProof, VmProof};
+
+use crate::PROTOCOL_PROOF_HASH;
+
 pub mod account;
 pub mod account_code;
 pub mod account_id;
@@ -27,57 +40,47 @@ pub mod validator_config;
 pub mod vault_delta;
 pub mod vault_patch;
 
-/// Returns a structurally complete placeholder execution proof for tests that do not verify it.
-pub fn dummy_execution_proof() -> crate::vm::ExecutionProof {
-    use alloc::vec::Vec;
-
-    use miden_core::deferred::TRUE_DIGEST;
-    use miden_verifier::{HashFunction, PrecompileStatus, StarkProof, VmProof};
-
-    crate::vm::ExecutionProof::new(
+/// Creates an empty, completed execution proof for tests that do not verify its STARK payload.
+///
+/// The proof cannot pass verification. It has no outstanding deferred work, which is the lifecycle
+/// state required by protocol objects that use it as inert test data.
+pub fn dummy_execution_proof() -> ExecutionProof {
+    ExecutionProof::new(
         VmProof {
-            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
+            proof: StarkProof::new(Vec::new(), PROTOCOL_PROOF_HASH),
             precompile_root: TRUE_DIGEST,
         },
         PrecompileStatus::Empty,
     )
 }
 
-/// Returns a structurally incomplete placeholder execution proof for verifier tests.
-pub fn dummy_deferred_execution_proof() -> crate::vm::ExecutionProof {
-    use alloc::vec::Vec;
-
-    use miden_core::deferred::{PrecompileWitness, PrecompileWitnessEntry, Tag};
-    use miden_verifier::{HashFunction, PrecompileStatus, StarkProof, VmProof};
-
+/// Creates a structurally incomplete placeholder execution proof for verifier tests.
+pub fn dummy_deferred_execution_proof() -> ExecutionProof {
     let witness = PrecompileWitness::from_entries(vec![PrecompileWitnessEntry::Join {
-        tag: Tag::AND,
+        frame: DEFERRED_AND_FRAME,
         lhs: 0,
         rhs: 0,
     }])
-    .expect("a logged TRUE is a nonempty obligation");
+    .expect("a join of two implicit TRUE nodes is structurally valid");
 
-    crate::vm::ExecutionProof::new(
+    ExecutionProof::new(
         VmProof {
-            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
-            precompile_root: witness.root_unchecked(),
+            proof: StarkProof::new(Vec::new(), PROTOCOL_PROOF_HASH),
+            precompile_root: fold_deferred_root(TRUE_DIGEST, TRUE_DIGEST),
         },
         PrecompileStatus::Deferred(witness),
     )
 }
 
-/// Returns a structurally complete placeholder proof containing precompile work.
-pub fn dummy_precompile_execution_proof() -> crate::vm::ExecutionProof {
-    use alloc::vec::Vec;
-
-    use miden_verifier::{HashFunction, PrecompileProof, PrecompileStatus, StarkProof};
-
-    let vm = dummy_execution_proof().vm().clone();
-
-    crate::vm::ExecutionProof::new(
+/// Creates a completed execution proof with an empty precompile proof for tests.
+///
+/// The proof cannot pass verification. It exists for testing proof lifecycle and policy checks.
+pub fn dummy_precompile_execution_proof() -> ExecutionProof {
+    let (_, vm, _) = dummy_execution_proof().into_parts();
+    ExecutionProof::new(
         vm,
         PrecompileStatus::Proven(PrecompileProof {
-            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
+            proof: StarkProof::new(Vec::new(), PROTOCOL_PROOF_HASH),
             roots: Vec::new(),
         }),
     )

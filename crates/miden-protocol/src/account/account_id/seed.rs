@@ -55,7 +55,8 @@ fn compute_account_seed_single(
     // loop until we have a seed that satisfies the specified account parameters.
     loop {
         // Check if the seed satisfies the specified account type and version. Additionally, the
-        // most significant bit of the suffix must be zero to ensure felt validity.
+        // most significant bit of the suffix must be zero to ensure felt validity. Eidos already
+        // clears that bit, so this validity check adds no grinding work.
         let suffix = current_digest[AccountIdV1::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
         let prefix = current_digest[AccountIdV1::SEED_DIGEST_PREFIX_ELEMENT_IDX];
         let is_suffix_msb_zero = suffix.as_canonical_u64() >> 63 == 0;

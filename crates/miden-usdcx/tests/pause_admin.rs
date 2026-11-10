@@ -24,8 +24,8 @@
 mod support;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::ExecutedTransaction;
@@ -40,8 +40,8 @@ use miden_usdcx::xreserve::encoding::Signature;
 use support::*;
 
 /// Deterministic note rng for the production admin notes (serial only; never affects the gate).
-fn prod_note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn prod_note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(3u32),

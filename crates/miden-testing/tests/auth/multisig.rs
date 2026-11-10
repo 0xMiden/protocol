@@ -3,7 +3,6 @@ use core::num::{NonZeroU16, NonZeroU32};
 use miden_core::deferred::PrecompileError;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{
     AuthScheme,
     AuthSecretKey,
@@ -21,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
@@ -106,9 +106,7 @@ pub(super) fn setup_keys_and_authenticators_with_scheme(
     for _ in 0..num_approvers {
         let sec_key = match auth_scheme {
             AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Poseidon2 => {
-                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
-            },
+            AuthScheme::Falcon512Eidos => AuthSecretKey::new_falcon512_eidos_with_rng(&mut rng),
             _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
         };
         let pub_key = sec_key.public_key();
@@ -216,7 +214,7 @@ enum InvalidEip712Witness {
 /// - 1 Multisig Contract
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_2_of_2_with_note_creation(
     #[case] auth_scheme: AuthScheme,
@@ -436,7 +434,8 @@ async fn test_multisig_rejects_invalid_eip712_witness(
         .unwrap_err()
         .unwrap_unauthorized_err();
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
-    let raw_key = Hasher::merge(&[public_keys[0].to_commitment().into(), tx_summary_hash]);
+    let raw_key =
+        Hasher::hash_double_word(&[public_keys[0].to_commitment().into(), tx_summary_hash]);
     let raw_witness = BoundSignature::new(
         SignatureKey::new(public_keys[0].to_commitment(), tx_summary_hash),
         secret_keys[0].sign(tx_summary_hash),
@@ -600,7 +599,7 @@ async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyh
 #[tokio::test]
 async fn test_multisig_rejects_eip712_for_falcon_approver() -> anyhow::Result<()> {
     let (_, auth_schemes, public_keys, _) =
-        setup_keys_and_authenticators_with_scheme(1, 0, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(1, 0, AuthScheme::Falcon512Eidos)?;
     let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
     let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
 
@@ -708,7 +707,7 @@ async fn test_multisig_rejects_invalid_eip712_signature_length(
 /// **Tested combinations:** (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_2_of_4_all_signer_combinations(
     #[case] auth_scheme: AuthScheme,
@@ -800,7 +799,7 @@ async fn test_multisig_2_of_4_all_signer_combinations(
 /// - 1 Multisig Contract
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     // Setup keys and authenticators (3 approvers, but only 2 signers)
@@ -894,7 +893,7 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
 /// - 1 Transaction Script setting the expiration delta
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_stale_signatures_fail_after_expiration(
     #[case] auth_scheme: AuthScheme,
@@ -1000,7 +999,7 @@ async fn test_multisig_stale_signatures_fail_after_expiration(
 #[tokio::test]
 async fn test_multisig_binds_block_older_than_reference_block() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Eidos)?;
 
     let approvers = public_keys
         .iter()
@@ -1069,7 +1068,7 @@ async fn test_multisig_binds_block_older_than_reference_block() -> anyhow::Resul
 #[tokio::test]
 async fn test_multisig_tx_summary_is_stable_while_the_chain_advances() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Eidos)?;
 
     let approvers = public_keys
         .iter()
@@ -1146,7 +1145,7 @@ async fn test_multisig_approval_expires_relative_to_bound_block(
     #[case] expected_error: Option<MasmError>,
 ) -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Eidos)?;
 
     let approvers = public_keys
         .iter()
@@ -1226,7 +1225,7 @@ async fn test_multisig_approval_expires_relative_to_bound_block(
 #[tokio::test]
 async fn test_multisig_freshness_delta_is_relative_to_the_reference_block() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Eidos)?;
 
     let approvers = public_keys
         .iter()
@@ -1312,7 +1311,7 @@ async fn test_multisig_freshness_delta_is_relative_to_the_reference_block() -> a
 /// - 1 Transaction Script calling multisig procedures
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
@@ -1504,7 +1503,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(output_note_asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::empty()))
         .build()?
         .into();
 
@@ -1588,7 +1587,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
 /// - 1 Transaction Script calling multisig procedures
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_update_signers_remove_owner(
     #[case] auth_scheme: AuthScheme,
@@ -1771,7 +1770,7 @@ async fn test_multisig_update_signers_remove_owner(
 /// unreachable for the new signer set.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     #[case] auth_scheme: AuthScheme,
@@ -1977,7 +1976,7 @@ async fn test_multisig_update_signers_rejects_too_many_approvers() -> anyhow::Re
 /// 4. Verify that only the CURRENT approvers can sign the update transaction
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_new_approvers_cannot_sign_before_update(
     #[case] auth_scheme: AuthScheme,
@@ -2104,7 +2103,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
 /// 2. Send a note only when both approvers sign the transaction (default threshold)
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_proc_threshold_overrides(
     #[case] auth_scheme: AuthScheme,
@@ -2194,7 +2193,7 @@ async fn test_multisig_proc_threshold_overrides(
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap())
         .asset(asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
         .build()?
         .into();
     let send_note_transaction_script = SendNotesTransactionScript::new(
@@ -2269,7 +2268,7 @@ async fn test_multisig_proc_threshold_overrides(
 /// Tests setting a per-procedure threshold override and clearing it via `proc_threshold == 0`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_set_procedure_threshold(
     #[case] auth_scheme: AuthScheme,
@@ -2479,7 +2478,7 @@ async fn test_multisig_set_procedure_threshold(
 /// Tests setting an override threshold above num_approvers is rejected.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
     #[case] auth_scheme: AuthScheme,
@@ -2538,7 +2537,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
 /// for its bound check.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
     #[case] auth_scheme: AuthScheme,

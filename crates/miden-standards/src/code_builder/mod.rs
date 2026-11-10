@@ -626,19 +626,23 @@ impl CodeBuilder {
     // TESTING CONVENIENCE FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a [`CodeBuilder`] with the transaction kernel core package linked.
+    /// Returns a [`CodeBuilder`] with the transaction kernel core and shared utilities linked.
     ///
     /// This assembler is the same as [`TransactionKernel::assembler`] but additionally includes the
     /// kernel core package on the namespace of `miden::tx_kernel_core`. The `miden::tx_kernel_core`
     /// package is added separately because even though the library (`api.masm`) and the kernel
     /// binary (`main.masm`) include this code, it is not otherwise accessible. By adding it
     /// separately, we can invoke procedures from the kernel core package to test them individually.
+    /// Shared utilities are statically linked under `miden::protocol_utils` for the same purpose.
     #[cfg(any(feature = "testing", test))]
     pub fn with_kernel_core_package(source_manager: Arc<dyn SourceManagerSync>) -> Self {
         let mut builder = Self::with_source_manager(source_manager);
         builder
             .link_dynamic_package(&TransactionKernel::core_package())
             .expect("failed to link transaction kernel core package");
+        builder
+            .link_static_package(&miden_protocol::ProtocolLib::utils_package())
+            .expect("failed to link protocol utils package");
         builder
     }
 
