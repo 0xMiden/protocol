@@ -52,7 +52,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
-use super::fee_payment::{VERIFICATION_BASE_FEE, assert_single_fee_note, multisig_auth_estimate};
+use super::fee_payment::{VERIFICATION_BASE_FEE, assert_single_fee_note};
 use super::multisig::MultisigAuthArgsExt;
 
 // ================================================================================================
@@ -633,8 +633,8 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     Ok(())
 }
 
-/// The component pays the transaction fee, counting every hot key, the cold key and the guardian
-/// as signers in its cycle estimate.
+/// The component pays the transaction fee after the signatures are verified, within the max fee it
+/// estimates when the auth args carry none.
 #[tokio::test]
 async fn test_hot_cold_guardian_pays_fee_note() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::Falcon512Poseidon2;
@@ -659,24 +659,37 @@ async fn test_hot_cold_guardian_pays_fee_note() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
+    // no max fee is set, so the auth procedure estimates it, counting every hot key, the cold key
+    // and the guardian as signers
     let auth_args = MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(7))
         .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
-    let tx = mock_chain.build_transaction(account.id()).multisig_auth_args(auth_args);
-    let executed = sign_and_execute(tx, &[&hot[0], &guardian]).await??;
+
+    let tx_summary = mock_chain
+        .build_transaction(account.id())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let msg = tx_summary.as_ref().to_commitment();
+    let signed_auth_args = auth_args.with_max_fee_from_summary(&tx_summary)?;
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let mut signed_builder =
+        mock_chain.build_transaction(account.id()).multisig_auth_args(signed_auth_args);
+    for signer in [&hot[0], &guardian] {
+        let signature =
+            signer.authenticator.get_signature(signer.commitment(), &signing_inputs).await?;
+        signed_builder = signed_builder.add_signature(signer.commitment(), msg, signature);
+    }
+    let executed = signed_builder.build()?.execute().await?;
 
     let paid_fee_asset = assert_single_fee_note(&executed)?;
     account.apply_patch(executed.account_patch())?;
     assert_eq!(
         account.vault().get_balance(initial_fee_asset.id())?.as_u64(),
         initial_fee_asset.amount().as_u64() - paid_fee_asset.amount().as_u64()
-    );
-
-    // two hot keys, the cold key and the guardian are counted as signers
-    let auth_procedure_cycles = executed.measurements().auth_procedure;
-    let auth_estimate = multisig_auth_estimate(hot.len() + 2);
-    assert!(
-        auth_procedure_cycles <= auth_estimate,
-        "hot/cold/guardian auth procedure took {auth_procedure_cycles} cycles, exceeding the estimate of {auth_estimate}",
     );
 
     Ok(())

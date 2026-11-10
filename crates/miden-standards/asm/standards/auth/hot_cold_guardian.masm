@@ -12,7 +12,7 @@
 
 use {Approver, PublicKeyCommitment, SignatureMessage, SignatureScheme} from miden::standards::auth::signature
 use {SignatureThreshold} from miden::standards::auth::multisig
-use {AccountProcedureRoot, BlockNumber, Bool} from miden::protocol::types
+use {AccountProcedureRoot, AssetAmount, BlockNumber, Bool} from miden::protocol::types
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
@@ -592,12 +592,12 @@ end
 #! then verified and counted per category.
 #!
 #! Inputs:
-#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - bound_block_num, approval_expiration_block_num and SALT are as described in
+#! - bound_block_num, approval_expiration_block_num, max_fee and SALT are as described in
 #!   `miden::standards::auth::multisig::auth_tx`.
 #!
 #! Panics if:
@@ -614,15 +614,13 @@ end
 pub proc auth_tx(
     bound_block_num: BlockNumber,
     approval_expiration_block_num: BlockNumber,
+    max_fee: AssetAmount,
     salt: word
 ) -> word
     exec.native_account::incr_nonce drop
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # ------ Computing transaction summary ------
-
-    push.0 movdn.2
-    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
     exec.auth::get_tx_summary_commitment
     # => [TX_SUMMARY_COMMITMENT]
