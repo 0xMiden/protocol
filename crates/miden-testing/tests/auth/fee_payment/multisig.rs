@@ -1,10 +1,10 @@
 use core::num::NonZeroU32;
 use std::collections::BTreeSet;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, PartialNote};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionSummary};
@@ -221,9 +221,24 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
     let auth_args = fee_paying_auth_args(&mock_chain, Word::from([17u32, 18, 19, 20]))?
         .with_approval_expiration_delta(NonZeroU32::new(APPROVAL_EXPIRATION_DELTA).unwrap())?;
 
+    // Fixed script work keeps both executions in the same fee bucket as the block advances.
+    let tx_script = CodeBuilder::default().compile_tx_script(
+        r"
+        @transaction_script
+        pub proc main
+            push.256 dup neq.0
+            while.true
+                sub.1 dup neq.0
+            end
+            drop
+        end
+        ",
+    )?;
+
     let original_summary = mock_chain
         .build_transaction(account.id())
         .multisig_auth_args(auth_args)
+        .tx_script(tx_script.clone())
         .build()?
         .execute()
         .await
@@ -239,8 +254,10 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
         signatures.push((public_key.to_commitment(), signature));
     }
 
-    let mut original_builder =
-        mock_chain.build_transaction(account.id()).multisig_auth_args(auth_args);
+    let mut original_builder = mock_chain
+        .build_transaction(account.id())
+        .multisig_auth_args(auth_args)
+        .tx_script(tx_script.clone());
     for (key, signature) in &signatures {
         original_builder = original_builder.add_signature(*key, msg, signature.clone());
     }
@@ -248,8 +265,10 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
 
     mock_chain.prove_until_block(signed_block + blocks_advanced)?;
 
-    let mut later_builder =
-        mock_chain.build_transaction(account.id()).multisig_auth_args(auth_args);
+    let mut later_builder = mock_chain
+        .build_transaction(account.id())
+        .multisig_auth_args(auth_args)
+        .tx_script(tx_script.clone());
     for (key, signature) in &signatures {
         later_builder = later_builder.add_signature(*key, msg, signature.clone());
     }
@@ -262,6 +281,7 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
     let later_summary = mock_chain
         .build_transaction(account.id())
         .multisig_auth_args(auth_args)
+        .tx_script(tx_script)
         .add_signature(signatures[0].0, msg, signatures[0].1.clone())
         .build()?
         .execute()
@@ -426,7 +446,7 @@ async fn multisig_rejects_fee_exceeding_max_fee() -> anyhow::Result<()> {
 /// the signatures are collected cannot drain the account's fee asset balance.
 #[tokio::test]
 async fn multisig_max_fee_covers_sponsored_fees() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([5u32, 6, 7, 8]));
+    let mut rng = EidosRandomCoin::new(Word::from([5u32, 6, 7, 8]));
     let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);
@@ -646,7 +666,7 @@ async fn multisig_estimates_max_fee() -> anyhow::Result<()> {
 /// fails.
 #[tokio::test]
 async fn multisig_rejects_sponsorship_inflated_after_estimating_max_fee() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([9u32, 10, 11, 12]));
+    let mut rng = EidosRandomCoin::new(Word::from([9u32, 10, 11, 12]));
     let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);

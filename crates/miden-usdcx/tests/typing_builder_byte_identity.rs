@@ -29,14 +29,14 @@ const TOKEN_SUPPLY: u64 = 0;
 // construction paths deterministic. These commitments include the mint policy code and the fee
 // schedule keyed by note script roots. The fee-conversion bound also changes the authentication
 // code and the seed-derived account identity.
-// The preimage helper's comparison affects procedure roots and the note-script fee keys.
+// The fee procedure's initial nonce argument and return value also affect the auth code.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([908466164085694477, 3645790855856035774, 6802588595656425936, 8045686795419542491])";
+    "Word([3437250371323760355, 6100318624691557078, 8034523182060528055, 4262653348536505993])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([7799755730770539829, 8852556139345090739, 3436491508159081147, 1527887730813880942])";
+    "Word([3861489036841236099, 2469777345274536156, 1438927009858665314, 1163463187822748392])";
 const GOLDEN_STORAGE_DIGEST: &str =
     "Word([8858573011609585531, 3583692118136842473, 6737041009492695339, 2715734966923451603])";
-const GOLDEN_ACCOUNT_ID: &str = "0x3577688a07d716f13a1cf79a852843";
+const GOLDEN_ACCOUNT_ID: &str = "0x1f80297813ac82f10233e413d9cc6c";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.
