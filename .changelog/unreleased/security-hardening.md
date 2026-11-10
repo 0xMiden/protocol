@@ -1,1 +1,1 @@
-Fixed account file writes to use owner only permissions and preserve existing files when permission changes fail. Block validation now rejects timestamps over 24 hours ahead of validator time, while transaction execution bounds note checker retries and lazy data store requests.
+Fixed account file writes to use owner only permissions and preserve existing files when permission changes fail. Transaction execution now bounds note checker retries and lazy data store requests.
