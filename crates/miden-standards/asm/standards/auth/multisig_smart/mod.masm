@@ -605,7 +605,7 @@ end
 #! - note_restrictions is greater than NOTE_RESTRICTION_MAX.
 #!
 #! Invocation: exec
-pub proc assert_valid_note_restrictions(note_restrictions: u8)
+proc assert_valid_note_restrictions(note_restrictions: u8)
     u32assert.err=ERR_INVALID_NOTE_RESTRICTIONS
     # => [note_restrictions]
 
