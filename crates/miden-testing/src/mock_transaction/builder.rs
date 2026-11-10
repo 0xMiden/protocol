@@ -13,6 +13,7 @@ use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, Signatu
 use miden_protocol::account::{Account, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
@@ -86,6 +87,7 @@ pub struct MockTransactionBuilder<'chain> {
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
+    code_to_register: Vec<Arc<MastForest>>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
 }
 
@@ -118,6 +120,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
+            code_to_register: Vec::new(),
             source_manager: None,
         }
     }
@@ -293,6 +296,13 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Adds code that the data store of the mock transaction provides as code to register (see
+    /// [`DataStore::get_code_to_register`](miden_tx::DataStore::get_code_to_register)).
+    pub fn code_to_register(mut self, mast_forest: Arc<MastForest>) -> Self {
+        self.code_to_register.push(mast_forest);
+        self
+    }
+
     /// Sets the [`SourceManagerSync`] on the [`MockTransaction`] that will be built.
     ///
     /// This source manager should contain the sources of all involved scripts and account code in
@@ -370,6 +380,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             authenticator: self.authenticator,
             source_manager,
             note_scripts: self.note_scripts,
+            code_to_register: self.code_to_register,
         })
     }
 }

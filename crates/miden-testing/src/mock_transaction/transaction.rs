@@ -14,6 +14,7 @@ use miden_protocol::account::{
     StorageSlotContent,
 };
 use miden_protocol::assembly::SourceManagerSync;
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness};
@@ -59,6 +60,7 @@ pub struct MockTransaction {
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
+    pub(super) code_to_register: Vec<Arc<MastForest>>,
 }
 
 impl MockTransaction {
@@ -449,6 +451,15 @@ impl DataStore for MockTransaction {
                 .map(|procedure_root| self.code_tree.open(procedure_root))
                 .collect())
         }
+    }
+
+    /// Returns all code to register of the mock transaction, because the host uses only the code
+    /// that the procedure roots reach.
+    fn get_code_to_register(
+        &self,
+        _procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        async move { Ok(self.code_to_register.clone()) }
     }
 }
 

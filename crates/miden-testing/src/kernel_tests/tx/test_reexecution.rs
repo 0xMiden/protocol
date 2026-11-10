@@ -1,6 +1,7 @@
 //! Tests that an executed transaction can be proven and re-executed from its inputs alone.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -14,6 +15,7 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageMapWitness,
 };
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetAmount, AssetId, AssetWitness, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
@@ -244,6 +246,14 @@ impl DataStore for TransactionInputsDataStore {
                 "code witnesses of code tree {code_tree_root} were requested again"
             )))
         }
+    }
+
+    /// Returns no code, because the transaction inputs do not contain code to register.
+    fn get_code_to_register(
+        &self,
+        _procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        async move { Ok(Vec::new()) }
     }
 }
 
