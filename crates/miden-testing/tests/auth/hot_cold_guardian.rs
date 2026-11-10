@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey, PublicKeyCommitment};
 use miden_protocol::account::{
@@ -99,15 +101,15 @@ impl HotColdAccount {
         hot: &[Signer],
         cold: &Signer,
         guardian: &Signer,
-        proc_policies: Vec<(AccountProcedureRoot, HotColdPolicy)>,
+        proc_policies: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
     ) -> anyhow::Result<AuthHotColdGuardianConfig> {
         Ok(AuthHotColdGuardianConfig::new(
             hot.iter().map(Signer::approver).collect(),
             cold.approver(),
             GuardianConfig::new(guardian.approver()),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )?
-        .with_proc_policies(proc_policies)?)
+        .with_proc_policies(proc_policies))
     }
 }
 
@@ -117,7 +119,7 @@ fn create_hot_cold_guardian_account(
     auth_scheme: AuthScheme,
     num_hot: usize,
     asset_amount: u64,
-    proc_policies: Vec<(AccountProcedureRoot, HotColdPolicy)>,
+    proc_policies: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
 ) -> anyhow::Result<HotColdAccount> {
     let mut rng = ChaCha20Rng::from_seed(rand::random());
     let hot: Vec<_> = (0..num_hot).map(|_| Signer::new(auth_scheme, &mut rng)).collect();
@@ -127,7 +129,7 @@ fn create_hot_cold_guardian_account(
     let config = HotColdAccount::config(&hot, &cold, &guardian, proc_policies)?;
     let account = AccountBuilder::new([0; 32])
         .account_type(AccountType::Public)
-        .with_component(AuthHotColdGuardian::new(config)?)
+        .with_component(AuthHotColdGuardian::new(config))
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;
@@ -330,7 +332,7 @@ async fn test_hot_cold_guardian_transfer_paths(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let HotColdAccount { hot, cold, guardian, account } =
-        create_hot_cold_guardian_account(auth_scheme, 2, 10, vec![])?;
+        create_hot_cold_guardian_account(auth_scheme, 2, 10, BTreeMap::new())?;
 
     let output_note_asset = FungibleAsset::mock(3);
     let mut builder = MockChainBuilder::with_accounts([account.clone()])?;
@@ -393,7 +395,7 @@ async fn test_hot_cold_guardian_transfer_paths(
 async fn test_hot_cold_guardian_hot_keys_count_once() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let HotColdAccount { hot, cold, guardian, account } =
-        create_hot_cold_guardian_account(auth_scheme, 3, 10, vec![])?;
+        create_hot_cold_guardian_account(auth_scheme, 3, 10, BTreeMap::new())?;
     let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
     let new_cold = Signer::new(auth_scheme, &mut ChaCha20Rng::from_seed(rand::random()));
 
@@ -437,7 +439,7 @@ async fn test_hot_cold_guardian_hot_keys_count_once() -> anyhow::Result<()> {
 async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let HotColdAccount { hot, cold, guardian, mut account } =
-        create_hot_cold_guardian_account(auth_scheme, 1, 10, vec![])?;
+        create_hot_cold_guardian_account(auth_scheme, 1, 10, BTreeMap::new())?;
     let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
     let mut rng = ChaCha20Rng::from_seed(rand::random());
     let new_hot: Vec<_> = (0..3).map(|_| Signer::new(auth_scheme, &mut rng)).collect();
@@ -519,7 +521,7 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
 async fn test_hot_cold_guardian_update_guardian_public_key() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let HotColdAccount { hot, cold, guardian, account } =
-        create_hot_cold_guardian_account(auth_scheme, 2, 10, vec![])?;
+        create_hot_cold_guardian_account(auth_scheme, 2, 10, BTreeMap::new())?;
     let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
     let new_guardian = Signer::new(auth_scheme, &mut ChaCha20Rng::from_seed(rand::random()));
 
@@ -563,7 +565,7 @@ async fn test_hot_cold_guardian_update_guardian_public_key() -> anyhow::Result<(
 async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let HotColdAccount { hot, cold, guardian, mut account } =
-        create_hot_cold_guardian_account(auth_scheme, 1, 10, vec![])?;
+        create_hot_cold_guardian_account(auth_scheme, 1, 10, BTreeMap::new())?;
 
     let mut builder = MockChainBuilder::with_accounts([account.clone()])?;
     let incoming_note = builder.add_p2id_note(
@@ -650,8 +652,8 @@ async fn test_hot_cold_guardian_pays_fee_note() -> anyhow::Result<()> {
             hot_keys: hot.iter().map(Signer::approver).collect(),
             cold_key: cold.approver(),
             guardian_config: GuardianConfig::new(guardian.approver()),
-            delay_config: HotColdDelayConfig::default_delay(),
-            proc_policy_map: vec![],
+            delay_config: HotColdDelayConfig::default(),
+            proc_policy_map: BTreeMap::new(),
         },
         [initial_fee_asset.into()],
     )?;

@@ -1,4 +1,4 @@
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountProcedureRoot;
@@ -90,26 +90,28 @@ impl HotColdDelayConfig {
         })
     }
 
+    pub fn min_delay(&self) -> u32 {
+        self.min_delay
+    }
+
+    pub fn propose_expiration_delta(&self) -> u16 {
+        self.propose_expiration_delta
+    }
+
+    pub fn cancel_threshold(&self) -> u32 {
+        self.cancel_threshold
+    }
+}
+
+impl Default for HotColdDelayConfig {
     /// Returns the default configuration: a 2 day delay, a 20 block proposal window and a
     /// cancellation threshold of one category.
-    pub fn default_delay() -> Self {
+    fn default() -> Self {
         Self {
             min_delay: DEFAULT_MIN_DELAY_BLOCKS,
             propose_expiration_delta: DEFAULT_PROPOSE_EXPIRATION_DELTA,
             cancel_threshold: 1,
         }
-    }
-
-    pub const fn min_delay(&self) -> u32 {
-        self.min_delay
-    }
-
-    pub const fn propose_expiration_delta(&self) -> u16 {
-        self.propose_expiration_delta
-    }
-
-    pub const fn cancel_threshold(&self) -> u32 {
-        self.cancel_threshold
     }
 }
 
@@ -123,7 +125,7 @@ pub struct AuthHotColdGuardianConfig {
     cold_key: Approver,
     guardian_config: GuardianConfig,
     delay_config: HotColdDelayConfig,
-    procedure_policies: Vec<(AccountProcedureRoot, HotColdPolicy)>,
+    procedure_policies: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
 }
 
 impl AuthHotColdGuardianConfig {
@@ -169,23 +171,19 @@ impl AuthHotColdGuardianConfig {
             cold_key,
             guardian_config,
             delay_config,
-            procedure_policies: Vec::new(),
+            procedure_policies: BTreeMap::new(),
         })
     }
 
-    /// Attaches policies for procedures other than the component's own, e.g. the procedures of a
-    /// wallet installed next to it.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a procedure root appears more than once.
+    /// Attaches procedure policies, e.g. for the procedures of a wallet installed next to the
+    /// component. A policy for one of the component's own procedures replaces its preset, see
+    /// [`AuthHotColdGuardian::preset_policies`](super::AuthHotColdGuardian::preset_policies).
     pub fn with_proc_policies(
         mut self,
-        proc_policies: Vec<(AccountProcedureRoot, HotColdPolicy)>,
-    ) -> Result<Self, AccountError> {
-        validate_proc_policies(&proc_policies)?;
+        proc_policies: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
+    ) -> Self {
         self.procedure_policies = proc_policies;
-        Ok(self)
+        self
     }
 
     pub fn hot_keys(&self) -> &[Approver] {
@@ -204,24 +202,9 @@ impl AuthHotColdGuardianConfig {
         self.delay_config
     }
 
-    pub fn procedure_policies(&self) -> &[(AccountProcedureRoot, HotColdPolicy)] {
+    pub fn procedure_policies(&self) -> &BTreeMap<AccountProcedureRoot, HotColdPolicy> {
         &self.procedure_policies
     }
-}
-
-/// Rejects duplicate procedure roots in a policy map.
-pub(super) fn validate_proc_policies(
-    proc_policies: &[(AccountProcedureRoot, HotColdPolicy)],
-) -> Result<(), AccountError> {
-    let mut policy_roots = BTreeSet::new();
-    for (proc_root, _) in proc_policies {
-        if !policy_roots.insert(*proc_root) {
-            return Err(AccountError::other(
-                "duplicate procedure roots are not allowed in the procedure policy map",
-            ));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -265,7 +248,7 @@ mod tests {
             vec![],
             approver(),
             GuardianConfig::new(approver()),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )
         .unwrap_err();
         assert!(err.to_string().contains("at least one hot key is required"));
@@ -278,7 +261,7 @@ mod tests {
             hot_keys,
             approver(),
             GuardianConfig::new(approver()),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )
         .unwrap_err();
         assert!(err.to_string().contains("exceeds the maximum hot key set size"));
@@ -292,7 +275,7 @@ mod tests {
             vec![shared],
             shared,
             GuardianConfig::new(approver()),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )
         .unwrap_err();
         assert!(hot_is_cold.to_string().contains("only one key category"));
@@ -301,7 +284,7 @@ mod tests {
             vec![approver()],
             shared,
             GuardianConfig::new(shared),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )
         .unwrap_err();
         assert!(cold_is_guardian.to_string().contains("only one key category"));
@@ -310,25 +293,9 @@ mod tests {
             vec![shared, shared],
             approver(),
             GuardianConfig::new(approver()),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )
         .unwrap_err();
         assert!(duplicate_hot.to_string().contains("only one key category"));
-    }
-
-    #[test]
-    fn config_rejects_duplicate_policy_roots() {
-        let root = AccountProcedureRoot::from_raw([1u32, 2, 3, 4].into());
-        let policy = HotColdPolicy::new(1).unwrap();
-        let err = AuthHotColdGuardianConfig::new(
-            vec![approver()],
-            approver(),
-            GuardianConfig::new(approver()),
-            HotColdDelayConfig::default_delay(),
-        )
-        .unwrap()
-        .with_proc_policies(vec![(root, policy), (root, policy)])
-        .unwrap_err();
-        assert!(err.to_string().contains("duplicate procedure roots"));
     }
 }

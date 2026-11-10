@@ -234,13 +234,13 @@ fn test_account_interface_identifies_hot_cold_guardian_auth() {
         vec![approver(), approver()],
         approver(),
         GuardianConfig::new(approver()),
-        HotColdDelayConfig::default_delay(),
+        HotColdDelayConfig::default(),
     )
     .expect("hot/cold/guardian config should be valid");
 
     let mock_seed = Word::from([8, 9, 10, 11u32]).as_bytes();
     let account = AccountBuilder::new(mock_seed)
-        .with_component(AuthHotColdGuardian::new(config).expect("component should be valid"))
+        .with_component(AuthHotColdGuardian::new(config))
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create hot/cold/guardian account");

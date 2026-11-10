@@ -1,6 +1,6 @@
 // AUTH
 // ================================================================================================
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -65,7 +65,7 @@ pub enum Auth {
         cold_key: Approver,
         guardian_config: GuardianConfig,
         delay_config: HotColdDelayConfig,
-        proc_policy_map: Vec<(AccountProcedureRoot, HotColdPolicy)>,
+        proc_policy_map: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
     },
 
     /// Multisig with smart per-procedure policy configuration and a delayed-execution policy
@@ -191,11 +191,9 @@ impl Auth {
                     *guardian_config,
                     *delay_config,
                 )
-                .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
-                .expect("invalid hot/cold/guardian config");
-                let component = AuthHotColdGuardian::new(config)
-                    .expect("hot/cold/guardian component creation failed")
-                    .into();
+                .expect("invalid hot/cold/guardian config")
+                .with_proc_policies(proc_policy_map.clone());
+                let component = AuthHotColdGuardian::new(config).into();
 
                 (vec![component], None)
             },

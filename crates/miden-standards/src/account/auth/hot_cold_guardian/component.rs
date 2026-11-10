@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -11,13 +12,11 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
 // The executed-transactions slot is shared with the multisig components so the replay
 // protection helper of the multisig MASM module can be reused.
 use super::super::multisig::EXECUTED_TRANSACTIONS_SLOT_NAME;
-use super::config::validate_proc_policies;
 use super::{AuthHotColdGuardianConfig, HotColdDelayConfig, HotColdPolicy};
 use crate::account::account_component_package;
 use crate::account::auth::{Approver, GuardianConfig};
@@ -185,46 +184,26 @@ impl AuthHotColdGuardian {
     }
 
     /// Creates a new [`AuthHotColdGuardian`] component from the provided configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a user policy targets one of the component's own procedures, whose
-    /// policies are preset, or repeats a procedure root.
-    pub fn new(config: AuthHotColdGuardianConfig) -> Result<Self, AccountError> {
-        validate_proc_policies(config.procedure_policies())?;
-        let preset_roots = Self::preset_policies();
-        if config
-            .procedure_policies()
-            .iter()
-            .any(|(root, _)| preset_roots.iter().any(|(preset_root, _)| preset_root == root))
-        {
-            return Err(AccountError::other(
-                "the policies of the component's own procedures are preset and cannot be overridden",
-            ));
-        }
-        Ok(Self { config })
+    pub fn new(config: AuthHotColdGuardianConfig) -> Self {
+        Self { config }
     }
 
-    /// Returns the policies the component installs for its own procedures.
+    /// Returns the policies the component installs for its own procedures. A policy of the
+    /// configuration for the same procedure replaces the preset.
     ///
-    /// - `update_hot_keys`: one category, cold required. Device management is immediate for the
-    ///   cold key and closed to the hot keys.
+    /// - `update_hot_keys`: cold only. Device management is immediate for the cold key and closed
+    ///   to the hot keys.
     /// - `rotate_cold_key`, `update_guardian_public_key`, `set_procedure_policy`,
-    ///   `update_delay_config`: both categories. Rewriting any of them weakens what the other
-    ///   policies protect, so they take the strongest quorum.
-    pub fn preset_policies() -> Vec<(AccountProcedureRoot, HotColdPolicy)> {
-        let cold_only = HotColdPolicy::new(1)
-            .and_then(HotColdPolicy::with_cold_required)
-            .expect("a single-category cold-required policy is valid");
-        let both = HotColdPolicy::new(2).expect("a two-category policy is valid");
-
-        alloc::vec![
-            (Self::update_hot_keys_root(), cold_only),
-            (Self::rotate_cold_key_root(), both),
-            (Self::update_guardian_public_key_root(), both),
-            (Self::set_procedure_policy_root(), both),
-            (Self::update_delay_config_root(), both),
-        ]
+    ///   `update_delay_config`: hot and cold. Rewriting any of them weakens what the other policies
+    ///   protect, so they take the strongest quorum.
+    pub fn preset_policies() -> BTreeMap<AccountProcedureRoot, HotColdPolicy> {
+        BTreeMap::from([
+            (Self::update_hot_keys_root(), HotColdPolicy::ColdOnly),
+            (Self::rotate_cold_key_root(), HotColdPolicy::HotAndCold),
+            (Self::update_guardian_public_key_root(), HotColdPolicy::HotAndCold),
+            (Self::set_procedure_policy_root(), HotColdPolicy::HotAndCold),
+            (Self::update_delay_config_root(), HotColdPolicy::HotAndCold),
+        ])
     }
 
     /// Returns the configured hot keys.
@@ -248,7 +227,7 @@ impl AuthHotColdGuardian {
     }
 
     /// Returns the user-provided per-procedure policies, without the preset ones.
-    pub fn procedure_policies(&self) -> &[(AccountProcedureRoot, HotColdPolicy)] {
+    pub fn procedure_policies(&self) -> &BTreeMap<AccountProcedureRoot, HotColdPolicy> {
         self.config.procedure_policies()
     }
 
@@ -387,14 +366,16 @@ impl From<AuthHotColdGuardian> for AccountComponent {
             StorageMap::default(),
         ));
 
-        // Procedure policies slot (map): the preset policies first, then the user's.
+        // Procedure policies slot (map): the presets, replaced by the configured policies for the
+        // same procedures.
         let mut all_policies = AuthHotColdGuardian::preset_policies();
-        all_policies.extend_from_slice(config.procedure_policies());
+        all_policies
+            .extend(config.procedure_policies().iter().map(|(root, policy)| (*root, *policy)));
         let procedure_policies =
             StorageMap::with_entries(all_policies.into_iter().map(|(proc_root, policy)| {
                 (StorageMapKey::from_raw(proc_root.as_word()), policy.to_word())
             }))
-            .expect("preset and user policy roots are distinct by construction");
+            .expect("the policy roots are unique");
         storage_slots.push(StorageSlot::with_map(
             AuthHotColdGuardian::procedure_policies_slot().clone(),
             procedure_policies,
@@ -429,7 +410,6 @@ impl From<AuthHotColdGuardian> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::ToString;
     use alloc::vec;
 
     use miden_protocol::account::AccountBuilder;
@@ -448,7 +428,7 @@ mod tests {
             vec![approver(), approver()],
             approver(),
             GuardianConfig::new(approver()),
-            HotColdDelayConfig::default_delay(),
+            HotColdDelayConfig::default(),
         )
         .unwrap()
     }
@@ -459,12 +439,12 @@ mod tests {
         let hot_keys = config.hot_keys().to_vec();
         let cold_key = config.cold_key();
         let guardian = config.guardian_config();
-        let wallet_policy = HotColdPolicy::new(2).unwrap();
-        let config = config
-            .with_proc_policies(vec![(BasicWallet::receive_asset_root(), wallet_policy)])
-            .unwrap();
+        let config = config.with_proc_policies(BTreeMap::from([(
+            BasicWallet::receive_asset_root(),
+            HotColdPolicy::HotAndCold,
+        )]));
 
-        let component = AuthHotColdGuardian::new(config).expect("component creation failed");
+        let component = AuthHotColdGuardian::new(config);
         let account = AccountBuilder::new([0; 32])
             .with_component(component)
             .with_component(BasicWallet)
@@ -527,7 +507,7 @@ mod tests {
             Word::from([2u32, 0, 0, 0])
         );
 
-        let delay = HotColdDelayConfig::default_delay();
+        let delay = HotColdDelayConfig::default();
         assert_eq!(
             storage.get_item(AuthHotColdGuardian::delay_config_slot()).unwrap(),
             Word::from([
@@ -540,15 +520,27 @@ mod tests {
     }
 
     #[test]
-    fn test_hot_cold_guardian_rejects_policy_on_preset_procedure() {
-        let config = config()
-            .with_proc_policies(vec![(
-                AuthHotColdGuardian::update_hot_keys_root(),
-                HotColdPolicy::new(2).unwrap(),
-            )])
-            .unwrap();
+    fn test_hot_cold_guardian_configured_policy_replaces_preset() {
+        let config = config().with_proc_policies(BTreeMap::from([(
+            AuthHotColdGuardian::update_hot_keys_root(),
+            HotColdPolicy::HotAndCold,
+        )]));
 
-        let err = AuthHotColdGuardian::new(config).unwrap_err();
-        assert!(err.to_string().contains("preset and cannot be overridden"));
+        let account = AccountBuilder::new([0; 32])
+            .with_component(AuthHotColdGuardian::new(config))
+            .with_component(BasicWallet)
+            .build()
+            .expect("account building failed");
+
+        assert_eq!(
+            account
+                .storage()
+                .get_map_item(
+                    AuthHotColdGuardian::procedure_policies_slot(),
+                    StorageMapKey::from_raw(AuthHotColdGuardian::update_hot_keys_root().as_word()),
+                )
+                .unwrap(),
+            HotColdPolicy::HotAndCold.to_word()
+        );
     }
 }
