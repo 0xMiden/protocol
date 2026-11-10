@@ -218,9 +218,9 @@ end
 #! Returns a conservative upper bound on the number of cycles a multisig authentication flow
 #! takes when up to num_of_signers signatures are verified.
 #!
-#! Intended to be passed as the num_extra_cycles input of fee::pay_fee when fee payment happens
-#! right before the multisig authentication flow (summary creation, signature verification and
-#! replay-protection recording). Signature verification runs at most once per signer and every
+#! Intended for estimating the fee before the multisig authentication flow runs (summary
+#! creation, signature verification and replay-protection recording), see
+#! `multisig::estimate_max_fee`. Signature verification runs at most once per signer and every
 #! supported scheme's verification cost is bounded by the Falcon estimate (the most expensive
 #! scheme), so the bound is num_of_signers * FALCON_512_POSEIDON2_AUTH_CYCLES plus a base margin
 #! covering the rest of the flow.
@@ -234,9 +234,8 @@ end
 #! per-signer worst case: a multisig with many approvers but a low threshold, or one using the
 #! cheaper ECDSA scheme, only verifies a few (cheaper) signatures, so the estimate can overshoot
 #! the real cost by roughly the approver-to-verified ratio. Overestimation only ever raises the
-#! fee, and because the fee grows with ilog2 of the cycle count each doubling of the overshoot
-#! costs at most one extra verification_base_fee unit, so even a 10x overshoot costs only a few
-#! fee units.
+#! estimated fee, and because the fee grows with ilog2 of the cycle count each doubling of the
+#! overshoot costs at most one extra verification_base_fee unit.
 #!
 #! Inputs:  [num_of_signers]
 #! Outputs: [num_cycles]
