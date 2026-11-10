@@ -49,11 +49,6 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
             account_code_upgrade: value.account_code_upgrade().map(Into::into),
             output_note_recipients: value.output_note_recipients().iter().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
-            libraries_to_register: value
-                .libraries_to_register()
-                .iter()
-                .map(|library| library.as_ref().into())
-                .collect(),
         }
     }
 }

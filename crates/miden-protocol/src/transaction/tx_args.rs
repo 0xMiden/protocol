@@ -1,16 +1,15 @@
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::script::TransactionScript;
 use super::{Felt, Word};
+use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
 use crate::note::{NoteId, NoteRecipient};
 use crate::vm::{AdviceInputs, AdviceMap};
-use crate::{EMPTY_WORD, MastForest};
 
 // TRANSACTION ARGUMENTS
 // ================================================================================================
@@ -36,8 +35,6 @@ use crate::{EMPTY_WORD, MastForest};
 ///   as a key to access the corresponding value.
 /// - Account code upgrade: the [`AccountCodeUpgrade`] of the native account if the transaction
 ///   upgrades its code.
-/// - Libraries to register: the code that the transaction may add to the code tree (see
-///   [`Self::register_library`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -48,7 +45,6 @@ pub struct TransactionArgs {
     advice_inputs: AdviceInputs,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
-    libraries_to_register: Vec<Arc<MastForest>>,
 }
 
 impl TransactionArgs {
@@ -66,12 +62,10 @@ impl TransactionArgs {
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
             None,
-            Vec::new(),
         )
     }
 
     /// Creates [`TransactionArgs`] from all of its components.
-    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         tx_script: Option<TransactionScript>,
         tx_script_args: Word,
@@ -81,7 +75,6 @@ impl TransactionArgs {
         advice_inputs: AdviceInputs,
         auth_args: Word,
         account_code_upgrade: Option<AccountCodeUpgrade>,
-        libraries_to_register: Vec<Arc<MastForest>>,
     ) -> Self {
         Self {
             tx_script,
@@ -92,7 +85,6 @@ impl TransactionArgs {
             advice_inputs,
             auth_args,
             account_code_upgrade,
-            libraries_to_register,
         }
     }
 
@@ -207,11 +199,6 @@ impl TransactionArgs {
         self.account_code_upgrade.as_ref()
     }
 
-    /// Returns the libraries whose code the transaction may add to the code tree.
-    pub fn libraries_to_register(&self) -> &[Arc<MastForest>] {
-        &self.libraries_to_register
-    }
-
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -219,34 +206,8 @@ impl TransactionArgs {
     ///
     /// The recipient details let the host build the full output note when the transaction creates
     /// a note with the recipient's commitment.
-    ///
-    /// The host also adds the script of the recipient to the code patch of the transaction, if the
-    /// transaction did not create the note before the authentication procedure. For a note that
-    /// the authentication procedure creates, this prevents a code witness request to the node, and
-    /// it is the only way to use a script that is absent from the code tree.
-    ///
-    /// The host does not know the note type at this point, so it treats the note as public. As a
-    /// result, an absent script is published permanently if the note is private and the
-    /// authentication procedure creates it, or if the transaction does not create the note. The
-    /// node also sees the script in the code witness request. The absent procedures that the script
-    /// references must be registered (see [`Self::register_library`]), otherwise the transaction
-    /// fails, even if it does not create the note.
-    ///
-    /// TODO(#4006): add a separate `register_note_script` for this, so that a recipient cannot
-    /// publish a private script.
     pub fn add_output_note_recipient(&mut self, note_recipient: NoteRecipient) {
         self.output_note_recipients.push(note_recipient);
-    }
-
-    /// Adds a library whose code the transaction may add to the code tree.
-    ///
-    /// The host builds the code patch of the transaction from the code of the top-level procedure
-    /// roots, e.g. the scripts of public output notes, and from the registered libraries. The patch
-    /// contains only the absent procedures that the top-level roots reach, so registering a library
-    /// does not add its unused procedures. The data store only provides code that the code tree
-    /// already contains, so absent code that a top-level root references must be registered.
-    pub fn register_library(&mut self, library: Arc<MastForest>) {
-        self.libraries_to_register.push(library);
     }
 
     /// Adds a signature the transaction needs for authentication.
@@ -317,7 +278,6 @@ mod tests {
             advice_inputs.clone(),
             Word::new([Felt::from(5_u32); 4]),
             None,
-            Vec::new(),
         );
 
         assert_eq!(tx_args.note_args(), &note_args);

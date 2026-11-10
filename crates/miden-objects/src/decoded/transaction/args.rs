@@ -1,5 +1,3 @@
-use alloc::sync::Arc;
-
 use miden_protobuf::unwrap_infallible;
 pub use proto::transaction::DecodedTransactionScript as TransactionScript;
 
@@ -53,7 +51,6 @@ impl Verify for TransactionArgs {
             self.advice_inputs.verify()?,
             self.auth_args,
             self.account_code_upgrade.verify()?,
-            self.libraries_to_register.verify()?.into_iter().map(Arc::new).collect(),
         ))
     }
 }

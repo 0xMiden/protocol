@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{Felt, Word};
+use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::{Account, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
@@ -17,7 +18,6 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
-use miden_protocol::{EMPTY_WORD, MastForest};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
@@ -83,7 +83,6 @@ pub struct MockTransactionBuilder<'chain> {
     tx_script_args: Word,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
-    libraries_to_register: Vec<Arc<MastForest>>,
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
@@ -117,7 +116,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
             account_code_upgrade: None,
-            libraries_to_register: Vec::new(),
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
@@ -242,13 +240,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Registers a library whose code the transaction may add to the code tree (see
-    /// [`TransactionArgs::register_library`]).
-    pub fn register_library(mut self, library: Arc<MastForest>) -> Self {
-        self.libraries_to_register.push(library);
-        self
-    }
-
     /// Requires the transaction's partial blockchain to track the provided block, so that the
     /// executed code can read its commitment.
     ///
@@ -357,9 +348,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
         tx_args = tx_args.with_auth_args(self.auth_args);
         if let Some(account_code_upgrade) = self.account_code_upgrade {
             tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
-        }
-        for library in self.libraries_to_register {
-            tx_args.register_library(library);
         }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(

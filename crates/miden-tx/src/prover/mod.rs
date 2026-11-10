@@ -175,7 +175,7 @@ impl LocalTransactionProver {
         let block_commitments = tx_inputs.collect_block_commitments();
         let code_tree = tx_inputs.code_tree().clone();
 
-        let (partial_account, ref_block, _, input_notes, tx_args) = tx_inputs.into_parts();
+        let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
@@ -184,7 +184,6 @@ impl LocalTransactionProver {
             script_mast_store,
             account_procedure_index_map,
             code_tree,
-            &tx_args,
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 

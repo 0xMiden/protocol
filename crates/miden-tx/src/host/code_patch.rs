@@ -203,7 +203,7 @@ pub(crate) fn code_witness_advice<'root>(
 /// # Errors
 ///
 /// Returns an error if the code witness of the procedure root is not available.
-fn is_present(
+pub(crate) fn is_present(
     code_tree: &PartialCodeTree,
     procedure_root: ProcedureRoot,
 ) -> Result<bool, TransactionKernelError> {

@@ -36,7 +36,6 @@ use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
     TransactionAdviceInputs,
-    TransactionArgs,
     TransactionInputs,
     TransactionLogs,
     TransactionSummary,
@@ -133,7 +132,6 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         code_tree_root: CodeTreeRoot,
-        tx_args: &TransactionArgs,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
@@ -144,7 +142,6 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             PartialCodeTree::new(code_tree_root),
-            tx_args,
         )?;
 
         Ok(Self {
@@ -239,14 +236,27 @@ where
 
     /// Handles the load of the code patch by the kernel.
     ///
-    /// The host starts without code witnesses, so it requests all witnesses that it needs to build
-    /// the code patch in one request (see [`TransactionBaseHost::code_witness_requests`]).
+    /// The host starts without code witnesses. It requests the witnesses of the top-level roots,
+    /// gets the code to register of the absent ones from the data store, and then requests the
+    /// witnesses of the procedures of this code.
     async fn on_code_patch_before_loaded(
         &mut self,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let source = self.base_host.code_patch_source()?;
-        let requests = self.base_host.code_witness_requests(&source);
-        self.fetch_code_witnesses(requests).await?;
+        self.fetch_code_witnesses(self.base_host.code_patch_top_level_roots()).await?;
+
+        let absent_roots = self.base_host.absent_top_level_roots()?;
+        let code_to_register = if absent_roots.is_empty() {
+            Vec::new()
+        } else {
+            self.base_host
+                .store()
+                .get_code_to_register(absent_roots)
+                .await
+                .map_err(TransactionKernelError::GetCodeToRegister)?
+        };
+
+        let source = self.base_host.code_patch_source(&code_to_register)?;
+        self.fetch_code_witnesses(source.procedure_roots()).await?;
 
         let code_patch = self.base_host.build_code_patch(&source)?;
         let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;
@@ -258,27 +268,31 @@ where
     /// Handles the verification of a top-level procedure root that the code patch does not create.
     ///
     /// The host has the witnesses of the top-level roots that it knew at the load. It does not know
-    /// the script root of a note that the auth procedure creates, so it requests the witness now. A
-    /// client prevents this request if it provides the recipient of the note.
+    /// the script root of a note that the auth procedure creates, so it requests the witness now.
     async fn on_code_patch_before_witness_verified(
         &mut self,
         procedure_root: ProcedureRoot,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        if !self.base_host.code_tree().is_tracked(&procedure_root) {
-            self.fetch_code_witnesses(Vec::from([procedure_root])).await?;
-        }
+        self.fetch_code_witnesses([procedure_root]).await?;
 
         self.base_host.on_code_patch_before_witness_verified(procedure_root)
     }
 
-    /// Requests the code witnesses from the data store and adds them to the available witnesses.
+    /// Requests the code witnesses of the procedure roots that the host does not track yet from the
+    /// data store, and adds them to the available witnesses.
     ///
     /// The transaction inputs get all fetched witnesses, not only those that the kernel verifies,
     /// because the prover and a re-execution need them to build the same code patch.
     async fn fetch_code_witnesses(
         &mut self,
-        procedure_roots: Vec<ProcedureRoot>,
+        procedure_roots: impl IntoIterator<Item = ProcedureRoot>,
     ) -> Result<(), TransactionKernelError> {
+        let procedure_roots = procedure_roots
+            .into_iter()
+            .filter(|procedure_root| !self.base_host.code_tree().is_tracked(procedure_root))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         if procedure_roots.is_empty() {
             return Ok(());
         }

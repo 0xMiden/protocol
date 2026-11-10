@@ -76,7 +76,6 @@ use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
     RawOutputNotes,
-    TransactionArgs,
     TransactionMeasurements,
     TransactionSummary,
     TransactionSummaryMetadata,
@@ -139,12 +138,6 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The code tree of the reference block that tracks the available code witnesses.
     code_tree: PartialCodeTree,
 
-    /// The recipients of the output notes that the client expects the transaction to create.
-    expected_output_recipients: Vec<NoteRecipient>,
-
-    /// The libraries whose code the transaction may add to the code tree.
-    libraries_to_register: Vec<Arc<MastForest>>,
-
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
 }
@@ -166,7 +159,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
-        tx_args: &TransactionArgs,
     ) -> Result<Self, TransactionKernelError> {
         let new_public_account_code =
             (account.is_new() && account.id().is_public()).then(|| account.code().clone());
@@ -195,8 +187,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             block_commitments,
             new_public_account_code,
             code_tree,
-            expected_output_recipients: tx_args.output_note_recipients().to_vec(),
-            libraries_to_register: tx_args.libraries_to_register().to_vec(),
             core_lib_handlers,
         })
     }
@@ -691,39 +681,45 @@ where
         Ok(())
     }
 
+    /// Returns the top-level procedure roots that are absent from the code tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code witness of a top-level root is not available.
+    pub(crate) fn absent_top_level_roots(
+        &self,
+    ) -> Result<BTreeSet<ProcedureRoot>, TransactionKernelError> {
+        let mut absent_roots = BTreeSet::new();
+        for top_level_root in self.code_patch_top_level_roots() {
+            if !code_patch::is_present(&self.code_tree, top_level_root)? {
+                absent_roots.insert(top_level_root);
+            }
+        }
+
+        Ok(absent_roots)
+    }
+
     /// Returns the source of the code patch: the code of the top-level procedure roots and the
-    /// libraries to register.
+    /// provided code to register (see
+    /// [`DataStore::get_code_to_register`](crate::DataStore::get_code_to_register)).
     ///
     /// # Errors
     ///
     /// Returns an error if the source cannot be built (see [`CodePatchSource::new`]).
-    pub(crate) fn code_patch_source(&self) -> Result<CodePatchSource, TransactionKernelError> {
-        let note_script_forests = self
-            .public_output_note_scripts()
-            .chain(self.pending_expected_note_scripts())
-            .map(NoteScript::mast);
+    pub(crate) fn code_patch_source(
+        &self,
+        code_to_register: &[Arc<MastForest>],
+    ) -> Result<CodePatchSource, TransactionKernelError> {
+        let note_script_forests = self.public_output_note_scripts().map(NoteScript::mast);
         let mast_forests = self
             .new_public_account_code
             .iter()
             .map(AccountCode::mast)
             .chain(note_script_forests)
-            .chain(self.libraries_to_register.iter().cloned())
+            .chain(code_to_register.iter().cloned())
             .collect::<Vec<_>>();
 
         CodePatchSource::new(mast_forests.iter().map(Arc::as_ref))
-    }
-
-    /// Returns the procedure roots whose code witnesses the host needs to build the code patch.
-    ///
-    /// These are the top-level procedure roots and the procedures of the source, because the host
-    /// does not know yet which of them are present.
-    pub(crate) fn code_witness_requests(&self, source: &CodePatchSource) -> Vec<ProcedureRoot> {
-        self.code_patch_top_level_roots()
-            .into_iter()
-            .chain(source.procedure_roots())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
     }
 
     /// Builds the code patch of the top-level procedure roots, which the kernel loads.
@@ -766,14 +762,12 @@ where
 
     /// Returns the top-level procedure roots of the code patch.
     ///
-    /// These are the procedures of a new public account, the script roots of the public output
-    /// notes created so far and of the expected output notes that the transaction did not create
-    /// yet. Executor and prover call this at the same point of the execution, so that they load
-    /// equal lists.
-    fn code_patch_top_level_roots(&self) -> BTreeSet<ProcedureRoot> {
+    /// These are the procedures of a new public account and the script roots of the public output
+    /// notes created so far. Executor and prover call this at the same point of the execution, so
+    /// that they load equal lists.
+    pub(crate) fn code_patch_top_level_roots(&self) -> BTreeSet<ProcedureRoot> {
         let note_script_roots = self
             .public_output_note_scripts()
-            .chain(self.pending_expected_note_scripts())
             .map(|note_script| ProcedureRoot::from_raw(note_script.root().into()));
 
         self.new_public_account_code
@@ -782,23 +776,6 @@ where
             .map(ProcedureRoot::from_raw)
             .chain(note_script_roots)
             .collect()
-    }
-
-    /// Returns the scripts of the expected output notes that the transaction did not create yet.
-    ///
-    /// The note type of these notes is unknown (see
-    /// [`TransactionArgs::add_output_note_recipient`](miden_protocol::transaction::TransactionArgs::add_output_note_recipient)).
-    fn pending_expected_note_scripts(&self) -> impl Iterator<Item = &NoteScript> {
-        let created_recipients = self
-            .output_notes
-            .values()
-            .map(OutputNoteBuilder::recipient_digest)
-            .collect::<BTreeSet<_>>();
-
-        self.expected_output_recipients
-            .iter()
-            .filter(move |recipient| !created_recipients.contains(&recipient.digest()))
-            .map(NoteRecipient::script)
     }
 
     /// Returns the scripts of the public output notes created so far.

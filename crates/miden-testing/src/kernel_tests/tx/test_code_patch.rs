@@ -30,7 +30,6 @@ use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account_code::MockAccountCodeExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
-use miden_tx::LocalTransactionProver;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
@@ -130,7 +129,7 @@ async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<
     let mock_chain = builder.build()?;
 
     // The mock account procedure is absent from the genesis code tree, so the transaction must
-    // register its library.
+    // provide its library as code to register.
     let mock_procedure = ProcedureRoot::from_raw(
         AccountCode::mock_account_package()
             .get_procedure_root_by_path("mock::account::get_nonce")
@@ -149,7 +148,7 @@ async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<
         .build_transaction(account.id())
         .send_notes_script(&script)
         .expected_output_note(RawOutputNote::Full(note.clone()))
-        .register_library(Arc::clone(AccountCode::mock_account_package().mast_forest()))
+        .code_to_register(Arc::clone(AccountCode::mock_account_package().mast_forest()))
         .build()?
         .execute()
         .await?;
@@ -215,23 +214,32 @@ async fn new_account_procedures_are_top_level_roots_if_public(
     Ok(())
 }
 
-/// A note that the authentication procedure creates and that the host does not know at the load
-/// needs a witness that proves its script present. The code patch does not change.
+/// A note that the authentication procedure creates needs a witness that proves its script present,
+/// because the lists do not change after the load. The code patch does not change. The recipient of
+/// an expected output note does not add its script to the code patch.
+#[rstest::rstest]
+#[case::expected(true)]
+#[case::unknown(false)]
 #[tokio::test]
-async fn unknown_auth_note_with_present_script_is_verified_with_witness() -> anyhow::Result<()> {
+async fn auth_note_with_present_script_is_verified_with_witness(
+    #[case] is_expected: bool,
+) -> anyhow::Result<()> {
     let note = create_p2id_note(ACCOUNT_ID_SENDER.try_into()?, 1)?;
 
-    let executed_tx = auth_procedure_creating_note_tx(&note, false)?.execute().await?;
+    let executed_tx = auth_procedure_creating_note_tx(&note, is_expected)?.execute().await?;
 
     assert!(executed_tx.code_patch().is_empty());
 
     Ok(())
 }
 
-/// A note that the authentication procedure creates and that the host does not know at the load
-/// must not have an absent script, because the lists do not change after the load.
+/// A note that the authentication procedure creates must not have an absent script, because the
+/// authentication procedure cannot create code. This also applies to an expected output note.
+#[rstest::rstest]
+#[case::expected(true)]
+#[case::unknown(false)]
 #[tokio::test]
-async fn unknown_auth_note_with_absent_script_is_rejected() -> anyhow::Result<()> {
+async fn auth_note_with_absent_script_is_rejected(#[case] is_expected: bool) -> anyhow::Result<()> {
     let note = create_custom_note(
         ACCOUNT_ID_SENDER.try_into()?,
         ACTIVE_ACCOUNT_SCRIPT,
@@ -239,7 +247,7 @@ async fn unknown_auth_note_with_absent_script_is_rejected() -> anyhow::Result<()
         1,
     )?;
 
-    let result = auth_procedure_creating_note_tx(&note, false)?.execute().await;
+    let result = auth_procedure_creating_note_tx(&note, is_expected)?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_CODE_PATCH_AUTH_NOTE_SCRIPT_ABSENT);
 
@@ -258,55 +266,6 @@ async fn private_auth_note_is_not_verified() -> anyhow::Result<()> {
     )?;
 
     auth_procedure_creating_note_tx(&note, false)?.execute().await?;
-
-    Ok(())
-}
-
-/// The host loads the script of an expected note before the authentication procedure creates the
-/// note. Thus, the host has the witness of a present script and puts an absent script into the
-/// created procedures. The executor gets the MAST of an absent script from the recipient.
-#[rstest::rstest]
-#[case::present(true)]
-#[case::absent(false)]
-#[tokio::test]
-async fn expected_auth_note_is_loaded_with_the_code_patch(
-    #[case] is_present: bool,
-) -> anyhow::Result<()> {
-    let note = if is_present {
-        create_p2id_note(ACCOUNT_ID_SENDER.try_into()?, 1)?
-    } else {
-        create_custom_note(
-            ACCOUNT_ID_SENDER.try_into()?,
-            ACTIVE_ACCOUNT_SCRIPT,
-            NoteType::Public,
-            1,
-        )?
-    };
-
-    let executed_tx = auth_procedure_creating_note_tx(&note, true)?.execute().await?;
-
-    let is_created = executed_tx
-        .code_patch()
-        .created_procedures()
-        .any(|root| root == note.script().root().into());
-    assert_eq!(is_created, !is_present);
-
-    Ok(())
-}
-
-/// The prover loads the same lists as the executor for a note that the authentication procedure
-/// creates. It gets the MAST of the script from the recipient.
-#[tokio::test]
-async fn prove_auth_procedure_creates_expected_note_with_absent_script() -> anyhow::Result<()> {
-    let note = create_custom_note(
-        ACCOUNT_ID_SENDER.try_into()?,
-        ACTIVE_ACCOUNT_SCRIPT,
-        NoteType::Public,
-        1,
-    )?;
-    let executed_tx = auth_procedure_creating_note_tx(&note, true)?.execute().await?;
-
-    LocalTransactionProver::default().prove(executed_tx)?;
 
     Ok(())
 }
@@ -347,8 +306,8 @@ const MOCK_PROCEDURE_REFERENCING_SCRIPT: &str = "
 
 /// Returns a transaction whose authentication procedure creates the note.
 ///
-/// If `is_expected` is `true`, the note is an expected output note, so the host knows its script
-/// at the load. Otherwise, only the preimage of its recipient is in the advice map.
+/// If `is_expected` is `true`, the note is an expected output note. Otherwise, only the preimage of
+/// its recipient is in the advice map.
 fn auth_procedure_creating_note_tx(
     note: &Note,
     is_expected: bool,

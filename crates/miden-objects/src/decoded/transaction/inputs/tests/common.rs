@@ -239,7 +239,6 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         dummy_advice_inputs([52, 53], 54, 55),
         dummy_word(56),
         None,
-        vec![account_code.mast()],
     );
     let foreign_accounts = vec![
         dummy_foreign_account(dummy_account_id(20), account_code),

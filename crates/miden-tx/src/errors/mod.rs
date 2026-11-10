@@ -348,6 +348,8 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
+    #[error("failed to get code to register from data store")]
+    GetCodeToRegister(#[source] DataStoreError),
     #[error("code witness does not fit the code tree of the reference block")]
     InvalidCodeWitness(#[source] CodeTreeError),
     #[error("code witness is not available")]

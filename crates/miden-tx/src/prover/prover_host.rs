@@ -11,13 +11,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
-use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    RawOutputNote,
-    TransactionArgs,
-    TransactionLogs,
-};
+use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
 
@@ -63,7 +57,6 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
-        tx_args: &TransactionArgs,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -73,7 +66,6 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             code_tree,
-            tx_args,
         )?;
 
         Ok(Self { base_host, code_patch: None })
@@ -232,10 +224,10 @@ where
 
             // The code witnesses are in the transaction inputs at proving time.
             // TODO(#4006): take the code patch from the transaction witness, so that the prover
-            // does not need the MAST of the created procedures.
+            // does not need the MAST of the created procedures, e.g. the code to register.
             TransactionEvent::CodePatchBeforeLoaded => self
                 .base_host
-                .code_patch_source()
+                .code_patch_source(&[])
                 .and_then(|source| self.base_host.build_code_patch(&source))
                 .and_then(|code_patch| {
                     let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;

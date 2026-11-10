@@ -118,10 +118,10 @@ end
 
 #! Verifies the script root of an output note that the auth procedure creates if the note is public.
 #!
-#! The host learns the script root only through the note or through the expected output notes. The
-#! lists do not change after the load, so the root must be a created procedure that the host knew
-#! at the load, or present in the code tree. A present root needs no list entry, because the code
-#! patch does not contain it.
+#! The auth procedure cannot create code, because the lists do not change after the load. Thus, the
+#! root must be a created procedure of a note that the transaction created before the load, or
+#! present in the code tree. A present root needs no list entry, because the code patch does not
+#! contain it.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: []
