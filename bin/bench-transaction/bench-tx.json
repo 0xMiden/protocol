@@ -720,12 +720,12 @@
   "consume FAUCET_METADATA_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 5586,
-    "total_cycles": 29557,
-    "notes_processing": 6614,
+    "total_cycles": 29589,
+    "notes_processing": 6646,
     "note_execution": [
       {
         "note": "FAUCET_METADATA_CONFIG",
-        "cycles": 6572
+        "cycles": 6604
       }
     ],
     "tx_script_processing": 41,
@@ -734,12 +734,12 @@
       "auth_procedure": 10290
     },
     "trace": {
-      "core_rows": 29603,
-      "chiplets_rows": 6379,
-      "eidos_compression_rows": 54592,
+      "core_rows": 29635,
+      "chiplets_rows": 6387,
+      "eidos_compression_rows": 54560,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
-        "hasher_rows": 4344,
+        "hasher_rows": 4352,
         "bitwise_rows": 86,
         "memory_rows": 1947,
         "kernel_rom_rows": 1,

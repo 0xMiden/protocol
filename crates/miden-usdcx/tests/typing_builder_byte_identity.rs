@@ -30,13 +30,14 @@ const TOKEN_SUPPLY: u64 = 0;
 // schedule keyed by note script roots. The fee-conversion bound also changes the authentication
 // code and the seed-derived account identity.
 // The fee procedure's initial nonce argument and return value also affect the auth code.
+// The metadata note's script root affects the allowlist and fee policy storage.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([3437250371323760355, 6100318624691557078, 8034523182060528055, 4262653348536505993])";
+    "Word([2615251248090846687, 858832830199264302, 7175325754399082902, 654866800020286994])";
 const GOLDEN_CODE_COMMITMENT: &str =
     "Word([3861489036841236099, 2469777345274536156, 1438927009858665314, 1163463187822748392])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([8858573011609585531, 3583692118136842473, 6737041009492695339, 2715734966923451603])";
-const GOLDEN_ACCOUNT_ID: &str = "0x1f80297813ac82f10233e413d9cc6c";
+    "Word([8467896637998365185, 1692113781014403013, 6816891479006554398, 2726467275195901621])";
+const GOLDEN_ACCOUNT_ID: &str = "0x7588cc936328e571687f9c415125f2";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

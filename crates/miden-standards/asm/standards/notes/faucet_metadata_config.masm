@@ -21,8 +21,6 @@ const MAX_SUPPLY_PTR = STORAGE_PTR + 1
 const STRING_PTR = STORAGE_PTR + 4
 const STRING_END_PTR = STORAGE_PTR + 32
 const STRING_NUM_ELEMENTS = STRING_END_PTR - STRING_PTR
-const STRING_FULL_BLOCK_END_PTR = STRING_PTR + 24
-const STRING_PARTIAL_BLOCK_NUM_ELEMENTS = 4
 
 # Config note variants, stored in the first storage item. Keep in sync with
 # `FaucetMetadataConfig` on the Rust side.
@@ -202,7 +200,7 @@ proc execute_set_max_supply(num_storage_items: u32)
     # => []
 end
 
-#! Builds the input window the three string setters expect: pads the stack, commits to the stored
+#! Builds the input window the four string setters expect: pads the stack, commits to the stored
 #! string payload, and inserts the payload into the advice map under that commitment so the called
 #! setter can pipe it back out.
 #!
@@ -231,9 +229,8 @@ proc prepare_string_call(num_storage_items: u32) -> (MetadataStringCommitment, [
     padw padw padw
     # => [pad(12)]
 
-    push.STRING_PARTIAL_BLOCK_NUM_ELEMENTS push.STRING_FULL_BLOCK_END_PTR push.STRING_PTR
-    push.STRING_NUM_ELEMENTS exec.eidos::init_chaining_word padw padw
-    exec.eidos::hash_elements_with_state
+    push.STRING_NUM_ELEMENTS push.STRING_PTR
+    exec.eidos::hash_elements
     # => [STRING_COMMITMENT, pad(12)]
 
     push.STRING_END_PTR push.STRING_PTR
