@@ -204,10 +204,6 @@ impl AuthHotColdGuardianConfig {
         self.delay_config
     }
 
-    pub fn default_threshold(&self) -> u32 {
-        DEFAULT_THRESHOLD
-    }
-
     pub fn procedure_policies(&self) -> &[(AccountProcedureRoot, HotColdPolicy)] {
         &self.procedure_policies
     }

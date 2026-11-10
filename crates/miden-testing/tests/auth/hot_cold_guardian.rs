@@ -467,7 +467,7 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
 
     assert_eq!(
         account.storage().get_item(AuthHotColdGuardian::config_slot())?,
-        Word::from([1u32, 3, 0, 0])
+        Word::from([3u32, 0, 0, 0])
     );
     for (i, signer) in new_hot.iter().enumerate() {
         assert_eq!(
@@ -492,7 +492,7 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
 
     assert_eq!(
         account.storage().get_item(AuthHotColdGuardian::config_slot())?,
-        Word::from([1u32, 1, 0, 0])
+        Word::from([1u32, 0, 0, 0])
     );
     for stale_index in 1..3u32 {
         let key = StorageMapKey::from_index(stale_index);

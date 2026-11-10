@@ -14,7 +14,6 @@ pub use {update_guardian_public_key} from miden::standards::auth::hot_cold_guard
 pub use {set_procedure_policy} from miden::standards::auth::hot_cold_guardian
 pub use {update_delay_config} from miden::standards::auth::hot_cold_guardian
 pub use {get_num_hot_keys} from miden::standards::auth::hot_cold_guardian
-pub use {get_default_threshold} from miden::standards::auth::hot_cold_guardian
 pub use {get_hot_key_at} from miden::standards::auth::hot_cold_guardian
 pub use {get_cold_key} from miden::standards::auth::hot_cold_guardian
 pub use {get_procedure_policy} from miden::standards::auth::hot_cold_guardian
@@ -61,7 +60,7 @@ pub proc auth_tx_hot_cold_guardian(auth_args: word)
     # vault withdrawal funding it are covered by the signatures.
     # ---------------------------------------------------------------------------------------------
 
-    exec.hot_cold_guardian::get_initial_config drop
+    exec.hot_cold_guardian::get_initial_num_hot_keys
     # => [num_hot_keys, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
     # count the cold key and the guardian as signers

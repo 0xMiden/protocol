@@ -18,12 +18,12 @@ name        = "miden::standards::auth::hot_cold_guardian"
 version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
-description = "Category configuration"
+description = "Number of hot keys"
 name        = "miden::standards::auth::hot_cold_guardian::config"
-# Word layout: [default_threshold, num_hot_keys, 0, 0]
+# Word layout: [num_hot_keys, 0, 0, 0]
 type = [
-  { name = "default_threshold", type = "u32" },
   { name = "num_hot_keys", type = "u32" },
+  { type = "void" },
   { type = "void" },
   { type = "void" },
 ]

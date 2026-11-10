@@ -277,7 +277,7 @@ impl AuthHotColdGuardian {
         *HOT_COLD_GUARDIAN_UPDATE_DELAY_CONFIG
     }
 
-    /// Returns the [`StorageSlotName`] holding `[default_threshold, num_hot_keys, 0, 0]`.
+    /// Returns the [`StorageSlotName`] holding `[num_hot_keys, 0, 0, 0]`.
     pub fn config_slot() -> &'static StorageSlotName {
         &CONFIG_SLOT_NAME
     }
@@ -338,10 +338,10 @@ impl From<AuthHotColdGuardian> for AccountComponent {
         let config = component.config;
         let mut storage_slots = Vec::with_capacity(10);
 
-        // Config slot (value: [default_threshold, num_hot_keys, 0, 0])
+        // Config slot (value: [num_hot_keys, 0, 0, 0])
         storage_slots.push(StorageSlot::with_value(
             AuthHotColdGuardian::config_slot().clone(),
-            Word::from([config.default_threshold(), config.hot_keys().len() as u32, 0, 0]),
+            Word::from([config.hot_keys().len() as u32, 0, 0, 0]),
         ));
 
         // Hot public keys slot (map)
@@ -474,7 +474,7 @@ mod tests {
 
         assert_eq!(
             storage.get_item(AuthHotColdGuardian::config_slot()).unwrap(),
-            Word::from([1u32, 2, 0, 0])
+            Word::from([2u32, 0, 0, 0])
         );
 
         for (i, hot_key) in hot_keys.iter().enumerate() {
