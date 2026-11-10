@@ -176,8 +176,8 @@ impl AuthGuardedMultisigConfig {
 ///
 /// # Fees
 ///
-/// The transaction fee is paid as described for [`AuthMultisig`](super::AuthMultisig), so the fee
-/// note is covered by the approver and guardian signatures.
+/// The transaction fee is paid as described for [`AuthMultisig`](super::AuthMultisig), after the
+/// approver and guardian signatures are verified and within the max fee the summary binds.
 ///
 /// # Security
 ///

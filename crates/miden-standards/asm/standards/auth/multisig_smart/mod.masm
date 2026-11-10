@@ -430,7 +430,8 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! The transaction summary this procedure builds has the layout documented on
-#! `miden::standards::auth::multisig::auth_tx`.
+#! `miden::standards::auth::multisig::auth_tx`, with a zero max fee since this component does not
+#! pay the transaction fee yet.
 #!
 #! Inputs:
 #!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
