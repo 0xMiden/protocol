@@ -21,12 +21,7 @@ version     = "1.0.0"
 description = "Number of hot keys"
 name        = "miden::standards::auth::hot_cold_guardian::config"
 # Word layout: [num_hot_keys, 0, 0, 0]
-type = [
-  { name = "num_hot_keys", type = "u32" },
-  { type = "void" },
-  { type = "void" },
-  { type = "void" },
-]
+type = [{ name = "num_hot_keys", type = "u32" }, { type = "void" }, { type = "void" }, { type = "void" }]
 
 [[package.metadata.account-component.storage.slots]]
 description = "Hot public keys"
