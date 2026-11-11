@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::RawOutputNote;
@@ -26,6 +25,7 @@ use miden_standards::note::{
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChain};
+use rand::RngExt;
 
 use super::VERIFICATION_BASE_FEE;
 
@@ -33,7 +33,7 @@ use super::VERIFICATION_BASE_FEE;
 // ================================================================================================
 
 /// The fee a network account's fee policy charges for a sponsored feature note.
-const FEE_AMOUNT: u64 = 500;
+pub(super) const FEE_AMOUNT: u64 = 500;
 
 // HELPERS
 // ================================================================================================
@@ -44,7 +44,7 @@ fn fee_faucet_id() -> anyhow::Result<AccountId> {
 }
 
 /// A fungible asset of `amount` units of the native fee asset.
-fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
+pub(super) fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
 }
 
@@ -52,7 +52,7 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 /// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
 /// through its active `BasicConstantFeePolicy`, holds `assets` in its vault, and bounds its
 /// sponsorship spending by `sponsorship_policy`.
-fn network_account(
+pub(super) fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
@@ -88,11 +88,11 @@ fn native_conversion_info() -> (Word, Vec<miden_protocol::Felt>) {
 
 /// Builds a public P2ID network note (a P2ID note carrying a `NetworkAccountTarget` attachment)
 /// sent by `sender`, targeting and routed to `target`, and carrying `asset`.
-fn p2id_network_note(
+pub(super) fn p2id_network_note(
     sender: AccountId,
     target: AccountId,
     asset: Asset,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let attachment = NetworkAccountTarget::new(target, NoteExecutionHint::Always)?;
     Ok(P2idNote::builder()
@@ -101,7 +101,7 @@ fn p2id_network_note(
         .asset(asset)
         .note_type(NoteType::Public)
         .attachment(attachment)
-        .serial_number(rng.draw_word())
+        .serial_number(rng.random())
         .build()?
         .into())
 }
@@ -114,7 +114,7 @@ fn p2id_network_note(
 /// carrying exactly the fee the target account's policy prices the note at.
 #[tokio::test]
 async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);
 
@@ -210,7 +210,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
 async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<()> {
     const NETWORK_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let payload_asset = FungibleAsset::mock(50).unwrap_fungible();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
@@ -313,7 +313,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
 async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> anyhow::Result<()> {
     const B_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
-    let mut rng = RandomCoin::new(Word::from([7u32, 8, 9, 10]));
+    let mut rng = EidosRandomCoin::new(Word::from([7u32, 8, 9, 10]));
     let payload_asset: Asset = FungibleAsset::mock(50);
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);

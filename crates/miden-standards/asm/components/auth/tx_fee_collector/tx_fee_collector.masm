@@ -2,7 +2,7 @@
 #
 # See the `AuthTxFeeCollector` Rust type's documentation for more details.
 
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::input_note
@@ -42,7 +42,7 @@ const ERR_AUTH_TX_FEE_COLLECTOR_NOTE_MUST_CARRY_ONE_ASSET = "every note a fee co
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_poseidon2
+#! - 2 => falcon512_eidos
 #!
 #! The account is left exactly as the transaction found it: the assets move from the input notes
 #! straight into the P2ID note, the nonce is never incremented (except once, when the account is
@@ -173,7 +173,7 @@ proc forward_note_assets
     exec.tx::get_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT, AUTH_ARGS, num_input_notes]
 
-    dupw.1 exec.poseidon2::merge
+    dupw.1 exec.eidos::hash_double_word
     # => [SERIAL_NUM, AUTH_ARGS, num_input_notes]
 
     swapw

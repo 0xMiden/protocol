@@ -98,8 +98,7 @@ fn main() -> Result<()> {
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
     assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
 
-    // Assemble the shared utilities as a library so that test assemblers can link them. In
-    // production, they are only statically linked into the kernels and the protocol library.
+    // Make the shared utilities available to test assemblers as a package.
     #[cfg(any(feature = "testing", test))]
     {
         let manifest_path = source_dir.join(ASM_PROTOCOL_UTILS_DIR).join(PROJECT_MANIFEST);

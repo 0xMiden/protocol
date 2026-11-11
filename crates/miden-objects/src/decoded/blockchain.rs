@@ -3,7 +3,7 @@ use miden_protobuf::unwrap_infallible;
 use miden_protocol::block::code_tree::CodeTreeRoot;
 
 use crate::decoded::VerificationError;
-use crate::{Verify, proto};
+use crate::{Verify, VerifyWith, proto};
 
 #[cfg(test)]
 mod tests;
@@ -173,7 +173,8 @@ impl crate::BuildUnchecked for BlockBody {
         let notes = self.output_note_batches.verify()?;
         let nullifiers = self.created_nullifiers.map(miden_protocol::note::Nullifier::from_raw);
         let transactions = self.transactions.build_unchecked()?;
-        Ok(Self::Output::new(updates, notes, nullifiers, transactions)?)
+        let public_logs = VerifyWith::verify_with(self.public_logs, transactions.as_slice())?;
+        Ok(Self::Output::new(updates, notes, nullifiers, transactions, public_logs)?)
     }
 }
 
@@ -208,7 +209,7 @@ impl SignedBlock {
 
 /// Authenticates the block against an already-trusted parent, in addition to self-consistency.
 /// This does not re-execute transactions or validate the account/nullifier state transition.
-impl crate::VerifyWith<&miden_protocol::block::BlockHeader> for SignedBlock {
+impl VerifyWith<&miden_protocol::block::BlockHeader> for SignedBlock {
     type Verified = miden_protocol::block::SignedBlock;
     type Error = VerificationError;
     fn verify_with(

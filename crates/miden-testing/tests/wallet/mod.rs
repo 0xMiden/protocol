@@ -16,8 +16,8 @@ fn wallet_creation() {
     let seed = [0_u8; 32];
     let mut rng = ChaCha20Rng::from_seed(seed);
 
-    let sec_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
-    let auth_scheme = auth::AuthScheme::Falcon512Poseidon2;
+    let sec_key = AuthSecretKey::new_falcon512_eidos_with_rng(&mut rng);
+    let auth_scheme = auth::AuthScheme::Falcon512Eidos;
     let pub_key = sec_key.public_key().to_commitment();
 
     // we need to use an initial seed to create the wallet account

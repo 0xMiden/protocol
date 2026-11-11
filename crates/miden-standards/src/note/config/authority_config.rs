@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountProcedureRoot, RoleSymbol};
 use miden_protocol::assembly::Path;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -19,6 +18,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
 use crate::note::costs::{AUTHORITY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
@@ -286,9 +286,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> AuthorityConfigNoteBuilder<authority_config_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -334,7 +334,7 @@ impl NoteConsumptionCost for AuthorityConfigNote {
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::note::NoteAttachmentScheme;
 
     use super::*;
@@ -356,7 +356,7 @@ mod tests {
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
     fn builder_builds_authority_config_note() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let managed = account_id(1);
         let owner = account_id(2);
 
@@ -381,7 +381,7 @@ mod tests {
     /// note without the caller having to add the attachment.
     #[test]
     fn builder_attaches_network_target() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let managed = account_id(1);
 
         let note = AuthorityConfigNote::builder()
@@ -403,7 +403,7 @@ mod tests {
     /// Caller-supplied attachments are kept in their order, with the bound network target appended.
     #[test]
     fn builder_keeps_caller_attachments() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let managed = account_id(1);
         let custom_scheme = NoteAttachmentScheme::new(64).unwrap();
         let custom = NoteAttachment::with_word(custom_scheme, Word::from([7u32, 0, 0, 0]));
@@ -429,7 +429,7 @@ mod tests {
     /// silently coexisting with the note's own target.
     #[test]
     fn builder_rejects_target_for_other_account() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let rogue_target =
             NetworkAccountTarget::new(account_id(3), NoteExecutionHint::None).unwrap();
 
@@ -453,7 +453,7 @@ mod tests {
     /// A non-public managed account cannot be a network target, so the builder rejects it.
     #[test]
     fn builder_rejects_non_public_account() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let managed = typed_account_id(1, AccountType::Private);
 
         let err = AuthorityConfigNote::builder()

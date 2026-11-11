@@ -4,11 +4,11 @@ mod config;
 
 use alloc::sync::Arc;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -47,7 +47,7 @@ pub(super) fn get_nominated_owner_from_storage(
 fn create_transfer_note(
     sender: AccountId,
     new_owner: AccountId,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = format!(
@@ -76,7 +76,7 @@ fn create_transfer_note(
 
 fn create_accept_note(
     sender: AccountId,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = r#"
@@ -99,7 +99,7 @@ fn create_accept_note(
 
 fn create_cancel_note(
     sender: AccountId,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = r#"
@@ -125,7 +125,7 @@ fn create_cancel_note(
 
 fn create_renounce_note(
     sender: AccountId,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
     source_manager: Arc<dyn SourceManagerSync>,
 ) -> anyhow::Result<Note> {
     let script = r#"
@@ -160,7 +160,7 @@ async fn test_transfer_ownership_only_owner() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let note = create_transfer_note(non_owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
     builder.add_output_note(RawOutputNote::Full(note.clone()));
@@ -190,7 +190,7 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
@@ -217,7 +217,7 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Step 2: accept ownership
-    let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng2 = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let accept_note = create_accept_note(new_owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
@@ -248,7 +248,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
@@ -271,7 +271,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Step 2: wrong account tries accept
-    let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng2 = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let accept_note = create_accept_note(wrong, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
@@ -294,7 +294,7 @@ async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let accept_note = create_accept_note(owner, &mut rng, Arc::clone(&source_manager))?;
 
     builder.add_output_note(RawOutputNote::Full(accept_note.clone()));
@@ -326,7 +326,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
@@ -349,7 +349,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Step 2: cancel by transferring to the zero address
-    let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng2 = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let cancel_note = create_cancel_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
@@ -378,7 +378,7 @@ async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let note = create_transfer_note(owner, owner, &mut rng, Arc::clone(&source_manager))?;
 
     builder.add_output_note(RawOutputNote::Full(note.clone()));
@@ -410,7 +410,7 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let renounce_note = create_renounce_note(owner, &mut rng, Arc::clone(&source_manager))?;
 
     builder.add_output_note(RawOutputNote::Full(renounce_note.clone()));
@@ -446,7 +446,7 @@ async fn test_renounce_ownership_clears_pending_nomination() -> anyhow::Result<(
     builder.add_account(account.clone())?;
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
@@ -469,7 +469,7 @@ async fn test_renounce_ownership_clears_pending_nomination() -> anyhow::Result<(
     mock_chain.prove_next_block()?;
 
     // Step 2: renounce while a transfer is pending — succeeds and clears the nomination.
-    let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng2 = EidosRandomCoin::new([Felt::from(200u32); 4].into());
     let renounce_note = create_renounce_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
@@ -519,7 +519,7 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
     );
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .source_manager(Arc::clone(&source_manager))
         .code(script)

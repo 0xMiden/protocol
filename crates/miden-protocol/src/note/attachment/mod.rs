@@ -463,10 +463,9 @@ impl Deserializable for NoteAttachmentHeader {
 ///
 /// Notes can have up to [`Self::MAX_COUNT`] attachments.
 ///
-/// The commitment to the attachments is defined as:
-/// - 0 attachments: `EMPTY_WORD`
-/// - 1+ attachments: `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)`, i.e., the
-///   sequential hash over the individual attachment commitments.
+/// The commitment is the sequential hash
+/// `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)` over the individual attachment
+/// commitments. An empty collection commits to the canonical Eidos empty hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteAttachments {
     attachments: Vec<NoteAttachment>,

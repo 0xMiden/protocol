@@ -26,22 +26,18 @@ const SEED: [u8; 32] = [7u8; 32];
 const TOKEN_SUPPLY: u64 = 0;
 
 // Account commitments for the production composition at SEED. The fixed seed makes both
-// construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
-// policy code and the fee schedule keyed by note script roots, for the rename of the
-// `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
-// slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
-// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, for the
-// logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the root
-// of the config note script that calls them, for the bound on converted amounts in
-// `fee::convert_amount`, which changes the auth component's `pay_fee` code, and for the move of
-// `get_recipient_preimage` to `miden::protocol::note`, which changes the code that recovers
-// recipient preimages.
+// construction paths deterministic. These commitments include the mint policy code and the fee
+// schedule keyed by note script roots. The fee-conversion bound also changes the authentication
+// code and the seed-derived account identity.
+// The fee procedure's initial nonce argument and return value also affect the auth code.
+// The metadata note's script root affects the allowlist and fee policy storage.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([12901383193969158814, 355125084961274122, 13151704264812755517, 2775634045139369366])";
-const GOLDEN_CODE_COMMITMENT: &str = "Word([15861559442708383307, 17536312048175743681, 14459895963654407285, 11666451853418884051])";
+    "Word([2615251248090846687, 858832830199264302, 7175325754399082902, 654866800020286994])";
+const GOLDEN_CODE_COMMITMENT: &str =
+    "Word([3861489036841236099, 2469777345274536156, 1438927009858665314, 1163463187822748392])";
 const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([14135769560331766604, 1801657161927140516, 17703757596875822812, 6419802617317490259])";
-const GOLDEN_ACCOUNT_ID: &str = "0xa1713a3f5114deb10ac9e673676277";
+    "Word([8467896637998365185, 1692113781014403013, 6816891479006554398, 2726467275195901621])";
+const GOLDEN_ACCOUNT_ID: &str = "0x7588cc936328e571687f9c415125f2";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.

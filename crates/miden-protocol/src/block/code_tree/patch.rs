@@ -8,8 +8,9 @@ use miden_core::mast::MastNodeExt;
 use miden_crypto_derive::WordWrapper;
 
 use crate::code::ProcedureRoot;
+use crate::domain_registry::CODE_PATCH_COMMITMENT_DOMAIN;
 use crate::errors::CodePatchError;
-use crate::{Felt, Hasher, MastForest, ProtocolDomainRegistry, Word};
+use crate::{Hasher, MastForest, Word};
 
 // CODE PATCH
 // ================================================================================================
@@ -55,9 +56,6 @@ impl CodePatch {
 
     /// The maximum number of procedure roots in each code patch list of a single transaction.
     pub const MAX_ROOTS: usize = 512;
-
-    /// Domain separator for the patch commitment.
-    const DOMAIN: Felt = ProtocolDomainRegistry::CodePatch.as_felt();
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -117,9 +115,12 @@ impl CodePatch {
         let commitment = if mast.procedure_roots().is_empty() {
             Word::empty()
         } else {
-            Hasher::merge_in_domain(
-                &[mast.interface_commitment(), mast.dependency_commitment()],
-                Self::DOMAIN,
+            Hasher::hash_elements_in_domain(
+                Word::words_as_elements(&[
+                    mast.interface_commitment(),
+                    mast.dependency_commitment(),
+                ]),
+                CODE_PATCH_COMMITMENT_DOMAIN,
             )
         };
 
@@ -257,6 +258,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::Felt;
     use crate::assembly::mast::MastNodeId;
     use crate::testing::assembler::assemble_test_package;
     use crate::utils::{IndexVec, create_external_node_forest};
@@ -352,9 +354,12 @@ mod tests {
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);
         assert_eq!(
             patch.commitment().as_word(),
-            Hasher::merge_in_domain(
-                &[expected_created_commitment, expected_dependencies_commitment],
-                CodePatch::DOMAIN
+            Hasher::hash_elements_in_domain(
+                Word::words_as_elements(&[
+                    expected_created_commitment,
+                    expected_dependencies_commitment
+                ]),
+                CODE_PATCH_COMMITMENT_DOMAIN,
             )
         );
 

@@ -11,7 +11,7 @@ use miden_protocol::errors::ProposedBatchError;
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::ProvenTransaction;
 use miden_protocol::vm::{ExecutionProof, PrecompileStatus};
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, PROTOCOL_PROOF_HASH, Word};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 
@@ -144,6 +144,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
+    assert_eq!(proven.proof().vm().proof.hash_fn(), PROTOCOL_PROOF_HASH);
 
     Ok(())
 }
@@ -174,25 +175,16 @@ async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
     for (shape, transactions, expected_root_count) in shapes {
         let batch = propose_batch(&chain, transactions).context(shape)?;
 
-        // The roots the batch must settle, in transaction order.
-        let mut expected_roots = Vec::new();
+        // The witnesses the batch must settle, in transaction order.
+        let mut expected_witnesses = Vec::new();
         for transaction in batch.transactions() {
-            expected_roots
-                .extend(transaction.precompile_witness().map(|witness| witness.root_unchecked()));
+            expected_witnesses.extend(transaction.precompile_witness().cloned());
         }
         // Pin the count independently, so this fails if transactions stop deferring claims.
-        assert_eq!(expected_roots.len(), expected_root_count, "{shape}");
+        assert_eq!(expected_witnesses.len(), expected_root_count, "{shape}");
 
         let executed = BatchExecutor::new().execute(batch).context(shape)?;
-        assert_eq!(
-            executed
-                .precompile_witnesses()
-                .iter()
-                .map(|witness| witness.root_unchecked())
-                .collect::<Vec<_>>(),
-            expected_roots,
-            "{shape}"
-        );
+        assert_eq!(executed.precompile_witnesses(), expected_witnesses.as_slice(), "{shape}");
 
         LocalBatchProver::default().prove(executed).context(shape)?;
     }

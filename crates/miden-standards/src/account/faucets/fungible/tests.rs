@@ -65,7 +65,7 @@ fn user_fungible_faucet_with_single_sig() {
     let description_string = "A polygon token";
 
     let auth_component =
-        AuthSingleSig::new(Approver::new(pub_key_word.into(), AuthScheme::Falcon512Poseidon2));
+        AuthSingleSig::new(Approver::new(pub_key_word.into(), AuthScheme::Falcon512Eidos));
 
     let faucet_account = create_singlesig_user_fungible_faucet(
         init_seed,
@@ -114,7 +114,7 @@ fn sample_approvers(n: u32) -> alloc::vec::Vec<(PublicKeyCommitment, AuthScheme)
         .map(|i| {
             (
                 PublicKeyCommitment::from(Word::new([Felt::from(i + 1); 4])),
-                AuthScheme::Falcon512Poseidon2,
+                AuthScheme::Falcon512Eidos,
             )
         })
         .collect()
@@ -157,7 +157,7 @@ fn user_fungible_faucet_with_guarded_multisig() {
     let num_approvers = 3;
     let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(99_u32); 4])),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     );
     let guardian = GuardianConfig::new(approver);
     let auth_component =
@@ -254,7 +254,7 @@ fn faucet_create_from_account() {
         .with_component(faucet)
         .with_component(AuthSingleSig::new(Approver::new(
             mock_public_key,
-            AuthScheme::Falcon512Poseidon2,
+            AuthScheme::Falcon512Eidos,
         )))
         .build_existing()
         .expect("failed to create wallet account");
@@ -266,7 +266,7 @@ fn faucet_create_from_account() {
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
         .with_component(AuthSingleSig::new(Approver::new(
             mock_public_key,
-            AuthScheme::Falcon512Poseidon2,
+            AuthScheme::Falcon512Eidos,
         )))
         .with_component(BasicWallet)
         .build_existing()
@@ -290,7 +290,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
 
     let approver = Approver::new(
         PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     );
 
     let singlesig = create_singlesig_user_fungible_faucet(
@@ -357,7 +357,7 @@ fn get_faucet_procedures() {
 fn user_fungible_faucet_rejects_owner_only_mint_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(
         Word::new([Felt::ONE; 4]).into(),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     ));
 
     let err = create_singlesig_user_fungible_faucet(
@@ -378,7 +378,7 @@ fn user_fungible_faucet_rejects_owner_only_mint_policy() {
 fn user_fungible_faucet_rejects_reserved_owner_only_burn_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(
         Word::new([Felt::ONE; 4]).into(),
-        AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Eidos,
     ));
 
     let err = create_singlesig_user_fungible_faucet(
