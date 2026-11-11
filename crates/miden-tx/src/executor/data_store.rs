@@ -99,8 +99,8 @@ pub trait DataStore: MastForestStore {
     /// store leaves out the code that it does not have.
     ///
     /// Unlike [`MastForestStore::get`], which provides code for execution, this method must only
-    /// return code that may be published, because the transaction adds it to the public code
-    /// registry.
+    /// return code that is expected to be published, because the transaction adds it to the public
+    /// code registry.
     fn get_code_to_register(
         &self,
         procedure_roots: BTreeSet<ProcedureRoot>,

@@ -82,7 +82,6 @@ fn foreign_account_id() -> anyhow::Result<AccountId> {
     Ok(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2)?)
 }
 
-/// Returns transaction inputs for the native account without notes or lazy loaded data.
 /// Returns a mock block header for the given partial blockchain with the given code tree root.
 fn mock_block_header(blockchain: &PartialBlockchain, code_tree_root: CodeTreeRoot) -> BlockHeader {
     let base = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
@@ -108,6 +107,7 @@ fn mock_code_tree() -> anyhow::Result<CodeTree> {
     Ok(CodeTree::with_entries([ProcedureRoot::mock(0)])?)
 }
 
+/// Returns transaction inputs for the native account without notes or lazy loaded data.
 fn empty_tx_inputs() -> anyhow::Result<TransactionInputs> {
     let blockchain = PartialBlockchain::default();
     let block_header = mock_block_header(&blockchain, mock_code_tree()?.root());

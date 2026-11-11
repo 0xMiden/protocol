@@ -88,9 +88,8 @@ end
 #! Writes `num_words` words from the advice stack to memory starting at `write_ptr` and returns
 #! their commitment, while it asserts that the words are unique and sorted.
 #!
-#! The words are sorted in ascending order as defined by `word::lt`. The commitment is equal to
-#! the sequential Eidos hash of the words, which makes it compatible with commitments over sorted
-#! lists of words, e.g. `MastForest::interface_commitment`.
+#! The words are sorted in ascending order as defined by `word::lt`. The commitment is the
+#! sequential hash of the words.
 #!
 #! Inputs:
 #!   Operand stack: [num_words, write_ptr]
