@@ -55,7 +55,9 @@ fn pipe_code(proc_name: &str, num_entries: usize, words: &[Word]) -> String {
         use miden::protocol_utils::mem
 
         begin
-            push.{advice_key} adv.push_mapval dropw
+            push.{advice_key} adv.push_mapvaln.8 dropw
+            # drop the number of elements that precedes the padded elements
+            adv_push drop
 
             push.{WRITE_PTR} push.{num_entries}
             exec.mem::{proc_name}

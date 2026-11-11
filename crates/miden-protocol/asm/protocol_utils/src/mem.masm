@@ -92,9 +92,13 @@ end
 #! the sequential Eidos hash of the words, which makes it compatible with commitments over sorted
 #! lists of words, e.g. `MastForest::interface_commitment`.
 #!
+#! The words on the advice stack must be padded with a zero word to an even number of words, e.g.
+#! via `adv.push_mapvaln.8`. The padding word is written to memory at `end_ptr`, but it is not part
+#! of the commitment. An empty sequence needs no advice.
+#!
 #! Inputs:
 #!   Operand stack: [num_words, write_ptr]
-#!   Advice stack:  [WORD_0, ..., WORD_n]
+#!   Advice stack:  [WORD_0, ..., WORD_n, PADDING]
 #! Outputs:
 #!   Operand stack: [COMMITMENT, end_ptr]
 #!
@@ -116,94 +120,67 @@ pub proc pipe_strictly_sorted_words_to_memory(
     u32assert.err=ERR_MEM_NUM_WORDS_NOT_U32
     # => [num_words, write_ptr]
 
-    # a final word without a pair is absorbed with zero padding after the loop
-    dup is_odd dup movdn.3
-    # => [needs_padding, num_words, write_ptr, needs_padding]
+    mul.WORD_NUM_ELEMENTS
+    # => [num_elements, write_ptr]
 
-    # num_even_words = num_words - needs_padding
-    dup.1 swap sub
-    # => [num_even_words, num_words, write_ptr, needs_padding]
-
-    # compute the end ptr of the even-word region
-    mul.WORD_NUM_ELEMENTS dup.2 add
-    # => [end_ptr, num_words, write_ptr, needs_padding]
+    dup.1 dup.1 add
+    # => [end_ptr, num_elements, write_ptr]
 
     dup.2 movdn.3 movdn.2
-    # => [num_words, write_ptr, end_ptr, start_ptr, needs_padding]
+    # => [num_elements, write_ptr, end_ptr, start_ptr]
 
     # initialize Eidos with the number of elements of all words
-    dup eq.0 swap mul.WORD_NUM_ELEMENTS exec.eidos::init
-    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, is_empty, write_ptr, end_ptr, start_ptr,
-    #     needs_padding]
+    dup eq.0 swap exec.eidos::init
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, is_empty, write_ptr, end_ptr, start_ptr]
 
     movup.12
     if.true
         # Eidos hashes an empty sequence with one compression of the zero block
         exec.eidos::compress
     end
-    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, end_ptr, start_ptr, needs_padding]
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, end_ptr, start_ptr]
 
-    dup.13 dup.13 neq
-    # => [should_loop, BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, end_ptr, start_ptr,
-    #     needs_padding]
+    # the loop runs while there are unwritten words, so that a final word is hashed together with
+    # its zero padding
+    dup.12 dup.14 u32lt
+    # => [should_loop, BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, end_ptr, start_ptr]
 
     while.true
         adv_pipe
-        # => [WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr, needs_padding]
+        # => [WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
 
-        # assert WORD_0 < WORD_1
-        dupw dupw.2 exec.word::lt assert.err=ERR_MEM_WORDS_NOT_STRICTLY_SORTED
-        # => [WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr, needs_padding]
+        # WORD_1 is a word (and not padding) if write_ptr' - 4 < end_ptr
+        dup.12 sub.WORD_NUM_ELEMENTS dup.14 u32lt
+        # => [has_word_1, WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
 
-        # WORD_0 has a previous word if start_ptr != write_ptr - 8
+        if.true
+            # assert WORD_0 < WORD_1
+            dupw dupw.2 exec.word::lt assert.err=ERR_MEM_WORDS_NOT_STRICTLY_SORTED
+        end
+        # => [WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
+
+        # WORD_0 has a previous word if start_ptr != write_ptr' - 8
         dup.12 sub.DOUBLE_WORD_NUM_ELEMENTS dup.15 neq
-        # => [has_previous_word, WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr,
-        #     needs_padding]
+        # => [has_previous_word, WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
 
         if.true
             # the previous word is located before WORD_0, which is located at write_ptr' - 8
             dup.12 sub.12 exec.assert_previous_word_lower
-            # => [WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr, needs_padding]
+            # => [WORD_0, WORD_1, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
         end
 
         exec.eidos::compress
-        # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr', end_ptr, start_ptr, needs_padding]
+        # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
 
-        dup.13 dup.13 neq
-        # => [should_loop, BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr', end_ptr, start_ptr,
-        #     needs_padding]
+        dup.12 dup.14 u32lt
+        # => [should_loop, BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr', end_ptr, start_ptr]
     end
-    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, end_ptr, start_ptr, needs_padding]
-
-    movup.13 drop movup.14
-    # => [needs_padding, BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, start_ptr]
-
-    if.true
-        # the final block consists of the final word and zero padding
-        dropw adv_loadw
-        # => [WORD, CHAINING_WORD, write_ptr, start_ptr]
-
-        # WORD has a previous word if start_ptr != write_ptr
-        dup.9 dup.9 neq
-        # => [has_previous_word, WORD, CHAINING_WORD, write_ptr, start_ptr]
-
-        if.true
-            dup.8 sub.WORD_NUM_ELEMENTS exec.assert_previous_word_lower
-            # => [WORD, CHAINING_WORD, write_ptr, start_ptr]
-        end
-
-        # store the final word and advance write_ptr
-        movup.8 dup add.WORD_NUM_ELEMENTS movdn.5 mem_storew_le movup.4 movdn.8
-        # => [WORD, CHAINING_WORD, write_ptr', start_ptr]
-
-        padw swapw exec.eidos::compress
-        # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr', start_ptr]
-    end
+    # => [BLOCK_LO, BLOCK_HI, CHAINING_WORD, write_ptr, end_ptr, start_ptr]
 
     exec.eidos::digest
-    # => [COMMITMENT, end_ptr, start_ptr]
+    # => [COMMITMENT, write_ptr, end_ptr, start_ptr]
 
-    movup.5 drop
+    movup.4 drop movup.5 drop
     # => [COMMITMENT, end_ptr]
 end
 
