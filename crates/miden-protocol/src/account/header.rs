@@ -120,8 +120,8 @@ impl AccountHeader {
     /// Returns the commitment of this account.
     ///
     /// The commitment of an account is computed as a hash over the account header elements returned
-    /// by [`Self::to_elements`]. Computing the account commitment requires 2 permutations of the
-    /// hash function.
+    /// by [`Self::to_elements`]. Computing the account commitment requires two Eidos
+    /// compressions.
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
     }

@@ -18,6 +18,10 @@ mod sponsorship;
 /// payment tests.
 pub(super) const VERIFICATION_BASE_FEE: u32 = 500;
 
+/// The fee cap the multisig fee payment tests bind into the transaction summary, generously above
+/// the fees the fee-charging mock chains compute.
+pub(super) const MAX_FEE: u64 = 100_000;
+
 // The cycle-estimate constants used by the fee-paying auth flows. These are Rust mirrors used to
 // regression-test that the estimates remain upper bounds of the measured cycle counts. There is
 // no build-time link between the MASM `const`s and these copies, so each must be updated by hand
@@ -25,25 +29,16 @@ pub(super) const VERIFICATION_BASE_FEE: u32 = 500;
 // MASM value that becomes too LOW (measured cycles exceed the mirror), which is the direction
 // that matters.
 //
-// Must be kept in sync with `miden::standards::auth::signature` (per-scheme estimates and
-// `MULTISIG_AUTH_BASE_CYCLES`) and `miden::standards::fee` (`PAY_FEE_CYCLES` and the epilogue
-// margins).
+// Must be kept in sync with `miden::standards::auth::signature` (per-scheme estimates) and
+// `miden::standards::fee` (`PAY_FEE_CYCLES` and the epilogue margins).
 const ECDSA_K256_KECCAK_AUTH_CYCLES: usize = 8000;
-const FALCON_512_POSEIDON2_AUTH_CYCLES: usize = 80000;
-const MULTISIG_AUTH_BASE_CYCLES: usize = 8192;
+const FALCON_512_EIDOS_AUTH_CYCLES: usize = 80000;
 const PAY_FEE_CYCLES: usize = 8192;
 const POST_AUTH_EPILOGUE_BASE_CYCLES: usize = 4096;
 const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// The cycle estimate the multisig auth components pass to `pay_fee` for the given number of
-/// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
-/// procedure cycles.
-pub(super) fn multisig_auth_estimate(num_signers: usize) -> usize {
-    num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
-}
 
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee

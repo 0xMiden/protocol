@@ -87,10 +87,7 @@ const ERR_MTF_LEAVES_NUM_EXCEED_LIMIT = "number of leaves in the MTF would excee
 # CONSTANTS
 # =================================================================================================
 
-# The maximum number of leaves which could be added to the MTF.
-#
-# If the height is 32, the leaves num will be equal to 4294967295 (2**32 - 1)
-const MAX_LEAVES_NUM = 4294967295
+# One below the maximum leaf count of 2^32 - 1.
 const MAX_LEAVES_MINUS_1 = 4294967294
 
 # The total height of the full MTF, whose root represents the commitment to the current frontier.

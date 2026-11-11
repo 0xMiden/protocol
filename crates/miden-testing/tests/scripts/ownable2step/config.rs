@@ -2,8 +2,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
@@ -34,7 +34,7 @@ fn owner_config_note(
     sender: AccountId,
     account: AccountId,
     config: OwnerConfig,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = OwnerConfigNote::builder()
         .sender(sender)
@@ -55,7 +55,7 @@ fn malformed_owner_config_note(
     sender: AccountId,
     target: AccountId,
     storage: Vec<Felt>,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(OwnerConfigNote::script())
@@ -96,7 +96,7 @@ async fn transfer_then_accept_dispatch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let transfer = owner_config_note(
         owner,
@@ -126,7 +126,7 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = owner_config_note(owner, account.id(), OwnerConfig::RenounceOwnership, &mut rng)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &note).await?;
@@ -144,7 +144,7 @@ async fn unknown_variant_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // variant 99 is not a known action
     let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(99u32)], &mut rng)?;
@@ -167,7 +167,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // TransferOwnership variant (0) but only one storage item instead of the expected three
     let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(0u32)], &mut rng)?;
@@ -192,7 +192,7 @@ async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow:
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
     let note = malformed_owner_config_note(owner, account.id(), storage, &mut rng)?;
@@ -218,7 +218,7 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
     let mut builder = MockChain::builder();
     builder.add_account(decoy.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
@@ -249,7 +249,7 @@ async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = owner_config_note(
         owner,

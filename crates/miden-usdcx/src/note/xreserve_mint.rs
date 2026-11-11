@@ -22,7 +22,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -41,6 +40,7 @@ use miden_standards::note::{
     P2idNoteStorage,
     StandardNoteAttachment,
 };
+use rand::{Rng, RngExt};
 
 use crate::xreserve::encoding::{
     BYTES_PER_PACKED_FELT,
@@ -287,9 +287,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> XUsdcMintNoteBuilder<x_usdc_mint_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
