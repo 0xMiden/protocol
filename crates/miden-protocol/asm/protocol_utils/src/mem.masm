@@ -93,8 +93,10 @@ end
 #! lists of words, e.g. `MastForest::interface_commitment`.
 #!
 #! The words on the advice stack must be padded with a zero word to an even number of words, e.g.
-#! via `adv.push_mapvaln.8`. The padding word is written to memory at `end_ptr`, but it is not part
-#! of the commitment. An empty sequence needs no advice.
+#! via `adv.push_mapvaln.8`. The padding word is hashed as the zero padding of the final block and
+#! is also written to memory at `end_ptr`, but it does not count as one of the `num_words` words.
+#! The padding is not checked, so a nonzero padding word results in a different commitment. An
+#! empty sequence needs no advice.
 #!
 #! Inputs:
 #!   Operand stack: [num_words, write_ptr]
