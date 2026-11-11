@@ -40,6 +40,9 @@ const PRESENT_VALUE: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::
 /// have been proven against an older tree root.
 ///
 /// Procedure roots are arbitrary hashes and so multiple of them can map to the same leaf.
+/// Eidos-derived roots have a zero high bit in the index limb and occupy the lower 2^63 leaf
+/// positions of the depth-64 tree. Leaves retain full procedure roots to distinguish index
+/// collisions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeTree<Backend = Smt> {
     smt: Backend,

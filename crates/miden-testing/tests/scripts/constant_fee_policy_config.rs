@@ -5,9 +5,9 @@
 
 use std::collections::BTreeSet;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
@@ -70,7 +70,7 @@ fn build_wrong_storage_config_note(
     account: AccountId,
     num_items: usize,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new(Word::from([7u32, 0, 0, 0]));
+    let mut rng = EidosRandomCoin::new(Word::from([7u32, 0, 0, 0]));
     let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)?;
     let note = NoteBuilder::new(sender, &mut rng)
         .script(ConstantFeePolicyConfigNote::script())
@@ -231,7 +231,7 @@ async fn config_note_without_target_attachment_is_rejected() -> anyhow::Result<(
         owner,
         BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
-    let mut rng = RandomCoin::new(Word::from([9u32, 0, 0, 0]));
+    let mut rng = EidosRandomCoin::new(Word::from([9u32, 0, 0, 0]));
     let note = NoteBuilder::new(owner, &mut rng)
         .script(ConstantFeePolicyConfigNote::script())
         .note_storage(vec![Felt::from(1u32); ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS])?

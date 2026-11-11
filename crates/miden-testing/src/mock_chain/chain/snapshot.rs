@@ -104,12 +104,20 @@ impl MockChain {
         for block in snapshot.blocks.into_inner() {
             let header = block.header.build_unchecked()?;
             // Trust the saved body, including MockChainBuilder's unchecked genesis fixtures.
-            let body = BlockBody::new_unchecked(
-                block.body.updated_accounts.verify()?,
-                block.body.output_note_batches.verify()?,
-                block.body.created_nullifiers.map(Nullifier::from_raw),
-                block.body.transactions.build_unchecked()?,
-            );
+            let body = {
+                let embedded_headers = block.body.transactions.build_unchecked()?;
+                let embedded_logs = miden_objects::VerifyWith::verify_with(
+                    block.body.public_logs,
+                    embedded_headers.as_slice(),
+                )?;
+                BlockBody::new_unchecked(
+                    block.body.updated_accounts.verify()?,
+                    block.body.output_note_batches.verify()?,
+                    block.body.created_nullifiers.map(Nullifier::from_raw),
+                    embedded_headers,
+                    embedded_logs,
+                )
+            };
             let signatures = BlockSignatures::new(block.signatures.verify_infallible())?;
             let block = ProvenBlock::new_unchecked(header, body, signatures, block.proof);
             chain.push(block.header().commitment());

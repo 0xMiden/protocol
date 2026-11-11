@@ -434,10 +434,11 @@ where
 
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let executor = EXEC::new(stack_inputs, advice_inputs, self.tx_executor.exec_options)
-            .map_err(ExecutionError::advice_error_no_context)
-            .map_err(map_execution_error)
-            .map_err(TransactionCheckerError::PrologueExecution)?;
+        let executor =
+            EXEC::new(stack_inputs, advice_inputs, self.tx_executor.exec_options.clone())
+                .map_err(ExecutionError::advice_error_no_context)
+                .map_err(map_execution_error)
+                .map_err(TransactionCheckerError::PrologueExecution)?;
         let result = executor
             .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
             .with_entrypoint_source_node(TransactionKernel::main_entrypoint_source_node())

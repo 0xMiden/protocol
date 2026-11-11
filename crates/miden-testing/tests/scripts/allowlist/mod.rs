@@ -10,7 +10,6 @@ mod config;
 
 use alloc::collections::BTreeMap;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
@@ -21,6 +20,7 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -101,9 +101,7 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
         .with_component(AllowlistManager);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )
@@ -138,7 +136,7 @@ fn build_admin_note(
         prefix = target_id.prefix().as_felt(),
     );
 
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(script_code.as_str())
@@ -582,9 +580,7 @@ fn add_rbac_faucet_with_allowlist(
         .with_component(AllowlistManager);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )

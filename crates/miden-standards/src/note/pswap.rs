@@ -1015,7 +1015,8 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::FungibleAsset;
-    use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+    use miden_protocol::crypto::rand::EidosRandomCoin;
+    use rand::RngExt;
     use rstest::rstest;
 
     use super::*;
@@ -1042,7 +1043,7 @@ mod tests {
         min_requested_asset: FungibleAsset,
         creator_id: AccountId,
     ) -> (PswapNote, Note) {
-        let mut rng = RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let storage = PswapNoteStorage::builder()
             .min_requested_asset(min_requested_asset)
             .creator_account_id(creator_id)
@@ -1050,7 +1051,7 @@ mod tests {
         let pswap = PswapNote::builder()
             .sender(creator_id)
             .storage(storage)
-            .serial_number(rng.draw_word())
+            .serial_number(rng.random())
             .note_type(NoteType::Public)
             .offered_asset(offered_asset)
             .build()
@@ -1250,11 +1251,11 @@ mod tests {
             .creator_account_id(creator_id)
             .min_fill_step(AssetAmount::new(min_fill_step).unwrap())
             .build();
-        let mut rng = RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let pswap = PswapNote::builder()
             .sender(creator_id)
             .storage(storage)
-            .serial_number(rng.draw_word())
+            .serial_number(rng.random())
             .note_type(NoteType::Public)
             .offered_asset(offered_asset)
             .build()
@@ -1374,7 +1375,7 @@ mod tests {
         let result = PswapNote::builder()
             .sender(creator_id)
             .storage(storage)
-            .serial_number(RandomCoin::new(Word::default()).draw_word())
+            .serial_number(EidosRandomCoin::new(Word::default()).random())
             .note_type(NoteType::Public)
             .offered_asset(offered_asset)
             .attachment(attachment)
@@ -1434,7 +1435,7 @@ mod tests {
     /// amount on either side leaves one of those two notes empty.
     #[test]
     fn pswap_note_builder_rejects_a_zero_asset() {
-        let mut rng = RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let creator = dummy_creator_id();
         let zero = FungibleAsset::new(dummy_faucet_id(3), 0).unwrap();
         let some = FungibleAsset::new(dummy_faucet_id(4), 100).unwrap();
@@ -1448,7 +1449,7 @@ mod tests {
                         .creator_account_id(creator)
                         .build(),
                 )
-                .serial_number(rng.draw_word())
+                .serial_number(rng.random())
                 .note_type(NoteType::Public)
                 .offered_asset(offered)
                 .build()
