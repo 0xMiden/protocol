@@ -174,8 +174,9 @@ end
 #! - the procedure roots are not unique and sorted.
 #! - a code witness is invalid or the presence of a procedure root does not match is_present.
 proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool)
-    adv_push
-    u32assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
+    adv_push u32assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
+    # => [num_procedure_roots, list_ptr, is_present]
+
     dup u32lte.MAX_CODE_PATCH_ROOTS assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
     # => [num_procedure_roots, list_ptr, is_present]
 
@@ -199,6 +200,8 @@ proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool)
     dup.1 dup.1 neq
     # => [should_loop, root_ptr, roots_end_ptr, is_present]
 
+    # verify the code witness for every procedure root and assert its status matches the expected
+    # is_present
     while.true
         padw dup.4 mem_loadw_le
         # => [PROC_ROOT, root_ptr, roots_end_ptr, is_present]
@@ -206,7 +209,8 @@ proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool)
         exec.verify_witness
         # => [is_root_present, root_ptr, roots_end_ptr, is_present]
 
-        dup.3 eq assert.err=ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
+        # assert is_root_present == is_present
+        dup.3 assert_eq.err=ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
         # => [root_ptr, roots_end_ptr, is_present]
 
         add.WORD_NUM_ELEMENTS
@@ -361,7 +365,7 @@ end
 #! Panics if:
 #! - the merkle store or the advice map does not contain the code witness of the root.
 proc is_created_or_present(proc_root: ProcedureRoot) -> Bool
-    exec.is_created_procedure
+    dupw exec.is_created_procedure
     # => [is_created, PROC_ROOT]
 
     if.true
@@ -377,31 +381,28 @@ end
 #! Returns whether a procedure root is in CREATED_PROCS.
 #!
 #! Inputs:  [PROC_ROOT]
-#! Outputs: [is_created, PROC_ROOT]
+#! Outputs: [is_created]
 #!
 #! Where:
 #! - PROC_ROOT is the procedure root to search for.
 #! - is_created is 1 if CREATED_PROCS contains PROC_ROOT, 0 otherwise.
-proc is_created_procedure(proc_root: ProcedureRoot) -> (Bool, ProcedureRoot)
-    dupw
-    # => [PROC_ROOT, PROC_ROOT]
-
+proc is_created_procedure(proc_root: ProcedureRoot) -> Bool
     push.CREATED_PROCS_LIST_PTR exec.memory::get_code_patch_num_procedure_roots
     mul.WORD_NUM_ELEMENTS
-    # => [roots_length, PROC_ROOT, PROC_ROOT]
+    # => [roots_length, PROC_ROOT]
 
     push.CREATED_PROCS_LIST_PTR exec.memory::get_code_patch_roots_ptr dup movdn.2 add swap
-    # => [roots_ptr, roots_end_ptr, PROC_ROOT, PROC_ROOT]
+    # => [roots_ptr, roots_end_ptr, PROC_ROOT]
 
     movdn.5 movdn.5
-    # => [PROC_ROOT, roots_ptr, roots_end_ptr, PROC_ROOT]
+    # => [PROC_ROOT, roots_ptr, roots_end_ptr]
 
     # the list was asserted to be sorted when it was loaded
     exec.sorted_array::find_word
-    # => [is_created, root_ptr, roots_ptr, roots_end_ptr, PROC_ROOT]
+    # => [is_created, root_ptr, roots_ptr, roots_end_ptr]
 
     movdn.3 drop drop drop
-    # => [is_created, PROC_ROOT]
+    # => [is_created]
 end
 
 #! Verifies the code witness of a procedure root against the code tree root of the reference block.

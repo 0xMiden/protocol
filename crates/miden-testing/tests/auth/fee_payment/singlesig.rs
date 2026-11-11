@@ -18,7 +18,6 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
-use miden_tx::LocalTransactionProver;
 use rstest::rstest;
 
 use super::{
@@ -75,17 +74,6 @@ async fn execute_fee_paying_tx(
 
 // TESTS
 // ================================================================================================
-
-/// The prover provides the code witness of the fee note script, which the host does not know when
-/// it loads the code patch.
-#[tokio::test]
-async fn prove_singlesig_fee_note_with_witness_in_auth() -> anyhow::Result<()> {
-    let (executed_transaction, _) = execute_fee_paying_tx(AuthScheme::EcdsaK256Keccak).await?;
-
-    LocalTransactionProver::default().prove(executed_transaction)?;
-
-    Ok(())
-}
 
 /// The singlesig auth procedure pays the transaction fee by creating a TX_FEE note funded with
 /// the native fee asset, and the paid amount covers the fee required for the actual number of

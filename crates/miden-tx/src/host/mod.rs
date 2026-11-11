@@ -798,7 +798,7 @@ where
     pub(crate) fn code_patch_top_level_roots(&self) -> BTreeSet<ProcedureRoot> {
         let note_script_roots = self
             .public_output_note_scripts()
-            .map(|note_script| ProcedureRoot::from_raw(note_script.root().into()));
+            .map(|note_script| ProcedureRoot::from(note_script.root()));
 
         self.new_public_account_code
             .iter()

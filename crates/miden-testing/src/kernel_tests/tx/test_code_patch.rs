@@ -21,7 +21,7 @@ use miden_protocol::errors::tx_kernel::ERR_CODE_PATCH_AUTH_NOTE_SCRIPT_ABSENT;
 use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, ProtocolLib, Word};
+use miden_protocol::{CoreLibrary, Felt, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -39,8 +39,9 @@ use crate::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 // TESTS
 // ================================================================================================
 
-/// Absent note scripts go into the created procedures, together with the procedures they reference.
-/// Present note scripts are not in the code patch. Repeated roots do not change the code patch.
+/// Absent note scripts go into the created procedures, together with the absent procedures they
+/// reference. Present note scripts and scripts of private notes are not in the code patch. Repeated
+/// roots do not change the code patch.
 #[tokio::test]
 async fn note_scripts_are_put_into_code_patch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -48,13 +49,29 @@ async fn note_scripts_are_put_into_code_patch() -> anyhow::Result<()> {
         builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(20)])?;
     let mock_chain = builder.build()?;
 
+    // The note script is compiled as a package, so that the root of its local procedure can be
+    // resolved by its path.
+    let custom_script_package = CodeBuilder::default()
+        .compile_component_code("custom_note", LOCAL_PROCEDURE_REFERENCING_SCRIPT)?
+        .into_package();
+    let local_procedure = custom_script_package
+        .get_procedure_root_by_path("custom_note::get_account_id")
+        .map(ProcedureRoot::from_raw)
+        .context("note script package should export get_account_id")?;
+    let create_local_procedure_note = |seed| {
+        NoteBuilder::new(account.id(), SmallRng::seed_from_u64(seed))
+            .package(custom_script_package.clone())
+            .build()
+    };
+
     let p2id_note = create_p2id_note(account.id(), 1)?;
-    let custom_note = create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 2)?;
+    let custom_note = create_local_procedure_note(2)?;
     let notes = [
         p2id_note.clone(),
         custom_note.clone(),
         create_p2id_note(account.id(), 3)?,
-        create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 4)?,
+        create_local_procedure_note(4)?,
+        create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Private, 5)?,
     ];
     let script = SendNotesTransactionScript::new(
         &account.code_interface(),
@@ -71,12 +88,12 @@ async fn note_scripts_are_put_into_code_patch() -> anyhow::Result<()> {
 
     let code_patch = executed_tx.code_patch();
     assert_eq!(
-        code_patch.created_procedures().collect::<Vec<_>>(),
-        [custom_note.script().root().into()]
+        code_patch.created_procedures(),
+        BTreeSet::from([custom_note.script().root().into(), local_procedure])
     );
     assert_eq!(
-        code_patch.dependencies().collect::<Vec<_>>(),
-        [ProtocolLib::procedure_root("miden::protocol::active_account::get_id")]
+        code_patch.dependencies(),
+        BTreeSet::from([ProtocolLib::procedure_root("miden::protocol::active_account::get_id")])
     );
 
     Ok(())
@@ -109,13 +126,10 @@ async fn referenced_present_top_level_root_is_a_dependency() -> anyhow::Result<(
 
     let code_patch = executed_tx.code_patch();
     assert_eq!(
-        code_patch.created_procedures().collect::<Vec<_>>(),
-        [custom_note.script().root().into()]
+        code_patch.created_procedures(),
+        BTreeSet::from([custom_note.script().root().into()])
     );
-    assert_eq!(
-        code_patch.dependencies().collect::<Vec<_>>(),
-        [p2id_note.script().root().into()]
-    );
+    assert_eq!(code_patch.dependencies(), BTreeSet::from([p2id_note.script().root().into()]));
 
     Ok(())
 }
@@ -148,30 +162,29 @@ async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<
         .build_transaction(account.id())
         .send_notes_script(&script)
         .expected_output_note(RawOutputNote::Full(note.clone()))
-        .code_to_register(Arc::clone(AccountCode::mock_account_package().mast_forest()))
+        .register_code(Arc::clone(AccountCode::mock_account_package().mast_forest()))
         .build()?
         .execute()
         .await?;
 
     let code_patch = executed_tx.code_patch();
     assert_eq!(
-        code_patch.created_procedures().collect::<BTreeSet<_>>(),
+        code_patch.created_procedures(),
         BTreeSet::from([note.script().root().into(), mock_procedure])
     );
-    let dependencies = code_patch.dependencies().collect::<Vec<_>>();
-    assert!(
-        dependencies
-            .contains(&ProtocolLib::procedure_root("miden::protocol::active_account::get_nonce"))
+    assert_eq!(
+        code_patch.dependencies(),
+        BTreeSet::from([
+            ProtocolLib::procedure_root("miden::protocol::active_account::get_nonce"),
+            core_lib_procedure_root("miden::core::sys::truncate_stack")?,
+        ])
     );
-    for dependency in dependencies {
-        assert!(mock_chain.code_tree().contains(&dependency));
-    }
 
     Ok(())
 }
 
 /// The procedures of a new public account are top-level roots, while those of a new private
-/// account are not. The mock account component is absent from the genesis code tree, so the
+/// account are not. The mock account component is absent from the genesis code tree, so the absent
 /// procedures of a new public account are created.
 #[rstest::rstest]
 #[case::public(AccountType::Public)]
@@ -201,12 +214,7 @@ async fn new_account_procedures_are_top_level_roots_if_public(
             .filter(|procedure_root| !mock_chain.code_tree().contains(procedure_root))
             .collect::<BTreeSet<_>>();
         assert!(!absent_procedures.is_empty());
-        assert!(
-            code_patch
-                .created_procedures()
-                .collect::<BTreeSet<_>>()
-                .is_superset(&absent_procedures)
-        );
+        assert_eq!(code_patch.created_procedures(), absent_procedures);
     } else {
         assert!(code_patch.is_empty());
     }
@@ -254,6 +262,47 @@ async fn auth_note_with_absent_script_is_rejected(#[case] is_expected: bool) -> 
     Ok(())
 }
 
+/// A note that the authentication procedure creates can have a script that an earlier note of the
+/// transaction makes a created procedure, because the code patch already contains this script.
+#[rstest::rstest]
+#[case::expected(true)]
+#[case::unknown(false)]
+#[tokio::test]
+async fn auth_note_with_created_script_is_accepted(
+    #[case] is_expected: bool,
+) -> anyhow::Result<()> {
+    let auth_note = create_custom_note(
+        ACCOUNT_ID_SENDER.try_into()?,
+        ACTIVE_ACCOUNT_SCRIPT,
+        NoteType::Public,
+        1,
+    )?;
+    let account = note_creating_auth_account(&auth_note)?;
+    let script_note = create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 2)?;
+    let script = SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(script_note.clone())],
+    )?;
+    let builder = TestTransactionBuilder::new(account)
+        .tx_script(script.tx_script().clone())
+        .tx_script_args(script.tx_script_args())
+        .expected_output_note(RawOutputNote::Full(script_note.clone()));
+
+    let executed_tx = with_auth_note(builder, &auth_note, is_expected).build()?.execute().await?;
+
+    let code_patch = executed_tx.code_patch();
+    assert_eq!(
+        code_patch.created_procedures(),
+        BTreeSet::from([script_note.script().root().into()])
+    );
+    assert_eq!(
+        code_patch.dependencies(),
+        BTreeSet::from([ProtocolLib::procedure_root("miden::protocol::active_account::get_id")])
+    );
+
+    Ok(())
+}
+
 /// A private note that the authentication procedure creates needs no check, so its absent script
 /// does not make the transaction fail.
 #[tokio::test]
@@ -283,6 +332,23 @@ const ACTIVE_ACCOUNT_SCRIPT: &str = "
     end
 ";
 
+/// A note script that references a local procedure, which in turn references a procedure of the
+/// protocol library. The local procedure also contains its own code, so that its root differs from
+/// the root of the protocol procedure.
+const LOCAL_PROCEDURE_REFERENCING_SCRIPT: &str = "
+    use miden::protocol::active_account
+
+    pub proc get_account_id
+        push.1 drop
+        exec.active_account::get_id
+    end
+
+    @note_script
+    pub proc main
+        exec.get_account_id drop drop
+    end
+";
+
 /// A note script that references the script of the P2ID note. The script also contains its own
 /// code, so that its root differs from the root of the P2ID script.
 const P2ID_REFERENCING_SCRIPT: &str = "
@@ -304,14 +370,18 @@ const MOCK_PROCEDURE_REFERENCING_SCRIPT: &str = "
     end
 ";
 
-/// Returns a transaction whose authentication procedure creates the note.
-///
-/// If `is_expected` is `true`, the note is an expected output note. Otherwise, only the preimage of
-/// its recipient is in the advice map.
+/// Returns a transaction whose authentication procedure creates the note (see [`with_auth_note`]).
 fn auth_procedure_creating_note_tx(
     note: &Note,
     is_expected: bool,
 ) -> anyhow::Result<MockTransaction> {
+    let builder = TestTransactionBuilder::new(note_creating_auth_account(note)?);
+
+    with_auth_note(builder, note, is_expected).build()
+}
+
+/// Returns an existing account whose authentication procedure creates the note.
+fn note_creating_auth_account(note: &Note) -> anyhow::Result<Account> {
     let auth_source = format!(
         "
         use miden::protocol::native_account
@@ -337,19 +407,36 @@ fn auth_procedure_creating_note_tx(
         vec![],
         AccountComponentMetadata::mock("mock::note_creating_auth"),
     )?;
-    let account = AccountBuilder::new([43; 32])
+
+    Ok(AccountBuilder::new([43; 32])
         .with_component(auth_component)
         .with_component(BasicWallet)
-        .build_existing()?;
+        .build_existing()?)
+}
 
-    let builder = TestTransactionBuilder::new(account);
-    let builder = if is_expected {
+/// Provides the note that the authentication procedure creates to the transaction.
+///
+/// If `is_expected` is `true`, the note is an expected output note. Otherwise, only the preimage of
+/// its recipient is in the advice map.
+fn with_auth_note(
+    builder: TestTransactionBuilder,
+    note: &Note,
+    is_expected: bool,
+) -> TestTransactionBuilder {
+    if is_expected {
         builder.expected_output_note(RawOutputNote::Full(note.clone()))
     } else {
         with_recipient_preimage(builder, note)
-    };
+    }
+}
 
-    builder.build()
+/// Returns the root of the procedure of the core library with the provided path.
+fn core_lib_procedure_root(path: &str) -> anyhow::Result<ProcedureRoot> {
+    CoreLibrary::default()
+        .package()
+        .get_procedure_root_by_path(path)
+        .map(ProcedureRoot::from_raw)
+        .with_context(|| format!("core library should export {path}"))
 }
 
 /// Returns a public P2ID note, whose script is present in the genesis code tree.

@@ -148,18 +148,19 @@ pub(crate) fn code_patch_advice(
     code_patch: &CodePatch,
     code_tree: &PartialCodeTree,
 ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-    let lists = [
-        code_patch.created_procedures().collect::<Vec<_>>(),
-        code_patch.dependencies().collect(),
-    ];
-
     let mut advice_stack = Vec::new();
-    for list in &lists {
+    let mut patch_list = |list: &BTreeSet<ProcedureRoot>| {
         advice_stack.push(Felt::from(list.len() as u32));
         advice_stack.extend(list.iter().flat_map(|procedure_root| procedure_root.as_word()));
-    }
+    };
 
-    let mut mutations = code_witness_advice(lists.iter().flatten(), code_tree)?;
+    let created_procedures = code_patch.created_procedures();
+    let dependencies = code_patch.dependencies();
+    patch_list(&created_procedures);
+    patch_list(&dependencies);
+
+    let patch_lists = created_procedures.iter().chain(dependencies.iter());
+    let mut mutations = code_witness_advice(patch_lists, code_tree)?;
     mutations.push(AdviceMutation::extend_advice_stack_with(advice_stack));
 
     Ok(mutations)
@@ -322,9 +323,9 @@ mod tests {
 
         let code_patch = source.build_code_patch(&top_level_roots, &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
+        assert_eq!(code_patch.created_procedures(), absent_roots);
         // a present top-level root is in the patch only if absent code references it
-        assert_eq!(code_patch.dependencies().collect::<Vec<_>>(), [present_root()]);
+        assert_eq!(code_patch.dependencies(), BTreeSet::from([present_root()]));
 
         Ok(())
     }
@@ -348,8 +349,8 @@ mod tests {
         let code_patch = code_patch_source(&[main_forest, other_forest])?
             .build_code_patch(&BTreeSet::from([main_root, other_root]), &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
-        assert_eq!(code_patch.created_procedures().count(), 3);
+        assert_eq!(code_patch.created_procedures(), absent_roots);
+        assert_eq!(code_patch.created_procedures().len(), 3);
 
         Ok(())
     }
@@ -405,10 +406,10 @@ mod tests {
         )?;
         let code_patch = source.build_code_patch(&BTreeSet::from([main_root]), &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures().collect::<Vec<_>>(), [main_root]);
+        assert_eq!(code_patch.created_procedures(), BTreeSet::from([main_root]));
         let mut expected_dependencies = helper_roots;
         expected_dependencies.insert(present_root());
-        assert_eq!(code_patch.dependencies().collect::<BTreeSet<_>>(), expected_dependencies);
+        assert_eq!(code_patch.dependencies(), expected_dependencies);
 
         Ok(())
     }
@@ -474,11 +475,11 @@ mod tests {
             partial_code_tree(registered_roots.iter().copied(), tracked_roots.iter().copied())?;
         let code_patch = source.build_code_patch(&note_script_roots, &code_tree)?;
 
-        let created_procedures = code_patch.created_procedures().collect::<BTreeSet<_>>();
+        let created_procedures = code_patch.created_procedures();
         assert!(created_procedures.is_superset(&note_script_roots));
         assert!(created_procedures.contains(&receive_asset_root));
         assert!(created_procedures.is_subset(&local_roots(standards_forest)));
-        assert!(code_patch.dependencies().all(|root| registered_roots.contains(&root)));
+        assert!(code_patch.dependencies().is_subset(&registered_roots));
 
         // a registered wallet procedure is a dependency
         let code_tree = partial_code_tree(
@@ -487,8 +488,8 @@ mod tests {
         )?;
         let code_patch = source.build_code_patch(&note_script_roots, &code_tree)?;
 
-        assert!(!code_patch.created_procedures().any(|root| root == receive_asset_root));
-        assert!(code_patch.dependencies().any(|root| root == receive_asset_root));
+        assert!(!code_patch.created_procedures().contains(&receive_asset_root));
+        assert!(code_patch.dependencies().contains(&receive_asset_root));
 
         Ok(())
     }

@@ -261,7 +261,7 @@ where
         let code_patch = self.base_host.build_code_patch(&source)?;
         let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;
         self.record_code_witnesses(
-            code_patch.created_procedures().chain(code_patch.dependencies()),
+            code_patch.created_procedures().into_iter().chain(code_patch.dependencies()),
         )?;
         self.code_patch = Some(code_patch);
 

@@ -6,7 +6,6 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_processor::{FutureMaybeSend, LoadedMastForest, MastForestStore};
-use miden_protocol::Word;
 use miden_protocol::account::{
     AccountBuilder,
     AccountId,
@@ -30,6 +29,7 @@ use miden_protocol::transaction::{
     RawOutputNote,
     TransactionInputs,
 };
+use miden_protocol::{ProtocolLib, Word};
 use miden_standards::account::access::Authority;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -101,9 +101,10 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
             .asset(faucet_asset)
             .build()?,
     );
-    // The script of this public note is absent from the code tree, so the kernel also verifies the
-    // procedures that the script references.
-    let code_patch_note = NoteBuilder::new(native_account.id(), SmallRng::seed_from_u64(1))
+
+    // The script of this public note is absent from the code tree, so the kernel verifies the
+    // `get_id` procedure that the script references.
+    let custom_note = NoteBuilder::new(native_account.id(), SmallRng::seed_from_u64(1))
         .code(
             "
             use miden::protocol::active_account
@@ -117,14 +118,14 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
         .build()?;
     let send_notes_script = SendNotesTransactionScript::new(
         &native_account.code_interface(),
-        &[PartialNote::from(output_note), PartialNote::from(code_patch_note.clone())],
+        &[PartialNote::from(output_note), PartialNote::from(custom_note.clone())],
     )?;
 
     let executed_tx = mock_chain
         .build_transaction(native_account.id())
         .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?])
         .send_notes_script(&send_notes_script)
-        .expected_output_note(RawOutputNote::Full(code_patch_note.clone()))
+        .expected_output_note(RawOutputNote::Full(custom_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -142,8 +143,17 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
             .maps()
             .any(|map| map.get(&blocklist_key) == Some(Word::empty()))
     );
-    let code_patch_script_root = ProcedureRoot::from_raw(code_patch_note.script().root().into());
-    assert!(!tx_inputs.code_tree().contains(&code_patch_script_root)?);
+    let custom_script_root = ProcedureRoot::from_raw(custom_note.script().root().into());
+    assert!(!tx_inputs.code_tree().contains(&custom_script_root)?);
+    assert_eq!(executed_tx.code_patch().created_procedures().len(), 1);
+    assert_eq!(
+        executed_tx.code_patch().created_procedures(),
+        BTreeSet::from([custom_script_root])
+    );
+    assert_eq!(
+        executed_tx.code_patch().dependencies(),
+        BTreeSet::from([ProtocolLib::procedure_root("miden::protocol::active_account::get_id")])
+    );
 
     // Test that re-execution during proving works as well.
     // TODO: Remove this once prover re-execution is removed (https://github.com/0xMiden/protocol/issues/3852).
