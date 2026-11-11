@@ -4,7 +4,6 @@ use alloc::sync::Arc;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::{AuthScheme, SignatureKey};
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -25,6 +24,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, Package, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::ProvenTransactionError;
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS,
@@ -105,15 +105,11 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(400);
     let account1 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset],
     )?;
     let account2 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [asset],
     )?;
     let output_note = create_public_p2any_note(account1.id(), [asset]);
@@ -589,7 +585,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         .context("failed to build account")?;
 
     // Consume and create a note so the input and outputs notes commitment is not the empty word.
-    let mut rng = RandomCoin::new(Word::empty());
+    let mut rng = EidosRandomCoin::new(Word::empty());
     let output_note = create_p2any_note(account.id(), NoteType::Private, [], &mut rng);
     let input_note = create_spawn_note(vec![&output_note])?;
 
@@ -945,7 +941,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
 /// Tests that a transaction consuming and creating one note with basic authentication correctly
 /// signs the transaction summary.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_auth_singlesig(
@@ -953,7 +949,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::BasicAuth { auth_scheme })?;
-    let mut rng = RandomCoin::new(Word::empty());
+    let mut rng = EidosRandomCoin::new(Word::empty());
     let p2any_note = create_p2any_note(account.id(), NoteType::Private, [], &mut rng);
     let spawn_note = builder.add_spawn_note([&p2any_note])?;
     let chain = builder.build()?;
@@ -1363,7 +1359,7 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [])?;
     let chain = builder.build()?;
 
-    let mut rng = RandomCoin::new(Word::from([1u32; 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
     let script = SendNotesTransactionScript::new(

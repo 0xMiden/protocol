@@ -22,7 +22,6 @@ use miden_agglayer::{
     RemoveGerNote,
     UpdateGerNote,
 };
-use miden_crypto::rand::FeltRng;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::note::Note;
@@ -42,6 +41,7 @@ use miden_standards::note::config::{
 use miden_standards::note::{FeeSponsorshipNote, P2idNote};
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::{Rng, RngExt};
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
@@ -68,7 +68,7 @@ fn rbac_config_note(
     sender: AccountId,
     account_id: AccountId,
     config: RbacConfig,
-    rng: &mut impl FeltRng,
+    rng: &mut impl Rng,
 ) -> anyhow::Result<Note> {
     let note = RbacConfigNote::builder()
         .sender(sender)
@@ -88,11 +88,10 @@ fn rbac_config_note(
 async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let initial_admin = bridge_admin_account_id();
-    let new_admin = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let new_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         6,
@@ -135,9 +134,8 @@ async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
 async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
-    let new_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let new_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_id = setup.bridge.id();
 
     let grant = rbac_config_note(
@@ -223,9 +221,8 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
 async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let setup = setup_bridge(&mut builder)?;
-    let new_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let new_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let bridge_id = setup.bridge.id();
 
     let pause = AggLayerBridge::pause_note(

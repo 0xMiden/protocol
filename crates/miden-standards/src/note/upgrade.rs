@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountCode, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::Path;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -19,6 +18,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
+use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
 use crate::note::costs::{NoteConsumptionCost, UPGRADE_CONSUMPTION_CYCLES};
@@ -187,9 +187,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> UpgradeNoteBuilder<upgrade_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -226,7 +226,7 @@ impl NoteConsumptionCost for UpgradeNote {
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
 
     use super::*;
     use crate::testing::account_component::{IncrNonceAuthComponent, MockProceduresComponent};
@@ -258,7 +258,7 @@ mod tests {
     /// storage is the commitment to the new code.
     #[test]
     fn builder_builds_upgrade_note() -> anyhow::Result<()> {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let target = account_id(1);
         let sender = account_id(2);
         let code = AccountCode::mock();

@@ -31,12 +31,17 @@ mod constants;
 // ================================================================================================
 
 pub use constants::*;
-pub use domain_registry::ProtocolDomainRegistry;
+pub use domain_registry::*;
 pub use miden_core::mast::{MastForest, MastNodeId};
 pub use miden_core::prettier::PrettyPrint;
 pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};
 pub use miden_core_lib::CoreLibrary;
-pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
+/// The protocol's Eidos hash function.
+///
+/// Digests contain four 63-bit elements, giving 252 bits of support and a 126-bit generic
+/// collision-resistance ceiling. Their 32-byte encoding is not a uniform 256-bit string, and
+/// digest elements are not uniform samples of the full field.
+pub use miden_crypto::hash::eidos::Eidos as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};
 pub use protocol::ProtocolLib;
@@ -65,7 +70,7 @@ pub mod assembly {
 }
 
 pub mod crypto {
-    pub use miden_crypto::{SequentialCommit, dsa, hash, ies, merkle, rand, utils};
+    pub use miden_crypto::{SequentialCommit, dsa, ecdh, hash, ies, merkle, rand, utils};
 }
 
 pub mod utils;
@@ -92,6 +97,7 @@ pub mod vm {
     pub use miden_verifier::{
         ExecutionProof,
         ExecutionProofCompatibility,
+        HashFunction,
         PrecompileStatus,
         ProofSecurityParameters,
         VerificationOutcome,

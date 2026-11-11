@@ -39,3 +39,6 @@ mod kernel_tests;
 
 #[cfg(test)]
 mod standards;
+
+#[cfg(test)]
+mod public_logs_tests;

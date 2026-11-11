@@ -24,10 +24,16 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 /// All the assets in a note can be reduced to a single commitment which is computed by
 /// sequentially hashing the assets. Note that the same list of assets can result in two different
 /// commitments if the asset ordering is different.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct NoteAssets {
     assets: Vec<Asset>,
     commitment: Word,
+}
+
+impl Default for NoteAssets {
+    fn default() -> Self {
+        Self::new(Vec::new()).expect("an empty asset list is valid")
+    }
 }
 
 impl NoteAssets {
@@ -194,6 +200,7 @@ mod tests {
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
+    use crate::{Felt, Hasher, Word};
 
     /// Helper to create `n` unique non-fungible assets.
     fn make_non_fungible_assets(n: usize) -> Vec<Asset> {
@@ -206,6 +213,16 @@ mod tests {
                 Asset::from(NonFungibleAsset::new(&details))
             })
             .collect()
+    }
+
+    #[test]
+    fn default_uses_canonical_empty_commitment() {
+        let assets = NoteAssets::default();
+        let expected = Hasher::hash_elements::<Felt>(&[]);
+
+        assert!(assets.is_empty());
+        assert_eq!(assets.commitment(), expected);
+        assert_ne!(assets.commitment(), Word::empty());
     }
 
     #[test]

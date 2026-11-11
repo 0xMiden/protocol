@@ -815,7 +815,7 @@ mod tests {
 
         let displayed = SCHEMA_TYPE_REGISTRY.display_word(&auth_scheme_type, numeric_word);
         assert!(
-            matches!(displayed, WordDisplay::Felt(ref value) if value == "Falcon512Poseidon2"),
+            matches!(displayed, WordDisplay::Felt(ref value) if value == "Falcon512Eidos"),
             "expected canonical auth scheme display, got {displayed:?}"
         );
     }

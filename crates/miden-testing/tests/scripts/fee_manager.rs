@@ -2,12 +2,12 @@ use alloc::sync::Arc;
 use std::collections::BTreeSet;
 
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -222,7 +222,7 @@ pub(super) fn estimate_note_fee_tx_script_code(
 ) -> String {
     format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
         use miden::standards::fees::fee_manager
 
         @transaction_script
@@ -236,9 +236,9 @@ pub(super) fn estimate_note_fee_tx_script_code(
 
             # compute the note's recipient, inserting the recipient preimages into the advice map
             # so the fee policy can recover the script root and storage commitment
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
             # => [RECIPIENT, pad(12)]
 
             # place the timeframe and priority in their parameter slots; the zeros in between
@@ -305,7 +305,7 @@ pub(super) fn create_get_fee_policy_note_script(expected_policy_root: Word) -> S
 
 /// Builds a private note carrying `note_script`, sent by `sender` and seeded from `seed`.
 fn build_sender_note(sender: AccountId, seed: u32, note_script: &str) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(seed); 4].into());
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(note_script)
@@ -512,7 +512,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // recovers; the zeros below serve as the other note parameters.
     let tx_script_code = format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
         use miden::protocol::tx
 
         @transaction_script
@@ -524,9 +524,9 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
             # compute the note's recipient, inserting the recipient preimages into the advice map
             # so the custom policy can recover the script root and storage commitment
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
             # => [RECIPIENT, pad(16)]
 
             # place the timeframe and priority in their parameter slots; the zeros in between
@@ -589,7 +589,7 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
     // The active policy is the basic constant fee policy the manager is built with.
     let get_policy_note_script =
         create_get_fee_policy_note_script(BasicConstantFeePolicy::root().as_word());
-    let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(602u32); 4].into());
     let get_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(get_policy_note_script)
