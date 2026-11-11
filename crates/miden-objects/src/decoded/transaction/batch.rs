@@ -1,8 +1,9 @@
 use miden_protobuf::unwrap_infallible;
+use miden_protocol::transaction::OrderedTransactionHeaders;
 pub use proto::transaction::DecodedBatchAccountUpdate as BatchAccountUpdate;
 
 use crate::decoded::VerificationError;
-use crate::{BuildUnchecked, Verify, proto};
+use crate::{BuildUnchecked, Verify, VerifyWith, proto};
 
 #[cfg(test)]
 mod tests;
@@ -23,7 +24,7 @@ impl Verify for BatchAccountUpdate {
 pub use proto::transaction::DecodedProposedBatch as ProposedBatch;
 
 /// Verifies transaction proofs and batch consistency, not trust in the supplied reference chain.
-impl crate::VerifyWith<u32> for ProposedBatch {
+impl VerifyWith<u32> for ProposedBatch {
     type Verified = miden_protocol::batch::ProposedBatch;
     type Error = VerificationError;
     fn verify_with(self, proof_security_level: u32) -> Result<Self::Verified, Self::Error> {
@@ -73,6 +74,8 @@ impl crate::BuildUnchecked for ProvenBatch {
         let inputs = self.input_notes.build_unchecked()?;
         let outputs = self.output_notes.verify()?;
         let transactions = self.transactions.build_unchecked()?;
+        let transactions = OrderedTransactionHeaders::new_unchecked(transactions);
+        let public_logs = VerifyWith::verify_with(self.public_logs, &transactions)?;
         Ok(Self::Output::new(
             self.reference_block_commitment,
             unwrap_infallible(self.reference_block_num.verify()),
@@ -80,7 +83,8 @@ impl crate::BuildUnchecked for ProvenBatch {
             miden_protocol::transaction::InputNotes::new_unchecked(inputs),
             outputs,
             unwrap_infallible(self.expiration_block_num.verify()),
-            miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions),
+            transactions,
+            public_logs,
             self.proof,
         )?)
     }
@@ -96,7 +100,7 @@ pub enum ProvenBatchError {
 
 /// Checks all fields duplicated from an already-verified proposal. The batch execution proof
 /// still needs verification by the consuming service; this only establishes proposal agreement.
-impl crate::VerifyWith<&miden_protocol::batch::ProposedBatch> for ProvenBatch {
+impl VerifyWith<&miden_protocol::batch::ProposedBatch> for ProvenBatch {
     type Verified = miden_protocol::batch::ProvenBatch;
     type Error = VerificationError;
     fn verify_with(

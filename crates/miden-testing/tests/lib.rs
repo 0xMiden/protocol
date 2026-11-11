@@ -28,8 +28,8 @@ use miden_protocol::note::{
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
-use miden_protocol::vm::VerificationOutcome;
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::vm::{HashFunction, PrecompileStatus, VerificationOutcome};
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, PROTOCOL_PROOF_HASH, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
 use miden_tx::{ExecutionOptions, LocalTransactionProver, Prover, TransactionProverError};
@@ -66,9 +66,13 @@ pub async fn prove_and_verify_transaction(
     let executed_tx_header = TransactionHeader::from(&executed_transaction);
     // Prove the transaction
 
-    let prover = LocalTransactionProver::new(Prover::default());
+    // Supply a different hash to verify that the protocol wrapper selects Eidos.
+    let prover = LocalTransactionProver::new(Prover::new().with_hash_fn(HashFunction::Blake3_256));
     let proven_transaction = prover.prove(executed_transaction).unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
+
+    assert_eq!(proven_transaction.proof().vm().proof.hash_fn(), PROTOCOL_PROOF_HASH);
+    assert!(!matches!(proven_transaction.proof().precompile(), PrecompileStatus::Proven(_)));
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     assert_eq!(proven_tx_header, executed_tx_header);

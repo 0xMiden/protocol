@@ -7,6 +7,9 @@ pub const MAX_ASSETS_PER_NOTE = 16
 #! The number of field elements in a Word.
 pub const WORD_NUM_ELEMENTS = 4
 
+#! The number of field elements in a double word.
+pub const DOUBLE_WORD_NUM_ELEMENTS = 2 * WORD_NUM_ELEMENTS
+
 #! The maximum expiration block delta a transaction can set.
 pub const MAX_EXPIRATION_BLOCK_DELTA = 65535
 

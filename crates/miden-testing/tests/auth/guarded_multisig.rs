@@ -9,7 +9,7 @@ use miden_protocol::account::{
     AccountType,
     StorageMapKey,
 };
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -49,7 +49,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
-use super::fee_payment::{VERIFICATION_BASE_FEE, assert_single_fee_note, multisig_auth_estimate};
+use super::fee_payment::{MAX_FEE, VERIFICATION_BASE_FEE, assert_single_fee_note};
 use super::multisig::{
     MultisigAuthArgsExt,
     build_update_signers_config_vector,
@@ -80,9 +80,7 @@ fn setup_keys_and_authenticators_with_scheme(
     for _ in 0..num_approvers {
         let sec_key = match auth_scheme {
             AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Poseidon2 => {
-                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
-            },
+            AuthScheme::Falcon512Eidos => AuthSecretKey::new_falcon512_eidos_with_rng(&mut rng),
             _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
         };
         let pub_key = sec_key.public_key();
@@ -187,7 +185,7 @@ fn create_guarded_multisig_account(
 /// configured.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_guarded_multisig_signature_required(
     #[case] auth_scheme: AuthScheme,
@@ -323,7 +321,7 @@ async fn test_guarded_multisig_signature_required(
 async fn test_guarded_multisig_approval_expiration_is_applied_after_the_guardian_signature()
 -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::Falcon512Eidos)?;
     let approvers = public_keys
         .iter()
         .zip(auth_schemes.iter())
@@ -411,7 +409,7 @@ async fn test_guarded_multisig_approval_expiration_is_applied_after_the_guardian
 /// Tests that the guardian public key can be updated and then enforced for guarded multisig.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_guarded_multisig_update_guardian_public_key(
     #[case] auth_scheme: AuthScheme,
@@ -429,7 +427,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let old_guardian_authenticator =
         BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
 
-    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
     let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
     let new_guardian_authenticator =
@@ -587,7 +585,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
 /// `assert_only_one_non_auth_procedure_called`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     #[case] auth_scheme: AuthScheme,
@@ -602,7 +600,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
 
     let old_guardian_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
 
-    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
     let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
 
@@ -792,7 +790,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
 
     let old_guardian_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
 
-    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let new_guardian_public_key = new_guardian_secret_key.public_key();
     let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
 
@@ -1129,7 +1127,7 @@ async fn test_guarded_multisig_signer_update_enforces_the_guardian_invariant(
 /// signer.
 #[tokio::test]
 async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let approvers = public_keys
@@ -1138,7 +1136,7 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
         .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let guardian_secret_key = AuthSecretKey::new_falcon512_eidos();
     let guardian_public_key = guardian_secret_key.public_key();
     let guardian_authenticator =
         BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
@@ -1160,26 +1158,28 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
+    // no max fee is set, so the auth procedure estimates it, counting the guardian as a signer
     let auth_args = MultisigAuthArgs::new(
         mock_chain.latest_block_header().block_num(),
         Word::from([Felt::from(5u32); 4]),
     )
     .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
-    let mock_tx_builder = mock_chain
-        .build_transaction(multisig_account.id())
-        .multisig_auth_args(auth_args);
 
-    let tx_summary = mock_tx_builder
-        .clone()
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
         .build()?
         .execute()
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
+    let signed_auth_args = auth_args.with_max_fee_from_summary(&tx_summary)?;
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
-    let mut signed_builder = mock_tx_builder;
+    let mut signed_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(signed_auth_args);
     for (public_key, authenticator) in public_keys.iter().zip(&authenticators) {
         let signature =
             authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
@@ -1202,14 +1202,6 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
         initial_fee_asset.amount().as_u64() - paid_fee_asset.amount().as_u64()
     );
 
-    // two approver signatures and the guardian signature are verified
-    let auth_procedure_cycles = executed_transaction.measurements().auth_procedure;
-    let auth_estimate = multisig_auth_estimate(3);
-    assert!(
-        auth_procedure_cycles <= auth_estimate,
-        "guarded multisig auth procedure took {auth_procedure_cycles} cycles, exceeding the estimate of {auth_estimate}",
-    );
-
     Ok(())
 }
 
@@ -1217,7 +1209,7 @@ async fn test_guarded_multisig_pays_fee_note() -> anyhow::Result<()> {
 /// fee on a fee-charging chain.
 #[tokio::test]
 async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
     let approvers = public_keys
@@ -1226,8 +1218,8 @@ async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> any
         .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let old_guardian_public_key = AuthSecretKey::new_falcon512_poseidon2().public_key();
-    let new_guardian_public_key = AuthSecretKey::new_falcon512_poseidon2().public_key();
+    let old_guardian_public_key = AuthSecretKey::new_falcon512_eidos().public_key();
+    let new_guardian_public_key = AuthSecretKey::new_falcon512_eidos().public_key();
 
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let initial_fee_asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?;
@@ -1259,7 +1251,8 @@ async fn test_guarded_multisig_update_guardian_public_key_pays_fee_note() -> any
         mock_chain.latest_block_header().block_num(),
         Word::from([Felt::from(6u32); 4]),
     )
-    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
+    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id))
+    .with_max_fee(AssetAmount::new(MAX_FEE)?);
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_script)

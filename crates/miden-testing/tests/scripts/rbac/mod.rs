@@ -5,7 +5,6 @@ mod config;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -14,6 +13,7 @@ use miden_protocol::account::{
     RoleSymbol,
     StorageMapKey,
 };
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleConfig};
@@ -108,7 +108,7 @@ pub(crate) fn is_role_member(
 
 pub(super) fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
     let seed: [u32; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed));
+    let mut rng = EidosRandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Public)
         .code(code.into())

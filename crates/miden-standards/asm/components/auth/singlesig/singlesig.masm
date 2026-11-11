@@ -4,6 +4,7 @@
 
 use miden::standards::auth::signature
 use miden::standards::fee
+use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 
@@ -21,7 +22,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_poseidon2
+#! - 2 => falcon512_eidos
 #!
 #! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
 #! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
@@ -72,10 +73,14 @@ pub proc auth_tx(auth_args: word)
     swap movdn.5
     # => [num_extra_cycles, CONVERSION_INFO, scheme_id, pad(12)]
 
-    exec.tx::get_reference_block_number movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, scheme_id, pad(12)]
+    # the fee note's serial number is derived from the reference block and the initial nonce
+    exec.active_account::get_nonce movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, initial_nonce, scheme_id, pad(12)]
 
-    exec.fee::pay_fee drop
+    exec.tx::get_reference_block_number movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, initial_nonce, scheme_id, pad(12)]
+
+    exec.fee::pay_fee drop drop
     # => [scheme_id, pad(12)]
 
     # Fetch public key commitment from storage.

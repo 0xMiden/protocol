@@ -115,7 +115,7 @@ chains. A `GER_INJECTOR` role holder observes L1 GER updates and creates [`UPDAT
 on Miden. The bridge consumes these notes:
 
 1. Asserts that the note sender holds the `GER_INJECTOR` role.
-2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
+2. Computes `KEY = eidos::hash_double_word(GER_LOWER, GER_UPPER)`.
 3. Stores `KEY -> [1, 0, 0, 0]` in the `ger_map`, marking the GER as known.
 4. Reverts if the GER was already present in the map (duplicate insertions are rejected).
 
@@ -135,7 +135,7 @@ A separate `GER_REMOVER` role can revoke a previously-registered GER by sending 
 1. Asserts that the note sender holds the `GER_REMOVER`
    role (a role distinct from the `GER_INJECTOR` role so that insertion and revocation
    authority can be split).
-2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
+2. Computes `KEY = eidos::hash_double_word(GER_LOWER, GER_UPPER)`.
 3. Asserts that `ger_map[KEY] == [1, 0, 0, 0]`, i.e. that the GER is currently known.
 4. Overwrites `ger_map[KEY]` with `[0, 0, 0, 0]`, the Miden equivalent of Solidity's
    `delete globalExitRootMap[ger]`. After this, any CLAIM note referencing the removed
@@ -361,7 +361,7 @@ role, then registers the faucet across three storage maps:
    faucet-ID-keyed sub-keys: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [addr0, addr1, addr2, addr3]`
    and `[1, 0, faucet_id_suffix, faucet_id_prefix] -> [addr4, origin_network, scale, 0]`.
 3. Hashes `origin_token_addr` (5 felts) together with `origin_network` (1 felt, byte-swapped
-   to match the leaf-side representation) using `Poseidon2::hash_elements` and writes
+   to match the leaf-side representation) using `Eidos::hash_elements` and writes
    `hash(origin_token_addr, origin_network) -> [0, 0, faucet_id_suffix, faucet_id_prefix]`
    into the `token_registry_map` map slot. The `(origin_network, origin_token_address)`
    pair is the canonical asset identity (matching the Solidity `tokenInfoHash`); keying on
@@ -409,7 +409,7 @@ role holder should warn users with notes in flight. As defense-in-depth, `claim`
 
 Asserts that the note sender holds the `GER_INJECTOR`
 role, then computes
-`KEY = poseidon2::merge(GER_LOWER, GER_UPPER)` and stores
+`KEY = eidos::hash_double_word(GER_LOWER, GER_UPPER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
 Duplicate insertions (same GER value) are explicitly rejected: if the key already exists
 in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
@@ -440,7 +440,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 4. Updates the claimed global index (CGI) chain hash:
    `NEW_CGI = Keccak256(OLD_CGI, Keccak256(GLOBAL_INDEX, LEAF_VALUE))`.
 5. Computes and checks the claim nullifier
-   `Poseidon2::hash_elements(leaf_index, source_bridge_network)` to prevent
+   `Eidos::hash_elements(leaf_index, source_bridge_network)` to prevent
    double-claiming. For mainnet deposits, `source_bridge_network = 0`. For rollup
    deposits, `source_bridge_network = rollup_index + 1`.
 6. Looks up the faucet account ID from the `(origin_token_address, origin_network)` pair via
@@ -460,15 +460,15 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
 |-----------|-----------|-------------|----------------|---------|
-| `agglayer::bridge::ger_map` | Map | `poseidon2::merge(GER_LOWER, GER_UPPER)` | `[1, 0, 0, 0]` if known | Known Global Exit Root set |
+| `agglayer::bridge::ger_map` | Map | `eidos::hash_double_word(GER_LOWER, GER_UPPER)` | `[1, 0, 0, 0]` if known | Known Global Exit Root set |
 | `agglayer::bridge::let_frontier` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). | Local Exit Tree |
 | `agglayer::bridge::let_root_lo` | Value | -- | Lower word of the LET root | LET root low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::let_root_hi` | Value | -- | Upper word of the LET root | LET root high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
 | `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, is_native, 0, 0]` if registered | Registered faucet lookup; `is_native` selects burn/mint vs. lock/unlock |
 | `agglayer::bridge::faucet_metadata_map` | Map | `[sub_key, 0, faucet_id_suffix, faucet_id_prefix]` (sub_key 0..3) | sub 0: `[addr0, addr1, addr2, addr3]`; sub 1: `[addr4, origin_network, scale, 0]`; sub 2: `METADATA_HASH_LO`; sub 3: `METADATA_HASH_HI` | Per-faucet conversion metadata (origin address, origin network, scale, metadata hash) |
-| `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5] \|\| origin_network)` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | (Origin token address, origin network) to faucet ID lookup |
-| `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
+| `agglayer::bridge::token_registry_map` | Map | `Eidos::hash_elements(origin_token_addr[5] \|\| origin_network)` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | (Origin token address, origin network) to faucet ID lookup |
+| `agglayer::bridge::claim_nullifiers` | Map | `Eidos::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
 | `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_lo` | Value | -- | Lower word of the removed-GER hash chain | Removed-GER hash chain low word (Keccak-256 lower 16 bytes) |
@@ -606,7 +606,7 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `b2agg.masm` |
 | `storage` | 6 felts -- see layout below |
 
@@ -665,7 +665,7 @@ token registry, and creates a MINT note targeting the faucet.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `claim.masm` |
 | `storage` | 569 felts -- see layout below |
 
@@ -696,7 +696,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 1. Script asserts consuming account matches the target bridge via `NetworkAccountTarget`
    attachment.
 2. All 569 felts are loaded into memory.
-3. Proof data and leaf data regions are hashed with Poseidon2 and inserted into the
+3. Proof data and leaf data regions are hashed with Eidos and inserted into the
    advice map as two keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
 4. The `miden_claim_amount` is read from memory.
 5. `bridge_in::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
@@ -734,7 +734,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `config_agg_bridge.masm` |
 | `storage` | 18 felts -- see layout below |
 
@@ -788,7 +788,7 @@ the 16-element MASM stack cannot hold all 18 registration felts at once.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `deregister_agg_faucet.masm` |
 | `storage` | 2 felts -- the faucet id |
 
@@ -843,7 +843,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `update_ger.masm` |
 | `storage` | 8 felts -- see layout below |
 
@@ -857,7 +857,7 @@ CLAIM notes can be verified against it.
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::update_ger` (which asserts that the
 sender holds the `GER_INJECTOR` role), which computes
-`poseidon2::merge(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
+`eidos::hash_double_word(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
 
 #### Permissions
 
@@ -891,7 +891,7 @@ removed-GER keccak256 hash chain.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `remove_ger.masm` |
 | `storage` | 8 felts -- see layout below |
 
@@ -905,7 +905,7 @@ removed-GER keccak256 hash chain.
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::remove_ger` (which asserts that the
 sender holds the `GER_REMOVER` role), which computes
-`poseidon2::merge(GER_LOWER, GER_UPPER)`, asserts the GER map entry equals `[1, 0, 0, 0]`
+`eidos::hash_double_word(GER_LOWER, GER_UPPER)`, asserts the GER map entry equals `[1, 0, 0, 0]`
 while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain as
 `keccak256(prev_chain || GER)` (see [Section 2.3](#23-ger-injection)).
 
@@ -943,7 +943,7 @@ note (`RbacConfigNote` in Rust), not a bridge-specific script.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Random (`rng.draw_word()`) |
+| `serial_num` | Random (`rng.random::<Word>()`) |
 | `script` | `rbac_config.masm` (miden-standards) |
 | `storage` | 2-4 felts, selector-dispatched -- see layout below |
 
@@ -990,7 +990,7 @@ procedure. Authorization is enforced by those procedures against the note sender
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Derived as `poseidon2::merge(B2AGG_SERIAL_NUM, ASSET_ID)` |
+| `serial_num` | Derived as `eidos::hash_double_word([num_leaves, 0, 0, 0], eidos::hash_double_word(B2AGG_SERIAL_NUM, ASSET_ID))`, where `num_leaves` is the post-append Local Exit Tree leaf count |
 | `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
 | `storage` | Asset to burn (8 felts) |
 
@@ -1039,7 +1039,7 @@ deliver minted assets to the recipient.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Derived deterministically from `PROOF_DATA_KEY` (Poseidon2 hash of the CLAIM proof data) |
+| `serial_num` | Derived deterministically from `PROOF_DATA_KEY` (Eidos hash of the CLAIM proof data) |
 | `script` | Standard P2ID script (`miden::standards::notes::p2id::main`) |
 | `storage` | 2 felts -- see layout below |
 
@@ -1087,7 +1087,7 @@ to mint and distribute assets to the recipient.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Derived from `PROOF_DATA_KEY` (Poseidon2 hash of the CLAIM proof data) |
+| `serial_num` | Derived from `PROOF_DATA_KEY` (Eidos hash of the CLAIM proof data) |
 | `script` | Standard MINT script (`miden::standards::notes::mint::main`) |
 | `storage` | 22 felts -- see layout below |
 
@@ -1414,7 +1414,7 @@ consumption:
   to a registration value `[1, is_native, 0, 0]`. Used during bridge-out to verify an
   asset's faucet is authorized (`bridge_config::assert_faucet_registered`) and, via the
   `is_native` flag, to branch between burn/lock on bridge-out and mint/unlock on bridge-in.
-- **Token registry** (`agglayer::bridge::token_registry_map`): maps Poseidon2 hashes of
+- **Token registry** (`agglayer::bridge::token_registry_map`): maps Eidos hashes of
   the `(origin_token_address, origin_network)` pair to faucet account IDs. Used during
   bridge-in to look up the correct faucet for a given origin asset
   (`bridge_config::lookup_faucet_by_token_address`). Keying on the pair (rather than the
@@ -1480,7 +1480,7 @@ perform the following writes:
 2. `faucet_metadata_map`: origin-address + origin-network + scale under sub-keys
    `[0, 0, fid_s, fid_p]` and `[1, 0, fid_s, fid_p]`; metadata hash (lo/hi) under
    `[2, 0, fid_s, fid_p]` and `[3, 0, fid_s, fid_p]`.
-3. `token_registry_map`: `Poseidon2(origin_token_addr, origin_network)` → `[0, 0, fid_s, fid_p]`.
+3. `token_registry_map`: `Eidos(origin_token_addr, origin_network)` → `[0, 0, fid_s, fid_p]`.
    Keying on the pair (not the address alone) matches Solidity's `tokenInfoHash` and
    prevents same-address cross-network collisions. Registration fails if this key already points
    to a different faucet.

@@ -22,7 +22,13 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{
+    OutputNote,
+    PartialBlockchain,
+    PublicTransactionLogs,
+    TransactionHeader,
+    TransactionLogError,
+};
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
 // PROPOSED BLOCK
@@ -94,6 +100,7 @@ impl ProposedBlock {
     ///
     /// - The number of batches exceeds [`MAX_BATCHES_PER_BLOCK`].
     /// - There are duplicate batches, i.e. they have the same [`BatchId`].
+    /// - A transaction appears in more than one batch.
     /// - The expiration block number of any batch is less than the block number of the currently
     ///   proposed block.
     ///
@@ -157,6 +164,8 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
+        check_duplicate_transactions(&batches)?;
+        check_public_logs(&batches)?;
 
         // Check timestamp increases monotonically.
         // --------------------------------------------------------------------------------------------
@@ -613,6 +622,24 @@ fn check_duplicate_batches(batches: &[ProvenBatch]) -> Result<(), ProposedBlockE
     }
 
     Ok(())
+}
+
+fn check_duplicate_transactions(batches: &[ProvenBatch]) -> Result<(), ProposedBlockError> {
+    let mut transaction_ids = BTreeSet::new();
+    for transaction in batches.iter().flat_map(|batch| batch.transactions().as_slice()) {
+        if !transaction_ids.insert(transaction.id()) {
+            return Err(ProposedBlockError::DuplicateTransaction(transaction.id()));
+        }
+    }
+    Ok(())
+}
+
+fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
+    PublicTransactionLogs::check_num_content_words(
+        batches
+            .iter()
+            .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),
+    )
 }
 
 fn check_timestamp_increases_monotonically(
