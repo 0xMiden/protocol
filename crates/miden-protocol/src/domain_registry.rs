@@ -82,22 +82,6 @@ miden_crypto::eidos_domain_registry! {
                 schema: "param0 = 8 Felts; param1 = param2 = 0; \
                     created procedures commitment, dependencies commitment",
             }
-            pub CODE_PATCH_CREATED_COMMITMENT_DOMAIN: CodePatchCreatedCommitmentDomain {
-                local_id: 6,
-                version: DomainVersion::numbered(1),
-                encoding: FeltSequence,
-                description: "Created code patch procedures.",
-                schema: "param0 = Felt count; param1 = param2 = 0; \
-                    procedure roots in kernel emission order; zero-pad the final block",
-            }
-            pub CODE_PATCH_DEPENDENCIES_COMMITMENT_DOMAIN: CodePatchDependenciesCommitmentDomain {
-                local_id: 7,
-                version: DomainVersion::numbered(1),
-                encoding: FeltSequence,
-                description: "Code patch dependencies.",
-                schema: "param0 = Felt count; param1 = param2 = 0; \
-                    dependency roots in kernel emission order; zero-pad the final block",
-            }
         }
     }
 }

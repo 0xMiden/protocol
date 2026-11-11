@@ -64,11 +64,10 @@ message TxAccountUpdate {
 
 // The procedures a transaction adds to the code tree and the procedures it depends on.
 //
-// The commitments are not transmitted since they are recomputed on decoding.
+// The patch containing procedures a transaction adds to the code tree and the procedures it
+// depends on.
 message CodePatch {
-  repeated primitives.Word created_procedures = 1;
-  repeated primitives.Word dependencies = 2;
-  primitives.MastForest mast = 3;
+  primitives.MastForest mast = 1;
 }
 
 message ProvenTransaction {
