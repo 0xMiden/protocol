@@ -59,8 +59,8 @@ impl TransactionInputs {
     /// Returns a builder for [`TransactionInputs`].
     ///
     /// Required setters: `account`, `block_header`, `protocol_config`, `blockchain` and
-    /// `input_notes`. The other fields default to empty values. The code tree defaults to a
-    /// partial code tree with the code tree root of the block header that tracks no procedures.
+    /// `input_notes`. The code tree defaults to a partial code tree with the code tree root of the
+    /// block header that tracks no procedures. The other fields default to empty values.
     ///
     /// # Errors
     ///
