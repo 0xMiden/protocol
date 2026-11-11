@@ -283,7 +283,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
 
 #[tokio::test]
 async fn lazy_data_store_requests_are_bounded() -> anyhow::Result<()> {
-    let map_keys = (0..=MAX_DATA_STORE_REQUESTS_PER_TX)
+    let storage_request_count = MAX_DATA_STORE_REQUESTS_PER_TX - 1;
+    let map_keys = (0..storage_request_count)
         .map(|index| StorageMapKey::from_array([0, 0, 0, index as u32]))
         .collect::<Vec<_>>();
     let map_entries = map_keys
@@ -292,7 +293,7 @@ async fn lazy_data_store_requests_are_bounded() -> anyhow::Result<()> {
         .map(|(index, key)| (*key, Word::from([index as u32 + 1, 0, 0, 0])))
         .collect::<Vec<_>>();
     let map_slot_name = StorageSlotName::mock(0);
-    let account = AccountBuilder::new([3; 32])
+    let account = AccountBuilder::new([5; 32])
         .account_type(AccountType::Public)
         .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_map(
@@ -300,7 +301,23 @@ async fn lazy_data_store_requests_are_bounded() -> anyhow::Result<()> {
             StorageMap::with_entries(map_entries.into_iter())?,
         )]))
         .build_existing()?;
-    let accesses = map_keys
+    let output_notes = [1_u32, 2]
+        .map(|value| {
+            NoteBuilder::new(account.id(), rand::rng())
+                .note_type(NoteType::Private)
+                .code(format!(
+                    r#"
+                    @note_script
+                    pub proc main
+                        push.{value} drop
+                    end
+                    "#
+                ))
+                .build()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+    let storage_accesses = map_keys
         .iter()
         .map(|key| {
             format!(
@@ -309,6 +326,23 @@ push.MOCK_MAP_SLOT[0..2]
 call.account::get_map_item
 dropw
 exec.sys::truncate_stack"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let note_creations = output_notes
+        .iter()
+        .map(|note| {
+            format!(
+                r#"push.{recipient}
+push.{note_type}
+push.{tag}
+call.account::create_note
+drop
+exec.sys::truncate_stack"#,
+                recipient = note.recipient().digest(),
+                note_type = NoteType::Private as u8,
+                tag = Felt::from(note.metadata().tag()),
             )
         })
         .collect::<Vec<_>>()
@@ -322,19 +356,31 @@ exec.sys::truncate_stack"#
 
         @transaction_script
         pub proc main
-            {accesses}
+            {storage_accesses}
+            {note_creations}
         end
         "#
     );
-    let builder = CodeBuilder::with_mock_packages();
-    let source_manager = builder.source_manager();
-    let tx_script = builder.compile_tx_script(code)?;
+    let code_builder = CodeBuilder::with_mock_packages();
+    let source_manager = code_builder.source_manager();
+    let tx_script = code_builder.compile_tx_script(code)?;
     let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
-    let mock_tx = mock_chain
+    let mut tx_builder = mock_chain
         .build_transaction(account)
         .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
+        .with_source_manager(source_manager);
+    for note in &output_notes {
+        let script_root = Word::from(note.script().root());
+        for (key, value) in note
+            .recipient()
+            .to_advice_map_entries()
+            .into_iter()
+            .filter(|(key, _)| *key != script_root)
+        {
+            tx_builder = tx_builder.add_advice_map_entry(key, value);
+        }
+    }
+    let mock_tx = tx_builder.build()?;
     let data_store = CountingDataStore::new(&mock_tx);
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store);
 
@@ -357,7 +403,8 @@ exec.sys::truncate_stack"#
                 })
             )
     );
-    assert_eq!(data_store.storage_map_request_count(), MAX_DATA_STORE_REQUESTS_PER_TX);
+    assert_eq!(data_store.storage_map_request_count(), storage_request_count);
+    assert_eq!(data_store.note_script_request_count(), 1);
 
     Ok(())
 }
