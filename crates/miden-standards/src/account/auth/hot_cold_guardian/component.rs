@@ -145,10 +145,10 @@ static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// Keys using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature at
 /// proving time and therefore do not get public-key privacy; those using
-/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`] for details.
+/// [`Falcon512Eidos`][falcon] do. See [`Approver`] for details.
 ///
 /// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
-/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
+/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Eidos
 #[derive(Debug)]
 pub struct AuthHotColdGuardian {
     config: AuthHotColdGuardianConfig,

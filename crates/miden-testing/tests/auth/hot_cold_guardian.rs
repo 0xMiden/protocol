@@ -326,7 +326,7 @@ fn policy_word(account: &Account, proc_root: AccountProcedureRoot) -> anyhow::Re
 /// less: a single category alone, or hot and cold without the guardian, is rejected.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[tokio::test]
 async fn test_hot_cold_guardian_transfer_paths(
     #[case] auth_scheme: AuthScheme,
@@ -637,7 +637,7 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
 /// estimates when the auth args carry none.
 #[tokio::test]
 async fn test_hot_cold_guardian_pays_fee_note() -> anyhow::Result<()> {
-    let auth_scheme = AuthScheme::Falcon512Poseidon2;
+    let auth_scheme = AuthScheme::Falcon512Eidos;
     let mut rng = ChaCha20Rng::from_seed(rand::random());
     let hot: Vec<_> = (0..2).map(|_| Signer::new(auth_scheme, &mut rng)).collect();
     let cold = Signer::new(auth_scheme, &mut rng);
