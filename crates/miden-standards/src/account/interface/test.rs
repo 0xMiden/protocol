@@ -11,10 +11,14 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUT
 use crate::account::auth::{
     Approver,
     ApproverSet,
+    AuthHotColdGuardian,
+    AuthHotColdGuardianConfig,
     AuthMultisig,
     AuthMultisigConfig,
     AuthSingleSig,
     AuthTxFeeCollector,
+    GuardianConfig,
+    HotColdDelayConfig,
     NoAuth,
 };
 use crate::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
@@ -221,6 +225,33 @@ fn test_account_interface_identifies_tx_fee_collector_auth() {
         interface.auth_component(),
         AccountComponentInterface::AuthTxFeeCollector
     ));
+}
+
+#[test]
+fn test_account_interface_identifies_hot_cold_guardian_auth() {
+    let approver = || Approver::from(&AuthSecretKey::new_ecdsa_k256_keccak().public_key());
+    let config = AuthHotColdGuardianConfig::new(
+        vec![approver(), approver()],
+        approver(),
+        GuardianConfig::new(approver()),
+        HotColdDelayConfig::default(),
+    )
+    .expect("hot/cold/guardian config should be valid");
+
+    let mock_seed = Word::from([8, 9, 10, 11u32]).as_bytes();
+    let account = AccountBuilder::new(mock_seed)
+        .with_component(AuthHotColdGuardian::new(config))
+        .with_component(BasicWallet)
+        .build_existing()
+        .expect("failed to create hot/cold/guardian account");
+
+    let interface = AccountInterface::from_account(&account);
+
+    assert!(matches!(
+        interface.auth_component(),
+        AccountComponentInterface::AuthHotColdGuardian
+    ));
+    assert!(interface.components().contains(&AccountComponentInterface::BasicWallet));
 }
 
 #[test]

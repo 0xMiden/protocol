@@ -45,6 +45,12 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the
     /// [`AuthGuardedMultisig`][crate::account::auth::AuthGuardedMultisig] module.
     AuthGuardedMultisig,
+    /// Exposes procedures from the
+    /// [`AuthHotColdGuardian`][crate::account::auth::AuthHotColdGuardian] module.
+    ///
+    /// This authentication scheme has three key categories: hot keys that together count once,
+    /// a cold key and a guardian that co-signs every transaction.
+    AuthHotColdGuardian,
     /// Exposes procedures from the [`NoAuth`][crate::account::auth::NoAuth] module.
     ///
     /// This authentication scheme provides no cryptographic authentication and only increments
@@ -96,6 +102,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthMultisigSmart => "Multisig Smart".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
+            AccountComponentInterface::AuthHotColdGuardian => "Hot Cold Guardian".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
             AccountComponentInterface::AuthTxFeeCollector => "Tx Fee Collector Auth".to_string(),
@@ -118,6 +125,7 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthMultisig
                 | AccountComponentInterface::AuthMultisigSmart
                 | AccountComponentInterface::AuthGuardedMultisig
+                | AccountComponentInterface::AuthHotColdGuardian
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
                 | AccountComponentInterface::AuthTxFeeCollector

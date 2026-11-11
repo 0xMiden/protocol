@@ -1,0 +1,915 @@
+# The MASM code of the Hot/Cold/Guardian Authentication Component.
+#
+# Three key categories authorize an account: hot keys (one per device, any one of them counts and
+# several never count more than one), a single cold key (offline, the most trusted key) and the
+# guardian key (co-signs every transaction, holds no authority of its own). Procedure policies are
+# counted in signed categories: hot contributes at most one, cold at most one.
+#
+# The hot keys are an indexed key set (see `miden::standards::auth::key_set`), the cold key a
+# single-entry key set and the guardian key a single-entry map.
+#
+# See the `AuthHotColdGuardian` Rust type's documentation for more details.
+
+use {Approver, PublicKeyCommitment, SignatureMessage, SignatureScheme} from miden::standards::auth::signature
+use {SignatureThreshold} from miden::standards::auth::multisig
+use {AccountProcedureRoot, AssetAmount, BlockNumber, Bool} from miden::protocol::types
+use miden::protocol::active_account
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
+use miden::protocol::native_account
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
+use miden::standards::auth
+use miden::standards::auth::guardian
+use miden::standards::auth::key_set
+use miden::standards::auth::multisig_smart
+use miden::standards::auth::signature
+use miden::core::word
+
+pub type HotColdPolicy = struct {
+    immediate_threshold: SignatureThreshold,
+    cold_required: Bool
+}
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage Slots
+#
+# - CONFIG_SLOT:
+#   [num_hot_keys, 0, 0, 0]
+#
+# - HOT_PUBLIC_KEYS_SLOT (map):
+#   HOT_KEY_MAP_KEY => HOT_PUBLIC_KEY
+#   where HOT_KEY_MAP_KEY = [key_index, 0, 0, 0]
+#
+# - HOT_SCHEME_IDS_SLOT (map):
+#   HOT_KEY_MAP_KEY => [scheme_id, 0, 0, 0]
+#
+# - COLD_PUBLIC_KEY_SLOT (map):
+#   [0, 0, 0, 0] => COLD_PUBLIC_KEY
+#
+# - COLD_SCHEME_ID_SLOT (map):
+#   [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
+#
+# - PROCEDURE_POLICIES_SLOT (map):
+#   PROC_ROOT => [immediate_threshold, delayed_threshold, cold_required, 0]
+#   where delayed_threshold is reserved for the delayed path and stays 0
+#
+# - DELAY_CONFIG_SLOT:
+#   [min_delay, propose_expiration_delta, cancel_threshold, 0]
+#
+# The guardian key lives in the guardian module's slots and the executed-transactions set in the
+# multisig module's slot.
+
+# The number of hot keys: [num_hot_keys, 0, 0, 0].
+pub const CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::config")
+
+# Map entries: [key_index, 0, 0, 0] => HOT_PUBLIC_KEY
+pub const HOT_PUBLIC_KEYS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_public_keys")
+
+# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
+pub const HOT_SCHEME_IDS_SLOT = word("miden::standards::auth::hot_cold_guardian::hot_scheme_ids")
+
+# Single-entry map: [0, 0, 0, 0] => COLD_PUBLIC_KEY
+pub const COLD_PUBLIC_KEY_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_public_key")
+
+# Single-entry map: [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
+pub const COLD_SCHEME_ID_SLOT = word("miden::standards::auth::hot_cold_guardian::cold_scheme_id")
+
+# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, cold_required, 0]
+pub const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::hot_cold_guardian::procedure_policies")
+
+# The delay configuration used by the delayed-execution flows:
+# [min_delay, propose_expiration_delta, cancel_threshold, 0].
+pub const DELAY_CONFIG_SLOT = word("miden::standards::auth::hot_cold_guardian::delay_config")
+
+# The index of the cold key in its single-entry key set.
+const COLD_KEY_INDEX = 0
+
+# The number of keys in the cold key set.
+const NUM_COLD_KEYS = 1
+
+# The user key categories: hot and cold. Thresholds count signed categories, so no threshold can
+# exceed this value.
+pub const NUM_USER_KEY_CATEGORIES = 2
+
+# The default threshold in signed categories: any one user key category plus the guardian. It is
+# fixed, so it lives here rather than in storage.
+pub const DEFAULT_THRESHOLD = 1
+
+# The maximum number of hot keys. Together with the cold and the guardian key this stays within
+# the signer set size the multisig fee estimate is calibrated for (MAX_NUM_APPROVERS).
+pub const MAX_NUM_HOT_KEYS = 62
+
+# The shortest account delay, in blocks, assuming a 3 second block time: 24 hours, so that a cold
+# key kept elsewhere can be reached before a delayed action executes. There is no upper bound: the
+# immediate path stays available to both categories plus the guardian, so a long delay never locks
+# the account.
+const MIN_DELAY_FLOOR_BLOCKS = 28800
+
+# ERRORS
+# =================================================================================================
+
+const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
+
+const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
+
+const ERR_NUM_HOT_KEYS_NOT_U32 = "number of hot keys must be u32"
+
+const ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS = "number of hot keys must be between 1 and the maximum hot key set size"
+
+const ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32 = "number of hot keys and hot key index must be u32"
+
+const ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS = "hot key index must be less than the number of hot keys"
+
+const ERR_HOT_KEY_IS_GUARDIAN_KEY = "hot public key must not equal the guardian public key"
+
+const ERR_COLD_KEY_IS_GUARDIAN_KEY = "cold public key must not equal the guardian public key"
+
+const ERR_GUARDIAN_KEY_IS_USER_KEY = "guardian public key must not equal a hot or cold public key"
+
+const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
+
+const ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "procedure threshold exceeds the number of user key categories"
+
+const ERR_COLD_REQUIRED_NOT_BOOL = "cold required must be 0 or 1"
+
+const ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY = "cold required applies only to a single-category immediate threshold"
+
+const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
+
+const ERR_MIN_DELAY_BELOW_FLOOR = "min_delay is below the minimum delay"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+
+const ERR_CANCEL_THRESHOLD_NOT_U32 = "cancel_threshold must be u32"
+
+const ERR_CANCEL_THRESHOLD_ZERO = "cancel_threshold must be non-zero"
+
+const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES = "cancel_threshold exceeds the number of user key categories"
+
+# LOCAL ADDRESSES (set_procedure_policy)
+# =================================================================================================
+
+const IMMEDIATE_THRESHOLD_LOC = 0
+const COLD_REQUIRED_LOC = 1
+
+# LOCAL ADDRESSES (auth_tx)
+# =================================================================================================
+
+const AUTH_TX_IMMEDIATE_THRESHOLD_LOC = 0
+const AUTH_TX_COLD_REQUIRED_LOC = 1
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Replaces the hot key set.
+#!
+#! The keys are read from the advice provider without an inline hash check: every value written
+#! below via set_item and set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which is part of
+#! the TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration produces a
+#! summary the current signers never signed.
+#!
+#! Inputs:
+#!   Operand stack: [HOT_KEYS_CONFIG_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     HOT_KEYS_CONFIG_COMMITMENT =>
+#!     [ HOT_CONFIG, PUB_KEY_N, SCHEME_ID_N, PUB_KEY_N-1, SCHEME_ID_N-1, ..., PUB_KEY_0, SCHEME_ID_0 ]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - HOT_CONFIG is the word [num_hot_keys, 0, 0, 0].
+#! - PUB_KEY_i is the public key commitment of the i-th hot key.
+#! - SCHEME_ID_i is the word [scheme_id, 0, 0, 0] of the i-th hot key.
+#!
+#! Panics if:
+#! - num_hot_keys is not a u32 value, zero or greater than MAX_NUM_HOT_KEYS.
+#! - any scheme id word is malformed or carries an unsupported scheme.
+#! - a hot key equals the guardian key.
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_hot_keys(hot_keys_config_commitment: word)
+    adv.push_mapval
+    # => [HOT_KEYS_CONFIG_COMMITMENT, pad(12)]
+
+    adv_loadw
+    # => [HOT_CONFIG, pad(12)]
+
+    dup exec.assert_num_hot_keys_in_bounds
+    # => [HOT_CONFIG, pad(12)]
+
+    # keep the new number of hot keys for the key set update below
+    dup movdn.4
+    # => [HOT_CONFIG, new_num_hot_keys, pad(12)]
+
+    push.CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, HOT_CONFIG, new_num_hot_keys, pad(12)]
+
+    exec.native_account::set_item
+    # => [OLD_CONFIG, new_num_hot_keys, pad(12)]
+
+    # the replaced config carries the initial number of hot keys
+    movdn.3 drop drop drop
+    # => [init_num_hot_keys, new_num_hot_keys, pad(12)]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_hot_keys, new_num_hot_keys, pad(12)]
+
+    exec.key_set::replace_from_advice
+    # => [pad(12)]
+
+    # the guardian must stay independent of the user keys, read from the current state so the keys
+    # just written are the ones validated
+    exec.guardian::get_guardian_public_key exec.contains_hot_key
+    # => [is_hot_key, pad(12)]
+
+    assertz.err=ERR_HOT_KEY_IS_GUARDIAN_KEY
+    # => [pad(12)]
+end
+
+#! Replaces the cold key.
+#!
+#! Inputs:  [new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
+#! Outputs: [pad(11)]
+#!
+#! Where:
+#! - new_cold_scheme_id is the signature scheme id of the new cold key.
+#! - NEW_COLD_PUBLIC_KEY is the public key commitment of the new cold key.
+#!
+#! Panics if:
+#! - new_cold_scheme_id is not a supported scheme.
+#! - NEW_COLD_PUBLIC_KEY equals the guardian key.
+#!
+#! Invocation: call
+@account_procedure
+pub proc rotate_cold_key(new_cold_scheme_id: SignatureScheme, new_cold_public_key: PublicKeyCommitment)
+    movdn.4
+    # => [NEW_COLD_PUBLIC_KEY, new_cold_scheme_id, pad(11)]
+
+    # the guardian must stay independent of the user keys, read from the current state so a key
+    # change made earlier in this transaction is covered
+    dupw exec.guardian::get_guardian_public_key exec.word::eq
+    # => [is_guardian_key, NEW_COLD_PUBLIC_KEY, new_cold_scheme_id, pad(11)]
+
+    assertz.err=ERR_COLD_KEY_IS_GUARDIAN_KEY
+    # => [NEW_COLD_PUBLIC_KEY, new_cold_scheme_id, pad(11)]
+
+    movup.4 push.COLD_KEY_INDEX
+    # => [cold_key_index, new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2] push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, cold_key_index, new_cold_scheme_id, NEW_COLD_PUBLIC_KEY, pad(11)]
+
+    exec.key_set::set_key_at
+    # => [pad(11)]
+end
+
+#! Replaces the guardian key.
+#!
+#! The guardian must stay independent of the user keys, otherwise one key would satisfy a user
+#! category and the guardian at once. The new key is checked against the cold and the hot keys and
+#! then written by `guardian::update_guardian_public_key`.
+#!
+#! Inputs:  [new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY, pad(11)]
+#! Outputs: [pad(11)]
+#!
+#! Where:
+#! - new_guardian_scheme_id is the signature scheme id of the new guardian key.
+#! - NEW_GUARDIAN_PUBLIC_KEY is the public key commitment of the new guardian key.
+#!
+#! Panics if:
+#! - new_guardian_scheme_id is not a supported scheme.
+#! - NEW_GUARDIAN_PUBLIC_KEY equals the cold key or one of the hot keys.
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_guardian_public_key(
+    new_guardian_scheme_id: SignatureScheme,
+    new_guardian_public_key: PublicKeyCommitment
+)
+    movdn.4
+    # => [NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    # read the current state so a key change made earlier in this transaction is covered
+    dupw exec.get_current_cold_public_key exec.word::eq
+    # => [is_cold_key, NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
+    # => [NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    dupw exec.contains_hot_key
+    # => [is_hot_key, NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    assertz.err=ERR_GUARDIAN_KEY_IS_USER_KEY
+    # => [NEW_GUARDIAN_PUBLIC_KEY, new_guardian_scheme_id, pad(11)]
+
+    movup.4
+    # => [new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY, pad(11)]
+
+    exec.guardian::update_guardian_public_key
+    # => [pad(11)]
+end
+
+#! Sets or clears the policy of an account procedure.
+#!
+#! Rewriting a policy weakens whatever it protects, so this procedure should carry a policy at
+#! least as strong as the strongest policy in the map.
+#!
+#! Inputs:  [immediate_threshold, cold_required, PROC_ROOT, pad(10)]
+#! Outputs: [pad(10)]
+#!
+#! Where:
+#! - immediate_threshold is the number of signed categories the procedure requires, or 0 to clear
+#!   the policy.
+#! - cold_required is 1 if the immediate path additionally requires the cold category, else 0.
+#! - PROC_ROOT is the root of the account procedure whose policy is being updated.
+#!
+#! Panics if:
+#! - immediate_threshold is not a u32 value or exceeds NUM_USER_KEY_CATEGORIES.
+#! - cold_required is neither 0 nor 1.
+#! - cold_required is set while immediate_threshold is not 1 (with both categories the cold key is
+#!   required anyway, and a cleared policy cannot require it).
+#! - PROC_ROOT is not one of the account's procedures.
+#!
+#! Locals:
+#! 0: immediate_threshold
+#! 1: cold_required
+#!
+#! Invocation: call
+@locals(2)
+@account_procedure
+pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedureRoot)
+    loc_store.IMMEDIATE_THRESHOLD_LOC
+    # => [cold_required, PROC_ROOT, pad(10)]
+
+    u32assert.err=ERR_COLD_REQUIRED_NOT_BOOL
+    # => [cold_required, PROC_ROOT, pad(10)]
+
+    dup u32lte.1 assert.err=ERR_COLD_REQUIRED_NOT_BOOL
+    # => [cold_required, PROC_ROOT, pad(10)]
+
+    loc_store.COLD_REQUIRED_LOC
+    # => [PROC_ROOT, pad(10)]
+
+    # 0 <= immediate_threshold <= NUM_USER_KEY_CATEGORIES, 0 clearing the policy
+    loc_load.IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, PROC_ROOT, pad(10)]
+
+    u32assert.err=ERR_PROC_THRESHOLD_NOT_U32
+    dup u32lte.NUM_USER_KEY_CATEGORIES assert.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+    # => [immediate_threshold, PROC_ROOT, pad(10)]
+
+    # cold required only makes sense for a single-category threshold
+    neq.1 loc_load.COLD_REQUIRED_LOC
+    # => [cold_required, is_not_single_category, PROC_ROOT, pad(10)]
+
+    and assertz.err=ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY
+    # => [PROC_ROOT, pad(10)]
+
+    dupw exec.active_account::has_procedure
+    # => [is_account_procedure, PROC_ROOT, pad(10)]
+
+    assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT, pad(10)]
+
+    # write [immediate_threshold, 0, cold_required, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]; index 1
+    # is reserved for the delayed threshold so the delayed path can be added without a storage
+    # change
+    push.0 loc_load.COLD_REQUIRED_LOC push.0 loc_load.IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, 0, cold_required, 0, PROC_ROOT, pad(10)]
+
+    swapw
+    # => [PROC_ROOT, POLICY_WORD, pad(10)]
+
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    # => [policies_slot_suffix, policies_slot_prefix, PROC_ROOT, POLICY_WORD, pad(10)]
+
+    exec.native_account::set_map_item
+    # => [OLD_POLICY_WORD, pad(10)]
+
+    dropw
+    # => [pad(10)]
+end
+
+#! Sets the delay configuration used by the delayed-execution flows.
+#!
+#! Inputs:  [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+#! Outputs: [pad(13)]
+#!
+#! Where:
+#! - min_delay is the number of blocks a proposal waits before it can execute.
+#! - propose_expiration_delta bounds how many blocks after its reference block a proposal
+#!   transaction stays includable.
+#! - cancel_threshold is the minimum number of signed categories a cancellation needs.
+#!
+#! Panics if:
+#! - min_delay is not a u32 value or below MIN_DELAY_FLOOR_BLOCKS.
+#! - propose_expiration_delta is not a u32 value, zero or above MAX_EXPIRATION_BLOCK_DELTA.
+#! - cancel_threshold is not a u32 value, zero or above NUM_USER_KEY_CATEGORIES.
+#!
+#! Invocation: call
+@account_procedure
+pub proc update_delay_config(
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    cancel_threshold: SignatureThreshold
+)
+    # min_delay >= MIN_DELAY_FLOOR_BLOCKS
+    u32assert.err=ERR_MIN_DELAY_NOT_U32
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    dup u32lt.MIN_DELAY_FLOOR_BLOCKS assertz.err=ERR_MIN_DELAY_BELOW_FLOOR
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    # 0 < propose_expiration_delta <= MAX_EXPIRATION_BLOCK_DELTA
+    swap u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
+
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
+
+    dup u32gt.MAX_EXPIRATION_BLOCK_DELTA assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    # => [propose_expiration_delta, min_delay, cancel_threshold, pad(13)]
+
+    # 0 < cancel_threshold <= NUM_USER_KEY_CATEGORIES
+    movup.2 u32assert.err=ERR_CANCEL_THRESHOLD_NOT_U32
+    # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
+
+    dup eq.0 assertz.err=ERR_CANCEL_THRESHOLD_ZERO
+    # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
+
+    dup u32gt.NUM_USER_KEY_CATEGORIES assertz.err=ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_CATEGORIES
+    # => [cancel_threshold, propose_expiration_delta, min_delay, pad(13)]
+
+    movup.2
+    # => [min_delay, cancel_threshold, propose_expiration_delta, pad(13)]
+
+    swap
+    # => [cancel_threshold, min_delay, propose_expiration_delta, pad(13)]
+
+    movdn.2
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+
+    push.0 movdn.3
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0, pad(13)]
+
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [delay_slot_suffix, delay_slot_prefix, DELAY_CONFIG, pad(13)]
+
+    exec.native_account::set_item
+    # => [OLD_DELAY_CONFIG, pad(13)]
+
+    dropw
+    # => [pad(13)]
+end
+
+#! Returns the number of hot keys from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [num_hot_keys, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_num_hot_keys() -> u8
+    exec.get_initial_num_hot_keys
+    # => [num_hot_keys, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [num_hot_keys, pad(15)]
+end
+
+#! Returns the hot key stored at `index` from the account's initial state.
+#!
+#! Inputs:  [index, pad(15)]
+#! Outputs: [PUB_KEY, scheme_id, pad(11)]
+#!
+#! Panics if:
+#! - index is not a u32 value.
+#! - index is greater than or equal to the number of hot keys.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_hot_key_at(index: u32) -> Approver
+    dup exec.get_initial_num_hot_keys
+    # => [num_hot_keys, index, index, pad(15)]
+
+    u32assert2.err=ERR_NUM_HOT_KEYS_OR_INDEX_NOT_U32
+    u32lt assert.err=ERR_HOT_KEY_INDEX_OUT_OF_BOUNDS
+    # => [index, pad(15)]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2] push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_slot_suffix, scheme_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, index, pad(15)]
+
+    exec.key_set::get_key_at
+    # => [PUB_KEY, scheme_id, pad(15)]
+
+    # truncate the stack
+    repeat.4 movup.5 drop end
+    # => [PUB_KEY, scheme_id, pad(11)]
+end
+
+#! Returns the cold key from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [PUB_KEY, scheme_id, pad(11)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_cold_key() -> Approver
+    push.COLD_KEY_INDEX
+    # => [cold_key_index, pad(16)]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2] push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, cold_key_index, pad(16)]
+
+    exec.key_set::get_key_at
+    # => [PUB_KEY, scheme_id, pad(16)]
+
+    # truncate the stack
+    repeat.5 movup.5 drop end
+    # => [PUB_KEY, scheme_id, pad(11)]
+end
+
+#! Returns the policy of PROC_ROOT from the account's initial state.
+#!
+#! Inputs:  [PROC_ROOT, pad(12)]
+#! Outputs: [immediate_threshold, cold_required, pad(14)]
+#!
+#! Where:
+#! - immediate_threshold is the number of signed categories the procedure requires, or 0 when the
+#!   procedure has no policy.
+#! - cold_required is 1 if the immediate path additionally requires the cold category, else 0.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_procedure_policy(proc_root: AccountProcedureRoot) -> HotColdPolicy
+    exec.get_initial_policy
+    # => [immediate_threshold, delayed_threshold, cold_required, pad(13)]
+
+    # the delayed path is not executed by this component
+    swap drop
+    # => [immediate_threshold, cold_required, pad(14)]
+end
+
+#! Returns the delay configuration from the account's initial state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_delay_config() -> (u32, u16, SignatureThreshold)
+    push.DELAY_CONFIG_SLOT[0..2]
+    # => [delay_slot_suffix, delay_slot_prefix, pad(16)]
+
+    exec.native_account::get_initial_item
+    # => [min_delay, propose_expiration_delta, cancel_threshold, 0, pad(16)]
+
+    movup.3 drop
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(16)]
+
+    # truncate the stack
+    repeat.3 movup.3 drop end
+    # => [min_delay, propose_expiration_delta, cancel_threshold, pad(13)]
+end
+
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Authenticates a transaction with the hot, cold and guardian key categories.
+#!
+#! The transaction summary this procedure builds has the layout documented on
+#! `miden::standards::auth::multisig::auth_tx`. The guardian signature is always required. The
+#! called procedures' policies yield the number of signed categories the transaction needs and
+#! whether the cold category must be among them; the hot and cold signatures over the summary are
+#! then verified and counted per category.
+#!
+#! Inputs:
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
+#! Outputs:
+#!   Operand stack: [TX_SUMMARY_COMMITMENT]
+#!
+#! Where:
+#! - bound_block_num, approval_expiration_block_num, max_fee and SALT are as described in
+#!   `miden::standards::auth::multisig::auth_tx`.
+#!
+#! Panics if:
+#! - a valid guardian signature is missing.
+#! - fewer categories signed than the called procedures require, or the cold category is required
+#!   and did not sign.
+#!
+#! Locals:
+#! 0: immediate_threshold
+#! 1: cold_required
+#!
+#! Invocation: exec
+@locals(2)
+pub proc auth_tx(
+    bound_block_num: BlockNumber,
+    approval_expiration_block_num: BlockNumber,
+    max_fee: AssetAmount,
+    salt: word
+) -> word
+    exec.native_account::incr_nonce drop
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
+
+    # ------ Computing transaction summary ------
+
+    exec.auth::get_tx_summary_commitment
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying the guardian signature ------
+    # The guardian co-signs every transaction; nothing is exempt in this component.
+    dupw push.0 exec.guardian::verify_signature
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Computing the requirements from the procedure policies ------
+    exec.compute_called_proc_policy
+    # => [immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
+
+    loc_store.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
+    # => [delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
+
+    # only the immediate path is executed by this component
+    drop
+    # => [cold_required, TX_SUMMARY_COMMITMENT]
+
+    loc_store.AUTH_TX_COLD_REQUIRED_LOC
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying the user signatures per category ------
+    exec.verify_category_signatures
+    # => [hot_signed, cold_signed, TX_SUMMARY_COMMITMENT]
+
+    # cold_ok = cold_signed OR NOT cold_required
+    dup.1 loc_load.AUTH_TX_COLD_REQUIRED_LOC not or
+    # => [cold_ok, hot_signed, cold_signed, TX_SUMMARY_COMMITMENT]
+
+    movdn.2 add
+    # => [num_signed_categories, cold_ok, TX_SUMMARY_COMMITMENT]
+
+    loc_load.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, num_signed_categories, cold_ok, TX_SUMMARY_COMMITMENT]
+
+    u32assert2 u32gte
+    # => [reaches_threshold, cold_ok, TX_SUMMARY_COMMITMENT]
+
+    and not
+    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        emit.AUTH_UNAUTHORIZED_EVENT
+        push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+    end
+    # => [TX_SUMMARY_COMMITMENT]
+end
+
+#! Verifies the hot and cold signatures over MSG and reports which categories signed.
+#!
+#! Hot counts once however many of its keys signed; cold counts once when its key signed. Keys are
+#! read from the initial state by `signature::verify_signatures`, so the keys present before the
+#! transaction authorize a key change.
+#!
+#! Inputs:  [MSG]
+#! Outputs: [hot_signed, cold_signed, MSG]
+#!
+#! Where:
+#! - MSG is the transaction message.
+#! - hot_signed is 1 if at least one hot key signed, else 0.
+#! - cold_signed is 1 if the cold key signed, else 0.
+#!
+#! Invocation: exec
+pub proc verify_category_signatures(msg: SignatureMessage) -> (Bool, Bool, SignatureMessage)
+    exec.get_initial_num_hot_keys
+    # => [num_hot_keys, MSG]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, MSG]
+
+    push.HOT_SCHEME_IDS_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, MSG]
+
+    exec.signature::verify_signatures
+    # => [num_hot_signatures, MSG]
+
+    neq.0 movdn.4
+    # => [MSG, hot_signed]
+
+    push.NUM_COLD_KEYS
+    # => [num_cold_keys, MSG, hot_signed]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, num_cold_keys, MSG, hot_signed]
+
+    push.COLD_SCHEME_ID_SLOT[0..2]
+    # => [cold_scheme_slot_suffix, cold_scheme_slot_prefix, cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, num_cold_keys, MSG, hot_signed]
+
+    exec.signature::verify_signatures
+    # => [num_cold_signatures, MSG, hot_signed]
+
+    neq.0 movup.5
+    # => [hot_signed, cold_signed, MSG]
+end
+
+#! Returns the number of hot keys from the account's initial state.
+#!
+#! Inputs:  []
+#! Outputs: [num_hot_keys]
+#!
+#! Invocation: exec
+pub proc get_initial_num_hot_keys() -> u8
+    push.CONFIG_SLOT[0..2]
+    exec.native_account::get_initial_item
+    # => [num_hot_keys, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [num_hot_keys]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the number of hot keys from the current account state.
+#!
+#! Inputs:  []
+#! Outputs: [num_hot_keys]
+#!
+#! Invocation: exec
+proc get_current_num_hot_keys() -> u8
+    push.CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [num_hot_keys, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [num_hot_keys]
+end
+
+#! Returns the policy word of PROC_ROOT from the account's initial state.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [immediate_threshold, delayed_threshold, cold_required]
+#!
+#! Where:
+#! - immediate_threshold and delayed_threshold are the thresholds per execution path, 0 for a
+#!   path the policy closes; both are 0 when the procedure has no policy.
+#! - cold_required is as described in `set_procedure_policy`.
+#!
+#! Invocation: exec
+proc get_initial_policy(
+    proc_root: AccountProcedureRoot
+) -> (SignatureThreshold, SignatureThreshold, Bool)
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    exec.native_account::get_initial_map_item
+    # => [immediate_threshold, delayed_threshold, cold_required, 0]
+
+    movup.3 drop
+    # => [immediate_threshold, delayed_threshold, cold_required]
+end
+
+#! Returns the cold public key from the current account state.
+#!
+#! Inputs:  []
+#! Outputs: [COLD_PUBLIC_KEY]
+#!
+#! Invocation: exec
+proc get_current_cold_public_key() -> PublicKeyCommitment
+    push.COLD_KEY_INDEX
+    # => [cold_key_index]
+
+    push.COLD_PUBLIC_KEY_SLOT[0..2]
+    # => [cold_pub_key_slot_suffix, cold_pub_key_slot_prefix, cold_key_index]
+
+    exec.key_set::get_pub_key_at
+    # => [COLD_PUBLIC_KEY]
+end
+
+#! Returns whether PUB_KEY is one of the hot keys in the current account state.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: [is_hot_key]
+#!
+#! Invocation: exec
+proc contains_hot_key(pub_key: PublicKeyCommitment) -> Bool
+    exec.get_current_num_hot_keys
+    # => [num_hot_keys, PUB_KEY]
+
+    push.HOT_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_hot_keys, PUB_KEY]
+
+    exec.key_set::contains_key
+    # => [is_hot_key]
+end
+
+#! Asserts that the number of hot keys is between 1 and MAX_NUM_HOT_KEYS.
+#!
+#! Inputs:  [num_hot_keys]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_hot_keys is not a u32 value.
+#! - num_hot_keys is zero or greater than MAX_NUM_HOT_KEYS.
+#!
+#! Invocation: exec
+proc assert_num_hot_keys_in_bounds(num_hot_keys: u32)
+    dup u32assert.err=ERR_NUM_HOT_KEYS_NOT_U32
+    # => [num_hot_keys, num_hot_keys]
+
+    eq.0 assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
+    # => [num_hot_keys]
+
+    u32gt.MAX_NUM_HOT_KEYS assertz.err=ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS
+    # => []
+end
+
+#! Computes the requirements of the called procedures.
+#!
+#! Iterates over all account procedures and, for those that were called in this transaction,
+#! accumulates the highest threshold per execution path (max) and whether any of them requires the
+#! cold category (or). A called procedure
+#! contributes its policy thresholds, UNREACHABLE_THRESHOLD for a path its policy closes, or
+#! DEFAULT_THRESHOLD on both paths when it has no policy (see
+#! `multisig_smart::compute_proc_policy_contribution`); the default contribution closes the
+#! privilege escalation where a transaction mixing a low-policy procedure with an unpolicied
+#! high-impact one could otherwise be authorized at the lower threshold. The auth procedure
+#! (index 0) is excluded.
+#!
+#! This component executes the immediate path only. The delayed threshold is computed all the
+#! same so that the stored policies keep their meaning once the delayed path is added.
+#!
+#! Inputs:  []
+#! Outputs: [immediate_threshold, delayed_threshold, cold_required]
+#!
+#! Where:
+#! - immediate_threshold and delayed_threshold are the max per path across all called non-auth
+#!   procedures, or DEFAULT_THRESHOLD when no non-auth procedure was called; a path at
+#!   UNREACHABLE_THRESHOLD is closed for this transaction.
+#! - cold_required is 1 if any called procedure requires the cold category.
+#!
+#! Invocation: exec
+proc compute_called_proc_policy() -> (SignatureThreshold, SignatureThreshold, Bool)
+    push.0 push.0 push.0 exec.active_account::get_num_procedures
+    # => [proc_index, immediate_acc=0, delayed_acc=0, cold_acc=0]
+
+    # procedure index 0 is the auth procedure and never contributes, so the loop stops before it
+    dup neq.1
+    # => [should_continue, proc_index, immediate_acc, delayed_acc, cold_acc]
+    while.true
+        sub.1
+        # => [proc_index, immediate_acc, delayed_acc, cold_acc]
+
+        dup exec.active_account::get_procedure_root
+        # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, cold_acc]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, proc_index, immediate_acc, delayed_acc, cold_acc]
+
+        if.true
+            dup exec.active_account::get_procedure_root
+            # => [PROC_ROOT, proc_index, immediate_acc, delayed_acc, cold_acc]
+
+            exec.get_initial_policy
+            # => [immediate, delayed, cold, proc_index, immediate_acc, delayed_acc, cold_acc]
+
+            # cold_acc' = cold_acc OR cold
+            movup.6 movup.3 or movdn.5
+            # => [immediate, delayed, proc_index, immediate_acc, delayed_acc, new_cold]
+
+            push.DEFAULT_THRESHOLD movdn.2
+            # => [immediate, delayed, default_threshold, proc_index, immediate_acc, delayed_acc, new_cold]
+
+            exec.multisig_smart::compute_proc_policy_contribution
+            # => [immediate_contribution, delayed_contribution, proc_index, immediate_acc, delayed_acc, new_cold]
+
+            # immediate_acc' = max(immediate_acc, immediate_contribution)
+            movup.3 u32max
+            # => [new_immediate, delayed_contribution, proc_index, delayed_acc, new_cold]
+
+            # delayed_acc' = max(delayed_acc, delayed_contribution)
+            swap movup.3 u32max
+            # => [new_delayed, new_immediate, proc_index, new_cold]
+
+            swap movup.2
+            # => [proc_index, new_immediate, new_delayed, new_cold]
+        end
+
+        dup neq.1
+        # => [should_continue, proc_index, immediate_acc, delayed_acc, cold_acc]
+    end
+
+    drop
+    # => [immediate_acc, delayed_acc, cold_acc]
+
+    # a transaction that calls no non-auth procedure costs the default threshold on either path
+    push.DEFAULT_THRESHOLD exec.multisig_smart::compute_tx_threshold
+    # => [immediate_threshold, delayed_acc, cold_acc]
+
+    swap push.DEFAULT_THRESHOLD exec.multisig_smart::compute_tx_threshold swap
+    # => [immediate_threshold, delayed_threshold, cold_acc]
+end

@@ -6,6 +6,7 @@ members = [
   "access/pausable_manager",
   "access/rbac",
   "auth/guarded_multisig",
+  "auth/hot_cold_guardian",
   "auth/multisig",
   "auth/multisig_smart",
   "auth/network_account",

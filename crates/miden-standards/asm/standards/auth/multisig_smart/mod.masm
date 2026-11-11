@@ -725,7 +725,7 @@ end
 #!     immediate or delay (i, d) -> (i,                     d)
 #!
 #! Invocation: exec
-proc compute_proc_policy_contribution(
+pub proc compute_proc_policy_contribution(
     immediate: SignatureThreshold,
     delayed: SignatureThreshold,
     default_threshold: SignatureThreshold

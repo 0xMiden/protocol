@@ -1,6 +1,6 @@
 // AUTH
 // ================================================================================================
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -15,6 +15,8 @@ use miden_standards::account::auth::{
     ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
+    AuthHotColdGuardian,
+    AuthHotColdGuardianConfig,
     AuthMultisig,
     AuthMultisigConfig,
     AuthMultisigSmart,
@@ -23,6 +25,8 @@ use miden_standards::account::auth::{
     AuthSingleSig,
     AuthTxFeeCollector,
     GuardianConfig,
+    HotColdDelayConfig,
+    HotColdPolicy,
     SponsorshipPolicy,
 };
 use miden_standards::account::fees::FeePolicyManager;
@@ -52,6 +56,16 @@ pub enum Auth {
         approver_set: ApproverSet,
         guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
+    },
+
+    /// Hot, cold and guardian key categories: any hot key counts once, the cold key counts once,
+    /// the guardian co-signs every transaction.
+    HotColdGuardian {
+        hot_keys: Vec<Approver>,
+        cold_key: Approver,
+        guardian_config: GuardianConfig,
+        delay_config: HotColdDelayConfig,
+        proc_policy_map: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
     },
 
     /// Multisig with smart per-procedure policy configuration and a delayed-execution policy
@@ -157,6 +171,25 @@ impl Auth {
                 let component = AuthGuardedMultisig::new(config)
                     .expect("guarded multisig component creation failed")
                     .into();
+
+                (vec![component], None)
+            },
+            Auth::HotColdGuardian {
+                hot_keys,
+                cold_key,
+                guardian_config,
+                delay_config,
+                proc_policy_map,
+            } => {
+                let config = AuthHotColdGuardianConfig::new(
+                    hot_keys.clone(),
+                    *cold_key,
+                    *guardian_config,
+                    *delay_config,
+                )
+                .expect("invalid hot/cold/guardian config")
+                .with_proc_policies(proc_policy_map.clone());
+                let component = AuthHotColdGuardian::new(config).into();
 
                 (vec![component], None)
             },
