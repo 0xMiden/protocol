@@ -260,6 +260,9 @@ where
 
         let code_patch = self.base_host.build_code_patch(&source)?;
         let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;
+        self.record_code_witnesses(
+            code_patch.created_procedures().chain(code_patch.dependencies()),
+        )?;
         self.code_patch = Some(code_patch);
 
         Ok(advice_mutations)
@@ -274,6 +277,7 @@ where
         procedure_root: ProcedureRoot,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         self.fetch_code_witnesses([procedure_root]).await?;
+        self.record_code_witnesses([procedure_root])?;
 
         self.base_host.on_code_patch_before_witness_verified(procedure_root)
     }
@@ -281,8 +285,9 @@ where
     /// Requests the code witnesses of the procedure roots that the host does not track yet from the
     /// data store, and adds them to the available witnesses.
     ///
-    /// The transaction inputs get all fetched witnesses, not only those that the kernel verifies,
-    /// because the prover and a re-execution need them to build the same code patch.
+    /// The host can fetch more witnesses than the kernel verifies, because it does not know which
+    /// procedures the code patch reaches before it builds the patch. Only the verified witnesses go
+    /// into the transaction inputs (see [`Self::record_code_witnesses`]).
     async fn fetch_code_witnesses(
         &mut self,
         procedure_roots: impl IntoIterator<Item = ProcedureRoot>,
@@ -308,8 +313,27 @@ where
                 source,
             })?;
 
-        self.base_host.add_code_witnesses(witnesses.iter().cloned())?;
-        self.lazy_loaded_data.code_witnesses.extend(witnesses);
+        self.base_host.add_code_witnesses(witnesses)?;
+
+        Ok(())
+    }
+
+    /// Records the code witnesses of the procedure roots that the kernel verifies, so that a
+    /// re-execution can build the same code patch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code witness of a procedure root is not available.
+    fn record_code_witnesses(
+        &mut self,
+        procedure_roots: impl IntoIterator<Item = ProcedureRoot>,
+    ) -> Result<(), TransactionKernelError> {
+        for procedure_root in procedure_roots {
+            let witness = self.base_host.code_tree().open(&procedure_root).map_err(|source| {
+                TransactionKernelError::MissingCodeWitness { procedure_root, source }
+            })?;
+            self.lazy_loaded_data.code_witnesses.insert(procedure_root, witness);
+        }
 
         Ok(())
     }
@@ -553,7 +577,7 @@ pub(crate) struct LazyLoadedData {
     storage_map_witnesses: Vec<(AccountId, StorageMapWitness)>,
 
     /// The code witnesses that the kernel verified.
-    code_witnesses: Vec<CodeWitness>,
+    code_witnesses: BTreeMap<ProcedureRoot, CodeWitness>,
 }
 
 impl LazyLoadedData {
@@ -582,7 +606,7 @@ impl LazyLoadedData {
         for (account_id, witness) in self.storage_map_witnesses {
             tx_inputs.add_storage_map_witnesses(account_id, [witness])?;
         }
-        tx_inputs.add_code_witnesses(self.code_witnesses)?;
+        tx_inputs.add_code_witnesses(self.code_witnesses.into_values())?;
 
         Ok(())
     }

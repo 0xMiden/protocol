@@ -202,9 +202,6 @@ impl LocalTransactionProver {
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
         let (account_patch, input_notes, output_notes, logs, code_patch) = host.into_parts();
-        let code_patch = code_patch.ok_or_else(|| {
-            TransactionProverError::other("transaction kernel did not load the code patch")
-        })?;
         let output_notes = RawOutputNotes::new(output_notes)
             .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
         let tx_outputs = TransactionOutputs::new(

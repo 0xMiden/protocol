@@ -83,10 +83,16 @@ where
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         TransactionLogs,
-        Option<CodePatch>,
+        CodePatch,
     ) {
         let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
-        (account_patch, input_notes, output_notes, logs, self.code_patch)
+        (
+            account_patch,
+            input_notes,
+            output_notes,
+            logs,
+            self.code_patch.expect("code patch should have been built"),
+        )
     }
 }
 

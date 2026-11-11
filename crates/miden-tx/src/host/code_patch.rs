@@ -49,10 +49,12 @@ impl CodePatchSource {
         Ok(Self { mast_forest })
     }
 
-    /// Returns the procedures whose code witnesses [`Self::build_code_patch`] needs.
+    /// Returns the procedures whose code witnesses [`Self::build_code_patch`] can need.
     ///
-    /// These are the procedure roots and the external nodes of the source. The caller must add
-    /// the top-level roots whose code is not in the source.
+    /// These are the procedure roots and the external nodes of the source. The build needs only
+    /// the witnesses of the procedures that the absent top-level roots reach, but these are not
+    /// known before the build. The caller must add the top-level roots whose code is not in the
+    /// source.
     pub(crate) fn procedure_roots(&self) -> impl Iterator<Item = ProcedureRoot> + '_ {
         let external_nodes = self
             .mast_forest
@@ -79,9 +81,8 @@ impl CodePatchSource {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the code witness of a top-level root or of a procedure in [`Self::procedure_roots`] is not
-    ///   available. The kernel verifies the witness of each top-level root, so the host must have
-    ///   it.
+    /// - the code witness of a top-level root or of a dependency is not available. The kernel
+    ///   verifies these witnesses, so the host must have them.
     /// - the code of an absent procedure is not in the source.
     /// - the patch is not a valid [`CodePatch`], e.g. because it exceeds [`CodePatch::MAX_SIZE`].
     pub(crate) fn build_code_patch(
@@ -89,15 +90,6 @@ impl CodePatchSource {
         top_level_roots: &BTreeSet<ProcedureRoot>,
         code_tree: &PartialCodeTree,
     ) -> Result<CodePatch, TransactionKernelError> {
-        // Look up the presence of each procedure of the source once, so that the extraction can
-        // decide which procedures to reference instead of copying.
-        let mut present_roots = BTreeSet::new();
-        for procedure_root in self.procedure_roots() {
-            if is_present(code_tree, procedure_root)? {
-                present_roots.insert(procedure_root.as_word());
-            }
-        }
-
         // Only absent top-level roots add code. The source must contain their code.
         let mut absent_top_level_nodes = Vec::new();
         for top_level_root in top_level_roots {
@@ -114,9 +106,16 @@ impl CodePatchSource {
         }
 
         // Copy the code that the absent top-level roots reach, and reference present procedures.
+        // The presence is looked up only for reached procedures, so that the build needs only
+        // the code witnesses that the kernel verifies. The host requests the witnesses of all
+        // procedures of the source, but the data store can leave some out. A procedure without a
+        // witness is copied, which makes it a created procedure. Its missing witness then fails
+        // the code patch advice (see `code_patch_advice`), so the patch cannot be loaded.
         let mast_forest = self
             .mast_forest
-            .extract_procedures(&absent_top_level_nodes, |digest| present_roots.contains(&digest))
+            .extract_procedures(&absent_top_level_nodes, |digest| {
+                code_tree.contains(&ProcedureRoot::from_raw(digest)).unwrap_or(false)
+            })
             .map_err(TransactionKernelError::CodePatchMastForest)?;
         let code_patch = CodePatch::new(Arc::new(mast_forest))
             .map_err(TransactionKernelError::InvalidCodePatch)?;
@@ -124,11 +123,10 @@ impl CodePatchSource {
         // The extraction keeps the external nodes of the source as dependencies. Such a node
         // references a procedure whose code the source does not contain, so the procedure must be
         // present.
-        if let Some(absent_dependency) = code_patch
-            .dependencies()
-            .find(|dependency| !present_roots.contains(&dependency.as_word()))
-        {
-            return Err(TransactionKernelError::MissingProcedureMast(absent_dependency));
+        for dependency in code_patch.dependencies() {
+            if !is_present(code_tree, dependency)? {
+                return Err(TransactionKernelError::MissingProcedureMast(dependency));
+            }
         }
 
         Ok(code_patch)
