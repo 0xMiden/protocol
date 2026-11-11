@@ -7,7 +7,7 @@ use {NOTE_MEM_SIZE, OUTPUT_NOTES_COMMITMENT_NUM_BLOCK_ELEMENTS, WORD_NUM_ELEMENT
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
 
-pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, validate_metadata, metadata_into_version}
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, validate_metadata, metadata_into_version, metadata_into_note_type, get_recipient_preimage}
     from miden::protocol_utils::note
 
 # ACTIVE NOTE PROCEDURES

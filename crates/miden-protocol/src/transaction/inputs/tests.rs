@@ -23,6 +23,8 @@ use crate::account::{
 use crate::asset::{AssetVault, FungibleAsset};
 use crate::block::BlockHeader;
 use crate::block::account_tree::AccountTree;
+use crate::block::code_tree::{CodeTree, CodeTreeRoot, PartialCodeTree};
+use crate::code::ProcedureRoot;
 use crate::crypto::merkle::smt::Smt;
 use crate::errors::TransactionInputError;
 use crate::note::NoteScript;
@@ -80,10 +82,35 @@ fn foreign_account_id() -> anyhow::Result<AccountId> {
     Ok(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2)?)
 }
 
+/// Returns a mock block header for the given partial blockchain with the given code tree root.
+fn mock_block_header(blockchain: &PartialBlockchain, code_tree_root: CodeTreeRoot) -> BlockHeader {
+    let base = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
+    BlockHeader::new(
+        base.prev_block_commitment(),
+        base.block_num(),
+        base.chain_commitment(),
+        base.account_root(),
+        base.nullifier_root(),
+        code_tree_root,
+        base.note_root(),
+        base.transactions_commitment(),
+        base.validator_config().clone(),
+        base.fee_parameters().clone(),
+        base.protocol_config_commitment(),
+        base.next_protocol_config().cloned(),
+        base.timestamp(),
+    )
+}
+
+/// Returns a code tree in which the first mock procedure root is present.
+fn mock_code_tree() -> anyhow::Result<CodeTree> {
+    Ok(CodeTree::with_entries([ProcedureRoot::mock(0)])?)
+}
+
 /// Returns transaction inputs for the native account without notes or lazy loaded data.
 fn empty_tx_inputs() -> anyhow::Result<TransactionInputs> {
     let blockchain = PartialBlockchain::default();
-    let block_header = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
+    let block_header = mock_block_header(&blockchain, mock_code_tree()?.root());
 
     Ok(TransactionInputs::builder()
         .account(PartialAccount::from(&mock_account(native_account_id()?)?))
@@ -112,7 +139,6 @@ fn account_inputs(account: &Account) -> anyhow::Result<AccountInputs> {
 fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
     let account = PartialAccount::from(&mock_account(native_account_id()?)?);
     let blockchain = PartialBlockchain::default();
-    let block_header = BlockHeader::mock(0, Some(blockchain.peaks().hash_peaks()), None, &[]);
     let protocol_config = ProtocolConfig::mock();
     let input_notes = InputNotes::new(vec![])?;
     let tx_args = TransactionArgs::from_parts(
@@ -127,6 +153,10 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
     );
     let foreign_account = account_inputs(&mock_account(foreign_account_id()?)?)?;
     let note_script = NoteScript::mock();
+    let code_tree = mock_code_tree()?;
+    let block_header = mock_block_header(&blockchain, code_tree.root());
+    let partial_code_tree =
+        PartialCodeTree::with_witnesses([code_tree.open(&ProcedureRoot::mock(0))])?;
 
     let tx_inputs = TransactionInputs::builder()
         .account(account.clone())
@@ -137,6 +167,7 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         .tx_args(tx_args.clone())
         .foreign_accounts(vec![foreign_account.clone()])
         .note_scripts(vec![note_script.clone()])
+        .code_tree(partial_code_tree.clone())
         .build()?;
 
     assert_eq!(tx_inputs.account(), &account);
@@ -150,6 +181,7 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         &BTreeMap::from([(foreign_account.id(), foreign_account)])
     );
     assert_eq!(tx_inputs.note_scripts(), &BTreeMap::from([(note_script.root(), note_script)]));
+    assert_eq!(tx_inputs.code_tree(), &partial_code_tree);
 
     Ok(())
 }
@@ -171,6 +203,56 @@ fn builder_rejects_an_inconsistent_protocol_config() -> anyhow::Result<()> {
         .build();
 
     assert_matches!(result, Err(TransactionInputError::InconsistentProtocolConfig { .. }));
+
+    Ok(())
+}
+
+#[test]
+fn builder_rejects_an_inconsistent_code_tree_root() -> anyhow::Result<()> {
+    let blockchain = PartialBlockchain::default();
+    let block_header = mock_block_header(&blockchain, mock_code_tree()?.root());
+
+    let result = TransactionInputs::builder()
+        .account(PartialAccount::from(&mock_account(native_account_id()?)?))
+        .block_header(block_header)
+        .protocol_config(ProtocolConfig::mock())
+        .blockchain(blockchain)
+        .input_notes(InputNotes::new(vec![])?)
+        .code_tree(PartialCodeTree::new(CodeTree::<Smt>::default().root()))
+        .build();
+
+    assert_matches!(result, Err(TransactionInputError::InconsistentCodeTreeRoot { .. }));
+
+    Ok(())
+}
+
+#[test]
+fn code_witnesses_are_added_to_the_code_tree() -> anyhow::Result<()> {
+    let mut tx_inputs = empty_tx_inputs()?;
+    let code_tree = mock_code_tree()?;
+    let present_procedure = ProcedureRoot::mock(0);
+    let absent_procedure = ProcedureRoot::mock(1);
+
+    tx_inputs.add_code_witnesses([
+        code_tree.open(&present_procedure),
+        code_tree.open(&absent_procedure),
+    ])?;
+
+    assert!(tx_inputs.code_tree().contains(&present_procedure)?);
+    assert!(!tx_inputs.code_tree().contains(&absent_procedure)?);
+
+    Ok(())
+}
+
+#[test]
+fn code_witnesses_are_rejected_for_other_trees() -> anyhow::Result<()> {
+    let mut tx_inputs = empty_tx_inputs()?;
+    let other_tree = CodeTree::with_entries([ProcedureRoot::mock(1)])?;
+
+    assert_matches!(
+        tx_inputs.add_code_witnesses([other_tree.open(&ProcedureRoot::mock(1))]),
+        Err(TransactionInputError::InvalidCodeWitness(_))
+    );
 
     Ok(())
 }

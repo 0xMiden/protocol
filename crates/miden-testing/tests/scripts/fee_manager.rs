@@ -113,8 +113,8 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = format!(
         r#"
+        use miden::protocol::note
         use miden::standards::fees::fee_manager
-        use miden::standards::note
 
         use {{Asset, NoteRecipient}} from miden::protocol::types
 

@@ -14,9 +14,12 @@ use miden_protocol::account::{
     StorageSlotContent,
 };
 use miden_protocol::assembly::SourceManagerSync;
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
@@ -52,10 +55,12 @@ pub struct MockTransaction {
     pub(super) expected_output_notes: Vec<Note>,
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
     pub(super) tx_inputs: TransactionInputs,
+    pub(super) code_tree: CodeTree,
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
+    pub(super) code_to_register: Vec<Arc<MastForest>>,
 }
 
 impl MockTransaction {
@@ -443,6 +448,35 @@ impl DataStore for MockTransaction {
         script_root: NoteScriptRoot,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         async move { Ok(self.note_scripts.get(&script_root).cloned()) }
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        procedure_roots: Vec<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        async move {
+            if self.code_tree.root() != code_tree_root {
+                return Err(DataStoreError::other(format!(
+                    "code tree has root {} but {code_tree_root} was requested",
+                    self.code_tree.root()
+                )));
+            }
+
+            Ok(procedure_roots
+                .iter()
+                .map(|procedure_root| self.code_tree.open(procedure_root))
+                .collect())
+        }
+    }
+
+    /// Returns all code to register of the mock transaction, because the host uses only the code
+    /// that the procedure roots reach.
+    fn get_code_to_register(
+        &self,
+        _procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        async move { Ok(self.code_to_register.clone()) }
     }
 }
 

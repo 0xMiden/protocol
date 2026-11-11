@@ -513,6 +513,11 @@ impl MockChain {
         &self.account_tree
     }
 
+    /// Returns a reference to the [`CodeTree`] of the chain.
+    pub fn code_tree(&self) -> &CodeTree {
+        &self.code_tree
+    }
+
     // BATCH APIS
     // ----------------------------------------------------------------------------------------
 

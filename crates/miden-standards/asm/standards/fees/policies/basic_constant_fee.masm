@@ -16,9 +16,9 @@ use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
 #   returned for unset keys; note scripts without a schedule entry abort fee computation.
 
 use miden::protocol::active_account
+use miden::protocol::note
 
 use miden::standards::fees::fee_manager
-use miden::standards::note
 
 
 # CONSTANTS

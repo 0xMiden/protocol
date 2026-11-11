@@ -1,6 +1,7 @@
 //! Tests that an executed transaction can be proven and re-executed from its inputs alone.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -14,9 +15,12 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageMapWitness,
 };
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetAmount, AssetId, AssetWitness, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -230,6 +234,26 @@ impl DataStore for TransactionInputsDataStore {
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let note_script = self.tx_inputs.note_scripts().get(&script_root).cloned();
         async move { Ok(note_script) }
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        _procedure_roots: Vec<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        async move {
+            Err(DataStoreError::other(format!(
+                "code witnesses of code tree {code_tree_root} were requested again"
+            )))
+        }
+    }
+
+    /// Returns no code, because the transaction inputs do not contain code to register.
+    fn get_code_to_register(
+        &self,
+        _procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        async move { Ok(Vec::new()) }
     }
 }
 

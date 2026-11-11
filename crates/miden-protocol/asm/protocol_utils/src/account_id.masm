@@ -21,6 +21,10 @@ const ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO = "account ID version must be non-z
 const ACCOUNT_VERSION_MASK_U32 = 0x0f # 0b1111
 
 # Given the least significant 32 bits of an account id's prefix, this mask defines the bit used to
+# determine the account type.
+const ACCOUNT_TYPE_MASK_U32 = 0x10 # 0b1_0000
+
+# Given the least significant 32 bits of an account id's prefix, this mask defines the bit used to
 # determine whether assets issued by the account trigger callbacks.
 const ACCOUNT_ASSET_CALLBACK_FLAG_MASK_U32 = 0x20 # 0b10_0000
 
@@ -196,6 +200,24 @@ proc id_version(account_id_prefix: felt) -> u8
     # mask out the version
     u32and.ACCOUNT_VERSION_MASK_U32
     # => [id_version]
+end
+
+#! Returns a boolean indicating whether the account is public, i.e. its state is stored on-chain.
+#!
+#! Inputs:  [account_id_prefix]
+#! Outputs: [is_public]
+#!
+#! Where:
+#! - account_id_prefix is the prefix of an account ID.
+#! - is_public is a boolean indicating whether the account is public.
+pub proc is_public(account_id_prefix: felt) -> Bool
+    # extract the lower 32 bits
+    u32split swap drop
+    # => [account_id_prefix_lo]
+
+    # mask out the account type bit and reduce it to a boolean
+    u32and.ACCOUNT_TYPE_MASK_U32 neq.0
+    # => [is_public]
 end
 
 #! Returns a boolean indicating whether assets issued by the account trigger callbacks.

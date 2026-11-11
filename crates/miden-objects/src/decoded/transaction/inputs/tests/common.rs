@@ -21,7 +21,9 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetId, AssetVault, PartialVault};
 use miden_protocol::block::account_tree::AccountTree;
+use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, PartialCodeTree};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNoteTree};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::InnerNodeInfo;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::crypto::merkle::store::MerkleStore;
@@ -146,6 +148,7 @@ pub fn dummy_signatures() -> Vec<BoundSignature> {
 fn dummy_block_header(
     blockchain: &PartialBlockchain,
     note_root: Word,
+    code_tree_root: CodeTreeRoot,
     protocol_config: &ProtocolConfig,
 ) -> BlockHeader {
     let base = BlockHeader::mock(
@@ -160,7 +163,7 @@ fn dummy_block_header(
         base.chain_commitment(),
         base.account_root(),
         base.nullifier_root(),
-        base.code_tree_root(),
+        code_tree_root,
         base.note_root(),
         base.transactions_commitment(),
         base.validator_config().clone(),
@@ -200,15 +203,33 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
     ])
     .unwrap();
 
+    let present_procedure = ProcedureRoot::mock(60);
+    let absent_procedure = ProcedureRoot::mock(61);
+    let code_tree = CodeTree::with_entries([present_procedure]).unwrap();
+    let partial_code_tree = PartialCodeTree::with_witnesses([
+        code_tree.open(&present_procedure),
+        code_tree.open(&absent_procedure),
+    ])
+    .unwrap();
+
     let protocol_config = dummy_protocol_config();
     let mut blockchain = PartialBlockchain::default();
-    let note_block_header = dummy_block_header(&blockchain, note_tree.root(), &protocol_config);
+    let note_block_header =
+        dummy_block_header(&blockchain, note_tree.root(), code_tree.root(), &protocol_config);
     blockchain.add_block(&note_block_header, true);
-    let intermediate_block_header =
-        dummy_block_header(&blockchain, BlockNoteTree::empty().root(), &protocol_config);
+    let intermediate_block_header = dummy_block_header(
+        &blockchain,
+        BlockNoteTree::empty().root(),
+        code_tree.root(),
+        &protocol_config,
+    );
     blockchain.add_block(&intermediate_block_header, false);
-    let block_header =
-        dummy_block_header(&blockchain, BlockNoteTree::empty().root(), &protocol_config);
+    let block_header = dummy_block_header(
+        &blockchain,
+        BlockNoteTree::empty().root(),
+        code_tree.root(),
+        &protocol_config,
+    );
     let tx_args = TransactionArgs::from_parts(
         None,
         dummy_word(50),
@@ -234,6 +255,7 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .foreign_accounts(foreign_accounts)
         .note_scripts(vec![NoteScript::mock()])
         .signatures(dummy_signatures())
+        .code_tree(partial_code_tree)
         .build()
         .unwrap()
 }
