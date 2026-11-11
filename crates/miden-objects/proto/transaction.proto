@@ -64,8 +64,8 @@ message TxAccountUpdate {
 
 // The procedures a transaction adds to the code tree and the procedures it depends on.
 //
-// The created procedures, dependencies and commitments are derived from the MAST forest on
-// decoding.
+// The patch containing procedures a transaction adds to the code tree and the procedures it
+// depends on.
 message CodePatch {
   primitives.MastForest mast = 1;
 }
