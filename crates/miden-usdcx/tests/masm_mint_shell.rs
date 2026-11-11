@@ -201,7 +201,7 @@ async fn unrelated_nonce_passes_replay_protection() -> Result<()> {
 // ================================================================================================
 // Executes the faucet-owned `xreserve::attestation_verify::verify_attestation` on a MockChain.
 // The proc does two things in order: check that the candidate public key is an enabled attester
-// (its Poseidon2 commitment must have a non-empty entry in the `xReserveAttesters` map), then
+// (its Eidos commitment must have a non-empty entry in the `xReserveAttesters` map), then
 // ECDSA-verify the supplied signature over keccak256 of the DepositIntent payload for that key.
 // Only a deposit Circle actually signed can pass.
 //
@@ -215,7 +215,7 @@ async fn unrelated_nonce_passes_replay_protection() -> Result<()> {
 // payload: key A and key B, with distinct commitments, so a signature by one can be offered
 // under the identity of the other.
 //
-// Every case runs the real proc — real keccak, real Poseidon2 commitment, real map read, the real
+// Every case runs the real proc — real keccak, real Eidos commitment, real map read, the real
 // core-library ECDSA verifier — and pins the exact outcome: an accepted attestation stops at the
 // supply-write boundary having written nothing; a rejected one traps with the specific error for
 // the check that failed; and an attestation with nothing staged in memory fails closed rather than

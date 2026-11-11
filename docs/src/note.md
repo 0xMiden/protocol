@@ -10,7 +10,7 @@ A `Note` is the medium through which [Accounts](account/index.md) communicate. A
 
 In Miden's hybrid UTXO and account-based model notes represent UTXO's which enable parallel transaction execution and privacy through asynchronous local `Note` production and consumption.
 
-Notes are not only a vehicle for asset transfers. They serve two distinct purposes:
+Notes serve two purposes:
 
 - **Transferring assets** between accounts.
 - **Invoking an account's public procedures**: when a note is consumed, its [script](#script) runs and calls into the target account's interface, acting on the data carried in the note's [storage](#storage). A note cannot change an account arbitrarily; it interacts only through the procedures the account exposes.
@@ -45,7 +45,7 @@ A `Note` can contain from 0 up to 16 different assets. These assets represent fu
 The code executed when the `Note` is consumed.
 :::
 
-Each `Note` has a script that defines the conditions under which it can be consumed. When accounts consume notes in transactions, `Note` scripts call the account’s interface functions. This enables all sorts of operations beyond simple asset transfers. The Miden VM’s Turing completeness allows for arbitrary logic, making `Note` scripts highly versatile. There is no limit to the amount of code a `Note` can hold.
+Each `Note` has a script that defines the conditions under which it can be consumed. When accounts consume notes in transactions, `Note` scripts call the account's interface functions. This enables all sorts of operations beyond simple asset transfers. The Miden VM's Turing completeness allows for arbitrary logic, making `Note` scripts highly versatile. There is no limit to the amount of code a `Note` can hold.
 
 ### Storage
 
@@ -94,7 +94,7 @@ Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
-- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage contains the receiver account ID. The receiver only needs to know the exact amount that was filled to derive the full note for consumption. This amount can be encoded in a public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
+- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private. The receiver knows it is a P2ID note with a serial number derived from the SWAP note's serial number and storage containing the receiver account ID. The only missing input is the exact amount filled. Encoding that amount in a public attachment lets the receiver derive the full note without a side-channel.
 
 ## Note Lifecycle
 
@@ -116,7 +116,7 @@ Accounts can create notes in a transaction. The `Note` exists if it is included 
 As with [accounts](account/index.md), notes can be stored either publicly or privately:
 
 - **Public mode:** The `Note` data is stored in the [note database](state#note-database), making it fully visible on-chain.
-- **Private mode:** Only the `Note`’s hash is stored publicly. The `Note`’s actual data remains off-chain, enhancing privacy.
+- **Private mode:** Only the `Note`'s hash is stored publicly. The `Note`'s actual data remains off-chain, enhancing privacy.
 
 ### Note validation
 
@@ -133,6 +133,8 @@ While note tags can be arbitrarily constructed from 32 bits of data, there are t
 #### Account Targets
 
 A note targeted at an account is a note that is intended or even enforced to be consumed by a specific account. One example is a P2ID note that can only be consumed by a specific account ID. The tag for such a note should make it easy for the receiver to find the note. Therefore, the tag encodes a certain number of bits of the receiver account's ID, by convention. Notably, it may not encode the full 32 bits of the target account's ID to preserve the receiver's privacy. See also the section on privacy below.
+
+The default account-target tag selects the high 14 bits of the account ID prefix. For an Eidos-generated ID, the high bit is fixed to zero, leaving 13 varying bits. A custom tag length of 32 selects at most 31 varying bits. Under pseudorandom hashing, the default therefore matches about twice as many unrelated account-targeted notes as a filter with 14 varying bits. The note script enforces who can consume the note; the tag only helps find it.
 
 #### Use Case Tags
 
@@ -155,8 +157,8 @@ To consume a `Note`, the consumer must know its data, including the note's stora
 
 Upon successful verification of the transaction:
 
-1. The Miden operator records the `Note`’s nullifier as "consumed" in the nullifier database.
-2. The `Note`’s one-time claim is thus extinguished, preventing reuse.
+1. The Miden operator records the `Note`'s nullifier as "consumed" in the nullifier database.
+2. The `Note`'s one-time claim is thus extinguished, preventing reuse.
 
 #### Note recipient restricting consumption
 
@@ -185,6 +187,8 @@ A note that is open to any consumer states so explicitly, e.g. a SWAP note is fi
 
 #### Note nullifier ensuring private consumption
 
+Nullifier synchronization uses the high 16 bits of the nullifier's last field element as a filter. Eidos fixes the high bit to zero, leaving 15 varying bits and prefixes in `0x0000..=0x7fff`. Expected bucket populations are therefore about twice those of a filter with 16 varying bits. Synchronization still matches full nullifiers after filtering.
+
 The `Note` nullifier, computed as:
 
 ```arduino
@@ -193,12 +197,12 @@ hash(SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_COMMITMENT, METADATA, AT
 
 Where:
 
-- **`SERIAL_NUM`** — the note's [serial number](#serial-number).
-- **`SCRIPT_ROOT`** — the commitment to the note's [script](#script), i.e. the script's MAST root.
-- **`STORAGE_COMMITMENT`** — a commitment to the note's [storage](#storage).
-- **`ASSET_COMMITMENT`** — a commitment to the note's [assets](#assets).
-- **`METADATA`** — the note's public [metadata](#metadata) (sender, note type, and tag).
-- **`ATTACHMENTS_COMMITMENT`** — a commitment to the note's [attachments](#attachments).
+- **`SERIAL_NUM`** is the note's [serial number](#serial-number).
+- **`SCRIPT_ROOT`** is the commitment to the note's [script](#script), i.e. the script's MAST root.
+- **`STORAGE_COMMITMENT`** is a commitment to the note's [storage](#storage).
+- **`ASSET_COMMITMENT`** is a commitment to the note's [assets](#assets).
+- **`METADATA`** is the note's public [metadata](#metadata) (sender, note type, and tag).
+- **`ATTACHMENTS_COMMITMENT`** is a commitment to the note's [attachments](#attachments).
 
 Like the note's ID, the nullifier is a commitment to the note's data, but it is computed differently so that neither can be derived from the other. The serial number is one of its inputs, and its randomness is what makes each note's nullifier unique.
 
@@ -265,9 +269,9 @@ The TX_FEE note script is the canonical way for a transaction to pay its fee to 
 - **Purpose:** Fee payment to a batch builder
 - **Storage:** Carries no storage items
 - **Note type:** Always public
-- **Assets:** Carries one or more assets of the sender's choosing - the note is unopinionated about which assets are used to pay
+- **Assets:** Carries one or more assets chosen by the sender to pay the fee
 - **Tag:** The unique `0xFEE` tag. Its 18 least significant bits are non-zero, so it can never collide with a default account-target tag (those have their 18 least significant bits set to zero)
-- **Validation:** None - unlike P2ID, there is no target account check, so any account may consume the note. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
+- **Validation:** Any account may consume the note. The fee gives the batch builder an incentive to include and consume it
 - **Requirements:** The note script does not move the assets, so the consuming account's own code must remove them from the note. Only the account context can do this, via `miden::protocol::input_note::remove_asset` or `remove_all_assets`. A transaction that leaves any of the note's assets uncollected fails the kernel's asset conservation check
 
 **Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
@@ -284,9 +288,9 @@ The FEE_SPONSORSHIP note script prepays the fee a network account charges for co
   - Reclaimer account ID (2 felts)
   - Reclaim block height (0 disables reclaim)
 - **Note type:** Always public
-- **Assets:** Exactly 1 - the fee, in the asset the target account charges in
+- **Assets:** Exactly one asset, carrying the fee charged by the target account
 - **Tag:** Routes to the target network account
-- **Validation:** If the sponsored note is among the transaction's input notes, the script does nothing, leaving the assets for the consuming account to collect. Otherwise only the reclaimer can consume the note, once the reclaim block height is reached - a zero height disables reclaim entirely
+- **Validation:** If the sponsored note is among the transaction's input notes, the script does nothing, leaving the assets for the consuming account to collect. Otherwise only the reclaimer can consume the note once the reclaim block height is reached. A zero height disables reclaim entirely
 - **Requirements:** Collection requires an account whose authentication procedure collects sponsored fees; reclaiming requires the `miden::standards::wallets::basic::receive_asset` procedure
 
 **Use case:** Paying a network account up front so it will consume a note that carries no fee of its own.

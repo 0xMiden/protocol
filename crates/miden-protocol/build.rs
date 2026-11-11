@@ -97,6 +97,13 @@ fn main() -> Result<()> {
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
     assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
 
+    // Make the shared utilities available to test assemblers as a package.
+    #[cfg(any(feature = "testing", test))]
+    {
+        let manifest_path = source_dir.join(ASM_PROTOCOL_UTILS_DIR).join(PROJECT_MANIFEST);
+        assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
+    }
+
     // compile batch kernel
     let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
     assemble_project(

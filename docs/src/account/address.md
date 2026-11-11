@@ -105,14 +105,22 @@ The note tag length routing parameter allows specifying the length of the [note 
 The encryption key routing parameter enables secure note payload encryption by allowing the receiver to provide a public encryption key in their address. When present, senders can use this key to encrypt the note payload using sealed box encryption, ensuring that only the receiver can decrypt and read the note contents.
 
 The supported **encryption schemes** are:
+
 - `X25519_XChaCha20Poly1305`: Curve25519-based key exchange with XChaCha20-Poly1305 authenticated encryption
 - `K256_XChaCha20Poly1305`: secp256k1-based key exchange with XChaCha20-Poly1305 authenticated encryption
-- `X25519_AeadPoseidon2`: Curve25519-based key exchange with Poseidon2-based authenticated encryption
-- `K256_AeadPoseidon2`: secp256k1-based key exchange with Poseidon2-based authenticated encryption
+- `X25519_AeadEidos`: Curve25519-based key exchange with Eidos-based authenticated encryption
+- `K256_AeadEidos`: secp256k1-based key exchange with Eidos-based authenticated encryption
+- `Ecgfp5_Eidos` uses EcGFp5 key agreement with Eidos authenticated encryption.
 
 The encryption key is optional in an address. If not provided, senders may use alternative encryption mechanisms or send unencrypted notes.
 
-When an encryption key is included in the address, it is encoded in bech32 format alongside other routing parameters. The encoding consists of a 1-byte variant discriminant followed by the public key bytes (32 bytes for Curve25519 keys, 33 bytes for secp256k1 keys in their compressed format).
+When an encryption key is included in the address, it is encoded in bech32 format alongside other routing parameters. The encoding consists of a 1-byte variant discriminant followed by the public key bytes (32 bytes for Curve25519 keys, 33 bytes for compressed secp256k1 keys, or 40 bytes for EcGFp5 keys). EcGFp5 uses variant 6.
+
+This fixed mainnet address uses account ID `0xfa0000000000bb010000cc000000de`, the basic wallet interface, and an absent note tag length. Its EcGFp5 public key is byte `04` followed by 39 zero bytes. The 45-byte routing payload starts with `00 fc 00 01 06 04`, followed by 39 zero bytes.
+
+```text
+mm1araqqqqqqqqtkqgqqrxqqqqqmc8u3e5c_qr7qqqgxqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0rdkjt
+```
 
 ## Encoding
 

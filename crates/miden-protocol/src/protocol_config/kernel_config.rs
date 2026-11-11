@@ -90,7 +90,7 @@ impl KernelConfig {
 
     /// Returns a commitment to this kernel configuration.
     pub fn to_commitment(&self) -> Word {
-        Hasher::merge(&[self.main_proc, self.kernel_procs_commitment()])
+        Hasher::hash_double_word(&[self.main_proc, self.kernel_procs_commitment()])
     }
 
     /// Returns the preimage of [`KernelConfig::to_commitment`] as a sequence of field elements.

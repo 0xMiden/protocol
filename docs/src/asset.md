@@ -32,14 +32,14 @@ Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). E
 
 ### Issuance
 
-Accounts that issue assets are referred to as faucets. They can issue either fungible or non-fungible assets as defined at asset creation. The faucet's code specifies the `Asset` minting conditions: i.e., how, when, and by whom these assets can be minted. Once minted, they can be transferred to other accounts using notes.
+Accounts that issue assets are referred to as faucets. They can issue either fungible or non-fungible assets as defined at asset creation. The faucet's code determines who can mint assets and under which conditions. Once minted, they can be transferred to other accounts using notes.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-issuance.png').default} style={{width: '70%'}} alt="Asset issuance"/>
 </p>
 
 :::tip
-An account can technically issue different types of assets simultaneously, for example, both a fungible and a non-fungible asset. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+An account can issue fungible and non-fungible assets simultaneously. Issuing one type per account keeps a simple 1-to-1 relationship between faucets and asset types.
 :::
 
 ### Encoding
@@ -129,6 +129,8 @@ Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USD
 
 The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes, which results in the asset value.
 
+The Eidos digest contains four 63-bit elements. The asset class uses the first two, giving 126 bits of support and a generic birthday collision-work ceiling of about `2^63` hash evaluations for assets from the same faucet. Finding any colliding pair is distinct from matching a particular existing asset class. The full asset value has 252 bits of support and a 126-bit generic collision-resistance ceiling; its 32-byte encoding does not provide 256 varying bits.
+
 - Asset ID: `[hash0, hash1, faucet_id_suffix | composition | version, faucet_id_prefix]`.
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
@@ -141,7 +143,7 @@ Examples of such assets include NFTs like a DevCon ticket.
 
 [Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 16 assets.
 
-Asset IDs are hashed before being used as keys in the underlying sparse Merkle tree. Hashing the raw key ensures a uniform leaf distribution: in particular, it prevents non-fungible assets issued by the same faucet from sharing an SMT leaf (their raw asset IDs share the fourth element - the faucet ID prefix - which the SMT uses to determine leaf membership).
+Asset IDs are hashed before being used as keys in the underlying sparse Merkle tree. This avoids placing every asset from one faucet in the same leaf, as would happen with their raw asset IDs. Eidos clears the high bit of each digest element, so hashed IDs occupy the lower `2^63` leaf positions in the depth-64 tree. Leaf-index collisions are still possible and are distinguished by retaining the full hashed keys in each leaf.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-storage.png').default} style={{width: '70%'}} alt="Asset storage"/>
@@ -210,6 +212,6 @@ This means assets with callbacks enabled can still be used even if the faucet ha
 All data structures not following the Miden asset model that can be exchanged.
 :::
 
-Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum’s ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
+Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum's ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
 
 Alternative or programmable asset models that expose FPI-callable checks follow the same expiration delta rule as native asset callbacks; see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).

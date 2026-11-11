@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
@@ -39,8 +39,8 @@ pub const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_p
 # keeps the delayed path closed for its commitment for good.
 pub const CANCELLED_UNLOCK_BLOCK = 0xFFFFFFFF
 
-# Domain of the cancel signing message.
-const CANCEL_PROPOSAL_DOMAIN = 0x028000
+# Eidos domain tag for cancellation messages: MIDEN_PROTOCOL, local ID 0x8000, version 1.
+const CANCEL_PROPOSAL_DOMAIN = 0x02800001
 
 # ERRORS
 # =================================================================================================
@@ -473,7 +473,7 @@ pub proc cancel_signing_message(tx_summary_commitment: word) -> word
     padw swapw
     # => [TX_SUMMARY_COMMITMENT, EMPTY_WORD]
 
-    push.CANCEL_PROPOSAL_DOMAIN exec.poseidon2::merge_in_domain
+    push.CANCEL_PROPOSAL_DOMAIN exec.eidos::hash_double_word_in_domain
     # => [CANCEL_MSG]
 end
 

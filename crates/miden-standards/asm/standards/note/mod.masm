@@ -4,7 +4,7 @@ use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
 # Collects note-related helper procedures that operate on input notes and are candidates for
 # eventual promotion into the protocol layer (`miden::protocol`).
 
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
 use miden::protocol::active_note
 use miden::protocol::input_note
@@ -112,7 +112,7 @@ pub proc get_recipient_preimage(recipient: NoteRecipient) -> (NoteScriptRoot, wo
     # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
 
     # re-hash the preimage and assert it reproduces RECIPIENT, keeping the preimage words
-    dupw.1 dupw.1 exec.poseidon2::merge
+    dupw.1 dupw.1 exec.eidos::hash_double_word
     # => [RECOMPUTED_RECIPIENT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
 
     movupw.3 assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
@@ -129,7 +129,7 @@ pub proc get_recipient_preimage(recipient: NoteRecipient) -> (NoteScriptRoot, wo
     swapw
     # => [SERIAL_COMMITMENT, SCRIPT_ROOT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
 
-    dupw.1 dupw.1 exec.poseidon2::merge
+    dupw.1 dupw.1 exec.eidos::hash_double_word
     # => [RECOMPUTED_SERIAL_SCRIPT_COMMITMENT, SERIAL_COMMITMENT, SCRIPT_ROOT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
 
     movupw.3 assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
