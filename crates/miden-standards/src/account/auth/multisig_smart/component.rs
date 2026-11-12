@@ -281,6 +281,19 @@ fn validate_proc_policies(
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
 ///
+/// # Fees
+///
+/// The transaction fee is paid as described for
+/// [`AuthMultisig`](crate::account::auth::AuthMultisig): after the signatures are verified, within
+/// the max fee the summary binds. A proposal for the delayed path is keyed by the target
+/// transaction's summary commitment, which includes its max fee, so the proposer fixes the max fee
+/// when it obtains the commitment (see
+/// [`MultisigAuthArgs::with_estimated_max_fee`](crate::account::auth::MultisigAuthArgs::with_estimated_max_fee))
+/// and the execution passes it back. A propose or cancel transaction pays its own fee the same way;
+/// since it verifies signatures over the proposed commitment rather than its own summary, its max
+/// fee is not covered by any signature and the fee it pays is bounded by the kernel's fee formula
+/// alone.
+///
 /// # Security
 ///
 /// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of

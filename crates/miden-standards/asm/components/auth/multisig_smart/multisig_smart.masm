@@ -2,9 +2,13 @@
 #
 # See the `AuthMultisigSmart` Rust type's documentation for more details.
 
+use miden::protocol::active_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
+use {MULTISIG_POST_FEE_CYCLES} from miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart
+use {MULTISIG_SMART_AUTH_CYCLES} from miden::standards::auth::multisig_smart
+use miden::standards::fee
 
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
 pub use {get_signer_at} from miden::standards::auth::multisig
@@ -18,7 +22,18 @@ pub use {update_spending_limits_policy} from miden::standards::auth::multisig_sm
 pub use {update_spending_oracle} from miden::standards::auth::multisig_smart::spending_limits
 pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spending_limits
 
-#! Authenticate a transaction using multisig smart-policy rules.
+#! Authenticate a transaction using multisig smart-policy rules, paying the transaction fee in the
+#! process.
+#!
+#! The fee is paid as in the multisig component (see `auth_tx_multisig`): after the signatures are
+#! verified, within the max fee the summary binds, which is estimated on every execution and used
+#! unless the auth args carry one. The estimate charges the cycles this flow spends beyond the
+#! multisig flow, see `MULTISIG_SMART_AUTH_CYCLES`.
+#! A proposal for the delayed path is keyed by the target transaction's summary commitment, which
+#! includes its max fee, so the proposer fixes the max fee when it obtains the commitment and the
+#! execution passes it back. A propose or cancel transaction pays its own fee the same way; since
+#! it verifies signatures over the proposed commitment rather than its own summary, its max fee is
+#! not covered by any signature.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -35,6 +50,7 @@ pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spendi
 #! - insufficient number of valid signatures (below threshold).
 #! - the approval expired at or before the transaction reference block, see
 #!   `multisig::assert_approval_not_expired`.
+#! - the transaction fee and the sponsored fees exceed the max fee, see `fee::pay_bounded_fee`.
 #!
 #! Invocation: call
 @auth_script
@@ -42,19 +58,74 @@ pub proc auth_tx_multisig_smart(auth_args: word)
     exec.multisig::resolve_auth_args
     # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info and the max fee
-    # are unused
-    dropw movup.2 drop
-    # => [bound_block_num, approval_expiration_block_num, SALT]
-
     # reject an expired approval before any signature is verified.
-    dup.1 exec.tx::get_reference_block_number
-    # => [reference_block_num, approval_expiration_block_num, bound_block_num, approval_expiration_block_num, SALT]
+    # ---------------------------------------------------------------------------------------------
 
-    exec.multisig::assert_approval_not_expired movdn.6
-    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    dup.5 exec.tx::get_reference_block_number
+    # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
+
+    exec.multisig::assert_approval_not_expired movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
+    # Estimate the max fee and use it unless the auth args carry one: an unsigned execution sets
+    # the estimate as the summary's max fee, and the signed execution passes it back. The estimate
+    # runs on every execution so that its foreign account reads affect the summary on both.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
+    push.MULTISIG_SMART_AUTH_CYCLES
+    # => [num_extra_cycles, num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
+    exec.multisig::estimate_max_fee
+    # => [estimated_max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
+    movup.7 dup eq.0
+    # => [is_max_fee_unset, max_fee, estimated_max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+
+    movup.2 swap cdrop
+    # => [max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+
+    movdn.6
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
+    dup.6 movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, max_fee, approval_expiration_delta]
+
+    # the fee note's serial number uses the initial nonce, read before auth_tx increments it
+    exec.active_account::get_nonce movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, initial_nonce, max_fee, approval_expiration_delta]
+
+    dup.4 movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
+
+    movdn.10 movdn.10 movdn.10 movdn.10
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
+
+    # Authenticate the transaction.
+    # ---------------------------------------------------------------------------------------------
 
     exec.multisig_smart::auth_tx
+    # => [TX_SUMMARY_COMMITMENT, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta]
+
+    # Pay the transaction fee now that the transaction is authorized, and assert it stays within
+    # the max fee the approvers signed.
+    # ---------------------------------------------------------------------------------------------
+
+    movdnw.2
+    # => [CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    push.MULTISIG_POST_FEE_CYCLES
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, initial_nonce, max_fee, approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    exec.fee::pay_bounded_fee
+    # => [approval_expiration_delta, TX_SUMMARY_COMMITMENT]
+
+    # Record the transaction for replay protection.
+    # ---------------------------------------------------------------------------------------------
+
+    movdn.4
     # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.multisig::record_and_assert_new_tx
@@ -62,6 +133,8 @@ pub proc auth_tx_multisig_smart(auth_args: word)
 
     # apply the approval expiration after tx summary extractions since the host cross-checks
     # the kernel expiration delta against the transaction summary delta
+    # ---------------------------------------------------------------------------------------------
+
     exec.multisig::apply_approval_expiration
     # => []
 end
