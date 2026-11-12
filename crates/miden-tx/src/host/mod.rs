@@ -38,7 +38,7 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry};
 use miden_processor::trace::RowIndex;
-use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
+use miden_processor::{Felt, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -644,18 +644,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn store(&self) -> &'store STORE {
         self.mast_store
     }
-}
 
-impl<'store, STORE> TransactionBaseHost<'store, STORE>
-where
-    STORE: MastForestStore,
-{
-    /// Returns the [`MastForest`] that contains the procedure with the given `procedure_root`.
-    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
-        // Search in the note MAST forest store, otherwise fall back to the user-provided store
-        match self.scripts_mast_store.get(procedure_root) {
-            Some(forest) => Some(forest),
-            None => self.mast_store.get(procedure_root),
-        }
+    /// Returns the store of the MAST forests of the transaction's scripts.
+    pub fn scripts_mast_store(&self) -> &ScriptMastForestStore {
+        &self.scripts_mast_store
     }
 }

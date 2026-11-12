@@ -5,7 +5,14 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
+use miden_processor::{
+    BaseHost,
+    FutureMaybeSend,
+    Host,
+    LoadedMastForest,
+    MastForestStore,
+    ProcessorState,
+};
 use miden_protocol::Word;
 use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, SignatureKey};
 use miden_protocol::account::{
@@ -19,6 +26,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
@@ -526,8 +534,18 @@ where
         &self,
         node_digest: &Word,
     ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
-        let mast_forest = self.base_host.get_mast_forest(node_digest);
-        async move { mast_forest }
+        let script_forest = self.base_host.scripts_mast_store().get(node_digest);
+        let procedure_root = ProcedureRoot::from_raw(*node_digest);
+
+        async move {
+            if script_forest.is_some() {
+                return script_forest;
+            }
+
+            // TODO: Propagate the error once the VM host interface allows it. For now, an error
+            // becomes a missing forest.
+            self.base_host.store().get_mast_forest(procedure_root).await.ok().flatten()
+        }
     }
 
     fn on_event(
