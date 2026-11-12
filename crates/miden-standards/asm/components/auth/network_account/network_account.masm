@@ -5,6 +5,7 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
+use {EMPTY_CODE_PATCH_COMMITMENT} from miden::protocol::tx
 use miden::core::word
 use miden::standards::assets::fungible_asset
 use miden::standards::auth::network_account
@@ -37,6 +38,8 @@ const ERR_NETWORK_ACCOUNT_FEE_ASSET_NOT_NATIVE = "sponsoring at most the collect
 const ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT = "network account transactions must have an effect before fee payment by consuming an input note, creating an output note, or changing account state"
 
 const ERR_NETWORK_ACCOUNT_SPONSORED_FEES_EXCEED_COLLECTED = "the fees moved into sponsorship notes exceed the fees collected in this transaction"
+
+const ERR_NETWORK_ACCOUNT_CODE_PATCH_NOT_EMPTY = "network account transactions after deployment must not create code"
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -74,17 +77,48 @@ proc assert_tx_has_effect()
     # => [pad(16)]
 end
 
+#! Asserts that the transaction creates no code if the account is already deployed.
+#!
+#! The host provides the code patch, so without this check a network transaction builder could
+#! make the account pay for code registration and additional witness verifications. The deployment
+#! transaction is executed locally, so it may create code.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account nonce is not zero and the code patch is not empty.
+#!
+#! Invocation: exec
+proc assert_no_code_created_after_deployment()
+    exec.active_account::get_nonce neq.0
+    # => [is_deployed]
+
+    if.true
+        exec.tx::get_code_patch_commitment
+        # => [CODE_PATCH_COMMITMENT]
+
+        push.EMPTY_CODE_PATCH_COMMITMENT
+        assert_eqw.err=ERR_NETWORK_ACCOUNT_CODE_PATCH_NOT_EMPTY
+        # => []
+    end
+    # => []
+end
+
 # AUTH PROCEDURE
 # =================================================================================================
 
 #! Authenticates a transaction against an `AuthNetworkAccount` component.
 #!
-#! Enforces three invariants:
+#! Enforces four invariants:
 #! 1. The transaction script root, if any, must be present in the tx-script allowlist (a transaction
 #!    that executed no tx script is always allowed).
 #! 2. Every consumed input note must have a script root present in the note-script allowlist.
 #! 3. Before fee collection and payment, the transaction must have consumed at least one input note,
 #!    created at least one output note, or changed the account state.
+#! 4. After deployment, the transaction must not create code (see
+#!    assert_no_code_created_after_deployment). Thus, all note scripts that the account creates
+#!    must be registered before the transaction.
 #!
 #! If these checks pass, the fees prepaid by any FEE_SPONSORSHIP input notes are collected into the
 #! account's vault (see fees::collect_sponsored_fees). This requires the account to have an active
@@ -112,6 +146,7 @@ end
 #! - the transaction script root or a consumed input note's script root is not allowlisted.
 #! - before fee collection and payment, the transaction has not consumed an input note, created an
 #!   output note, or changed the account state.
+#! - the account is already deployed and the transaction creates code.
 #! - the sponsorship setting is enabled, the transaction sponsored something and the configured fee
 #!   asset is not the native fee asset, which would make the two amounts incomparable.
 #! - the sponsorship setting is enabled and the sponsored fees exceed the collected fees.
@@ -123,6 +158,9 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     exec.network_account::assert_transaction_allowed
+    # => [pad(16)]
+
+    exec.assert_no_code_created_after_deployment
     # => [pad(16)]
 
     # ---- Reject transactions whose only account effect would be fee payment ----

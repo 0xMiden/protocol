@@ -21,6 +21,17 @@ use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFEREN
 
 pub use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 
+# CONSTANTS
+# =================================================================================================
+
+# The commitment of a code patch that creates no procedures and has no dependencies.
+pub const EMPTY_CODE_PATCH_COMMITMENT = [
+    6969954385970043427,
+    1037154479976804928,
+    9011581891632899635,
+    854418591025857978
+]
+
 #! Returns the block number of the transaction reference block.
 #!
 #! Inputs:  []

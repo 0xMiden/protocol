@@ -32,12 +32,12 @@ const TOKEN_SUPPLY: u64 = 0;
 // The fee procedure's initial nonce argument and return value also affect the auth code.
 // The metadata note's script root affects the allowlist and fee policy storage.
 const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([2615251248090846687, 858832830199264302, 7175325754399082902, 654866800020286994])";
+    "Word([626327722812875157, 3369840278245777653, 8670352285025903583, 842668119764938821])";
 const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([3861489036841236099, 2469777345274536156, 1438927009858665314, 1163463187822748392])";
+    "Word([2710068917736576689, 1582146440614395908, 732514195862575230, 3007197033766375336])";
 const GOLDEN_STORAGE_DIGEST: &str =
     "Word([8467896637998365185, 1692113781014403013, 6816891479006554398, 2726467275195901621])";
-const GOLDEN_ACCOUNT_ID: &str = "0x7588cc936328e571687f9c415125f2";
+const GOLDEN_ACCOUNT_ID: &str = "0x6b2daf73800dc5b1524da1dcf96796";
 
 /// A deterministic digest over the account's storage slots (name + serialized slot), so a
 /// storage-only drift is caught independently of the code commitment.
