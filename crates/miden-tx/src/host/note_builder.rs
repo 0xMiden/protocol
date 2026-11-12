@@ -84,6 +84,11 @@ impl OutputNoteBuilder {
         &self.metadata
     }
 
+    /// Returns the digest of the note's recipient.
+    pub fn recipient_digest(&self) -> Word {
+        self.recipient_digest
+    }
+
     /// Returns the recipient of the note, if its details are known.
     pub fn recipient(&self) -> Option<&NoteRecipient> {
         self.recipient.as_ref()

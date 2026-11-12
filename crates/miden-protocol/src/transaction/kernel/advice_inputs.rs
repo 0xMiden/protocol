@@ -71,14 +71,6 @@ impl TransactionAdviceInputs {
         inputs.add_foreign_accounts(tx_inputs.foreign_accounts().values());
         inputs.add_code_tree(tx_inputs.code_tree());
 
-        // NOTE_SCRIPT_ROOT |-> [NOTE_SCRIPT_ELEMENTS]
-        inputs.extend_map(
-            tx_inputs
-                .note_scripts()
-                .iter()
-                .map(|(root, script)| (Word::from(*root), script.to_elements())),
-        );
-
         // Recipient preimages, so that the host can build the full output notes.
         for recipient in tx_inputs.tx_args().output_note_recipients() {
             inputs.extend_map(recipient.to_advice_map_entries());

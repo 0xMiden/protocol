@@ -141,6 +141,15 @@ impl NoteScript {
         Ok(Self(script))
     }
 
+    /// Returns a new [NoteScript] containing only a reference to the script with the provided
+    /// `root`.
+    ///
+    /// Like [`Self::from_package_reference`], this creates a minimal [MastForest] with a single
+    /// external node, so the script has the same root as the referenced script.
+    pub fn from_root(root: NoteScriptRoot) -> Self {
+        Self(MastForestScript::from_root(root.as_word()))
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 

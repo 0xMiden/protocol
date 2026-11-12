@@ -35,6 +35,16 @@ impl Note {
 
         Note::new(assets, metadata, recipient)
     }
+
+    /// Returns the note with a script that is a reference to its root.
+    pub fn with_minimal_script(self) -> Note {
+        let (assets, metadata, recipient, attachments) = self.into_parts();
+        let (serial_num, script, storage) = recipient.into_parts();
+        let recipient =
+            NoteRecipient::new(serial_num, NoteScript::from_root(script.root()), storage);
+
+        Note::with_attachments(assets, metadata.into_partial_metadata(), recipient, attachments)
+    }
 }
 
 // NOTE SCRIPT

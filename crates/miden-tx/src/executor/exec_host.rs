@@ -23,13 +23,7 @@ use miden_protocol::block::code_tree::{CodePatch, CodeTreeRoot, CodeWitness, Par
 use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
-use miden_protocol::note::{
-    NoteRecipient,
-    NoteScript,
-    NoteScriptRoot,
-    NoteStorage,
-    PartialNoteMetadata,
-};
+use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{
     AccountInputs,
     InputNote,
@@ -41,7 +35,6 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
-use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
@@ -133,6 +126,7 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         code_tree_root: CodeTreeRoot,
+        expected_output_note_recipients: Vec<NoteRecipient>,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
@@ -143,6 +137,7 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             PartialCodeTree::new(code_tree_root),
+            expected_output_note_recipients,
         )?;
 
         Ok(Self {
@@ -438,81 +433,6 @@ where
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
 
-    /// Handles a request for a [`NoteScript`] during transaction execution when the script is not
-    /// already in the advice provider.
-    ///
-    /// Standard note scripts (P2ID, etc.) are resolved directly from [`StandardNote`], avoiding a
-    /// data store round-trip. Non-standard scripts are fetched from the [`DataStore`].
-    ///
-    /// The resolved script is used to build a [`NoteRecipient`], which is then used to create
-    /// an [`OutputNoteBuilder`]. This function is only called for notes where the script is not
-    /// already in the advice provider.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The note is public and the script is not found in the data store.
-    /// - Constructing the recipient with the fetched script does not match the expected recipient
-    ///   digest.
-    /// - The data store returns an error when fetching the script.
-    async fn on_note_script_requested(
-        &mut self,
-        note_idx: usize,
-        recipient_digest: Word,
-        script_root: Word,
-        metadata: PartialNoteMetadata,
-        note_storage: NoteStorage,
-        serial_num: Word,
-    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // Resolve standard note scripts directly, avoiding a data store round-trip.
-        let script_root = NoteScriptRoot::from_raw(script_root);
-        let note_script: Option<NoteScript> =
-            if let Some(standard_note) = StandardNote::from_script_root(script_root) {
-                Some(standard_note.script())
-            } else {
-                self.base_host.store().get_note_script(script_root).await.map_err(|err| {
-                    TransactionKernelError::other_with_source(
-                        "failed to retrieve note script from data store",
-                        err,
-                    )
-                })?
-            };
-
-        match note_script {
-            Some(note_script) => {
-                let script_felts = note_script.to_elements();
-                self.lazy_loaded_data.note_scripts.push(note_script.clone());
-                let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
-
-                if recipient.digest() != recipient_digest {
-                    return Err(TransactionKernelError::other(format!(
-                        "recipient digest is {recipient_digest}, but recipient constructed from raw inputs has digest {}",
-                        recipient.digest()
-                    )));
-                }
-
-                self.base_host.output_note_from_recipient(note_idx, metadata, recipient)?;
-
-                Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
-                    Word::from(script_root),
-                    script_felts,
-                )]))])
-            },
-            None if metadata.is_private() => {
-                self.base_host.output_note_from_recipient_digest(
-                    note_idx,
-                    metadata,
-                    recipient_digest,
-                )?;
-
-                Ok(Vec::new())
-            },
-            None => Err(TransactionKernelError::other(format!(
-                "note script with root {} not found in data store for public note",
-                Word::from(script_root),
-            ))),
-        }
-    }
-
     /// Consumes `self` and returns the account delta, input and output notes, logs, transaction
     /// progress, and lazy loaded data.
     #[allow(clippy::type_complexity)]
@@ -562,9 +482,6 @@ pub(crate) struct LazyLoadedData {
     /// The foreign accounts the transaction accessed.
     foreign_accounts: Vec<AccountInputs>,
 
-    /// The scripts of output notes whose script was not in the advice provider.
-    note_scripts: Vec<NoteScript>,
-
     /// The signatures the authenticator generated.
     signatures: Vec<BoundSignature>,
 
@@ -594,9 +511,6 @@ impl LazyLoadedData {
     ) -> Result<(), TransactionInputError> {
         for foreign_account in self.foreign_accounts {
             tx_inputs.add_foreign_account(foreign_account)?;
-        }
-        for note_script in self.note_scripts {
-            tx_inputs.add_note_script(note_script);
         }
         for signature in self.signatures {
             tx_inputs.add_signature(signature)?;
@@ -772,22 +686,6 @@ where
                         RecipientData::Recipient(note_recipient) => self
                             .base_host
                             .output_note_from_recipient(note_idx, metadata, note_recipient),
-                        RecipientData::ScriptMissing {
-                            recipient_digest,
-                            serial_num,
-                            script_root,
-                            note_storage,
-                        } => {
-                            self.on_note_script_requested(
-                                note_idx,
-                                recipient_digest,
-                                script_root,
-                                metadata,
-                                note_storage,
-                                serial_num,
-                            )
-                            .await
-                        },
                     }
                 },
 

@@ -360,6 +360,7 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             tx_inputs.block_header().code_tree_root(),
+            tx_inputs.tx_args().output_note_recipients().to_vec(),
             self.source_manager.clone(),
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;

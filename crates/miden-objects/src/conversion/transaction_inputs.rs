@@ -78,7 +78,6 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
             input_notes: Some(value.input_notes().into()),
             tx_args: Some(value.tx_args().into()),
             foreign_accounts: value.foreign_accounts().values().map(Into::into).collect(),
-            note_scripts: value.note_scripts().values().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
             code_tree: Some(value.code_tree().partial_smt().clone().into()),
         }

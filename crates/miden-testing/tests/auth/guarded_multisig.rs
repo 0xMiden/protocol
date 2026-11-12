@@ -702,7 +702,6 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_with_output_script)
-        .add_note_script(note_script)
         .expected_output_note(RawOutputNote::Full(output_note))
         .multisig_auth_args(MultisigAuthArgs::new(
             mock_chain.latest_block_header().block_num(),

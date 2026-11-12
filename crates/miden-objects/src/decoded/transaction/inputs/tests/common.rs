@@ -27,7 +27,7 @@ use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::InnerNodeInfo;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::crypto::merkle::store::MerkleStore;
-use miden_protocol::note::{Note, NoteInclusionProof, NoteScript};
+use miden_protocol::note::{Note, NoteInclusionProof};
 use miden_protocol::protocol_config::{
     KernelConfig,
     ProofSecurityPolicy,
@@ -253,7 +253,6 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .input_notes(input_notes)
         .tx_args(tx_args)
         .foreign_accounts(foreign_accounts)
-        .note_scripts(vec![NoteScript::mock()])
         .signatures(dummy_signatures())
         .code_tree(partial_code_tree)
         .build()
