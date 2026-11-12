@@ -4,15 +4,34 @@ use miden_core::program::proof_request_key;
 use miden_core_lib::PVM_PROOF_REQUEST_EVENT_NAME;
 use miden_processor::ProcessorState;
 use miden_processor::advice::AdviceMutation;
+use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::{AdviceInputs, EventName};
-use miden_protocol::{CoreLibrary, Word};
+use miden_protocol::{CoreLibrary, Felt, Word};
 
-use crate::TransactionKernelError;
+use crate::{PrecompileHandling, TransactionKernelError};
 
 pub(crate) static PROOF_REQUEST_EVENT_NAME: EventName = PVM_PROOF_REQUEST_EVENT_NAME;
 
 pub(crate) fn is_proof_request(process: &ProcessorState) -> bool {
     process.get_stack_item(0) == PROOF_REQUEST_EVENT_NAME.to_event_id().as_felt()
+}
+
+pub(crate) fn is_handling_request(process: &ProcessorState) -> bool {
+    process.get_stack_item(0) == TransactionEventId::EpiloguePrecompileHandling.event_id().as_felt()
+}
+
+/// Supplies the selected mode as untrusted advice. The kernel validates its encoding and applies
+/// the corresponding branch; proof acceptance remains the verifier's responsibility.
+pub(crate) fn handle_handling_request(
+    process: &ProcessorState,
+    handling: PrecompileHandling,
+) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+    if !process.ctx().is_root() {
+        return Err(TransactionKernelError::other(
+            "precompile handling requests must originate in the transaction kernel context",
+        ));
+    }
+    Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(handling as u8)])])
 }
 
 /// Supplies an untrusted PVM proof package for the root selected by the epilogue.

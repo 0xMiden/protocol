@@ -40,9 +40,9 @@ Recall that an [account's nonce](index.md#nonce) must be incremented whenever it
 The standard signature-based authentication components support two schemes:
 
 - `falcon512_eidos` verifies the signature in the VM trace.
-- `ecdsa_k256_keccak` commits to a deferred signature relation whose precompile proof the transaction epilogue verifies recursively.
+- `ecdsa_k256_keccak` commits to a deferred signature relation whose precompile proof the transaction epilogue verifies recursively by default.
 
-Both schemes give the public key and signature to the prover as witness data and bind the public key to the account's `Eidos(pk)` commitment. ECDSA transaction proofs no longer transport a separate deferred precompile witness to recipients or the batch prover. Execution and precompile proving still require that witness, and applications that outsource either step disclose the relevant inputs to that service.
+Both schemes give the public key and signature to the prover as witness data and bind the public key to the account's `Eidos(pk)` commitment. Recursively settled ECDSA transaction proofs transport no separate precompile witness. A prover configured for deferred handling includes that witness, exposing the public key and signature to recipients. Execution and precompile proving require the witness in either mode, and applications that outsource either step disclose the relevant inputs to that service.
 
 ### Procedure invocation checks
 

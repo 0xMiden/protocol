@@ -42,9 +42,10 @@ pub enum AuthScheme {
     /// ECDSA signature scheme over secp256k1 curve using Keccak to hash the messages when signing.
     ///
     /// Verification uses a deferred precompile whose proof the transaction epilogue verifies
-    /// recursively. The transaction proof carries no separate precompile witness. Execution and
-    /// precompile proving still require the public key and signature as witness data. The VM binds
-    /// the public key to the account commitment.
+    /// recursively by default. Recursively settled proofs carry no separate precompile witness;
+    /// deferred proofs carry that witness and expose the public key and signature. Execution and
+    /// precompile proving require that witness in either mode. The VM binds the public key to the
+    /// account commitment.
     EcdsaK256Keccak = ECDSA_K256_KECCAK,
 }
 

@@ -49,6 +49,9 @@ pub(crate) struct MockHost<'store> {
     /// Overrides the advised delta-commitment body block count for tests that exercise kernel
     /// validation of host advice.
     delta_commitment_body_block_count_response: Option<Felt>,
+
+    /// Overrides the precompile mode for kernel validation of untrusted host advice.
+    precompile_handling_response: Option<Felt>,
 }
 
 impl<'store> MockHost<'store> {
@@ -73,6 +76,7 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
+                &TransactionEventId::EpiloguePrecompileHandling,
             ]
             .map(TransactionEventId::event_id),
         );
@@ -83,12 +87,17 @@ impl<'store> MockHost<'store> {
             input_note_index_response: None,
             patch_commitment_body_block_count_response: None,
             delta_commitment_body_block_count_response: None,
+            precompile_handling_response: None,
         }
     }
 
     /// Overrides the input-note index response with `[note_idx, is_found]`.
     pub fn set_input_note_index_response(&mut self, response: [Felt; 2]) {
         self.input_note_index_response = Some(response);
+    }
+
+    pub fn set_precompile_handling_response(&mut self, response: Option<Felt>) {
+        self.precompile_handling_response = response;
     }
 
     /// Overrides the advised account patch/delta commitment body block counts.
@@ -158,6 +167,12 @@ impl<'store> Host for MockHost<'store> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
 
         async move {
+            if event_id == TransactionEventId::EpiloguePrecompileHandling.event_id()
+                && let Some(response) = self.precompile_handling_response
+            {
+                return Ok(vec![AdviceMutation::extend_advice_stack_with([response])]);
+            }
+
             if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
                 && let Some(response) = self.input_note_index_response
             {

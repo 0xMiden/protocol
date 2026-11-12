@@ -21,6 +21,7 @@ pub use miden_prover::Prover;
 use miden_prover::{ExecutionProof, Word};
 
 use super::TransactionProverError;
+use crate::PrecompileHandling;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
 
 mod prover_host;
@@ -34,8 +35,10 @@ pub use mast_store::TransactionMastStore;
 
 /// Local Transaction prover is a stateless component which is responsible for proving transactions.
 ///
-/// The transaction epilogue recursively verifies its precompile proof. The resulting transaction
-/// proof covers that verification and carries no outstanding precompile work.
+/// By default the transaction epilogue recursively verifies its precompile proof, and the resulting
+/// transaction proof carries no outstanding precompile work. [`PrecompileHandling::Deferred`]
+/// leaves that work in a portable witness for subsequent settlement; strict protocol transaction
+/// verification and batch admission reject such incomplete proofs.
 ///
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
@@ -44,6 +47,7 @@ pub use mast_store::TransactionMastStore;
 pub struct LocalTransactionProver {
     prover: Prover,
     execution_options: ExecutionOptions,
+    precompile_handling: PrecompileHandling,
 }
 
 impl Default for LocalTransactionProver {
@@ -60,6 +64,7 @@ impl LocalTransactionProver {
         Self {
             prover: prover.with_hash_fn(PROTOCOL_PROOF_HASH),
             execution_options: ExecutionOptions::default(),
+            precompile_handling: PrecompileHandling::default(),
         }
     }
 
@@ -72,6 +77,19 @@ impl LocalTransactionProver {
     #[must_use]
     pub fn with_execution_options(mut self, execution_options: ExecutionOptions) -> Self {
         self.execution_options = execution_options;
+        self
+    }
+
+    /// Selects how the transaction epilogue handles precompile work during proving.
+    ///
+    /// The default is [`PrecompileHandling::Recursive`], independently of the mode used for the
+    /// initial transaction execution. [`PrecompileHandling::Deferred`] produces a VM proof with
+    /// an outstanding precompile witness when work exists. That witness can disclose precompile
+    /// inputs, and the resulting proof is rejected by strict transaction verification and batch
+    /// admission until the work is settled in a recursive proving run.
+    #[must_use]
+    pub fn with_precompile_handling(mut self, precompile_handling: PrecompileHandling) -> Self {
+        self.precompile_handling = precompile_handling;
         self
     }
 
@@ -139,7 +157,7 @@ impl LocalTransactionProver {
     ///
     /// Returns an error if:
     /// - The execution of the transaction fails.
-    /// - The transaction epilogue leaves outstanding precompile work.
+    /// - Recursive handling was selected but the epilogue leaves outstanding precompile work.
     /// - The output notes of the execution are invalid.
     /// - The stack outputs of the execution do not match the outputs built from the witness and the
     ///   execution.
@@ -187,7 +205,8 @@ impl LocalTransactionProver {
             script_mast_store,
             account_procedure_index_map,
         )
-        .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
+        .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?
+        .with_precompile_handling(self.precompile_handling);
 
         let processor = FastProcessor::new_with_options(
             stack_inputs,
@@ -201,8 +220,7 @@ impl LocalTransactionProver {
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
-        let (witness, precompile_witness) = witness.into_parts();
-        if witness.has_precompiles() || precompile_witness.is_some() {
+        if self.precompile_handling == PrecompileHandling::Recursive && witness.has_precompiles() {
             return Err(TransactionProverError::TransactionProofContainsPrecompiles);
         }
 
@@ -229,7 +247,7 @@ impl LocalTransactionProver {
 
         let proof = self
             .prover
-            .prove_vm_witness(witness)
+            .prove(witness)
             .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
 
         self.build_proven_transaction(

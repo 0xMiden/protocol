@@ -34,8 +34,9 @@ impl TransactionVerifier {
     /// Verifies the provided [`ProvenTransaction`] against the transaction kernel and returns its
     /// verification outcome.
     ///
-    /// The transaction kernel recursively settles all precompile work in its epilogue, so a
-    /// successful verification always returns a complete outcome.
+    /// A successful verification requires no outstanding precompile work and always returns a
+    /// complete outcome. Proofs produced with deferred host handling must be re-executed and
+    /// proved with recursive settlement before protocol acceptance.
     ///
     /// # Errors
     /// Returns an error if:

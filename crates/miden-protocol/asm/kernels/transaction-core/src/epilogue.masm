@@ -38,6 +38,9 @@ const ERR_EPILOGUE_SECURITY_ESTIMATOR_ROOT_MISMATCH =
 const ERR_EPILOGUE_INSUFFICIENT_PRECOMPILE_PROOF_SECURITY =
     "precompile proof security is below the protocol's required minimum"
 
+const ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING =
+    "precompile handling must be 0 (deferred) or 1 (recursive)"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -46,6 +49,9 @@ const EPILOGUE_AUTH_PROC_START_EVENT = event("miden::protocol::epilogue::auth_pr
 
 # Event emitted to signal that an execution of the authentication procedure has ended.
 const EPILOGUE_AUTH_PROC_END_EVENT = event("miden::protocol::epilogue::auth_proc_end")
+
+# Requests one advice value: 0 leaves work deferred; 1 verifies and clears it recursively.
+const EPILOGUE_PRECOMPILE_HANDLING_EVENT = event("miden::protocol::epilogue::precompile_handling")
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -319,7 +325,8 @@ end
 #!   expiration block number.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
-#! - recursively verifies its precompile proof and clears the settled deferred obligation.
+#! - either leaves precompile work deferred or recursively verifies and clears it, as selected by
+#!   the host. Accepting verifiers independently enforce whether deferred work is allowed.
 #!
 #! Inputs:  []
 #! Outputs: [
@@ -452,9 +459,15 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitme
     exec.eidos::hash_double_word
     # => [ACCOUNT_UPDATE_COMMITMENT]
 
-    # All user effects have finished, including authentication. No untrusted code or precompile
-    # logging may follow settlement.
-    exec.settle_precompiles
+    # All user effects have finished, including authentication. The host chooses the proof path;
+    # the final authenticated VM root exposes whether any work remains deferred. No untrusted
+    # code or precompile logging may follow this decision.
+    emit.EPILOGUE_PRECOMPILE_HANDLING_EVENT
+    adv_push u32assert.err=ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING
+    dup u32lte.1 assert.err=ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING
+    if.true
+        exec.settle_precompiles
+    end
     # => [ACCOUNT_UPDATE_COMMITMENT]
 
     # ------ Build output stack ------

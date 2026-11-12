@@ -3,6 +3,7 @@ extern crate alloc;
 mod agglayer;
 mod auth;
 mod oracle;
+mod precompile_handling;
 mod scripts;
 mod standards;
 mod wallet;

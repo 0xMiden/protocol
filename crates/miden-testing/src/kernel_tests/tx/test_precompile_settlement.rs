@@ -3,16 +3,54 @@ use alloc::string::String;
 
 use miden_core::program::proof_request_key;
 use miden_processor::ExecutionError;
-use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_INSUFFICIENT_PRECOMPILE_PROOF_SECURITY;
+use miden_protocol::errors::tx_kernel::{
+    ERR_EPILOGUE_INSUFFICIENT_PRECOMPILE_PROOF_SECURITY,
+    ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING,
+};
 use miden_protocol::transaction::memory::MINIMUM_PROOF_SECURITY_BITS_PTR;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{CoreLibrary, Felt, Word};
 
 use super::ExecutionOutputExt;
-use crate::{Auth, MockChain};
+use crate::{Auth, MockChain, assert_execution_error};
 
 // Unused root-context memory, outside the authenticated configuration and account sections.
 const SETTLED_ROOT_PTR: u32 = 2300;
+
+/// The host's deferred response leaves the same root and witness available for later proving.
+/// Non-boolean responses must fail before any proof request or clearing.
+#[tokio::test]
+async fn epilogue_validates_precompile_handling_and_preserves_deferred_work() -> anyhow::Result<()>
+{
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let chain = builder.build()?;
+    let transaction = chain.build_transaction(account.id()).build()?;
+    let code = settlement_program(1, "exec.epilogue::finalize_transaction");
+
+    let output = transaction
+        .execute_code_with_precompile_handling_response(&code, Felt::ZERO)
+        .await?;
+    let deferred_root = output.get_kernel_mem_word(SETTLED_ROOT_PTR);
+    assert_ne!(deferred_root, Word::empty());
+    assert_eq!(output.precompile_root, deferred_root);
+    assert!(output.precompile_witness.is_some());
+    assert!(!output.advice.map().contains_key(&proof_request_key(
+        CoreLibrary::default().pvm_recursive_verifier_root(),
+        deferred_root,
+    )));
+
+    for invalid_mode in [Felt::from(2u32), Felt::new(1u64 << 32).unwrap()] {
+        assert_execution_error!(
+            transaction
+                .execute_code_with_precompile_handling_response(&code, invalid_mode)
+                .await,
+            ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING,
+        );
+    }
+
+    Ok(())
+}
 
 /// Reuse one valid PVM package to ensure rejection happens in the kernel, even when the host
 /// supplies a proof under the requested key without checking its statement or security policy.

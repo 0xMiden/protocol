@@ -27,8 +27,8 @@ Most procedures in the Miden protocol library are implemented as wrappers around
 
 The procedures maintain the same security and context restrictions as the underlying kernel procedures. When invoking these procedures, ensure that the calling context matches the requirements.
 
-Precompile settlement is performed by the transaction epilogue after scripts and authentication
-finish. Account code and scripts use the core library's precompile procedures; they do not need a
+By default, precompile settlement is performed by the transaction epilogue after scripts and authentication
+finish. Hosts can instead select deferred handling. Account code and scripts use the core library's precompile procedures; they do not need a
 separate protocol settlement call and cannot invoke the root-only `clear_deferred` instruction. See
 [precompile settlement](transaction.md#precompile-settlement) for the proof lifecycle and current fee
 estimation limitation.

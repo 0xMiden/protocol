@@ -2962,6 +2962,7 @@ dependencies = [
  "miden-standards",
  "miden-tx",
  "miden-tx-batch",
+ "miden-verifier",
  "primitive-types 0.14.0",
  "rand 0.10.3",
  "rand_chacha 0.10.0",

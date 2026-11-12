@@ -53,7 +53,7 @@ use crate::host::{
     TxSummaryOrSignature,
     precompile_proof,
 };
-use crate::{AccountProcedureIndexMap, DataStore};
+use crate::{AccountProcedureIndexMap, DataStore, PrecompileHandling};
 
 // TRANSACTION EXECUTOR HOST
 // ================================================================================================
@@ -87,6 +87,9 @@ where
 
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
+
+    /// Whether the epilogue leaves its precompile claims deferred or settles them recursively.
+    precompile_handling: PrecompileHandling,
 
     /// Whether execution is currently inside the authentication procedure.
     ///
@@ -144,9 +147,17 @@ where
             authenticator,
             ref_block,
             lazy_loaded_data: LazyLoadedData::default(),
+            precompile_handling: PrecompileHandling::default(),
             in_auth_procedure: false,
             source_manager,
         })
+    }
+
+    /// Selects whether the epilogue leaves precompile work deferred or settles it recursively.
+    #[must_use]
+    pub fn with_precompile_handling(mut self, handling: PrecompileHandling) -> Self {
+        self.precompile_handling = handling;
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -539,7 +550,11 @@ where
         &mut self,
         process: &ProcessorState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
-        let core_lib_event_result = if precompile_proof::is_proof_request(process) {
+        let core_lib_event_result = if precompile_proof::is_handling_request(process) {
+            precompile_proof::handle_handling_request(process, self.precompile_handling)
+                .map(Some)
+                .map_err(EventError::from)
+        } else if precompile_proof::is_proof_request(process) {
             precompile_proof::handle_proof_request(
                 process,
                 Some(&mut self.lazy_loaded_data.precompile_proofs),
