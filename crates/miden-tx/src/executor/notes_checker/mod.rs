@@ -129,7 +129,7 @@ where
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // Attempt to find an executable set of notes.
-        let mut budget = CheckerBudget::new(self.tx_executor.exec_options);
+        let mut budget = CheckerBudget::new(&self.tx_executor.exec_options);
         let mut data_store_request_count = 0;
         self.find_executable_notes_by_elimination(
             tx_inputs,
@@ -184,7 +184,7 @@ where
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // try to consume the provided note
-        let mut budget = CheckerBudget::single_attempt(self.tx_executor.exec_options);
+        let mut budget = CheckerBudget::single_attempt(&self.tx_executor.exec_options);
         let mut data_store_request_count = 0;
         match self
             .try_execute_notes(&mut tx_inputs, &mut budget, &mut data_store_request_count)
@@ -472,7 +472,7 @@ where
             .await
             .map_err(TransactionCheckerError::TransactionPreparation)?;
 
-        let exec_options = budget.take_execution_options(self.tx_executor.exec_options).ok_or(
+        let exec_options = budget.take_execution_options(&self.tx_executor.exec_options).ok_or(
             TransactionCheckerError::ExecutionBudgetExhausted { max_cycles: budget.max_cycles() },
         )?;
 
