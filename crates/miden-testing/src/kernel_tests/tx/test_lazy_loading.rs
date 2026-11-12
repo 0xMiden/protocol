@@ -3,6 +3,7 @@
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -22,8 +23,11 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{Asset, AssetId, AssetWitness, FungibleAsset};
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{NoteScript, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::{
@@ -125,6 +129,21 @@ impl DataStore for CountingDataStore<'_> {
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         self.note_script_requests.fetch_add(1, Ordering::Relaxed);
         self.inner.get_note_script(script_root)
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        procedure_roots: Vec<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        self.inner.get_code_witnesses(code_tree_root, procedure_roots)
+    }
+
+    fn get_code_to_register(
+        &self,
+        procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        self.inner.get_code_to_register(procedure_roots)
     }
 }
 
@@ -498,9 +517,8 @@ exec.sys::truncate_stack"#
 #[tokio::test]
 async fn note_checker_limits_missing_private_note_scripts_across_retries() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let output_note = NoteBuilder::new(account.id(), rand::rng())
         .note_type(NoteType::Private)
         .code(

@@ -4,7 +4,6 @@ use std::sync::Mutex;
 
 use assert_matches::assert_matches;
 use miden_processor::advice::{AdviceError, AdviceInputs};
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{
     ExecutionError,
     ExecutionOptions,

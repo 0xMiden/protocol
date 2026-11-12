@@ -27,7 +27,7 @@ pub(super) struct CheckerBudget {
 }
 
 impl CheckerBudget {
-    pub(super) fn new(options: ExecutionOptions) -> Self {
+    pub(super) fn new(options: &ExecutionOptions) -> Self {
         let max_cycles = options.max_cycles();
         let max_cycles_per_attempt =
             (max_cycles / MAX_NUM_CHECKER_NOTES as u32).max(options.expected_cycles());
@@ -40,7 +40,7 @@ impl CheckerBudget {
     }
 
     /// Creates a budget for a single execution that may use the full configured allowance.
-    pub(super) fn single_attempt(options: ExecutionOptions) -> Self {
+    pub(super) fn single_attempt(options: &ExecutionOptions) -> Self {
         let max_cycles = options.max_cycles();
 
         Self {
@@ -57,7 +57,7 @@ impl CheckerBudget {
     /// Reserves one conservative execution allowance and returns options capped to that allowance.
     pub(super) fn take_execution_options(
         &mut self,
-        options: ExecutionOptions,
+        options: &ExecutionOptions,
     ) -> Option<ExecutionOptions> {
         if self.remaining_cycles < self.max_cycles_per_attempt {
             return None;
@@ -257,10 +257,10 @@ mod tests {
             .unwrap()
             .with_max_memory_elements(40)
             .with_overlapped_trace_build(false);
-        let mut budget = CheckerBudget::new(options);
+        let mut budget = CheckerBudget::new(&options);
 
         for _ in 0..MAX_NUM_CHECKER_NOTES {
-            let attempt_options = budget.take_execution_options(options).unwrap();
+            let attempt_options = budget.take_execution_options(&options).unwrap();
             assert_eq!(attempt_options.max_cycles(), 4_096);
             assert_eq!(attempt_options.max_advice_size_bytes(), 123);
             assert_eq!(attempt_options.max_hash_len_bytes(), 456);
@@ -270,15 +270,15 @@ mod tests {
             assert!(!attempt_options.overlapped_trace_build());
         }
 
-        assert!(budget.take_execution_options(options).is_none());
+        assert!(budget.take_execution_options(&options).is_none());
     }
 
     #[test]
     fn single_attempt_budget_preserves_configured_cycle_limit() {
         let options = ExecutionOptions::new(Some(81_920), 4_096, 2_048).unwrap();
-        let mut budget = CheckerBudget::single_attempt(options);
+        let mut budget = CheckerBudget::single_attempt(&options);
 
-        assert_eq!(budget.take_execution_options(options).unwrap().max_cycles(), 81_920);
-        assert!(budget.take_execution_options(options).is_none());
+        assert_eq!(budget.take_execution_options(&options).unwrap().max_cycles(), 81_920);
+        assert!(budget.take_execution_options(&options).is_none());
     }
 }
