@@ -9,7 +9,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain, MockTransaction};
-use miden_tx::TransactionExecutor;
+use miden_tx::{PrecompileHandling, TransactionExecutor};
 
 // MERKLE TREE FRONTIER
 // ================================================================================================
@@ -234,6 +234,10 @@ async fn execute_frontier_stress_test(tx: MockTransaction) -> anyhow::Result<()>
         .with_verification_precompile_limits(limits);
 
     TransactionExecutor::<_, ()>::new(&tx)
+        // This algorithm stress test deliberately exceeds the default hash-work limit. At this
+        // size the fixed VM precompile-proof preset falls below the protocol's 96-bit minimum,
+        // so leave its work deferred instead of weakening the recursive acceptance policy.
+        .with_precompile_handling(PrecompileHandling::Deferred)
         .with_source_manager(tx.source_manager())
         .with_options(options)?
         .execute_transaction(

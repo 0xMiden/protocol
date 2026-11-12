@@ -14,6 +14,9 @@ pub enum PrecompileHandling {
     /// Recursively verifies a precompile proof under the authenticated protocol security policy,
     /// then clears the verified obligation. The resulting transaction proof has no external
     /// precompile work.
+    ///
+    /// Execution fails if the proof does not meet the minimum security. Raising precompile work
+    /// limits can exceed the security supported by the VM's fixed proof parameters.
     #[default]
     Recursive = 1,
 }

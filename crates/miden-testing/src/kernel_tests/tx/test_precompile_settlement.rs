@@ -3,6 +3,7 @@ use alloc::string::String;
 
 use miden_core::program::proof_request_key;
 use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
 use miden_protocol::errors::tx_kernel::{
     ERR_EPILOGUE_INSUFFICIENT_PRECOMPILE_PROOF_SECURITY,
     ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING,
@@ -40,14 +41,25 @@ async fn epilogue_validates_precompile_handling_and_preserves_deferred_work() ->
         deferred_root,
     )));
 
-    for invalid_mode in [Felt::from(2u32), Felt::new(1u64 << 32).unwrap()] {
-        assert_execution_error!(
-            transaction
-                .execute_code_with_precompile_handling_response(&code, invalid_mode)
-                .await,
-            ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING,
-        );
-    }
+    assert_execution_error!(
+        transaction
+            .execute_code_with_precompile_handling_response(&code, Felt::from(2u32))
+            .await,
+        ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING,
+    );
+    // Responses outside the u32 range fail at the preceding `u32assert` with the same code.
+    assert_execution_error!(
+        transaction
+            .execute_code_with_precompile_handling_response(
+                &code,
+                Felt::new(1u64 << 32).unwrap(),
+            )
+            .await,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING.code()
+    );
 
     Ok(())
 }

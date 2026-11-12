@@ -219,7 +219,7 @@ async fn authentication_code_cannot_clear_precompile_work() -> anyhow::Result<()
         .build_existing()?;
     builder.add_account(account.clone())?;
     let chain = builder.build()?;
-    let result = chain.build_transaction(account.id()).build()?.execute().await;
+    let result = chain.build_transaction(account).build()?.execute().await;
     assert_matches::assert_matches!(
         result,
         Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(

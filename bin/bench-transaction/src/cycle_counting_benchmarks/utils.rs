@@ -214,9 +214,9 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume single P2ID note with ECDSA signing",
-            padded_core: 16_384,
-            padded_chiplets: 4_096,
-            padded_eidos_compression: 65_536,
+            padded_core: 131_072,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
@@ -228,11 +228,9 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
-            padded_core: 32_768,
-            // The code-tree block header and transaction outputs moved this trace above 4_096.
-            // Keep this bracket aligned with the VM consumer snapshot.
-            padded_chiplets: 8_192,
-            padded_eidos_compression: 65_536,
+            padded_core: 131_072,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
@@ -244,30 +242,30 @@ mod tests {
         },
         ScenarioExpectation {
             name: "create single P2ID note with ECDSA signing",
-            padded_core: 16_384,
-            padded_chiplets: 4_096,
-            padded_eidos_compression: 65_536,
+            padded_core: 131_072,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L1 to Miden)",
-            padded_core: 65_536,
-            padded_chiplets: 16_384,
-            padded_eidos_compression: 131_072,
+            padded_core: 131_072,
+            padded_chiplets: 131_072,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L2 to Miden)",
-            padded_core: 65_536,
-            padded_chiplets: 16_384,
-            padded_eidos_compression: 131_072,
+            padded_core: 131_072,
+            padded_chiplets: 131_072,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume B2AGG note (bridge-out)",
             padded_core: 262_144,
-            padded_chiplets: 65_536,
-            padded_eidos_compression: 262_144,
+            padded_chiplets: 131_072,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
     ];

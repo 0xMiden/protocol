@@ -26,6 +26,7 @@ use super::{
     POST_AUTH_EPILOGUE_BASE_CYCLES,
     POST_AUTH_EPILOGUE_PER_NOTE_CYCLES,
     VERIFICATION_BASE_FEE,
+    execute_deferred_fee_transaction,
 };
 
 // HELPER FUNCTIONS
@@ -60,13 +61,12 @@ async fn execute_fee_paying_tx(
         Word::from([9u32, 10, 11, 12]),
     );
 
-    let executed_transaction = mock_chain
+    let transaction = mock_chain
         .build_transaction(account.id())
         .auth_args(args)
         .add_advice_map_entry(args, advice_value)
-        .build()?
-        .execute()
-        .await?;
+        .build()?;
+    let executed_transaction = execute_deferred_fee_transaction(transaction).await?;
 
     Ok((executed_transaction, initial_nonce))
 }

@@ -38,7 +38,12 @@ use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator
 use rstest::rstest;
 
 use super::super::multisig::{MultisigAuthArgsExt, setup_keys_and_authenticators_with_scheme};
-use super::{VERIFICATION_BASE_FEE, assert_single_fee_note, sponsorship};
+use super::{
+    VERIFICATION_BASE_FEE,
+    assert_single_fee_note,
+    execute_deferred_fee_transaction,
+    sponsorship,
+};
 use crate::consume_note;
 
 // HELPER FUNCTIONS
@@ -142,7 +147,7 @@ async fn execute_fee_paying_multisig_tx(
         signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
     }
 
-    Ok(signed_builder.build()?.execute().await?)
+    Ok(execute_deferred_fee_transaction(signed_builder.build()?).await?)
 }
 
 /// Signs the transaction of the given builder with all `signers` and executes it: runs once
@@ -164,7 +169,7 @@ async fn execute_signed_multisig_tx(
         signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
     }
 
-    Ok(signed_builder.build()?.execute().await)
+    Ok(execute_deferred_fee_transaction(signed_builder.build()?).await)
 }
 
 // TESTS
@@ -261,7 +266,7 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
     for (key, signature) in &signatures {
         original_builder = original_builder.add_signature(*key, msg, signature.clone());
     }
-    let original_tx = original_builder.build()?.execute().await?;
+    let original_tx = execute_deferred_fee_transaction(original_builder.build()?).await?;
 
     mock_chain.prove_until_block(signed_block + blocks_advanced)?;
 
@@ -273,7 +278,7 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
         later_builder = later_builder.add_signature(*key, msg, signature.clone());
     }
     if blocks_advanced >= APPROVAL_EXPIRATION_DELTA {
-        let result = later_builder.build()?.execute().await;
+        let result = execute_deferred_fee_transaction(later_builder.build()?).await;
         assert_transaction_executor_error!(result, ERR_MULTISIG_APPROVAL_EXPIRED);
         return Ok(());
     }
@@ -290,7 +295,7 @@ async fn multisig_fee_note_is_stable_across_reference_blocks(
         .unwrap_unauthorized_err();
     assert_eq!(later_summary.to_commitment(), msg);
 
-    let later_tx = later_builder.build()?.execute().await?;
+    let later_tx = execute_deferred_fee_transaction(later_builder.build()?).await?;
 
     assert_eq!(later_tx.block_header().block_num(), signed_block + blocks_advanced);
     assert_eq!(later_tx.expiration_block_num(), signed_block + APPROVAL_EXPIRATION_DELTA);
@@ -377,7 +382,7 @@ async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
             signed_builder.add_signature(key.to_commitment(), original_msg, signature.clone());
         signatures.push((key.to_commitment(), signature));
     }
-    let original_tx = signed_builder.build()?.execute().await?;
+    let original_tx = execute_deferred_fee_transaction(signed_builder.build()?).await?;
     let original_fee = assert_single_fee_note(&original_tx)?;
 
     // Do not apply the original transaction: the account and its nonce must remain unchanged.
@@ -400,7 +405,7 @@ async fn multisig_accepts_original_signatures_when_fee_changes_within_max_fee(
     for (key, signature) in signatures {
         later_builder = later_builder.add_signature(key, original_msg, signature);
     }
-    let later_tx = later_builder.build()?.execute().await?;
+    let later_tx = execute_deferred_fee_transaction(later_builder.build()?).await?;
     let later_fee = assert_single_fee_note(&later_tx)?;
 
     assert!(later_fee.amount() > original_fee.amount());
@@ -589,7 +594,7 @@ async fn multisig_fee_payment_preserves_replay_protection(
     for (pub_key_commitment, signature) in &signatures {
         signed_builder = signed_builder.add_signature(*pub_key_commitment, msg, signature.clone());
     }
-    let executed_transaction = signed_builder.build()?.execute().await?;
+    let executed_transaction = execute_deferred_fee_transaction(signed_builder.build()?).await?;
     assert_single_fee_note(&executed_transaction)?;
 
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
@@ -601,7 +606,7 @@ async fn multisig_fee_payment_preserves_replay_protection(
     for (pub_key_commitment, signature) in &signatures {
         replay_builder = replay_builder.add_signature(*pub_key_commitment, msg, signature.clone());
     }
-    let result = replay_builder.build()?.execute().await;
+    let result = execute_deferred_fee_transaction(replay_builder.build()?).await;
     assert_transaction_executor_error!(result, ERR_TX_ALREADY_EXECUTED);
 
     Ok(())

@@ -3,6 +3,8 @@ use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::note::TxFeeNote;
+use miden_testing::MockTransaction;
+use miden_tx::{PrecompileHandling, TransactionExecutor, TransactionExecutorError};
 
 mod conversion;
 mod multisig;
@@ -39,6 +41,27 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Executes a fee regression against the existing fee schedule. Recursive verification costs are
+/// integrated separately, so these assertions measure execution with precompile work deferred.
+pub(super) async fn execute_deferred_fee_transaction(
+    transaction: MockTransaction,
+) -> Result<ExecutedTransaction, TransactionExecutorError> {
+    let mut executor = TransactionExecutor::new(&transaction)
+        .with_source_manager(transaction.source_manager())
+        .with_precompile_handling(PrecompileHandling::Deferred);
+    if let Some(authenticator) = transaction.authenticator() {
+        executor = executor.with_authenticator(authenticator);
+    }
+    executor
+        .execute_transaction(
+            transaction.account().id(),
+            transaction.tx_inputs().ref_block(),
+            transaction.input_notes().clone(),
+            transaction.tx_args().clone(),
+        )
+        .await
+}
 
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee
