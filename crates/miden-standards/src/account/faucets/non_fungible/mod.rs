@@ -709,6 +709,12 @@ pub fn create_guarded_user_non_fungible_faucet(
 /// setter ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
 /// network can bound its own transactions' expiry.
 ///
+/// The note allowlist does not cover the config notes of the installed components, so none of
+/// them can be consumed by a newly created faucet. Before relying on one, for example on an
+/// [`AuthorityConfigNote`](crate::note::config::AuthorityConfigNote) for the emergency freeze, an
+/// administrator must allowlist its script root through a
+/// [`NetworkAccountConfigNote`](crate::note::config::NetworkAccountConfigNote).
+///
 /// # Errors
 ///
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
