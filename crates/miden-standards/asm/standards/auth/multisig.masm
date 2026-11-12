@@ -11,6 +11,7 @@ use miden::protocol::tx
 use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::auth
+use miden::standards::auth::key_set
 use miden::standards::auth::signature
 use miden::standards::assets::fungible_asset
 use miden::standards::fee
@@ -32,8 +33,6 @@ pub type ThresholdConfig = struct {
 }
 
 # Local Memory Addresses
-const IS_SIGNER_FOUND_LOC=0
-const CURRENT_SIGNER_INDEX_LOC=1
 
 # resolve_auth_args locals: the three words of the auth args preimage in hashing order.
 const AUTH_ARGS_BOUND_BLOCK_LOC=0
@@ -43,7 +42,6 @@ const AUTH_ARGS_SALT_LOC=4
 const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
 const NEW_NUM_OF_APPROVERS_LOC=0
-const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
@@ -120,8 +118,6 @@ const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or g
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
-const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
-
 const ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32 = "number of approvers and signer index must be u32"
 
 const ERR_SIGNER_INDEX_OUT_OF_BOUNDS = "signer index must be less than the number of approvers"
@@ -190,17 +186,16 @@ const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public ke
 #!
 #! Locals:
 #! 0: new_num_of_approvers
-#! 1: init_num_of_approvers
 #!
 #! Invocation: call
-@locals(2)
+@locals(1)
 @account_procedure
 pub proc update_signers_and_threshold(multisig_config_hash: word)
     # The signer configuration is read from the advice provider without an inline hash check. Every
-    # value written below via set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which is part of
-    # the TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration produces a
-    # different delta commitment and thus a summary the current signers never signed. The same
-    # applies to the per-signer loads in the loop below.
+    # value written below via set_item and by key_set::replace_from_advice is folded into
+    # ACCOUNT_DELTA_COMMITMENT, which is part of the TX_SUMMARY_COMMITMENT the current signers sign,
+    # so a substituted configuration produces a different delta commitment and thus a summary the
+    # current signers never signed.
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
@@ -243,74 +238,22 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     exec.native_account::set_item
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
-    # store init_num_of_approvers for later
-    drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop drop
-    # => [pad(12)]
+    # the replaced config carries the initial number of approvers
+    drop movdn.2 drop drop
+    # => [init_num_of_approvers, pad(12)]
 
-    loc_load.NEW_NUM_OF_APPROVERS_LOC
-    # => [num_approvers]
+    loc_load.NEW_NUM_OF_APPROVERS_LOC swap
+    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-    # num_approvers was already asserted non-zero above, so enter the loop unconditionally
-    push.1
-    while.true
-        sub.1
-        # => [i-1, pad(12)]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2] push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, pad(12)]
-
-        padw adv_loadw
-        # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
-
-        swapw
-        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        # override OLD_VALUE with SCHEME_ID_WORD
-        adv_loadw
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        # validate the scheme id word is in a correct form
-        exec.auth::signature::assert_supported_scheme_word
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        dup.4 exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_id_suffix, scheme_id_slot_id_prefix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        dropw
-        # => [i-1, pad(12)]
-
-        dup neq.0
-        # => [is_non_zero, i-1, pad(12)]
-    end
-    # => [pad(13)]
-
-    drop
+    exec.key_set::replace_from_advice
     # => [pad(12)]
 
     # assert all approver public keys are unique.
     loc_load.NEW_NUM_OF_APPROVERS_LOC
     exec.assert_unique_approver_public_keys
-    # => [pad(12)]
-
-    # compare initial vs current multisig config
-
-    # load init_num_of_approvers & new_num_of_approvers
-    loc_load.NEW_NUM_OF_APPROVERS_LOC loc_load.INIT_NUM_OF_APPROVERS_LOC
-    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
-
-    exec.cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
 end
 #! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
@@ -417,31 +360,10 @@ pub proc get_signer_at(index: u32) -> Approver
     u32lt assert.err=ERR_SIGNER_INDEX_OUT_OF_BOUNDS
     # => [index]
 
-    dup
-    # => [index, index]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2] push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, index, pad(15)]
 
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY, index]
-
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, index]
-
-    exec.native_account::get_initial_map_item
-    # => [PUB_KEY, index]
-
-    movup.4
-    # => [index, PUB_KEY]
-
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY, PUB_KEY]
-
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
-
-    exec.native_account::get_initial_map_item
-    # => [[scheme_id, 0, 0, 0], PUB_KEY]
-
-    movdn.7 drop drop drop
+    exec.key_set::get_key_at
     # => [PUB_KEY, scheme_id, pad(15)]
 
     # truncate the stack
@@ -451,74 +373,23 @@ end
 
 #! Returns 1 if PUB_KEY is a signer, else 0.
 #!
-#! Reads the initial account state: the result reflects the approver set at the start of the
-#! transaction, not any updates made earlier in the same transaction.
+#! Reads the current account state, so the result reflects an approver-set update made earlier in
+#! the same transaction. Signature verification never relies on this: it reads the initial state,
+#! see `signature::verify_signatures`.
 #!
 #! Inputs:  [PUB_KEY, pad(12)]
 #! Outputs: [is_signer, pad(15)]
-#! Locals:
-#! 0: is_signer_found
-#! 1: current_signer_index
 #!
 #! Invocation: call
-@locals(2)
 @account_procedure
 pub proc is_signer(pub_key: word) -> felt
-    # initialize is_signer_found = false
-    push.0 loc_store.IS_SIGNER_FOUND_LOC
-    # => [PUB_KEY]
+    exec.get_current_threshold_and_num_approvers drop
+    # => [num_approvers, PUB_KEY, pad(12)]
 
-    exec.get_initial_threshold_and_num_approvers
-    # => [threshold, num_approvers, PUB_KEY]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_approvers, PUB_KEY, pad(12)]
 
-    drop
-    # => [num_approvers, PUB_KEY]
-
-    dup neq.0
-    # => [has_remaining_signers, num_approvers, PUB_KEY]
-
-    while.true
-        # => [i, PUB_KEY]
-
-        sub.1
-        # => [i-1, PUB_KEY]
-
-        # store i-1 for this loop iteration before map lookup
-        dup loc_store.CURRENT_SIGNER_INDEX_LOC
-        # => [i-1, PUB_KEY]
-
-        exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, PUB_KEY]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
-
-        exec.native_account::get_initial_map_item
-        # => [CURRENT_PUB_KEY, PUB_KEY]
-
-        dupw.1 exec.word::eq
-        # => [is_pub_key_match, PUB_KEY]
-
-        loc_store.IS_SIGNER_FOUND_LOC
-        # => [PUB_KEY]
-
-        loc_load.CURRENT_SIGNER_INDEX_LOC
-        # => [i-1, PUB_KEY]
-
-        dup neq.0
-        # => [has_remaining_signers, i-1, PUB_KEY]
-
-        loc_load.IS_SIGNER_FOUND_LOC not
-        # => [!is_signer_found, has_remaining_signers, i-1, PUB_KEY]
-
-        and
-        # => [should_loop, i-1, PUB_KEY]
-    end
-
-    drop dropw
-    # => [pad(16)]
-
-    loc_load.IS_SIGNER_FOUND_LOC
+    exec.key_set::contains_key
     # => [is_signer, pad(16)]
 
     # truncate the stack
@@ -528,82 +399,6 @@ end
 
 # PUBLIC HELPERS
 # =================================================================================================
-
-#! Remove old approver public keys and the corresponding scheme ids from the approver public key and
-#! scheme id mappings.
-#!
-#! This procedure clears the approver entries in the range [new_num_of_approvers,
-#! init_num_of_approvers) from APPROVER_PUBLIC_KEYS_SLOT and APPROVER_SCHEME_ID_SLOT. It does not
-#! touch THRESHOLD_CONFIG_SLOT or PROC_THRESHOLD_ROOTS_SLOT.
-#!
-#! Caller contract: before calling this, the caller must have already updated THRESHOLD_CONFIG_SLOT
-#! so that the threshold is still reachable with the reduced signer set, i.e. threshold <=
-#! new_num_of_approvers. Otherwise the account is left with a threshold that no remaining quorum can
-#! reach, making it permanently unable to authenticate. In-tree this is guaranteed by
-#! `update_signers_and_threshold`, which calls `assert_threshold_is_reachable` before this procedure.
-#!
-#! Inputs: [init_num_of_approvers, new_num_of_approvers]
-#! Outputs: []
-#!
-#! Where:
-#! - init_num_of_approvers is the original number of approvers before the update
-#! - new_num_of_approvers is the new number of approvers after the update
-#!
-#! Panics if:
-#! - init_num_of_approvers or new_num_of_approvers is not a u32 value.
-#!
-#! Invocation: exec
-pub proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
-    dup.1 dup.1
-    u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
-    u32lt
-    # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
-
-    while.true
-        # => [i, new_num_of_approvers]
-
-        sub.1
-        # => [i-1, new_num_of_approvers]
-
-        # clear scheme id at APPROVER_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        # clear public key at APPROVER_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        dup.1 dup.1
-        u32lt
-        # => [should_loop, i-1, new_num_of_approvers]
-    end
-
-    drop drop
-end
 
 #! Asserts the threshold is reachable with the given number of approvers, i.e. threshold is not
 #! greater than num_approvers.
@@ -723,41 +518,16 @@ end
 #!
 #! Invocation: exec
 pub proc assert_not_approver_public_key(pub_key: word)
-    exec.get_current_threshold_and_num_approvers
-    # => [default_threshold, num_approvers, PUB_KEY]
+    exec.get_current_threshold_and_num_approvers drop
+    # => [num_approvers, PUB_KEY]
 
-    drop
-    # => [i = num_approvers, PUB_KEY]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_approvers, PUB_KEY]
 
-    dup neq.0
-    # => [should_loop, i, PUB_KEY]
+    exec.key_set::contains_key
+    # => [is_approver]
 
-    while.true
-        sub.1
-        # => [i, PUB_KEY]
-
-        # keep the loop index below PUB_KEY while the map key is built from its copy
-        dup movdn.5
-        # => [i, PUB_KEY, i]
-
-        exec.get_approver_pub_key
-        # => [APPROVER_PUBLIC_KEY, PUB_KEY, i]
-
-        dupw.1 exec.word::eq
-        # => [is_match, PUB_KEY, i]
-
-        assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
-        # => [PUB_KEY, i]
-
-        movup.4
-        # => [i, PUB_KEY]
-
-        dup neq.0
-        # => [should_loop, i, PUB_KEY]
-    end
-    # => [0, PUB_KEY]
-
-    drop dropw
+    assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
     # => []
 end
 
@@ -1144,13 +914,10 @@ end
 #!
 #! Invocation: exec
 proc get_approver_pub_key(index: u32) -> word
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY]
-
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_keys_slot_suffix, pub_keys_slot_prefix, APPROVER_MAP_KEY]
+    # => [pub_keys_slot_suffix, pub_keys_slot_prefix, index]
 
-    exec.active_account::get_map_item
+    exec.key_set::get_pub_key_at
     # => [APPROVER_PUBLIC_KEY]
 end
 
