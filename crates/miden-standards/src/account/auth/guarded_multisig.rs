@@ -1,21 +1,19 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
-    StorageMap,
-    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
+use super::approver::key_set_slots;
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use super::{Approver, ApproverSet};
 use crate::account::account_component_package;
@@ -76,29 +74,10 @@ impl GuardianConfig {
         &GUARDIAN_SCHEME_ID_SLOT_NAME
     }
 
-    /// Returns the storage slots holding the guardian's public key and signature scheme.
+    /// Returns the storage slots holding the guardian's public key and signature scheme: a
+    /// single-entry key set at index 0.
     pub(super) fn into_slots(self) -> Vec<StorageSlot> {
-        let mut storage_slots = Vec::with_capacity(2);
-
-        // Guardian public key slot (map: [0, 0, 0, 0] -> pubkey)
-        let guardian_public_key_entries =
-            [(StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])), Word::from(self.pub_key()))];
-        storage_slots.push(StorageSlot::with_map(
-            Self::public_key_slot().clone(),
-            StorageMap::with_entries(guardian_public_key_entries).unwrap(),
-        ));
-
-        // Guardian scheme IDs slot (map: [0, 0, 0, 0] -> [scheme_id, 0, 0, 0])
-        let guardian_scheme_id_entries = [(
-            StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])),
-            Word::from([self.auth_scheme() as u32, 0, 0, 0]),
-        )];
-        storage_slots.push(StorageSlot::with_map(
-            Self::scheme_id_slot().clone(),
-            StorageMap::with_entries(guardian_scheme_id_entries).unwrap(),
-        ));
-
-        storage_slots
+        key_set_slots(Self::public_key_slot(), Self::scheme_id_slot(), &[self.approver]).into()
     }
 }
 
@@ -285,8 +264,8 @@ mod tests {
     use alloc::string::ToString;
 
     use miden_protocol::Word;
-    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::AuthSecretKey;
+    use miden_protocol::account::{AccountBuilder, StorageMapKey};
 
     use super::*;
     use crate::account::wallets::BasicWallet;

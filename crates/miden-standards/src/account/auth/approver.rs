@@ -3,7 +3,9 @@ use alloc::format;
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
+use miden_protocol::account::{StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
 
 // APPROVER
@@ -120,6 +122,41 @@ impl ApproverSet {
     pub fn threshold(&self) -> NonZeroU32 {
         self.threshold
     }
+}
+
+// KEY SET
+// ================================================================================================
+
+/// Builds the two storage map slots of an indexed key set, in the layout the
+/// `miden::standards::auth::key_set` MASM module reads: `pk_slot` maps `[index, 0, 0, 0]` to the
+/// public key commitment of `keys[index]` and `scheme_slot` maps it to `[scheme_id, 0, 0, 0]`.
+pub(crate) fn key_set_slots(
+    pk_slot: &StorageSlotName,
+    scheme_slot: &StorageSlotName,
+    keys: &[Approver],
+) -> [StorageSlot; 2] {
+    let pub_key_entries = keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| (StorageMapKey::from_index(index as u32), Word::from(key.pub_key())));
+    let scheme_id_entries = keys.iter().enumerate().map(|(index, key)| {
+        (
+            StorageMapKey::from_index(index as u32),
+            Word::from([key.auth_scheme() as u32, 0, 0, 0]),
+        )
+    });
+
+    // the map keys are the distinct key indices, so building the maps cannot fail
+    [
+        StorageSlot::with_map(
+            pk_slot.clone(),
+            StorageMap::with_entries(pub_key_entries).expect("key set indices are unique"),
+        ),
+        StorageSlot::with_map(
+            scheme_slot.clone(),
+            StorageMap::with_entries(scheme_id_entries).expect("key set indices are unique"),
+        ),
+    ]
 }
 
 // TESTS
