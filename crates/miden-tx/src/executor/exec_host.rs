@@ -83,9 +83,6 @@ where
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
 
-    /// The code patch that the kernel loaded, or `None` before the load.
-    code_patch: Option<CodePatch>,
-
     /// Whether execution is currently inside the authentication procedure.
     ///
     /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
@@ -146,7 +143,6 @@ where
             authenticator,
             ref_block,
             lazy_loaded_data: LazyLoadedData::default(),
-            code_patch: None,
             in_auth_procedure: false,
             source_manager,
         })
@@ -260,7 +256,7 @@ where
         self.record_code_witnesses(
             code_patch.created_procedures().into_iter().chain(code_patch.dependencies()),
         )?;
-        self.code_patch = Some(code_patch);
+        self.base_host.set_code_patch(code_patch);
 
         Ok(advice_mutations)
     }
@@ -447,7 +443,8 @@ where
         LazyLoadedData,
         CodePatch,
     ) {
-        let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
+        let (account_patch, input_notes, output_notes, logs, code_patch) =
+            self.base_host.into_parts();
 
         (
             account_patch,
@@ -456,7 +453,7 @@ where
             logs,
             self.tx_progress,
             self.lazy_loaded_data,
-            self.code_patch.expect("code patch should have been built"),
+            code_patch.expect("code patch should have been built"),
         )
     }
 

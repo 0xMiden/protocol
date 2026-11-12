@@ -1043,7 +1043,8 @@ end
 #!     [version, expiration_delta << 32 || bound_block_num, approval_expiration_block_num, max_fee],
 #!     SALT,
 #!     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-#!     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
+#!     OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT,
+#!     BLOCK_COMMITMENT, LOGS_COMMITMENT
 #! ]
 #! ```
 #!

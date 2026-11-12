@@ -859,7 +859,8 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 ///         [version, metadata, user_param0, user_param1],
 ///         [user_param2, user_param3, user_param4, user_param5],
 ///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT
+///         OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT,
+///         BLOCK_COMMITMENT, LOGS_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -884,8 +885,9 @@ fn extract_tx_summary<'store, STORE>(
     let account_delta_commitment = extract_word(commitments, 8);
     let input_notes_commitment = extract_word(commitments, 12);
     let output_notes_commitment = extract_word(commitments, 16);
-    let block_commitment = extract_word(commitments, 20);
-    let logs_commitment = extract_word(commitments, 24);
+    let code_patch_commitment = extract_word(commitments, 20);
+    let block_commitment = extract_word(commitments, 24);
+    let logs_commitment = extract_word(commitments, 28);
 
     // Validate the metadata against the kernel state so that a summary preimage carrying
     // fabricated values is rejected rather than presented to the signer.
@@ -910,6 +912,7 @@ fn extract_tx_summary<'store, STORE>(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
+        code_patch_commitment,
         metadata,
         block_commitment,
         user_params,

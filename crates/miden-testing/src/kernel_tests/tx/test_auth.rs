@@ -5,7 +5,10 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, Signature};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::errors::MasmError;
-use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT;
+use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_PROC_NOT_AUTH_PROC,
+    ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT,
+};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::{Felt, Hasher, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
@@ -231,8 +234,8 @@ async fn test_call_tracking_across_tx_script_and_auth_procedure() -> anyhow::Res
 /// The account exposes an `emit_auth_request` procedure that builds a real transaction summary and
 /// emits `AUTH_REQUEST` for it, exactly like the standard auth procedure - but it runs as a normal
 /// account procedure invoked from the transaction script, i.e. outside the epilogue authentication
-/// phase. No signature is pre-supplied, so the event drives production, which must be rejected with
-/// `AuthRequestOutsideAuthProcedure`.
+/// phase. The summary binds the code patch commitment, which only the authentication procedure can
+/// read, so the kernel rejects the summary before the host is asked for a signature.
 #[tokio::test]
 async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> anyhow::Result<()> {
     let probe_code = CodeBuilder::default().compile_component_code(
@@ -249,8 +252,7 @@ async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> an
             exec.auth::get_default_tx_summary_commitment
             # => [MESSAGE, PK_COMM, scheme_id]
 
-            # With no pre-supplied signature the host must produce one, which is only allowed inside
-            # the auth procedure; here it is not, so the transaction aborts.
+            # Not reached: the summary cannot be created outside the auth procedure.
             emit.AUTH_REQUEST_EVENT
 
             dropw dropw drop
@@ -268,7 +270,7 @@ async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> an
         builder.add_existing_account_from_components(Auth::IncrNonce, [probe_component.clone()])?;
     let chain = builder.build()?;
 
-    // A dummy public key commitment; the request is rejected before any signature is verified.
+    // A dummy public key commitment; the summary is rejected before any signature is requested.
     let pub_key_commitment = Word::from([1u32, 2, 3, 4]);
     let tx_script_source = format!(
         "
@@ -294,10 +296,7 @@ async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> an
         .execute()
         .await;
 
-    assert_matches!(
-        execution_result,
-        Err(TransactionExecutorError::AuthRequestOutsideAuthProcedure)
-    );
+    assert_transaction_executor_error!(execution_result, ERR_ACCOUNT_PROC_NOT_AUTH_PROC);
 
     Ok(())
 }
