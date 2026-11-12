@@ -19,7 +19,7 @@ Compared to most blockchains, where a `Transaction` typically involves more than
 
 Currently the protocol allows a `Transaction` to consume up to `1024` input notes and produce up to `1024` output notes. In aggregate, a `Transaction` can therefore process up to `2048` note-based requests, such as deposits into or withdrawals from a pool.
 
-A simple transaction currently takes about 1-2 seconds on a MacBook Pro. It takes around `90K` cycles to create the proof, as of now the signature verification step is the dominant cost.
+Transaction proving cost depends on the scripts, authentication scheme, and precompile workload. Transactions using precompiles also execute recursive proof verification in the epilogue.
 
 ## Transaction lifecycle
 
@@ -54,8 +54,28 @@ A `Transaction` requires several inputs:
    - The account's state must have changed, or at least one input note must have been consumed to make the transaction non-empty.
    - If the account's state has changed, the `nonce` must have been incremented to prevent replay attacks.
    - Additionally, the sum of all input assets must be equal to the sum of all output assets (if the account is not a faucet).
+   - Precompile work produced by the scripts and authentication procedure is recursively verified before the transaction returns.
 
 The proof together with the corresponding data needed for verification and updates of the global state can then be submitted and processed by the network.
+
+### Precompile settlement
+
+Precompiles register claims in the VM's deferred accumulator during execution. After authentication
+and the account and note checks, the epilogue reads that accumulator's root. If it is nonempty, the
+epilogue requests a precompile proof, verifies it against that exact root, and applies the proof
+security policy authenticated by the protocol configuration. Only then does it clear the accumulator.
+An empty accumulator needs no precompile proof. Account code and scripts cannot clear it themselves:
+the VM permits `clear_deferred` only in the kernel's root context.
+
+The executor retains generated verifier advice in the transaction inputs for prover replay. The
+resulting transaction proof carries no separate deferred precompile witness or precompile proof;
+transaction verification and batch admission reject either form. Each transaction's kernel proof
+covers its own precompile verification. The batch kernel still needs recursive transaction-proof
+verification before a batch proof can attest to those transactions.
+
+The fee estimator does not yet include the recursive verification cost. Fee estimation is a separate
+follow-up; fee-paying transactions that use precompiles can fail the existing final fee check because
+their estimated payment is too low.
 
 ### Foreign procedure invocation (FPI) and expiration
 

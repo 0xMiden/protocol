@@ -34,8 +34,8 @@ pub use mast_store::TransactionMastStore;
 
 /// Local Transaction prover is a stateless component which is responsible for proving transactions.
 ///
-/// The produced proof covers the VM execution only. Precompile claims are left deferred, because a
-/// batch settles the claims of all its transactions with a single precompile proof.
+/// The transaction epilogue recursively verifies its precompile proof. The resulting transaction
+/// proof covers that verification and carries no outstanding precompile work.
 ///
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
@@ -139,6 +139,7 @@ impl LocalTransactionProver {
     ///
     /// Returns an error if:
     /// - The execution of the transaction fails.
+    /// - The transaction epilogue leaves outstanding precompile work.
     /// - The output notes of the execution are invalid.
     /// - The stack outputs of the execution do not match the outputs built from the witness and the
     ///   execution.
@@ -200,6 +201,11 @@ impl LocalTransactionProver {
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
+        let (witness, precompile_witness) = witness.into_parts();
+        if witness.has_precompiles() || precompile_witness.is_some() {
+            return Err(TransactionProverError::TransactionProofContainsPrecompiles);
+        }
+
         let (account_patch, input_notes, output_notes, logs) = host.into_parts();
         let output_notes = RawOutputNotes::new(output_notes)
             .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
@@ -223,7 +229,7 @@ impl LocalTransactionProver {
 
         let proof = self
             .prover
-            .prove(witness)
+            .prove_vm_witness(witness)
             .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
 
         self.build_proven_transaction(

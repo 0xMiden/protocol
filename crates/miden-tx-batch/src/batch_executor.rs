@@ -1,12 +1,4 @@
-use alloc::vec::Vec;
-
-use miden_processor::{
-    DefaultHost,
-    ExecutionError,
-    ExecutionOptions,
-    FastProcessor,
-    PrecompileWitness,
-};
+use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
 
@@ -46,9 +38,6 @@ impl BatchExecutor {
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
-    /// The executed batch carries the ordered precompile witnesses of the batch's transactions,
-    /// which the prover settles with a single precompile proof.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -58,8 +47,6 @@ impl BatchExecutor {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let precompile_witnesses = Self::collect_precompile_witnesses(&proposed_batch);
-
         let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
 
         let processor = FastProcessor::new_with_options(
@@ -77,7 +64,7 @@ impl BatchExecutor {
         let (witness, precompile_witness) = witness.into_parts();
 
         // Executing the batch kernel must never require precompiles of its own.
-        if precompile_witness.is_some() {
+        if witness.has_precompiles() || precompile_witness.is_some() {
             return Err(ProvenBatchError::BatchProofContainsPrecompiles);
         }
 
@@ -87,18 +74,7 @@ impl BatchExecutor {
         let batch_outputs = BatchOutputs::parse(witness.claim().stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
-        Ok(ExecutedBatch::new(proposed_batch, witness, precompile_witnesses, batch_outputs))
-    }
-
-    /// Collects the outstanding precompile witnesses in transaction order.
-    ///
-    /// Their order and duplicates are significant to the aggregate precompile statement.
-    fn collect_precompile_witnesses(proposed_batch: &ProposedBatch) -> Vec<PrecompileWitness> {
-        proposed_batch
-            .transactions()
-            .iter()
-            .filter_map(|transaction| transaction.precompile_witness().cloned())
-            .collect()
+        Ok(ExecutedBatch::new(proposed_batch, witness, batch_outputs))
     }
 }
 

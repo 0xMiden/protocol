@@ -1544,8 +1544,6 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel proving failed")]
     BatchKernelProvingFailed(#[source] ExecutionError),
-    #[error("precompile proving failed")]
-    PrecompileProvingFailed(#[source] ExecutionError),
     #[error("batch proof contains precompiles")]
     BatchProofContainsPrecompiles,
     #[error("batch kernel produced an invalid output stack")]
@@ -1940,7 +1938,7 @@ pub enum TransactionVerifierError {
     },
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
-    #[error("transaction proof contains settled precompile work")]
+    #[error("transaction proof carries precompile work outside the kernel proof")]
     TransactionProofContainsPrecompiles,
     #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },

@@ -243,6 +243,16 @@ const FEE_ASSET_ID_PTR = 2200
 # The memory address at which the transaction kernel config commitment is stored
 const TX_KERNEL_CONFIG_COMMITMENT_PTR = 2204
 
+# Commitment to the proof verifier roots and security policy in the protocol config.
+const PROOF_VERIFICATION_COMMITMENT_PTR = 2216
+
+# Authenticated ProofVerificationConfig::to_elements preimage:
+# [VM_VERIFIER_ROOT, PRECOMPILE_VERIFIER_ROOT, SECURITY_ESTIMATOR_ROOT, [minimum_bits, 0, 0, 0]].
+pub const PROOF_VERIFICATION_CONFIG_PTR = 2240
+const PRECOMPILE_VERIFIER_ROOT_PTR = PROOF_VERIFICATION_CONFIG_PTR + WORD_NUM_ELEMENTS
+const PROOF_SECURITY_ESTIMATOR_ROOT_PTR = PROOF_VERIFICATION_CONFIG_PTR + 2 * WORD_NUM_ELEMENTS
+pub const MINIMUM_PROOF_SECURITY_BITS_PTR = PROOF_VERIFICATION_CONFIG_PTR + 3 * WORD_NUM_ELEMENTS
+
 # PARTIAL BLOCKCHAIN
 # -------------------------------------------------------------------------------------------------
 
@@ -929,6 +939,34 @@ end
 #!   and its exposed procedure roots.
 pub proc get_tx_kernel_config_commitment() -> Commitment
     padw mem_loadw_le.TX_KERNEL_CONFIG_COMMITMENT_PTR
+end
+
+#! Returns the authenticated commitment to the proof verification config.
+#! Inputs: []
+#! Outputs: [PROOF_VERIFICATION_COMMITMENT]
+pub proc get_proof_verification_config_commitment() -> Commitment
+    padw mem_loadw_le.PROOF_VERIFICATION_COMMITMENT_PTR
+end
+
+#! Returns the accepted precompile proof verifier root.
+#! Inputs: []
+#! Outputs: [PRECOMPILE_VERIFIER_ROOT]
+pub proc get_precompile_verifier_root() -> Commitment
+    padw mem_loadw_le.PRECOMPILE_VERIFIER_ROOT_PTR
+end
+
+#! Returns the accepted proof security estimator root.
+#! Inputs: []
+#! Outputs: [SECURITY_ESTIMATOR_ROOT]
+pub proc get_proof_security_estimator_root() -> Commitment
+    padw mem_loadw_le.PROOF_SECURITY_ESTIMATOR_ROOT_PTR
+end
+
+#! Returns the minimum accepted proof security in bits, validated by the prologue as 1..=255.
+#! Inputs: []
+#! Outputs: [minimum_bits]
+pub proc get_minimum_proof_security_bits() -> u8
+    mem_load.MINIMUM_PROOF_SECURITY_BITS_PTR
 end
 
 #! Returns the note root of the transaction reference block.

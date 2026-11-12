@@ -1,0 +1,2 @@
+[BREAKING] The transaction epilogue recursively verifies its own precompile proof, and transaction verification rejects proofs carrying deferred work or a separate precompile proof. Removed batch precompile witness collection and the batch prover's discarded precompile proof and skip option.
+Fee estimation does not yet include recursive verification costs; fee-paying transactions using precompiles may fail the final fee check until the fee-estimation follow-up.

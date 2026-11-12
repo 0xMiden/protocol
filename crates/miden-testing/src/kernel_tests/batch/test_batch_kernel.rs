@@ -7,7 +7,7 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::errors::ProposedBatchError;
+use miden_protocol::errors::{ProposedBatchError, TransactionVerifierError};
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::ProvenTransaction;
 use miden_protocol::vm::{ExecutionProof, PrecompileStatus};
@@ -60,8 +60,8 @@ pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatc
     )?)
 }
 
-/// Executes and proves one transaction per given auth scheme, so that the transactions carry the
-/// real deferred precompile claims of their signature checks.
+/// Executes and proves one transaction per given auth scheme, including in-kernel settlement of
+/// the signature checks' precompile claims.
 ///
 /// Returns the chain together with the proven transactions, in the order of the auth schemes.
 async fn proven_transactions(
@@ -149,15 +149,10 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The batch settles the outstanding precompile claims of its transactions: the executor collects
-/// one witness per ECDSA transaction in transaction order, and the prover proves them all at once.
-/// A transaction without a signature check contributes no claim.
-///
-/// Proving dominates the runtime of this test, so the transactions are proven once and each shape
-/// is chosen to cover a distinct prover path: one precompile proof over several interleaved claims
-/// and one batch without any claim.
+/// A batch accepts complete transaction proofs with and without precompile checks. Each transaction
+/// has already settled its own claims, so the batch proof carries no separate precompile work.
 #[tokio::test]
-async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
+async fn prove_batch_with_settled_transaction_precompiles() -> anyhow::Result<()> {
     let schemes = vec![Auth::basic_ecdsa(), Auth::basic_ecdsa(), Auth::IncrNonce];
     let (chain, transactions) = proven_transactions(schemes).await?;
     let (ecdsa, no_claim) = (&transactions[..2], &transactions[2]);
@@ -167,73 +162,69 @@ async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
         (
             "ecdsa, no claim, ecdsa",
             vec![ecdsa[0].clone(), no_claim.clone(), ecdsa[1].clone()],
-            2,
         ),
-        ("no claim", vec![no_claim.clone()], 0),
+        ("no claim", vec![no_claim.clone()]),
     ];
 
-    for (shape, transactions, expected_root_count) in shapes {
-        let batch = propose_batch(&chain, transactions).context(shape)?;
-
-        // The witnesses the batch must settle, in transaction order.
-        let mut expected_witnesses = Vec::new();
-        for transaction in batch.transactions() {
-            expected_witnesses.extend(transaction.precompile_witness().cloned());
+    for (shape, transactions) in shapes {
+        for transaction in &transactions {
+            assert!(matches!(transaction.proof().precompile(), PrecompileStatus::Empty), "{shape}");
         }
-        // Pin the count independently, so this fails if transactions stop deferring claims.
-        assert_eq!(expected_witnesses.len(), expected_root_count, "{shape}");
-
+        let batch = propose_batch(&chain, transactions).context(shape)?;
         let executed = BatchExecutor::new().execute(batch).context(shape)?;
-        assert_eq!(executed.precompile_witnesses(), expected_witnesses.as_slice(), "{shape}");
-
-        LocalBatchProver::default().prove(executed).context(shape)?;
+        let proven = LocalBatchProver::default().prove(executed).context(shape)?;
+        assert!(matches!(proven.proof().precompile(), PrecompileStatus::Empty), "{shape}");
     }
 
     Ok(())
 }
 
-/// A transaction whose deferred precompile witness does not match the precompile root its VM proof
-/// commits to is rejected when the batch is proposed. This is the guarantee that lets
-/// `BatchExecutor::execute` collect the witnesses without re-validating them.
+/// Batch admission rejects both deferred work and a separate precompile proof, even when the
+/// carried VM proof is otherwise valid.
 #[tokio::test]
-async fn propose_batch_rejects_mismatched_precompile_witness() -> anyhow::Result<()> {
-    let (chain, transactions) =
-        proven_transactions(vec![Auth::basic_ecdsa(), Auth::basic_ecdsa()]).await?;
-
-    // Move the second transaction's witness onto the first transaction, leaving its VM proof - and
-    // therefore the precompile root that proof commits to - untouched.
-    let foreign_witness = transactions[1]
-        .precompile_witness()
-        .context("second transaction does not defer precompile work")?
-        .clone();
+async fn propose_batch_rejects_external_precompile_work() -> anyhow::Result<()> {
+    let (chain, transactions) = proven_transactions(vec![Auth::IncrNonce]).await?;
     let original = transactions[0].as_ref();
-    let tampered = ProvenTransaction::new(
-        original.account_update().clone(),
-        original.input_notes().iter().cloned(),
-        original.output_notes().iter().cloned(),
-        original.ref_block_num(),
-        original.ref_block_commitment(),
-        original.expiration_block_num(),
-        ExecutionProof::new(
-            original.proof().vm().clone(),
-            PrecompileStatus::Deferred(foreign_witness),
-        ),
-        original.log_details().clone(),
-        original.code_patch().clone(),
-    )?;
+    for external_proof in [
+        miden_protocol::testing::dummy_deferred_execution_proof(),
+        miden_protocol::testing::dummy_precompile_execution_proof(),
+    ] {
+        let (_, _, precompile) = external_proof.into_parts();
+        let tampered = ProvenTransaction::new(
+            original.account_update().clone(),
+            original.input_notes().iter().cloned(),
+            original.output_notes().iter().cloned(),
+            original.ref_block_num(),
+            original.ref_block_commitment(),
+            original.expiration_block_num(),
+            ExecutionProof::from_parts(
+                original.proof().compatibility().clone(),
+                original.proof().vm().clone(),
+                precompile,
+            ),
+            original.log_details().clone(),
+            original.code_patch().clone(),
+        )?;
 
-    let (reference_block, partial_blockchain, unauthenticated_note_proofs) =
-        chain.get_batch_inputs(core::iter::once(tampered.ref_block_num()), iter::empty())?;
-    let error = ProposedBatch::new(
-        vec![Arc::new(tampered)],
-        reference_block,
-        partial_blockchain,
-        unauthenticated_note_proofs,
-        MIN_PROOF_SECURITY_LEVEL,
-    )
-    .expect_err("batch with a mismatched precompile witness was proposed");
+        let (reference_block, partial_blockchain, unauthenticated_note_proofs) =
+            chain.get_batch_inputs(core::iter::once(tampered.ref_block_num()), iter::empty())?;
+        let error = ProposedBatch::new(
+            vec![Arc::new(tampered)],
+            reference_block,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+            MIN_PROOF_SECURITY_LEVEL,
+        )
+        .expect_err("batch accepted external precompile work");
 
-    assert_matches!(error, ProposedBatchError::TransactionVerificationFailed { .. });
+        assert_matches!(
+            error,
+            ProposedBatchError::TransactionVerificationFailed {
+                source: TransactionVerifierError::TransactionProofContainsPrecompiles,
+                ..
+            }
+        );
+    }
 
     Ok(())
 }

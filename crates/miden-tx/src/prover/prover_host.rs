@@ -20,6 +20,7 @@ use crate::host::{
     TransactionBaseHost,
     TransactionEvent,
     TxSummaryOrSignature,
+    precompile_proof,
 };
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
 
@@ -119,6 +120,9 @@ where
         &mut self,
         process: &ProcessorState,
     ) -> Result<Vec<AdviceMutation>, EventError> {
+        if precompile_proof::is_proof_request(process) {
+            return precompile_proof::handle_proof_request(process, None).map_err(EventError::from);
+        }
         if let Some(advice_mutations) = self.base_host.handle_core_lib_events(process)? {
             return Ok(advice_mutations);
         }

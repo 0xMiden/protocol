@@ -25,7 +25,8 @@ use crate::BatchVerifierError;
 /// must therefore not be relied on at a trust boundary until the kernel verification logic that
 /// emits and binds the real commitments lands.
 ///
-/// The proof also does not cover the precompile claims of the batch's transactions.
+/// Each transaction settles its own precompile work, but the skeleton batch kernel does not yet
+/// recursively verify those transaction proofs.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     proof_security_level: u32,

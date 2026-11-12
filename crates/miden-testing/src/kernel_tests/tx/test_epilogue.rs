@@ -1,8 +1,11 @@
+use alloc::collections::BTreeMap;
 use alloc::string::ToString;
+use alloc::vec::Vec;
 use std::borrow::ToOwned;
 
 use anyhow::Context;
-use miden_processor::{Felt, ONE};
+use miden_processor::operation::OperationError;
+use miden_processor::{ExecutionError, Felt, ONE};
 use miden_protocol::account::{
     Account,
     AccountCodePatch,
@@ -16,7 +19,11 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
+    ERR_EPILOGUE_PRECOMPILE_VERIFIER_ROOT_MISMATCH,
+    ERR_EPILOGUE_SECURITY_ESTIMATOR_ROOT_MISMATCH,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
+    ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_COMMITMENT_MISMATCH,
+    ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_INVALID_LENGTH,
     ERR_TX_INVALID_EXPIRATION_DELTA,
 };
 use miden_protocol::note::{NoteTag, NoteType};
@@ -30,10 +37,14 @@ use miden_protocol::transaction::memory::{
     NOTE_MEM_SIZE,
     OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
+    PRECOMPILE_VERIFIER_ROOT_PTR,
+    PROOF_SECURITY_ESTIMATOR_ROOT_PTR,
+    PROOF_VERIFICATION_CONFIG_PTR,
 };
 use miden_protocol::transaction::{
     RawOutputNote,
     RawOutputNotes,
+    TransactionArgs,
     TransactionLogs,
     TransactionOutputs,
 };
@@ -111,6 +122,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     );
 
     let exec_output = mock_tx.execute_code(&code).await?;
+    assert_eq!(exec_output.precompile_root, Word::empty());
+    assert!(exec_output.precompile_witness.is_none());
 
     // The final account is the initial account with the nonce incremented by one.
     let mut final_account = account.clone();
@@ -174,6 +187,95 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         exec_output.stack.len(),
         16,
         "The stack must be truncated to 16 elements after finalize_transaction"
+    );
+    Ok(())
+}
+
+/// Advice cannot change the accepted verifier or policy, or append data after its fixed preimage.
+#[tokio::test]
+async fn proof_verification_config_is_authenticated() -> anyhow::Result<()> {
+    let mut mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let config = mock_tx.tx_inputs().protocol_config().proof_verification();
+    let commitment = config.to_commitment();
+    let elements = config.to_elements();
+    let code = "
+        use miden::tx_kernel_core::prologue
+        begin
+            exec.prologue::prepare_transaction
+        end
+    ";
+
+    let output = mock_tx.execute_code(code).await?;
+    for (index, expected) in elements.as_chunks::<4>().0.iter().enumerate() {
+        assert_eq!(
+            output.get_kernel_mem_word(PROOF_VERIFICATION_CONFIG_PTR + index as u32 * 4),
+            Word::new(*expected),
+        );
+    }
+
+    let mut extra_element = elements.clone();
+    extra_element.push(Felt::ZERO);
+    let mut different_root = elements.clone();
+    different_root[0] += ONE;
+    for (preimage, expected_error) in [
+        (Vec::new(), ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_INVALID_LENGTH),
+        (elements[..15].to_vec(), ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_INVALID_LENGTH),
+        (extra_element, ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_INVALID_LENGTH),
+        (different_root, ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_COMMITMENT_MISMATCH),
+    ] {
+        mock_tx.set_tx_args(TransactionArgs::new(BTreeMap::from([(commitment, preimage)]).into()));
+        assert_execution_error!(mock_tx.execute_code(code).await, expected_error);
+    }
+    Ok(())
+}
+
+/// Root-context tests deliberately replace a validated root; settlement must check the actual
+/// linked procedure identities before asking the host for a precompile proof.
+#[tokio::test]
+async fn epilogue_rejects_unsupported_verifier_and_estimator_roots() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    for (pointer, expected_error) in [
+        (PRECOMPILE_VERIFIER_ROOT_PTR, ERR_EPILOGUE_PRECOMPILE_VERIFIER_ROOT_MISMATCH),
+        (PROOF_SECURITY_ESTIMATOR_ROOT_PTR, ERR_EPILOGUE_SECURITY_ESTIMATOR_ROOT_MISMATCH),
+    ] {
+        let code = format!(
+            "
+            use miden::core::precompiles::u256
+            use miden::tx_kernel_core::prologue
+            use miden::tx_kernel_core::epilogue
+            begin
+                exec.prologue::prepare_transaction
+                padw mem_storew_le.{pointer} dropw
+
+                exec.u256::push_one_digest dupw exec.u256::add
+                exec.u256::push_two_digest exec.u256::assert_eq
+
+                exec.epilogue::finalize_transaction
+            end
+            "
+        );
+        assert_execution_error!(mock_tx.execute_code(&code).await, expected_error);
+    }
+    Ok(())
+}
+
+/// A transaction script runs in a child context, so it cannot bypass epilogue settlement by
+/// clearing the accumulator itself.
+#[tokio::test]
+async fn transaction_script_cannot_clear_deferred_work() -> anyhow::Result<()> {
+    let script = CodeBuilder::with_mock_packages()
+        .compile_tx_script("@transaction_script pub proc main clear_deferred end")?;
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(script)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::ClearDeferredOutsideRootContext { .. },
+            ..
+        }
     );
     Ok(())
 }

@@ -2978,6 +2978,9 @@ version = "1.0.0-rc.1"
 dependencies = [
  "bon",
  "miden-agglayer",
+ "miden-core",
+ "miden-core-lib",
+ "miden-precompiles-stark",
  "miden-processor",
  "miden-protocol",
  "miden-prover",

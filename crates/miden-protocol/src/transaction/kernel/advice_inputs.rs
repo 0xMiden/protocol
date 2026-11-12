@@ -237,15 +237,20 @@ impl TransactionAdviceInputs {
     /// The block header only commits to the configuration, so the kernel resolves these commitments
     /// to their preimage:
     /// - PROTOCOL_CONFIG_COMMITMENT |-> the protocol config elements.
+    /// - PROOF_VERIFICATION_COMMITMENT |-> the proof verifier roots and security policy.
     /// - TX_KERNEL_CONFIG_COMMITMENT |-> the transaction kernel config elements.
     /// - TX_KERNEL_PROCS_COMMITMENT |-> the array of the transaction kernel's procedure roots.
     ///
-    /// NOTE: keep this in sync with the `process_protocol_config` and `process_kernel_data` kernel
-    /// procedures.
+    /// NOTE: keep this in sync with the `process_protocol_config`,
+    /// `process_proof_verification_config` and `process_kernel_data` kernel procedures.
     fn add_protocol_config(&mut self, protocol_config: &ProtocolConfig) {
         let tx_kernel = protocol_config.tx_kernel();
 
         self.add_map_entry(protocol_config.to_commitment(), protocol_config.to_elements());
+        self.add_map_entry(
+            protocol_config.proof_verification().to_commitment(),
+            protocol_config.proof_verification().to_elements(),
+        );
         self.add_map_entry(tx_kernel.to_commitment(), tx_kernel.to_elements());
         self.add_map_entry(
             tx_kernel.kernel_procs_commitment(),

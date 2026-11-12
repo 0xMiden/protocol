@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core_lib::PVM_PROOF_REQUEST_EVENT_NAME;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, Felt, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
@@ -61,6 +62,7 @@ impl<'store> MockHost<'store> {
             .into_iter()
             .map(|(handler_event_name, _)| handler_event_name.to_event_id());
         let mut handled_events = BTreeSet::from_iter(core_lib_handlers);
+        handled_events.insert(PVM_PROOF_REQUEST_EVENT_NAME.to_event_id());
 
         // The default set of transaction events that are always handled.
         handled_events.extend(
