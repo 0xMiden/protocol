@@ -424,8 +424,7 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitme
     exec.eidos::hash_double_word
     # => [LOGS_EXPIRATION_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT]
 
-    # TODO(#4006): compute the code patch commitment and insert the code patch into the advice map.
-    padw
+    exec.memory::get_code_patch_commitment
     # => [CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT]
 
     # place the account update commitment above the code patch commitment

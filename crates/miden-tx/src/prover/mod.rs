@@ -146,7 +146,8 @@ impl LocalTransactionProver {
         &self,
         tx_witness: impl Into<TransactionWitness>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let (tx_inputs, final_account, expiration_block_num) = tx_witness.into().into_parts();
+        let (tx_inputs, final_account, expiration_block_num, code_patch) =
+            tx_witness.into().into_parts();
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
         // Create a per-call MAST store to avoid accumulating forests across prove
@@ -186,6 +187,7 @@ impl LocalTransactionProver {
             script_mast_store,
             account_procedure_index_map,
             code_tree,
+            code_patch,
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 

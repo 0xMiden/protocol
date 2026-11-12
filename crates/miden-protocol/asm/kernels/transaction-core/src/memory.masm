@@ -378,9 +378,12 @@ const OUTPUT_NOTE_ASSETS_OFFSET = 40
 # CODE PATCH
 # -------------------------------------------------------------------------------------------------
 
-# The memory address at which the code patch section begins. The section contains one list per kind
-# of procedure root.
+# The memory address at which the code patch section begins. The section contains the code patch
+# commitment and one list per kind of procedure root.
 const CODE_PATCH_SECTION_PTR = 17825792
+
+# The memory address at which the code patch commitment is stored.
+const CODE_PATCH_COMMITMENT_PTR = CODE_PATCH_SECTION_PTR
 
 # The offset of the first procedure root relative to the start of a code patch list.
 const CODE_PATCH_LIST_ROOTS_OFFSET = WORD_NUM_ELEMENTS
@@ -390,7 +393,7 @@ const CODE_PATCH_LIST_LENGTH = CODE_PATCH_LIST_ROOTS_OFFSET + MAX_CODE_PATCH_ROO
 
 # The memory addresses at which the code patch lists begin.
 # Each list is laid out as [[num_procedure_roots, 0, 0, 0], PROC_ROOT_0, PROC_ROOT_1, ...].
-pub const CREATED_PROCS_LIST_PTR = CODE_PATCH_SECTION_PTR
+pub const CREATED_PROCS_LIST_PTR = CODE_PATCH_COMMITMENT_PTR + WORD_NUM_ELEMENTS
 pub const DEPENDENCIES_LIST_PTR = CREATED_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH
 
 # LINK MAP MEMORY
@@ -2387,16 +2390,20 @@ end
 # CODE PATCH
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the number of procedure roots in the code patch list.
+#! Returns the number of procedure roots in CREATED_PROCS.
 #!
-#! Inputs:  [list_ptr]
-#! Outputs: [num_procedure_roots]
+#! Inputs:  []
+#! Outputs: [num_created_procs]
+pub proc get_code_patch_num_created_procs() -> u32
+    mem_load.CREATED_PROCS_LIST_PTR
+end
+
+#! Returns the number of procedure roots in DEPENDENCIES.
 #!
-#! Where:
-#! - list_ptr is the memory address at which the code patch list begins.
-#! - num_procedure_roots is the number of procedure roots in the list.
-pub proc get_code_patch_num_procedure_roots(list_ptr: ptr<ProcedureRoot>) -> u32
-    mem_load
+#! Inputs:  []
+#! Outputs: [num_dependencies]
+pub proc get_code_patch_num_dependencies() -> u32
+    mem_load.DEPENDENCIES_LIST_PTR
 end
 
 #! Sets the number of procedure roots in the code patch list.
@@ -2421,6 +2428,24 @@ end
 #! - roots_ptr is the memory address of the first procedure root in the list.
 pub proc get_code_patch_roots_ptr(list_ptr: ptr<ProcedureRoot>) -> ptr<ProcedureRoot>
     add.CODE_PATCH_LIST_ROOTS_OFFSET
+end
+
+#! Returns the code patch commitment.
+#!
+#! Inputs:  []
+#! Outputs: [CODE_PATCH_COMMITMENT]
+pub proc get_code_patch_commitment() -> Commitment
+    padw mem_loadw_le.CODE_PATCH_COMMITMENT_PTR
+    # => [CODE_PATCH_COMMITMENT]
+end
+
+#! Sets the code patch commitment.
+#!
+#! Inputs:  [CODE_PATCH_COMMITMENT]
+#! Outputs: []
+pub proc set_code_patch_commitment(code_patch_commitment: Commitment)
+    mem_storew_le.CODE_PATCH_COMMITMENT_PTR dropw
+    # => []
 end
 
 # LINK MAP

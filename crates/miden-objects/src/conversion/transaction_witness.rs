@@ -11,6 +11,7 @@ impl From<&TransactionWitness> for proto::transaction::TransactionWitnessV1 {
             tx_inputs: Some(witness.tx_inputs().into()),
             final_account: Some(witness.final_account().into()),
             expiration_block_num: Some(witness.expiration_block_num().into()),
+            code_patch: Some(witness.code_patch().into()),
         }
     }
 }

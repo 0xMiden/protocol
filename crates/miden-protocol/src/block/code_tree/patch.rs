@@ -24,10 +24,9 @@ use crate::{Hasher, MastForest, Word};
 /// is a dependency only if a created procedure references it.
 ///
 /// Both lists are sorted, so their commitments are the interface and dependency commitments of the
-/// forest and are equal to the commitments over the strictly sorted lists of the transaction kernel
-/// (TODO(#4006): the kernel does not output them yet). Hence, the procedure roots and the external
-/// nodes must each be unique, since a duplicate would make the forest commitments differ from the
-/// kernel's.
+/// forest and are equal to the commitments over the strictly sorted lists of the transaction
+/// kernel. Hence, the procedure roots and the external nodes must each be unique, since a duplicate
+/// would make the forest commitments differ from the kernel's.
 ///
 /// A dependency must not be a created procedure, i.e. an external node must not reference a
 /// created procedure. Building the forest with [`MastForest::merge`] replaces such references with
@@ -112,17 +111,10 @@ impl CodePatch {
 
     /// Creates a new [`CodePatch`] from the MAST forest without validation.
     fn new_unchecked(mast: Arc<MastForest>) -> Self {
-        let commitment = if mast.procedure_roots().is_empty() {
-            Word::empty()
-        } else {
-            Hasher::hash_elements_in_domain(
-                Word::words_as_elements(&[
-                    mast.interface_commitment(),
-                    mast.dependency_commitment(),
-                ]),
-                CODE_PATCH_COMMITMENT_DOMAIN,
-            )
-        };
+        let commitment = Hasher::hash_elements_in_domain(
+            Word::words_as_elements(&[mast.interface_commitment(), mast.dependency_commitment()]),
+            CODE_PATCH_COMMITMENT_DOMAIN,
+        );
 
         Self {
             mast,
@@ -166,7 +158,7 @@ impl CodePatch {
         self.mast.dependency_commitment()
     }
 
-    /// Returns the commitment to this patch, or [`Word::empty`] for an empty patch.
+    /// Returns the commitment to this patch.
     ///
     /// The commitment is the domain-separated merge of [`Self::created_commitment`] and
     /// [`Self::dependencies_commitment`].
@@ -304,13 +296,20 @@ mod tests {
     }
 
     #[test]
-    fn empty_patch_has_empty_commitment() -> anyhow::Result<()> {
+    fn empty_patch_commits_to_empty_lists() -> anyhow::Result<()> {
         let patch = CodePatch::new(Arc::new(MastForest::new()))?;
 
         assert!(patch.is_empty());
         assert_eq!(patch.created_procedures().len(), 0);
         assert_eq!(patch.dependencies().len(), 0);
-        assert_eq!(patch.commitment().as_word(), Word::empty());
+        let empty_list_commitment = Hasher::hash_elements::<Felt>(&[]);
+        assert_eq!(
+            patch.commitment().as_word(),
+            Hasher::hash_elements_in_domain(
+                Word::words_as_elements(&[empty_list_commitment, empty_list_commitment]),
+                CODE_PATCH_COMMITMENT_DOMAIN,
+            )
+        );
         assert_eq!(patch, CodePatch::default());
 
         Ok(())

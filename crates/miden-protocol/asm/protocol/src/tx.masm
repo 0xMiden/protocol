@@ -1,6 +1,10 @@
 use miden::core::crypto::hashes::eidos
 use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
-use {TX_ADD_LOG_OFFSET, TX_GET_LOGS_COMMITMENT_OFFSET} from miden::protocol::kernel_proc_offsets
+use {
+    TX_ADD_LOG_OFFSET,
+    TX_GET_CODE_PATCH_COMMITMENT_OFFSET,
+    TX_GET_LOGS_COMMITMENT_OFFSET,
+} from miden::protocol::kernel_proc_offsets
 use {
     AccountId,
     AccountProcedureRoot,
@@ -547,4 +551,29 @@ pub proc get_logs_commitment() -> word
 
     swapdw dropw dropw swapw dropw
     # => [LOGS_COMMITMENT]
+end
+
+#! Returns the code patch commitment of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [CODE_PATCH_COMMITMENT]
+#!
+#! Where:
+#! - CODE_PATCH_COMMITMENT is the commitment to the code that the transaction creates and the code
+#!   that it depends on.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the authentication procedure of the
+#!   native account.
+#!
+#! Invocation: exec
+pub proc get_code_patch_commitment() -> word
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.TX_GET_CODE_PATCH_COMMITMENT_OFFSET syscall.exec_kernel_proc
+    # => [CODE_PATCH_COMMITMENT, pad(12)]
+
+    swapdw dropw dropw swapw dropw
+    # => [CODE_PATCH_COMMITMENT]
 end
