@@ -111,6 +111,9 @@ const ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT = "a new account cannot be
 
 const ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET = "an account code upgrade is already pending"
 
+const ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_IN_AUTH_PROCEDURE =
+    "an account cannot be upgraded in the authentication procedure"
+
 const ERR_FOREIGN_ACCOUNT_ID_MISMATCH =
     "foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
 
@@ -942,6 +945,7 @@ end
 #! Panics if:
 #! - STORAGE_UPGRADE_COMMITMENT is not empty.
 #! - the native account is new.
+#! - the epilogue executes the authentication procedure.
 #! - a code upgrade is already pending.
 #! - the number of new procedures is less than 2 or more than 256.
 #! - the new procedures do not match NEW_CODE_COMMITMENT.
@@ -957,6 +961,11 @@ pub proc upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Co
 
     # a new account's code is already part of its creation, so upgrading it is meaningless
     exec.memory::is_new_account assertz.err=ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # the authentication procedure authenticates the upgrade, so it cannot initialize one
+    exec.memory::is_epilogue_auth_in_progress
+    assertz.err=ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_IN_AUTH_PROCEDURE
     # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
 
     exec.memory::has_code_upgrade assertz.err=ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET
