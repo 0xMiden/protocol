@@ -541,6 +541,7 @@ async fn standard_auth_rejects_replayed_transaction_log_signatures(
             account_delta.clone(),
             executed.input_notes().clone(),
             executed.output_notes().clone(),
+            executed.code_patch().clone(),
             effects.ref_block_number(),
             effects.ref_block_commitment(),
             0,

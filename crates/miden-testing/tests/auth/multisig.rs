@@ -457,6 +457,7 @@ async fn test_multisig_rejects_invalid_eip712_witness(
                 tx_summary.account_delta().clone(),
                 tx_summary.input_notes().clone(),
                 tx_summary.output_notes().clone(),
+                tx_summary.code_patch().clone(),
                 tx_summary.block_number(),
                 tx_summary.block_commitment(),
                 tx_summary.expiration_delta(),
