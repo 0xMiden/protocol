@@ -127,6 +127,9 @@ static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - rotating the cold key, rotating the guardian and changing policies or the delay configuration
 ///   require both categories (hot + cold + guardian).
 ///
+/// A transaction with a pending code upgrade requires both categories too, whichever procedure
+/// initiated the upgrade, since the new code replaces the code that enforces the policies.
+///
 /// Delayed execution (proposing an action with the hot category and executing it after the
 /// configured delay unless the cold key cancels it) is not part of this component yet; its delay
 /// configuration is stored so adding it needs no storage change.

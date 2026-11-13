@@ -5,6 +5,9 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey, Public
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCode,
+    AccountCodeUpgrade,
+    AccountComponent,
     AccountProcedureRoot,
     AccountType,
     StorageMapKey,
@@ -17,6 +20,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::access::Authority;
 use miden_standards::account::auth::hot_cold_guardian::MIN_DELAY_FLOOR_BLOCKS;
 use miden_standards::account::auth::{
     Approver,
@@ -28,6 +32,7 @@ use miden_standards::account::auth::{
     HotColdPolicy,
     MultisigAuthArgs,
 };
+use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -39,6 +44,7 @@ use miden_standards::errors::standards::{
     ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES,
 };
+use miden_standards::testing::account_component::MockProceduresComponent;
 use miden_testing::{
     Auth,
     MockChain,
@@ -691,6 +697,75 @@ async fn test_hot_cold_guardian_stored_policy_replaces_preset() -> anyhow::Resul
 
     let tx = update_hot_keys_tx(&mock_chain, &account, &[new_hot.approver()], 1)?;
     sign_and_execute(tx, &[&hot[0], &guardian]).await??;
+
+    Ok(())
+}
+
+/// A pending code upgrade takes both categories plus the guardian, even though `upgrade` has no
+/// policy, since the new code replaces the code that enforces the policies.
+#[tokio::test]
+async fn test_hot_cold_guardian_code_upgrade_requires_both_categories() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+    let hot = Signer::new(auth_scheme, &mut rng);
+    let cold = Signer::new(auth_scheme, &mut rng);
+    let guardian = Signer::new(auth_scheme, &mut rng);
+
+    // `AuthControlled` leaves `upgrade` gated by the auth component alone.
+    let components = |extra: Vec<AccountComponent>| -> anyhow::Result<Vec<AccountComponent>> {
+        let config =
+            HotColdAccount::config(core::slice::from_ref(&hot), &cold, &guardian, BTreeMap::new())?;
+        Ok([
+            AuthHotColdGuardian::new(config).into(),
+            BasicWallet.into(),
+            Authority::AuthControlled.into(),
+            UpgradeManager.into(),
+        ]
+        .into_iter()
+        .chain(extra)
+        .collect())
+    };
+    let account = AccountBuilder::new([0; 32])
+        .account_type(AccountType::Public)
+        .with_components(components(vec![])?)
+        .build_existing()?;
+    let upgraded_code =
+        AccountCode::from_components(&components(vec![MockProceduresComponent::new(1).into()])?)?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+
+    let script = CodeBuilder::default()
+        .with_dynamically_linked_package(UpgradeManager::code())?
+        .compile_tx_script(format!(
+            "
+            @transaction_script
+            pub proc main
+                padw push.{new_code_commitment}
+                call.::miden::standards::components::upgrade::manager::upgrade
+                dropw dropw
+            end
+            ",
+            new_code_commitment = upgraded_code.commitment(),
+        ))?;
+    let upgrade_tx = || {
+        mock_chain
+            .build_transaction(account.id())
+            .tx_script(script.clone())
+            .account_code_upgrade(AccountCodeUpgrade::new(upgraded_code.clone()))
+            .multisig_auth_args(MultisigAuthArgs::new(
+                mock_chain.latest_block_header().block_num(),
+                salt(1),
+            ))
+    };
+
+    // A single category plus the guardian cannot upgrade the code.
+    for signers in [[&hot, &guardian], [&cold, &guardian]] {
+        let result = sign_and_execute(upgrade_tx(), &signers).await?;
+        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
+    }
+
+    // Both categories plus the guardian upgrade it.
+    let executed = sign_and_execute(upgrade_tx(), &[&hot, &cold, &guardian]).await??;
+    assert_eq!(executed.final_account().code_commitment(), upgraded_code.commitment());
 
     Ok(())
 }

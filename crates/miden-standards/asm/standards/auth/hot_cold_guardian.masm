@@ -597,8 +597,9 @@ end
 #! The transaction summary this procedure builds has the layout documented on
 #! `miden::standards::auth::multisig::auth_tx`. The guardian signature is always required. The
 #! called procedures' policies yield the number of signed categories the transaction needs and
-#! whether the cold category must be among them; the hot and cold signatures over the summary are
-#! then verified and counted per category.
+#! whether the cold category must be among them; a pending code upgrade raises the need to both
+#! categories. The hot and cold signatures over the summary are then verified and counted per
+#! category.
 #!
 #! Inputs:
 #!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
@@ -641,6 +642,16 @@ pub proc auth_tx(
 
     # ------ Computing the requirements from the procedure policies ------
     exec.compute_called_proc_policy
+    # => [immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
+
+    # a pending code upgrade replaces the code that enforces the policies, so it takes both
+    # categories whichever procedure initiated it
+    exec.native_account::get_code_upgrade_commitment exec.word::eqz not
+    # => [has_pending_upgrade, immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        push.NUM_USER_KEY_CATEGORIES u32max
+    end
     # => [immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
 
     loc_store.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
