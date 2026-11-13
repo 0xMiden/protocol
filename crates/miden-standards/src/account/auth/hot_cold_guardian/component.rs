@@ -36,6 +36,13 @@ const HOT_COLD_GUARDIAN_LIBRARY_PATH: &str =
     "miden::standards::components::auth::hot_cold_guardian";
 
 procedure_root!(
+    HOT_COLD_GUARDIAN_AUTH_TX,
+    HOT_COLD_GUARDIAN_LIBRARY_PATH,
+    AuthHotColdGuardian::AUTH_TX_PROC_NAME,
+    AuthHotColdGuardian::code()
+);
+
+procedure_root!(
     HOT_COLD_GUARDIAN_UPDATE_HOT_KEYS,
     HOT_COLD_GUARDIAN_LIBRARY_PATH,
     AuthHotColdGuardian::UPDATE_HOT_KEYS_PROC_NAME,
@@ -161,6 +168,9 @@ impl AuthHotColdGuardian {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::hot_cold_guardian";
 
+    /// The name of the auth procedure.
+    pub const AUTH_TX_PROC_NAME: &'static str = "auth_tx_hot_cold_guardian";
+
     /// The name of the procedure that replaces the hot key set.
     pub const UPDATE_HOT_KEYS_PROC_NAME: &'static str = "update_hot_keys";
 
@@ -233,6 +243,11 @@ impl AuthHotColdGuardian {
     /// Returns the user-provided per-procedure policies, without the preset ones.
     pub fn procedure_policies(&self) -> &BTreeMap<AccountProcedureRoot, HotColdPolicy> {
         self.config.procedure_policies()
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the auth procedure.
+    pub fn auth_tx_root() -> AccountProcedureRoot {
+        *HOT_COLD_GUARDIAN_AUTH_TX
     }
 
     /// Returns the [`AccountProcedureRoot`] of the `update_hot_keys` procedure.
@@ -439,10 +454,12 @@ mod tests {
         let hot_keys = config.hot_keys().to_vec();
         let cold_key = config.cold_key();
         let guardian = config.guardian_config();
-        let config = config.with_proc_policies(BTreeMap::from([(
-            BasicWallet::receive_asset_root(),
-            HotColdPolicy::HotAndCold,
-        )]));
+        let config = config
+            .with_proc_policies(BTreeMap::from([(
+                BasicWallet::receive_asset_root(),
+                HotColdPolicy::HotAndCold,
+            )]))
+            .unwrap();
 
         let component = AuthHotColdGuardian::new(config);
         let account = AccountBuilder::new([0; 32])
@@ -517,10 +534,12 @@ mod tests {
 
     #[test]
     fn test_hot_cold_guardian_configured_policy_replaces_preset() {
-        let config = config().with_proc_policies(BTreeMap::from([(
-            AuthHotColdGuardian::update_hot_keys_root(),
-            HotColdPolicy::HotAndCold,
-        )]));
+        let config = config()
+            .with_proc_policies(BTreeMap::from([(
+                AuthHotColdGuardian::update_hot_keys_root(),
+                HotColdPolicy::HotAndCold,
+            )]))
+            .unwrap();
 
         let account = AccountBuilder::new([0; 32])
             .with_component(AuthHotColdGuardian::new(config))

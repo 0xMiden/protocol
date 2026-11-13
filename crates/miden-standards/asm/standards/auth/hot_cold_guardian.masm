@@ -120,6 +120,8 @@ const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
 const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
 
+const ERR_PROC_ROOT_IS_AUTH_PROCEDURE = "procedure policy cannot be set on the auth procedure"
+
 const ERR_NUM_HOT_KEYS_NOT_U32 = "number of hot keys must be u32"
 
 const ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS = "number of hot keys must be between 1 and the maximum hot key set size"
@@ -344,6 +346,7 @@ end
 #! - cold_required is set while immediate_threshold is not 1 (with both categories the cold key is
 #!   required anyway, and a cleared policy cannot require it).
 #! - PROC_ROOT is not one of the account's procedures.
+#! - PROC_ROOT is the account's auth procedure, which never contributes to the policies.
 #!
 #! Locals:
 #! 0: immediate_threshold
@@ -384,6 +387,14 @@ pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedure
     # => [is_account_procedure, PROC_ROOT, pad(10)]
 
     assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT, pad(10)]
+
+    # the auth procedure (index 0) is skipped by compute_called_proc_policy, so a policy on it
+    # would never be enforced
+    dupw push.0 exec.active_account::get_procedure_root exec.word::eq
+    # => [is_auth_procedure, PROC_ROOT, pad(10)]
+
+    assertz.err=ERR_PROC_ROOT_IS_AUTH_PROCEDURE
     # => [PROC_ROOT, pad(10)]
 
     # write [immediate_threshold, 0, cold_required, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]; index 1

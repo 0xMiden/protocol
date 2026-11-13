@@ -42,6 +42,7 @@ use miden_standards::errors::standards::{
     ERR_HOT_KEY_IS_GUARDIAN_KEY,
     ERR_MIN_DELAY_BELOW_FLOOR,
     ERR_NUM_HOT_KEYS_OUT_OF_BOUNDS,
+    ERR_PROC_ROOT_IS_AUTH_PROCEDURE,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_CATEGORIES,
 };
 use miden_standards::testing::account_component::MockProceduresComponent;
@@ -115,7 +116,7 @@ impl HotColdAccount {
             GuardianConfig::new(guardian.approver()),
             HotColdDelayConfig::default(),
         )?
-        .with_proc_policies(proc_policies))
+        .with_proc_policies(proc_policies)?)
     }
 }
 
@@ -591,6 +592,13 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 1, 2)?;
     let result = tx.build()?.execute().await;
     assert_transaction_executor_error!(result, ERR_COLD_REQUIRED_NEEDS_SINGLE_CATEGORY);
+
+    // The auth procedure never contributes to the policies, so it cannot carry one.
+    let auth_root = account.code().procedures()[0];
+    assert_eq!(auth_root, AuthHotColdGuardian::auth_tx_root());
+    let tx = set_procedure_policy_tx(&mock_chain, &account, auth_root, 1, 1, 2)?;
+    let result = tx.build()?.execute().await;
+    assert_transaction_executor_error!(result, ERR_PROC_ROOT_IS_AUTH_PROCEDURE);
 
     // A hot key plus the guardian cannot change policies.
     let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 3)?;
