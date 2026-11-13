@@ -120,8 +120,8 @@ static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///   and can enforce off-chain rules, but holds no authority of its own.
 ///
 /// Procedure policies ([`HotColdPolicy`]) count signed categories. A procedure without a policy
-/// costs the default of one category plus the guardian. The component installs policies for its
-/// own procedures, see [`AuthHotColdGuardian::preset_policies`]:
+/// costs the default of one category plus the guardian. The component code presets policies for
+/// its own procedures, see [`AuthHotColdGuardian::preset_policies`]:
 ///
 /// - replacing the hot keys requires the cold category (cold + guardian),
 /// - rotating the cold key, rotating the guardian and changing policies or the delay configuration
@@ -188,8 +188,9 @@ impl AuthHotColdGuardian {
         Self { config }
     }
 
-    /// Returns the policies the component installs for its own procedures. A policy of the
-    /// configuration for the same procedure replaces the preset.
+    /// Returns the preset policies of the component's own procedures. They are built into the
+    /// component code and apply to a procedure while it has no stored policy, however the account
+    /// was created. A configured or stored policy for the same procedure replaces the preset.
     ///
     /// - `update_hot_keys`: cold only. Device management is immediate for the cold key and closed
     ///   to the hot keys.
@@ -366,16 +367,12 @@ impl From<AuthHotColdGuardian> for AccountComponent {
             StorageMap::default(),
         ));
 
-        // Procedure policies slot (map): the presets, replaced by the configured policies for the
-        // same procedures.
-        let mut all_policies = AuthHotColdGuardian::preset_policies();
-        all_policies
-            .extend(config.procedure_policies().iter().map(|(root, policy)| (*root, *policy)));
-        let procedure_policies =
-            StorageMap::with_entries(all_policies.into_iter().map(|(proc_root, policy)| {
-                (StorageMapKey::from_raw(proc_root.as_word()), policy.to_word())
-            }))
-            .expect("the policy roots are unique");
+        // Procedure policies slot (map): the configured policies only. The presets are built into
+        // the component code and apply to procedures without a stored policy.
+        let procedure_policies = StorageMap::with_entries(config.procedure_policies().iter().map(
+            |(proc_root, policy)| (StorageMapKey::from_raw(proc_root.as_word()), policy.to_word()),
+        ))
+        .expect("the policy roots are unique");
         storage_slots.push(StorageSlot::with_map(
             AuthHotColdGuardian::procedure_policies_slot().clone(),
             procedure_policies,
@@ -498,14 +495,10 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(policy_word(BasicWallet::receive_asset_root()), Word::from([2u32, 0, 0, 0]));
-        assert_eq!(
-            policy_word(AuthHotColdGuardian::update_hot_keys_root()),
-            Word::from([1u32, 0, 1, 0])
-        );
-        assert_eq!(
-            policy_word(AuthHotColdGuardian::rotate_cold_key_root()),
-            Word::from([2u32, 0, 0, 0])
-        );
+        // the presets are built into the component code, so they are not stored
+        for preset_root in AuthHotColdGuardian::preset_policies().keys() {
+            assert_eq!(policy_word(*preset_root), Word::empty());
+        }
 
         let delay = HotColdDelayConfig::default();
         assert_eq!(

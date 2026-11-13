@@ -633,6 +633,68 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     Ok(())
 }
 
+/// The presets of the component's own procedures are built into its code: they are not stored,
+/// yet `get_procedure_policy` reports them, while a procedure without a preset reports no policy.
+#[tokio::test]
+async fn test_hot_cold_guardian_reports_preset_policies() -> anyhow::Result<()> {
+    let HotColdAccount { hot, guardian, account, .. } =
+        create_hot_cold_guardian_account(AuthScheme::EcdsaK256Keccak, 1, 10, BTreeMap::new())?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+
+    let preset_policies =
+        AuthHotColdGuardian::preset_policies().into_iter().map(|(root, policy)| {
+            (root, policy.immediate_threshold(), u32::from(policy.cold_required()))
+        });
+    let expected_policies = preset_policies.chain([(BasicWallet::receive_asset_root(), 0, 0)]);
+
+    for (salt_seed, (proc_root, immediate_threshold, cold_required)) in (1..).zip(expected_policies)
+    {
+        assert_eq!(policy_word(&account, proc_root)?, Word::empty());
+
+        let script = compile_tx_script(format!(
+            r#"
+            @transaction_script
+            pub proc main
+                push.{root}
+                call.::miden::standards::components::auth::hot_cold_guardian::get_procedure_policy
+                # => [immediate_threshold, cold_required, pad(14)]
+
+                eq.{immediate_threshold} assert.err="unexpected immediate threshold"
+                eq.{cold_required} assert.err="unexpected cold required flag"
+                drop drop
+            end
+            "#,
+            root = proc_root.as_word(),
+        ))?;
+        let tx = mock_chain.build_transaction(account.id()).tx_script(script).multisig_auth_args(
+            MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(salt_seed)),
+        );
+        sign_and_execute(tx, &[&hot[0], &guardian]).await??;
+    }
+
+    Ok(())
+}
+
+/// A stored policy replaces the preset: with `update_hot_keys` configured as `HotOrCold`, a hot key
+/// plus the guardian can replace the hot keys.
+#[tokio::test]
+async fn test_hot_cold_guardian_stored_policy_replaces_preset() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let HotColdAccount { hot, guardian, account, .. } = create_hot_cold_guardian_account(
+        auth_scheme,
+        1,
+        10,
+        BTreeMap::from([(AuthHotColdGuardian::update_hot_keys_root(), HotColdPolicy::HotOrCold)]),
+    )?;
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    let new_hot = Signer::new(auth_scheme, &mut ChaCha20Rng::from_seed(rand::random()));
+
+    let tx = update_hot_keys_tx(&mock_chain, &account, &[new_hot.approver()], 1)?;
+    sign_and_execute(tx, &[&hot[0], &guardian]).await??;
+
+    Ok(())
+}
+
 /// The component pays the transaction fee after the signatures are verified, within the max fee it
 /// estimates when the auth args carry none.
 #[tokio::test]
