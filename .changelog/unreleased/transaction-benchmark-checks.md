@@ -1,0 +1,1 @@
+Transaction benchmarks now fail on execution, proving, or verification errors and check generated proofs after timing. Added separate commands for cycle counting in release mode and latency benchmarks.

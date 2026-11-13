@@ -44,8 +44,9 @@ Freshness is enforced in CI: the `checked_in_note_costs_match_executed_scenarios
 
 ### Benchmark Groups
 
-Each of the above transactions is measured in two groups:
-- Benchmarking the transaction execution.
+Cycle counts and elapsed time are measured separately:
+
+- Cycle counts cover all scenarios listed above.
 
   For each transaction, data is collected on the number of cycles required to complete:
   - Prologue
@@ -63,10 +64,13 @@ Each of the above transactions is measured in two groups:
 
   The same pass rebuilds the `ExecutionTrace` for each scenario. It records the AIR row totals (`core_rows`, `chiplets_rows`, `eidos_compression_rows`, and `byte_pair_lookup_rows`) and the per-chiplet breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, and `ace_rows`).
 
-  Results of this benchmark will be stored in the [`bin/bench-tx/bench-tx.json`](bench-tx.json) file.
-- Benchmarking the transaction execution and proving.
-  
-  For each transaction in this group we measure how much time it takes to execute the transaction and to execute and prove the transaction.
+  Results are stored in [`bench-tx.json`](bench-tx.json).
+- Elapsed-time benchmarks cover single- and two-note P2ID consumption with Falcon or ECDSA authentication, CLAIM consumption from L1 or L2, and B2AGG consumption. Each scenario has two measurements:
+
+  - `Execute transaction`: initial transaction execution.
+  - `Execute and prove transaction`: initial execution followed by prover replay and proof generation.
+
+  Transaction setup is excluded from both measurements. Generated proofs are checked with `TransactionVerifier` after timing; execution, proving, or verification errors fail the benchmark.
 
   Proving benchmarks use Eidos, matching the protocol proof-hash policy.
 
@@ -74,24 +78,21 @@ Each of the above transactions is measured in two groups:
 
 ## Running Benchmarks
 
-You can run the benchmarks in two ways:
-
-### Option 1: Using Make (from protocol directory)
+From the repository root, run cycle counting and latency measurements independently:
 
 ```bash
-make bench-tx
+make bench-tx-cycles
+make bench-tx-time
 ```
 
-This command will run both the cycle counting and the time counting benchmarks.
+`make bench-tx-cycles` updates `bench-tx.json` using a release build. `make bench-tx-time` measures transaction latency using Cargo's bench profile. `make bench-tx` runs both commands in sequence.
 
-### Option 2: Running each benchmark individually (from protocol directory)
+To measure execution and proving of a single-note ECDSA P2ID transaction with eight Rayon workers:
 
 ```bash
-# Run the cycle counting benchmarks
-cargo run --bin bench-transaction --features concurrent
-
-# Run the time counting benchmarks
-cargo bench --bin bench-transaction --bench time_counting_benchmarks --features concurrent
+RAYON_NUM_THREADS=8 cargo bench --locked -p bench-transaction \
+  --bench time_counting_benchmarks --features concurrent -- \
+  '^Execute and prove transaction/eidos/ecdsa/single-p2id-note$'
 ```
 
 ## Trace shape and miden-vm's synthetic benchmark
