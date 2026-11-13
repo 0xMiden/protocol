@@ -21,6 +21,7 @@ use crate::host::{
     TransactionBaseHost,
     TransactionEvent,
     TxSummaryOrSignature,
+    code_patch_advice,
 };
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
 
@@ -33,8 +34,8 @@ where
     /// The underlying base transaction host.
     base_host: TransactionBaseHost<'store, STORE>,
 
-    /// The code patch that the kernel loads, or `None` before the kernel loads it.
-    code_patch: Option<CodePatch>,
+    /// The code patch of the executed transaction, which the kernel loads.
+    code_patch: CodePatch,
 }
 
 impl<'store, STORE> TransactionProverHost<'store, STORE>
@@ -45,6 +46,8 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
+    ///
+    /// The code patch is the patch of the executed transaction.
     ///
     /// # Errors
     ///
@@ -57,6 +60,7 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
+        code_patch: CodePatch,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -68,14 +72,14 @@ where
             code_tree,
         )?;
 
-        Ok(Self { base_host, code_patch: None })
+        Ok(Self { base_host, code_patch })
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     /// Consumes `self` and returns the account patch, input and output notes, transaction logs and
-    /// the code patch, if the kernel loaded it.
+    /// the code patch.
     pub fn into_parts(
         self,
     ) -> (
@@ -86,13 +90,7 @@ where
         CodePatch,
     ) {
         let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
-        (
-            account_patch,
-            input_notes,
-            output_notes,
-            logs,
-            self.code_patch.expect("code patch should have been built"),
-        )
+        (account_patch, input_notes, output_notes, logs, self.code_patch)
     }
 }
 
@@ -237,17 +235,9 @@ where
             },
 
             // The code witnesses are in the transaction inputs at proving time.
-            // TODO(#4006): take the code patch from the transaction witness, so that the prover
-            // does not need the MAST of the created procedures, e.g. the code to register.
-            TransactionEvent::CodePatchBeforeLoaded => self
-                .base_host
-                .code_patch_source(&[])
-                .and_then(|source| self.base_host.build_code_patch(&source))
-                .and_then(|code_patch| {
-                    let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;
-                    self.code_patch = Some(code_patch);
-                    Ok(advice_mutations)
-                }),
+            TransactionEvent::CodePatchBeforeLoaded => {
+                Ok(Vec::from([code_patch_advice(&self.code_patch)]))
+            },
 
             TransactionEvent::CodePatchBeforeWitnessVerified { procedure_root } => {
                 self.base_host.on_code_patch_before_witness_verified(procedure_root)

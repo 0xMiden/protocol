@@ -2242,3 +2242,31 @@ pub proc tx_get_logs_commitment(padding: [felt; 16]) -> (word, [felt; 12])
     swapw dropw
     # => [LOGS_COMMITMENT, pad(12)]
 end
+
+#! Returns the code patch commitment of the transaction.
+#!
+#! May only be called by the auth procedure because the code patch is loaded by the epilogue and
+#! so the returned value would be meaningless before the epilogue starts.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [CODE_PATCH_COMMITMENT, pad(12)]
+#!
+#! Panics if:
+#! - the current active account is not the native account of the transaction.
+#! - the invocation of this procedure does not originate from the authentication procedure
+#!   of the account.
+#!
+#! Invocation: dynexec
+pub proc tx_get_code_patch_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    exec.memory::assert_native_account
+    # => [pad(16)]
+
+    exec.assert_auth_procedure_origin
+    # => [pad(16)]
+
+    exec.memory::get_code_patch_commitment
+    # => [CODE_PATCH_COMMITMENT, pad(16)]
+
+    swapw dropw
+    # => [CODE_PATCH_COMMITMENT, pad(12)]
+end

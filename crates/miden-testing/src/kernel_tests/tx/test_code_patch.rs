@@ -14,10 +14,15 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountType,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::code::ProcedureRoot;
-use miden_protocol::errors::tx_kernel::ERR_CODE_PATCH_AUTH_NOTE_SCRIPT_ABSENT;
+use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_PROC_NOT_AUTH_PROC,
+    ERR_CODE_PATCH_AUTH_NOTE_SCRIPT_ABSENT,
+};
 use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
@@ -319,8 +324,73 @@ async fn private_auth_note_is_not_verified() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The authentication procedure reads the code patch commitment of the transaction.
+#[rstest::rstest]
+#[case::empty(false)]
+#[case::non_empty(true)]
+#[tokio::test]
+async fn auth_procedure_reads_code_patch_commitment(
+    #[case] creates_code: bool,
+) -> anyhow::Result<()> {
+    let slot_name = StorageSlotName::new(CODE_PATCH_COMMITMENT_SLOT)?;
+    let mut account = code_patch_commitment_storing_auth_account(&slot_name)?;
+
+    let mut builder = TestTransactionBuilder::new(account.clone());
+    if creates_code {
+        let note = create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 1)?;
+        let script = SendNotesTransactionScript::new(
+            &account.code_interface(),
+            &[PartialNote::from(note.clone())],
+        )?;
+        builder = builder
+            .tx_script(script.tx_script().clone())
+            .tx_script_args(script.tx_script_args())
+            .expected_output_note(RawOutputNote::Full(note));
+    }
+    let executed_tx = builder.build()?.execute().await?;
+
+    assert_eq!(executed_tx.code_patch().is_empty(), !creates_code);
+    account.apply_patch(executed_tx.account_patch())?;
+    assert_eq!(
+        account.storage().get_item(&slot_name)?,
+        executed_tx.code_patch().commitment().as_word()
+    );
+
+    Ok(())
+}
+
+/// Only the authentication procedure can read the code patch commitment, because the kernel loads
+/// the code patch before it.
+#[tokio::test]
+async fn tx_script_cannot_read_code_patch_commitment() -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::default().compile_tx_script(
+        "
+        use miden::protocol::tx
+
+        @transaction_script
+        pub proc main
+            exec.tx::get_code_patch_commitment dropw
+        end
+        ",
+    )?;
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_PROC_NOT_AUTH_PROC);
+
+    Ok(())
+}
+
 // HELPERS
 // ================================================================================================
+
+/// The name of the storage slot to which the authentication procedure of
+/// [`code_patch_commitment_storing_auth_account`] writes the code patch commitment.
+const CODE_PATCH_COMMITMENT_SLOT: &str = "miden::testing::code_patch::commitment";
 
 /// A note script that references a procedure of the protocol library.
 const ACTIVE_ACCOUNT_SCRIPT: &str = "
@@ -409,6 +479,42 @@ fn note_creating_auth_account(note: &Note) -> anyhow::Result<Account> {
     )?;
 
     Ok(AccountBuilder::new([43; 32])
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()?)
+}
+
+/// Returns an existing account whose authentication procedure writes the code patch commitment to
+/// the storage slot.
+fn code_patch_commitment_storing_auth_account(
+    slot_name: &StorageSlotName,
+) -> anyhow::Result<Account> {
+    let auth_source = format!(
+        "
+        use miden::protocol::native_account
+        use miden::protocol::tx
+
+        const CODE_PATCH_COMMITMENT_SLOT = word(\"{slot_name}\")
+
+        @auth_script
+        pub proc auth
+            exec.tx::get_code_patch_commitment
+            push.CODE_PATCH_COMMITMENT_SLOT[0..2] exec.native_account::set_item dropw
+
+            exec.native_account::incr_nonce drop
+            dropw dropw dropw dropw
+        end
+        "
+    );
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("mock::code_patch_commitment_auth", &auth_source)?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![StorageSlot::with_value(slot_name.clone(), Word::empty())],
+        AccountComponentMetadata::mock("mock::code_patch_commitment_auth"),
+    )?;
+
+    Ok(AccountBuilder::new([44; 32])
         .with_component(auth_component)
         .with_component(BasicWallet)
         .build_existing()?)

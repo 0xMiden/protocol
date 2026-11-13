@@ -112,3 +112,6 @@ pub const TX_GET_FEE_ASSET_ID_OFFSET = 63 # accessor
 # transaction logs
 pub const TX_ADD_LOG_OFFSET = 64
 pub const TX_GET_LOGS_COMMITMENT_OFFSET = 65
+
+# code patch
+pub const TX_GET_CODE_PATCH_COMMITMENT_OFFSET = 66

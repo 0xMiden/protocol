@@ -1,0 +1,1 @@
+[BREAKING] The transaction kernel now commits to the code patch, `TransactionWitness` now carries the `CodePatch`, and the authentication procedure can read the commitment with `tx::get_code_patch_commitment`.
