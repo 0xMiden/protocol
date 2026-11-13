@@ -103,7 +103,10 @@ where
     STORE: MastForestStore,
 {
     fn get_mast_forest(&self, node_digest: &Word) -> Option<LoadedMastForest> {
-        self.base_host.get_mast_forest(node_digest)
+        self.base_host
+            .scripts_mast_store()
+            .get(node_digest)
+            .or_else(|| self.base_host.store().get(node_digest))
     }
 
     fn on_event(&mut self, process: &ProcessorState) -> Result<Vec<AdviceMutation>, EventError> {

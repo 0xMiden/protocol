@@ -255,10 +255,11 @@ impl DataStore for TransactionInputsDataStore {
     ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
         async move { Ok(Vec::new()) }
     }
-}
 
-impl MastForestStore for TransactionInputsDataStore {
-    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
-        self.mast_store.get(procedure_hash)
+    fn get_mast_forest(
+        &self,
+        procedure_root: ProcedureRoot,
+    ) -> impl FutureMaybeSend<Result<Option<LoadedMastForest>, DataStoreError>> {
+        async move { Ok(self.mast_store.get(&procedure_root.as_word())) }
     }
 }
