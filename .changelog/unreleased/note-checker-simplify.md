@@ -1,0 +1,1 @@
+Simplified `NoteConsumptionChecker`: the epilogue-failure search runs a single pass with fee-collecting bundles first, a check that reaches the account's authentication without an authenticator reports its notes as consumable pending authorization, and a failing transaction script is returned as `NoteCheckerError::TransactionScriptExecution`.
