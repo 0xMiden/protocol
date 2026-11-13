@@ -3,6 +3,7 @@ extern crate alloc;
 mod agglayer;
 mod auth;
 mod oracle;
+mod precompile_handling;
 mod scripts;
 mod standards;
 mod wallet;
@@ -38,14 +39,6 @@ use rstest::rstest;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-pub async fn prove_and_verify_transaction_deferred(
-    executed_transaction: ExecutedTransaction,
-) -> Result<(), TransactionVerifierError> {
-    let (_, outcome) = prove_and_verify_transaction(executed_transaction).await?;
-    assert!(!outcome.is_complete());
-    Ok(())
-}
-
 /// Proves `executed_transaction` locally, round-trips it and verifies it.
 pub async fn prove_and_verify_transaction_complete(
     executed_transaction: ExecutedTransaction,
@@ -72,7 +65,7 @@ pub async fn prove_and_verify_transaction(
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 
     assert_eq!(proven_transaction.proof().vm().proof.hash_fn(), PROTOCOL_PROOF_HASH);
-    assert!(!matches!(proven_transaction.proof().precompile(), PrecompileStatus::Proven(_)));
+    assert!(matches!(proven_transaction.proof().precompile(), PrecompileStatus::Empty));
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     assert_eq!(proven_tx_header, executed_tx_header);
@@ -90,38 +83,48 @@ pub async fn prove_and_verify_transaction(
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
 
     let outcome = verifier.verify(&proven_transaction)?;
+    assert!(outcome.is_complete());
+    assert!(outcome.outstanding_precompile_root().is_none());
 
     Ok((proven_transaction, outcome))
 }
 
-/// The local prover leaves precompile claims for the batch prover, so a transaction that
-/// authenticates with ECDSA verifies while its precompile obligation is still outstanding. Falcon
-/// is the control: it verifies in-circuit and uses no precompile, so its proof is complete.
-///
-/// Both must also pass `ProposedBatch::new`, which verifies the proof of every transaction it
-/// batches.
+/// The epilogue settles both script and authentication precompile work. Falcon and nonce-only
+/// authentication exercise the empty-root path. The complete proof must also pass batch admission.
 #[rstest]
 #[case::ecdsa(Auth::basic_ecdsa(), false)]
-#[case::falcon(Auth::basic_falcon(), true)]
+#[case::falcon(Auth::basic_falcon(), false)]
+#[case::no_precompiles(Auth::IncrNonce, false)]
+#[case::script_precompile(Auth::IncrNonce, true)]
+#[case::script_and_auth_precompiles(Auth::basic_ecdsa(), true)]
 #[tokio::test]
-async fn prove_and_verify_defers_precompile_claims(
+async fn prove_and_verify_settles_precompile_claims(
     #[case] auth: Auth,
-    #[case] is_complete: bool,
+    #[case] script_precompile: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(auth)?;
     let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
     let mock_chain = builder.build()?;
 
-    let executed = mock_chain
-        .build_transaction(account.id())
-        .authenticated_input_note(note.id())
-        .build()?
-        .execute()
-        .await?;
+    let mut transaction =
+        mock_chain.build_transaction(account.id()).authenticated_input_note(note.id());
+    if script_precompile {
+        transaction = transaction.tx_script(CodeBuilder::default().compile_tx_script(
+            "use miden::core::precompiles::u256
+             @transaction_script
+             pub proc main
+                 exec.u256::push_one_digest
+                 dupw exec.u256::add
+                 exec.u256::push_two_digest
+                 exec.u256::assert_eq
+             end",
+        )?);
+    }
+    let executed = transaction.build()?.execute().await?;
 
     let (proven_transaction, outcome) = prove_and_verify_transaction(executed).await?;
-    assert_eq!(outcome.is_complete(), is_complete);
+    assert!(outcome.is_complete());
 
     let transactions = vec![Arc::new(proven_transaction)];
     let (batch_reference_block, partial_blockchain, unauthenticated_note_proofs) = mock_chain
@@ -139,12 +142,11 @@ async fn prove_and_verify_defers_precompile_claims(
     Ok(())
 }
 
-/// Deferred transaction proofs are validated by the VM verifier rather than rejected by their
-/// lifecycle state alone.
+/// Transaction proof lifecycle checks reject deferred work before attempting STARK verification.
 #[tokio::test]
-async fn transaction_verifier_delegates_deferred_proof_validation() -> anyhow::Result<()> {
+async fn transaction_verifier_rejects_deferred_precompile_proofs() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
     let mock_chain = builder.build()?;
 
@@ -159,7 +161,7 @@ async fn transaction_verifier_delegates_deferred_proof_validation() -> anyhow::R
     let err = TransactionVerifier::new(0).verify(&proven).unwrap_err();
     assert_matches::assert_matches!(
         err,
-        TransactionVerifierError::TransactionVerificationFailed(_)
+        TransactionVerifierError::TransactionProofContainsPrecompiles
     );
 
     Ok(())
@@ -168,7 +170,7 @@ async fn transaction_verifier_delegates_deferred_proof_validation() -> anyhow::R
 #[tokio::test]
 async fn transaction_verifier_rejects_settled_precompile_proofs() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
     let mock_chain = builder.build()?;
 
@@ -186,6 +188,47 @@ async fn transaction_verifier_rejects_settled_precompile_proofs() -> anyhow::Res
         TransactionVerifierError::TransactionProofContainsPrecompiles
     );
 
+    Ok(())
+}
+
+/// Authentication code cannot discard precompile obligations, even when the current root is TRUE.
+#[tokio::test]
+async fn authentication_code_cannot_clear_precompile_work() -> anyhow::Result<()> {
+    use miden_protocol::account::{AccountBuilder, AccountComponent, AccountComponentMetadata};
+    use miden_standards::account::wallets::BasicWallet;
+
+    let mut builder = MockChain::builder();
+    let code = CodeBuilder::default().compile_component_code(
+        "mock::clear_precompiles_auth",
+        "use miden::protocol::native_account
+         @auth_script
+         pub proc auth
+             exec.native_account::incr_nonce drop
+             padw clear_deferred dropw
+             dropw dropw dropw dropw
+         end",
+    )?;
+    let component = AccountComponent::new(
+        code,
+        vec![],
+        AccountComponentMetadata::mock("mock::clear_precompiles_auth"),
+    )?;
+    let account = AccountBuilder::new([42; 32])
+        .with_component(component)
+        .with_component(BasicWallet)
+        .build_existing()?;
+    builder.add_account(account.clone())?;
+    let chain = builder.build()?;
+    let result = chain.build_transaction(account).build()?.execute().await;
+    assert_matches::assert_matches!(
+        result,
+        Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::ClearDeferredOutsideRootContext { .. },
+                ..
+            }
+        ))
+    );
     Ok(())
 }
 

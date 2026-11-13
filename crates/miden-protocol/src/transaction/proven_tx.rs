@@ -1,8 +1,6 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_core::deferred::PrecompileWitness;
-
 use super::{InputNote, ToInputNoteCommitments, TransactionLogDetails};
 use crate::Word;
 use crate::account::{AccountUpdateDetails, validate_new_public_account};
@@ -25,7 +23,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{ExecutionProof, PrecompileStatus};
+use crate::vm::ExecutionProof;
 
 // PROVEN TRANSACTION
 // ================================================================================================
@@ -168,18 +166,6 @@ impl ProvenTransaction {
     /// Returns the proof of the transaction.
     pub fn proof(&self) -> &ExecutionProof {
         &self.proof
-    }
-
-    /// Returns a singleton precompile witness over the transaction's outstanding precompile claims,
-    /// or `None` if the transaction has no outstanding claims.
-    ///
-    /// A batch collects these witnesses in transaction order and settles their claims with a
-    /// single precompile proof.
-    pub fn precompile_witness(&self) -> Option<&PrecompileWitness> {
-        match self.proof.precompile() {
-            PrecompileStatus::Deferred(witness) => Some(witness),
-            PrecompileStatus::Empty | PrecompileStatus::Proven(_) => None,
-        }
     }
 
     /// Returns the number of the reference block the transaction was executed against.

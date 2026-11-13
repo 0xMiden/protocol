@@ -1,7 +1,6 @@
 use miden_verifier::{
     ExecutionClaim,
     ExecutionProof,
-    PrecompileStatus,
     VerificationError,
     VerificationOutcome,
     Verifier,
@@ -35,15 +34,15 @@ impl TransactionVerifier {
     /// Verifies the provided [`ProvenTransaction`] against the transaction kernel and returns its
     /// verification outcome.
     ///
-    /// A verified transaction may still have an outstanding precompile obligation. Callers must
-    /// inspect the returned [`VerificationOutcome`] and handle that obligation if present.
+    /// A successful verification requires no outstanding precompile work and always returns a
+    /// complete outcome. Proofs produced with deferred host handling must be re-executed and
+    /// proved with recursive settlement before protocol acceptance.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The transaction proof contains settled precompile work.
+    /// - The transaction proof carries deferred precompile work or a separate precompile proof.
     /// - The VM proof does not use the protocol's Eidos transcript hash.
     /// - Transaction verification fails.
-    /// - A deferred precompile witness is invalid or does not match the VM proof.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(
         &self,
@@ -93,7 +92,7 @@ impl TransactionVerifier {
 
 /// Checks the transaction proof lifecycle and protocol transcript hash.
 fn validate_proof_shape(proof: &ExecutionProof) -> Result<(), TransactionVerifierError> {
-    if matches!(proof.precompile(), PrecompileStatus::Proven(_)) {
+    if proof.has_precompiles() {
         return Err(TransactionVerifierError::TransactionProofContainsPrecompiles);
     }
 
@@ -123,13 +122,14 @@ mod tests {
     };
 
     #[test]
-    fn proof_shape_requires_eidos_and_rejects_settled_precompiles() {
+    fn proof_shape_requires_eidos_and_no_precompile_work() {
         assert_matches!(validate_proof_shape(&dummy_execution_proof()), Ok(()));
-        assert_matches!(validate_proof_shape(&dummy_deferred_execution_proof()), Ok(()));
-        assert_matches!(
-            validate_proof_shape(&dummy_precompile_execution_proof()),
-            Err(TransactionVerifierError::TransactionProofContainsPrecompiles)
-        );
+        for proof in [dummy_deferred_execution_proof(), dummy_precompile_execution_proof()] {
+            assert_matches!(
+                validate_proof_shape(&proof),
+                Err(TransactionVerifierError::TransactionProofContainsPrecompiles)
+            );
+        }
 
         let (compatibility, mut vm, precompile) = dummy_execution_proof().into_parts();
         vm.proof = StarkProof::new(Vec::new(), HashFunction::Blake3_256);
@@ -140,6 +140,24 @@ mod tests {
                 actual: HashFunction::Blake3_256,
                 expected: PROTOCOL_PROOF_HASH,
             })
+        );
+    }
+
+    #[test]
+    fn empty_precompile_status_requires_the_authenticated_final_root_to_be_true() {
+        let (compatibility, mut vm, precompile) = dummy_execution_proof().into_parts();
+        vm.precompile_root = crate::Word::from([1, 0, 0, 0u32]);
+        let proof = ExecutionProof::from_parts(compatibility, vm, precompile);
+        assert_matches!(validate_proof_shape(&proof), Ok(()));
+
+        let claim = ExecutionClaim::from_program_info(
+            TransactionKernel::program_info(),
+            Default::default(),
+            Default::default(),
+        );
+        assert_matches!(
+            Verifier::new().verify(&claim, &proof),
+            Err(VerificationError::MissingPrecompileProof)
         );
     }
 }

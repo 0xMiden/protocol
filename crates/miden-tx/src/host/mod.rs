@@ -30,6 +30,8 @@ pub use script_mast_forest_store::ScriptMastForestStore;
 
 mod tx_progress;
 
+pub(crate) mod precompile_proof;
+
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -364,6 +366,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// First checks if the event is a core library event, then checks if it is a transaction
     /// kernel event.
     pub fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        if event_id == precompile_proof::PROOF_REQUEST_EVENT_NAME.to_event_id() {
+            return Some(&precompile_proof::PROOF_REQUEST_EVENT_NAME);
+        }
         if let Some(name) = self.core_lib_handlers.resolve_event(event_id) {
             return Some(name);
         }

@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core_lib::PVM_PROOF_REQUEST_EVENT_NAME;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, Felt, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
@@ -48,6 +49,9 @@ pub(crate) struct MockHost<'store> {
     /// Overrides the advised delta-commitment body block count for tests that exercise kernel
     /// validation of host advice.
     delta_commitment_body_block_count_response: Option<Felt>,
+
+    /// Overrides the precompile mode for kernel validation of untrusted host advice.
+    precompile_handling_response: Option<Felt>,
 }
 
 impl<'store> MockHost<'store> {
@@ -61,6 +65,7 @@ impl<'store> MockHost<'store> {
             .into_iter()
             .map(|(handler_event_name, _)| handler_event_name.to_event_id());
         let mut handled_events = BTreeSet::from_iter(core_lib_handlers);
+        handled_events.insert(PVM_PROOF_REQUEST_EVENT_NAME.to_event_id());
 
         // The default set of transaction events that are always handled.
         handled_events.extend(
@@ -71,6 +76,7 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
+                &TransactionEventId::EpiloguePrecompileHandling,
             ]
             .map(TransactionEventId::event_id),
         );
@@ -81,12 +87,17 @@ impl<'store> MockHost<'store> {
             input_note_index_response: None,
             patch_commitment_body_block_count_response: None,
             delta_commitment_body_block_count_response: None,
+            precompile_handling_response: None,
         }
     }
 
     /// Overrides the input-note index response with `[note_idx, is_found]`.
     pub fn set_input_note_index_response(&mut self, response: [Felt; 2]) {
         self.input_note_index_response = Some(response);
+    }
+
+    pub fn set_precompile_handling_response(&mut self, response: Option<Felt>) {
+        self.precompile_handling_response = response;
     }
 
     /// Overrides the advised account patch/delta commitment body block counts.
@@ -156,6 +167,12 @@ impl<'store> Host for MockHost<'store> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
 
         async move {
+            if event_id == TransactionEventId::EpiloguePrecompileHandling.event_id()
+                && let Some(response) = self.precompile_handling_response
+            {
+                return Ok(vec![AdviceMutation::extend_advice_stack_with([response])]);
+            }
+
             if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
                 && let Some(response) = self.input_note_index_response
             {

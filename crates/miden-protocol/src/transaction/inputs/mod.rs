@@ -14,6 +14,7 @@ use crate::errors::TransactionInputError;
 use crate::note::{Note, NoteInclusionProof, NoteScript, NoteScriptRoot};
 use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
+use crate::vm::AdviceInputs;
 
 #[cfg(test)]
 mod tests;
@@ -320,6 +321,11 @@ impl TransactionInputs {
         self.signatures.push(signature);
 
         Ok(())
+    }
+
+    /// Retains advice loaded during execution so it is available when the transaction is replayed.
+    pub fn extend_advice_inputs(&mut self, advice_inputs: AdviceInputs) {
+        self.tx_args.extend_advice_inputs(advice_inputs);
     }
 
     /// Updates the transaction arguments of the inputs.

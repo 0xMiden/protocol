@@ -27,7 +27,7 @@ use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChain};
 use rand::RngExt;
 
-use super::VERIFICATION_BASE_FEE;
+use super::{VERIFICATION_BASE_FEE, execute_deferred_fee_transaction};
 
 // CONSTANTS
 // ================================================================================================
@@ -150,16 +150,15 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     let (auth_args, advice_value) = native_conversion_info();
     let foreign_target = mock_chain.get_foreign_account_inputs(target.id())?;
 
-    let executed = mock_chain
+    let transaction = mock_chain
         .build_transaction(sponsor.id())
         .foreign_accounts([foreign_target])
         .send_notes_script(&tx_script)
         .auth_args(auth_args)
         .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))
-        .build()?
-        .execute()
-        .await?;
+        .build()?;
+    let executed = execute_deferred_fee_transaction(transaction).await?;
 
     // three output notes: the network note, its sponsorship note, and the sponsor's fee note
     let output_notes = executed.output_notes();

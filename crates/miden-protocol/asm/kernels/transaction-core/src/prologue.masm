@@ -27,7 +27,7 @@ use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORA
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
 use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
-     PROTOCOL_CONFIG_SECTION_OFFSET}
+     PROTOCOL_CONFIG_SECTION_OFFSET, PROOF_VERIFICATION_CONFIG_PTR, MINIMUM_PROOF_SECURITY_BITS_PTR}
     from miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 
@@ -53,6 +53,15 @@ const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32 = "verification base fee mu
 
 const ERR_PROLOGUE_PROTOCOL_CONFIG_COMMITMENT_MISMATCH =
     "provided protocol config does not match the reference block's protocol config commitment"
+
+const ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_INVALID_LENGTH =
+    "proof verification config must contain exactly 16 field elements"
+
+const ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_COMMITMENT_MISMATCH =
+    "provided proof verification config does not match the protocol config's commitment"
+
+const ERR_PROLOGUE_PROOF_SECURITY_POLICY_INVALID =
+    "proof security policy must contain a minimum of 1 to 255 bits and zero padding"
 
 const ERR_PROLOGUE_FEE_ASSET_MUST_BE_FUNGIBLE = "the protocol config's fee asset must be fungible"
 
@@ -185,6 +194,51 @@ proc process_protocol_config()
     # assert that fees are paid in a fungible asset
     exec.memory::get_fee_asset_id exec.asset::id_into_composition
     eq.COMPOSITION_FUNGIBLE assert.err=ERR_PROLOGUE_FEE_ASSET_MUST_BE_FUNGIBLE
+    # OS => []
+end
+
+#! Authenticates and stores the proof verification config committed by the protocol config.
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Advice map: {
+#!     PROOF_VERIFICATION_COMMITMENT:
+#!       [VM_VERIFIER_ROOT, PRECOMPILE_VERIFIER_ROOT, SECURITY_ESTIMATOR_ROOT, [minimum_bits, 0, 0, 0]]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!   Advice stack: []
+#!
+#! Panics if the preimage has a noncanonical length, does not match its authenticated commitment,
+#! or contains an invalid security policy. The epilogue separately authenticates the linked
+#! precompile verifier and security estimator against these roots before settling any obligation.
+proc process_proof_verification_config()
+    exec.memory::get_proof_verification_config_commitment
+    adv.push_mapvaln
+    adv_push eq.16 assert.err=ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_INVALID_LENGTH
+    # OS => [PROOF_VERIFICATION_COMMITMENT]
+    # AS => [PROOF_VERIFICATION_CONFIG_ELEMENTS]
+
+    push.PROOF_VERIFICATION_CONFIG_PTR
+    push.EIDOS_INIT_CHAINING_WORD_16 padw padw
+    repeat.2
+        adv_pipe exec.eidos::compress
+    end
+    exec.eidos::digest
+    # OS => [COMPUTED_COMMITMENT, config_end_ptr, PROOF_VERIFICATION_COMMITMENT]
+
+    movup.4 drop
+    assert_eqw.err=ERR_PROLOGUE_PROOF_VERIFICATION_CONFIG_COMMITMENT_MISMATCH
+    # OS => []
+
+    padw mem_loadw_le.MINIMUM_PROOF_SECURITY_BITS_PTR
+    # OS => [minimum_bits, pad(3)]
+    u32assert.err=ERR_PROLOGUE_PROOF_SECURITY_POLICY_INVALID
+    dup neq.0 assert.err=ERR_PROLOGUE_PROOF_SECURITY_POLICY_INVALID
+    u32lte.255 assert.err=ERR_PROLOGUE_PROOF_SECURITY_POLICY_INVALID
+    repeat.3
+        assertz.err=ERR_PROLOGUE_PROOF_SECURITY_POLICY_INVALID
+    end
     # OS => []
 end
 
@@ -1357,6 +1411,7 @@ end
 #!      PARTIAL_BLOCKCHAIN_COMMITMENT: [MMR_PEAKS],
 #!      INPUT_NOTES_COMMITMENT: [NOTE_DATA],
 #!      PROTOCOL_CONFIG_COMMITMENT: [PROTOCOL_CONFIG_ELEMENTS],
+#!      PROOF_VERIFICATION_COMMITMENT: [PROOF_VERIFICATION_CONFIG_ELEMENTS],
 #!      TX_KERNEL_CONFIG_COMMITMENT: [TX_KERNEL_MAIN_PROC, TX_KERNEL_PROCS_COMMITMENT],
 #!      TX_KERNEL_PROCS_COMMITMENT: [KERNEL_PROCEDURE_ROOTS],
 #!      ACCOUNT_CODE_COMMITMENT: [ACCOUNT_PROCEDURE_DATA],
@@ -1376,6 +1431,8 @@ end
 #! - BLOCK_HEADER_ELEMENTS is the reference block header, see process_block_data.
 #! - PARTIAL_BLOCKCHAIN_COMMITMENT is the sequential hash of the reference MMR.
 #! - PROTOCOL_CONFIG_ELEMENTS is the chain's protocol config, see process_protocol_config.
+#! - PROOF_VERIFICATION_CONFIG_ELEMENTS contains the accepted verifier roots and security policy,
+#!   see process_proof_verification_config.
 #! - TX_KERNEL_MAIN_PROC and TX_KERNEL_PROCS_COMMITMENT describe the transaction kernel, see
 #!   process_kernel_data.
 #! - block_num is the reference block number.
@@ -1402,6 +1459,7 @@ pub proc prepare_transaction(block_commitment: Commitment, initial_account_commi
 
     exec.process_block_data
     exec.process_protocol_config
+    exec.process_proof_verification_config
     exec.process_kernel_data
     exec.process_chain_data
     exec.process_account_data

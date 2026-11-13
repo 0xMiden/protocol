@@ -38,7 +38,7 @@ use miden_protocol::transaction::{
     TransactionLogs,
     TransactionSummary,
 };
-use miden_protocol::vm::{AdviceMap, EventId, EventName};
+use miden_protocol::vm::{AdviceInputs, AdviceMap, EventId, EventName};
 use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
@@ -51,8 +51,9 @@ use crate::host::{
     TransactionProgress,
     TransactionProgressEvent,
     TxSummaryOrSignature,
+    precompile_proof,
 };
-use crate::{AccountProcedureIndexMap, DataStore};
+use crate::{AccountProcedureIndexMap, DataStore, PrecompileHandling};
 
 // TRANSACTION EXECUTOR HOST
 // ================================================================================================
@@ -86,6 +87,9 @@ where
 
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
+
+    /// Whether the epilogue leaves its precompile claims deferred or settles them recursively.
+    precompile_handling: PrecompileHandling,
 
     /// Whether execution is currently inside the authentication procedure.
     ///
@@ -143,9 +147,17 @@ where
             authenticator,
             ref_block,
             lazy_loaded_data: LazyLoadedData::default(),
+            precompile_handling: PrecompileHandling::default(),
             in_auth_procedure: false,
             source_manager,
         })
+    }
+
+    /// Selects whether the epilogue leaves precompile work deferred or settles it recursively.
+    #[must_use]
+    pub fn with_precompile_handling(mut self, handling: PrecompileHandling) -> Self {
+        self.precompile_handling = handling;
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -452,6 +464,9 @@ pub(crate) struct LazyLoadedData {
     /// The signatures the authenticator generated.
     signatures: Vec<BoundSignature>,
 
+    /// Recursive proof packages generated during execution, reused during proving.
+    precompile_proofs: AdviceInputs,
+
     /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
     ///
     /// They are fetched against the initial vault roots, so they fit the initial partial accounts.
@@ -489,6 +504,7 @@ impl LazyLoadedData {
         for (account_id, witness) in self.storage_map_witnesses {
             tx_inputs.add_storage_map_witnesses(account_id, [witness])?;
         }
+        tx_inputs.extend_advice_inputs(self.precompile_proofs);
 
         Ok(())
     }
@@ -534,7 +550,20 @@ where
         &mut self,
         process: &ProcessorState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
-        let core_lib_event_result = self.base_host.handle_core_lib_events(process);
+        let core_lib_event_result = if precompile_proof::is_handling_request(process) {
+            precompile_proof::handle_handling_request(process, self.precompile_handling)
+                .map(Some)
+                .map_err(EventError::from)
+        } else if precompile_proof::is_proof_request(process) {
+            precompile_proof::handle_proof_request(
+                process,
+                Some(&mut self.lazy_loaded_data.precompile_proofs),
+            )
+            .map(Some)
+            .map_err(EventError::from)
+        } else {
+            self.base_host.handle_core_lib_events(process)
+        };
 
         // If the event was handled by a core lib handler (Ok(Some)), we will return the result from
         // within the async block below. So, we only need to extract th tx event if the event was

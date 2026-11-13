@@ -1,0 +1,1 @@
+[BREAKING] Added `PrecompileHandling::{Deferred, Recursive}` to transaction executor and prover host configuration, defaulting to `Recursive`. Custom hosts must answer `EpiloguePrecompileHandling` with `0` or `1`. Deferred proving preserves outstanding work in a portable witness; strict transaction verification and batch admission continue to require recursive settlement.

@@ -273,6 +273,23 @@ pub const BLOCK_KERNEL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2212;
 /// The memory address at which the proof verification config commitment is stored.
 pub const PROOF_VERIFICATION_COMMITMENT_PTR: MemoryAddress = 2216;
 
+/// The authenticated proof verification config, in
+/// [`crate::protocol_config::ProofVerificationConfig::to_elements`] order: VM verifier root,
+/// precompile verifier root, security estimator root, then `[minimum_security_bits, 0, 0, 0]`.
+pub const PROOF_VERIFICATION_CONFIG_PTR: MemoryAddress = 2240;
+
+/// The memory address of the accepted VM proof verifier root.
+pub const VM_VERIFIER_ROOT_PTR: MemoryAddress = PROOF_VERIFICATION_CONFIG_PTR;
+
+/// The memory address of the accepted precompile proof verifier root.
+pub const PRECOMPILE_VERIFIER_ROOT_PTR: MemoryAddress = PROOF_VERIFICATION_CONFIG_PTR + 4;
+
+/// The memory address of the accepted proof security estimator root.
+pub const PROOF_SECURITY_ESTIMATOR_ROOT_PTR: MemoryAddress = PROOF_VERIFICATION_CONFIG_PTR + 8;
+
+/// The memory address of the minimum accepted proof security in bits, followed by three zeros.
+pub const MINIMUM_PROOF_SECURITY_BITS_PTR: MemoryAddress = PROOF_VERIFICATION_CONFIG_PTR + 12;
+
 // CHAIN DATA
 // ------------------------------------------------------------------------------------------------
 

@@ -8,6 +8,8 @@ use miden::tx_kernel_core::note
 use miden::tx_kernel_core::tx
 
 use miden::core::crypto::hashes::eidos
+use miden::core::stark::security
+use miden::core::sys::pvm
 use miden::core::word
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
 use {NOTE_MEM_SIZE} from miden::tx_kernel_core::constants
@@ -27,6 +29,18 @@ const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT =
 
 const ERR_EPILOGUE_NONCE_CANNOT_BE_0 = "nonce cannot be 0 after an account-creating transaction"
 
+const ERR_EPILOGUE_PRECOMPILE_VERIFIER_ROOT_MISMATCH =
+    "linked precompile verifier does not match the protocol config"
+
+const ERR_EPILOGUE_SECURITY_ESTIMATOR_ROOT_MISMATCH =
+    "linked proof security estimator does not match the protocol config"
+
+const ERR_EPILOGUE_INSUFFICIENT_PRECOMPILE_PROOF_SECURITY =
+    "precompile proof security is below the protocol's required minimum"
+
+const ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING =
+    "precompile handling must be 0 (deferred) or 1 (recursive)"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -35,6 +49,9 @@ const EPILOGUE_AUTH_PROC_START_EVENT = event("miden::protocol::epilogue::auth_pr
 
 # Event emitted to signal that an execution of the authentication procedure has ended.
 const EPILOGUE_AUTH_PROC_END_EVENT = event("miden::protocol::epilogue::auth_proc_end")
+
+# Requests one advice value: 0 leaves work deferred; 1 verifies and clears it recursively.
+const EPILOGUE_PRECOMPILE_HANDLING_EVENT = event("miden::protocol::epilogue::precompile_handling")
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -255,6 +272,49 @@ proc apply_code_upgrade()
     # => []
 end
 
+# PRECOMPILE SETTLEMENT
+# =================================================================================================
+
+#! Settles the transaction's deferred work, including its authentication procedure's precompiles.
+#! Preserves the caller's memory and operand stack.
+#!
+#! Only the trusted root-context epilogue may reach this helper: it is not a kernel syscall API.
+#! The root hint is untrusted. The verifier proves the same root retained for clear_deferred,
+#! and its transcript-bound security descriptor must satisfy the authenticated protocol policy.
+#! The zero branch still clears its supplied root. The VM AIR accounts for cleared and remaining
+#! roots through a multiset rather than chronological execution; accepting verifiers must require
+#! the authenticated final root to be TRUE, so no unproved obligations can remain outstanding.
+proc settle_precompiles()
+    adv.push_deferred_root padw adv_loadw
+    # => [ROOT, ...]
+
+    dupw exec.word::eqz
+    if.false
+        exec.memory::get_precompile_verifier_root
+        procref.pvm::verify_proof
+        assert_eqw.err=ERR_EPILOGUE_PRECOMPILE_VERIFIER_ROOT_MISMATCH
+
+        exec.memory::get_proof_security_estimator_root
+        procref.security::compute_conjectured_security_level
+        assert_eqw.err=ERR_EPILOGUE_SECURITY_ESTIMATOR_ROOT_MISMATCH
+        # => [ROOT, ...]
+
+        adv.export_deferred_witness
+        exec.pvm::request_proof
+        dupw exec.pvm::verify_proof
+        # => [security_descriptor(12), ROOT, ...]
+
+        exec.security::compute_conjectured_security_level
+        exec.memory::get_minimum_proof_security_bits
+        # => [minimum_bits, security_bits, ROOT, ...]
+        u32gte assert.err=ERR_EPILOGUE_INSUFFICIENT_PRECOMPILE_PROOF_SECURITY
+        # => [ROOT, ...]
+    end
+
+    clear_deferred dropw
+    # => [...]
+end
+
 # TRANSACTION EPILOGUE PROCEDURE
 # =================================================================================================
 
@@ -265,6 +325,8 @@ end
 #!   expiration block number.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
+#! - either leaves precompile work deferred or recursively verifies and clears it, as selected by
+#!   the host. Accepting verifiers independently enforce whether deferred work is allowed.
 #!
 #! Inputs:  []
 #! Outputs: [
@@ -395,6 +457,17 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitme
     # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT]
 
     exec.eidos::hash_double_word
+    # => [ACCOUNT_UPDATE_COMMITMENT]
+
+    # All user effects have finished, including authentication. The host chooses the proof path;
+    # the final authenticated VM root exposes whether any work remains deferred. No untrusted
+    # code or precompile logging may follow this decision.
+    emit.EPILOGUE_PRECOMPILE_HANDLING_EVENT
+    adv_push u32assert.err=ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING
+    dup u32lte.1 assert.err=ERR_EPILOGUE_INVALID_PRECOMPILE_HANDLING
+    if.true
+        exec.settle_precompiles
+    end
     # => [ACCOUNT_UPDATE_COMMITMENT]
 
     # ------ Build output stack ------

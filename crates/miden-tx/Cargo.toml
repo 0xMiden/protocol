@@ -20,7 +20,9 @@ concurrent = ["miden-prover/concurrent", "std"]
 default = ["std"]
 std = [
   "concurrent",
+  "dep:miden-precompiles-stark",
   "miden-agglayer/std",
+  "miden-precompiles-stark/std",
   "miden-processor/std",
   "miden-protocol/std",
   "miden-prover/std",
@@ -35,8 +37,11 @@ miden-protocol  = { workspace = true }
 miden-standards = { workspace = true }
 
 # Miden dependencies
-miden-processor = { workspace = true }
-miden-prover    = { workspace = true }
+miden-core              = { workspace = true }
+miden-core-lib          = { workspace = true }
+miden-precompiles-stark = { optional = true, workspace = true }
+miden-processor         = { workspace = true }
+miden-prover            = { workspace = true }
 
 # External dependencies
 bon       = { workspace = true }

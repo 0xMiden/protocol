@@ -30,6 +30,9 @@ pub use host::{AccountProcedureIndexMap, LinkMap, MemoryViewer, ScriptMastForest
 mod prover;
 pub use prover::{LocalTransactionProver, Prover, TransactionMastStore, TransactionProverHost};
 
+mod precompile_handling;
+pub use precompile_handling::PrecompileHandling;
+
 mod pricer;
 pub use pricer::{NetworkNotePricer, NotePricingError};
 

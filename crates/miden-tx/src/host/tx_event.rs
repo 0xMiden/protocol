@@ -642,6 +642,8 @@ impl TransactionEvent {
             TransactionEventId::EpilogueAuthProcEnd => Some(TransactionEvent::Progress(
                 TransactionProgressEvent::EpilogueAuthProcEnd(process.clock()),
             )),
+            // Executor and prover hosts answer this configuration request before event extraction.
+            TransactionEventId::EpiloguePrecompileHandling => None,
         };
 
         Ok(tx_event)

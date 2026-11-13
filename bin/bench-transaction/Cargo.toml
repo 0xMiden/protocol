@@ -24,6 +24,7 @@ concurrent = [
   "dep:miden-standards",
   "dep:miden-testing",
   "dep:miden-tx",
+  "dep:miden-vm-stark",
   "dep:rand",
   "dep:serde",
   "dep:serde_json",
@@ -54,6 +55,7 @@ miden-protocol  = { optional = true, workspace = true }
 miden-standards = { optional = true, workspace = true }
 miden-testing   = { optional = true, workspace = true }
 miden-tx        = { optional = true, workspace = true }
+miden-vm-stark  = { optional = true, workspace = true }
 
 # External dependencies
 anyhow     = { optional = true, workspace = true }

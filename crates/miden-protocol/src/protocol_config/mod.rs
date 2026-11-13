@@ -14,7 +14,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
+use crate::{CoreLibrary, Felt, Word};
 
 mod kernel_config;
 pub use kernel_config::KernelConfig;
@@ -91,8 +91,8 @@ impl ProtocolConfig {
 
     /// Creates the [`ProtocolConfig`] described by the currently linked kernels.
     ///
-    /// TODO(#3644): The batch kernel, the block kernel and the proof verification roots are
-    /// placeholders until those parts of the protocol exist.
+    /// TODO(#3644): The batch and block kernel configurations are placeholders until those parts
+    /// of the protocol exist.
     ///
     /// # Errors
     ///
@@ -105,10 +105,16 @@ impl ProtocolConfig {
         let batch_kernel = KernelConfig::new(BatchKernel::main().hash(), Vec::new())?;
         let block_kernel = KernelConfig::new(Word::empty(), Vec::new())?;
 
-        // Placeholders.
-        let security_policy = ProofSecurityPolicy::new(Word::empty(), Self::MINIMUM_SECURITY_BITS)?;
-        let proof_verification =
-            ProofVerificationConfig::new(Word::empty(), Word::empty(), security_policy);
+        let core_library = CoreLibrary::default();
+        let security_policy = ProofSecurityPolicy::new(
+            core_library.conjectured_security_estimator_root(),
+            Self::MINIMUM_SECURITY_BITS,
+        )?;
+        let proof_verification = ProofVerificationConfig::new(
+            core_library.vm_recursive_verifier_root(),
+            core_library.pvm_recursive_verifier_root(),
+            security_policy,
+        );
 
         Self::new(fee_asset_id, tx_kernel, batch_kernel, block_kernel, proof_verification)
     }
@@ -251,11 +257,28 @@ mod tests {
     }
 
     #[test]
-    fn current_commits_to_the_linked_tx_kernel() {
+    fn current_commits_to_the_linked_kernel_and_proof_verifiers() {
         let config = ProtocolConfig::current(fee_asset_id()).unwrap();
+        let core_library = CoreLibrary::default();
 
         assert_eq!(config.tx_kernel().main_proc(), TransactionKernel::main().hash());
         assert_eq!(config.tx_kernel().kernel_procs(), TransactionKernel::PROCEDURES);
+        assert_eq!(
+            config.proof_verification().vm_verifier_root(),
+            core_library.vm_recursive_verifier_root(),
+        );
+        assert_eq!(
+            config.proof_verification().precompile_verifier_root(),
+            core_library.pvm_recursive_verifier_root(),
+        );
+        assert_eq!(
+            config.proof_verification().security_policy().security_estimator_root(),
+            core_library.conjectured_security_estimator_root(),
+        );
+        assert_eq!(
+            config.proof_verification().security_policy().minimum_bits(),
+            MIN_PROOF_SECURITY_LEVEL as u8,
+        );
     }
 
     #[test]

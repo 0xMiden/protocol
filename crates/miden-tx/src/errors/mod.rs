@@ -180,6 +180,8 @@ pub enum TransactionProverError {
     TransactionProgramExecutionFailed(ExecutionError),
     #[error("failed to generate transaction proof")]
     TransactionProofGenerationFailed(#[source] ProverError),
+    #[error("transaction epilogue left outstanding precompile work")]
+    TransactionProofContainsPrecompiles,
     /// Custom error variant for errors not covered by the other variants.
     #[error("{error_msg}")]
     Other {

@@ -54,19 +54,21 @@ miden-tx                   = { default-features = false, path = "crates/miden-tx
 miden-tx-batch             = { default-features = false, path = "crates/miden-tx-batch", version = "=1.0.0-rc.1" }
 
 # Miden dependencies
-miden-assembly         = { default-features = false, version = "=1.0.0-rc.0" }
-miden-assembly-syntax  = { default-features = false, version = "=1.0.0-rc.0" }
-miden-core             = { default-features = false, version = "=1.0.0-rc.0" }
-miden-core-lib         = { default-features = false, version = "=1.0.0-rc.0" }
-miden-crypto           = { default-features = false, version = "=1.0.0-rc.0" }
-miden-crypto-derive    = { default-features = false, version = "=1.0.0-rc.0" }
-miden-mast-package     = { default-features = false, version = "=1.0.0-rc.0" }
-miden-package-registry = { default-features = false, version = "=1.0.0-rc.0" }
-miden-processor        = { default-features = false, version = "=1.0.0-rc.0" }
-miden-project          = { default-features = false, version = "=1.0.0-rc.0" }
-miden-prover           = { default-features = false, version = "=1.0.0-rc.0" }
-miden-utils-sync       = { default-features = false, version = "=1.0.0-rc.0" }
-miden-verifier         = { default-features = false, version = "=1.0.0-rc.0" }
+miden-assembly          = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-assembly-syntax   = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-core              = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-core-lib          = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-crypto            = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-crypto-derive     = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-mast-package      = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-package-registry  = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-precompiles-stark = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-processor         = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-project           = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-prover            = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-utils-sync        = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-verifier          = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
+miden-vm-stark          = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "ae5b547ddc3c2dff1555608c969acab3c259928d" }
 
 # External dependencies
 alloy-sol-types  = { default-features = false, version = "1.5" }

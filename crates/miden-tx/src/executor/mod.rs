@@ -26,6 +26,7 @@ use miden_protocol::vm::StackOutputs;
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
+use crate::PrecompileHandling;
 use crate::auth::TransactionAuthenticator;
 use crate::errors::TransactionKernelError;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
@@ -71,6 +72,7 @@ pub struct TransactionExecutor<
     authenticator: Option<&'auth AUTH>,
     source_manager: Arc<dyn SourceManagerSync>,
     exec_options: ExecutionOptions,
+    precompile_handling: PrecompileHandling,
     _executor: PhantomData<EXEC>,
 }
 
@@ -102,6 +104,7 @@ where
                 ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
             )
             .expect("Must not fail while max cycles is more than min trace length"),
+            precompile_handling: PrecompileHandling::default(),
             _executor: PhantomData,
         }
     }
@@ -125,6 +128,7 @@ where
             authenticator: self.authenticator,
             source_manager: self.source_manager,
             exec_options: self.exec_options,
+            precompile_handling: self.precompile_handling,
             _executor: PhantomData,
         }
     }
@@ -136,6 +140,18 @@ where
     #[must_use]
     pub fn with_authenticator(mut self, authenticator: &'auth AUTH) -> Self {
         self.authenticator = Some(authenticator);
+        self
+    }
+
+    /// Selects whether the epilogue leaves precompile work deferred or verifies it recursively.
+    ///
+    /// The default is [`PrecompileHandling::Recursive`]. This configures execution only; a prover
+    /// chooses its own handling when it re-executes the transaction. Deferred execution avoids
+    /// generating a precompile proof, but its cycle measurements do not include recursive
+    /// verification performed by a subsequent recursive proving run.
+    #[must_use]
+    pub fn with_precompile_handling(mut self, precompile_handling: PrecompileHandling) -> Self {
+        self.precompile_handling = precompile_handling;
         self
     }
 
@@ -362,7 +378,8 @@ where
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
         )
-        .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
+        .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?
+        .with_precompile_handling(self.precompile_handling);
 
         let advice_inputs = tx_advice_inputs.into_advice_inputs();
 

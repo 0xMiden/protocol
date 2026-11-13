@@ -20,8 +20,9 @@ use crate::host::{
     TransactionBaseHost,
     TransactionEvent,
     TxSummaryOrSignature,
+    precompile_proof,
 };
-use crate::{AccountProcedureIndexMap, TransactionKernelError};
+use crate::{AccountProcedureIndexMap, PrecompileHandling, TransactionKernelError};
 
 /// The transaction prover host is responsible for handling [`SyncHost`] requests made by the
 /// transaction kernel during proving.
@@ -31,6 +32,9 @@ where
 {
     /// The underlying base transaction host.
     base_host: TransactionBaseHost<'store, STORE>,
+
+    /// Whether the epilogue leaves its precompile claims deferred or settles them recursively.
+    precompile_handling: PrecompileHandling,
 }
 
 impl<'store, STORE> TransactionProverHost<'store, STORE>
@@ -62,7 +66,17 @@ where
             acct_procedure_index_map,
         )?;
 
-        Ok(Self { base_host })
+        Ok(Self {
+            base_host,
+            precompile_handling: PrecompileHandling::default(),
+        })
+    }
+
+    /// Selects whether the epilogue leaves precompile work deferred or settles it recursively.
+    #[must_use]
+    pub fn with_precompile_handling(mut self, handling: PrecompileHandling) -> Self {
+        self.precompile_handling = handling;
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -119,6 +133,13 @@ where
         &mut self,
         process: &ProcessorState,
     ) -> Result<Vec<AdviceMutation>, EventError> {
+        if precompile_proof::is_handling_request(process) {
+            return precompile_proof::handle_handling_request(process, self.precompile_handling)
+                .map_err(EventError::from);
+        }
+        if precompile_proof::is_proof_request(process) {
+            return precompile_proof::handle_proof_request(process, None).map_err(EventError::from);
+        }
         if let Some(advice_mutations) = self.base_host.handle_core_lib_events(process)? {
             return Ok(advice_mutations);
         }

@@ -214,9 +214,9 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume single P2ID note with ECDSA signing",
-            padded_core: 16_384,
-            padded_chiplets: 4_096,
-            padded_eidos_compression: 65_536,
+            padded_core: 131_072,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
@@ -228,11 +228,9 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume two P2ID notes with ECDSA signing",
-            padded_core: 32_768,
-            // The code-tree block header and transaction outputs moved this trace above 4_096.
-            // Keep this bracket aligned with the VM consumer snapshot.
-            padded_chiplets: 8_192,
-            padded_eidos_compression: 65_536,
+            padded_core: 131_072,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
@@ -244,30 +242,30 @@ mod tests {
         },
         ScenarioExpectation {
             name: "create single P2ID note with ECDSA signing",
-            padded_core: 16_384,
-            padded_chiplets: 4_096,
-            padded_eidos_compression: 65_536,
+            padded_core: 131_072,
+            padded_chiplets: 65_536,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L1 to Miden)",
-            padded_core: 65_536,
-            padded_chiplets: 16_384,
-            padded_eidos_compression: 131_072,
+            padded_core: 131_072,
+            padded_chiplets: 131_072,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L2 to Miden)",
-            padded_core: 65_536,
-            padded_chiplets: 16_384,
-            padded_eidos_compression: 131_072,
+            padded_core: 131_072,
+            padded_chiplets: 131_072,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {
             name: "consume B2AGG note (bridge-out)",
             padded_core: 262_144,
-            padded_chiplets: 65_536,
-            padded_eidos_compression: 262_144,
+            padded_chiplets: 131_072,
+            padded_eidos_compression: 524_288,
             padded_byte_pair_lookup: 65_536,
         },
     ];
@@ -351,7 +349,9 @@ mod tests {
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
             96,
             BYTE_PAIR_LOOKUP_ROWS as usize,
-        );
+            [64, 256, 128, BYTE_PAIR_LOOKUP_ROWS as usize],
+        )
+        .unwrap();
         assert_ne!(
             summary.core_rows(),
             summary.trace_len(),
@@ -368,13 +368,14 @@ mod tests {
 
     #[test]
     fn trace_measurements_preserve_all_four_air_rows() {
-        let summary = TraceLenSummary::new_with_padded(
+        let summary = TraceLenSummary::new(
             10,
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
             96,
             BYTE_PAIR_LOOKUP_ROWS as usize,
             [64, 512, 128, BYTE_PAIR_LOOKUP_ROWS as usize],
-        );
+        )
+        .unwrap();
 
         let measurements = TraceMeasurements::from(summary);
 

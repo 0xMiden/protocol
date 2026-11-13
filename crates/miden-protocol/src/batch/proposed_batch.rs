@@ -345,9 +345,8 @@ impl ProposedBatch {
     /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
     /// execution proof against the transaction kernel.
     ///
-    /// Transactions whose precompile claims are still outstanding are accepted: verification checks
-    /// that their deferred witness matches their VM proof, and the batch prover settles the claims
-    /// of all transactions in the batch with a single precompile proof.
+    /// Each transaction must have settled its precompile work in its own kernel proof. Proofs
+    /// carrying deferred work or a separate precompile proof are rejected.
     ///
     /// # Errors
     ///
@@ -369,8 +368,6 @@ impl ProposedBatch {
 
         let verifier = TransactionVerifier::new(proof_security_level);
         for tx in batch.transactions() {
-            // The outcome may carry an outstanding precompile obligation, which the batch prover
-            // settles for all transactions at once.
             let _verification_outcome = verifier.verify(tx).map_err(|source| {
                 ProposedBatchError::TransactionVerificationFailed {
                     transaction_id: tx.id(),
