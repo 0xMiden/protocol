@@ -443,8 +443,10 @@ end
 #!   `miden::standards::auth::multisig::auth_tx`.
 #!
 #! A propose/cancel transaction (delayed-execution timelock action) verifies its own signatures
-#! inside the called procedure, so this procedure only asserts that nothing else was bundled with
-#! it. Every other transaction is treated as an execution: the called procedures' policies yield one
+#! inside the called procedure, over the proposed commitment rather than this transaction's summary,
+#! so this procedure only asserts that nothing else was bundled with it: no other non-auth
+#! procedure and no input notes. Every other transaction is treated as an execution: the
+#! called procedures' policies yield one
 #! threshold per execution path, the signatures are verified, and the path is selected from their
 #! count. Signatures reaching the immediate threshold execute at once; otherwise signatures reaching
 #! the delayed threshold execute through the timelock, which requires an unlocked proposal for this
@@ -501,6 +503,13 @@ pub proc auth_tx(
         # A delay action must be the only non-auth procedure called, otherwise it could be bundled
         # with a state-mutating procedure to bypass the timelock.
         exec.tx_policy::assert_only_one_non_auth_procedure_called
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # The action's signatures cover the proposed commitment, not this transaction's summary, so
+        # an input note bundled with it would be nullified without any approver consenting to it.
+        # Output notes need no check: creating one takes the account context, i.e. a second account
+        # procedure, which the check above already rejects.
+        exec.tx_policy::assert_no_input_notes
         # => [TX_SUMMARY_COMMITMENT]
     else
         # ------ Execution path ------

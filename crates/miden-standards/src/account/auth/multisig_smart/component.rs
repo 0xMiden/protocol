@@ -326,6 +326,13 @@ fn validate_proc_policies(
 ///   commitment, never force a fully signed transaction through the timelock or make an
 ///   immediate-only procedure unexecutable.
 ///
+/// - A delay action approves nothing but itself. `propose_transaction` and
+///   `cancel_transaction_proposal` verify signatures over the proposed commitment (or its cancel
+///   message), never over the summary of the transaction that calls them, so the auth procedure
+///   requires such a transaction to call no other procedure and to consume no notes: a consumed
+///   note would be nullified without any approver having signed for it. (Creating a note takes an
+///   account procedure, which the first requirement already rules out.)
+///
 /// A policy protects a procedure only while the procedures that can weaken it are protected at
 /// least as strongly. `update_delayed_execution_policy` shortens the timelock,
 /// `set_procedure_policy` rewrites any policy, and `update_signers_and_threshold` replaces the
