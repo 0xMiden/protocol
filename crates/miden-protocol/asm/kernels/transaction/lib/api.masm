@@ -249,6 +249,7 @@ end
 #! - the current active account is not the native account of the transaction.
 #! - STORAGE_UPGRADE_COMMITMENT is not empty.
 #! - the native account is new.
+#! - the epilogue executes the authentication procedure.
 #! - a code upgrade is already pending.
 #! - the new code is not valid account code.
 #!

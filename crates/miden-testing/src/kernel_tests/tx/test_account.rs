@@ -50,6 +50,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
     ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET,
     ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT,
+    ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_IN_AUTH_PROCEDURE,
     ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED,
 };
 use miden_protocol::field::PrimeField64;
@@ -1408,6 +1409,46 @@ async fn test_account_upgrade_rejects_new_account() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT);
+
+    Ok(())
+}
+
+/// Tests that the authentication procedure cannot upgrade the account, since the upgrade must be
+/// known before the epilogue for the creation of the code patch.
+#[tokio::test]
+async fn test_account_upgrade_rejects_upgrade_in_auth_procedure() -> anyhow::Result<()> {
+    // The new code commitment is passed as the auth args, since the new code contains this
+    // component and so the component code cannot contain the commitment.
+    let auth_source = "
+        use miden::protocol::native_account
+
+        @auth_script
+        pub proc auth_upgrade
+            # => [AUTH_ARGS, pad(12)]
+            exec.native_account::upgrade
+            # => [pad(16)]
+        end
+    ";
+    let auth_code =
+        CodeBuilder::default().compile_component_code("test::upgrade_auth", auth_source)?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::upgrade_auth"),
+    )?;
+    let account = AccountBuilder::new([7; 32])
+        .with_component(auth_component.clone())
+        .with_component(MockAccountComponent::with_empty_slots())
+        .build_existing()?;
+
+    let upgraded_code_commitment = Word::from([1, 2, 3, 4u32]);
+    let result = TestTransactionBuilder::new(account.clone())
+        .auth_args(upgraded_code_commitment)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_IN_AUTH_PROCEDURE);
 
     Ok(())
 }
