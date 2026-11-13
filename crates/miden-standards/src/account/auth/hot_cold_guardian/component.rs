@@ -36,6 +36,13 @@ const HOT_COLD_GUARDIAN_LIBRARY_PATH: &str =
     "miden::standards::components::auth::hot_cold_guardian";
 
 procedure_root!(
+    HOT_COLD_GUARDIAN_AUTH_TX,
+    HOT_COLD_GUARDIAN_LIBRARY_PATH,
+    AuthHotColdGuardian::AUTH_TX_PROC_NAME,
+    AuthHotColdGuardian::code()
+);
+
+procedure_root!(
     HOT_COLD_GUARDIAN_UPDATE_HOT_KEYS,
     HOT_COLD_GUARDIAN_LIBRARY_PATH,
     AuthHotColdGuardian::UPDATE_HOT_KEYS_PROC_NAME,
@@ -120,12 +127,15 @@ static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///   and can enforce off-chain rules, but holds no authority of its own.
 ///
 /// Procedure policies ([`HotColdPolicy`]) count signed categories. A procedure without a policy
-/// costs the default of one category plus the guardian. The component installs policies for its
-/// own procedures, see [`AuthHotColdGuardian::preset_policies`]:
+/// costs the default of one category plus the guardian. The component code presets policies for
+/// its own procedures, see [`AuthHotColdGuardian::preset_policies`]:
 ///
 /// - replacing the hot keys requires the cold category (cold + guardian),
 /// - rotating the cold key, rotating the guardian and changing policies or the delay configuration
 ///   require both categories (hot + cold + guardian).
+///
+/// A transaction with a pending code upgrade requires both categories too, whichever procedure
+/// initiated the upgrade, since the new code replaces the code that enforces the policies.
 ///
 /// Delayed execution (proposing an action with the hot category and executing it after the
 /// configured delay unless the cold key cancels it) is not part of this component yet; its delay
@@ -158,6 +168,9 @@ impl AuthHotColdGuardian {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::hot_cold_guardian";
 
+    /// The name of the auth procedure.
+    pub const AUTH_TX_PROC_NAME: &'static str = "auth_tx_hot_cold_guardian";
+
     /// The name of the procedure that replaces the hot key set.
     pub const UPDATE_HOT_KEYS_PROC_NAME: &'static str = "update_hot_keys";
 
@@ -188,8 +201,9 @@ impl AuthHotColdGuardian {
         Self { config }
     }
 
-    /// Returns the policies the component installs for its own procedures. A policy of the
-    /// configuration for the same procedure replaces the preset.
+    /// Returns the preset policies of the component's own procedures. They are built into the
+    /// component code and apply to a procedure while it has no stored policy, however the account
+    /// was created. A configured or stored policy for the same procedure replaces the preset.
     ///
     /// - `update_hot_keys`: cold only. Device management is immediate for the cold key and closed
     ///   to the hot keys.
@@ -229,6 +243,11 @@ impl AuthHotColdGuardian {
     /// Returns the user-provided per-procedure policies, without the preset ones.
     pub fn procedure_policies(&self) -> &BTreeMap<AccountProcedureRoot, HotColdPolicy> {
         self.config.procedure_policies()
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the auth procedure.
+    pub fn auth_tx_root() -> AccountProcedureRoot {
+        *HOT_COLD_GUARDIAN_AUTH_TX
     }
 
     /// Returns the [`AccountProcedureRoot`] of the `update_hot_keys` procedure.
@@ -366,16 +385,12 @@ impl From<AuthHotColdGuardian> for AccountComponent {
             StorageMap::default(),
         ));
 
-        // Procedure policies slot (map): the presets, replaced by the configured policies for the
-        // same procedures.
-        let mut all_policies = AuthHotColdGuardian::preset_policies();
-        all_policies
-            .extend(config.procedure_policies().iter().map(|(root, policy)| (*root, *policy)));
-        let procedure_policies =
-            StorageMap::with_entries(all_policies.into_iter().map(|(proc_root, policy)| {
-                (StorageMapKey::from_raw(proc_root.as_word()), policy.to_word())
-            }))
-            .expect("the policy roots are unique");
+        // Procedure policies slot (map): the configured policies only. The presets are built into
+        // the component code and apply to procedures without a stored policy.
+        let procedure_policies = StorageMap::with_entries(config.procedure_policies().iter().map(
+            |(proc_root, policy)| (StorageMapKey::from_raw(proc_root.as_word()), policy.to_word()),
+        ))
+        .expect("the policy roots are unique");
         storage_slots.push(StorageSlot::with_map(
             AuthHotColdGuardian::procedure_policies_slot().clone(),
             procedure_policies,
@@ -439,10 +454,12 @@ mod tests {
         let hot_keys = config.hot_keys().to_vec();
         let cold_key = config.cold_key();
         let guardian = config.guardian_config();
-        let config = config.with_proc_policies(BTreeMap::from([(
-            BasicWallet::receive_asset_root(),
-            HotColdPolicy::HotAndCold,
-        )]));
+        let config = config
+            .with_proc_policies(BTreeMap::from([(
+                BasicWallet::receive_asset_root(),
+                HotColdPolicy::HotAndCold,
+            )]))
+            .unwrap();
 
         let component = AuthHotColdGuardian::new(config);
         let account = AccountBuilder::new([0; 32])
@@ -498,14 +515,10 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(policy_word(BasicWallet::receive_asset_root()), Word::from([2u32, 0, 0, 0]));
-        assert_eq!(
-            policy_word(AuthHotColdGuardian::update_hot_keys_root()),
-            Word::from([1u32, 0, 1, 0])
-        );
-        assert_eq!(
-            policy_word(AuthHotColdGuardian::rotate_cold_key_root()),
-            Word::from([2u32, 0, 0, 0])
-        );
+        // the presets are built into the component code, so they are not stored
+        for preset_root in AuthHotColdGuardian::preset_policies().keys() {
+            assert_eq!(policy_word(*preset_root), Word::empty());
+        }
 
         let delay = HotColdDelayConfig::default();
         assert_eq!(
@@ -521,10 +534,12 @@ mod tests {
 
     #[test]
     fn test_hot_cold_guardian_configured_policy_replaces_preset() {
-        let config = config().with_proc_policies(BTreeMap::from([(
-            AuthHotColdGuardian::update_hot_keys_root(),
-            HotColdPolicy::HotAndCold,
-        )]));
+        let config = config()
+            .with_proc_policies(BTreeMap::from([(
+                AuthHotColdGuardian::update_hot_keys_root(),
+                HotColdPolicy::HotAndCold,
+            )]))
+            .unwrap();
 
         let account = AccountBuilder::new([0; 32])
             .with_component(AuthHotColdGuardian::new(config))

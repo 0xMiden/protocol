@@ -178,12 +178,23 @@ impl AuthHotColdGuardianConfig {
     /// Attaches procedure policies, e.g. for the procedures of a wallet installed next to the
     /// component. A policy for one of the component's own procedures replaces its preset, see
     /// [`AuthHotColdGuardian::preset_policies`](super::AuthHotColdGuardian::preset_policies).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a policy is set on the component's auth procedure, which never
+    /// contributes to the policies.
     pub fn with_proc_policies(
         mut self,
         proc_policies: BTreeMap<AccountProcedureRoot, HotColdPolicy>,
-    ) -> Self {
+    ) -> Result<Self, AccountError> {
+        if proc_policies.contains_key(&super::AuthHotColdGuardian::auth_tx_root()) {
+            return Err(AccountError::other(
+                "procedure policy cannot be set on the auth procedure",
+            ));
+        }
+
         self.procedure_policies = proc_policies;
-        self
+        Ok(self)
     }
 
     pub fn hot_keys(&self) -> &[Approver] {
@@ -297,5 +308,22 @@ mod tests {
         )
         .unwrap_err();
         assert!(duplicate_hot.to_string().contains("only one key category"));
+    }
+
+    #[test]
+    fn config_rejects_a_policy_on_the_auth_procedure() {
+        let err = AuthHotColdGuardianConfig::new(
+            vec![approver()],
+            approver(),
+            GuardianConfig::new(approver()),
+            HotColdDelayConfig::default(),
+        )
+        .unwrap()
+        .with_proc_policies(BTreeMap::from([(
+            super::super::AuthHotColdGuardian::auth_tx_root(),
+            HotColdPolicy::ColdOnly,
+        )]))
+        .unwrap_err();
+        assert!(err.to_string().contains("cannot be set on the auth procedure"));
     }
 }

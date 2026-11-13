@@ -96,6 +96,13 @@ pub const NUM_USER_KEY_CATEGORIES = 2
 # fixed, so it lives here rather than in storage.
 pub const DEFAULT_THRESHOLD = 1
 
+# The preset policy words of the component's own procedures, which apply while a procedure has no
+# stored policy: [immediate_threshold, delayed_threshold, cold_required, 0]. They live here rather
+# than in storage so that they hold however the account was created. They mirror
+# `AuthHotColdGuardian::preset_policies` in Rust.
+const COLD_ONLY_POLICY = [1, 0, 1, 0]
+const HOT_AND_COLD_POLICY = [2, 0, 0, 0]
+
 # The maximum number of hot keys. Together with the cold and the guardian key this stays within
 # the signer set size the multisig fee estimate is calibrated for (MAX_NUM_APPROVERS).
 pub const MAX_NUM_HOT_KEYS = 62
@@ -112,6 +119,8 @@ const MIN_DELAY_FLOOR_BLOCKS = 28800
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
 const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
+
+const ERR_PROC_ROOT_IS_AUTH_PROCEDURE = "procedure policy cannot be set on the auth procedure"
 
 const ERR_NUM_HOT_KEYS_NOT_U32 = "number of hot keys must be u32"
 
@@ -326,7 +335,8 @@ end
 #!
 #! Where:
 #! - immediate_threshold is the number of signed categories the procedure requires, or 0 to clear
-#!   the policy.
+#!   the stored policy. A cleared procedure falls back to its preset policy if it has one, see
+#!   `get_preset_policy`.
 #! - cold_required is 1 if the immediate path additionally requires the cold category, else 0.
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
 #!
@@ -336,6 +346,7 @@ end
 #! - cold_required is set while immediate_threshold is not 1 (with both categories the cold key is
 #!   required anyway, and a cleared policy cannot require it).
 #! - PROC_ROOT is not one of the account's procedures.
+#! - PROC_ROOT is the account's auth procedure, which never contributes to the policies.
 #!
 #! Locals:
 #! 0: immediate_threshold
@@ -376,6 +387,14 @@ pub proc set_procedure_policy(policy: HotColdPolicy, proc_root: AccountProcedure
     # => [is_account_procedure, PROC_ROOT, pad(10)]
 
     assert.err=ERR_PROC_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT, pad(10)]
+
+    # the auth procedure (index 0) is skipped by compute_called_proc_policy, so a policy on it
+    # would never be enforced
+    dupw push.0 exec.active_account::get_procedure_root exec.word::eq
+    # => [is_auth_procedure, PROC_ROOT, pad(10)]
+
+    assertz.err=ERR_PROC_ROOT_IS_AUTH_PROCEDURE
     # => [PROC_ROOT, pad(10)]
 
     # write [immediate_threshold, 0, cold_required, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT]; index 1
@@ -537,14 +556,15 @@ pub proc get_cold_key() -> Approver
     # => [PUB_KEY, scheme_id, pad(11)]
 end
 
-#! Returns the policy of PROC_ROOT from the account's initial state.
+#! Returns the policy of PROC_ROOT from the account's initial state, or its preset policy if it has
+#! no stored policy.
 #!
 #! Inputs:  [PROC_ROOT, pad(12)]
 #! Outputs: [immediate_threshold, cold_required, pad(14)]
 #!
 #! Where:
 #! - immediate_threshold is the number of signed categories the procedure requires, or 0 when the
-#!   procedure has no policy.
+#!   procedure has neither a stored nor a preset policy.
 #! - cold_required is 1 if the immediate path additionally requires the cold category, else 0.
 #!
 #! Invocation: call
@@ -588,8 +608,9 @@ end
 #! The transaction summary this procedure builds has the layout documented on
 #! `miden::standards::auth::multisig::auth_tx`. The guardian signature is always required. The
 #! called procedures' policies yield the number of signed categories the transaction needs and
-#! whether the cold category must be among them; the hot and cold signatures over the summary are
-#! then verified and counted per category.
+#! whether the cold category must be among them; a pending code upgrade raises the need to both
+#! categories. The hot and cold signatures over the summary are then verified and counted per
+#! category.
 #!
 #! Inputs:
 #!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
@@ -632,6 +653,16 @@ pub proc auth_tx(
 
     # ------ Computing the requirements from the procedure policies ------
     exec.compute_called_proc_policy
+    # => [immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
+
+    # a pending code upgrade replaces the code that enforces the policies, so it takes both
+    # categories whichever procedure initiated it
+    exec.native_account::get_code_upgrade_commitment exec.word::eqz not
+    # => [has_pending_upgrade, immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        push.NUM_USER_KEY_CATEGORIES u32max
+    end
     # => [immediate_threshold, delayed_threshold, cold_required, TX_SUMMARY_COMMITMENT]
 
     loc_store.AUTH_TX_IMMEDIATE_THRESHOLD_LOC
@@ -751,26 +782,83 @@ proc get_current_num_hot_keys() -> u8
     # => [num_hot_keys]
 end
 
-#! Returns the policy word of PROC_ROOT from the account's initial state.
+#! Returns the policy word of PROC_ROOT from the account's initial state, or its preset policy if
+#! it has no stored policy.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [immediate_threshold, delayed_threshold, cold_required]
 #!
 #! Where:
 #! - immediate_threshold and delayed_threshold are the thresholds per execution path, 0 for a
-#!   path the policy closes; both are 0 when the procedure has no policy.
+#!   path the policy closes; both are 0 when the procedure has neither a stored nor a preset
+#!   policy.
 #! - cold_required is as described in `set_procedure_policy`.
 #!
 #! Invocation: exec
 proc get_initial_policy(
     proc_root: AccountProcedureRoot
 ) -> (SignatureThreshold, SignatureThreshold, Bool)
-    push.PROCEDURE_POLICIES_SLOT[0..2]
+    dupw push.PROCEDURE_POLICIES_SLOT[0..2]
     exec.native_account::get_initial_map_item
+    # => [POLICY_WORD, PROC_ROOT]
+
+    exec.word::testz
+    # => [has_no_stored_policy, POLICY_WORD, PROC_ROOT]
+
+    if.true
+        dropw exec.get_preset_policy
+        # => [POLICY_WORD]
+    else
+        swapw dropw
+        # => [POLICY_WORD]
+    end
     # => [immediate_threshold, delayed_threshold, cold_required, 0]
 
     movup.3 drop
     # => [immediate_threshold, delayed_threshold, cold_required]
+end
+
+#! Returns the preset policy word of PROC_ROOT, or the empty word if PROC_ROOT is not one of the
+#! component's own procedures that carry a preset.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [POLICY_WORD]
+#!
+#! Where:
+#! - POLICY_WORD is COLD_ONLY_POLICY for update_hot_keys, HOT_AND_COLD_POLICY for
+#!   rotate_cold_key, update_guardian_public_key, set_procedure_policy and update_delay_config,
+#!   and the empty word otherwise.
+#!
+#! Invocation: exec
+proc get_preset_policy(proc_root: AccountProcedureRoot) -> word
+    dupw procref.update_hot_keys exec.word::eq movdn.4
+    # => [PROC_ROOT, is_cold_only]
+
+    push.0 movdn.4
+    # => [PROC_ROOT, is_hot_and_cold, is_cold_only]
+
+    dupw procref.rotate_cold_key exec.word::eq movup.5 or movdn.4
+    dupw procref.update_guardian_public_key exec.word::eq movup.5 or movdn.4
+    dupw procref.set_procedure_policy exec.word::eq movup.5 or movdn.4
+    dupw procref.update_delay_config exec.word::eq movup.5 or movdn.4
+    # => [PROC_ROOT, is_hot_and_cold, is_cold_only]
+
+    # select the policy word before dropping PROC_ROOT, so that the stack never shrinks below its
+    # input depth
+    movup.4 padw push.HOT_AND_COLD_POLICY movup.8
+    # => [is_hot_and_cold, HOT_AND_COLD_POLICY, EMPTY_WORD, PROC_ROOT, is_cold_only]
+
+    cdropw
+    # => [POLICY_WORD, PROC_ROOT, is_cold_only]
+
+    push.COLD_ONLY_POLICY movup.12
+    # => [is_cold_only, COLD_ONLY_POLICY, POLICY_WORD, PROC_ROOT]
+
+    cdropw
+    # => [POLICY_WORD, PROC_ROOT]
+
+    swapw dropw
+    # => [POLICY_WORD]
 end
 
 #! Returns the cold public key from the current account state.
