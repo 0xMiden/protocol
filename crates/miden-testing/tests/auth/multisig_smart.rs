@@ -925,6 +925,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
     ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_DELAY_SUM_TOO_LARGE,
     ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION,
     ERR_PROC_POLICY_INVALID_MODE,
     ERR_TX_ALREADY_PROPOSED,
@@ -2043,6 +2044,48 @@ async fn test_multisig_smart_update_policy_rejects_cancel_threshold_above_approv
         .execute()
         .await;
     assert_transaction_executor_error!(result, ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
+
+/// `update_delayed_execution_policy` rejects a `min_delay + propose_expiration_delta` sum that
+/// reaches `CANCELLED_UNLOCK_BLOCK`: `compute_unlock_block` would then reject every proposal, and
+/// nothing could execute through the delayed path again.
+#[tokio::test]
+async fn test_multisig_smart_update_policy_rejects_delay_sum_reaching_cancelled_marker()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    // `min_delay + propose_expiration_delta == u32::MAX`, the cancelled-proposal marker.
+    let script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.1
+            push.1
+            push.{min_delay}
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop drop drop
+        end
+        ",
+        min_delay = u32::MAX - 1,
+    ))?;
+    let result = mock_chain
+        .build_transaction(account_id)
+        .tx_script(script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt(706),
+        ))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_DELAY_SUM_TOO_LARGE);
 
     Ok(())
 }

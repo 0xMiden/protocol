@@ -50,6 +50,7 @@ const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+const ERR_DELAY_SUM_TOO_LARGE = "min_delay plus propose_expiration_delta must be below the cancelled proposal marker"
 const ERR_CANCEL_THRESHOLD_NOT_U32 = "cancel_threshold must be u32"
 const ERR_CANCEL_THRESHOLD_ZERO = "cancel_threshold must be non-zero"
 const ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS = "cancel_threshold exceeds the number of approvers"
@@ -95,6 +96,9 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires an
 #! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
 #! - `propose_expiration_delta` exceeds `MAX_EXPIRATION_BLOCK_DELTA`, the largest delta the kernel's
 #!   `tx::update_expiration_block_delta` accepts (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
+#! - `min_delay + propose_expiration_delta` overflows `u32` or reaches `CANCELLED_UNLOCK_BLOCK`,
+#!   which would leave no reference block from which a proposal could be recorded
+#!   (`ERR_DELAY_SUM_TOO_LARGE`).
 #! - `cancel_threshold` is not a valid `u32` field element (`ERR_CANCEL_THRESHOLD_NOT_U32`).
 #! - `cancel_threshold` is zero (`ERR_CANCEL_THRESHOLD_ZERO`).
 #! - `cancel_threshold` exceeds the current number of approvers
@@ -119,6 +123,15 @@ pub proc update_delayed_execution_policy(
     # Reject a delta the kernel's `tx::update_expiration_block_delta` would not accept here, rather
     # than bricking the propose flow later.
     u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    # => [min_delay, propose_expiration_delta, cancel_threshold]
+
+    # The unlock block is `reference_block + propose_expiration_delta + min_delay`, so a sum that
+    # overflows or reaches `CANCELLED_UNLOCK_BLOCK` would make `compute_unlock_block` reject every
+    # proposal and close the delayed path for good.
+    dup.1 dup.1 u32overflowing_add assertz.err=ERR_DELAY_SUM_TOO_LARGE
+    # => [min_delay + propose_expiration_delta, min_delay, propose_expiration_delta, cancel_threshold]
+
+    u32lt.CANCELLED_UNLOCK_BLOCK assert.err=ERR_DELAY_SUM_TOO_LARGE
     # => [min_delay, propose_expiration_delta, cancel_threshold]
 
     # Assert 0 < cancel_threshold <= current number of approvers, so the quorum is reachable by
