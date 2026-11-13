@@ -49,8 +49,7 @@ pub(super) enum NoteBundle {
 }
 
 impl NoteBundle {
-    /// Returns `true` if the bundle carries FEE_SPONSORSHIP notes, which are what the account
-    /// collects fees from.
+    /// Returns `true` if the bundle carries FEE_SPONSORSHIP notes.
     pub(super) fn has_sponsorships(&self) -> bool {
         matches!(self, Self::Feature { sponsorships, .. } if !sponsorships.is_empty())
     }
@@ -169,10 +168,10 @@ impl NoteBundler {
     /// - its feature note is absent, and the native account cannot reclaim it.
     /// - its feature note is itself a FEE_SPONSORSHIP note.
     ///
-    /// The bundles carrying sponsorships come first, since they are the ones the account collects
-    /// fees from, so that a bundle which only passes once fees are collected is tried after them.
-    /// Within each group the bundles keep the order of the notes heading them, and the
-    /// sponsorships in a bundle keep their relative order.
+    /// The bundles carrying sponsorships come first, since they are what the account collects fees
+    /// from, so a bundle that only passes once fees are collected is tried after them. Within each
+    /// group the bundles keep the order of the notes heading them, and the sponsorships in a bundle
+    /// keep their relative order.
     pub(super) fn bundle(&self, notes: &[Note]) -> (NoteBundles, Vec<FailedNote>) {
         let note_indices: BTreeMap<NoteId, usize> =
             notes.iter().enumerate().map(|(idx, note)| (note.id(), idx)).collect();
@@ -233,9 +232,8 @@ impl NoteBundler {
             }
         }
 
-        let (collecting, rest): (Vec<_>, Vec<_>) =
-            bundles.into_values().partition(NoteBundle::has_sponsorships);
-        let bundles = collecting.into_iter().chain(rest).collect();
+        let mut bundles: Vec<NoteBundle> = bundles.into_values().collect();
+        bundles.sort_by_key(|bundle| !bundle.has_sponsorships());
 
         (NoteBundles(bundles), rejected)
     }

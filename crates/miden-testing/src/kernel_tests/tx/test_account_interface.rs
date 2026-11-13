@@ -96,7 +96,6 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
     successful.iter().for_each(|s| assert!(notes.contains(s.note())));
 
     assert!(failed.is_empty());
-    assert!(!consumption_info.is_authorization_pending());
 
     Ok(())
 }
@@ -245,9 +244,8 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
 }
 
 /// Against a signature account, an executor without an authenticator cannot serve the signature
-/// the auth procedure requests. The check stops there, after every remaining note executed, and
-/// reports those notes as consumable pending authorization. A note failing before that point is
-/// still eliminated.
+/// the auth procedure requests. The check stops there and reports the notes that executed as
+/// successful; a note failing before that point is still eliminated.
 #[tokio::test]
 async fn check_note_consumability_stops_at_authentication() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -291,9 +289,8 @@ async fn check_note_consumability_stops_at_authentication() -> anyhow::Result<()
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert!(consumption_info.is_authorization_pending());
-
     let successful = consumption_info.successful();
+    assert_eq!(successful.len(), 2);
     assert_eq!(
         [successful[0].note().id(), successful[1].note().id()],
         [successful_note_1.id(), successful_note_2.id()],
