@@ -3045,6 +3045,7 @@ dependencies = [
 name = "miden-tx"
 version = "1.0.0-rc.1"
 dependencies = [
+ "anyhow",
  "bon",
  "miden-agglayer",
  "miden-processor",

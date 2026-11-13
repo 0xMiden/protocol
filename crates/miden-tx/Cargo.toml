@@ -43,6 +43,7 @@ bon       = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+anyhow          = { workspace = true }
 miden-protocol  = { features = ["testing"], workspace = true }
 miden-standards = { features = ["testing"], workspace = true }
 rand_chacha     = { workspace = true }
