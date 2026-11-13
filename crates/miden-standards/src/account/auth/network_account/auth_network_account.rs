@@ -119,11 +119,15 @@ procedure_root!(
 /// whose only legitimate inputs are a known, finite set of system-issued notes and scripts.
 ///
 /// The component exports a single auth procedure, `auth_network_transaction`, that rejects the
-/// transaction unless all three of the following are true:
+/// transaction unless all four of the following are true:
 /// - the transaction script root, if any, is present in the component's tx-script allowlist
 /// - every consumed input note has a script root present in the component's note-script allowlist
 /// - before fee collection and payment, it has consumed at least one input note, created at least
 ///   one output note, or changed the account state.
+/// - if the account is already deployed, the transaction creates no code, i.e. its code patch is
+///   empty. Otherwise, a network transaction builder could make the account pay for code
+///   registration. Thus, all note scripts that the account creates must be registered before the
+///   transaction.
 ///
 /// If these checks pass, the procedure pays the transaction fee by creating a public TX_FEE
 /// note funded from the account's vault in the native fee asset at rate 1/1 (see

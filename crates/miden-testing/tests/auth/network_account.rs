@@ -14,7 +14,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
-use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_protocol::{Felt, Word};
@@ -25,6 +25,7 @@ use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_NETWORK_ACCOUNT_CODE_PATCH_NOT_EMPTY,
     ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
     ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT,
@@ -46,7 +47,7 @@ use miden_standards::note::{
 };
 use miden_standards::testing::account_component::{MockAccountComponent, MockProceduresComponent};
 use miden_standards::testing::note::NoteBuilder;
-use miden_standards::tx_script::ExpirationTransactionScript;
+use miden_standards::tx_script::{ExpirationTransactionScript, SendWalletNotesTransactionScript};
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -281,6 +282,75 @@ async fn test_auth_network_account_increments_nonce_for_new_account() -> anyhow:
         .await?;
 
     assert_eq!(executed.final_account().nonce(), Felt::ONE);
+
+    Ok(())
+}
+
+/// The deployment transaction of a network account is executed locally, so it may create code,
+/// e.g. register the custom code of the account.
+#[tokio::test]
+async fn test_auth_network_account_deployment_creates_code() -> anyhow::Result<()> {
+    let action_slot = StorageSlotName::new("test::network_account::deployment_action")?;
+    let tx_script = storage_update_tx_script(&action_slot);
+
+    let note_roots = BTreeSet::from([NoteScriptRoot::from_raw(placeholder_script_root())]);
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts([tx_script.root()]);
+
+    let account = AccountBuilder::new([1; 32])
+        .with_components(auth_component)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_value(
+            action_slot,
+        )]))
+        .account_type(AccountType::Public)
+        .build()?;
+
+    let mock_chain = MockChain::builder().build()?;
+
+    let executed = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    assert!(!executed.code_patch().is_empty());
+
+    Ok(())
+}
+
+/// After deployment, a network account transaction must not create code.
+#[tokio::test]
+async fn test_auth_network_account_rejects_code_creation_after_deployment() -> anyhow::Result<()> {
+    let account = build_account_with_allowlists(
+        vec![placeholder_script_root()],
+        vec![SendWalletNotesTransactionScript::script_root()],
+    )?;
+
+    // the default note script is not in the code tree, so creating the note creates code
+    let output_note = NoteBuilder::new(account.id(), &mut rand::rng())
+        .note_type(NoteType::Public)
+        .build()?;
+    let send_notes_script = SendWalletNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(output_note.clone())],
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .tx_script(send_notes_script.tx_script().clone())
+        .tx_script_args(send_notes_script.tx_script_args())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CODE_PATCH_NOT_EMPTY);
 
     Ok(())
 }
