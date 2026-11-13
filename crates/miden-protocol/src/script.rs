@@ -144,11 +144,16 @@ impl MastForestScript {
             return Err(MastForestScriptError::ProcedureMissingAttribute(path.to_string().into()));
         }
 
-        let digest = proc_export.digest;
+        Ok(Self::from_root(proc_export.digest).with_package_debug_info(package))
+    }
 
-        let (mast, entrypoint) = create_external_node_forest(digest);
+    /// Returns a new [MastForestScript] containing only a reference to the procedure with the
+    /// provided `root`.
+    pub(crate) fn from_root(root: Word) -> Self {
+        let (mast, entrypoint) = create_external_node_forest(root);
 
-        Ok(Self::from_parts(Arc::new(mast), entrypoint)?.with_package_debug_info(package))
+        Self::from_parts(Arc::new(mast), entrypoint)
+            .expect("external node forest should contain its entrypoint")
     }
 
     // PUBLIC ACCESSORS

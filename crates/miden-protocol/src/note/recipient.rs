@@ -67,18 +67,16 @@ impl NoteRecipient {
     ///
     /// They allow the VM to recover the note's script root and storage commitment from the
     /// recipient alone, which is all a note is committed to on chain.
-    pub fn to_advice_map_entries(&self) -> [(Word, Vec<Felt>); 5] {
+    pub fn to_advice_map_entries(&self) -> [(Word, Vec<Felt>); 4] {
         let (serial_commitment, serial_script_commitment, digest) =
             compute_recipient_chain(self.serial_num, &self.script, &self.storage);
         let script_root = Word::from(self.script.root());
-        let script_encoded = self.script.to_elements();
 
         [
             (serial_commitment, concat_words(self.serial_num, Word::empty())),
             (serial_script_commitment, concat_words(serial_commitment, script_root)),
             (digest, concat_words(serial_script_commitment, self.storage.commitment())),
             (self.storage().commitment(), self.storage().to_elements()),
-            (script_root, script_encoded),
         ]
     }
 

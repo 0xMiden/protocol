@@ -9,7 +9,6 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::code::ProcedureRoot;
-use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain};
 
@@ -105,21 +104,4 @@ pub trait DataStore: MastForestStore {
         &self,
         procedure_roots: BTreeSet<ProcedureRoot>,
     ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>>;
-
-    /// Returns a note script with the specified root, or `None` if not found.
-    ///
-    /// This method will try to find a note script with the specified root in the data store.
-    /// If the script is not found, it returns `Ok(None)` rather than an error, as "not found"
-    /// is a valid, expected outcome.
-    ///
-    /// **Note:** Data store implementers do not need to handle standard note scripts (e.g. P2ID).
-    /// These are resolved directly by the transaction executor and will not trigger this method.
-    ///
-    /// # Errors
-    /// Returns an error if the data store encountered an internal error while attempting to
-    /// retrieve the script.
-    fn get_note_script(
-        &self,
-        script_root: NoteScriptRoot,
-    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>>;
 }

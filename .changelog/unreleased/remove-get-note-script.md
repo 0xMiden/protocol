@@ -1,0 +1,1 @@
+[BREAKING] Removed `DataStore::get_note_script`, the note scripts of `TransactionInputs` and the script entry of `NoteRecipient::to_advice_map_entries`, because the host builds public output note scripts with the new `NoteScript::from_root` and takes private output note scripts from the expected recipients.

@@ -77,7 +77,7 @@ async fn build_trace_summary(
     let block_commitments = tx_inputs.collect_block_commitments();
     let code_tree = tx_inputs.code_tree().clone();
 
-    let (partial_account, _ref_block, _blockchain, input_notes, _tx_args) = tx_inputs.into_parts();
+    let (partial_account, _ref_block, _blockchain, input_notes, tx_args) = tx_inputs.into_parts();
     let mut host = TransactionProverHost::new(
         &partial_account,
         input_notes,
@@ -87,6 +87,7 @@ async fn build_trace_summary(
         account_procedure_index_map,
         code_tree,
         code_patch,
+        tx_args.output_note_recipients().to_vec(),
     )
     .context("failed to construct transaction prover host")?;
 

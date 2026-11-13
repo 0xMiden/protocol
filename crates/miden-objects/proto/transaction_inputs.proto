@@ -44,7 +44,6 @@ message TransactionInputsV1 {
   InputNotes input_notes = 5;
   TransactionArgs tx_args = 6;
   repeated AccountInputs foreign_accounts = 7;
-  repeated note.NoteScript note_scripts = 8;
-  repeated BoundSignature signatures = 9;
-  primitives.PartialSmt code_tree = 10;
+  repeated BoundSignature signatures = 8;
+  primitives.PartialSmt code_tree = 9;
 }

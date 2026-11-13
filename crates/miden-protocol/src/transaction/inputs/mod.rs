@@ -11,7 +11,7 @@ use crate::asset::AssetWitness;
 use crate::block::code_tree::{CodeWitness, PartialCodeTree};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::TransactionInputError;
-use crate::note::{Note, NoteInclusionProof, NoteScript, NoteScriptRoot};
+use crate::note::{Note, NoteInclusionProof};
 use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
 
@@ -43,8 +43,6 @@ pub struct TransactionInputs {
     tx_args: TransactionArgs,
     /// Foreign accounts the transaction accessed during execution.
     foreign_accounts: BTreeMap<AccountId, AccountInputs>,
-    /// Scripts of the output notes the host resolved during execution.
-    note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     /// Signatures the authenticator generated during execution.
     signatures: Vec<BoundSignature>,
     /// See [`Self::code_tree`].
@@ -81,7 +79,6 @@ impl TransactionInputs {
         code_tree: Option<PartialCodeTree>,
         #[builder(default)] tx_args: TransactionArgs,
         #[builder(default)] foreign_accounts: Vec<AccountInputs>,
-        #[builder(default)] note_scripts: Vec<NoteScript>,
         #[builder(default)] signatures: Vec<BoundSignature>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
@@ -95,8 +92,6 @@ impl TransactionInputs {
             });
         }
 
-        let note_scripts = note_scripts.into_iter().map(|script| (script.root(), script)).collect();
-
         let mut tx_inputs = Self {
             account,
             block_header,
@@ -105,7 +100,6 @@ impl TransactionInputs {
             input_notes,
             tx_args,
             foreign_accounts: BTreeMap::new(),
-            note_scripts,
             signatures: Vec::new(),
             code_tree,
         };
@@ -299,11 +293,6 @@ impl TransactionInputs {
         Ok(())
     }
 
-    /// Adds a note script, so that re-executing the transaction does not need to fetch it again.
-    pub fn add_note_script(&mut self, script: NoteScript) {
-        self.note_scripts.insert(script.root(), script);
-    }
-
     /// Adds a signature, so that re-executing the transaction does not need the authenticator.
     ///
     /// # Errors
@@ -385,11 +374,6 @@ impl TransactionInputs {
     /// Returns the foreign accounts accessed during execution, keyed by their ID.
     pub fn foreign_accounts(&self) -> &BTreeMap<AccountId, AccountInputs> {
         &self.foreign_accounts
-    }
-
-    /// Returns the output note scripts resolved during execution, keyed by their root.
-    pub fn note_scripts(&self) -> &BTreeMap<NoteScriptRoot, NoteScript> {
-        &self.note_scripts
     }
 
     /// Returns the signatures generated during execution.

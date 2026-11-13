@@ -16,7 +16,7 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
+use miden_protocol::note::{Note, NoteId};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
@@ -86,7 +86,6 @@ pub struct MockTransactionBuilder<'chain> {
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
-    note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     code_to_register: Vec<Arc<MastForest>>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
 }
@@ -119,7 +118,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
-            note_scripts: BTreeMap::new(),
             code_to_register: Vec::new(),
             source_manager: None,
         }
@@ -290,12 +288,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Adds a note script to the mock transaction for testing.
-    pub fn add_note_script(mut self, script: NoteScript) -> Self {
-        self.note_scripts.insert(script.root(), script);
-        self
-    }
-
     /// Adds code that the data store of the mock transaction provides as code to register (see
     /// [`DataStore::get_code_to_register`](miden_tx::DataStore::get_code_to_register)).
     pub fn register_code(mut self, mast_forest: Arc<MastForest>) -> Self {
@@ -379,7 +371,6 @@ impl<'chain> MockTransactionBuilder<'chain> {
             mast_store,
             authenticator: self.authenticator,
             source_manager,
-            note_scripts: self.note_scripts,
             code_to_register: self.code_to_register,
         })
     }

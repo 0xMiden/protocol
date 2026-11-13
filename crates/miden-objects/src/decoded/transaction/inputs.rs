@@ -66,7 +66,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let notes = self.input_notes.verify()?;
         let args = self.tx_args.verify()?;
         let foreign_accounts = self.foreign_accounts.verify()?;
-        let note_scripts = self.note_scripts.verify()?;
         let signatures = self.signatures.verify()?;
         let code_tree = PartialCodeTree::from_partial_smt(self.code_tree.verify()?)?;
         Ok(Self::Output::builder()
@@ -77,7 +76,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .input_notes(notes)
             .tx_args(args)
             .foreign_accounts(foreign_accounts)
-            .note_scripts(note_scripts)
             .signatures(signatures)
             .code_tree(code_tree)
             .build()?)

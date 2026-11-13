@@ -395,7 +395,6 @@ async fn test_bridge_in_claim_to_p2id(
     let mint_mock_tx = mock_chain
         .build_transaction(agglayer_faucet.id())
         .authenticated_input_note(mint_output_note.id())
-        .add_note_script(P2idNote::script())
         .authenticated_input_notes(mint_sponsorship_id)
         .build()?;
 
@@ -687,7 +686,6 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let attack_mock_tx = mock_chain
         .build_transaction(faucet_b.id())
         .authenticated_input_note(mint_output_note.id())
-        .add_note_script(P2idNote::script())
         .build()?;
 
     let attack_result = attack_mock_tx.execute().await;
