@@ -21,7 +21,7 @@ use miden_protocol::errors::{
     TransactionInputError,
     TransactionOutputError,
 };
-use miden_protocol::note::{NoteId, NoteScriptRoot, PartialNoteMetadata};
+use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use miden_prover::ProverError;
@@ -32,18 +32,12 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum NoteCheckerError {
-    #[error("note consumability exceeded the limit of {max_requests} lazy data store requests")]
-    DataStoreRequestLimitExceeded { max_requests: usize },
-    #[error("note consumability execution budget of {max_cycles} cycles was exhausted")]
-    ExecutionBudgetExhausted { max_cycles: u32 },
     #[error("invalid input note count ({0} is out of range)")]
     InputNoteCountOutOfRange(usize),
     #[error("transaction preparation failed: {0}")]
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
-    #[error("transaction script execution failed: {0}")]
-    TransactionScriptExecution(#[source] TransactionExecutorError),
     #[error("transaction inputs creation failed: {0}")]
     TransactionInputs(#[source] TransactionInputError),
 }
@@ -53,10 +47,6 @@ pub enum NoteCheckerError {
 
 #[derive(Debug, Error)]
 pub(crate) enum TransactionCheckerError {
-    #[error("note consumability exceeded the limit of {max_requests} lazy data store requests")]
-    DataStoreRequestLimitExceeded { max_requests: usize },
-    #[error("note consumability execution budget of {max_cycles} cycles was exhausted")]
-    ExecutionBudgetExhausted { max_cycles: u32 },
     #[error("transaction preparation failed: {0}")]
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
@@ -79,8 +69,17 @@ pub(crate) enum TransactionCheckerError {
         /// for other error types where the cycle count is not meaningful.
         failed_note_cycle_count: Option<usize>,
     },
-    #[error("transaction script execution failed: {0}")]
-    TransactionScriptExecution(#[source] TransactionExecutorError),
+}
+
+impl From<TransactionCheckerError> for TransactionExecutorError {
+    fn from(error: TransactionCheckerError) -> Self {
+        match error {
+            TransactionCheckerError::TransactionPreparation(error) => error,
+            TransactionCheckerError::PrologueExecution(error) => error,
+            TransactionCheckerError::EpilogueExecution { error, .. } => error,
+            TransactionCheckerError::NoteExecution { error, .. } => error,
+        }
+    }
 }
 
 // TRANSACTION EXECUTOR ERROR
@@ -338,13 +337,6 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
-    #[error("failed to get note script {script_root} from data store")]
-    GetNoteScript {
-        script_root: NoteScriptRoot,
-        source: DataStoreError,
-    },
-    #[error("transaction exceeded the limit of {max_requests} lazy data store requests")]
-    DataStoreRequestLimitExceeded { max_requests: usize },
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]
