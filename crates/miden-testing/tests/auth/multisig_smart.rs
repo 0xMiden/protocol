@@ -1413,7 +1413,8 @@ async fn test_multisig_smart_delay_action_rejects_input_notes() -> anyhow::Resul
     Ok(())
 }
 
-/// Proposing the same commitment twice must fail the second time with `ERR_TX_ALREADY_PROPOSED`.
+/// Proposing a commitment again without tightening its record (the same signers from a later
+/// reference block) must fail with `ERR_TX_ALREADY_PROPOSED`.
 #[tokio::test]
 async fn test_multisig_smart_double_propose_fails() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
@@ -1454,6 +1455,248 @@ async fn test_multisig_smart_double_propose_fails() -> anyhow::Result<()> {
     )
     .await?;
     assert_transaction_executor_error!(result, ERR_TX_ALREADY_PROPOSED);
+
+    Ok(())
+}
+
+/// A proposal recorded with few signatures must not pin the cancellation quorum at the floor: a
+/// later proposal of the same commitment carrying more approver signatures raises the quorum and
+/// leaves the unlock block as recorded, so the group that consented cannot be vetoed by a group
+/// that merely meets the floor.
+#[tokio::test]
+async fn test_multisig_smart_reproposal_raises_cancel_quorum() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    // One approver proposes first: the quorum is the configured floor of one.
+    let commitment = Word::from([Felt::from(780u32); 4]);
+    let propose_block = mock_chain.latest_block_header().block_num();
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        commitment,
+        MultisigAuthArgs::new(propose_block, salt(781)),
+        &[0],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("single-signature propose should succeed");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // Three approvers propose the same commitment: the quorum rises to three while the unlock
+    // block, computed from the earlier proposal block, stays.
+    let repropose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(782)),
+        &[0, 1, 2],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("re-proposing with more signatures should succeed");
+    multisig_account.apply_patch(repropose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&repropose_tx)?;
+    mock_chain.prove_next_block()?;
+    let stored = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
+        .expect("tx proposals slot should exist");
+    assert_eq!(
+        stored,
+        Word::from([test_unlock_block(propose_block).as_u32(), propose_block.as_u32(), 3, 0]),
+        "re-proposing must raise the quorum and keep the unlock block"
+    );
+
+    // Two other approvers meet the floor but not the raised quorum; three do.
+    let below_quorum = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(783)),
+        &[3, 4],
+        &public_keys,
+        &authenticators,
+    )
+    .await?;
+    assert_transaction_executor_error!(below_quorum, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
+
+    execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(784)),
+        &[2, 3, 4],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("three approvers should cancel the re-proposed commitment");
+
+    Ok(())
+}
+
+/// A proposal recorded from a late reference block must not fix the unlock block for good: a later
+/// proposal of the same commitment from an earlier reference block, still includable within
+/// `propose_expiration_delta`, lowers the unlock block to its own, so one proposer cannot push a
+/// delayed approval past its deadline. The timelock still holds for the re-proposal, whose unlock
+/// block counts from the last block it can be included in.
+#[tokio::test]
+async fn test_multisig_smart_reproposal_from_earlier_reference_block_lowers_unlock()
+-> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    // A proposal window wide enough to re-propose from an earlier block a few blocks later.
+    let propose_expiration_delta = 10u16;
+    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+        2,
+        &public_keys,
+        100,
+        vec![(
+            AuthMultisigSmart::update_delayed_execution_policy_root(),
+            ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)?,
+        )],
+        DelayedExecutionPolicy::new(
+            TEST_MIN_DELAY,
+            propose_expiration_delta,
+            TEST_CANCEL_THRESHOLD,
+        )?,
+    )?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+    let unlock_block = |propose_block: BlockNumber| {
+        propose_block + u32::from(propose_expiration_delta) + TEST_MIN_DELAY
+    };
+
+    let execute_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            push.1
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
+            drop
+            drop
+            drop
+        end
+        ",
+    )?;
+    let early_block = mock_chain.latest_block_header().block_num();
+    let exec_auth_args = MultisigAuthArgs::new(early_block, salt(790))
+        .with_approval_expiration_delta(NonZeroU32::new(100).unwrap())?;
+    let target_commitment = mock_chain
+        .build_transaction(account_id)
+        .tx_script(execute_script.clone())
+        .multisig_auth_args(exec_auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err()
+        .as_ref()
+        .to_commitment();
+
+    // The first proposal references a later block, so its unlock block is later.
+    mock_chain.prove_until_block(early_block + 3)?;
+    let late_block = mock_chain.latest_block_header().block_num();
+    let late_propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        target_commitment,
+        MultisigAuthArgs::new(late_block, salt(791)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("propose from the late block should succeed");
+    multisig_account.apply_patch(late_propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&late_propose_tx)?;
+    mock_chain.prove_next_block()?;
+    let stored = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    assert_eq!(
+        stored,
+        Word::from([unlock_block(late_block).as_u32(), late_block.as_u32(), 2, 0]),
+        "the late proposal must be recorded with its own unlock block"
+    );
+
+    // Re-propose from the earlier block, still within its proposal window: the record now unlocks
+    // when a proposal from that block would have.
+    let builder = mock_chain
+        .build_transaction(account_id)
+        .reference_block(early_block)
+        .tx_script(compile_delay_action_script("propose_transaction", target_commitment)?)
+        .multisig_auth_args(MultisigAuthArgs::new(early_block, salt(792)));
+    let early_propose_tx = add_delay_action_signatures(
+        builder,
+        "propose_transaction",
+        target_commitment,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .build()?
+    .execute()
+    .await
+    .expect("re-proposing from the earlier block should succeed");
+    multisig_account.apply_patch(early_propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&early_propose_tx)?;
+    mock_chain.prove_next_block()?;
+    let stored = multisig_account
+        .storage()
+        .get_map_item(
+            AuthMultisigSmart::tx_proposals_slot(),
+            StorageMapKey::from_raw(target_commitment),
+        )
+        .expect("tx proposals slot should exist");
+    assert_eq!(
+        stored,
+        Word::from([unlock_block(early_block).as_u32(), early_block.as_u32(), 2, 0]),
+        "re-proposing from an earlier block must lower the unlock block"
+    );
+
+    // The target executes at the earlier unlock block, before the late proposal would have
+    // unlocked.
+    assert!(unlock_block(early_block) < unlock_block(late_block));
+    mock_chain.prove_until_block(unlock_block(early_block))?;
+    let executed_tx = execute_script_with_signers(
+        &mock_chain,
+        account_id,
+        execute_script,
+        exec_auth_args,
+        &[0],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("execute should succeed at the lowered unlock block");
+    multisig_account.apply_patch(executed_tx.account_patch())?;
 
     Ok(())
 }

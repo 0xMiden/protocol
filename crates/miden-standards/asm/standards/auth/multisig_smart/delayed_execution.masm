@@ -354,6 +354,70 @@ pub proc write_tx_proposal(
     # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
 end
 
+#! Merges the proposal the current transaction computed into the live record stored for the same
+#! commitment.
+#!
+#! A later proposal may only tighten the record: the unlock block becomes the earlier of the two,
+#! with the proposal block of whichever proposal it came from, and the cancellation quorum the
+#! larger of the two. So a proposal recorded from a late reference block cannot keep the unlock
+#! block past the approval deadline while an earlier-referenced proposal is still includable, and a
+#! proposal that won the ordering with few signatures cannot pin the quorum at the floor. A
+#! proposal that tightens neither is a replay of the stored one and is rejected.
+#!
+#! Inputs:  [old_unlock_block, old_proposal_block, old_min_cancel_sigs, unlock_block, proposal_block, min_cancel_sigs]
+#! Outputs: [unlock_block, proposal_block, min_cancel_sigs]
+#!
+#! Where:
+#! - old_unlock_block, old_proposal_block and old_min_cancel_sigs are the fields of the live record
+#!   (its unlock block is neither zero nor `CANCELLED_UNLOCK_BLOCK`).
+#! - unlock_block, proposal_block and min_cancel_sigs are the fields the current proposal computed
+#!   on input, and the merged fields to store on output.
+#!
+#! Panics if:
+#! - the current proposal neither lowers the unlock block nor raises the cancellation quorum
+#!   (`ERR_TX_ALREADY_PROPOSED`).
+#!
+#! Invocation: exec
+proc merge_tx_proposal(
+    old_unlock_block: BlockNumber,
+    old_proposal_block: BlockNumber,
+    old_min_cancel_sigs: SignatureThreshold,
+    unlock_block: BlockNumber,
+    proposal_block: BlockNumber,
+    min_cancel_sigs: SignatureThreshold
+) -> (BlockNumber, BlockNumber, SignatureThreshold)
+    movup.2 movup.5
+    # => [min_cancel_sigs, old_min_cancel_sigs, old_unlock_block, old_proposal_block, unlock_block, proposal_block]
+
+    dup.1 u32max
+    # => [merged_min_cancel_sigs, old_min_cancel_sigs, old_unlock_block, old_proposal_block, unlock_block, proposal_block]
+
+    dup dup.2 u32gt
+    # => [raises_quorum, merged_min_cancel_sigs, old_min_cancel_sigs, old_unlock_block, old_proposal_block, unlock_block, proposal_block]
+
+    movup.2 drop movdn.5 movdn.4
+    # => [old_unlock_block, old_proposal_block, unlock_block, proposal_block, merged_min_cancel_sigs, raises_quorum]
+
+    dup.2 dup.1 u32lt
+    # => [lowers_unlock, old_unlock_block, old_proposal_block, unlock_block, proposal_block, merged_min_cancel_sigs, raises_quorum]
+
+    dup movdn.7
+    # => [lowers_unlock, old_unlock_block, old_proposal_block, unlock_block, proposal_block, merged_min_cancel_sigs, raises_quorum, lowers_unlock]
+
+    if.true
+        # The current proposal unlocks earlier: keep its block pair.
+        drop drop
+        # => [unlock_block, proposal_block, merged_min_cancel_sigs, raises_quorum, lowers_unlock]
+    else
+        # The stored proposal unlocks no later: keep its block pair.
+        movup.2 drop movup.2 drop
+        # => [old_unlock_block, old_proposal_block, merged_min_cancel_sigs, raises_quorum, lowers_unlock]
+    end
+
+    movup.4 movup.4 or assert.err=ERR_TX_ALREADY_PROPOSED
+    # => [unlock_block, proposal_block, merged_min_cancel_sigs]
+end
+
 #! Computes the unlock block for the current proposal.
 #!
 #! The unlock block counts from the latest block the proposal transaction can be included in,
@@ -539,6 +603,12 @@ end
 #! them, and never fewer than the configured floor. The current (proposal) transaction is given the
 #! configured `propose_expiration_delta`.
 #!
+#! A commitment with a live proposal can be proposed again, which tightens the record (see
+#! `merge_tx_proposal`): a proposal with an earlier reference block lowers the unlock block, and one
+#! with more verified signatures raises the cancellation quorum. Otherwise the first proposer could
+#! fix both for good, pushing the unlock block past the approval deadline with a late reference
+#! block or pinning the quorum at the floor with a single signature.
+#!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
 #!
@@ -550,7 +620,8 @@ end
 #! - no signature verifies over `TX_SUMMARY_COMMITMENT` (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
 #! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #! - a proposal for `TX_SUMMARY_COMMITMENT` was cancelled (`ERR_TX_PROPOSAL_CANCELLED`).
-#! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
+#! - a live proposal for `TX_SUMMARY_COMMITMENT` exists and this one neither lowers its unlock block
+#!   nor raises its cancellation quorum (`ERR_TX_ALREADY_PROPOSED`).
 #!
 #! Invocation: call
 @account_procedure
@@ -581,20 +652,35 @@ pub proc propose_transaction(tx_summary_commitment: word)
     exec.compute_unlock_block
     # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
+    # ---- Merge with the record already stored for the commitment, if any. ----
+    # The delay action is the only non-auth procedure of this transaction, so the initial record
+    # `get_tx_proposal` reads is the current one.
+    dup.6 dup.6 dup.6 dup.6 push.TX_PROPOSALS_SLOT[0..2] exec.get_tx_proposal
+    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs, unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    # A cancelled record stays cancelled, so the (replayable) proposal signatures cannot re-open the
+    # delayed path for a vetoed commitment. A transaction that was already executed can still be
+    # proposed here; it is not worth an extra `EXECUTED_TXS_SLOT` lookup to reject it, because such
+    # a proposal is harmless - executing it later fails in `multisig::assert_new_tx` (the
+    # executed-transactions replay guard).
+    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
+    # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs, unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    dup neq.0
+    # => [has_live_record, old_unlock_block, old_proposal_block, old_min_cancel_sigs, unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        exec.merge_tx_proposal
+        # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    else
+        drop drop drop
+        # => [unlock_block, proposal_block, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    end
+
     push.TX_PROPOSALS_SLOT[0..2] exec.write_tx_proposal
     # => [old_unlock_block, old_proposal_block, old_min_cancel_sigs]
 
-    # The write returns the entry it replaced; the abort reverts the overwrite. A cancelled record
-    # stays cancelled, so the (replayable) proposal signatures cannot re-open the delayed path for a
-    # vetoed commitment; any other non-zero unlock block means a live proposal already exists. A
-    # transaction that was already executed can still be proposed here; it is not worth an extra
-    # `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing it
-    # later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
-    movdn.2 drop drop
-    # => [old_unlock_block]
-
-    dup eq.CANCELLED_UNLOCK_BLOCK assertz.err=ERR_TX_PROPOSAL_CANCELLED
-    assertz.err=ERR_TX_ALREADY_PROPOSED
+    drop drop drop
     # => []
 end
 
