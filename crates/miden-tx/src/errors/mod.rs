@@ -38,6 +38,9 @@ pub enum NoteCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
+    /// The transaction script failed, which no choice of input notes changes.
+    #[error("transaction script execution failed: {0}")]
+    TransactionScriptExecution(#[source] TransactionExecutorError),
     #[error("transaction inputs creation failed: {0}")]
     TransactionInputs(#[source] TransactionInputError),
 }
@@ -51,6 +54,9 @@ pub(crate) enum TransactionCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
+    /// The transaction script failed, after every note executed.
+    #[error("transaction script execution failed: {0}")]
+    TransactionScriptExecution(#[source] TransactionExecutorError),
     #[error("transaction execution epilogue failed: {error}")]
     EpilogueExecution {
         error: TransactionExecutorError,
@@ -85,6 +91,7 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
         match error {
             TransactionCheckerError::TransactionPreparation(error) => error,
             TransactionCheckerError::PrologueExecution(error) => error,
+            TransactionCheckerError::TransactionScriptExecution(error) => error,
             TransactionCheckerError::EpilogueExecution { error, .. } => error,
             TransactionCheckerError::AuthorizationRequired { error, .. } => error,
             TransactionCheckerError::NoteExecution { error, .. } => error,

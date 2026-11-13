@@ -28,6 +28,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{
     FeeSponsorshipNote,
     NoteConsumptionStatus,
@@ -417,6 +418,57 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
         [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
     );
+    Ok(())
+}
+
+/// A failing transaction script is the caller's problem, not any note's: both checks return it as
+/// an error instead of searching for a note set that passes.
+///
+/// The note has a custom script, so that `can_consume` executes it rather than answering from
+/// static analysis.
+#[tokio::test]
+async fn check_note_consumability_returns_a_transaction_script_failure() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+    let note =
+        create_public_p2any_note(ACCOUNT_ID_SENDER.try_into().unwrap(), [FungibleAsset::mock(100)]);
+
+    let tx_script = CodeBuilder::with_mock_packages()
+        .compile_tx_script("@transaction_script pub proc main push.1 push.0 div end")?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(vec![note.clone()])
+        .tx_script(tx_script)
+        .build()?;
+
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
+
+    let result = notes_checker
+        .check_notes_consumability(account_id, block_ref, vec![note.clone()], tx_args.clone())
+        .await;
+    assert_matches!(
+        result,
+        Err(NoteCheckerError::TransactionScriptExecution(
+            TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::OperationError {
+                    err: miden_processor::operation::OperationError::DivideByZero,
+                    ..
+                }
+            )
+        ))
+    );
+
+    let result = notes_checker
+        .can_consume(account_id, block_ref, InputNote::unauthenticated(note), tx_args)
+        .await;
+    assert_matches!(result, Err(NoteCheckerError::TransactionScriptExecution(_)));
+
     Ok(())
 }
 

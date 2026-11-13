@@ -103,7 +103,10 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if [`InputNotes`] cannot be created from the provided notes vector.
+    /// Returns an error if:
+    /// - [`InputNotes`] cannot be created from the provided notes vector.
+    /// - the transaction fails before any note runs, or in the transaction script, neither of which
+    ///   a different set of notes changes.
     pub async fn check_notes_consumability(
         &self,
         target_account_id: AccountId,
@@ -191,6 +194,10 @@ where
                     // execution failed during the prologue
                     TransactionCheckerError::PrologueExecution(e) => {
                         Err(NoteCheckerError::PrologueExecution(e))
+                    },
+                    // the transaction script failed, which says nothing about the note
+                    TransactionCheckerError::TransactionScriptExecution(e) => {
+                        Err(NoteCheckerError::TransactionScriptExecution(e))
                     },
                     // execution failed during the note processing
                     TransactionCheckerError::NoteExecution { .. } => {
@@ -301,6 +308,10 @@ where
                 Err(TransactionCheckerError::PrologueExecution(err)) => {
                     return Err(NoteCheckerError::PrologueExecution(err));
                 },
+                // The transaction script failed, which no note subset changes.
+                Err(TransactionCheckerError::TransactionScriptExecution(err)) => {
+                    return Err(NoteCheckerError::TransactionScriptExecution(err));
+                },
                 Err(TransactionCheckerError::TransactionPreparation(err)) => {
                     return Err(NoteCheckerError::TransactionPreparation(err));
                 },
@@ -390,8 +401,9 @@ where
                             };
                             (0, failure)
                         },
-                        // The prologue failed, or the transaction inputs could not be
-                        // prepared: no note ran, so blame the feature note.
+                        // The prologue failed or the transaction inputs could not be prepared,
+                        // so no note ran, or the transaction script failed once this bundle was
+                        // added: blame the feature note.
                         other => (0, NoteFailure::Blamed { error: other.into(), num_cycles: None }),
                     };
 
@@ -484,6 +496,12 @@ where
                 // If the interval end of the last note is specified, then an error occurred after
                 // notes processing. All notes executed successfully in this case.
                 if last_note_interval.end().is_some() {
+                    // An error inside the transaction script is the script's, not any note's.
+                    let tx_script_interval = tx_progress.tx_script_processing();
+                    if tx_script_interval.start().is_some() && tx_script_interval.end().is_none() {
+                        return Err(TransactionCheckerError::TransactionScriptExecution(error));
+                    }
+
                     let successful_notes_cycle_counts =
                         notes.iter().map(|(_, interval)| interval.len()).collect();
 
