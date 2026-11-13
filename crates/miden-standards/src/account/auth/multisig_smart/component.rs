@@ -351,6 +351,14 @@ fn validate_proc_policies(
 /// through a proposal and wait out the current timelock, during which the other approvers can
 /// cancel it.
 ///
+/// Policies are keyed by procedure root and outlive the code they were set for. A code upgrade
+/// neither validates nor clears the policies of the roots it removes, `set_procedure_policy`
+/// cannot clear a policy whose root the current code lacks, and `update_signers_and_threshold`
+/// checks only the policies of the current procedures when the signer set shrinks. A policy left
+/// behind by an upgrade can thus end up with a threshold above the approver count, and it applies
+/// again, unreachable, if a later upgrade restores its root. Lower such policies before shrinking
+/// the signer set, or re-check the policies of every restored root after an upgrade.
+///
 /// The spending limit configured through [`SpendingLimitsPolicy`] is only as strong as the
 /// policies on the procedures that can weaken it. `update_spending_limits_policy` shortens the
 /// window, `update_spending_oracle` changes what every converted amount means, and
