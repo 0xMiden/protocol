@@ -46,6 +46,8 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
 # Estimated upper bound on the number of cycles a pay_fee flow spends per sponsorship note it
 # creates (serial number derivation, note creation, vault withdrawal and funding) plus that note's
 # share of the epilogue, charged by estimate_fee for the notes a later pay_fee flow would create.
+# The pricing of the network notes, which pay_fee repeats, is not part of it: estimate_fee
+# measures its own pricing and charges that instead.
 const SPONSORSHIP_NOTE_CYCLES = 4096
 
 # Exclusive upper bound of the high u32 limb of a converted fee amount. Bounding the high limb
@@ -337,10 +339,12 @@ end
 #!
 #! Prices the network output notes the way pay_fee sponsors them (see
 #! fees::estimate_network_note_sponsorships) and computes the transaction fee via compute_fee,
-#! charging on top of num_extra_cycles the cycles pay_fee would spend creating the sponsorship
-#! notes and the margins pay_fee applies. The estimate is an upper bound of what pay_fee pays as
-#! long as the caller's num_extra_cycles bounds the cycles spent between this call and the
-#! pay_fee flow.
+#! charging on top of num_extra_cycles the cycles pay_fee would spend pricing the notes again,
+#! measured on the pricing this procedure performs, creating the sponsorship notes, and the
+#! margins pay_fee applies. The estimate is an upper bound of what pay_fee pays as long as the
+#! caller's num_extra_cycles bounds the cycles spent between this call and the pay_fee flow and
+#! the targets' fee policies cost the same when pay_fee prices the notes again, which holds for
+#! policies whose cost depends only on state the transaction cannot change in between.
 #!
 #! Inputs:  [num_extra_cycles]
 #! Outputs: [fee_amount, total_sponsored_fee_amount]
@@ -360,11 +364,21 @@ end
 #!
 #! Invocation: exec
 pub proc estimate_fee(num_extra_cycles: u32) -> (AssetAmount, AssetAmount)
+    clk
+    # => [clk_before_pricing, num_extra_cycles]
+
     exec.fees::estimate_network_note_sponsorships
-    # => [num_sponsored_notes, total_sponsored_fee_amount, num_extra_cycles]
+    # => [num_sponsored_notes, total_sponsored_fee_amount, clk_before_pricing, num_extra_cycles]
 
     # charge the creation of the sponsorship notes a pay_fee flow would perform
-    mul.SPONSORSHIP_NOTE_CYCLES movup.2 add
+    mul.SPONSORSHIP_NOTE_CYCLES
+    # => [creation_cycles, total_sponsored_fee_amount, clk_before_pricing, num_extra_cycles]
+
+    # pay_fee prices the notes again, so charge what the pricing above cost once more
+    clk movup.3 sub add
+    # => [pricing_and_creation_cycles, total_sponsored_fee_amount, num_extra_cycles]
+
+    movup.2 add
     # => [num_extra_cycles, total_sponsored_fee_amount]
 
     exec.apply_cycle_margins
