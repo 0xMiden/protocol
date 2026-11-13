@@ -17,7 +17,9 @@ use miden_protocol::errors::AccountError;
 /// number of approvers, which [`AuthMultisigSmart::new`](super::AuthMultisigSmart::new) and the
 /// on-chain policy update enforce.
 ///
-/// All fields must be non-zero.
+/// All fields must be non-zero, and `min_delay + propose_expiration_delta` must stay below
+/// `u32::MAX`, the cancelled-proposal marker: a larger sum would leave no reference block from
+/// which a proposal could be recorded, closing the delayed path for good.
 ///
 /// Proposing a delayed transaction requires a single approver signature and only starts the
 /// timelock; the number of signatures the delayed action costs is governed by the called
@@ -30,7 +32,8 @@ pub struct DelayedExecutionPolicy {
 }
 
 impl DelayedExecutionPolicy {
-    /// Creates a new policy after validating that all fields are non-zero.
+    /// Creates a new policy after validating that all fields are non-zero and that
+    /// `min_delay + propose_expiration_delta` is below `u32::MAX`.
     pub fn new(
         min_delay: u32,
         propose_expiration_delta: u16,
@@ -46,6 +49,14 @@ impl DelayedExecutionPolicy {
         }
         if cancel_threshold == 0 {
             return Err(AccountError::other("delayed execution cancel_threshold must be non-zero"));
+        }
+        if min_delay
+            .checked_add(u32::from(propose_expiration_delta))
+            .is_none_or(|sum| sum == u32::MAX)
+        {
+            return Err(AccountError::other(
+                "delayed execution min_delay plus propose_expiration_delta must be below u32::MAX",
+            ));
         }
         Ok(Self {
             min_delay,
@@ -89,6 +100,14 @@ mod tests {
     fn delayed_execution_policy_rejects_zero_cancel_threshold() {
         let err = DelayedExecutionPolicy::new(30, 2, 0).unwrap_err();
         assert!(err.to_string().contains("cancel_threshold must be non-zero"));
+    }
+
+    #[test]
+    fn delayed_execution_policy_rejects_delay_sum_reaching_u32_max() {
+        let err = DelayedExecutionPolicy::new(u32::MAX - 1, 1, 1).unwrap_err();
+        assert!(err.to_string().contains("must be below u32::MAX"));
+        let err = DelayedExecutionPolicy::new(u32::MAX, 1, 1).unwrap_err();
+        assert!(err.to_string().contains("must be below u32::MAX"));
     }
 
     #[test]

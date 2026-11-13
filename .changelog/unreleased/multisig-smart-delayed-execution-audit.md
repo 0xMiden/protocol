@@ -1,0 +1,1 @@
+[BREAKING] The smart multisig's `propose_transaction` now tightens a live proposal instead of rejecting it (an earlier reference block lowers the unlock block, more signatures raise the cancellation quorum), propose and cancel transactions reject input notes, and `DelayedExecutionPolicy` requires `min_delay + propose_expiration_delta` below `u32::MAX`.

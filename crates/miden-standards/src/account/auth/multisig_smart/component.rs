@@ -313,18 +313,30 @@ fn validate_proc_policies(
 ///   [`DelayedExecutionPolicy`] `cancel_threshold` in force when the proposal was recorded and the
 ///   number of approvers that signed the proposal, capped by the current approver count: proposers
 ///   can only raise the quorum with real approver signatures, never lower it below the floor, and a
-///   group smaller than the proposers cannot veto them. Signatures do not distinguish the immediate
-///   from the delayed path, so a signing round meant for immediate execution that stalls above the
-///   delayed threshold can be proposed by whoever holds the signatures, and once the signers
-///   outnumber the rest nobody can veto it; approvers who want a transaction to run immediately or
-///   not at all sign it without an approval expiration, which closes the delayed path.
+///   group smaller than the proposers cannot veto them. Re-proposing a live commitment with more
+///   signatures raises its quorum, so whoever proposes first cannot pin it at the floor. Signatures
+///   do not distinguish the immediate from the delayed path, so a signing round meant for immediate
+///   execution that stalls above the delayed threshold can be proposed by whoever holds the
+///   signatures, and once the signers outnumber the rest nobody can veto it; approvers who want a
+///   transaction to run immediately or not at all sign it without an approval expiration, which
+///   closes the delayed path.
 ///
 /// - A proposal cannot block execution. The path is chosen from the verified signatures, so a
 ///   transaction carrying enough signatures for immediate execution runs whether or not someone
 ///   proposed its commitment, and any such proposal is dropped when it executes. A rogue approver
 ///   or a relayer holding a single signature can therefore only open the delayed path for a
 ///   commitment, never force a fully signed transaction through the timelock or make an
-///   immediate-only procedure unexecutable.
+///   immediate-only procedure unexecutable. Nor can such a proposal close the delayed path by
+///   referencing a late block: re-proposing the commitment from an earlier reference block lowers
+///   the unlock block, while the timelock still counts from the last block the re-proposal can be
+///   included in.
+///
+/// - A delay action approves nothing but itself. `propose_transaction` and
+///   `cancel_transaction_proposal` verify signatures over the proposed commitment (or its cancel
+///   message), never over the summary of the transaction that calls them, so the auth procedure
+///   requires such a transaction to call no other procedure and to consume no notes: a consumed
+///   note would be nullified without any approver having signed for it. (Creating a note takes an
+///   account procedure, which the first requirement already rules out.)
 ///
 /// A policy protects a procedure only while the procedures that can weaken it are protected at
 /// least as strongly. `update_delayed_execution_policy` shortens the timelock,
@@ -338,6 +350,14 @@ fn validate_proc_policies(
 /// strongest policy they can weaken, so that lowering a protection with fewer keys has to go
 /// through a proposal and wait out the current timelock, during which the other approvers can
 /// cancel it.
+///
+/// Policies are keyed by procedure root and outlive the code they were set for. A code upgrade
+/// neither validates nor clears the policies of the roots it removes, `set_procedure_policy`
+/// cannot clear a policy whose root the current code lacks, and `update_signers_and_threshold`
+/// checks only the policies of the current procedures when the signer set shrinks. A policy left
+/// behind by an upgrade can thus end up with a threshold above the approver count, and it applies
+/// again, unreachable, if a later upgrade restores its root. Lower such policies before shrinking
+/// the signer set, or re-check the policies of every restored root after an upgrade.
 ///
 /// The spending limit configured through [`SpendingLimitsPolicy`] is only as strong as the
 /// policies on the procedures that can weaken it. `update_spending_limits_policy` shortens the
