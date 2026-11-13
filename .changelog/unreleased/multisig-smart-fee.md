@@ -1,0 +1,1 @@
+[BREAKING] `AuthMultisigSmart` now pays the transaction fee like `AuthMultisig`, after verifying the signatures and within the max fee the summary binds, which `multisig_smart::auth_tx` now takes as an input; `multisig::estimate_max_fee` takes the caller's extra cycles.

@@ -6,6 +6,7 @@ use miden_standards::note::TxFeeNote;
 
 mod conversion;
 mod multisig;
+mod multisig_smart;
 mod network;
 mod no_auth;
 mod singlesig;

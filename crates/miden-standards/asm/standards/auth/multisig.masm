@@ -1001,10 +1001,13 @@ end
 #! summary binds that expiration. Skipping the estimate on the signed execution would change the
 #! summary.
 #!
-#! Inputs:  [num_of_signers]
+#! Inputs:  [num_extra_cycles, num_of_signers]
 #! Outputs: [max_fee]
 #!
 #! Where:
+#! - num_extra_cycles is the estimated number of cycles the caller's authentication flow spends
+#!   beyond the multisig flow `signature::estimate_multisig_authentication_cycles` covers, e.g. for
+#!   evaluating procedure policies; zero for the plain multisig flow.
 #! - num_of_signers is the maximum number of signature verifications the authentication flow can
 #!   perform.
 #! - max_fee is the estimated fee and sponsored fees, in the native fee asset.
@@ -1013,8 +1016,11 @@ end
 #! - the fee estimate fails (propagates the panics of `miden::standards::fee::estimate_fee`).
 #!
 #! Invocation: exec
-pub proc estimate_max_fee(num_of_signers: u8) -> AssetAmount
-    exec.signature::estimate_multisig_authentication_cycles add.MULTISIG_POST_FEE_CYCLES
+pub proc estimate_max_fee(num_extra_cycles: u32, num_of_signers: u8) -> AssetAmount
+    swap exec.signature::estimate_multisig_authentication_cycles add.MULTISIG_POST_FEE_CYCLES
+    # => [num_multisig_cycles, num_extra_cycles]
+
+    add
     # => [num_extra_cycles]
 
     exec.fee::estimate_fee

@@ -73,6 +73,10 @@ pub proc auth_tx_hot_cold_guardian(auth_args: word)
     add.2
     # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
+    # this flow spends no cycles beyond the multisig flow the estimate covers
+    push.0
+    # => [num_extra_cycles, num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
     exec.multisig::estimate_max_fee
     # => [estimated_max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
