@@ -224,7 +224,7 @@ async fn execute_frontier_stress_test(tx: MockTransaction) -> anyhow::Result<()>
     let hash_class = WorkClass::new("hash");
     let mut hash_limit = options
         .execution_precompile_limits()
-        .class(hash_class)
+        .class(&hash_class)
         .expect("default policy should admit hash precompiles");
     // Each stress transaction performs 32 frontier updates with 32 Keccak calls per update.
     hash_limit.max_count = 32 * 32;

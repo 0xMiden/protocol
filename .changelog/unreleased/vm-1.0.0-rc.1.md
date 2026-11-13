@@ -1,0 +1,1 @@
+[BREAKING] Use the VM's `next` branch ahead of `1.0.0-rc.1` and link MASM packages against core `1.0.0-rc.1`. Rebuild compiled packages and regenerate proofs and IES ciphertexts created with the previous VM.

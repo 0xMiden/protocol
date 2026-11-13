@@ -351,7 +351,9 @@ mod tests {
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
             96,
             BYTE_PAIR_LOOKUP_ROWS as usize,
-        );
+            [16, 256, 128, BYTE_PAIR_LOOKUP_ROWS as usize],
+        )
+        .expect("padded heights cover all AIR rows");
         assert_ne!(
             summary.core_rows(),
             summary.trace_len(),
@@ -368,13 +370,14 @@ mod tests {
 
     #[test]
     fn trace_measurements_preserve_all_four_air_rows() {
-        let summary = TraceLenSummary::new_with_padded(
+        let summary = TraceLenSummary::new(
             10,
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
             96,
             BYTE_PAIR_LOOKUP_ROWS as usize,
             [64, 512, 128, BYTE_PAIR_LOOKUP_ROWS as usize],
-        );
+        )
+        .expect("padded heights cover all AIR rows");
 
         let measurements = TraceMeasurements::from(summary);
 
