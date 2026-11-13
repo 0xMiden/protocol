@@ -214,9 +214,9 @@ mod tests {
         },
         ScenarioExpectation {
             name: "consume single P2ID note with ECDSA signing",
-            padded_core: 16_384,
-            padded_chiplets: 4_096,
-            padded_eidos_compression: 65_536,
+            padded_core: 32_768,
+            padded_chiplets: 8_192,
+            padded_eidos_compression: 131_072,
             padded_byte_pair_lookup: 65_536,
         },
         ScenarioExpectation {

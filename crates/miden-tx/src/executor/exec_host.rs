@@ -19,6 +19,8 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::{CodePatch, CodeTreeRoot, CodeWitness, PartialCodeTree};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
@@ -87,6 +89,9 @@ where
     /// The data that was lazy loaded during transaction execution.
     lazy_loaded_data: LazyLoadedData,
 
+    /// The code patch that the kernel loaded, or `None` before the load.
+    code_patch: Option<CodePatch>,
+
     /// Whether execution is currently inside the authentication procedure.
     ///
     /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
@@ -126,6 +131,7 @@ where
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
+        code_tree_root: CodeTreeRoot,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
@@ -135,6 +141,7 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
+            PartialCodeTree::new(code_tree_root),
         )?;
 
         Ok(Self {
@@ -143,6 +150,7 @@ where
             authenticator,
             ref_block,
             lazy_loaded_data: LazyLoadedData::default(),
+            code_patch: None,
             in_auth_procedure: false,
             source_manager,
         })
@@ -224,6 +232,110 @@ where
         self.lazy_loaded_data.signatures.push(signature);
 
         Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
+    }
+
+    /// Handles the load of the code patch by the kernel.
+    ///
+    /// The host starts without code witnesses. It requests the witnesses of the top-level roots,
+    /// gets the code to register of the absent ones from the data store, and then requests the
+    /// witnesses of the procedures of this code.
+    async fn on_code_patch_before_loaded(
+        &mut self,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        self.fetch_code_witnesses(self.base_host.code_patch_top_level_roots()).await?;
+
+        let absent_roots = self.base_host.absent_top_level_roots()?;
+        let code_to_register = if absent_roots.is_empty() {
+            Vec::new()
+        } else {
+            self.base_host
+                .store()
+                .get_code_to_register(absent_roots)
+                .await
+                .map_err(TransactionKernelError::GetCodeToRegister)?
+        };
+
+        let source = self.base_host.code_patch_source(&code_to_register)?;
+        self.fetch_code_witnesses(source.procedure_roots()).await?;
+
+        let code_patch = self.base_host.build_code_patch(&source)?;
+        let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;
+        self.record_code_witnesses(
+            code_patch.created_procedures().into_iter().chain(code_patch.dependencies()),
+        )?;
+        self.code_patch = Some(code_patch);
+
+        Ok(advice_mutations)
+    }
+
+    /// Handles the verification of a top-level procedure root that the code patch does not create.
+    ///
+    /// The host has the witnesses of the top-level roots that it knew at the load. It does not know
+    /// the script root of a note that the auth procedure creates, so it requests the witness now.
+    async fn on_code_patch_before_witness_verified(
+        &mut self,
+        procedure_root: ProcedureRoot,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        self.fetch_code_witnesses([procedure_root]).await?;
+        self.record_code_witnesses([procedure_root])?;
+
+        self.base_host.on_code_patch_before_witness_verified(procedure_root)
+    }
+
+    /// Requests the code witnesses of the procedure roots that the host does not track yet from the
+    /// data store, and adds them to the available witnesses.
+    ///
+    /// The host can fetch more witnesses than the kernel verifies, because it does not know which
+    /// procedures the code patch reaches before it builds the patch. Only the verified witnesses go
+    /// into the transaction inputs (see [`Self::record_code_witnesses`]).
+    async fn fetch_code_witnesses(
+        &mut self,
+        procedure_roots: impl IntoIterator<Item = ProcedureRoot>,
+    ) -> Result<(), TransactionKernelError> {
+        let procedure_roots = procedure_roots
+            .into_iter()
+            .filter(|procedure_root| !self.base_host.code_tree().is_tracked(procedure_root))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if procedure_roots.is_empty() {
+            return Ok(());
+        }
+
+        let code_tree_root = self.base_host.code_tree().root();
+        let witnesses = self
+            .base_host
+            .store()
+            .get_code_witnesses(code_tree_root, procedure_roots)
+            .await
+            .map_err(|source| TransactionKernelError::GetCodeWitnesses {
+                code_tree_root,
+                source,
+            })?;
+
+        self.base_host.add_code_witnesses(witnesses)?;
+
+        Ok(())
+    }
+
+    /// Records the code witnesses of the procedure roots that the kernel verifies, so that a
+    /// re-execution can build the same code patch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code witness of a procedure root is not available.
+    fn record_code_witnesses(
+        &mut self,
+        procedure_roots: impl IntoIterator<Item = ProcedureRoot>,
+    ) -> Result<(), TransactionKernelError> {
+        for procedure_root in procedure_roots {
+            let witness = self.base_host.code_tree().open(&procedure_root).map_err(|source| {
+                TransactionKernelError::MissingCodeWitness { procedure_root, source }
+            })?;
+            self.lazy_loaded_data.code_witnesses.insert(procedure_root, witness);
+        }
+
+        Ok(())
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -411,6 +523,7 @@ where
         TransactionLogs,
         TransactionProgress,
         LazyLoadedData,
+        CodePatch,
     ) {
         let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
 
@@ -421,6 +534,7 @@ where
             logs,
             self.tx_progress,
             self.lazy_loaded_data,
+            self.code_patch.expect("code patch should have been built"),
         )
     }
 
@@ -461,6 +575,9 @@ pub(crate) struct LazyLoadedData {
     ///
     /// They are fetched against the initial map roots, so they fit the initial partial accounts.
     storage_map_witnesses: Vec<(AccountId, StorageMapWitness)>,
+
+    /// The code witnesses that the kernel verified.
+    code_witnesses: BTreeMap<ProcedureRoot, CodeWitness>,
 }
 
 impl LazyLoadedData {
@@ -489,6 +606,7 @@ impl LazyLoadedData {
         for (account_id, witness) in self.storage_map_witnesses {
             tx_inputs.add_storage_map_witnesses(account_id, [witness])?;
         }
+        tx_inputs.add_code_witnesses(self.code_witnesses.into_values())?;
 
         Ok(())
     }
@@ -686,6 +804,12 @@ where
 
                 TransactionEvent::InputNoteIndexLookup { note_id } => {
                     Ok(self.base_host.on_input_note_index_lookup(note_id))
+                },
+
+                TransactionEvent::CodePatchBeforeLoaded => self.on_code_patch_before_loaded().await,
+
+                TransactionEvent::CodePatchBeforeWitnessVerified { procedure_root } => {
+                    self.on_code_patch_before_witness_verified(procedure_root).await
                 },
 
                 TransactionEvent::AuthRequest {

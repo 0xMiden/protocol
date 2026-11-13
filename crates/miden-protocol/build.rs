@@ -50,7 +50,7 @@ const PROTOCOL_LIB_ERRORS_RS_FILE: &str = "protocol_errors.rs";
 const TX_KERNEL_ERRORS_ARRAY_NAME: &str = "TX_KERNEL_ERRORS";
 const PROTOCOL_LIB_ERRORS_ARRAY_NAME: &str = "PROTOCOL_LIB_ERRORS";
 
-const TX_KERNEL_ERROR_CATEGORIES: [&str; 15] = [
+const TX_KERNEL_ERROR_CATEGORIES: [&str; 16] = [
     "KERNEL",
     "PROLOGUE",
     "EPILOGUE",
@@ -66,6 +66,7 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 15] = [
     "MEM",
     "INPUT_NOTE",
     "OUTPUT_NOTE",
+    "CODE_PATCH",
 ];
 
 // PRE-PROCESSING

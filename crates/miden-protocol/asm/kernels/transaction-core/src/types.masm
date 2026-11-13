@@ -7,6 +7,9 @@ use {AccountId, StorageSlotId} from ::miden::protocol_utils::types
 #! A cryptographic commitment or Merkle root.
 pub type Commitment = word
 
+#! The MAST root of a procedure.
+pub type ProcedureRoot = word
+
 #! Account header in memory and operand-stack order.
 pub type AccountMetadata = struct {
     version: u8,

@@ -17,6 +17,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -162,6 +163,16 @@ pub(crate) enum TransactionEvent {
         note_idx: usize,
         /// The attachment that is appended to the output note.
         attachment: NoteAttachment,
+    },
+
+    /// The kernel requests the procedure roots of the code patch.
+    CodePatchBeforeLoaded,
+
+    /// The kernel requests the code witness of a top-level procedure root that the code patch
+    /// does not create.
+    CodePatchBeforeWitnessVerified {
+        /// The top-level procedure root.
+        procedure_root: ProcedureRoot,
     },
 
     /// A lookup that resolves an input note ID to its index through the advice provider.
@@ -542,6 +553,16 @@ impl TransactionEvent {
                 )?;
 
                 Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
+            },
+
+            TransactionEventId::CodePatchBeforeLoaded => {
+                Some(TransactionEvent::CodePatchBeforeLoaded)
+            },
+
+            TransactionEventId::CodePatchBeforeWitnessVerified => {
+                // Expected stack state: [event, PROC_ROOT]
+                let procedure_root = ProcedureRoot::from_raw(process.get_stack_word(1));
+                Some(TransactionEvent::CodePatchBeforeWitnessVerified { procedure_root })
             },
 
             TransactionEventId::InputNoteIndexLookup => {

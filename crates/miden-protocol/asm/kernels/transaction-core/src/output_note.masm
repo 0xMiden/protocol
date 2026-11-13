@@ -13,6 +13,7 @@ use miden::tx_kernel_core::account
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::tx_kernel_core::asset
 use miden::tx_kernel_core::callbacks
+use miden::tx_kernel_core::code_patch
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
@@ -107,6 +108,8 @@ const NOTE_BEFORE_ADD_ATTACHMENT_EVENT = event("miden::protocol::note::before_ad
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
 #! - the number of output notes exceeds the maximum limit of 1024.
+#! - the auth procedure creates a public note and the verification of its script root fails (see
+#!   `code_patch::verify_auth_output_note`).
 pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
     emit.NOTE_BEFORE_CREATED_EVENT
     # => [tag, note_type, RECIPIENT]
@@ -143,6 +146,16 @@ pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> 
     # set the RECIPIENT for the output note
     exec.memory::set_output_note_recipient dropw
     # => [note_idx]
+
+    # the code patch load checks the notes created before the auth procedure, but notes created by
+    # the auth procedure are verified immediately.
+    exec.memory::is_epilogue_auth_in_progress
+    # => [is_epilogue_auth_in_progress, note_idx]
+
+    if.true
+        dup exec.code_patch::verify_auth_output_note
+        # => [note_idx]
+    end
 end
 
 #! Returns the information about assets in the output note with the specified index.

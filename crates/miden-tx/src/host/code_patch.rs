@@ -2,9 +2,12 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_processor::advice::AdviceMutation;
 use miden_processor::mast::{MastForest, MastNodeExt};
+use miden_protocol::Felt;
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::vm::AdviceMap;
 
 use crate::errors::TransactionKernelError;
 
@@ -46,10 +49,12 @@ impl CodePatchSource {
         Ok(Self { mast_forest })
     }
 
-    /// Returns the procedures whose code witnesses [`Self::build_code_patch`] needs.
+    /// Returns the procedures whose code witnesses [`Self::build_code_patch`] can need.
     ///
-    /// These are the procedure roots and the external nodes of the source. The caller must add
-    /// the top-level roots whose code is not in the source.
+    /// These are the procedure roots and the external nodes of the source. The build needs only
+    /// the witnesses of the procedures that the absent top-level roots reach, but these are not
+    /// known before the build. The caller must add the top-level roots whose code is not in the
+    /// source.
     pub(crate) fn procedure_roots(&self) -> impl Iterator<Item = ProcedureRoot> + '_ {
         let external_nodes = self
             .mast_forest
@@ -76,9 +81,8 @@ impl CodePatchSource {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the code witness of a top-level root or of a procedure in [`Self::procedure_roots`] is not
-    ///   available. The kernel verifies the witness of each top-level root, so the host must have
-    ///   it.
+    /// - the code witness of a top-level root or of a dependency is not available. The kernel
+    ///   verifies these witnesses, so the host must have them.
     /// - the code of an absent procedure is not in the source.
     /// - the patch is not a valid [`CodePatch`], e.g. because it exceeds [`CodePatch::MAX_SIZE`].
     pub(crate) fn build_code_patch(
@@ -86,15 +90,6 @@ impl CodePatchSource {
         top_level_roots: &BTreeSet<ProcedureRoot>,
         code_tree: &PartialCodeTree,
     ) -> Result<CodePatch, TransactionKernelError> {
-        // Look up the presence of each procedure of the source once, so that the extraction can
-        // decide which procedures to reference instead of copying.
-        let mut present_roots = BTreeSet::new();
-        for procedure_root in self.procedure_roots() {
-            if is_present(code_tree, procedure_root)? {
-                present_roots.insert(procedure_root.as_word());
-            }
-        }
-
         // Only absent top-level roots add code. The source must contain their code.
         let mut absent_top_level_nodes = Vec::new();
         for top_level_root in top_level_roots {
@@ -111,9 +106,16 @@ impl CodePatchSource {
         }
 
         // Copy the code that the absent top-level roots reach, and reference present procedures.
+        // The presence is looked up only for reached procedures, so that the build needs only
+        // the code witnesses that the kernel verifies. The host requests the witnesses of all
+        // procedures of the source, but the data store can leave some out. A procedure without a
+        // witness is copied, which makes it a created procedure. Its missing witness then fails
+        // the code patch advice (see `code_patch_advice`), so the patch cannot be loaded.
         let mast_forest = self
             .mast_forest
-            .extract_procedures(&absent_top_level_nodes, |digest| present_roots.contains(&digest))
+            .extract_procedures(&absent_top_level_nodes, |digest| {
+                code_tree.contains(&ProcedureRoot::from_raw(digest)).unwrap_or(false)
+            })
             .map_err(TransactionKernelError::CodePatchMastForest)?;
         let code_patch = CodePatch::new(Arc::new(mast_forest))
             .map_err(TransactionKernelError::InvalidCodePatch)?;
@@ -121,23 +123,86 @@ impl CodePatchSource {
         // The extraction keeps the external nodes of the source as dependencies. Such a node
         // references a procedure whose code the source does not contain, so the procedure must be
         // present.
-        if let Some(absent_dependency) = code_patch
-            .dependencies()
-            .find(|dependency| !present_roots.contains(&dependency.as_word()))
-        {
-            return Err(TransactionKernelError::MissingProcedureMast(absent_dependency));
+        for dependency in code_patch.dependencies() {
+            if !is_present(code_tree, dependency)? {
+                return Err(TransactionKernelError::MissingProcedureMast(dependency));
+            }
         }
 
         Ok(code_patch)
     }
 }
 
+// CODE PATCH ADVICE
+// ================================================================================================
+
+/// Returns the advice that the kernel reads to load the code patch.
+///
+/// The lists are sorted, because the kernel asserts that they are unique and sorted. The advice
+/// stack layout is defined in `code_patch::load` in the transaction kernel.
+///
+/// # Errors
+///
+/// Returns an error if the code witness of a procedure root is not available in the code tree.
+pub(crate) fn code_patch_advice(
+    code_patch: &CodePatch,
+    code_tree: &PartialCodeTree,
+) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+    let mut advice_stack = Vec::new();
+    let mut patch_list = |list: &BTreeSet<ProcedureRoot>| {
+        advice_stack.push(Felt::from(list.len() as u32));
+        advice_stack.extend(list.iter().flat_map(|procedure_root| procedure_root.as_word()));
+    };
+
+    let created_procedures = code_patch.created_procedures();
+    let dependencies = code_patch.dependencies();
+    patch_list(&created_procedures);
+    patch_list(&dependencies);
+
+    let patch_lists = created_procedures.iter().chain(dependencies.iter());
+    let mut mutations = code_witness_advice(patch_lists, code_tree)?;
+    mutations.push(AdviceMutation::extend_advice_stack_with(advice_stack));
+
+    Ok(mutations)
+}
+
+/// Returns the advice that provides the code witnesses of the procedure roots through the merkle
+/// store and the advice map.
+///
+/// # Errors
+///
+/// Returns an error if the code witness of a procedure root is not available in the code tree.
+pub(crate) fn code_witness_advice<'root>(
+    procedure_roots: impl IntoIterator<Item = &'root ProcedureRoot>,
+    code_tree: &PartialCodeTree,
+) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+    let mut merkle_store_nodes = Vec::new();
+    let mut advice_map = AdviceMap::default();
+    for procedure_root in procedure_roots {
+        let witness = code_tree.open(procedure_root).map_err(|source| {
+            TransactionKernelError::MissingCodeWitness { procedure_root: *procedure_root, source }
+        })?;
+
+        let proof = witness.proof();
+        merkle_store_nodes.extend(proof.authenticated_nodes());
+        advice_map.insert(proof.leaf().hash(), proof.leaf().to_elements().collect::<Arc<[Felt]>>());
+    }
+
+    Ok(Vec::from([
+        AdviceMutation::extend_merkle_store(merkle_store_nodes),
+        AdviceMutation::extend_map(advice_map),
+    ]))
+}
+
+// HELPERS
+// ================================================================================================
+
 /// Returns `true` if the procedure root is present in the code tree.
 ///
 /// # Errors
 ///
 /// Returns an error if the code witness of the procedure root is not available.
-fn is_present(
+pub(crate) fn is_present(
     code_tree: &PartialCodeTree,
     procedure_root: ProcedureRoot,
 ) -> Result<bool, TransactionKernelError> {
@@ -258,9 +323,9 @@ mod tests {
 
         let code_patch = source.build_code_patch(&top_level_roots, &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
+        assert_eq!(code_patch.created_procedures(), absent_roots);
         // a present top-level root is in the patch only if absent code references it
-        assert_eq!(code_patch.dependencies().collect::<Vec<_>>(), [present_root()]);
+        assert_eq!(code_patch.dependencies(), BTreeSet::from([present_root()]));
 
         Ok(())
     }
@@ -284,8 +349,8 @@ mod tests {
         let code_patch = code_patch_source(&[main_forest, other_forest])?
             .build_code_patch(&BTreeSet::from([main_root, other_root]), &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures().collect::<BTreeSet<_>>(), absent_roots);
-        assert_eq!(code_patch.created_procedures().count(), 3);
+        assert_eq!(code_patch.created_procedures(), absent_roots);
+        assert_eq!(code_patch.created_procedures().len(), 3);
 
         Ok(())
     }
@@ -341,10 +406,10 @@ mod tests {
         )?;
         let code_patch = source.build_code_patch(&BTreeSet::from([main_root]), &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures().collect::<Vec<_>>(), [main_root]);
+        assert_eq!(code_patch.created_procedures(), BTreeSet::from([main_root]));
         let mut expected_dependencies = helper_roots;
         expected_dependencies.insert(present_root());
-        assert_eq!(code_patch.dependencies().collect::<BTreeSet<_>>(), expected_dependencies);
+        assert_eq!(code_patch.dependencies(), expected_dependencies);
 
         Ok(())
     }
@@ -410,11 +475,11 @@ mod tests {
             partial_code_tree(registered_roots.iter().copied(), tracked_roots.iter().copied())?;
         let code_patch = source.build_code_patch(&note_script_roots, &code_tree)?;
 
-        let created_procedures = code_patch.created_procedures().collect::<BTreeSet<_>>();
+        let created_procedures = code_patch.created_procedures();
         assert!(created_procedures.is_superset(&note_script_roots));
         assert!(created_procedures.contains(&receive_asset_root));
         assert!(created_procedures.is_subset(&local_roots(standards_forest)));
-        assert!(code_patch.dependencies().all(|root| registered_roots.contains(&root)));
+        assert!(code_patch.dependencies().is_subset(&registered_roots));
 
         // a registered wallet procedure is a dependency
         let code_tree = partial_code_tree(
@@ -423,8 +488,8 @@ mod tests {
         )?;
         let code_patch = source.build_code_patch(&note_script_roots, &code_tree)?;
 
-        assert!(!code_patch.created_procedures().any(|root| root == receive_asset_root));
-        assert!(code_patch.dependencies().any(|root| root == receive_asset_root));
+        assert!(!code_patch.created_procedures().contains(&receive_asset_root));
+        assert!(code_patch.dependencies().contains(&receive_asset_root));
 
         Ok(())
     }

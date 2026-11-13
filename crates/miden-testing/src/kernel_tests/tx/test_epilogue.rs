@@ -66,7 +66,10 @@ fn logs_expiration_commitment(expiration_block_num: u32) -> Word {
 async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let asset = FungibleAsset::mock(100);
-    let output_note_1 = create_public_p2any_note(account.id(), [asset]);
+    // The output note is private, because the mock host of `execute_code` does not track created
+    // notes, so it cannot put the script of a public note into the code patch.
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let output_note_1 = create_p2any_note(account.id(), NoteType::Private, [asset], &mut rng);
     // input_note_1 is needed for maintaining cohesion of involved assets
     let input_note_1 =
         create_public_p2any_note(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap(), [asset]);

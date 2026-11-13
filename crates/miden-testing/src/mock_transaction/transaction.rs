@@ -263,6 +263,7 @@ impl MockTransaction {
             None,
             ref_block,
             block_commitments,
+            tx_inputs.block_header().code_tree_root(),
             self.source_manager(),
         )
         .expect("partial account from a full account should contain its complete storage");

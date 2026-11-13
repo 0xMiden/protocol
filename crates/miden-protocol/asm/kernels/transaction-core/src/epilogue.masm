@@ -3,6 +3,7 @@ use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
+use miden::tx_kernel_core::code_patch
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 use miden::tx_kernel_core::tx
@@ -259,6 +260,7 @@ end
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
+#! - loads the code patch of the public code that the transaction created so far.
 #! - invokes the native account's authentication procedure.
 #! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment and the hash of the transaction logs commitment and
@@ -292,10 +294,19 @@ end
 #!   replayability. A tx changes the chain state if it either consumes 1 or more input notes or by
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
+#! - the code patch cannot be loaded (see `code_patch::load`).
 @locals(8)
 pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitment)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
+
+    # ------ Load the code patch ------
+
+    # Load the code patch before the auth procedure, so that the cycles of the witness verification
+    # are included if the auth procedure computes the fee, and so that auth procedures can restrict
+    # the code patch (e.g. for network accounts).
+    exec.code_patch::load
+    # => []
 
     # ------ Execute the account's authentication procedure ------
 

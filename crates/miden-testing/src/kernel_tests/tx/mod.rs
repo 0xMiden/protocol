@@ -24,6 +24,7 @@ mod test_asset;
 mod test_asset_vault;
 mod test_auth;
 mod test_callbacks;
+mod test_code_patch;
 mod test_epilogue;
 mod test_faucet;
 mod test_fee;

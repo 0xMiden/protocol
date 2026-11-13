@@ -1,5 +1,6 @@
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
@@ -90,6 +91,11 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
 
     assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
+
+    // the kernel verified the code witness of the fee note script, although the host did not
+    // know the script when it provided the code patch lists
+    let fee_script_root = ProcedureRoot::from_raw(TxFeeNote::script_root().into());
+    assert!(executed_transaction.tx_inputs().code_tree().contains(&fee_script_root)?);
 
     // the note carries exactly one asset: the native fee asset
     let assets = output_note.assets();
