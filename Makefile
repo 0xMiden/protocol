@@ -172,9 +172,17 @@ generate-solidity-test-vectors: ## Regenerate Solidity test vectors using Foundr
 # --- benchmarking --------------------------------------------------------------------------------
 
 .PHONY: bench-tx
-bench-tx: ## Run transaction benchmarks
-	cargo run --bin bench-transaction --features concurrent
-	cargo bench --bin bench-transaction --bench time_counting_benchmarks --features concurrent
+bench-tx: ## Run cycle counts and transaction latency benchmarks
+	$(MAKE) bench-tx-cycles
+	$(MAKE) bench-tx-time
+
+.PHONY: bench-tx-cycles
+bench-tx-cycles: ## Regenerate transaction cycle counts and trace shapes
+	cargo run --locked --release --bin bench-transaction --features concurrent
+
+.PHONY: bench-tx-time
+bench-tx-time: ## Measure transaction latency
+	cargo bench --locked -p bench-transaction --bench time_counting_benchmarks --features concurrent
 
 .PHONY: bench-note-checker
 bench-note-checker: ## Run note checker benchmarks

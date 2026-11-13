@@ -63,4 +63,4 @@ serde_json = { optional = true, workspace = true }
 tokio      = { optional = true, workspace = true }
 
 [dev-dependencies]
-criterion = { features = ["async_tokio", "html_reports"], workspace = true }
+criterion = { features = ["html_reports"], workspace = true }
