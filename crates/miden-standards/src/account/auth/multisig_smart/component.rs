@@ -27,6 +27,7 @@ use super::ProcedurePolicy;
 use super::config::DelayedExecutionPolicy;
 use super::spending_limits::SpendingLimitsPolicy;
 use crate::account::account_component_package;
+use crate::account::auth::approver::key_set_slots;
 use crate::account::auth::{Approver, ApproverSet};
 use crate::{MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN, procedure_root};
 
@@ -551,26 +552,11 @@ impl From<AuthMultisigSmart> for AccountComponent {
             Word::from([multisig.config.default_threshold(), num_approvers, 0, 0]),
         ));
 
-        // Approver public keys slot (map)
-        let map_entries = multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
-            (StorageMapKey::from_index(i as u32), Word::from(approver.pub_key()))
-        });
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisigSmart::approver_public_keys_slot().clone(),
-            StorageMap::with_entries(map_entries).unwrap(),
-        ));
-
-        // Approver scheme IDs slot
-        let scheme_id_entries =
-            multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
-                (
-                    StorageMapKey::from_index(i as u32),
-                    Word::from([approver.auth_scheme() as u32, 0, 0, 0]),
-                )
-            });
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisigSmart::approver_scheme_ids_slot().clone(),
-            StorageMap::with_entries(scheme_id_entries).unwrap(),
+        // Approver public key and scheme id slots (maps keyed by the approver index)
+        storage_slots.extend(key_set_slots(
+            AuthMultisigSmart::approver_public_keys_slot(),
+            AuthMultisigSmart::approver_scheme_ids_slot(),
+            multisig.config.approvers(),
         ));
 
         // Executed transactions slot (map)

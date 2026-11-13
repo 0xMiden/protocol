@@ -19,6 +19,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::super::multisig::EXECUTED_TRANSACTIONS_SLOT_NAME;
 use super::{AuthHotColdGuardianConfig, HotColdDelayConfig, HotColdPolicy};
 use crate::account::account_component_package;
+use crate::account::auth::approver::key_set_slots;
 use crate::account::auth::{Approver, GuardianConfig};
 use crate::procedure_root;
 
@@ -323,41 +324,18 @@ impl From<AuthHotColdGuardian> for AccountComponent {
             Word::from([config.hot_keys().len() as u32, 0, 0, 0]),
         ));
 
-        // Hot public keys slot (map)
-        let hot_public_key_entries = config.hot_keys().iter().enumerate().map(|(i, approver)| {
-            (StorageMapKey::from_index(i as u32), Word::from(approver.pub_key()))
-        });
-        storage_slots.push(StorageSlot::with_map(
-            AuthHotColdGuardian::hot_public_keys_slot().clone(),
-            StorageMap::with_entries(hot_public_key_entries).unwrap(),
+        // Hot public key and scheme id slots (maps keyed by the hot key index)
+        storage_slots.extend(key_set_slots(
+            AuthHotColdGuardian::hot_public_keys_slot(),
+            AuthHotColdGuardian::hot_scheme_ids_slot(),
+            config.hot_keys(),
         ));
 
-        // Hot scheme IDs slot (map)
-        let hot_scheme_id_entries = config.hot_keys().iter().enumerate().map(|(i, approver)| {
-            (
-                StorageMapKey::from_index(i as u32),
-                Word::from([approver.auth_scheme() as u32, 0, 0, 0]),
-            )
-        });
-        storage_slots.push(StorageSlot::with_map(
-            AuthHotColdGuardian::hot_scheme_ids_slot().clone(),
-            StorageMap::with_entries(hot_scheme_id_entries).unwrap(),
-        ));
-
-        // Cold key slots (single-entry maps keyed by [0, 0, 0, 0], like the guardian's)
-        let category_map_key = StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0]));
-        let cold_key = config.cold_key();
-        storage_slots.push(StorageSlot::with_map(
-            AuthHotColdGuardian::cold_public_key_slot().clone(),
-            StorageMap::with_entries([(category_map_key, Word::from(cold_key.pub_key()))]).unwrap(),
-        ));
-        storage_slots.push(StorageSlot::with_map(
-            AuthHotColdGuardian::cold_scheme_id_slot().clone(),
-            StorageMap::with_entries([(
-                category_map_key,
-                Word::from([cold_key.auth_scheme() as u32, 0, 0, 0]),
-            )])
-            .unwrap(),
+        // Cold key slots: a single-entry key set at index 0, like the guardian's
+        storage_slots.extend(key_set_slots(
+            AuthHotColdGuardian::cold_public_key_slot(),
+            AuthHotColdGuardian::cold_scheme_id_slot(),
+            &[config.cold_key()],
         ));
 
         // Executed transactions slot (map)

@@ -20,6 +20,7 @@ use miden_protocol::transaction::{TransactionSummary, TransactionSummaryUserPara
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word, ZERO};
 
+use super::approver::key_set_slots;
 use super::{Approver, ApproverSet, FeeConversionInfo};
 use crate::account::account_component_package;
 use crate::procedure_root;
@@ -359,29 +360,11 @@ impl From<AuthMultisig> for AccountComponent {
             Word::from([multisig.config.default_threshold(), num_approvers, 0, 0]),
         ));
 
-        // Approver public keys slot (map)
-        let map_entries = multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
-            (StorageMapKey::from_index(i as u32), Word::from(approver.pub_key()))
-        });
-
-        // Safe to unwrap because we know that the map keys are unique.
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::approver_public_keys_slot().clone(),
-            StorageMap::with_entries(map_entries).unwrap(),
-        ));
-
-        // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
-        let scheme_id_entries =
-            multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
-                (
-                    StorageMapKey::from_index(i as u32),
-                    Word::from([approver.auth_scheme() as u32, 0, 0, 0]),
-                )
-            });
-
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::approver_scheme_ids_slot().clone(),
-            StorageMap::with_entries(scheme_id_entries).unwrap(),
+        // Approver public key and scheme id slots (maps keyed by the approver index)
+        storage_slots.extend(key_set_slots(
+            AuthMultisig::approver_public_keys_slot(),
+            AuthMultisig::approver_scheme_ids_slot(),
+            multisig.config.approvers(),
         ));
 
         // Executed transactions slot (map)
