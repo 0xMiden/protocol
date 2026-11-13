@@ -11,7 +11,7 @@ use miden_protocol::{Felt, Word, ZERO};
 /// How a fungible asset the budget cannot price is treated.
 ///
 /// An asset is priced when the budget is configured and it is either the base asset or one the
-/// oracle has a rate for. Anything else falls to this policy.
+/// oracle has a non-zero rate for. Anything else falls to this policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
 #[non_exhaustive]
@@ -70,8 +70,8 @@ impl SpendingOracle {
 /// The spending budget: one limit denominated in `base_asset`.
 ///
 /// The base asset is charged one to one. Any other fungible asset is charged at the rate the
-/// oracle quotes for it, and falls to the [`UnpricedAssetPolicy`] when the oracle has no rate for
-/// it.
+/// oracle quotes for it, and falls to the [`UnpricedAssetPolicy`] when the oracle has no rate, or
+/// a zero rate, for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpendingBudget {
     base_asset: AssetId,

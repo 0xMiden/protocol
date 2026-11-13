@@ -89,6 +89,7 @@ const ORACLE_RATE: u64 = 3_000;
 
 const FIXED_RATE_PROVIDER: &str = "fixed_rate_3000";
 const UNPRICED_PROVIDER: &str = "unpriced";
+const ZERO_RATE_PROVIDER: &str = "zero_rate";
 
 const RATE_PROVIDERS_PATH: &str = "test::spending_limits::rate_providers";
 
@@ -119,6 +120,19 @@ const RATE_PROVIDERS_CODE: &str = r#"
     pub proc unpriced
         dropw dropw
         push.0 push.0 push.0
+        exec.sys::truncate_stack
+    end
+
+    #! Prices every pair at 0/1, observed at timestamp 7.
+    #!
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [last_updated, num, den, pad(13)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc zero_rate
+        dropw dropw
+        push.1 push.0 push.7
         exec.sys::truncate_stack
     end
 "#;
@@ -651,14 +665,19 @@ async fn the_budget_accumulates_across_assets() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// An asset the oracle does not price, or prices at a zero rate, falls to the unpriced-asset
+/// policy.
 #[rstest]
-#[case::reject(UnpricedAssetPolicy::Reject)]
-#[case::allow(UnpricedAssetPolicy::Allow)]
+#[case::reject(UnpricedAssetPolicy::Reject, UNPRICED_PROVIDER)]
+#[case::allow(UnpricedAssetPolicy::Allow, UNPRICED_PROVIDER)]
+#[case::zero_rate_reject(UnpricedAssetPolicy::Reject, ZERO_RATE_PROVIDER)]
+#[case::zero_rate_allow(UnpricedAssetPolicy::Allow, ZERO_RATE_PROVIDER)]
 #[tokio::test]
 async fn an_unpriced_asset_falls_to_the_policy(
     #[case] unpriced: UnpricedAssetPolicy,
+    #[case] provider: &str,
 ) -> anyhow::Result<()> {
-    let mut harness = Harness::new(Some(unpriced), UNPRICED_PROVIDER)?;
+    let mut harness = Harness::new(Some(unpriced), provider)?;
 
     let result = harness.send_signed(fungible(eth(), 10), &[0, 1], None).await?;
 

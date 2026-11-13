@@ -17,8 +17,8 @@ use miden::standards::oracle::price_oracle
 #
 # Every fungible asset a transaction sends out through an output note is priced into the base asset
 # and charged to the account's budget. The base asset is charged one to one; any other asset is
-# priced through the configured oracle and, without a rate for it, falls to the unpriced-asset
-# policy. The budget resets at fixed window boundaries derived from the reference block number. A
+# priced through the configured oracle and, without a non-zero rate for it, falls to the
+# unpriced-asset policy. The budget resets at fixed window boundaries derived from the reference block number. A
 # transaction that would push the budget over its limit fails regardless of how many approvers
 # signed it. The policy never changes how many signatures a transaction needs, it only decides
 # whether the transaction is allowed at all. Non-fungible assets are outside the policy.
@@ -578,8 +578,9 @@ end
 #! block. Right after the read the transaction's expiration delta is tightened to
 #! `max_oracle_block_age`, so the reference block the price came from cannot be older than that at
 #! inclusion. That bounds the age of the read, not of the rate: a rate is used whenever the provider
-#! priced the pair (`last_updated != 0`), and how long ago it was observed is left to the oracle
-#! operator rather than checked here.
+#! priced the pair (`last_updated != 0`) at a non-zero rate, and how long ago it was observed is
+#! left to the oracle operator rather than checked here. A zero rate counts as unpriced, since
+#! `fee::convert_amount` cannot convert at it.
 #!
 #! Inputs:  [ASSET_ID, amount]
 #! Outputs: [is_priced, converted_amount]
@@ -633,8 +634,9 @@ proc convert_to_base_asset(asset_id: AssetId, amount: AssetAmount) -> (Bool, Ass
         movup.3 exec.tx::update_expiration_block_delta
         # => [last_updated, num, den, amount]
 
-        # ----- A zero last_updated means the provider does not price the pair. -----
-        eq.0
+        # ----- A zero last_updated means the provider does not price the pair, and a zero rate
+        # cannot be converted, so both leave the asset to the unpriced-asset policy. -----
+        eq.0 dup.1 eq.0 or
         # => [is_unpriced, num, den, amount]
 
         if.true
