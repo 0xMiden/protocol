@@ -10,7 +10,7 @@ use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteInclusionProof, NoteType};
-use miden_protocol::{MAX_BATCHES_PER_BLOCK, Word};
+use miden_protocol::{MAX_BATCHES_PER_BLOCK, MAX_BLOCK_TIMESTAMP_DELTA_SECS, Word};
 use miden_tx::LocalTransactionProver;
 use rstest::rstest;
 
@@ -183,6 +183,43 @@ async fn proposed_block_fails_on_timestamp_not_increasing_monotonically() -> any
 
     let error = ProposedBlock::new_at(block_inputs, batches, prev_block_timestamp).unwrap_err();
     assert_matches!(error, ProposedBlockError::TimestampDoesNotIncreaseMonotonically { .. });
+
+    Ok(())
+}
+
+/// Tests that a block timestamp must be less than 24 hours after its parent timestamp.
+#[tokio::test]
+async fn proposed_block_fails_on_timestamp_jump_at_limit() -> anyhow::Result<()> {
+    let chain = MockChain::builder().build()?;
+    let block_inputs = BlockInputs::new(
+        chain.latest_block_header(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+        BTreeMap::default(),
+        BTreeMap::default(),
+    );
+    let previous_timestamp = block_inputs.prev_block_header().timestamp();
+
+    ProposedBlock::new_at(
+        block_inputs.clone(),
+        Vec::new(),
+        previous_timestamp + MAX_BLOCK_TIMESTAMP_DELTA_SECS - 1,
+    )?;
+
+    let provided_timestamp = previous_timestamp + MAX_BLOCK_TIMESTAMP_DELTA_SECS;
+    let error = ProposedBlock::new_at(block_inputs, Vec::new(), provided_timestamp).unwrap_err();
+    assert_matches!(
+        error,
+        ProposedBlockError::TimestampDeltaTooLarge {
+            provided_timestamp: error_provided_timestamp,
+            previous_timestamp: error_previous_timestamp,
+            timestamp_delta,
+            max_delta,
+        } if error_provided_timestamp == provided_timestamp
+            && error_previous_timestamp == previous_timestamp
+            && timestamp_delta == MAX_BLOCK_TIMESTAMP_DELTA_SECS
+            && max_delta == MAX_BLOCK_TIMESTAMP_DELTA_SECS
+    );
 
     Ok(())
 }

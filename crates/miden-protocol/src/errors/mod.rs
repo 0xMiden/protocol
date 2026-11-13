@@ -1638,6 +1638,16 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "timestamp delta {timestamp_delta} between provided timestamp {provided_timestamp} and previous timestamp {previous_timestamp} must be less than {max_delta} seconds"
+    )]
+    TimestampDeltaTooLarge {
+        provided_timestamp: u32,
+        previous_timestamp: u32,
+        timestamp_delta: u32,
+        max_delta: u32,
+    },
+
+    #[error(
         "account {account_id} is updated from the same initial state commitment {initial_state_commitment} by multiple conflicting batches with IDs {first_batch_id} and {second_batch_id}"
     )]
     ConflictingBatchesUpdateSameAccount {
