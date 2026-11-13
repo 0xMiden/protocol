@@ -86,6 +86,12 @@ where
     /// note and the FEE_SPONSORSHIP notes bound to it, form one group, and the groups collecting
     /// fees are tried first.
     ///
+    /// If the account's authentication procedure requests a signature the executor cannot provide,
+    /// because it has no authenticator or too few signatures, the check stops there: every note
+    /// executed by then, so the notes are reported as successful, with
+    /// [`NoteConsumptionInfo::is_authorization_pending`] set. Whatever the account checks after
+    /// requesting the signature is not exercised.
+    ///
     /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
     /// anything is executed: one whose feature note is absent and which the account may not
     /// reclaim, and one naming another FEE_SPONSORSHIP note as its feature note.
@@ -190,6 +196,11 @@ where
                     TransactionCheckerError::NoteExecution { .. } => {
                         Ok(NoteConsumptionStatus::UnconsumableConditions)
                     },
+                    // execution stopped at the account's authentication, which this check cannot
+                    // complete: the note is consumable once the transaction is authorized
+                    TransactionCheckerError::AuthorizationRequired { .. } => {
+                        Ok(NoteConsumptionStatus::ConsumableWithAuthorization)
+                    },
                     // execution failed during the epilogue
                     TransactionCheckerError::EpilogueExecution {
                         error: epilogue_error, ..
@@ -233,13 +244,22 @@ where
                 Ok(cycle_counts) => {
                     // A full set of successful notes has been found. The bundles hold the notes in
                     // the order they were executed in, so they line up with the cycle counts.
-                    let successful = bundles
-                        .into_notes()
-                        .into_iter()
-                        .zip(cycle_counts)
-                        .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
-                        .collect();
+                    let successful = successful_notes(bundles.into_notes(), cycle_counts);
                     return Ok(NoteConsumptionInfo::new(successful, failed_notes));
+                },
+                Err(TransactionCheckerError::AuthorizationRequired {
+                    successful_notes_cycle_counts,
+                    ..
+                }) => {
+                    // Every candidate note executed, and the account's authentication cannot
+                    // complete in this check: no note subset changes that, so the candidates are
+                    // consumable pending authorization.
+                    let successful =
+                        successful_notes(bundles.into_notes(), successful_notes_cycle_counts);
+                    return Ok(NoteConsumptionInfo::new_pending_authorization(
+                        successful,
+                        failed_notes,
+                    ));
                 },
                 Err(TransactionCheckerError::NoteExecution {
                     failed_note_index,
@@ -302,13 +322,14 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        let mut successful_notes: Vec<Note> = Vec::new();
-        let mut successful_cycle_counts = Vec::new();
+        let mut accepted_notes: Vec<Note> = Vec::new();
+        let mut accepted_cycle_counts = Vec::new();
+        let mut authorization_pending = false;
 
         for bundle in bundles {
             let bundle_notes: Vec<Note> = bundle.notes().cloned().collect();
             let candidate_notes: Vec<Note> =
-                successful_notes.iter().chain(&bundle_notes).cloned().collect();
+                accepted_notes.iter().chain(&bundle_notes).cloned().collect();
 
             // We can safely use unchecked builder for the candidate notes here since the
             // provided notes were already validated previously in the
@@ -321,8 +342,18 @@ where
                 Ok(cycle_counts) => {
                     // This combination succeeded; commit it, with the cycle counts of its
                     // execution.
-                    successful_cycle_counts = cycle_counts;
-                    successful_notes = candidate_notes;
+                    accepted_cycle_counts = cycle_counts;
+                    accepted_notes = candidate_notes;
+                },
+                Err(TransactionCheckerError::AuthorizationRequired {
+                    successful_notes_cycle_counts,
+                    ..
+                }) => {
+                    // This combination executed up to the account's authentication, which this
+                    // check cannot complete: commit it as consumable pending authorization.
+                    authorization_pending = true;
+                    accepted_cycle_counts = successful_notes_cycle_counts;
+                    accepted_notes = candidate_notes;
                 },
                 Err(error) => {
                     // This combination failed, so the whole bundle is rejected. Decide which
@@ -338,7 +369,7 @@ where
                             ..
                         } => (
                             failed_note_index
-                                .checked_sub(successful_notes.len())
+                                .checked_sub(accepted_notes.len())
                                 .filter(|idx| *idx < bundle_notes.len())
                                 .unwrap_or(0),
                             NoteFailure::Blamed {
@@ -372,14 +403,14 @@ where
             }
         }
 
-        // Pair successful notes with their cycle counts from the last successful execution.
-        let successful = successful_notes
-            .into_iter()
-            .zip(successful_cycle_counts)
-            .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
-            .collect();
+        // Pair the accepted notes with their cycle counts from the last accepted execution.
+        let successful = successful_notes(accepted_notes, accepted_cycle_counts);
 
-        NoteConsumptionInfo::new(successful, failed_notes)
+        if authorization_pending {
+            NoteConsumptionInfo::new_pending_authorization(successful, failed_notes)
+        } else {
+            NoteConsumptionInfo::new(successful, failed_notes)
+        }
     }
 
     /// Attempts to execute a transaction with the provided input notes.
@@ -455,10 +486,23 @@ where
                 if last_note_interval.end().is_some() {
                     let successful_notes_cycle_counts =
                         notes.iter().map(|(_, interval)| interval.len()).collect();
-                    Err(TransactionCheckerError::EpilogueExecution {
-                        error,
-                        successful_notes_cycle_counts,
-                    })
+
+                    let checker_error = match error {
+                        // The account's authentication requested a signature the executor could
+                        // not provide, which no note subset changes.
+                        TransactionExecutorError::Unauthorized(_)
+                        | TransactionExecutorError::MissingAuthenticator => {
+                            TransactionCheckerError::AuthorizationRequired {
+                                error,
+                                successful_notes_cycle_counts,
+                            }
+                        },
+                        error => TransactionCheckerError::EpilogueExecution {
+                            error,
+                            successful_notes_cycle_counts,
+                        },
+                    };
+                    Err(checker_error)
                 } else {
                     // Return the index of the failed note.
                     let failed_note_index = success_notes.len();
@@ -492,10 +536,20 @@ where
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Pairs the notes of a successful execution with their cycle counts, which `try_execute_notes`
+/// returns in the order the notes executed in.
+fn successful_notes(notes: Vec<Note>, cycle_counts: Vec<usize>) -> Vec<SuccessfulNote> {
+    notes
+        .into_iter()
+        .zip(cycle_counts)
+        .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
+        .collect()
+}
+
 /// Handle the epilogue error during the note consumption check in the `can_consume` method.
 ///
 /// The goal of this helper function is to handle the cases where the account couldn't consume the
-/// note because of some epilogue check failure, e.g. absence of the authenticator.
+/// note because of some epilogue check failure, e.g. a fee it cannot collect.
 fn handle_epilogue_error(
     note: &Note,
     epilogue_error: TransactionExecutorError,
@@ -506,17 +560,5 @@ fn handle_epilogue_error(
         return NoteConsumptionStatus::NeverConsumable(Box::new(fee_error));
     }
 
-    match epilogue_error {
-        // `Unauthorized` is returned for the multisig accounts if the transaction doesn't have
-        // enough signatures.
-        TransactionExecutorError::Unauthorized(_)
-        // `MissingAuthenticator` is returned for the account with the basic auth if the
-        // authenticator was not provided to the executor (UnreachableAuth).
-        | TransactionExecutorError::MissingAuthenticator => {
-            // Both these cases signal that there is a probability that the provided note could be
-            // consumed if the authentication is provided.
-            NoteConsumptionStatus::ConsumableWithAuthorization
-        },
-        _ => NoteConsumptionStatus::UnconsumableConditions,
-    }
+    NoteConsumptionStatus::UnconsumableConditions
 }

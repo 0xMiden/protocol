@@ -146,6 +146,7 @@ impl FailedNote {
 pub struct NoteConsumptionInfo {
     successful: Vec<SuccessfulNote>,
     failed: Vec<FailedNote>,
+    authorization_pending: bool,
 }
 
 impl NoteConsumptionInfo {
@@ -156,7 +157,24 @@ impl NoteConsumptionInfo {
 
     /// Creates a new [`NoteConsumptionInfo`] instance with the given successful and failed notes.
     pub fn new(successful: Vec<SuccessfulNote>, failed: Vec<FailedNote>) -> Self {
-        Self { successful, failed }
+        Self {
+            successful,
+            failed,
+            authorization_pending: false,
+        }
+    }
+
+    /// Creates a new [`NoteConsumptionInfo`] instance whose successful notes are consumable
+    /// pending authorization, see [`Self::is_authorization_pending`].
+    pub fn new_pending_authorization(
+        successful: Vec<SuccessfulNote>,
+        failed: Vec<FailedNote>,
+    ) -> Self {
+        Self {
+            successful,
+            failed,
+            authorization_pending: true,
+        }
     }
 
     /// Returns a reference to the successfully consumed notes.
@@ -167,6 +185,15 @@ impl NoteConsumptionInfo {
     /// Returns a reference to the failed notes.
     pub fn failed(&self) -> &[FailedNote] {
         &self.failed
+    }
+
+    /// Returns `true` if the successful notes executed but the account's authentication did not
+    /// complete, because the executor had no authenticator or too few signatures for it.
+    ///
+    /// The notes are consumable once the transaction is authorized. Whatever the account checks
+    /// after requesting a signature was not run.
+    pub fn is_authorization_pending(&self) -> bool {
+        self.authorization_pending
     }
 
     /// Consumes the struct and returns the successful and failed notes.

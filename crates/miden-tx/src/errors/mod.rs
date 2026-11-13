@@ -57,6 +57,15 @@ pub(crate) enum TransactionCheckerError {
         /// Cycle counts for notes that executed successfully before the epilogue failed.
         successful_notes_cycle_counts: Vec<usize>,
     },
+    /// The account's authentication procedure requested a signature the executor could not
+    /// provide, having no authenticator or too few signatures: every note executed, and nothing
+    /// after the request ran.
+    #[error("transaction execution stopped at the account's authentication: {error}")]
+    AuthorizationRequired {
+        error: TransactionExecutorError,
+        /// Cycle counts of the notes, all of which executed before the signature was requested.
+        successful_notes_cycle_counts: Vec<usize>,
+    },
     #[error("transaction note execution failed on note index {failed_note_index}: {error}")]
     NoteExecution {
         failed_note_index: usize,
@@ -77,6 +86,7 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
             TransactionCheckerError::TransactionPreparation(error) => error,
             TransactionCheckerError::PrologueExecution(error) => error,
             TransactionCheckerError::EpilogueExecution { error, .. } => error,
+            TransactionCheckerError::AuthorizationRequired { error, .. } => error,
             TransactionCheckerError::NoteExecution { error, .. } => error,
         }
     }
