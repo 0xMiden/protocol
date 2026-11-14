@@ -1,0 +1,1 @@
+[BREAKING] Upgrade to the VM's crates.io `1.0.0-rc.1` release and link MASM packages against core `1.0.0-rc.1`. Rebuild compiled packages and regenerate proofs and IES ciphertexts created with the previous VM.
