@@ -1,0 +1,1 @@
+[BREAKING] The transaction epilogue now rejects a transaction with an unsealed output note, and the standard note and transaction scripts, fee and auth components and agglayer bridge seal the notes they create.

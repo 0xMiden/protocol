@@ -3,9 +3,12 @@ use std::borrow::ToOwned;
 
 use anyhow::Context;
 use miden_processor::{Felt, ONE};
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
+    AccountBuilder,
     AccountCodePatch,
+    AccountComponent,
     AccountPatch,
     AccountStoragePatch,
     AccountVaultPatch,
@@ -16,6 +19,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
+    ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
     ERR_TX_INVALID_EXPIRATION_DELTA,
 };
@@ -38,6 +42,7 @@ use miden_protocol::transaction::{
     TransactionOutputs,
 };
 use miden_protocol::{Hasher, Word};
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
@@ -89,12 +94,15 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
             exec.output_note::add_asset
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             exec.epilogue::finalize_transaction
@@ -215,12 +223,15 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         push.{recipient}
         push.{note_type}
         push.{tag}
-        call.::mock::account::create_note
-        # => [note_idx]
+        call.::mock::account::create_note dup
+        # => [note_idx, note_idx]
 
         push.{ASSET_VALUE}
         push.{ASSET_ID}
         call.::miden::standards::wallets::basic::move_asset_to_note
+        # => [note_idx]
+
+        exec.output_note::seal
         # => []
         ",
             recipient = note.recipient().digest(),
@@ -593,6 +604,9 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
             call.::mock::account::create_note
             # => [note_idx]
 
+            dup exec.output_note::seal
+            # => [note_idx]
+
             # make sure that output note was created: compare the output note hash with an empty
             # word
             exec.note::compute_output_notes_commitment
@@ -615,6 +629,114 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
 
     // assert that even if the output note was created, the transaction is considered empty
     assert_execution_error!(result, ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY);
+
+    Ok(())
+}
+
+/// Tests that the epilogue rejects a transaction that leaves any of its output notes unsealed.
+#[rstest::rstest]
+#[case::first_note_unsealed("drop", "exec.output_note::seal")]
+#[case::last_note_unsealed("exec.output_note::seal", "drop")]
+#[tokio::test]
+async fn epilogue_fails_when_output_note_is_not_sealed(
+    #[case] finish_note0: &str,
+    #[case] finish_note1: &str,
+) -> anyhow::Result<()> {
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            exec.util::create_default_note
+            # => [note_idx]
+            {finish_note0}
+            # => []
+
+            exec.util::create_default_note
+            # => [note_idx]
+            {finish_note1}
+            # => []
+        end
+        "
+    );
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED);
+
+    Ok(())
+}
+
+/// Tests that the epilogue checks the output notes created by the auth procedure: a note the auth
+/// procedure seals is accepted, an unsealed one is rejected.
+#[rstest::rstest]
+#[case::sealed(true)]
+#[case::unsealed(false)]
+#[tokio::test]
+async fn epilogue_checks_output_notes_created_by_auth_procedure(
+    #[case] seal: bool,
+) -> anyhow::Result<()> {
+    let finish_note = if seal { "exec.output_note::seal" } else { "drop" };
+    let auth_code = format!(
+        "
+        use miden::protocol::native_account
+        use miden::protocol::output_note
+
+        #! Creates an output note with the recipient given by AUTH_ARGS and increments the nonce.
+        #!
+        #! Inputs:  [RECIPIENT, pad(12)]
+        #! Outputs: [pad(16)]
+        @auth_script
+        pub proc auth_create_note
+            push.{note_type} push.{tag}
+            # => [tag, note_type, RECIPIENT, pad(12)]
+
+            exec.output_note::create
+            # => [note_idx, pad(15)]
+
+            {finish_note}
+            # => [pad(16)]
+
+            exec.native_account::incr_nonce drop
+            # => [pad(16)]
+        end
+        ",
+        note_type = NoteType::Private as u8,
+        tag = NoteTag::default(),
+    );
+
+    let auth_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code("test::auth_create_note", auth_code)?,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_create_note"),
+    )?;
+    let account = AccountBuilder::new([7; 32])
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    let recipient = Word::from([1, 2, 3, 4u32]);
+    let result = TestTransactionBuilder::new(account)
+        .auth_args(recipient)
+        .build()?
+        .execute()
+        .await;
+
+    if seal {
+        let executed_tx = result?;
+        assert_eq!(executed_tx.output_notes().num_notes(), 1);
+        assert_eq!(executed_tx.output_notes().get_note(0).recipient_digest(), recipient);
+    } else {
+        assert_transaction_executor_error!(result, ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED);
+    }
 
     Ok(())
 }
