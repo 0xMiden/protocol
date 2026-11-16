@@ -370,32 +370,6 @@ pub proc get_signer_at(index: u32) -> Approver
     # => [PUB_KEY, scheme_id, pad(11)]
 end
 
-#! Returns 1 if PUB_KEY is a signer, else 0.
-#!
-#! Reads the current account state, so the result reflects an approver-set update made earlier in
-#! the same transaction. Signature verification never relies on this: it reads the initial state,
-#! see `signature::verify_signatures`.
-#!
-#! Inputs:  [PUB_KEY, pad(12)]
-#! Outputs: [is_signer, pad(15)]
-#!
-#! Invocation: call
-@account_procedure
-pub proc is_signer(pub_key: word) -> felt
-    exec.get_current_threshold_and_num_approvers drop
-    # => [num_approvers, PUB_KEY, pad(12)]
-
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_approvers, PUB_KEY, pad(12)]
-
-    exec.key_set::contains_key
-    # => [is_signer, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [is_signer, pad(15)]
-end
-
 # PUBLIC HELPERS
 # =================================================================================================
 

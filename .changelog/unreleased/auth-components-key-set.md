@@ -1,1 +1,1 @@
-Simplified the `multisig`, `multisig_smart` and `guardian` MASM modules and the Rust storage setup of their components on the shared `key_set` procedures; `is_signer` now reads the current account state.
+[BREAKING] Simplified the `multisig`, `multisig_smart` and `guardian` MASM modules and the Rust storage setup of their components on the shared `key_set` procedures, and removed the unused `is_signer` procedure from the multisig components.
