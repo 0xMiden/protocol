@@ -331,8 +331,7 @@ where
     /// Prepares the data needed for transaction execution.
     ///
     /// Preparation includes loading transaction inputs from the data store, validating them, and
-    /// instantiating a transaction host, which answers the first IES `seal` requests with
-    /// `ies_seal_secrets`.
+    /// instantiating a transaction host with the supplied `ies_seal_secrets`.
     async fn prepare_transaction(
         &self,
         tx_inputs: &TransactionInputs,

@@ -120,8 +120,7 @@ async fn ies_seal_encrypts_to_recipient_public_key(
     Ok(())
 }
 
-/// Tests that the prover answers the `seal` request with the recorded ephemeral secret, so that
-/// the proven transaction has the envelope of the executed one.
+/// Tests that proving with the recorded ephemeral secret reproduces the executed envelope.
 #[rstest]
 #[case::protocol_procedure(RecipientKeySource::ProtocolProcedure, SealingAccount::Native)]
 #[case::transaction_arguments(RecipientKeySource::TransactionArguments, SealingAccount::Native)]
@@ -143,8 +142,8 @@ async fn prove_ies_seal_reproduces_executed_envelope(
     Ok(())
 }
 
-/// Tests that a transaction sealing twice draws a fresh secret per request and records the secrets
-/// in request order, and that proving answers the requests in that order.
+/// Tests that a transaction sealing twice draws and records a fresh secret per request, and that
+/// proving uses them in the same order.
 #[rstest]
 #[case::different_recipients([1, 2])]
 #[case::same_recipient([1, 1])]
@@ -190,10 +189,10 @@ async fn prove_ies_seals_replay_secrets_in_request_order(
     Ok(())
 }
 
-/// Tests that the supplied secrets answer the first `seal` requests and fresh secrets the requests
-/// after them, and that proving answers the requests in the same order.
+/// Tests that the host uses the supplied secrets before drawing fresh ones, and that proving uses
+/// them in the same order.
 #[tokio::test]
-async fn prove_ies_seal_answers_supplied_secrets_before_drawn_ones() -> anyhow::Result<()> {
+async fn prove_ies_seal_uses_supplied_secrets_before_drawn_ones() -> anyhow::Result<()> {
     let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
     let supplied_secret = IesSealSecret::new(recipients[0], secret_key(9));
 
@@ -206,11 +205,12 @@ async fn prove_ies_seal_answers_supplied_secrets_before_drawn_ones() -> anyhow::
         execute(&mock_account(), None, tx_script, Vec::new(), vec![supplied_secret.clone()])
             .await?;
 
-    // The supplied secret answered the first request, whose envelope carries its ephemeral key.
+    // The first envelope carries the ephemeral key of the supplied secret.
     assert_eq!(executed_tx.tx_inputs().tx_args().ies_seal_secrets(), [supplied_secret]);
     assert_eq!(envelope(&executed_tx, 0)?.ephemeral_key(), secret_key(9).public_key());
 
-    // A fresh secret answered the second request and is the only one recorded.
+    // The second envelope carries the ephemeral key of the only recorded secret, which the host
+    // drew.
     let recorded_secrets = executed_tx.tx_inputs().ies_seal_secrets();
     assert_eq!(recorded_secrets.len(), 1);
     assert_eq!(recorded_secrets[0].recipient(), recipients[1]);
@@ -235,8 +235,8 @@ enum RecordedSecretsChange {
     Extend,
 }
 
-/// Tests that proving fails with a specific error when the recorded secrets do not answer the
-/// `seal` requests of the transaction in order.
+/// Tests that proving fails with a specific error when the recorded secrets do not match the
+/// `seal` requests of the transaction.
 #[rstest]
 #[case::shortened(RecordedSecretsChange::Shorten)]
 #[case::reordered(RecordedSecretsChange::Reorder)]
@@ -377,7 +377,7 @@ async fn unauthorized_execution_returns_secrets_that_reproduce_its_summary() -> 
     Ok(())
 }
 
-/// How a test supplies secrets that do not answer the `seal` request of a transaction.
+/// How a test supplies secrets that do not match the `seal` request of a transaction.
 enum InconsistentSuppliedSecrets {
     /// Supplies a secret for another recipient.
     OtherRecipient,
@@ -385,8 +385,8 @@ enum InconsistentSuppliedSecrets {
     Unused,
 }
 
-/// Tests that the executor rejects supplied secrets that do not answer the `seal` requests of the
-/// transaction in order.
+/// Tests that the executor rejects supplied secrets that do not match the `seal` requests of the
+/// transaction.
 #[rstest]
 #[case::other_recipient(InconsistentSuppliedSecrets::OtherRecipient)]
 #[case::unused(InconsistentSuppliedSecrets::Unused)]
@@ -436,7 +436,7 @@ async fn ies_seal_rejects_inconsistent_supplied_secrets(
 }
 
 /// Tests that the notes checker draws fresh secrets in every run, so that a note sealing after an
-/// eliminated note is not answered with the secret the eliminated note drew.
+/// eliminated note does not get the secret the eliminated note drew.
 #[tokio::test]
 async fn notes_checker_draws_fresh_secrets_after_eliminating_a_note() -> anyhow::Result<()> {
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
@@ -449,8 +449,8 @@ async fn notes_checker_draws_fresh_secrets_after_eliminating_a_note() -> anyhow:
             .code(format!("@note_script pub proc main {sealing_code} {after_sealing} end"))
             .build()
     };
-    // The failing note seals first, so that the next run would answer the request of the other
-    // note with the failing note's secret if it replayed it.
+    // The failing note seals first, so that replaying its secret in the next run would give it to
+    // the other note.
     let failing_note = sealing_note(1, "push.1 drop push.0 div")?;
     let succeeding_note = sealing_note(2, "")?;
 
@@ -573,10 +573,9 @@ async fn ies_seal_rejects_conflicting_advice_map_entry() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the mock host of kernel tests answers the `seal` request, so that code run through
-/// `execute_code` can encrypt.
+/// Tests that code run through `execute_code` can encrypt.
 #[tokio::test]
-async fn execute_code_answers_seal_request() -> anyhow::Result<()> {
+async fn execute_code_handles_seal_request() -> anyhow::Result<()> {
     // The code runs in the root context, so the plaintext, the context and the envelope are placed
     // above the transaction kernel's memory.
     const SCRATCH_PTR: u32 = 1 << 27;
@@ -632,7 +631,7 @@ async fn execute_code_answers_seal_request() -> anyhow::Result<()> {
 // ================================================================================================
 
 /// Executes a transaction that encrypts [`PLAINTEXT`] under [`CONTEXT`] to each recipient and
-/// adds the envelopes, in request order, as attachments to an output note.
+/// adds the envelopes as attachments to an output note.
 ///
 /// A foreign account can seal to one recipient only.
 pub(super) async fn execute_sealing_transaction(
@@ -817,7 +816,7 @@ fn compile_tx_script(
 }
 
 /// Returns MASM that encrypts [`PLAINTEXT`] under [`CONTEXT`] to each recipient, writing the
-/// envelopes in request order from [`ENVELOPES_PTR`].
+/// envelopes one after the other from [`ENVELOPES_PTR`].
 fn sealing_code(recipients: &[PublicKey], key_source: RecipientKeySource) -> String {
     let seals = recipients.iter().enumerate().map(|(idx, recipient)| match key_source {
         RecipientKeySource::ProtocolProcedure => seal_to_public_key(&recipient.to_elements(), idx),

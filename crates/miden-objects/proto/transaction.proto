@@ -109,8 +109,7 @@ message BoundSignature {
 }
 
 message IesSealSecret {
-  // Canonically serialized recipient public key followed by the ephemeral secret key, which
-  // decrypts the envelope it produced.
+  // Canonically serialized recipient public key followed by the ephemeral secret key.
   bytes encoded = 1;
 }
 

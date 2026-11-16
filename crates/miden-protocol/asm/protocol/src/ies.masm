@@ -25,10 +25,7 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #! The context is authenticated but not encrypted. The recipient decrypts the envelope with its
 #! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
 #!
-#! Inserts the public key into the advice map under its commitment, where the transaction host
-#! looks it up to answer the `seal` request with an ephemeral secret. The transaction inputs record
-#! the ephemeral secret, so anyone holding them can decrypt the envelope. The plaintext is also part
-#! of the execution witness, so whoever proves the transaction sees it.
+#! Inserts the public key into the advice map under its commitment.
 #!
 #! Inputs:  [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 #! Outputs: []

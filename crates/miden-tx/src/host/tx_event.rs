@@ -181,7 +181,7 @@ pub(crate) enum TransactionEvent {
         tx_summary: TransactionSummary,
     },
 
-    /// The data necessary to answer an IES `seal` request of the core library.
+    /// The data necessary to handle an IES `seal` request of the core library.
     IesSeal {
         /// The recipient public key, looked up in the advice map under the requested commitment.
         recipient: PublicKey,
@@ -733,11 +733,8 @@ pub(crate) enum RecipientData {
     },
 }
 
-/// Looks up the recipient public key of an IES `seal` request in the advice map, under the key
-/// commitment the request carries.
-///
-/// The `seal` procedure also checks the key it receives against the commitment. Checking it here
-/// reports an invalid advice map entry as a host error before any advice is generated for it.
+/// Looks up the recipient public key of an IES `seal` request in the advice map under the
+/// commitment the request carries, and checks that it is a valid public key with that commitment.
 fn extract_ies_recipient(process: &ProcessorState) -> Result<PublicKey, TransactionKernelError> {
     // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
     let commitment = process.get_stack_word(1);

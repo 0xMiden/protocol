@@ -118,8 +118,7 @@ where
 
     /// Creates a new [`TransactionExecutorHost`] instance from the provided inputs.
     ///
-    /// `ies_seal_secrets` answer the first IES `seal` requests of the transaction, in request
-    /// order. Requests after them are answered with fresh secrets.
+    /// `ies_seal_secrets` are the ephemeral secrets, in request order, supplied for re-execution.
     ///
     /// # Errors
     ///
@@ -236,12 +235,11 @@ where
         Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
     }
 
-    /// Answers an IES `seal` request with the key agreement advice for the next supplied ephemeral
-    /// secret, or for a fresh one once all supplied secrets have been used.
+    /// Returns the key agreement advice for an IES `seal` request, using the next supplied
+    /// ephemeral secret or, once all supplied secrets are used, a fresh one.
     ///
     /// A fresh secret is drawn from a ChaCha20 generator seeded by the operating system's random
-    /// number generator. It is recorded in the transaction inputs, so that proving the transaction,
-    /// or executing it again with the recorded secrets in its arguments, reproduces the envelope.
+    /// number generator. It is recorded in the transaction inputs for re-execution or proving.
     fn on_ies_seal_requested(
         &mut self,
         recipient: PublicKey,
@@ -467,10 +465,6 @@ where
     ///
     /// The checker cannot call `into_parts` as it would panic when constructing the patch on an
     /// erroneous transaction.
-    ///
-    /// The returned lazy loaded data omits the ephemeral secrets drawn for IES `seal` requests: the
-    /// checker executes the transaction with changing sets of notes, so the secrets of one run do
-    /// not belong to the transaction it finally reports on.
     pub(crate) fn into_notes_checker_parts(mut self) -> (TransactionProgress, LazyLoadedData) {
         self.lazy_loaded_data.ies_seal_secrets.clear();
         (self.tx_progress, self.lazy_loaded_data)
@@ -500,8 +494,7 @@ pub(crate) struct LazyLoadedData {
     /// The signatures the authenticator generated.
     signatures: Vec<BoundSignature>,
 
-    /// The ephemeral secrets drawn for the IES `seal` requests after the supplied ones, in request
-    /// order.
+    /// The ephemeral secrets freshly drawn for the IES `seal` requests during execution.
     ies_seal_secrets: Vec<IesSealSecret>,
 
     /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
@@ -759,8 +752,7 @@ where
                     },
                 },
 
-                // This always returns an error to abort the transaction. The drawn secrets let a
-                // signed execution reproduce the envelopes and thereby the summary.
+                // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
                     Err(TransactionKernelError::Unauthorized {
                         tx_summary: Box::new(tx_summary),

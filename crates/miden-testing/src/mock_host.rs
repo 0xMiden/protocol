@@ -63,11 +63,7 @@ impl<'store> MockHost<'store> {
             .map(|(handler_event_name, _)| handler_event_name.to_event_id());
         let mut handled_events = BTreeSet::from_iter(core_lib_handlers);
 
-        // The core library does not handle its IES `seal` event by default. Forward it to the
-        // executor host, since `seal` cannot proceed without the key agreement advice it pushes.
-        handled_events.insert(ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id());
-
-        // The default set of transaction events that are always handled.
+        // The default set of transaction events, and the IES `seal` event, that are always handled.
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
@@ -77,7 +73,9 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]
-            .map(TransactionEventId::event_id),
+            .map(TransactionEventId::event_id)
+            .into_iter()
+            .chain([ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id()]),
         );
 
         Self {

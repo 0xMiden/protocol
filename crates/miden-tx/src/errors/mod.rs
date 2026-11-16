@@ -136,9 +136,8 @@ pub enum TransactionExecutorError {
     TransactionProgramExecutionFailed(ExecutionError),
     /// This variant can be matched on to get the summary of a transaction for signing purposes.
     ///
-    /// `ies_seal_secrets` are the ephemeral secrets the host drew for IES `seal` requests. The
-    /// signed execution of the same transaction must add them to its transaction arguments, after
-    /// the secrets those already supply, to reproduce the envelopes and thereby the summary.
+    /// `ies_seal_secrets` are the ephemeral secrets the host drew for IES `seal` requests, which
+    /// the signed execution must supply in its transaction arguments to reproduce the summary.
     // The summary is boxed to avoid triggering clippy::result_large_err for functions that return
     // this type.
     #[error("transaction is unauthorized with summary {tx_summary:?}")]
@@ -310,7 +309,7 @@ pub enum TransactionKernelError {
         source: InvalidPublicKey,
     },
     #[error(
-        "advice map entry for EcGFp5 public key commitment {commitment} of an IES seal request has {len} elements instead of the five of a public key"
+        "advice map entry for EcGFp5 public key commitment {commitment} has {len} elements instead of five"
     )]
     IesPublicKeyInvalidLength { commitment: Word, len: usize },
     #[error(

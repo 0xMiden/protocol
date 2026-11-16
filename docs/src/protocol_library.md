@@ -223,8 +223,8 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 
 ## Encryption Procedures (`miden::protocol::ies`)
 
-Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The transaction host draws the ephemeral secret of each encryption, or takes it from the transaction arguments, and the transaction inputs record it, so that proving the transaction, or executing it again with the recorded secrets in its transaction arguments, reproduces the same envelope. Anyone holding the transaction inputs, such as a delegated prover, can therefore decrypt the envelopes. A secret must only be replayed into the transaction it was drawn for, since sealing a different plaintext under the same context with it reuses the encryption key and nonce.
+Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The transaction inputs record the ephemeral secret of each encryption, so that re-execution and proving reproduce the envelope. Anyone holding the transaction inputs can decrypt the envelope.
 
 | Procedure | Description | Context |
 | --------- | ----------- | ------- |
-| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination. The context is authenticated but not encrypted. The public key is inserted into the advice map under its commitment, where the host looks it up.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |
+| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination. The context is authenticated but not encrypted. Inserts the public key into the advice map under its commitment.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |

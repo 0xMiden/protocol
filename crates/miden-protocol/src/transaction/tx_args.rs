@@ -29,8 +29,8 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - Output note recipients: the recipients of the output notes the transaction is expected to
 ///   create.
 /// - Signatures: signatures the transaction needs for authentication.
-/// - IES seal secrets: the ephemeral secrets that answer the first IES `seal` requests of the
-///   transaction, in request order, so that executing it again reproduces their envelopes.
+/// - IES seal secrets: ephemeral secrets supplied for the IES `seal` requests, e.g. those an
+///   earlier execution of the transaction drew.
 /// - Advice inputs: provides arbitrary user-defined data needed at runtime.
 /// - Auth arguments: data put onto the stack right before authentication procedure execution. If
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
@@ -186,8 +186,7 @@ impl TransactionArgs {
         &self.signatures
     }
 
-    /// Returns the ephemeral secrets that answer the first IES `seal` requests of the transaction,
-    /// in request order.
+    /// Returns the ephemeral secrets supplied for the IES `seal` requests.
     pub fn ies_seal_secrets(&self) -> &[IesSealSecret] {
         &self.ies_seal_secrets
     }
@@ -229,12 +228,10 @@ impl TransactionArgs {
         self.signatures.push(signature);
     }
 
-    /// Adds the ephemeral secret that answers the next IES `seal` request after those already
-    /// supplied.
+    /// Adds an ephemeral secret for the next IES `seal` request.
     ///
-    /// Supply only the secrets an earlier execution of the same transaction drew: whoever chooses
-    /// a secret can decrypt its envelope, and replaying it into an execution that seals a different
-    /// plaintext under the same context to the same recipient reuses the encryption key and nonce.
+    /// Supply only secrets an earlier execution of the same transaction drew, see
+    /// [`IesSealSecret`].
     pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
         self.ies_seal_secrets.push(secret);
     }

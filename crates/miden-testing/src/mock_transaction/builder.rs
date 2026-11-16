@@ -297,8 +297,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Adds the ephemeral secret that answers the next IES `seal` request after those already
-    /// added.
+    /// Adds an ephemeral secret for the next IES `seal` request.
     pub fn add_ies_seal_secret(mut self, secret: IesSealSecret) -> Self {
         self.ies_seal_secrets.push(secret);
         self

@@ -125,8 +125,7 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
 
-    /// The supplied ephemeral secrets that answer the first IES `seal` requests, in request
-    /// order. The secrets of answered requests are removed.
+    /// The ephemeral secrets, in request order, supplied for re-execution or proving.
     ies_seal_secrets: vec::IntoIter<IesSealSecret>,
 }
 
@@ -136,8 +135,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
     ///
-    /// `ies_seal_secrets` answer the first IES `seal` requests of the transaction, in request
-    /// order.
+    /// `ies_seal_secrets` are the ephemeral secrets, in request order, supplied for re-execution or
+    /// proving.
     ///
     /// # Errors
     ///
@@ -398,7 +397,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Returns the next supplied ephemeral secret for an IES `seal` request to `recipient`, or
-    /// `None` if all supplied secrets have answered earlier requests.
+    /// `None` if all supplied secrets are used.
     ///
     /// # Errors
     ///
@@ -426,8 +425,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.ies_seal_secrets.len()
     }
 
-    /// Converts the key agreement advice for the provided ephemeral secret into advice mutations
-    /// that answer an IES `seal` request.
+    /// Returns the advice mutations that provide the key agreement advice for an IES `seal`
+    /// request with the provided ephemeral secret.
     pub fn on_ies_seal_requested(&self, secret: &IesSealSecret) -> Vec<AdviceMutation> {
         let advice = secret.advise();
         vec![

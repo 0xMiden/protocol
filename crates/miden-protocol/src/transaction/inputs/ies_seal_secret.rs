@@ -15,12 +15,11 @@ use crate::utils::serde::{
 /// The ephemeral secret a transaction host drew to encrypt to a recipient with the EcGFp5/Eidos
 /// integrated encryption scheme.
 ///
-/// Answering the same `seal` request with the same secret reproduces the same envelope, so that
-/// the transaction can be re-executed, e.g. to prove it. The secret decrypts the envelope, so it is
-/// as sensitive as the plaintext. Answering a request that seals a different plaintext under the
-/// same context to the same recipient with it reuses the encryption key and nonce, and any replay
-/// links the envelopes through their shared ephemeral key, so it must only be replayed into the
-/// transaction it was drawn for.
+/// Replaying the same secret for the same `seal` request reproduces the same envelope, which
+/// re-execution and proving rely on. Anyone holding the transaction inputs can decrypt the
+/// envelope, so the secret is as sensitive as the plaintext. It must only be replayed into the
+/// transaction it was drawn for: using it for a different plaintext reuses the encryption key and
+/// nonce.
 pub struct IesSealSecret {
     recipient: PublicKey,
     ephemeral_secret: SecretKey,
@@ -42,8 +41,7 @@ impl IesSealSecret {
         &self.ephemeral_secret
     }
 
-    /// Returns the key agreement advice with which the VM encrypts to the recipient under this
-    /// ephemeral secret.
+    /// Returns the key agreement advice for encrypting to the recipient with this secret.
     pub fn advise(&self) -> AgreementAdvice {
         self.recipient.advise(&self.ephemeral_secret)
     }

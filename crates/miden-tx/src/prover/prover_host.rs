@@ -49,8 +49,7 @@ where
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
     ///
-    /// The host answers the IES `seal` requests of the transaction with `ies_seal_secrets`, in
-    /// request order, so that it reproduces the envelopes of the executed transaction.
+    /// `ies_seal_secrets` are the ephemeral secrets, in request order, supplied for proving.
     ///
     /// # Errors
     ///
@@ -132,7 +131,8 @@ impl<STORE> TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    /// Answers an IES `seal` request with the next supplied ephemeral secret.
+    /// Returns the key agreement advice for an IES `seal` request, using the next supplied
+    /// ephemeral secret.
     fn on_ies_seal_requested(
         &mut self,
         recipient: PublicKey,

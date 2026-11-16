@@ -426,8 +426,7 @@ where
             return Ok(Vec::new());
         }
 
-        // Every run draws fresh IES seal secrets: the runs vary the notes, so supplied secrets need
-        // not answer their requests.
+        // Every run draws fresh IES seal secrets, since the runs vary the notes.
         let (mut host, stack_inputs, advice_inputs) = self
             .tx_executor
             .prepare_transaction(tx_inputs, Vec::new())

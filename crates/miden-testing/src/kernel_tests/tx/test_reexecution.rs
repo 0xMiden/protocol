@@ -178,10 +178,10 @@ async fn sealing_transaction_can_be_reexecuted_from_its_inputs() -> anyhow::Resu
         )
         .await?;
     assert_eq!(reexecuted_tx.id(), executed_tx.id());
-    // The transaction arguments answered every request, so the re-execution drew no secret.
+    // The transaction arguments supplied every secret, so the re-execution drew none.
     assert!(reexecuted_tx.tx_inputs().ies_seal_secrets().is_empty());
 
-    // Proving answers the requests from the transaction arguments as well.
+    // Proving uses the secrets of the transaction arguments as well.
     let proven_tx = LocalTransactionProver::default().prove(reexecuted_tx)?;
     assert_eq!(proven_tx.id(), executed_tx.id());
 
