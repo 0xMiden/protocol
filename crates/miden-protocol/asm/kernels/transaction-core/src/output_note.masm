@@ -261,13 +261,15 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     exec.asset::validate
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
+    dup.8 exec.memory::get_output_note_ptr
+    exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+
     # emit event to signal that a new asset is going to be added to the note
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    movup.8 exec.memory::get_output_note_ptr
-    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
-    dup
+    movup.8 exec.memory::get_output_note_ptr dup
     # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]
 
     movdn.9 movdn.9
@@ -799,7 +801,8 @@ proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_
             # => [faucet_id_suffix, faucet_id_prefix, asset_ptr, assets_end_ptr, assets_start_ptr,
             #     note_idx]
 
-            # check whether the faucet already occurs among the preceding assets
+            # check whether the faucet already occurs among the preceding assets in kernel memory;
+            # the callback flag is a bit of the faucet ID, so all assets of a faucet share it
             dup.1 dup.1 dup.4 dup.7
             # => [assets_start_ptr, asset_ptr, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix,
             #     faucet_id_prefix, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]

@@ -12,9 +12,12 @@ use miden::core::word
 # The index of the local memory slot that contains the procedure root of the callback.
 const CALLBACK_PROC_ROOT_LOC = 0
 
-# The index of the local memory slot that contains the flag indicating whether a foreign context
-# was started for the callback.
-const CALLBACK_WAS_FOREIGN_CONTEXT_STARTED_LOC = 4
+# The indices of the local memory words that hold the callback outputs while the foreign context is
+# ended.
+const CALLBACK_OUTPUTS_WORD_0_LOC = 4
+const CALLBACK_OUTPUTS_WORD_1_LOC = 8
+const CALLBACK_OUTPUTS_WORD_2_LOC = 12
+const CALLBACK_OUTPUTS_WORD_3_LOC = 16
 
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
@@ -53,16 +56,12 @@ pub proc on_before_asset_added_to_account(asset: Asset)
     # => [has_callbacks, ASSET_ID, ASSET_VALUE]
 
     if.true
-        # pad the asset to the 16 elements of the callback inputs
-        padw padw swapdw
-        # => [ASSET_ID, ASSET_VALUE, pad(8)]
-
         exec.asset::id_to_faucet_id
-        # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
+        # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID, ASSET_VALUE]
 
         push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
         # => [slot_id_suffix, slot_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_ID,
-        #     ASSET_VALUE, pad(8)]
+        #     ASSET_VALUE]
 
         exec.invoke_callback
         # => [callback_outputs(16)]
@@ -98,87 +97,111 @@ end
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
 pub proc on_before_note_sealed(faucet_id: AccountId, note_idx: u16) -> [felt; 16]
-    # pad the note index to the 16 elements of the callback inputs
-    repeat.15
+    # pad the note index to the 8 elements of the callback inputs
+    repeat.7
         push.0 movdn.3
     end
-    # => [faucet_id_suffix, faucet_id_prefix, note_idx, pad(15)]
+    # => [faucet_id_suffix, faucet_id_prefix, note_idx, pad(7)]
 
     push.ON_BEFORE_NOTE_SEALED_PROC_ROOT_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, faucet_id_suffix, faucet_id_prefix, note_idx, pad(15)]
+    # => [slot_id_suffix, slot_id_prefix, faucet_id_suffix, faucet_id_prefix, note_idx, pad(7)]
 
     exec.invoke_callback
     # => [callback_outputs(16)]
 end
 
 #! Invokes a callback by starting a foreign context against the faucet, reading the callback
-#! procedure root from the provided slot ID in the faucet's storage, and invoking it via `dyncall`.
+#! procedure root from the provided slot ID in the faucet's storage, and invoking it via `dyncall`
+#! with the callback inputs padded to 16 elements.
 #!
 #! If the faucet does not have the callback storage slot, or if the slot contains the empty word,
 #! the callback is skipped, its inputs are consumed and 16 zeros are returned in place of its
 #! outputs. Both conditions are evaluated only after the foreign context has been started, so a
-#! faucet whose account ID has the asset callback flag enabled is loaded as a foreign account on
-#! every movement of its assets, even when it registers no callback procedure root.
+#! faucet whose account ID has the asset callback flag enabled is loaded as a foreign account
+#! whenever one of its assets is added to an account vault and once for every sealed output note
+#! holding its assets, even when it registers no callback procedure root.
 #!
 #! The callback cannot modify account or note state, so it affects the transaction only through
 #! its return values. See `memory::assert_not_in_asset_callback`.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, faucet_id_suffix, faucet_id_prefix, callback_inputs(16)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, faucet_id_suffix, faucet_id_prefix, callback_inputs(8)]
 #! Outputs: [callback_outputs(16)]
 #!
 #! Where:
 #! - slot_id* is the ID of the slot that contains the callback procedure root.
 #! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet whose
 #!   callback is invoked.
-#! - callback_inputs are the 16 elements passed to the callback.
+#! - callback_inputs are the first 8 elements passed to the callback, followed by 8 zeros.
 #! - callback_outputs are the 16 elements returned by the callback, or 16 zeros if the callback
 #!   invocation was skipped.
 #!
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
-@locals(8)
+@locals(20)
 proc invoke_callback(
     slot_id: StorageSlotId,
     faucet_id: AccountId,
-    callback_inputs: [felt; 16]
+    callback_inputs: [felt; 8]
 ) -> [felt; 16]
     exec.maybe_start_faucet_callback_context
-    # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, callback_inputs(16)]
+    # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, callback_inputs(8)]
 
-    # store was_foreign_context_started flag for later
-    loc_store.CALLBACK_WAS_FOREIGN_CONTEXT_STARTED_LOC
-    # => [should_invoke_callback, PROC_ROOT, callback_inputs(16)]
+    # keep was_foreign_context_started below the 16 elements passed to the callback
+    movdn.13
+    # => [should_invoke_callback, PROC_ROOT, callback_inputs(8), was_foreign_context_started]
 
     # only invoke the callback if the procedure root is not the empty word
     if.true
         # verify the callback root is part of the faucet's account code before invoking it
         dupw exec.account::assert_procedure_in_active_account drop
-        # => [PROC_ROOT, callback_inputs(16)]
+        # => [PROC_ROOT, callback_inputs(8), was_foreign_context_started]
 
         # prepare for dyncall by storing procedure root in local memory
         loc_storew_le.CALLBACK_PROC_ROOT_LOC dropw
-        # => [callback_inputs(16)]
+        # => [callback_inputs(8), was_foreign_context_started]
+
+        # pad the callback inputs to 16 elements
+        padw padw swapdw
+        # => [callback_inputs(8), pad(8), was_foreign_context_started]
 
         # invoke the callback while the flag rejects account and note state changes
         push.1 exec.memory::set_asset_callback_in_progress_flag
-        # => [callback_inputs(16)]
+        # => [callback_inputs(8), pad(8), was_foreign_context_started]
 
         locaddr.CALLBACK_PROC_ROOT_LOC
         dyncall
-        # => [callback_outputs(16)]
+        # => [callback_outputs(16), was_foreign_context_started]
 
         push.0 exec.memory::set_asset_callback_in_progress_flag
+        # => [callback_outputs(16), was_foreign_context_started]
+
+        # store the callback outputs to reach the flag below them
+        loc_storew_le.CALLBACK_OUTPUTS_WORD_0_LOC dropw
+        loc_storew_le.CALLBACK_OUTPUTS_WORD_1_LOC dropw
+        loc_storew_le.CALLBACK_OUTPUTS_WORD_2_LOC dropw
+        loc_storew_le.CALLBACK_OUTPUTS_WORD_3_LOC dropw
+        # => [was_foreign_context_started]
+
+        exec.maybe_end_faucet_callback_context
+        # => []
+
+        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_3_LOC
+        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_2_LOC
+        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_1_LOC
+        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_0_LOC
         # => [callback_outputs(16)]
     else
-        # drop proc root and callback inputs and return zeros in place of the callback outputs
-        dropw dropw dropw dropw dropw
+        # drop proc root and callback inputs
+        dropw dropw dropw
+        # => [was_foreign_context_started]
+
+        exec.maybe_end_faucet_callback_context
+        # => []
+
+        # return zeros in place of the callback outputs
         padw padw padw padw
         # => [callback_outputs(16)]
     end
-    # => [callback_outputs(16)]
-
-    loc_load.CALLBACK_WAS_FOREIGN_CONTEXT_STARTED_LOC
-    exec.maybe_end_faucet_callback_context
     # => [callback_outputs(16)]
 end
 

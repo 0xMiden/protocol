@@ -353,14 +353,17 @@ async fn receive_callback_rejects_paused_faucet_without_active_policy() -> anyho
 /// the note, with the note index as `custom_data`. Assets of other faucets are skipped.
 ///
 /// The note holds a fungible and a non-fungible asset of the faucet, separated by an asset of
-/// another faucet. The policy asserts its inputs and, in the rejecting case, rejects non-fungible
-/// assets, so the transaction fails only if the policy also runs for the faucet's second asset.
+/// another faucet. The policy asserts its inputs and, in the rejecting cases, rejects non-fungible
+/// assets, so the transaction fails only if the policy runs for the faucet's first and its last
+/// asset alike.
 #[rstest::rstest]
-#[case::accepted(false)]
-#[case::second_asset_rejected(true)]
+#[case::accepted(false, false)]
+#[case::last_asset_rejected(true, false)]
+#[case::first_asset_rejected(true, true)]
 #[tokio::test]
 async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
     #[case] reject_non_fungible: bool,
+    #[case] non_fungible_first: bool,
 ) -> anyhow::Result<()> {
     const NOTE_IDX: u16 = 1;
     const ERR_NON_FUNGIBLE_ASSET_REJECTED: MasmError =
@@ -436,11 +439,15 @@ async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
     )?;
     let other_faucet = add_faucet_with_wallet(&mut builder)?;
 
-    let note_assets = [
-        Asset::from(FungibleAsset::new(faucet.id(), 100)?),
-        Asset::from(FungibleAsset::new(other_faucet.id(), 50)?),
-        Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1, 2]))),
-    ];
+    let fungible = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    let other_faucet_asset = Asset::from(FungibleAsset::new(other_faucet.id(), 50)?);
+    let non_fungible =
+        Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1, 2])));
+    let note_assets = if non_fungible_first {
+        [non_fungible, other_faucet_asset, fungible]
+    } else {
+        [fungible, other_faucet_asset, non_fungible]
+    };
     let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, note_assets)?;
     let mock_chain = builder.build()?;
 
