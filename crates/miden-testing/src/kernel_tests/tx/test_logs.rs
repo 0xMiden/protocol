@@ -99,10 +99,7 @@ async fn kernel_logs_reject_forged_content() -> anyhow::Result<()> {
     let code = kernel_log_program(&format!("push.{commitment} push.29.17 exec.tx::add_log"));
     assert_execution_error!(
         tx.execute_code(&code).await,
-        matches ExecutionError::OperationError {
-            err: OperationError::FailedAssertion { err_code, .. },
-            ..
-        } if err_code == Felt::ZERO
+        MasmError::from_static_str("pipe_preimage_to_memory: COMMITMENT does not match")
     );
     Ok(())
 }
