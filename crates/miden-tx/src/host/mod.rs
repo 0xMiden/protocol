@@ -140,6 +140,9 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The code tree of the reference block that tracks the available code witnesses.
     code_tree: PartialCodeTree,
 
+    /// The code patch that the kernel loads, or `None` before it is known.
+    code_patch: Option<CodePatch>,
+
     /// The recipients of the output notes the transaction is expected to create.
     ///
     /// Their scripts provide the full scripts of private output notes and the code of public
@@ -196,6 +199,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             block_commitments,
             new_public_account_code,
             code_tree,
+            code_patch: None,
             expected_output_note_recipients,
             core_lib_handlers,
         })
@@ -271,7 +275,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Consumes `self` and returns the account patch, input and output notes, and transaction logs.
     pub fn into_parts(
         self,
-    ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
+    ) -> (
+        AccountPatch,
+        InputNotes<InputNote>,
+        Vec<RawOutputNote>,
+        TransactionLogs,
+        Option<CodePatch>,
+    ) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
         (
@@ -280,7 +290,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             output_notes,
             TransactionLogs::new(self.logs)
                 .expect("host validates transaction log limits before appending"),
+            self.code_patch,
         )
+    }
+
+    /// Returns the code patch that the kernel loads, or `None` before it is known.
+    pub(crate) fn code_patch(&self) -> Option<&CodePatch> {
+        self.code_patch.as_ref()
     }
 
     /// Returns the complete transaction logs collected during execution.
@@ -290,6 +306,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     // MUTATORS
     // --------------------------------------------------------------------------------------------
+
+    /// Sets the code patch that the kernel loads.
+    pub(crate) fn set_code_patch(&mut self, code_patch: CodePatch) {
+        self.code_patch = Some(code_patch);
+    }
 
     /// Inserts an output note builder at the specified index.
     ///
@@ -613,11 +634,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     /// Builds a [`TransactionSummary`] from the current host's state and validates it against the
     /// provided commitments.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_tx_summary(
         &self,
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        code_patch_commitment: Word,
         metadata: TransactionSummaryMetadata,
         block_commitment: Word,
         user_params: TransactionSummaryUserParams,
@@ -662,6 +685,22 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
+        // The kernel loads the code patch before the auth procedure, which creates the summary.
+        let code_patch = self.code_patch.clone().ok_or_else(|| {
+            TransactionKernelError::TransactionSummaryConstructionFailed(
+                "code patch was not loaded before the transaction summary".into(),
+            )
+        })?;
+        let actual_code_patch_commitment = code_patch.commitment().as_word();
+        if actual_code_patch_commitment != code_patch_commitment {
+            return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
+                format!(
+                    "expected code patch commitment to be {actual_code_patch_commitment} but was {code_patch_commitment}"
+                )
+                .into(),
+            ));
+        }
+
         let expected_block_commitment = self
             .block_commitments
             .get(&block_number)
@@ -679,6 +718,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             account_delta,
             input_notes,
             output_notes,
+            code_patch,
             block_number,
             block_commitment,
             metadata.expiration_delta(),

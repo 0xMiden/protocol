@@ -695,11 +695,27 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
     Ok(())
 }
 
-/// Tests that the host rejects a transaction summary whose block commitment does not match the
-/// reference block of the transaction.
+/// Tests that the host rejects a transaction summary whose block commitment or code patch
+/// commitment does not match the state of the transaction.
+#[rstest::rstest]
+#[case::wrong_block_commitment(
+    "push.1.2.3.4",
+    "exec.tx::get_code_patch_commitment",
+    "block commitment"
+)]
+#[case::wrong_code_patch_commitment(
+    "exec.tx::get_reference_block_commitment",
+    "push.1.2.3.4",
+    "code patch commitment"
+)]
 #[tokio::test]
-async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<()> {
-    let source_code = r#"
+async fn tx_summary_with_wrong_commitment_is_rejected(
+    #[case] block_commitment_code: &str,
+    #[case] code_patch_commitment_code: &str,
+    #[case] expected_mismatch: &str,
+) -> anyhow::Result<()> {
+    let source_code = format!(
+        r#"
       use miden::standards::auth
       use miden::protocol::tx
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
@@ -713,31 +729,33 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
           exec.::miden::protocol::native_account::incr_nonce drop
           # => [pad(16)]
 
-          # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT.
+          # Assemble the summary preimage manually, with one bogus commitment.
           exec.tx::get_logs_commitment
-          push.1.2.3.4
-          # => [FAKE_BLOCK_COMMITMENT, pad(16)]
+          {block_commitment_code}
+          # => [BLOCK_COMMITMENT, LOGS_COMMITMENT, pad(16)]
 
+          {code_patch_commitment_code}
           exec.tx::get_output_notes_commitment
           exec.tx::get_input_notes_commitment
           exec.::miden::protocol::native_account::compute_delta_commitment
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT, pad(16)]
 
           # the six user params are all zero here
           padw push.0.0
-          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT, pad(16)]
 
           # metadata binding the reference block number and an unset expiration delta, preceded by
           # the layout version
           exec.tx::get_reference_block_number push.1
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
       end
-    "#;
+    "#
+    );
 
     let auth_code = CodeBuilder::default()
         .compile_component_code("test::auth_component", source_code)
@@ -768,7 +786,7 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
         ) if matches!(
             event_err.downcast_ref::<TransactionKernelError>(),
             Some(TransactionKernelError::TransactionSummaryCommitmentMismatch(inner))
-                if inner.to_string().contains("block commitment")
+                if inner.to_string().contains(expected_mismatch)
         )
     );
 
@@ -799,19 +817,20 @@ async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<(
           push.1.2.3.4
           # => [BLOCK_COMMITMENT, pad(16)]
 
+          exec.tx::get_code_patch_commitment
           exec.tx::get_output_notes_commitment
           exec.tx::get_input_notes_commitment
           exec.::miden::protocol::native_account::compute_delta_commitment
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           # the six user params are all zero here
           padw push.0.0
-          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           # metadata binding the block before the reference block, which the transaction does not
           # track, and an unset expiration delta, preceded by the layout version
           exec.tx::get_reference_block_number sub.1 push.1
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
@@ -879,17 +898,18 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
           # expiration delta of 777 while the transaction never set one.
           exec.tx::get_logs_commitment
           exec.tx::get_reference_block_commitment
+          exec.tx::get_code_patch_commitment
           exec.tx::get_output_notes_commitment
           exec.tx::get_input_notes_commitment
           exec.::miden::protocol::native_account::compute_delta_commitment
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           # the six user params are all zero here
           padw push.0.0
-          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.1
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
@@ -976,6 +996,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account_delta,
         InputNotes::new(vec![InputNote::unauthenticated(spawn_note)])?,
         RawOutputNotes::new(vec![RawOutputNote::Partial(PartialNote::from(p2any_note))])?,
+        tx.code_patch().clone(),
         ref_block_number,
         ref_block_commitment,
         0,

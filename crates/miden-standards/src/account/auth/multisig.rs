@@ -598,6 +598,7 @@ impl MultisigAuthArgs {
             summary.account_delta().clone(),
             summary.input_notes().clone(),
             summary.output_notes().clone(),
+            summary.code_patch().clone(),
             summary.block_number(),
             summary.block_commitment(),
             summary.expiration_delta(),
