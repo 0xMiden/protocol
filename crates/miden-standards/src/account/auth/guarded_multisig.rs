@@ -76,8 +76,8 @@ impl GuardianConfig {
 
     /// Returns the storage slots holding the guardian's public key and signature scheme: a
     /// single-entry key set at index 0.
-    pub(super) fn into_slots(self) -> Vec<StorageSlot> {
-        key_set_slots(Self::public_key_slot(), Self::scheme_id_slot(), &[self.approver]).into()
+    pub(super) fn into_slots(self) -> [StorageSlot; 2] {
+        key_set_slots(Self::public_key_slot(), Self::scheme_id_slot(), &[self.approver])
     }
 }
 
