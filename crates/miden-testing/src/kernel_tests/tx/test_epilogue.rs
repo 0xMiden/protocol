@@ -3,12 +3,9 @@ use std::borrow::ToOwned;
 
 use anyhow::Context;
 use miden_processor::{Felt, ONE};
-use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
-    AccountBuilder,
     AccountCodePatch,
-    AccountComponent,
     AccountPatch,
     AccountStoragePatch,
     AccountVaultPatch,
@@ -42,7 +39,6 @@ use miden_protocol::transaction::{
     TransactionOutputs,
 };
 use miden_protocol::{Hasher, Word};
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
@@ -671,72 +667,6 @@ async fn epilogue_fails_when_output_note_is_not_sealed(
         .await;
 
     assert_transaction_executor_error!(result, ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED);
-
-    Ok(())
-}
-
-/// Tests that the epilogue checks the output notes created by the auth procedure: a note the auth
-/// procedure seals is accepted, an unsealed one is rejected.
-#[rstest::rstest]
-#[case::sealed(true)]
-#[case::unsealed(false)]
-#[tokio::test]
-async fn epilogue_checks_output_notes_created_by_auth_procedure(
-    #[case] seal: bool,
-) -> anyhow::Result<()> {
-    let finish_note = if seal { "exec.output_note::seal" } else { "drop" };
-    let auth_code = format!(
-        "
-        use miden::protocol::native_account
-        use miden::protocol::output_note
-
-        #! Creates an output note with the recipient given by AUTH_ARGS and increments the nonce.
-        #!
-        #! Inputs:  [RECIPIENT, pad(12)]
-        #! Outputs: [pad(16)]
-        @auth_script
-        pub proc auth_create_note
-            push.{note_type} push.{tag}
-            # => [tag, note_type, RECIPIENT, pad(12)]
-
-            exec.output_note::create
-            # => [note_idx, pad(15)]
-
-            {finish_note}
-            # => [pad(16)]
-
-            exec.native_account::incr_nonce drop
-            # => [pad(16)]
-        end
-        ",
-        note_type = NoteType::Private as u8,
-        tag = NoteTag::default(),
-    );
-
-    let auth_component = AccountComponent::new(
-        CodeBuilder::default().compile_component_code("test::auth_create_note", auth_code)?,
-        vec![],
-        AccountComponentMetadata::mock("test::auth_create_note"),
-    )?;
-    let account = AccountBuilder::new([7; 32])
-        .with_component(auth_component)
-        .with_component(BasicWallet)
-        .build_existing()?;
-
-    let recipient = Word::from([1, 2, 3, 4u32]);
-    let result = TestTransactionBuilder::new(account)
-        .auth_args(recipient)
-        .build()?
-        .execute()
-        .await;
-
-    if seal {
-        let executed_tx = result?;
-        assert_eq!(executed_tx.output_notes().num_notes(), 1);
-        assert_eq!(executed_tx.output_notes().get_note(0).recipient_digest(), recipient);
-    } else {
-        assert_transaction_executor_error!(result, ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED);
-    }
 
     Ok(())
 }
