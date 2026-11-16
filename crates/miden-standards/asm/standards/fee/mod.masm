@@ -271,8 +271,8 @@ pub proc apply_cycle_margins(num_extra_cycles: felt) -> felt
     # => [num_estimated_extra_cycles]
 end
 
-#! Creates a new TX_FEE output note and funds it with the provided asset from the
-#! account's vault.
+#! Creates a new TX_FEE output note, funds it with the provided asset from the account's vault and
+#! seals it.
 #!
 #! The note's serial number is derived as hash(FEE_DOMAIN || [serial_number_block, initial_nonce,
 #! account_id_suffix, account_id_prefix]).
@@ -318,18 +318,21 @@ pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, initial_nonc
     exec.output_note::create
     # => [note_idx, ASSET_ID, ASSET_VALUE]
 
-    movdn.8
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    dup movdn.9 movdn.8
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     # move the fee asset from the vault into the note
     # (see basic_wallet::move_asset_to_note for the same sequence in call form)
     dupw.1 dupw.1
-    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.native_account::remove_asset dropw
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.output_note::add_asset
+    # => [note_idx]
+
+    exec.output_note::seal
     # => []
 end
 
