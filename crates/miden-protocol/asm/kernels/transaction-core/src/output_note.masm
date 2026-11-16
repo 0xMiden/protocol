@@ -308,87 +308,24 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
-#! - the attachment scheme is 0 or exceeds 65534.
-#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
-#! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
-#! - the note already has 4 attachments.
 #! - the output note is sealed.
+#! - the attachment is invalid or exceeds the note's attachment limits (see `add_attachment_raw`).
 pub proc add_attachment(
     attachment_scheme: u16,
     attachment_commitment: NoteAttachmentCommitment,
     note_idx: u16
 )
-    # validate attachment_scheme does not exceed max
-    dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
-    u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
-
-    # assert the scheme is not 0 which the kernel uses to represent absent attachments
-    dup neq.ATTACHMENT_RESERVED_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
-
-    movdn.4
-    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
-
-    # validate preimage for commitment is available and number of committed words is within limits
-    dupw exec.validate_attachment
-    # => [num_words, ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
-
-    movup.5
-    # => [attachment_scheme, num_words, ATTACHMENT_COMMITMENT, note_idx]
-
     # get note_ptr from note_idx
-    movup.6 exec.memory::get_output_note_ptr
-    # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
-
-    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
-    # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
-
-    # update and validate total attachment words
-    dup exec.memory::get_output_note_total_attachment_words
-    # => [total_num_words, note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
-
-    movup.3 add
-    # => [new_total_num_words, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
-
-    dup u32lte.MAX_ATTACHMENT_TOTAL_WORDS assert.err=ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED
-    # => [new_total_num_words, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
-
-    dup.1 exec.memory::set_output_note_total_attachment_words
+    movup.5 exec.memory::get_output_note_ptr
     # => [note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
-    # validate current number of attachments < 4
-    dup exec.memory::get_output_note_num_attachments
-    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
+    # => [note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
-    dup lt.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
-    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+    movdn.5
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_ptr]
 
-    # emit event
-    emit.NOTE_BEFORE_ADD_ATTACHMENT_EVENT
-    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
-
-    # --- Add attachment in output note memory ---
-
-    movup.6 movup.6 movup.6 movup.6
-    # => [ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
-
-    # use attachment_idx = num_attachments
-    dup.4 dup.6
-    # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
-
-    # store commitment in note memory
-    exec.memory::set_output_note_attachment_commitment
-    # => [num_attachments, note_ptr, attachment_scheme]
-
-    # increment number of attachments
-    dup add.1
-    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme]
-
-    dup.2 exec.memory::set_output_note_num_attachments
-    # => [num_attachments, note_ptr, attachment_scheme]
-
-    exec.set_attachment_schemes
+    exec.add_attachment_raw
     # => []
 end
 
@@ -755,6 +692,104 @@ proc add_asset_raw(asset: Asset, note_ptr: ptr<OutputNoteData>)
         movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
         # => []
     end
+end
+
+#! Adds an attachment to the note specified by the ptr. Attachments are append-only.
+#!
+#! This procedure does not check whether the note is sealed.
+#!
+#! The attachment elements are fetched from the advice map using ATTACHMENT_COMMITMENT as the key.
+#! The number of words (num_words) is derived from the element count and the commitment is verified
+#! by hashing the fetched elements.
+#!
+#! Inputs:
+#!   Operand Stack: [attachment_scheme, ATTACHMENT_COMMITMENT, note_ptr]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
+#! Outputs: []
+#!
+#! Where:
+#! - attachment_scheme is the user-defined scheme of the attachment.
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
+#! - note_ptr is the memory address at which the output note data begins.
+#!
+#! Panics if:
+#! - the attachment scheme is 0 or exceeds 65534.
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
+#! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
+#! - the total number of attachment words in the note would exceed 512.
+#! - the note already has 4 attachments.
+proc add_attachment_raw(
+    attachment_scheme: u16,
+    attachment_commitment: NoteAttachmentCommitment,
+    note_ptr: ptr<OutputNoteData>
+)
+    # validate attachment_scheme does not exceed max
+    dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
+    u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_ptr]
+
+    # assert the scheme is not 0 which the kernel uses to represent absent attachments
+    dup neq.ATTACHMENT_RESERVED_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_ptr]
+
+    movdn.4
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_ptr]
+
+    # validate preimage for commitment is available and number of committed words is within limits
+    dupw exec.validate_attachment
+    # => [num_words, ATTACHMENT_COMMITMENT, attachment_scheme, note_ptr]
+
+    movup.5 movup.6
+    # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
+
+    # update and validate total attachment words
+    dup exec.memory::get_output_note_total_attachment_words
+    # => [total_num_words, note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
+
+    movup.3 add
+    # => [new_total_num_words, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    dup u32lte.MAX_ATTACHMENT_TOTAL_WORDS assert.err=ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED
+    # => [new_total_num_words, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    dup.1 exec.memory::set_output_note_total_attachment_words
+    # => [note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    # validate current number of attachments < 4
+    dup exec.memory::get_output_note_num_attachments
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    dup lt.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    # emit event
+    emit.NOTE_BEFORE_ADD_ATTACHMENT_EVENT
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    # --- Add attachment in output note memory ---
+
+    movup.6 movup.6 movup.6 movup.6
+    # => [ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
+
+    # use attachment_idx = num_attachments
+    dup.4 dup.6
+    # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
+
+    # store commitment in note memory
+    exec.memory::set_output_note_attachment_commitment
+    # => [num_attachments, note_ptr, attachment_scheme]
+
+    # increment number of attachments
+    dup add.1
+    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme]
+
+    dup.2 exec.memory::set_output_note_num_attachments
+    # => [num_attachments, note_ptr, attachment_scheme]
+
+    exec.set_attachment_schemes
+    # => []
 end
 
 #! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
