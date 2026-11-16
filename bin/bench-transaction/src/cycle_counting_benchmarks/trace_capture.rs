@@ -93,7 +93,8 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         .await
         .context("failed to execute transaction kernel for trace")?;
     let (vm_witness, _precompile_witness) = execution_witness.into_parts();
-    let trace = build_trace(vm_witness).context("failed to build trace from execution output")?;
+    let trace = build_trace(vm_witness, &miden_vm_stark::memory::default_budget())
+        .context("failed to build trace from execution output")?;
 
     Ok(*trace.trace_len_summary())
 }
