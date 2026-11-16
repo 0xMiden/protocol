@@ -19,6 +19,9 @@ pub const NOTE_TREE_DEPTH = 16
 # The maximum number of notes that can be created in a single transaction.
 pub const MAX_OUTPUT_NOTES_PER_TX = 1024
 
+# The maximum number of procedure roots in each code patch list of a single transaction.
+pub const MAX_CODE_PATCH_ROOTS = 512
+
 # The number of field elements per account procedure data entry (procedure MAST root).
 pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
 

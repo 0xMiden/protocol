@@ -298,7 +298,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
 
     /// Adds code that the data store of the mock transaction provides as code to register (see
     /// [`DataStore::get_code_to_register`](miden_tx::DataStore::get_code_to_register)).
-    pub fn code_to_register(mut self, mast_forest: Arc<MastForest>) -> Self {
+    pub fn register_code(mut self, mast_forest: Arc<MastForest>) -> Self {
         self.code_to_register.push(mast_forest);
         self
     }

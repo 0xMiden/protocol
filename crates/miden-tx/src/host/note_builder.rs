@@ -76,6 +76,19 @@ impl OutputNoteBuilder {
         }
     }
 
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the metadata of the note.
+    pub fn metadata(&self) -> &PartialNoteMetadata {
+        &self.metadata
+    }
+
+    /// Returns the recipient of the note, if its details are known.
+    pub fn recipient(&self) -> Option<&NoteRecipient> {
+        self.recipient.as_ref()
+    }
+
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 

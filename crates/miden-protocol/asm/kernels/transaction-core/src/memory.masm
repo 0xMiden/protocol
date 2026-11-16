@@ -24,11 +24,12 @@ use {
     InputNoteData,
     LinkMapEntry,
     OutputNoteData,
+    ProcedureRoot,
     StorageSlot,
 } from miden::tx_kernel_core::types
 use miden::core::mem
 use miden::core::word
-use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
+use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, MAX_CODE_PATCH_ROOTS, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
     from miden::tx_kernel_core::constants
 
 # ERRORS
@@ -373,6 +374,24 @@ const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET = 18
 const OUTPUT_NOTE_ATTACHMENT_0_OFFSET = 20
 const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 36
 const OUTPUT_NOTE_ASSETS_OFFSET = 40
+
+# CODE PATCH
+# -------------------------------------------------------------------------------------------------
+
+# The memory address at which the code patch section begins. The section contains one list per kind
+# of procedure root.
+const CODE_PATCH_SECTION_PTR = 17825792
+
+# The offset of the first procedure root relative to the start of a code patch list.
+const CODE_PATCH_LIST_ROOTS_OFFSET = WORD_NUM_ELEMENTS
+
+# The length of the memory interval that a code patch list occupies.
+const CODE_PATCH_LIST_LENGTH = CODE_PATCH_LIST_ROOTS_OFFSET + MAX_CODE_PATCH_ROOTS * WORD_NUM_ELEMENTS
+
+# The memory addresses at which the code patch lists begin.
+# Each list is laid out as [[num_procedure_roots, 0, 0, 0], PROC_ROOT_0, PROC_ROOT_1, ...].
+pub const CREATED_PROCS_LIST_PTR = CODE_PATCH_SECTION_PTR
+pub const DEPENDENCIES_LIST_PTR = CREATED_PROCS_LIST_PTR + CODE_PATCH_LIST_LENGTH
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -2363,6 +2382,45 @@ end
 #! - num_kernel_procedures is the number of the procedures of the selected kernel.
 pub proc set_num_kernel_procedures(num_kernel_procedures: u16)
     mem_store.NUM_KERNEL_PROCEDURES_PTR
+end
+
+# CODE PATCH
+# -------------------------------------------------------------------------------------------------
+
+#! Returns the number of procedure roots in the code patch list.
+#!
+#! Inputs:  [list_ptr]
+#! Outputs: [num_procedure_roots]
+#!
+#! Where:
+#! - list_ptr is the memory address at which the code patch list begins.
+#! - num_procedure_roots is the number of procedure roots in the list.
+pub proc get_code_patch_num_procedure_roots(list_ptr: ptr<ProcedureRoot>) -> u32
+    mem_load
+end
+
+#! Sets the number of procedure roots in the code patch list.
+#!
+#! Inputs:  [list_ptr, num_procedure_roots]
+#! Outputs: []
+#!
+#! Where:
+#! - list_ptr is the memory address at which the code patch list begins.
+#! - num_procedure_roots is the number of procedure roots in the list.
+pub proc set_code_patch_num_procedure_roots(list_ptr: ptr<ProcedureRoot>, num_procedure_roots: u32)
+    mem_store
+end
+
+#! Returns the memory address at which the procedure roots of the code patch list begin.
+#!
+#! Inputs:  [list_ptr]
+#! Outputs: [roots_ptr]
+#!
+#! Where:
+#! - list_ptr is the memory address at which the code patch list begins.
+#! - roots_ptr is the memory address of the first procedure root in the list.
+pub proc get_code_patch_roots_ptr(list_ptr: ptr<ProcedureRoot>) -> ptr<ProcedureRoot>
+    add.CODE_PATCH_LIST_ROOTS_OFFSET
 end
 
 # LINK MAP

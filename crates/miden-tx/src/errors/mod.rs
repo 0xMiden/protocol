@@ -11,6 +11,7 @@ use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::CodeTreeRoot;
 use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
@@ -341,6 +342,16 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
+    #[error("failed to get code witnesses from data store for code tree root {code_tree_root}")]
+    GetCodeWitnesses {
+        code_tree_root: CodeTreeRoot,
+        // thiserror will return this when calling Error::source on TransactionKernelError.
+        source: DataStoreError,
+    },
+    #[error("failed to get code to register from data store")]
+    GetCodeToRegister(#[source] DataStoreError),
+    #[error("code witness does not fit the code tree of the reference block")]
+    InvalidCodeWitness(#[source] CodeTreeError),
     #[error("code witness is not available")]
     MissingCodeWitness {
         procedure_root: ProcedureRoot,

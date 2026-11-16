@@ -11,7 +11,6 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -360,6 +359,7 @@ where
             self.authenticator,
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
+            tx_inputs.block_header().code_tree_root(),
             self.source_manager.clone(),
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
@@ -380,16 +380,22 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    let (account_patch, _input_notes, output_notes, logs, tx_progress, lazy_loaded_data) =
-        host.into_parts();
+    let (
+        account_patch,
+        _input_notes,
+        output_notes,
+        logs,
+        tx_progress,
+        lazy_loaded_data,
+        code_patch,
+    ) = host.into_parts();
 
     let tx_outputs = TransactionKernel::from_transaction_parts(
         &stack_outputs,
         &final_advice_inputs,
         output_notes,
         logs,
-        // TODO(#4006): take the code patch from the host once the transaction kernel builds it.
-        CodePatch::default(),
+        code_patch,
     )
     .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 

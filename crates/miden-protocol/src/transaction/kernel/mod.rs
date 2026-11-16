@@ -292,7 +292,7 @@ impl TransactionKernel {
         final_account_commitment: Word,
         account_patch_commitment: Word,
         output_notes_commitment: Word,
-        code_patch_commitment: CodePatchCommitment,
+        _code_patch_commitment: CodePatchCommitment,
         expiration_block_num: BlockNumber,
         logs_commitment: Word,
     ) -> StackOutputs {
@@ -306,7 +306,9 @@ impl TransactionKernel {
         let mut outputs: Vec<Felt> = Vec::with_capacity(Word::NUM_ELEMENTS * 4);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
-        outputs.extend(code_patch_commitment.as_word());
+        // TODO(#4006): output the code patch commitment once the transaction kernel outputs it.
+        // Until then, the kernel outputs the empty word, so the proof does not commit to the patch.
+        outputs.extend(Word::empty());
         outputs.extend(logs_expiration_commitment);
 
         StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
@@ -362,10 +364,12 @@ impl TransactionKernel {
         logs: TransactionLogs,
         code_patch: CodePatch,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
+        // TODO(#4006): check the code patch against CODE_PATCH_COMMITMENT once the transaction
+        // kernel outputs it.
         let (
             output_notes_commitment,
             account_update_commitment,
-            code_patch_commitment,
+            _code_patch_commitment,
             logs_expiration_commitment,
         ) = Self::parse_output_stack(stack);
 
@@ -374,15 +378,6 @@ impl TransactionKernel {
 
         if logs.commitment() != logs_commitment {
             return Err(TransactionOutputError::LogsCommitmentInconsistent);
-        }
-
-        // TODO(#4006): read the code patch from the advice map under CODE_PATCH_COMMITMENT once
-        // the transaction kernel builds the code patch.
-        if code_patch.commitment() != code_patch_commitment {
-            return Err(TransactionOutputError::CodePatchCommitmentInconsistent {
-                actual: code_patch.commitment(),
-                expected: code_patch_commitment,
-            });
         }
 
         let (final_account_commitment, account_patch_commitment) =

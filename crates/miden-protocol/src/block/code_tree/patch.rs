@@ -138,14 +138,14 @@ impl CodePatch {
         &self.mast
     }
 
-    /// Returns an iterator over the created procedure roots in ascending order.
-    pub fn created_procedures(&self) -> impl Iterator<Item = ProcedureRoot> + use<> {
-        sorted_procedure_roots(self.mast.procedure_digests()).into_iter()
+    /// Returns the set of created procedure roots.
+    pub fn created_procedures(&self) -> BTreeSet<ProcedureRoot> {
+        self.mast.procedure_digests().map(ProcedureRoot::from_raw).collect()
     }
 
-    /// Returns an iterator over the dependencies in ascending order.
-    pub fn dependencies(&self) -> impl Iterator<Item = ProcedureRoot> + use<> {
-        sorted_procedure_roots(external_node_digests(&self.mast)).into_iter()
+    /// Returns the set of dependencies.
+    pub fn dependencies(&self) -> BTreeSet<ProcedureRoot> {
+        external_node_digests(&self.mast).map(ProcedureRoot::from_raw).collect()
     }
 
     /// Returns `true` if the patch creates no procedures.
@@ -200,11 +200,6 @@ impl Display for CodePatchCommitment {
 /// Returns an iterator over the digests of the external nodes of the forest.
 fn external_node_digests(mast: &MastForest) -> impl Iterator<Item = Word> + '_ {
     mast.nodes().iter().filter(|node| node.is_external()).map(|node| node.digest())
-}
-
-/// Returns the procedure roots of the digests, which iterate in ascending order.
-fn sorted_procedure_roots(digests: impl Iterator<Item = Word>) -> BTreeSet<ProcedureRoot> {
-    digests.map(ProcedureRoot::from_raw).collect()
 }
 
 /// Returns the set of procedure roots of the digests, or the first duplicated procedure root.
@@ -313,8 +308,8 @@ mod tests {
         let patch = CodePatch::new(Arc::new(MastForest::new()))?;
 
         assert!(patch.is_empty());
-        assert_eq!(patch.created_procedures().count(), 0);
-        assert_eq!(patch.dependencies().count(), 0);
+        assert_eq!(patch.created_procedures().len(), 0);
+        assert_eq!(patch.dependencies().len(), 0);
         assert_eq!(patch.commitment().as_word(), Word::empty());
         assert_eq!(patch, CodePatch::default());
 
@@ -342,13 +337,16 @@ mod tests {
             Hasher::hash_elements(&sorted_elements(expected_dependencies.iter().copied()));
 
         assert!(!patch.is_empty());
-        assert_eq!(patch.created_procedures().collect::<Vec<_>>(), expected_created_procedures);
         assert_eq!(
-            patch.dependencies().collect::<Vec<_>>(),
+            patch.created_procedures(),
+            expected_created_procedures.into_iter().collect::<BTreeSet<_>>()
+        );
+        assert_eq!(
+            patch.dependencies(),
             expected_dependencies
                 .into_iter()
                 .map(ProcedureRoot::from_raw)
-                .collect::<Vec<_>>()
+                .collect::<BTreeSet<_>>()
         );
         assert_eq!(patch.created_commitment(), expected_created_commitment);
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);

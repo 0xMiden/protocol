@@ -1,9 +1,10 @@
 use miden_core::program::KernelDescriptor;
 
 use crate::WORD_SIZE;
+use crate::account::AccountHeader;
+
 // TYPE ALIASES
 // ================================================================================================
-use crate::account::AccountHeader;
 
 pub type MemoryAddress = u32;
 pub type MemoryOffset = u32;
@@ -32,6 +33,7 @@ pub type StorageSlot = u8;
 // | Input notes                 | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)     |
 // |                             |               |                  | + 1024 input notes max, 1024 elements each  |
 // | Output notes                | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each   |
+// | Code patch                  | 17_825_792    | 4_104            | 2 lists of 512 roots max + a num_roots word |
 // | Link Map Memory             | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs        |
 
 // Relative layout of one account
