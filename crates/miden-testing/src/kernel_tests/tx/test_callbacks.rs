@@ -642,12 +642,13 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     // note_idx.
     let script_code = format!(
         r#"
+        use miden::protocol::output_note
         use mock::util
 
         @transaction_script
         pub proc main
             # Create note 0 (just to consume index 0)
-            exec.util::create_default_note drop
+            exec.util::create_default_note exec.output_note::seal
             # => []
 
             # Create note 1

@@ -281,6 +281,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
     let tx_note_creation_script = format!(
         "
         use miden::core::sys
+        use miden::protocol::output_note
         use miden::standards::wallets::basic as basic_wallet
 
         @transaction_script
@@ -295,16 +296,19 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
             push.{tag}
             # => [tag, note_type, RECIPIENT, pad(16)]
 
-            call.basic_wallet::create_note
-            # => [note_idx, pad(21)]
+            call.basic_wallet::create_note dup
+            # => [note_idx, note_idx, pad(21)]
 
             # move the asset to the note
             push.{ASSET_VALUE}
             push.{ASSET_ID}
-            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(21)]
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(21)]
 
             call.basic_wallet::move_asset_to_note
-            # => [pad(30)]
+            # => [note_idx, pad(29)]
+
+            exec.output_note::seal
+            # => [pad(29)]
 
             # truncate the stack
             exec.sys::truncate_stack

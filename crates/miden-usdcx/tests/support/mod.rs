@@ -1999,6 +1999,10 @@ pub proc main
     call.wallet::move_asset_to_note
     # => [pad(16)]
 
+    # seal the note (the tx's only output note, index 0) now that it is final.
+    push.0 exec.::miden::protocol::output_note::seal
+    # => [pad(16)]
+
     exec.::miden::core::sys::truncate_stack
 end
 "#
@@ -2797,7 +2801,7 @@ pub async fn emit_note_with_attachments(
     }
     // each extra-attachment leg re-supplies the note index explicitly — the producer tx creates
     // exactly ONE output note, so its index is deterministically 0 — and calls the appender
-    // (insertion order preserved).
+    // (insertion order preserved). The script then seals that note.
     let mut extra_legs = String::new();
     for attachment in attachments.iter().skip(1) {
         let scheme_n = attachment.attachment_scheme().as_u16();
@@ -2822,6 +2826,7 @@ pub async fn emit_note_with_attachments(
          \x20\x20\x20\x20push.{tag}\n\
          \x20\x20\x20\x20call.emit_helper::emit_note_with_attachment\n\
          {extra_legs}\
+         \x20\x20\x20\x20push.0 exec.::miden::protocol::output_note::seal\n\
          \x20\x20\x20\x20exec.::miden::core::sys::truncate_stack\n\
          end\n"
     );

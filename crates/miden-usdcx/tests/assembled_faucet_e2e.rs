@@ -616,7 +616,8 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
                 push.{faucet_id_suffix}
                 exec.::miden::standards::assets::fungible_asset::create
                 call.::miden::standards::faucets::fungible::mint_and_send
-                dropw dropw dropw dropw
+                exec.::miden::protocol::output_note::seal
+                dropw dropw dropw drop drop drop
             end
             ",
         recipient = recipient_recipe.digest(),

@@ -124,7 +124,10 @@ fn nft_mint_body(faucet_id: AccountId, commitment: Word, recipient: Word) -> Str
             # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT]
             call.::miden::standards::faucets::non_fungible::mint_and_send
             # => [note_idx, pad(15)]
-            dropw dropw dropw dropw
+
+            exec.::miden::protocol::output_note::seal
+            # => [pad(15)]
+            dropw dropw dropw drop drop drop
         ",
         note_type = NoteType::Private as u8,
         tag = 0u32,
