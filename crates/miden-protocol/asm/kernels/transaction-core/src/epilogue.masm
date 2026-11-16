@@ -294,8 +294,7 @@ end
 
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
-#! - asserts that every output note, including those created by the authentication procedure, is
-#!   sealed.
+#! - asserts that every output note is sealed.
 #! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment and the hash of the transaction logs commitment and
 #!   expiration block number.
