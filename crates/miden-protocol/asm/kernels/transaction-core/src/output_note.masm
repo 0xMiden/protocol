@@ -67,6 +67,9 @@ const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS = "number of attachments per note can
 const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
     "total number of attachment words per note cannot exceed 512"
 
+const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME =
+    "note callback returned a non-empty attachment commitment with attachment scheme 0"
+
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS =
     "non-fungible asset that already exists in the note cannot be added again"
 
@@ -334,8 +337,9 @@ end
 #!
 #! If the note is already sealed, the procedure returns without invoking any callback. The callbacks
 #! are invoked in the order in which each faucet first occurs among the note's assets. Each callback
-#! can return an attachment, which is appended to the note right after the callback returns. Once
-#! the note is sealed, its assets and attachments cannot be modified.
+#! can return an attachment, which is appended to the note right after the callback returns, so the
+#! note's attachments, metadata and ID are final only once the last callback returned. Once the note
+#! is sealed, its assets and attachments cannot be modified.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: []
@@ -346,6 +350,7 @@ end
 #! Panics if:
 #! - a callback procedure root is not part of its faucet's account code.
 #! - an invoked callback panics.
+#! - a callback returns attachment scheme 0 with a non-empty attachment commitment.
 #! - an attachment returned by a callback is invalid or exceeds the note's attachment limits (see
 #!   `add_attachment_raw`).
 pub proc seal(note_idx: u16)
@@ -810,6 +815,7 @@ end
 #! Panics if:
 #! - a callback procedure root is not part of its faucet's account code.
 #! - an invoked callback panics.
+#! - a callback returns attachment scheme 0 with a non-empty attachment commitment.
 #! - an attachment returned by a callback is invalid or exceeds the note's attachment limits (see
 #!   `add_attachment_raw`).
 proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_idx: u16)
@@ -884,6 +890,7 @@ end
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
 #! - the invoked callback panics.
+#! - the callback returns attachment scheme 0 with a non-empty attachment commitment.
 #! - the attachment returned by the callback is invalid or exceeds the note's attachment limits (see
 #!   `add_attachment_raw`).
 proc maybe_invoke_on_before_note_sealed_callback(
@@ -923,7 +930,12 @@ proc maybe_invoke_on_before_note_sealed_callback(
             exec.add_attachment_raw
             # => []
         else
-            drop dropw drop
+            # a callback that returns no attachment must not return a commitment either
+            drop exec.word::eqz
+            assert.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME
+            # => [note_idx]
+
+            drop
             # => []
         end
     end
