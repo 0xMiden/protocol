@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
@@ -32,14 +33,24 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_IS_SEALED,
+    ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
 };
-use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::note::{
+    Note,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
@@ -48,7 +59,8 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
-use miden_tx::{TransactionExecutorError, TransactionKernelError};
+use miden_standards::testing::note::NoteBuilder;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError, TransactionKernelError};
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
@@ -117,7 +129,7 @@ end
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
 #! Inputs:  [note_idx, pad(15)]
-#! Outputs: [pad(16)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
 #! Invocation: call
 @account_procedure
@@ -665,7 +677,7 @@ async fn test_on_before_note_sealed_callback_receives_correct_inputs() -> anyhow
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [pad(16)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
     @locals(8)
     @account_procedure
     pub proc on_before_note_sealed
@@ -793,7 +805,7 @@ async fn test_note_sealed_callback_runs_once_per_faucet_in_first_occurrence_orde
         format!(
             r#"
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [pad(16)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
     @account_procedure
     pub proc on_before_note_sealed
         dup exec.::miden::protocol::output_note::is_sealed
@@ -1019,6 +1031,83 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
     Ok(())
 }
 
+/// Tests that the attachment returned by a faucet's `on_before_note_sealed` callback is appended
+/// to the sealed note after the attachment the note's creator added, and that a callback returning
+/// attachment scheme 0 appends no attachment.
+///
+/// The transaction is also proven, so the prover host must build the same output note.
+#[rstest::rstest]
+#[case::returned_attachment(true)]
+#[case::no_returned_attachment(false)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_is_appended_to_note(
+    #[case] returns_attachment: bool,
+) -> anyhow::Result<()> {
+    let creator_attachment =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(10)?, Word::from([1, 2, 3, 4u32]));
+    let callback_attachment_scheme = NoteAttachmentScheme::new(20)?;
+    let callback_attachment_word = Word::from([5, 6, 7, 8u32]);
+
+    let note_callback_masm = note_sealed_callback_masm(
+        returns_attachment
+            .then_some((callback_attachment_scheme.as_u16(), callback_attachment_word)),
+    );
+    let (note, result) =
+        execute_note_sealing_tx(&note_callback_masm, vec![creator_attachment.clone()]).await?;
+    let executed_tx = result?;
+
+    let mut expected_attachments = vec![creator_attachment];
+    if returns_attachment {
+        expected_attachments
+            .push(NoteAttachment::with_word(callback_attachment_scheme, callback_attachment_word));
+    }
+    let expected_note = Note::with_attachments(
+        note.assets().clone(),
+        *note.metadata().partial_metadata(),
+        note.recipient().clone(),
+        NoteAttachments::new(expected_attachments)?,
+    );
+
+    let output_note = executed_tx.output_notes().get_note(0);
+    assert_eq!(output_note.attachments(), expected_note.attachments());
+    assert_eq!(output_note.id(), expected_note.id());
+
+    let proven_tx = LocalTransactionProver::default().prove(executed_tx)?;
+    assert_eq!(proven_tx.output_notes().get_note(0).id(), expected_note.id());
+
+    Ok(())
+}
+
+/// Tests that the attachment returned by an `on_before_note_sealed` callback is validated like any
+/// other attachment and counts toward the note's limit of attachments.
+#[rstest::rstest]
+#[case::too_many_attachments(NoteAttachments::MAX_COUNT, 20, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
+#[case::invalid_scheme(1, u16::MAX, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_is_validated(
+    #[case] num_creator_attachments: usize,
+    #[case] callback_attachment_scheme: u16,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let creator_attachments = (1u16..)
+        .take(num_creator_attachments)
+        .map(|scheme| {
+            Ok(NoteAttachment::with_word(
+                NoteAttachmentScheme::new(scheme)?,
+                Word::from([u32::from(scheme); 4]),
+            ))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let note_callback_masm =
+        note_sealed_callback_masm(Some((callback_attachment_scheme, Word::from([5, 6, 7, 8u32]))));
+
+    let (_, result) = execute_note_sealing_tx(&note_callback_masm, creator_attachments).await?;
+
+    assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
 /// Tests that a new account whose storage contains an asset callback slot is rejected if its
 /// account ID has the asset callback flag disabled.
 #[tokio::test]
@@ -1123,7 +1212,7 @@ async fn mint_and_send_with_native_note_callback(
     let note_callback_masm = format!(
         r#"
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [pad(16)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
     @account_procedure
     pub proc on_before_note_sealed
         {callback_body}
@@ -1257,4 +1346,137 @@ fn add_faucet_with_callbacks(
         account_builder,
         AccountState::Exists,
     )
+}
+
+/// Returns the MASM source of an `on_before_note_sealed` callback that returns a single-word
+/// attachment with the provided scheme and word, or no attachment if `attachment` is `None`.
+///
+/// The callback puts the attachment word into the advice map under its commitment.
+fn note_sealed_callback_masm(attachment: Option<(u16, Word)>) -> String {
+    let Some((attachment_scheme, attachment_word)) = attachment else {
+        return String::from(
+            "
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    @account_procedure
+    pub proc on_before_note_sealed
+        drop
+        # => [0, EMPTY_WORD, pad(11)]
+    end
+    ",
+        );
+    };
+
+    format!(
+        "
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    @locals(4)
+    @account_procedure
+    pub proc on_before_note_sealed
+        drop
+        # => [pad(16)]
+
+        push.{attachment_word} loc_storew_le.0
+        exec.::miden::core::crypto::hashes::eidos::hash
+        # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+        locaddr.0 dup add.4 movdn.5 movdn.4
+        # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+        adv.insert_mem
+        movup.4 drop movup.4 drop
+        # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+        push.{attachment_scheme}
+        exec.::miden::core::sys::truncate_stack
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    end
+    "
+    )
+}
+
+/// Executes a transaction in which the native account creates a private output note holding an
+/// asset of a faucet whose `on_before_note_sealed` callback is `note_callback_masm`, adds the
+/// single-word `creator_attachments` to the note and seals it.
+///
+/// Returns the note as the transaction script creates it, i.e. without an attachment returned by
+/// the callback, and the execution result.
+async fn execute_note_sealing_tx(
+    note_callback_masm: &str,
+    creator_attachments: Vec<NoteAttachment>,
+) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_callbacks(&mut builder, [42; 32], None, Some(note_callback_masm))?;
+    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
+    let mock_chain = builder.build()?;
+
+    let mut note_builder = NoteBuilder::new(sender.id(), EidosRandomCoin::new(Word::empty()))
+        .note_type(NoteType::Private)
+        .add_assets([asset]);
+    for attachment in creator_attachments {
+        note_builder = note_builder.attachment(attachment);
+    }
+    let note = note_builder.build()?;
+
+    let add_attachments_code = note
+        .attachments()
+        .iter()
+        .map(|attachment| {
+            format!(
+                "dup push.{attachment_word} push.{attachment_scheme}
+                # => [attachment_scheme, ATTACHMENT, note_idx, note_idx]
+
+                exec.output_note::add_word_attachment
+                # => [note_idx]",
+                attachment_word = attachment.content().as_words()[0],
+                attachment_scheme = attachment.attachment_scheme().as_u16(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            push.{recipient} push.{note_type} push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            push.{asset_value} push.{asset_id} dup.8 movdn.8
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+            exec.util::move_asset_to_note
+            # => [note_idx, pad(15)]
+
+            {add_attachments_code}
+
+            exec.output_note::seal
+            # => [pad(15)]
+
+            exec.::miden::core::sys::truncate_stack
+        end
+        ",
+        recipient = note.recipient().digest(),
+        note_type = note.metadata().note_type() as u8,
+        tag = note.metadata().tag(),
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+    ))?;
+
+    let result = mock_chain
+        .build_transaction(sender.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute()
+        .await;
+
+    Ok((note, result))
 }

@@ -11,7 +11,7 @@ use miden_protocol::account::{
     AccountType,
     AccountVaultPatch,
 };
-use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
@@ -206,6 +206,134 @@ async fn pswap_rejects_later_asset_addition(
         .execute()
         .await;
     assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+    Ok(())
+}
+
+/// An asset callback that runs when PSWAP seals its payback or remainder may return an attachment
+/// that the kernel appends after PSWAP's own attachment. The output stays reconstructible from the
+/// PSWAP data and the public attachments, a refill reads its depth from the first attachment only,
+/// and Alice can consume the output. The filler is the asset issuer; exercise the requested asset's
+/// callback for paybacks and the offered asset's callback for remainders.
+#[rstest]
+#[tokio::test]
+async fn pswap_outputs_with_callback_attachment_remain_consumable(
+    #[values(false, true)] remainder_callback: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let other_issuer = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(100))?;
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let code = CodeBuilder::default().compile_component_code(
+        "tests::pswap_callback",
+        format!(
+            "use miden::core::crypto::hashes::eidos
+            use miden::core::sys
+
+            @locals(4)
+            @account_procedure
+            pub proc on_before_note_sealed
+                drop
+                # => [pad(16)]
+
+                push.1.2.3.4 loc_storew_le.0 exec.eidos::hash
+                # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+                locaddr.0 dup add.4 movdn.5 movdn.4 adv.insert_mem
+                # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+                movup.4 drop movup.4 drop push.{}
+                # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
+
+                exec.sys::truncate_stack
+                # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+            end",
+            PswapNote::PSWAP_ATTACHMENT_SCHEME.as_u16(),
+        ),
+    )?;
+    let root = code
+        .as_package()
+        .get_procedure_root_by_path("tests::pswap_callback::on_before_note_sealed")
+        .unwrap();
+    let callback = AccountComponent::new(
+        code,
+        AssetCallbacks::new().on_before_note_sealed(root).into_storage_slots(),
+        AccountComponentMetadata::new("tests::pswap_callback"),
+    )?;
+    let mut filler = builder.add_account_from_builder(
+        BASIC_AUTH,
+        Account::builder([92; 32])
+            .account_type(AccountType::Public)
+            .with_component(BasicWallet)
+            .with_component(callback),
+        AccountState::Exists,
+    )?;
+    let (offered_id, requested_id) = if remainder_callback {
+        (filler.id(), other_issuer.id())
+    } else {
+        (other_issuer.id(), filler.id())
+    };
+    let offered = FungibleAsset::new(offered_id, 50)?;
+    let requested = FungibleAsset::new(requested_id, 25)?;
+    filler.vault_mut().add_asset(requested.into())?;
+    builder.add_account(filler.clone())?;
+    let (pswap, note) =
+        build_pswap_note(&mut builder, alice.id(), offered, requested, NoteType::Public)?;
+    let chain = builder.build()?;
+    let executed = chain
+        .build_transaction(filler.clone())
+        .authenticated_input_note(note.id())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_args(10, 0)?)]))
+        .build()?
+        .execute()
+        .await?;
+
+    let output = executed.output_notes().get_note(usize::from(remainder_callback));
+    assert_eq!(output.attachments().num_attachments(), 2);
+
+    let (payback, remainder) =
+        pswap.execute(filler.id(), Some(FungibleAsset::new(requested_id, 10)?), None)?;
+    let expected = if remainder_callback {
+        Note::from(remainder.expect("partial fill creates a remainder"))
+    } else {
+        payback
+    };
+    assert_eq!(output.attachments().get(0), expected.attachments().get(0));
+
+    // The assets and recipient are predictable; all attachment data is public, including the
+    // returned attachment. Combining them reconstructs the actual output's ID.
+    let reconstructed = Note::with_attachments(
+        expected.assets().clone(),
+        *expected.metadata().partial_metadata(),
+        expected.recipient().clone(),
+        output.attachments().clone(),
+    );
+    assert_eq!(reconstructed.id(), output.id());
+
+    if remainder_callback {
+        // Even another PSWAP-scheme attachment cannot override the first one's depth.
+        let refilled = chain
+            .build_transaction(filler.clone())
+            .unauthenticated_input_note(reconstructed.clone())
+            .build()?
+            .execute()
+            .await?;
+        assert_eq!(refilled.output_notes().num_notes(), 1);
+        let next_payback = refilled.output_notes().get_note(0);
+        let next_attachment = PswapNoteAttachment::try_from(
+            next_payback.attachments().get(0).expect("payback has a PSWAP attachment"),
+        )?;
+        assert_eq!(next_attachment.depth(), 2);
+        assert_eq!(next_attachment.amount(), AssetAmount::new(15)?);
+    }
+
+    // Alice can claim the payback or cancel the remainder with the returned attachment.
+    chain
+        .build_transaction(alice)
+        .foreign_accounts([chain.get_foreign_account_inputs(filler)?])
+        .unauthenticated_input_note(reconstructed)
+        .build()?
+        .execute()
+        .await?;
+
     Ok(())
 }
 
