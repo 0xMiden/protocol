@@ -426,9 +426,11 @@ where
             return Ok(Vec::new());
         }
 
+        // Every run draws fresh IES seal secrets: the runs vary the notes, so supplied secrets need
+        // not answer their requests.
         let (mut host, stack_inputs, advice_inputs) = self
             .tx_executor
-            .prepare_transaction(tx_inputs)
+            .prepare_transaction(tx_inputs, Vec::new())
             .await
             .map_err(TransactionCheckerError::TransactionPreparation)?;
 
@@ -538,7 +540,7 @@ fn handle_epilogue_error(
     match epilogue_error {
         // `Unauthorized` is returned for the multisig accounts if the transaction doesn't have
         // enough signatures.
-        TransactionExecutorError::Unauthorized(_)
+        TransactionExecutorError::Unauthorized { .. }
         // `MissingAuthenticator` is returned for the account with the basic auth if the
         // authenticator was not provided to the executor (UnreachableAuth).
         | TransactionExecutorError::MissingAuthenticator => {

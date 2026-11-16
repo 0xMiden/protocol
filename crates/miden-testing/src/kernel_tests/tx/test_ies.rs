@@ -8,19 +8,42 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::hash::eidos::domains::ECGFP5_PUBLIC_KEY;
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::note::NoteType;
-use miden_protocol::transaction::{ExecutedTransaction, TransactionScript};
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_SENDER,
+};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    IesSealSecret,
+    TransactionInputs,
+    TransactionScript,
+    TransactionWitness,
+};
 use miden_protocol::{Felt, Hasher, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_tx::{LocalTransactionProver, TransactionExecutorError, TransactionKernelError};
+use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::testing::note::NoteBuilder;
+use miden_tx::auth::UnreachableAuth;
+use miden_tx::{
+    LocalTransactionProver,
+    NoteConsumptionChecker,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionKernelError,
+    TransactionProverError,
+};
+use rand_chacha::ChaCha20Rng;
+use rand_chacha::rand_core::SeedableRng;
 use rstest::rstest;
 
-use crate::{Auth, MockChain, assert_transaction_executor_error};
+use crate::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 // CONSTANTS
 // ================================================================================================
@@ -30,11 +53,13 @@ const CONTEXT: [u32; 4] = [5, 6, 7, 8];
 
 const PLAINTEXT_PTR: u32 = 0;
 const CONTEXT_PTR: u32 = PLAINTEXT_PTR + PLAINTEXT.len() as u32;
-const ENVELOPE_PTR: u32 = CONTEXT_PTR + CONTEXT.len() as u32;
+/// The memory address of the first envelope. The envelopes follow each other.
+const ENVELOPES_PTR: u32 = CONTEXT_PTR + CONTEXT.len() as u32;
 /// The envelope header has eight elements and each plaintext element encrypts to two.
 const ENVELOPE_LEN: u32 = 8 + 2 * PLAINTEXT.len() as u32;
 const ENVELOPE_NUM_WORDS: u32 = ENVELOPE_LEN / WORD_SIZE as u32;
 
+/// The attachment scheme of the first envelope. The schemes of the next envelopes follow it.
 const ENVELOPE_ATTACHMENT_SCHEME: u16 = 1;
 
 // TESTS
@@ -42,7 +67,7 @@ const ENVELOPE_ATTACHMENT_SCHEME: u16 = 1;
 
 /// How the transaction gets the recipient public key to the host.
 #[derive(Clone, Copy)]
-enum RecipientKeySource {
+pub(super) enum RecipientKeySource {
     /// The script calls `miden::protocol::ies::seal` with the public key.
     ProtocolProcedure,
     /// The script calls the core library's `seal` with the public key commitment and the
@@ -52,7 +77,7 @@ enum RecipientKeySource {
 
 /// Where the plaintext is encrypted.
 #[derive(Clone, Copy)]
-enum SealingAccount {
+pub(super) enum SealingAccount {
     /// The transaction script of the native account encrypts.
     Native,
     /// A procedure of a foreign account encrypts and returns the envelope.
@@ -70,13 +95,14 @@ async fn ies_seal_encrypts_to_recipient_public_key(
     #[case] key_source: RecipientKeySource,
     #[case] sealing_account: SealingAccount,
 ) -> anyhow::Result<()> {
-    let recipient_secret = recipient_secret_key(1);
+    let recipient_secret = secret_key(1);
     let recipient = recipient_secret.public_key();
 
-    let executed_tx = execute_sealing_transaction(recipient, key_source, sealing_account).await?;
+    let executed_tx =
+        execute_sealing_transaction(&[recipient], key_source, sealing_account).await?;
 
     let plaintext =
-        ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &envelope(&executed_tx)?)?;
+        ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &envelope(&executed_tx, 0)?)?;
     assert_eq!(plaintext, felts(PLAINTEXT));
 
     let secrets = executed_tx.tx_inputs().ies_seal_secrets();
@@ -89,24 +115,362 @@ async fn ies_seal_encrypts_to_recipient_public_key(
 /// Tests that the prover answers the `seal` request with the recorded ephemeral secret, so that
 /// the proven transaction has the envelope of the executed one.
 #[rstest]
-#[case::native_account(SealingAccount::Native)]
-#[case::foreign_account(SealingAccount::Foreign)]
+#[case::protocol_procedure(RecipientKeySource::ProtocolProcedure, SealingAccount::Native)]
+#[case::transaction_arguments(RecipientKeySource::TransactionArguments, SealingAccount::Native)]
+#[case::foreign_account(RecipientKeySource::ProtocolProcedure, SealingAccount::Foreign)]
 #[tokio::test]
 async fn prove_ies_seal_reproduces_executed_envelope(
+    #[case] key_source: RecipientKeySource,
     #[case] sealing_account: SealingAccount,
 ) -> anyhow::Result<()> {
-    let recipient = recipient_secret_key(1).public_key();
-    let executed_tx = execute_sealing_transaction(
-        recipient,
-        RecipientKeySource::ProtocolProcedure,
-        sealing_account,
-    )
-    .await?;
+    let recipient = secret_key(1).public_key();
+    let executed_tx =
+        execute_sealing_transaction(&[recipient], key_source, sealing_account).await?;
 
     let proven_tx = LocalTransactionProver::default().prove(executed_tx.clone())?;
 
     // The transaction ID commits to the output notes, which hold the envelope.
     assert_eq!(proven_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// Tests that a transaction sealing twice draws a fresh secret per request and records the secrets
+/// in request order, and that proving answers the requests in that order.
+#[rstest]
+#[case::different_recipients([1, 2])]
+#[case::same_recipient([1, 1])]
+#[tokio::test]
+async fn prove_ies_seals_replay_secrets_in_request_order(
+    #[case] recipient_seeds: [u8; 2],
+) -> anyhow::Result<()> {
+    let recipient_secrets = recipient_seeds.map(secret_key);
+    let recipients = recipient_secrets.each_ref().map(SecretKey::public_key);
+
+    let executed_tx = execute_sealing_transaction(
+        &recipients,
+        RecipientKeySource::ProtocolProcedure,
+        SealingAccount::Native,
+    )
+    .await?;
+
+    let recorded_recipients = executed_tx
+        .tx_inputs()
+        .ies_seal_secrets()
+        .iter()
+        .map(IesSealSecret::recipient)
+        .collect::<Vec<_>>();
+    assert_eq!(recorded_recipients, recipients);
+
+    let ephemeral_keys = executed_tx
+        .tx_inputs()
+        .ies_seal_secrets()
+        .iter()
+        .map(|secret| secret.ephemeral_secret().public_key())
+        .collect::<Vec<_>>();
+    assert_ne!(ephemeral_keys[0], ephemeral_keys[1], "each request should draw a fresh secret");
+
+    let envelopes = [envelope(&executed_tx, 0)?, envelope(&executed_tx, 1)?];
+    for (recipient_secret, envelope) in recipient_secrets.iter().zip(&envelopes) {
+        let plaintext = ecgfp5_eidos::open(recipient_secret, &felts(CONTEXT), envelope)?;
+        assert_eq!(plaintext, felts(PLAINTEXT));
+    }
+
+    let proven_tx = LocalTransactionProver::default().prove(executed_tx.clone())?;
+    assert_eq!(proven_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// Tests that the supplied secrets answer the first `seal` requests and fresh secrets the requests
+/// after them, and that proving answers the requests in the same order.
+#[tokio::test]
+async fn prove_ies_seal_answers_supplied_secrets_before_drawn_ones() -> anyhow::Result<()> {
+    let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
+    let supplied_secret = IesSealSecret::new(recipients[0], secret_key(9));
+
+    let tx_script = compile_tx_script(
+        &sealing_code(&recipients, RecipientKeySource::ProtocolProcedure),
+        2,
+        None,
+    )?;
+    let executed_tx =
+        execute(&mock_account(), None, tx_script, Vec::new(), vec![supplied_secret.clone()])
+            .await?;
+
+    // The supplied secret answered the first request, whose envelope carries its ephemeral key.
+    assert_eq!(executed_tx.tx_inputs().tx_args().ies_seal_secrets(), [supplied_secret]);
+    assert_eq!(envelope(&executed_tx, 0)?.ephemeral_key(), secret_key(9).public_key());
+
+    // A fresh secret answered the second request and is the only one recorded.
+    let recorded_secrets = executed_tx.tx_inputs().ies_seal_secrets();
+    assert_eq!(recorded_secrets.len(), 1);
+    assert_eq!(recorded_secrets[0].recipient(), recipients[1]);
+    assert_eq!(
+        envelope(&executed_tx, 1)?.ephemeral_key(),
+        recorded_secrets[0].ephemeral_secret().public_key()
+    );
+
+    let proven_tx = LocalTransactionProver::default().prove(executed_tx.clone())?;
+    assert_eq!(proven_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// How a test changes the recorded secrets of a transaction that seals to two recipients.
+enum RecordedSecretsChange {
+    /// Drops the secret of the second request.
+    Shorten,
+    /// Swaps the secrets of the two requests.
+    Reorder,
+    /// Appends a secret that no request uses.
+    Extend,
+}
+
+/// Tests that proving fails with a specific error when the recorded secrets do not answer the
+/// `seal` requests of the transaction in order.
+#[rstest]
+#[case::shortened(RecordedSecretsChange::Shorten)]
+#[case::reordered(RecordedSecretsChange::Reorder)]
+#[case::extended(RecordedSecretsChange::Extend)]
+#[tokio::test]
+async fn prove_ies_seal_rejects_inconsistent_recorded_secrets(
+    #[case] change: RecordedSecretsChange,
+) -> anyhow::Result<()> {
+    let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
+    let executed_tx = execute_sealing_transaction(
+        &recipients,
+        RecipientKeySource::ProtocolProcedure,
+        SealingAccount::Native,
+    )
+    .await?;
+
+    let mut secrets = executed_tx.tx_inputs().ies_seal_secrets().to_vec();
+    match change {
+        RecordedSecretsChange::Shorten => {
+            secrets.pop();
+        },
+        RecordedSecretsChange::Reorder => secrets.reverse(),
+        RecordedSecretsChange::Extend => {
+            secrets.push(IesSealSecret::new(recipients[0], secret_key(9)));
+        },
+    }
+    let witness = witness_with_recorded_secrets(executed_tx, secrets)?;
+
+    let error = LocalTransactionProver::default()
+        .prove(witness)
+        .expect_err("proving should reject the changed secrets");
+    let kernel_error = match &error {
+        TransactionProverError::TransactionProgramExecutionFailed(ExecutionError::EventError {
+            error,
+            ..
+        }) => error.downcast_ref::<TransactionKernelError>(),
+        _ => None,
+    };
+
+    match change {
+        RecordedSecretsChange::Shorten => {
+            assert!(
+                matches!(kernel_error, Some(TransactionKernelError::IesSealSecretMissing)),
+                "unexpected error: {error}"
+            );
+        },
+        RecordedSecretsChange::Reorder => {
+            assert!(
+                matches!(
+                    kernel_error,
+                    Some(TransactionKernelError::IesSealSecretRecipientMismatch {
+                        supplied,
+                        requested,
+                    }) if *supplied == recipients[1].to_commitment()
+                        && *requested == recipients[0].to_commitment()
+                ),
+                "unexpected error: {error}"
+            );
+        },
+        RecordedSecretsChange::Extend => {
+            assert!(
+                matches!(error, TransactionProverError::UnusedIesSealSecrets(1)),
+                "unexpected error: {error}"
+            );
+        },
+    }
+
+    Ok(())
+}
+
+/// Tests that proving with a different secret for the same recipient yields a different
+/// transaction ID, so that comparing IDs detects an envelope that proving did not reproduce.
+#[tokio::test]
+async fn prove_ies_seal_with_other_secret_changes_transaction_id() -> anyhow::Result<()> {
+    let recipient = secret_key(1).public_key();
+    let executed_tx = execute_sealing_transaction(
+        &[recipient],
+        RecipientKeySource::ProtocolProcedure,
+        SealingAccount::Native,
+    )
+    .await?;
+    let executed_tx_id = executed_tx.id();
+
+    let other_secret = IesSealSecret::new(recipient, secret_key(9));
+    let witness = witness_with_recorded_secrets(executed_tx, vec![other_secret])?;
+    let proven_tx = LocalTransactionProver::default().prove(witness)?;
+
+    assert_ne!(proven_tx.id(), executed_tx_id);
+
+    Ok(())
+}
+
+/// Tests that the secrets an unauthorized execution returns reproduce its summary, so that the
+/// signed execution of a two-pass authentication flow matches the summary the signers approved.
+#[tokio::test]
+async fn unauthorized_execution_returns_secrets_that_reproduce_its_summary() -> anyhow::Result<()> {
+    let recipient = secret_key(1).public_key();
+    let account = AccountBuilder::new([42; 32])
+        .with_component(aborting_auth_component()?)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .build_existing()?;
+    let tx_script = compile_tx_script(
+        &sealing_code(&[recipient], RecipientKeySource::ProtocolProcedure),
+        1,
+        None,
+    )?;
+    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    mock_chain.prove_next_block()?;
+
+    let execute_unauthorized = async |ies_seal_secrets: Vec<IesSealSecret>| {
+        let mut tx_builder =
+            mock_chain.build_transaction(account.clone()).tx_script(tx_script.clone());
+        for secret in ies_seal_secrets {
+            tx_builder = tx_builder.add_ies_seal_secret(secret);
+        }
+
+        match tx_builder.build()?.execute().await {
+            Err(TransactionExecutorError::Unauthorized { tx_summary, ies_seal_secrets }) => {
+                Ok((tx_summary.to_commitment(), ies_seal_secrets))
+            },
+            other => Err(anyhow::anyhow!("expected an unauthorized execution, got {other:?}")),
+        }
+    };
+
+    let (summary, drawn_secrets) = execute_unauthorized(Vec::new()).await?;
+    assert_eq!(drawn_secrets.len(), 1);
+
+    // Supplying the drawn secrets reproduces the summary and draws no further secrets.
+    let (replayed_summary, replay_drawn_secrets) =
+        execute_unauthorized(drawn_secrets.clone()).await?;
+    assert_eq!(replayed_summary, summary);
+    assert!(replay_drawn_secrets.is_empty());
+
+    // Without them, a fresh secret changes the envelope and thereby the summary.
+    let (fresh_summary, _) = execute_unauthorized(Vec::new()).await?;
+    assert_ne!(fresh_summary, summary);
+
+    Ok(())
+}
+
+/// How a test supplies secrets that do not answer the `seal` request of a transaction.
+enum InconsistentSuppliedSecrets {
+    /// Supplies a secret for another recipient.
+    OtherRecipient,
+    /// Supplies a second secret that no request uses.
+    Unused,
+}
+
+/// Tests that the executor rejects supplied secrets that do not answer the `seal` requests of the
+/// transaction in order.
+#[rstest]
+#[case::other_recipient(InconsistentSuppliedSecrets::OtherRecipient)]
+#[case::unused(InconsistentSuppliedSecrets::Unused)]
+#[tokio::test]
+async fn ies_seal_rejects_inconsistent_supplied_secrets(
+    #[case] supplied: InconsistentSuppliedSecrets,
+) -> anyhow::Result<()> {
+    let recipient = secret_key(1).public_key();
+    let other_recipient = secret_key(2).public_key();
+    let secrets = match supplied {
+        InconsistentSuppliedSecrets::OtherRecipient => {
+            vec![IesSealSecret::new(other_recipient, secret_key(9))]
+        },
+        InconsistentSuppliedSecrets::Unused => vec![
+            IesSealSecret::new(recipient, secret_key(9)),
+            IesSealSecret::new(recipient, secret_key(8)),
+        ],
+    };
+
+    let tx_script = compile_tx_script(
+        &sealing_code(&[recipient], RecipientKeySource::ProtocolProcedure),
+        1,
+        None,
+    )?;
+    let result = execute(&mock_account(), None, tx_script, Vec::new(), secrets).await;
+
+    match supplied {
+        InconsistentSuppliedSecrets::OtherRecipient => assert_transaction_executor_error!(
+            result,
+            matches ExecutionError::EventError { error: ref event_err, .. }
+                if matches!(
+                    event_err.downcast_ref::<TransactionKernelError>(),
+                    Some(TransactionKernelError::IesSealSecretRecipientMismatch {
+                        supplied,
+                        requested,
+                    }) if *supplied == other_recipient.to_commitment()
+                        && *requested == recipient.to_commitment()
+                )
+        ),
+        InconsistentSuppliedSecrets::Unused => assert!(
+            matches!(result, Err(TransactionExecutorError::UnusedIesSealSecrets(1))),
+            "unexpected result: {result:?}"
+        ),
+    }
+
+    Ok(())
+}
+
+/// Tests that the notes checker draws fresh secrets in every run, so that a note sealing after an
+/// eliminated note is not answered with the secret the eliminated note drew.
+#[tokio::test]
+async fn notes_checker_draws_fresh_secrets_after_eliminating_a_note() -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let sealing_note = |recipient_seed: u8, after_sealing: &str| {
+        let sealing_code = sealing_code(
+            &[secret_key(recipient_seed).public_key()],
+            RecipientKeySource::ProtocolProcedure,
+        );
+        NoteBuilder::new(sender, ChaCha20Rng::from_seed([recipient_seed; 32]))
+            .code(format!("@note_script pub proc main {sealing_code} {after_sealing} end"))
+            .build()
+    };
+    // The failing note seals first, so that the next run would answer the request of the other
+    // note with the failing note's secret if it replayed it.
+    let failing_note = sealing_note(1, "push.1 drop push.0 div")?;
+    let succeeding_note = sealing_note(2, "")?;
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+    let notes = vec![failing_note.clone(), succeeding_note.clone()];
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(notes.clone())
+        .build()?;
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let consumption_info = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            mock_tx.account().id(),
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?;
+
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
+    assert_eq!(successful.len(), 1);
+    assert_eq!(successful[0].note().id(), succeeding_note.id());
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].note().id(), failing_note.id());
 
     Ok(())
 }
@@ -118,8 +482,9 @@ async fn ies_seal_rejects_invalid_public_key() -> anyhow::Result<()> {
     let public_key = [ZERO; 5];
     let commitment = Hasher::hash_elements_in_domain(&public_key, ECGFP5_PUBLIC_KEY);
 
-    let tx_script = compile_tx_script(&seal_to_public_key(&public_key), None)?;
-    let result = execute(tx_script, None, None).await;
+    let code = format!("{}\n{}", store_inputs(), seal_to_public_key(&public_key, 0));
+    let result =
+        execute(&mock_account(), None, compile_tx_script(&code, 1, None)?, vec![], vec![]).await;
 
     assert_transaction_executor_error!(
         result,
@@ -135,45 +500,40 @@ async fn ies_seal_rejects_invalid_public_key() -> anyhow::Result<()> {
 }
 
 /// Tests that the host rejects a `seal` request whose public key commitment has no advice map
-/// entry.
+/// entry, or an entry that is not a public key with that commitment.
+#[rstest]
+#[case::missing(None)]
+#[case::invalid_length(Some(vec![ZERO; 4]))]
+#[case::other_public_key(Some(secret_key(2).public_key().to_elements().to_vec()))]
 #[tokio::test]
-async fn ies_seal_rejects_unknown_public_key_commitment() -> anyhow::Result<()> {
-    let commitment = recipient_secret_key(1).public_key().to_commitment();
+async fn ies_seal_rejects_invalid_advice_map_entry(
+    #[case] entry: Option<Vec<Felt>>,
+) -> anyhow::Result<()> {
+    let commitment = secret_key(1).public_key().to_commitment();
 
-    let tx_script = compile_tx_script(&seal_to_commitment(commitment), None)?;
-    let result = execute(tx_script, None, None).await;
+    let code = format!("{}\n{}", store_inputs(), seal_to_commitment(commitment, 0));
+    let tx_script = compile_tx_script(&code, 1, None)?;
+    let advice_map_entries = entry.clone().map(|values| (commitment, values)).into_iter().collect();
+    let result = execute(&mock_account(), None, tx_script, advice_map_entries, vec![]).await;
 
+    let other_commitment = secret_key(2).public_key().to_commitment();
     assert_transaction_executor_error!(
         result,
         matches ExecutionError::EventError { error: ref event_err, .. }
-            if matches!(
-                event_err.downcast_ref::<TransactionKernelError>(),
-                Some(TransactionKernelError::IesPublicKeyMissing(actual)) if *actual == commitment
-            )
-    );
-
-    Ok(())
-}
-
-/// Tests that the host rejects an advice map entry that maps a public key commitment to a
-/// different public key.
-#[tokio::test]
-async fn ies_seal_rejects_public_key_with_other_commitment() -> anyhow::Result<()> {
-    let commitment = recipient_secret_key(1).public_key().to_commitment();
-    let other_key = recipient_secret_key(2).public_key();
-
-    let tx_script = compile_tx_script(&seal_to_commitment(commitment), None)?;
-    let advice_map_entry = (commitment, other_key.to_elements().to_vec());
-    let result = execute(tx_script, None, Some(advice_map_entry)).await;
-
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::EventError { error: ref event_err, .. }
-            if matches!(
-                event_err.downcast_ref::<TransactionKernelError>(),
-                Some(TransactionKernelError::IesPublicKeyCommitmentMismatch { expected, actual })
-                    if *expected == commitment && *actual == other_key.to_commitment()
-            )
+            if match (event_err.downcast_ref::<TransactionKernelError>(), &entry) {
+                (Some(TransactionKernelError::IesPublicKeyMissing(actual)), None) => {
+                    *actual == commitment
+                },
+                (
+                    Some(TransactionKernelError::IesPublicKeyInvalidLength { commitment: actual, len: 4 }),
+                    Some(_),
+                ) => *actual == commitment,
+                (
+                    Some(TransactionKernelError::IesPublicKeyCommitmentMismatch { expected, actual }),
+                    Some(_),
+                ) => *expected == commitment && *actual == other_commitment,
+                _ => false,
+            }
     );
 
     Ok(())
@@ -182,31 +542,33 @@ async fn ies_seal_rejects_public_key_with_other_commitment() -> anyhow::Result<(
 // HELPERS
 // ================================================================================================
 
-/// Executes a transaction that encrypts [`PLAINTEXT`] under [`CONTEXT`] to `recipient` and adds
-/// the envelope as an attachment to an output note.
-async fn execute_sealing_transaction(
-    recipient: PublicKey,
+/// Executes a transaction that encrypts [`PLAINTEXT`] under [`CONTEXT`] to each recipient and
+/// adds the envelopes, in request order, as attachments to an output note.
+///
+/// A foreign account can seal to one recipient only.
+pub(super) async fn execute_sealing_transaction(
+    recipients: &[PublicKey],
     key_source: RecipientKeySource,
     sealing_account: SealingAccount,
 ) -> anyhow::Result<ExecutedTransaction> {
-    let seal = match key_source {
-        RecipientKeySource::ProtocolProcedure => seal_to_public_key(&recipient.to_elements()),
-        RecipientKeySource::TransactionArguments => seal_to_commitment(recipient.to_commitment()),
-    };
-    let advice_map_entry = match key_source {
-        RecipientKeySource::ProtocolProcedure => None,
-        RecipientKeySource::TransactionArguments => {
-            Some((recipient.to_commitment(), recipient.to_elements().to_vec()))
-        },
+    let sealing_code = sealing_code(recipients, key_source);
+    let advice_map_entries = match key_source {
+        RecipientKeySource::ProtocolProcedure => Vec::new(),
+        RecipientKeySource::TransactionArguments => recipients
+            .iter()
+            .map(|recipient| (recipient.to_commitment(), recipient.to_elements().to_vec()))
+            .collect(),
     };
 
     let (tx_script, foreign_account) = match sealing_account {
-        SealingAccount::Native => (compile_tx_script(&seal, None)?, None),
+        SealingAccount::Native => (compile_tx_script(&sealing_code, recipients.len(), None)?, None),
         SealingAccount::Foreign => {
+            anyhow::ensure!(recipients.len() == 1, "a foreign account seals to one recipient");
+
             let source_manager = Arc::new(DefaultSourceManager::default());
             let foreign_component = AccountComponent::new(
                 CodeBuilder::with_kernel_core_package(source_manager.clone())
-                    .compile_component_code("ies_sealer", sealing_component_code(&seal))?,
+                    .compile_component_code("ies_sealer", sealing_component_code(&sealing_code))?,
                 Vec::new(),
                 AccountComponentMetadata::mock("ies_sealer"),
             )?;
@@ -235,47 +597,98 @@ async fn execute_sealing_transaction(
                 suffix = foreign_account.id().suffix(),
                 store_envelope = store_envelope_from_stack(),
             );
-            let tx_script = compile_tx_script(&code, Some(&foreign_component))?;
+            let tx_script = compile_tx_script(&code, 1, Some(&foreign_component))?;
             (tx_script, Some(foreign_account))
         },
     };
 
-    Ok(execute(tx_script, foreign_account, advice_map_entry).await?)
+    Ok(execute(
+        &mock_account(),
+        foreign_account.as_ref(),
+        tx_script,
+        advice_map_entries,
+        Vec::new(),
+    )
+    .await?)
 }
 
-/// Executes `tx_script` against a mock account on a mock chain that also holds
-/// `foreign_account`, with `advice_map_entry` in the transaction arguments.
+/// Executes `tx_script` against `account` on a mock chain that also holds `foreign_account`, with
+/// `advice_map_entries` and `ies_seal_secrets` in the transaction arguments.
 async fn execute(
+    account: &Account,
+    foreign_account: Option<&Account>,
     tx_script: TransactionScript,
-    foreign_account: Option<Account>,
-    advice_map_entry: Option<(Word, Vec<Felt>)>,
+    advice_map_entries: Vec<(Word, Vec<Felt>)>,
+    ies_seal_secrets: Vec<IesSealSecret>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::IncrNonce).unwrap();
-    if let Some(foreign_account) = &foreign_account {
-        builder.add_account(foreign_account.clone()).unwrap();
-    }
-    let mut mock_chain = builder.build().unwrap();
+    let accounts = [Some(account), foreign_account].into_iter().flatten().cloned();
+    let mut mock_chain = MockChainBuilder::with_accounts(accounts).unwrap().build().unwrap();
     mock_chain.prove_next_block().unwrap();
 
-    let mut tx_builder = mock_chain.build_transaction(account.id()).tx_script(tx_script);
+    let mut tx_builder = mock_chain.build_transaction(account.clone()).tx_script(tx_script);
     if let Some(foreign_account) = foreign_account {
-        tx_builder = tx_builder
-            .foreign_accounts([mock_chain.get_foreign_account_inputs(foreign_account).unwrap()]);
+        tx_builder = tx_builder.foreign_accounts([mock_chain
+            .get_foreign_account_inputs(foreign_account.clone())
+            .unwrap()]);
     }
-    if let Some((key, values)) = advice_map_entry {
+    for (key, values) in advice_map_entries {
         tx_builder = tx_builder.add_advice_map_entry(key, values);
+    }
+    for secret in ies_seal_secrets {
+        tx_builder = tx_builder.add_ies_seal_secret(secret);
     }
 
     tx_builder.build().unwrap().execute().await
 }
 
-/// Compiles a transaction script that runs `sealing_code`, which leaves the envelope at
-/// [`ENVELOPE_PTR`], and adds the envelope as an attachment to a new private output note.
+/// Returns the witness of `executed_tx` with `ies_seal_secrets` recorded in place of the secrets
+/// drawn during execution.
+fn witness_with_recorded_secrets(
+    executed_tx: ExecutedTransaction,
+    ies_seal_secrets: Vec<IesSealSecret>,
+) -> anyhow::Result<TransactionWitness> {
+    let (tx_inputs, final_account, expiration_block_num) =
+        TransactionWitness::from(executed_tx).into_parts();
+    let tx_inputs = TransactionInputs::builder()
+        .account(tx_inputs.account().clone())
+        .block_header(tx_inputs.block_header().clone())
+        .protocol_config(tx_inputs.protocol_config().clone())
+        .blockchain(tx_inputs.blockchain().clone())
+        .input_notes(tx_inputs.input_notes().clone())
+        .code_tree(tx_inputs.code_tree().clone())
+        .tx_args(tx_inputs.tx_args().clone())
+        .foreign_accounts(tx_inputs.foreign_accounts().values().cloned().collect())
+        .note_scripts(tx_inputs.note_scripts().values().cloned().collect())
+        .signatures(tx_inputs.signatures().to_vec())
+        .ies_seal_secrets(ies_seal_secrets)
+        .build()?;
+
+    Ok(TransactionWitness::new_unchecked(
+        tx_inputs,
+        final_account,
+        expiration_block_num,
+    ))
+}
+
+/// Compiles a transaction script that runs `sealing_code`, which leaves `num_envelopes` envelopes
+/// at [`ENVELOPES_PTR`], and adds them as attachments to a new private output note.
 fn compile_tx_script(
     sealing_code: &str,
+    num_envelopes: usize,
     foreign_component: Option<&AccountComponent>,
 ) -> anyhow::Result<TransactionScript> {
+    let attach_envelopes = (0..num_envelopes)
+        .map(|idx| {
+            format!(
+                "dup push.{} push.{ENVELOPE_NUM_WORDS} push.{}
+                exec.output_note::add_attachment_from_memory",
+                envelope_ptr(idx),
+                ENVELOPE_ATTACHMENT_SCHEME + idx as u16,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let code = format!(
         r#"
         use miden::core::sys
@@ -292,11 +705,8 @@ fn compile_tx_script(
             call.::mock::account::create_note
             # => [note_idx, pad(15)]
 
-            push.{ENVELOPE_PTR} push.{ENVELOPE_NUM_WORDS} push.{ENVELOPE_ATTACHMENT_SCHEME}
-            # => [attachment_scheme, num_words, attachment_ptr, note_idx, pad(15)]
-
-            exec.output_note::add_attachment_from_memory
-            # => [pad(15)]
+            {attach_envelopes}
+            # => [note_idx, pad(15)]
 
             exec.sys::truncate_stack
             # => [pad(16)]
@@ -317,13 +727,26 @@ fn compile_tx_script(
         .context("failed to compile transaction script")
 }
 
+/// Returns MASM that encrypts [`PLAINTEXT`] under [`CONTEXT`] to each recipient, writing the
+/// envelopes in request order from [`ENVELOPES_PTR`].
+fn sealing_code(recipients: &[PublicKey], key_source: RecipientKeySource) -> String {
+    let seals = recipients.iter().enumerate().map(|(idx, recipient)| match key_source {
+        RecipientKeySource::ProtocolProcedure => seal_to_public_key(&recipient.to_elements(), idx),
+        RecipientKeySource::TransactionArguments => {
+            seal_to_commitment(recipient.to_commitment(), idx)
+        },
+    });
+
+    [store_inputs()].into_iter().chain(seals).collect::<Vec<_>>().join("\n")
+}
+
 /// Returns the code of an account component whose `seal_envelope` procedure runs `sealing_code`
-/// and returns the envelope.
+/// and returns the envelope at [`ENVELOPES_PTR`].
 fn sealing_component_code(sealing_code: &str) -> String {
     let load_envelope = (0..ENVELOPE_NUM_WORDS)
         .rev()
         .map(|word_idx| {
-            format!("padw push.{} mem_loadw_le", ENVELOPE_PTR + word_idx * WORD_SIZE as u32)
+            format!("padw push.{} mem_loadw_le", ENVELOPES_PTR + word_idx * WORD_SIZE as u32)
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -347,38 +770,37 @@ fn sealing_component_code(sealing_code: &str) -> String {
     )
 }
 
-/// Returns MASM that stores the 16-element envelope on top of the stack at [`ENVELOPE_PTR`].
+/// Returns MASM that stores the 16-element envelope on top of the stack at [`ENVELOPES_PTR`].
 fn store_envelope_from_stack() -> String {
     (0..ENVELOPE_NUM_WORDS)
         .map(|word_idx| {
-            format!("push.{} mem_storew_le dropw", ENVELOPE_PTR + word_idx * WORD_SIZE as u32)
+            format!("push.{} mem_storew_le dropw", ENVELOPES_PTR + word_idx * WORD_SIZE as u32)
         })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// Returns MASM that encrypts [`PLAINTEXT`] under [`CONTEXT`] to `public_key` with
-/// `miden::protocol::ies::seal`.
-fn seal_to_public_key(public_key: &[Felt; 5]) -> String {
+/// Returns MASM that encrypts the plaintext under the context to `public_key` with
+/// `miden::protocol::ies::seal`, writing the envelope with index `envelope_idx`.
+fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
     format!(
         "{}\n{}\nexec.::miden::protocol::ies::seal",
-        store_inputs(),
+        push_seal_arguments(envelope_idx),
         push_reversed(public_key)
     )
 }
 
-/// Returns MASM that encrypts [`PLAINTEXT`] under [`CONTEXT`] to the public key with `commitment`
-/// with the core library's `seal`.
-fn seal_to_commitment(commitment: Word) -> String {
+/// Returns MASM that encrypts the plaintext under the context to the public key with `commitment`
+/// with the core library's `seal`, writing the envelope with index `envelope_idx`.
+fn seal_to_commitment(commitment: Word, envelope_idx: usize) -> String {
     format!(
         "{}\n{}\nexec.::miden::core::crypto::ies::ecgfp5_eidos::seal",
-        store_inputs(),
+        push_seal_arguments(envelope_idx),
         push_reversed(commitment.as_elements())
     )
 }
 
-/// Returns MASM that writes [`PLAINTEXT`] and [`CONTEXT`] to memory and pushes the remaining
-/// `seal` arguments.
+/// Returns MASM that writes [`PLAINTEXT`] and [`CONTEXT`] to memory.
 fn store_inputs() -> String {
     let store = |ptr: u32, values: [u32; 4]| {
         values
@@ -389,10 +811,15 @@ fn store_inputs() -> String {
             .join("\n")
     };
 
+    format!("{}\n{}", store(PLAINTEXT_PTR, PLAINTEXT), store(CONTEXT_PTR, CONTEXT))
+}
+
+/// Returns MASM that pushes the `seal` arguments below the key for the envelope with index
+/// `envelope_idx`.
+fn push_seal_arguments(envelope_idx: usize) -> String {
     format!(
-        "{}\n{}\npush.{ENVELOPE_PTR} push.{} push.{CONTEXT_PTR} push.{} push.{PLAINTEXT_PTR}",
-        store(PLAINTEXT_PTR, PLAINTEXT),
-        store(CONTEXT_PTR, CONTEXT),
+        "push.{} push.{} push.{CONTEXT_PTR} push.{} push.{PLAINTEXT_PTR}",
+        envelope_ptr(envelope_idx),
         CONTEXT.len(),
         PLAINTEXT.len(),
     )
@@ -408,19 +835,59 @@ fn push_reversed(elements: &[Felt]) -> String {
         .join(" ")
 }
 
-/// Returns the envelope attached to the first output note of the transaction.
-fn envelope(executed_tx: &ExecutedTransaction) -> anyhow::Result<Envelope> {
+/// Returns the code of an auth component that aborts every transaction as unauthorized.
+fn aborting_auth_component() -> anyhow::Result<AccountComponent> {
+    let source_code = r#"
+        use miden::standards::auth
+        use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
+
+        @auth_script
+        pub proc auth_abort_tx
+            dropw
+            # => [pad(16)]
+
+            exec.::miden::protocol::native_account::incr_nonce
+            # => [final_nonce, pad(16)]
+
+            push.0.0.0.0.0
+            # => [user_params(6), pad(16)]
+
+            exec.auth::get_default_tx_summary_commitment
+            # => [MESSAGE, pad(16)]
+
+            emit.AUTH_UNAUTHORIZED_EVENT
+        end
+    "#;
+
+    Ok(AccountComponent::new(
+        CodeBuilder::default().compile_component_code("test::auth_component", source_code)?,
+        Vec::new(),
+        AccountComponentMetadata::mock("test::auth_component"),
+    )?)
+}
+
+/// Returns the envelope attached with index `envelope_idx` to the first output note.
+fn envelope(executed_tx: &ExecutedTransaction, envelope_idx: usize) -> anyhow::Result<Envelope> {
     let attachment = executed_tx
         .output_notes()
         .get_note(0)
         .attachments()
-        .get(0)
+        .get(envelope_idx)
         .context("output note should have the envelope attachment")?;
 
     Ok(Envelope::from_elements(attachment.as_elements())?)
 }
 
-fn recipient_secret_key(seed: u8) -> SecretKey {
+fn envelope_ptr(envelope_idx: usize) -> u32 {
+    ENVELOPES_PTR + envelope_idx as u32 * ENVELOPE_LEN
+}
+
+fn mock_account() -> Account {
+    Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce)
+}
+
+/// Returns a secret key, which the tests use as recipient key or as ephemeral secret.
+pub(super) fn secret_key(seed: u8) -> SecretKey {
     SecretKey::from_bytes(&[seed; 40]).expect("bytes should encode a valid secret key")
 }
 

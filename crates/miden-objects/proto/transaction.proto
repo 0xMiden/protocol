@@ -108,6 +108,12 @@ message BoundSignature {
   AuthSignature signature = 3;
 }
 
+message IesSealSecret {
+  // Canonically serialized recipient public key followed by the ephemeral secret key, which
+  // decrypts the envelope it produced.
+  bytes encoded = 1;
+}
+
 message TransactionArgs {
   optional TransactionScript tx_script = 1;
   primitives.Word tx_script_args = 2;
@@ -117,6 +123,7 @@ message TransactionArgs {
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
   repeated note.NoteRecipient output_note_recipients = 7;
   repeated BoundSignature signatures = 8;
+  repeated IesSealSecret ies_seal_secrets = 9;
 }
 
 message LogTopic {

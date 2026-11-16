@@ -17,7 +17,12 @@ use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
-use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_protocol::transaction::{
+    IesSealSecret,
+    RawOutputNote,
+    TransactionArgs,
+    TransactionScript,
+};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
@@ -86,6 +91,7 @@ pub struct MockTransactionBuilder<'chain> {
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
+    ies_seal_secrets: Vec<IesSealSecret>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     code_to_register: Vec<Arc<MastForest>>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
@@ -119,6 +125,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
+            ies_seal_secrets: Vec::new(),
             note_scripts: BTreeMap::new(),
             code_to_register: Vec::new(),
             source_manager: None,
@@ -290,6 +297,13 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Adds the ephemeral secret that answers the next IES `seal` request after those already
+    /// added.
+    pub fn add_ies_seal_secret(mut self, secret: IesSealSecret) -> Self {
+        self.ies_seal_secrets.push(secret);
+        self
+    }
+
     /// Adds a note script to the mock transaction for testing.
     pub fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
@@ -358,6 +372,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
                 BoundSignature::new(SignatureKey::new(public_key_commitment, message), signature)
                     .context("failed to bind signature to its key")?;
             tx_args.add_signature(signature);
+        }
+        for secret in self.ies_seal_secrets {
+            tx_args.add_ies_seal_secret(secret);
         }
         tx_inputs.set_tx_args(tx_args);
 

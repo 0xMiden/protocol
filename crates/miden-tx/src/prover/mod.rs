@@ -176,7 +176,7 @@ impl LocalTransactionProver {
         );
 
         let block_commitments = tx_inputs.collect_block_commitments();
-        let ies_seal_secrets = tx_inputs.ies_seal_secrets().to_vec();
+        let ies_seal_secrets = tx_inputs.ies_seal_secrets_in_request_order().cloned().collect();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
@@ -201,6 +201,11 @@ impl LocalTransactionProver {
         let witness = processor
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+
+        let num_unused_ies_seal_secrets = host.num_unused_ies_seal_secrets();
+        if num_unused_ies_seal_secrets != 0 {
+            return Err(TransactionProverError::UnusedIesSealSecrets(num_unused_ies_seal_secrets));
+        }
 
         let (account_patch, input_notes, output_notes, logs) = host.into_parts();
         let output_notes = RawOutputNotes::new(output_notes)

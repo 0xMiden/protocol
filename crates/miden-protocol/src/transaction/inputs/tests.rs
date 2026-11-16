@@ -147,6 +147,7 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
         AdviceInputs::default(),
         Word::new([Felt::from(2_u32); 4]),
         None,

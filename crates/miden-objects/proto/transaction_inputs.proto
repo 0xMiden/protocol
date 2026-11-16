@@ -30,11 +30,6 @@ message AccountInputs {
   account.AccountWitness witness = 2;
 }
 
-message IesSealSecret {
-  // Canonically serialized recipient public key followed by the ephemeral secret key.
-  bytes encoded = 1;
-}
-
 message TransactionInputs {
   oneof version {
     TransactionInputsV1 v1 = 1;

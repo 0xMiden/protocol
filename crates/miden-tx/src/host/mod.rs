@@ -34,6 +34,7 @@ mod tx_progress;
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
@@ -58,6 +59,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     IesSealSecret,
@@ -122,6 +124,10 @@ pub struct TransactionBaseHost<'store, STORE> {
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
+
+    /// The supplied ephemeral secrets that answer the first IES `seal` requests, in request
+    /// order. The secrets of answered requests are removed.
+    ies_seal_secrets: vec::IntoIter<IesSealSecret>,
 }
 
 impl<'store, STORE> TransactionBaseHost<'store, STORE> {
@@ -129,6 +135,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
+    ///
+    /// `ies_seal_secrets` answer the first IES `seal` requests of the transaction, in request
+    /// order.
     ///
     /// # Errors
     ///
@@ -140,6 +149,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
+        ies_seal_secrets: Vec<IesSealSecret>,
     ) -> Result<Self, TransactionKernelError> {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
@@ -164,6 +174,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             input_notes,
             block_commitments,
             core_lib_handlers,
+            ies_seal_secrets: ies_seal_secrets.into_iter(),
         })
     }
 
@@ -384,6 +395,35 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
         vec![AdviceMutation::extend_advice_stack_with(signature)]
+    }
+
+    /// Returns the next supplied ephemeral secret for an IES `seal` request to `recipient`, or
+    /// `None` if all supplied secrets have answered earlier requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the next supplied secret is for another recipient.
+    pub fn next_ies_seal_secret(
+        &mut self,
+        recipient: PublicKey,
+    ) -> Result<Option<IesSealSecret>, TransactionKernelError> {
+        let Some(secret) = self.ies_seal_secrets.next() else {
+            return Ok(None);
+        };
+
+        if secret.recipient() != recipient {
+            return Err(TransactionKernelError::IesSealSecretRecipientMismatch {
+                supplied: secret.recipient().to_commitment(),
+                requested: recipient.to_commitment(),
+            });
+        }
+
+        Ok(Some(secret))
+    }
+
+    /// Returns the number of supplied ephemeral secrets that no IES `seal` request has used.
+    pub fn num_unused_ies_seal_secrets(&self) -> usize {
+        self.ies_seal_secrets.len()
     }
 
     /// Converts the key agreement advice for the provided ephemeral secret into advice mutations

@@ -18,7 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::crypto::ecdh::ecgfp5::{InvalidPublicKey, PublicKey};
+use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -746,9 +746,10 @@ fn extract_ies_recipient(process: &ProcessorState) -> Result<PublicKey, Transact
         .advice_provider()
         .get_mapped_values(&commitment)
         .ok_or(TransactionKernelError::IesPublicKeyMissing(commitment))?;
-    let recipient = <[Felt; 5]>::try_from(elements)
-        .map_err(|_| InvalidPublicKey)
-        .and_then(PublicKey::from_elements)
+    let elements = <[Felt; 5]>::try_from(elements).map_err(|_| {
+        TransactionKernelError::IesPublicKeyInvalidLength { commitment, len: elements.len() }
+    })?;
+    let recipient = PublicKey::from_elements(elements)
         .map_err(|source| TransactionKernelError::IesPublicKeyInvalid { commitment, source })?;
 
     let actual = recipient.to_commitment();

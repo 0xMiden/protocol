@@ -44,6 +44,12 @@ use miden_tx::{
     TransactionMastStore,
 };
 
+use super::test_ies::{
+    RecipientKeySource,
+    SealingAccount,
+    execute_sealing_transaction,
+    secret_key,
+};
 use crate::{AccountState, Auth, MockChain};
 
 /// Tests that a transaction which uses FPI and a signature can be re-executed and proven from its
@@ -141,6 +147,43 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
         )
         .await?;
     assert_eq!(reexecuted_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// Tests that a transaction that encrypts with IES `seal` can be re-executed and proven from its
+/// inputs, when the re-execution supplies the recorded secrets through its transaction arguments.
+#[tokio::test]
+async fn sealing_transaction_can_be_reexecuted_from_its_inputs() -> anyhow::Result<()> {
+    let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
+    let executed_tx = execute_sealing_transaction(
+        &recipients,
+        RecipientKeySource::ProtocolProcedure,
+        SealingAccount::Native,
+    )
+    .await?;
+    let tx_inputs = executed_tx.tx_inputs().clone();
+
+    let mut tx_args = tx_inputs.tx_args().clone();
+    for secret in tx_inputs.ies_seal_secrets() {
+        tx_args.add_ies_seal_secret(secret.clone());
+    }
+    let data_store = TransactionInputsDataStore::new(tx_inputs.clone());
+    let reexecuted_tx = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store)
+        .execute_transaction(
+            tx_inputs.account().id(),
+            tx_inputs.ref_block(),
+            tx_inputs.input_notes().clone(),
+            tx_args,
+        )
+        .await?;
+    assert_eq!(reexecuted_tx.id(), executed_tx.id());
+    // The transaction arguments answered every request, so the re-execution drew no secret.
+    assert!(reexecuted_tx.tx_inputs().ies_seal_secrets().is_empty());
+
+    // Proving answers the requests from the transaction arguments as well.
+    let proven_tx = LocalTransactionProver::default().prove(reexecuted_tx)?;
+    assert_eq!(proven_tx.id(), executed_tx.id());
 
     Ok(())
 }

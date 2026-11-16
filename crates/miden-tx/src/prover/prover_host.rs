@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use alloc::{format, vec};
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
@@ -39,10 +38,6 @@ where
 {
     /// The underlying base transaction host.
     base_host: TransactionBaseHost<'store, STORE>,
-
-    /// The ephemeral secrets that answer the IES `seal` requests of the transaction, in request
-    /// order.
-    ies_seal_secrets: vec::IntoIter<IesSealSecret>,
 }
 
 impl<'store, STORE> TransactionProverHost<'store, STORE>
@@ -54,8 +49,8 @@ where
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
     ///
-    /// The host answers the IES `seal` requests of the transaction with the recorded
-    /// `ies_seal_secrets`, so that it reproduces the envelopes of the executed transaction.
+    /// The host answers the IES `seal` requests of the transaction with `ies_seal_secrets`, in
+    /// request order, so that it reproduces the envelopes of the executed transaction.
     ///
     /// # Errors
     ///
@@ -76,12 +71,15 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
+            ies_seal_secrets,
         )?;
 
-        Ok(Self {
-            base_host,
-            ies_seal_secrets: ies_seal_secrets.into_iter(),
-        })
+        Ok(Self { base_host })
+    }
+
+    /// Returns the number of supplied IES seal secrets that no `seal` request has used.
+    pub fn num_unused_ies_seal_secrets(&self) -> usize {
+        self.base_host.num_unused_ies_seal_secrets()
     }
 
     // PUBLIC ACCESSORS
@@ -134,24 +132,15 @@ impl<STORE> TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    /// Answers an IES `seal` request with the next recorded ephemeral secret.
+    /// Answers an IES `seal` request with the next supplied ephemeral secret.
     fn on_ies_seal_requested(
         &mut self,
         recipient: PublicKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let secret = self.ies_seal_secrets.next().ok_or_else(|| {
-            TransactionKernelError::other(
-                "ephemeral secrets of IES seal requests should be in the transaction inputs at proving time",
-            )
-        })?;
-
-        if secret.recipient() != recipient {
-            return Err(TransactionKernelError::other(format!(
-                "IES seal secret was drawn for the public key with commitment {} but the request is for the public key with commitment {}",
-                secret.recipient().to_commitment(),
-                recipient.to_commitment(),
-            )));
-        }
+        let secret = self
+            .base_host
+            .next_ies_seal_secret(recipient)?
+            .ok_or(TransactionKernelError::IesSealSecretMissing)?;
 
         Ok(self.base_host.on_ies_seal_requested(&secret))
     }

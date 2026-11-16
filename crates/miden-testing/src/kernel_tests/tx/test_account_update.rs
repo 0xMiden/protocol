@@ -1619,7 +1619,7 @@ impl AccountUpdateTest {
             tx.build()?.execute().await
         };
         let summary = match delta_run {
-            Err(TransactionExecutorError::Unauthorized(summary)) => summary,
+            Err(TransactionExecutorError::Unauthorized { tx_summary, .. }) => tx_summary,
             Err(other) => anyhow::bail!("expected Unauthorized error, got: {other}"),
             Ok(_) => anyhow::bail!("expected Unauthorized error, got Ok"),
         };

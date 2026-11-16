@@ -50,7 +50,8 @@ pub struct TransactionInputs {
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     /// Signatures the authenticator generated during execution.
     signatures: Vec<BoundSignature>,
-    /// Ephemeral secrets the host drew for IES `seal` requests during execution, in request order.
+    /// Ephemeral secrets the host drew during execution for the IES `seal` requests after those
+    /// the transaction arguments answer, in request order.
     ies_seal_secrets: Vec<IesSealSecret>,
     /// See [`Self::code_tree`].
     code_tree: PartialCodeTree,
@@ -331,6 +332,9 @@ impl TransactionInputs {
 
     /// Adds the ephemeral secret the host drew for the next IES `seal` request, so that proving the
     /// transaction reproduces the same envelope.
+    ///
+    /// The secrets in the transaction arguments answer the first requests, so the added secrets
+    /// answer the requests after them.
     pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
         self.ies_seal_secrets.push(secret);
     }
@@ -410,10 +414,16 @@ impl TransactionInputs {
         &self.signatures
     }
 
-    /// Returns the ephemeral secrets drawn for IES `seal` requests during execution, in request
-    /// order.
+    /// Returns the ephemeral secrets the host drew during execution for the IES `seal` requests
+    /// after those the transaction arguments answer, in request order.
     pub fn ies_seal_secrets(&self) -> &[IesSealSecret] {
         &self.ies_seal_secrets
+    }
+
+    /// Returns the ephemeral secrets that answer the IES `seal` requests of the transaction in
+    /// request order: those of the transaction arguments followed by those drawn during execution.
+    pub fn ies_seal_secrets_in_request_order(&self) -> impl Iterator<Item = &IesSealSecret> {
+        self.tx_args.ies_seal_secrets().iter().chain(&self.ies_seal_secrets)
     }
 
     /// Returns the code tree of the reference block, which tracks the procedure roots whose

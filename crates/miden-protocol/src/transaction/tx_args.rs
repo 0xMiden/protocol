@@ -9,6 +9,7 @@ use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
 use crate::note::{NoteId, NoteRecipient};
+use crate::transaction::IesSealSecret;
 use crate::vm::{AdviceInputs, AdviceMap};
 
 // TRANSACTION ARGUMENTS
@@ -28,6 +29,8 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - Output note recipients: the recipients of the output notes the transaction is expected to
 ///   create.
 /// - Signatures: signatures the transaction needs for authentication.
+/// - IES seal secrets: the ephemeral secrets that answer the first IES `seal` requests of the
+///   transaction, in request order, so that executing it again reproduces their envelopes.
 /// - Advice inputs: provides arbitrary user-defined data needed at runtime.
 /// - Auth arguments: data put onto the stack right before authentication procedure execution. If
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
@@ -42,6 +45,7 @@ pub struct TransactionArgs {
     note_args: BTreeMap<NoteId, Word>,
     output_note_recipients: Vec<NoteRecipient>,
     signatures: Vec<BoundSignature>,
+    ies_seal_secrets: Vec<IesSealSecret>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
@@ -59,6 +63,7 @@ impl TransactionArgs {
             BTreeMap::new(),
             Vec::new(),
             Vec::new(),
+            Vec::new(),
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
             None,
@@ -66,12 +71,14 @@ impl TransactionArgs {
     }
 
     /// Creates [`TransactionArgs`] from all of its components.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         tx_script: Option<TransactionScript>,
         tx_script_args: Word,
         note_args: BTreeMap<NoteId, Word>,
         output_note_recipients: Vec<NoteRecipient>,
         signatures: Vec<BoundSignature>,
+        ies_seal_secrets: Vec<IesSealSecret>,
         advice_inputs: AdviceInputs,
         auth_args: Word,
         account_code_upgrade: Option<AccountCodeUpgrade>,
@@ -82,6 +89,7 @@ impl TransactionArgs {
             note_args,
             output_note_recipients,
             signatures,
+            ies_seal_secrets,
             advice_inputs,
             auth_args,
             account_code_upgrade,
@@ -178,6 +186,12 @@ impl TransactionArgs {
         &self.signatures
     }
 
+    /// Returns the ephemeral secrets that answer the first IES `seal` requests of the transaction,
+    /// in request order.
+    pub fn ies_seal_secrets(&self) -> &[IesSealSecret] {
+        &self.ies_seal_secrets
+    }
+
     /// Returns a reference to the internal [AdviceInputs].
     pub fn advice_inputs(&self) -> &AdviceInputs {
         &self.advice_inputs
@@ -213,6 +227,16 @@ impl TransactionArgs {
     /// Adds a signature the transaction needs for authentication.
     pub fn add_signature(&mut self, signature: BoundSignature) {
         self.signatures.push(signature);
+    }
+
+    /// Adds the ephemeral secret that answers the next IES `seal` request after those already
+    /// supplied.
+    ///
+    /// Supply only the secrets an earlier execution of the same transaction drew: whoever chooses
+    /// a secret can decrypt its envelope, and replaying it into an execution that seals a different
+    /// plaintext or context to the same recipient reuses the encryption key and nonce.
+    pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
+        self.ies_seal_secrets.push(secret);
     }
 
     /// Adds the recipients of output notes the transaction is expected to create.
@@ -273,6 +297,7 @@ mod tests {
             None,
             Word::new([Felt::from(4_u32); 4]),
             note_args.clone(),
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             advice_inputs.clone(),
