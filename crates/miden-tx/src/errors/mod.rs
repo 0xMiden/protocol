@@ -137,7 +137,8 @@ pub enum TransactionExecutorError {
     /// This variant can be matched on to get the summary of a transaction for signing purposes.
     ///
     /// `ies_seal_secrets` are the ephemeral secrets the host drew for IES `seal` requests, which
-    /// the signed execution must supply in its transaction arguments to reproduce the summary.
+    /// reproduce the summary. Pass these secrets to the signed execution after any secrets its
+    /// arguments already supply.
     // The summary is boxed to avoid triggering clippy::result_large_err for functions that return
     // this type.
     #[error("transaction is unauthorized with summary {tx_summary:?}")]
@@ -376,7 +377,8 @@ pub enum TransactionKernelError {
         source: DataStoreError,
     },
     /// This variant signals that a signature over the contained commitments is required, but
-    /// missing. It also carries the ephemeral secrets the host drew for IES `seal` requests.
+    /// missing. It also carries the ephemeral secrets the host drew for IES `seal` requests. Pass
+    /// these secrets to the signed execution after any secrets its arguments already supply.
     #[error("transaction requires a signature")]
     Unauthorized {
         tx_summary: Box<TransactionSummary>,

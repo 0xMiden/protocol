@@ -187,6 +187,8 @@ impl TransactionArgs {
     }
 
     /// Returns the ephemeral secrets supplied for the IES `seal` requests.
+    ///
+    /// The secrets are used in the order added, one per `seal` request.
     pub fn ies_seal_secrets(&self) -> &[IesSealSecret] {
         &self.ies_seal_secrets
     }
@@ -230,8 +232,8 @@ impl TransactionArgs {
 
     /// Adds an ephemeral secret for the next IES `seal` request.
     ///
-    /// Supply only secrets an earlier execution of the same transaction drew, see
-    /// [`IesSealSecret`].
+    /// The secrets are used in the order added, one per `seal` request. Supply only secrets an
+    /// earlier execution of the same transaction drew, see [`IesSealSecret`].
     pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
         self.ies_seal_secrets.push(secret);
     }
