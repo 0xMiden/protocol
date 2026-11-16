@@ -189,10 +189,12 @@ The **note callback** receives the index of the output note being sealed:
 
 ```
 Inputs:  [note_idx, pad(15)]
-Outputs: [pad(16)]
+Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
 ```
 
 The kernel seals the note after its callbacks have run. Since a callback cannot modify the note, it reads the note's final assets, metadata and recipient itself (e.g. via `output_note::get_assets`, `output_note::get_metadata` and `output_note::get_recipient`). The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
+
+The note callback can return one attachment for the note. It puts the attachment elements into the advice map under `ATTACHMENT_COMMITMENT` (e.g. via `adv.insert_mem`) and returns the attachment's scheme and commitment. The kernel appends the attachment to the note right after the callback returns, so the attachments of several callbacks follow the callback order. A returned attachment counts toward the note's [attachment limits](note#attachments). An `attachment_scheme` of `0` means the callback returns no attachment.
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 

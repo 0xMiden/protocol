@@ -333,8 +333,9 @@ end
 #! enabled among the assets of the note specified by the index, and then seals the note.
 #!
 #! If the note is already sealed, the procedure returns without invoking any callback. The callbacks
-#! are invoked in the order in which each faucet first occurs among the note's assets. Once the
-#! note is sealed, its assets and attachments cannot be modified.
+#! are invoked in the order in which each faucet first occurs among the note's assets. Each callback
+#! can return an attachment, which is appended to the note right after the callback returns. Once
+#! the note is sealed, its assets and attachments cannot be modified.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: []
@@ -345,6 +346,8 @@ end
 #! Panics if:
 #! - a callback procedure root is not part of its faucet's account code.
 #! - an invoked callback panics.
+#! - an attachment returned by a callback is invalid or exceeds the note's attachment limits (see
+#!   `add_attachment_raw`).
 pub proc seal(note_idx: u16)
     dup exec.memory::get_output_note_ptr
     # => [note_ptr, note_idx]
@@ -696,7 +699,8 @@ end
 
 #! Adds an attachment to the note specified by the ptr. Attachments are append-only.
 #!
-#! This procedure does not check whether the note is sealed.
+#! This procedure does not check whether the note is sealed, so `seal` uses it to append the
+#! attachments returned by the `on_before_note_sealed` callbacks to the sealed note.
 #!
 #! The attachment elements are fetched from the advice map using ATTACHMENT_COMMITMENT as the key.
 #! The number of words (num_words) is derived from the element count and the commitment is verified
@@ -794,7 +798,7 @@ end
 
 #! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
 #! enabled among the assets of the specified note, in the order in which each faucet first occurs
-#! among the note's assets.
+#! among the note's assets, and appends the attachment each callback returns to the note.
 #!
 #! Inputs:  [note_ptr, note_idx]
 #! Outputs: []
@@ -806,6 +810,8 @@ end
 #! Panics if:
 #! - a callback procedure root is not part of its faucet's account code.
 #! - an invoked callback panics.
+#! - an attachment returned by a callback is invalid or exceeds the note's attachment limits (see
+#!   `add_attachment_raw`).
 proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_idx: u16)
     dup exec.memory::get_output_note_asset_data_ptr
     # => [assets_start_ptr, note_ptr, note_idx]
@@ -861,9 +867,9 @@ proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_
     # => []
 end
 
-#! Invokes the `on_before_note_sealed` callback of the provided faucet for the specified note, unless
-#! an asset of the faucet precedes the asset at asset_ptr among the note's assets, in which case the
-#! callback was already invoked.
+#! Invokes the `on_before_note_sealed` callback of the provided faucet for the specified note and
+#! appends the attachment the callback returns to the note, unless an asset of the faucet precedes
+#! the asset at asset_ptr among the note's assets, in which case the callback was already invoked.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, assets_start_ptr, asset_ptr, note_idx]
 #! Outputs: []
@@ -878,6 +884,8 @@ end
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
 #! - the invoked callback panics.
+#! - the attachment returned by the callback is invalid or exceeds the note's attachment limits (see
+#!   `add_attachment_raw`).
 proc maybe_invoke_on_before_note_sealed_callback(
     faucet_id: AccountId,
     assets_start_ptr: ptr<Asset>,
@@ -898,11 +906,26 @@ proc maybe_invoke_on_before_note_sealed_callback(
         drop drop drop
         # => []
     else
-        exec.callbacks::on_before_note_sealed
-        # => [callback_outputs(16)]
+        dup.2 movdn.3
+        # => [faucet_id_suffix, faucet_id_prefix, note_idx, note_idx]
 
-        dropw dropw dropw dropw
-        # => []
+        exec.callbacks::on_before_note_sealed
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+        # append the attachment returned by the callback, unless it returned none
+        dup neq.ATTACHMENT_RESERVED_SCHEME
+        # => [has_attachment, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+        if.true
+            movup.5 exec.memory::get_output_note_ptr movdn.5
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_ptr]
+
+            exec.add_attachment_raw
+            # => []
+        else
+            drop dropw drop
+            # => []
+        end
     end
 end
 
