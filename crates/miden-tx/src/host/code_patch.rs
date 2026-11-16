@@ -19,7 +19,7 @@ use procedure_extraction::ExtractProcedures;
 
 /// The code that a transaction can register, merged into one [`MastForest`].
 ///
-/// The merge deduplicates nodes by digest and replaces an external node with the code of its
+/// The merge deduplicates equal nodes and replaces an external node with the code of its
 /// procedure if another forest contains it. Thus, building the [`CodePatch`] does not need to
 /// follow references across forests.
 pub(crate) struct CodePatchSource {
@@ -246,7 +246,7 @@ mod tests {
         format!(
             "
             proc helper
-                if.true push.1 drop else push.2 drop end
+                if.true push.1 assert.err=\"main\" else push.2 drop end
             end
 
             pub proc main
@@ -258,10 +258,12 @@ mod tests {
         )
     }
 
-    /// `other` references a copy of the `helper` procedure of [`main_source`].
+    /// `other` references a copy of the `helper` procedure of [`main_source`] with another error
+    /// message. The error message does not change the digest, but [`MastForest::merge`] keeps both
+    /// copies.
     const OTHER_SOURCE: &str = "
         proc helper
-            if.true push.1 drop else push.2 drop end
+            if.true push.1 assert.err=\"other\" else push.2 drop end
         end
 
         pub proc other
@@ -334,23 +336,40 @@ mod tests {
     fn shared_procedure_is_copied_once() -> anyhow::Result<()> {
         let (main_forest, main_root) = assemble_procedure(&main_source(), "main")?;
         let (other_forest, other_root) = assemble_procedure(OTHER_SOURCE, "other")?;
+        let helper_root = local_roots(&main_forest)
+            .into_iter()
+            .find(|root| *root != main_root)
+            .ok_or_else(|| anyhow::anyhow!("main source does not compile helper to a root"))?;
 
-        // both forests contain helper, so the absent roots are main, other and helper
-        let absent_roots =
-            local_roots(&main_forest).union(&local_roots(&other_forest)).copied().collect();
-        let code_tree = partial_code_tree(
-            [present_root()],
-            [main_root, other_root, present_root()]
-                .into_iter()
-                .chain(local_roots(&main_forest))
-                .chain(local_roots(&other_forest)),
-        )?;
+        let source = code_patch_source(&[main_forest, other_forest])?;
+        // the merge keeps both copies of helper, because their error messages differ
+        assert_eq!(source.procedure_roots().filter(|root| *root == helper_root).count(), 2);
 
-        let code_patch = code_patch_source(&[main_forest, other_forest])?
-            .build_code_patch(&BTreeSet::from([main_root, other_root]), &code_tree)?;
+        let top_level_roots = BTreeSet::from([main_root, other_root]);
+        let cases = [
+            // absent helper is created once
+            (
+                vec![present_root()],
+                vec![main_root, other_root, helper_root],
+                vec![present_root()],
+            ),
+            // present helper is a dependency once
+            (
+                vec![present_root(), helper_root],
+                vec![main_root, other_root],
+                vec![present_root(), helper_root],
+            ),
+        ];
+        for (present_roots, expected_created_procedures, expected_dependencies) in cases {
+            let code_tree = partial_code_tree(present_roots, source.procedure_roots())?;
+            let code_patch = source.build_code_patch(&top_level_roots, &code_tree)?;
 
-        assert_eq!(code_patch.created_procedures(), absent_roots);
-        assert_eq!(code_patch.created_procedures().len(), 3);
+            assert_eq!(
+                code_patch.created_procedures(),
+                BTreeSet::from_iter(expected_created_procedures)
+            );
+            assert_eq!(code_patch.dependencies(), BTreeSet::from_iter(expected_dependencies));
+        }
 
         Ok(())
     }

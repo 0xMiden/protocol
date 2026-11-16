@@ -15,6 +15,8 @@ mod multisig_smart_spending_limits;
 
 mod guarded_multisig;
 
+mod hot_cold_guardian;
+
 mod network_account;
 
 mod tx_fee_collector;

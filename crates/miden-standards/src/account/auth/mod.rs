@@ -25,6 +25,14 @@ pub use multisig_smart::{AuthMultisigSmart, AuthMultisigSmartConfig};
 mod guarded_multisig;
 pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};
 
+pub mod hot_cold_guardian;
+pub use hot_cold_guardian::{
+    AuthHotColdGuardian,
+    AuthHotColdGuardianConfig,
+    HotColdDelayConfig,
+    HotColdPolicy,
+};
+
 mod network_account;
 pub use network_account::{
     AuthNetworkAccount,
