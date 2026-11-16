@@ -439,10 +439,10 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
 /// Verifies that a faucet whose `TokenPolicyManager` installs the asset-callback slots (here via
 /// [`TransferPolicy::with_basic_allowlist`]) can mint while its allowlist is empty.
 ///
-/// Minting crosses the send policy: the faucet adds the minted asset to an output note, which the
-/// kernel routes through `on_before_asset_added_to_note` with the faucet itself as the native
-/// account. Because the issuer is exempt from its own allowlist, no `allow_account` call for the
-/// faucet's own ID is needed to mint.
+/// Minting crosses the send policy: sealing the output note holding the minted asset runs
+/// `on_before_note_sealed` with the faucet itself as the native account. Because the issuer is
+/// exempt from its own allowlist, no `allow_account` call for the faucet's own ID is needed to
+/// mint.
 #[tokio::test]
 async fn mint_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();

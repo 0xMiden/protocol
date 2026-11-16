@@ -465,9 +465,9 @@ async fn mint_on_blocklist_basic_faucet() -> anyhow::Result<()> {
 
 /// Verifies that `block_account` on the faucet's own ID does not disable its minting.
 ///
-/// Minting crosses the send policy: the faucet adds the minted asset to an output note, which the
-/// kernel routes through `on_before_asset_added_to_note` with the faucet itself as the native
-/// account. Because the issuer is exempt from its own blocklist, the self-entry is inert.
+/// Minting crosses the send policy: sealing the output note holding the minted asset runs
+/// `on_before_note_sealed` with the faucet itself as the native account. Because the issuer is
+/// exempt from its own blocklist, the self-entry is inert.
 ///
 /// The entry is written through the regular admin path, so this covers any writer - the standard
 /// config note, a custom note, or a direct manager call - because the exemption lives in the

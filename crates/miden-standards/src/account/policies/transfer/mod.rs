@@ -52,15 +52,17 @@ pub enum TransferPolicyError {
 /// check) with any companion [`AccountComponent`]s that must be installed on the account for that
 /// procedure root to work.
 ///
-/// The same descriptor applies to both send (`on_before_asset_added_to_note`) and receive
+/// The same descriptor applies to both send (`on_before_note_sealed`) and receive
 /// (`on_before_asset_added_to_account`) callbacks — the policy procedure receives no direction
-/// parameter and reads the relevant account context via `native_account::get_id`.
+/// parameter and reads the relevant account context via `native_account::get_id`. The send policy
+/// is invoked once for each of the issuing faucet's assets in an output note when that note is
+/// sealed.
 ///
-/// Note that minting crosses the send callback: `mint_and_send` ends in
-/// `output_note::add_asset`, which the kernel routes through `on_before_asset_added_to_note`
-/// with the issuing faucet itself as the native account, indistinguishable at that point from
-/// an ordinary send. The bundled blocklist and allowlist policies therefore exempt the issuer by
-/// comparing the asset's faucet ID against the native account ID.
+/// Note that minting crosses the send callback: the note created by `mint_and_send` runs
+/// `on_before_note_sealed` when it is sealed, with the issuing faucet itself as the native account,
+/// indistinguishable at that point from an ordinary send. The bundled blocklist and allowlist
+/// policies therefore exempt the issuer by comparing the asset's faucet ID against the native
+/// account ID.
 ///
 /// Transfer policies reached through asset callbacks run through FPI. Policies that read mutable,
 /// security-sensitive state must set an expiration delta in the execution path that reads that

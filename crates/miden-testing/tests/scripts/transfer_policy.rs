@@ -9,9 +9,17 @@ extern crate alloc;
 
 use alloc::vec;
 
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::asset::{
+    Asset,
+    AssetAmount,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::crypto::rand::EidosRandomCoin;
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
@@ -24,6 +32,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_PAUSABLE_IS_PAUSED;
 use miden_standards::note::{MintNote, MintNoteStorage, P2idNote};
 use miden_testing::{
@@ -139,8 +148,8 @@ pub(crate) struct MintNoteFixture {
 /// private P2ID note for `target`.
 ///
 /// This replaces a hand-written `mint_and_send` transaction script: the mint runs through the
-/// standard MINT note, and minting is what crosses the send transfer policy, since the faucet adds
-/// the minted asset to an output note while it is itself the native account.
+/// standard MINT note, and minting is what crosses the send transfer policy, since the MINT note
+/// seals the output note holding the minted asset while the faucet is itself the native account.
 pub(crate) fn build_mint_note(
     sender: AccountId,
     faucet_id: AccountId,
@@ -335,6 +344,161 @@ async fn receive_callback_rejects_paused_faucet_without_active_policy() -> anyho
         .await;
 
     assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
+
+    Ok(())
+}
+
+/// Sealing a note invokes the issuing faucet's send callback once, which applies the pause check
+/// and expiration limit and then invokes the active send policy for each of the faucet's assets in
+/// the note, with the note index as `custom_data`. Assets of other faucets are skipped.
+///
+/// The note holds a fungible and a non-fungible asset of the faucet, separated by an asset of
+/// another faucet. The policy asserts its inputs and, in the rejecting case, rejects non-fungible
+/// assets, so the transaction fails only if the policy also runs for the faucet's second asset.
+#[rstest::rstest]
+#[case::accepted(false)]
+#[case::second_asset_rejected(true)]
+#[tokio::test]
+async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
+    #[case] reject_non_fungible: bool,
+) -> anyhow::Result<()> {
+    const NOTE_IDX: u16 = 1;
+    const ERR_NON_FUNGIBLE_ASSET_REJECTED: MasmError =
+        MasmError::from_static_str("send policy rejects non-fungible assets");
+
+    let component_name = "tests::send_policy";
+    let composition_check = if reject_non_fungible {
+        format!(
+            "exec.asset::id_to_composition neq.COMPOSITION_NONE
+            assert.err=\"{}\"",
+            ERR_NON_FUNGIBLE_ASSET_REJECTED.message()
+        )
+    } else {
+        String::new()
+    };
+    let policy_code = CodeBuilder::default().compile_component_code(
+        component_name,
+        format!(
+            r#"
+            use miden::protocol::account_id
+            use miden::protocol::active_account
+            use miden::protocol::asset
+            use {{COMPOSITION_NONE}} from miden::protocol::asset
+
+            #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+            #! Outputs: [pad(16)]
+            @account_procedure
+            pub proc check_policy
+                dup.8 push.{NOTE_IDX} assert_eq.err="send policy received an unexpected note index"
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                exec.asset::id_to_faucet_id exec.active_account::get_id exec.account_id::eq
+                assert.err="send policy received an asset of another faucet"
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                {composition_check}
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                dropw dropw drop
+                # => [pad(16)]
+            end
+            "#
+        ),
+    )?;
+    let policy_component =
+        AccountComponent::new(policy_code, vec![], AccountComponentMetadata::mock(component_name))?;
+    let policy_root = policy_component
+        .get_procedure_root_by_path(format!("{component_name}::check_policy").as_str())
+        .expect("send policy procedure should exist");
+    let send_policy = TransferPolicy::custom(policy_root, [policy_component])?;
+
+    let mut builder = MockChain::builder();
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SND")?)
+        .symbol("SND".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+    let faucet = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        AccountBuilder::new([47u8; 32])
+            .account_type(AccountType::Public)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_components(
+                TokenPolicyManager::builder()
+                    .active_mint_policy(MintPolicy::allow_all())
+                    .active_burn_policy(BurnPolicy::allow_all())
+                    .active_send_policy(send_policy)
+                    .build(),
+            ),
+        AccountState::Exists,
+    )?;
+    let other_faucet = add_faucet_with_wallet(&mut builder)?;
+
+    let note_assets = [
+        Asset::from(FungibleAsset::new(faucet.id(), 100)?),
+        Asset::from(FungibleAsset::new(other_faucet.id(), 50)?),
+        Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1, 2]))),
+    ];
+    let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, note_assets)?;
+    let mock_chain = builder.build()?;
+
+    let move_assets_code = note_assets
+        .iter()
+        .map(|asset| {
+            format!(
+                "push.{asset_value} push.{asset_id} dup.8 movdn.8
+                # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+
+                exec.util::move_asset_to_note
+                # => [note_idx]",
+                asset_value = asset.to_value_word(),
+                asset_id = asset.to_id_word(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        r#"
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            # note 0 holds no assets
+            exec.util::create_default_note exec.output_note::seal
+            # => []
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            {move_assets_code}
+
+            exec.output_note::seal
+            # => []
+        end
+        "#
+    ))?;
+
+    let result = mock_chain
+        .build_transaction(sender.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .build()?
+        .execute()
+        .await;
+
+    if reject_non_fungible {
+        assert_transaction_executor_error!(result, ERR_NON_FUNGIBLE_ASSET_REJECTED);
+    } else {
+        let executed = result?;
+        assert_eq!(
+            executed.output_notes().get_note(usize::from(NOTE_IDX)).assets().num_assets(),
+            3
+        );
+        assert_default_expiration_limit(&executed);
+    }
 
     Ok(())
 }
