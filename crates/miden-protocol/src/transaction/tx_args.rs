@@ -234,7 +234,7 @@ impl TransactionArgs {
     ///
     /// Supply only the secrets an earlier execution of the same transaction drew: whoever chooses
     /// a secret can decrypt its envelope, and replaying it into an execution that seals a different
-    /// plaintext or context to the same recipient reuses the encryption key and nonce.
+    /// plaintext under the same context to the same recipient reuses the encryption key and nonce.
     pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
         self.ies_seal_secrets.push(secret);
     }

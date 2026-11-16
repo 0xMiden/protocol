@@ -223,7 +223,7 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 
 ## Encryption Procedures (`miden::protocol::ies`)
 
-Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The transaction host draws the ephemeral secret of each encryption, and the transaction inputs record it, so that proving reproduces the same envelope. The secret and the plaintext are part of the execution witness, so whoever proves the transaction can read them.
+Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The transaction host draws the ephemeral secret of each encryption, or takes it from the transaction arguments, and the transaction inputs record it, so that proving the transaction, or executing it again with the recorded secrets in its transaction arguments, reproduces the same envelope. Anyone holding the transaction inputs, such as a delegated prover, can therefore decrypt the envelopes. A secret must only be replayed into the transaction it was drawn for, since sealing a different plaintext under the same context with it reuses the encryption key and nonce.
 
 | Procedure | Description | Context |
 | --------- | ----------- | ------- |

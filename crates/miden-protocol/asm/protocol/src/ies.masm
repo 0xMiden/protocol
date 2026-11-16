@@ -26,8 +26,9 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
 #!
 #! Inserts the public key into the advice map under its commitment, where the transaction host
-#! looks it up to answer the `seal` request with a fresh ephemeral secret. The ephemeral secret and
-#! the plaintext are part of the execution witness, so whoever proves the transaction sees them.
+#! looks it up to answer the `seal` request with an ephemeral secret. The transaction inputs record
+#! the ephemeral secret, so anyone holding them can decrypt the envelope. The plaintext is also part
+#! of the execution witness, so whoever proves the transaction sees it.
 #!
 #! Inputs:  [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 #! Outputs: []
@@ -42,6 +43,7 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #!
 #! Panics if:
 #! - public_key is not a valid EcGFp5 public key.
+#! - the advice map already maps the commitment of public_key to other values.
 #! - the pointers or lengths are invalid for `miden::core::crypto::ies::ecgfp5_eidos::seal`.
 #!
 #! Invocation: exec

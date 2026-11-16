@@ -17,9 +17,10 @@ use crate::utils::serde::{
 ///
 /// Answering the same `seal` request with the same secret reproduces the same envelope, so that
 /// the transaction can be re-executed, e.g. to prove it. The secret decrypts the envelope, so it is
-/// as sensitive as the plaintext. Answering a request that seals a different plaintext or context
-/// to the same recipient with it reuses the encryption key and nonce, so it must only be replayed
-/// into the transaction it was drawn for.
+/// as sensitive as the plaintext. Answering a request that seals a different plaintext under the
+/// same context to the same recipient with it reuses the encryption key and nonce, and any replay
+/// links the envelopes through their shared ephemeral key, so it must only be replayed into the
+/// transaction it was drawn for.
 pub struct IesSealSecret {
     recipient: PublicKey,
     ephemeral_secret: SecretKey,

@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
@@ -534,6 +535,32 @@ async fn ies_seal_rejects_invalid_advice_map_entry(
                 ) => *expected == commitment && *actual == other_commitment,
                 _ => false,
             }
+    );
+
+    Ok(())
+}
+
+/// Tests that `miden::protocol::ies::seal` fails when the advice map already maps the public key
+/// commitment to other values.
+#[tokio::test]
+async fn ies_seal_rejects_conflicting_advice_map_entry() -> anyhow::Result<()> {
+    let recipient = secret_key(1).public_key();
+    let commitment = recipient.to_commitment();
+
+    let tx_script = compile_tx_script(
+        &sealing_code(&[recipient], RecipientKeySource::ProtocolProcedure),
+        1,
+        None,
+    )?;
+    let conflicting_entry = (commitment, secret_key(2).public_key().to_elements().to_vec());
+    let result = execute(&mock_account(), None, tx_script, vec![conflicting_entry], vec![]).await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError {
+            err: AdviceError::MapKeyAlreadyPresent { key, .. },
+            ..
+        } if key == commitment
     );
 
     Ok(())
