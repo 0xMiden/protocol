@@ -29,23 +29,25 @@ pub type ConversionInfo = word
 
 # Estimated upper bound on the number of cycles a pay_fee flow spends after the kernel's
 # compute_fee call returns: rate conversion, fee-asset construction, serial-number derivation,
-# recipient computation, note creation and funding. Guarded by the fee-payment regression tests.
+# recipient computation, note creation, funding and sealing. Guarded by the fee-payment regression
+# tests.
 const PAY_FEE_CYCLES = 8192
 
 # Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure
-# returns: output vault build, output notes commitment, account patch and final account
-# commitments. The cost scales with the number of output notes (measured ~330 cycles per
-# asset-less note; ~1k-2k base for note-less transactions), so the estimate is computed as
-# BASE + PER_NOTE * (num_output_notes + 1), counting the fee note itself. Note that the per-note
-# figure is measured on asset-less notes; notes carrying many assets cost more, so asset-heavy
-# transactions may slightly under-estimate the fee (which fails closed: the batch builder may
-# reject the underpaying note). Guarded by the fee-payment regression tests.
+# returns: output note seal check, output vault build, output notes commitment, account patch and
+# final account commitments. The cost scales with the number of output notes (measured ~240 cycles
+# per asset-less note, ~10 of them for the seal check; ~1k-2k base for note-less transactions), so
+# the estimate is computed as BASE + PER_NOTE * (num_output_notes + 1), counting the fee note
+# itself. Note that the per-note figure is measured on asset-less notes; notes carrying many assets
+# cost more, so asset-heavy transactions may slightly under-estimate the fee (which fails closed:
+# the batch builder may reject the underpaying note). Guarded by the fee-payment regression tests.
 const POST_AUTH_EPILOGUE_BASE_CYCLES = 4096
 const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
 
 # Estimated upper bound on the number of cycles a pay_fee flow spends per sponsorship note it
-# creates (serial number derivation, note creation, vault withdrawal and funding) plus that note's
-# share of the epilogue, charged by estimate_fee for the notes a later pay_fee flow would create.
+# creates (serial number derivation, note creation, vault withdrawal, funding and sealing) plus that
+# note's share of the epilogue, charged by estimate_fee for the notes a later pay_fee flow would
+# create.
 const SPONSORSHIP_NOTE_CYCLES = 4096
 
 # Exclusive upper bound of the high u32 limb of a converted fee amount. Bounding the high limb
