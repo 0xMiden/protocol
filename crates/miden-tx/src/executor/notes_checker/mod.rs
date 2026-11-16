@@ -82,14 +82,11 @@ where
     ///
     /// If a failure occurs at the epilogue phase of the transaction execution, the
     /// otherwise-successful notes are re-added one bundle at a time, in a single pass, keeping the
-    /// bundles the epilogue passes with. A bundle is a note together with the FEE_SPONSORSHIP
-    /// notes bound to it. The bundles carrying sponsorships are tried first, so a bundle that only
-    /// passes once fees are collected comes after them.
+    /// bundles the epilogue passes with.
     ///
     /// A run that stops at the account's authentication, because the executor has no authenticator
     /// or too few signatures, counts as successful: its notes are known to execute up to that
-    /// point only. Nothing after the signature request runs, neither the rest of the account's
-    /// authentication nor the kernel's epilogue checks, such as asset preservation.
+    /// point only.
     ///
     /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
     /// anything is executed: one whose feature note is absent and which the account may not
