@@ -30,6 +30,11 @@ message AccountInputs {
   account.AccountWitness witness = 2;
 }
 
+message IesSealSecret {
+  // Canonically serialized recipient public key followed by the ephemeral secret key.
+  bytes encoded = 1;
+}
+
 message TransactionInputs {
   oneof version {
     TransactionInputsV1 v1 = 1;
@@ -47,4 +52,5 @@ message TransactionInputsV1 {
   repeated note.NoteScript note_scripts = 8;
   repeated BoundSignature signatures = 9;
   primitives.PartialSmt code_tree = 10;
+  repeated IesSealSecret ies_seal_secrets = 11;
 }

@@ -38,6 +38,7 @@ pub use inputs::{
     AccountInputs,
     AuthSignature,
     BoundSignature,
+    IesSealSecret,
     TransactionInputs,
     TransactionInputsV1,
 };

@@ -24,6 +24,7 @@ use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, PartialCodeTree};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNoteTree};
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::merkle::InnerNodeInfo;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::crypto::merkle::store::MerkleStore;
@@ -38,6 +39,7 @@ use miden_protocol::testing::assembler::assemble_test_package;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
     AccountInputs,
+    IesSealSecret,
     InputNote,
     InputNotes,
     PartialBlockchain,
@@ -142,6 +144,15 @@ pub fn dummy_signatures() -> Vec<BoundSignature> {
             BoundSignature::new(key, secret_key.sign(message))
                 .expect("signature should be bound to the key of its signer")
         })
+        .collect()
+}
+
+/// Returns two IES seal secrets for the same recipient, as two `seal` requests to it would record.
+pub fn dummy_ies_seal_secrets() -> Vec<IesSealSecret> {
+    let recipient = SecretKey::from_bytes(&[3; 40]).unwrap().public_key();
+    [[4; 40], [5; 40]]
+        .iter()
+        .map(|bytes| IesSealSecret::new(recipient, SecretKey::from_bytes(bytes).unwrap()))
         .collect()
 }
 
@@ -255,6 +266,7 @@ pub fn dummy_transaction_inputs() -> TransactionInputs {
         .foreign_accounts(foreign_accounts)
         .note_scripts(vec![NoteScript::mock()])
         .signatures(dummy_signatures())
+        .ies_seal_secrets(dummy_ies_seal_secrets())
         .code_tree(partial_code_tree)
         .build()
         .unwrap()

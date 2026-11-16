@@ -220,3 +220,11 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 | Procedure                  | Description                                                                                                                                                          | Context |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_ID, ASSET_VALUE]` | Any     |
+
+## Encryption Procedures (`miden::protocol::ies`)
+
+Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The transaction host draws the ephemeral secret of each encryption, and the transaction inputs record it, so that proving reproduces the same envelope. The secret and the plaintext are part of the execution witness, so whoever proves the transaction can read them.
+
+| Procedure | Description | Context |
+| --------- | ----------- | ------- |
+| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination. The context is authenticated but not encrypted. The public key is inserted into the advice map under its commitment, where the host looks it up.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |
