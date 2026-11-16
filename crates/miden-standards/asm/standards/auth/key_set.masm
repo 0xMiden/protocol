@@ -1,0 +1,380 @@
+# An indexed set of signing keys kept in account storage.
+#
+# A key set lives in two storage maps, both keyed by [index, 0, 0, 0]: one holding the public key
+# commitments and one holding the signature scheme id words. The procedures take the two map slots
+# as inputs, so any component can keep such a set in the slots of its choice; the number of keys is
+# tracked by the component. The procedures report facts and leave the error to report to the
+# caller, since the right message depends on what the set holds (approvers, hot keys, ...).
+
+use {Approver, PublicKeyCommitment, SignatureScheme} from miden::standards::auth::signature
+use {Bool, StorageSlotId} from miden::protocol::types
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::auth::signature
+use miden::core::word
+
+# ERRORS
+# =================================================================================================
+
+const ERR_KEY_COUNTS_NOT_U32 = "initial and new number of keys must be u32"
+
+# LOCAL ADDRESSES
+# =================================================================================================
+
+# The slot ids are stored in locals because the loops below need them on every iteration.
+const SCHEME_SLOT_SUFFIX_LOC = 0
+const SCHEME_SLOT_PREFIX_LOC = 1
+const PK_SLOT_SUFFIX_LOC = 2
+const PK_SLOT_PREFIX_LOC = 3
+
+# LOCAL ADDRESSES (contains_key)
+const FOUND_LOC = 4
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Writes a key into the set at `index`, replacing the entry stored there.
+#!
+#! Inputs:  [scheme_slot_id_suffix, scheme_slot_id_prefix, pk_slot_id_suffix, pk_slot_id_prefix,
+#!           index, scheme_id, PUB_KEY]
+#! Outputs: []
+#!
+#! Where:
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the scheme id map slot.
+#! - pk_slot_id_{suffix,prefix} are the suffix and prefix felts of the public key map slot.
+#! - index is the index the key is written at.
+#! - scheme_id is the signature scheme id of the key, stored as the word [scheme_id, 0, 0, 0].
+#! - PUB_KEY is the public key commitment of the key.
+#!
+#! Panics if:
+#! - scheme_id is not a supported scheme.
+#!
+#! Invocation: exec
+pub proc set_key_at(
+    scheme_slot_id: StorageSlotId,
+    pk_slot_id: StorageSlotId,
+    index: u32,
+    scheme_id: SignatureScheme,
+    pub_key: PublicKeyCommitment
+)
+    movup.4
+    # => [index, scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, scheme_id, PUB_KEY]
+
+    # keep the index for the public key write below
+    dup movdn.10
+    # => [index, scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, scheme_id, PUB_KEY, index]
+
+    exec.signature::create_approver_map_key
+    # => [MAP_KEY, scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, scheme_id, PUB_KEY, index]
+
+    movup.8 dup exec.signature::assert_supported_scheme
+    # => [scheme_id, MAP_KEY, scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, PUB_KEY, index]
+
+    push.0.0.0 movup.3 swapw
+    # => [MAP_KEY, SCHEME_ID_WORD, scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, PUB_KEY, index]
+
+    movup.9 movup.9
+    # => [scheme_slot_suffix, scheme_slot_prefix, MAP_KEY, SCHEME_ID_WORD, pk_slot_suffix, pk_slot_prefix, PUB_KEY, index]
+
+    exec.native_account::set_map_item dropw
+    # => [pk_slot_suffix, pk_slot_prefix, PUB_KEY, index]
+
+    movup.6 exec.signature::create_approver_map_key
+    # => [MAP_KEY, pk_slot_suffix, pk_slot_prefix, PUB_KEY]
+
+    movup.5 movup.5
+    # => [pk_slot_suffix, pk_slot_prefix, MAP_KEY, PUB_KEY]
+
+    exec.native_account::set_map_item dropw
+    # => []
+end
+
+#! Writes `num_keys` keys from the advice stack into the set, at indices num_keys-1 down to 0.
+#!
+#! The keys are read from the advice provider without an inline hash check. The caller is
+#! expected to have loaded the key material under a commitment that its signers sign over, so a
+#! substituted set produces a different account delta and thus a different signed summary.
+#!
+#! Inputs:
+#!   Operand stack: [scheme_slot_id_suffix, scheme_slot_id_prefix, pk_slot_id_suffix,
+#!                   pk_slot_id_prefix, num_keys]
+#!   Advice stack:  [PUB_KEY_N-1, SCHEME_ID_N-1, ..., PUB_KEY_0, SCHEME_ID_0]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the scheme id map slot.
+#! - pk_slot_id_{suffix,prefix} are the suffix and prefix felts of the public key map slot.
+#! - num_keys is the number of keys to write.
+#! - PUB_KEY_i is the public key commitment written at index i.
+#! - SCHEME_ID_i is the word [scheme_id, 0, 0, 0] written at index i.
+#!
+#! Panics if:
+#! - any scheme id word is malformed or carries an unsupported scheme.
+#!
+#! Invocation: exec
+@locals(4)
+pub proc write_from_advice(
+    scheme_slot_id: StorageSlotId,
+    pk_slot_id: StorageSlotId,
+    num_keys: u32
+)
+    loc_store.SCHEME_SLOT_SUFFIX_LOC loc_store.SCHEME_SLOT_PREFIX_LOC
+    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
+    # => [num_keys]
+
+    dup neq.0
+    # => [should_loop, num_keys]
+
+    while.true
+        sub.1
+        # => [i]
+
+        padw adv_loadw padw adv_loadw
+        # => [SCHEME_ID_WORD, PUB_KEY, i]
+
+        exec.signature::assert_supported_scheme_word
+        # => [SCHEME_ID_WORD, PUB_KEY, i]
+
+        movdn.3 drop drop drop
+        # => [scheme_id, PUB_KEY, i]
+
+        dup.5
+        # => [i, scheme_id, PUB_KEY, i]
+
+        loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
+        loc_load.SCHEME_SLOT_PREFIX_LOC loc_load.SCHEME_SLOT_SUFFIX_LOC
+        # => [scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, i, scheme_id, PUB_KEY, i]
+
+        exec.set_key_at
+        # => [i]
+
+        dup neq.0
+        # => [should_loop, i]
+    end
+    # => [0]
+
+    drop
+    # => []
+end
+
+#! Clears the entries in the range [new_num_keys, init_num_keys) from both maps of the set.
+#!
+#! Inputs:  [scheme_slot_id_suffix, scheme_slot_id_prefix, pk_slot_id_suffix, pk_slot_id_prefix,
+#!           init_num_keys, new_num_keys]
+#! Outputs: []
+#!
+#! Where:
+#! - init_num_keys is the number of keys before the update.
+#! - new_num_keys is the number of keys after the update.
+#!
+#! Panics if:
+#! - init_num_keys or new_num_keys is not a u32 value.
+#!
+#! Invocation: exec
+@locals(4)
+pub proc cleanup(
+    scheme_slot_id: StorageSlotId,
+    pk_slot_id: StorageSlotId,
+    init_num_keys: u32,
+    new_num_keys: u32
+)
+    loc_store.SCHEME_SLOT_SUFFIX_LOC loc_store.SCHEME_SLOT_PREFIX_LOC
+    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
+    # => [init_num_keys, new_num_keys]
+
+    dup.1 dup.1
+    u32assert2.err=ERR_KEY_COUNTS_NOT_U32
+    u32lt
+    # => [should_loop, i = init_num_keys, new_num_keys]
+
+    while.true
+        sub.1
+        # => [i-1, new_num_keys]
+
+        # clear the scheme id at MAP_KEY(i-1)
+        dup exec.signature::create_approver_map_key
+        # => [MAP_KEY, i-1, new_num_keys]
+
+        padw swapw
+        # => [MAP_KEY, EMPTY_WORD, i-1, new_num_keys]
+
+        loc_load.SCHEME_SLOT_PREFIX_LOC loc_load.SCHEME_SLOT_SUFFIX_LOC
+        # => [scheme_slot_suffix, scheme_slot_prefix, MAP_KEY, EMPTY_WORD, i-1, new_num_keys]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_keys]
+
+        dropw
+        # => [i-1, new_num_keys]
+
+        # clear the public key at MAP_KEY(i-1)
+        dup exec.signature::create_approver_map_key
+        # => [MAP_KEY, i-1, new_num_keys]
+
+        padw swapw
+        # => [MAP_KEY, EMPTY_WORD, i-1, new_num_keys]
+
+        loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
+        # => [pk_slot_suffix, pk_slot_prefix, MAP_KEY, EMPTY_WORD, i-1, new_num_keys]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_keys]
+
+        dropw
+        # => [i-1, new_num_keys]
+
+        dup.1 dup.1
+        u32lt
+        # => [should_loop, i-1, new_num_keys]
+    end
+
+    drop drop
+    # => []
+end
+
+#! Replaces the keys of the set with `new_num_keys` keys from the advice stack and clears the
+#! entries left over from the previous `init_num_keys` keys.
+#!
+#! See `write_from_advice` for the advice stack layout and the hash check the caller is expected
+#! to have performed.
+#!
+#! Inputs:
+#!   Operand stack: [scheme_slot_id_suffix, scheme_slot_id_prefix, pk_slot_id_suffix,
+#!                   pk_slot_id_prefix, init_num_keys, new_num_keys]
+#!   Advice stack:  [PUB_KEY_N-1, SCHEME_ID_N-1, ..., PUB_KEY_0, SCHEME_ID_0]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - init_num_keys is the number of keys before the update.
+#! - new_num_keys is the number of keys after the update.
+#!
+#! Panics if:
+#! - init_num_keys or new_num_keys is not a u32 value.
+#! - any scheme id word is malformed or carries an unsupported scheme.
+#!
+#! Invocation: exec
+pub proc replace_from_advice(
+    scheme_slot_id: StorageSlotId,
+    pk_slot_id: StorageSlotId,
+    init_num_keys: u32,
+    new_num_keys: u32
+)
+    # both steps need the slots, so the write works on a copy of them
+    dupw dup.9 movdn.4
+    # => [scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, new_num_keys,
+    #     scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, init_num_keys,
+    #     new_num_keys]
+
+    exec.write_from_advice
+    # => [scheme_slot_suffix, scheme_slot_prefix, pk_slot_suffix, pk_slot_prefix, init_num_keys,
+    #     new_num_keys]
+
+    exec.cleanup
+    # => []
+end
+
+#! Returns whether PUB_KEY is one of the first `num_keys` public keys in the set.
+#!
+#! Reads the current account state, so keys just written by the caller are covered.
+#!
+#! Inputs:  [pk_slot_id_suffix, pk_slot_id_prefix, num_keys, PUB_KEY]
+#! Outputs: [contains_key]
+#!
+#! Invocation: exec
+@locals(5)
+pub proc contains_key(pk_slot_id: StorageSlotId, num_keys: u32, pub_key: PublicKeyCommitment) -> Bool
+    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
+    push.0 loc_store.FOUND_LOC
+    # => [i = num_keys, PUB_KEY]
+
+    dup neq.0
+    # => [should_loop, i, PUB_KEY]
+
+    while.true
+        sub.1
+        # => [i, PUB_KEY]
+
+        # keep the loop index below PUB_KEY while the key at its copy is read
+        dup movdn.5
+        # => [i, PUB_KEY, i]
+
+        loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
+        # => [pk_slot_suffix, pk_slot_prefix, i, PUB_KEY, i]
+
+        exec.get_pub_key_at
+        # => [KEY_I, PUB_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, PUB_KEY, i]
+
+        loc_load.FOUND_LOC or loc_store.FOUND_LOC
+        # => [PUB_KEY, i]
+
+        movup.4
+        # => [i, PUB_KEY]
+
+        dup neq.0
+        # => [should_loop, i, PUB_KEY]
+    end
+    # => [0, PUB_KEY]
+
+    drop dropw
+    # => []
+
+    loc_load.FOUND_LOC
+    # => [contains_key]
+end
+
+#! Returns the public key stored at `index`, read from the current account state.
+#!
+#! The caller is responsible for the bounds check.
+#!
+#! Inputs:  [pk_slot_id_suffix, pk_slot_id_prefix, index]
+#! Outputs: [PUB_KEY]
+#!
+#! Invocation: exec
+pub proc get_pub_key_at(pk_slot_id: StorageSlotId, index: u32) -> PublicKeyCommitment
+    movup.2 exec.signature::create_approver_map_key
+    # => [MAP_KEY, pk_slot_suffix, pk_slot_prefix]
+
+    movup.5 movup.5
+    # => [pk_slot_suffix, pk_slot_prefix, MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [PUB_KEY]
+end
+
+#! Returns the key stored at `index`, read from the initial account state.
+#!
+#! The caller is responsible for the bounds check.
+#!
+#! Inputs:  [scheme_slot_id_suffix, scheme_slot_id_prefix, pk_slot_id_suffix, pk_slot_id_prefix,
+#!           index]
+#! Outputs: [PUB_KEY, scheme_id]
+#!
+#! Invocation: exec
+@locals(4)
+pub proc get_key_at(scheme_slot_id: StorageSlotId, pk_slot_id: StorageSlotId, index: u32) -> Approver
+    loc_store.SCHEME_SLOT_SUFFIX_LOC loc_store.SCHEME_SLOT_PREFIX_LOC
+    loc_store.PK_SLOT_SUFFIX_LOC loc_store.PK_SLOT_PREFIX_LOC
+    # => [index]
+
+    dup exec.signature::create_approver_map_key
+    # => [MAP_KEY, index]
+
+    loc_load.PK_SLOT_PREFIX_LOC loc_load.PK_SLOT_SUFFIX_LOC
+    exec.native_account::get_initial_map_item
+    # => [PUB_KEY, index]
+
+    movup.4 exec.signature::create_approver_map_key
+    # => [MAP_KEY, PUB_KEY]
+
+    loc_load.SCHEME_SLOT_PREFIX_LOC loc_load.SCHEME_SLOT_SUFFIX_LOC
+    exec.native_account::get_initial_map_item
+    # => [[scheme_id, 0, 0, 0], PUB_KEY]
+
+    movdn.7 drop drop drop
+    # => [PUB_KEY, scheme_id]
+end
