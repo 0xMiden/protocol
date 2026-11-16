@@ -1089,8 +1089,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # create an output note with one asset
-            {output_note} exec.output_note::seal
+            # create and seal an output note with one asset
+            {output_note}
             # => []
 
             # get the recipient (the only existing note has 0'th index)
@@ -1116,7 +1116,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         "#,
-        output_note = create_output_note(&output_note),
+        output_note = create_sealed_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
         METADATA = output_note.metadata().to_metadata_word(),
     );
@@ -1219,24 +1219,24 @@ async fn test_get_assets() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            {create_note_0} exec.output_note::seal
+            {create_note_0}
             {check_note_0}
 
-            {create_note_1} exec.output_note::seal
+            {create_note_1}
             {check_note_1}
 
-            {create_note_2} exec.output_note::seal
+            {create_note_2}
             {check_note_2}
 
             # truncate the stack
             exec.sys::truncate_stack
         end
         ",
-        create_note_0 = create_output_note(&p2any_note_0_assets),
+        create_note_0 = create_sealed_output_note(&p2any_note_0_assets),
         check_note_0 = check_assets_code(0, 0, &p2any_note_0_assets),
-        create_note_1 = create_output_note(&p2id_note_1_asset),
+        create_note_1 = create_sealed_output_note(&p2id_note_1_asset),
         check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
-        create_note_2 = create_output_note(&p2id_note_2_assets),
+        create_note_2 = create_sealed_output_note(&p2id_note_2_assets),
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
@@ -2299,6 +2299,21 @@ fn create_output_note(note: &Note) -> String {
             ASSET_VALUE = asset.to_value_word()
         ));
     }
+
+    create_note_code
+}
+
+/// Returns a `masm` code which creates an output note, adds some assets to it and seals it.
+///
+/// The calling script must import `miden::protocol::output_note`.
+fn create_sealed_output_note(note: &Note) -> String {
+    let mut create_note_code = create_output_note(note);
+    create_note_code.push_str(
+        "
+        exec.output_note::seal
+        # => []
+    ",
+    );
 
     create_note_code
 }
