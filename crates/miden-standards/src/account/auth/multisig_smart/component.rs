@@ -333,6 +333,15 @@ fn validate_proc_policies(
 ///   note would be nullified without any approver having signed for it. (Creating a note takes an
 ///   account procedure, which the first requirement already rules out.)
 ///
+/// - The first proposal fixes a commitment's record: its reference block sets the unlock block, its
+///   signatures set the cancellation quorum, and a later proposal of the same commitment is
+///   rejected. Anyone holding an approver signature over the commitment, a signer or the
+///   coordinator who collected the signatures, can therefore propose it from a late reference block
+///   or with a single signature, pushing the unlock block out or leaving the quorum at the floor.
+///   Approvers who care about either submit the proposal themselves, with every signature they
+///   collected and a current reference block, and re-sign a badly proposed commitment with a new
+///   salt.
+///
 /// A policy protects a procedure only while the procedures that can weaken it are protected at
 /// least as strongly. `update_delayed_execution_policy` shortens the timelock,
 /// `set_procedure_policy` rewrites any policy, and `update_signers_and_threshold` replaces the
