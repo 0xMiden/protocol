@@ -5,6 +5,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -38,6 +39,7 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME,
     ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
@@ -1052,8 +1054,11 @@ async fn test_note_sealed_callback_attachment_is_appended_to_note(
         returns_attachment
             .then_some((callback_attachment_scheme.as_u16(), callback_attachment_word)),
     );
-    let (note, result) =
-        execute_note_sealing_tx(&note_callback_masm, vec![creator_attachment.clone()]).await?;
+    let (note, result) = execute_note_sealing_tx(
+        &[([42; 32], &note_callback_masm)],
+        vec![creator_attachment.clone()],
+    )
+    .await?;
     let executed_tx = result?;
 
     let mut expected_attachments = vec![creator_attachment];
@@ -1078,11 +1083,53 @@ async fn test_note_sealed_callback_attachment_is_appended_to_note(
     Ok(())
 }
 
+/// Tests that the attachments returned by the `on_before_note_sealed` callbacks of several faucets
+/// are appended in the order in which each faucet first occurs among the note's assets.
+#[rstest::rstest]
+#[case::first_faucet_occurs_first(true)]
+#[case::second_faucet_occurs_first(false)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachments_follow_callback_order(
+    #[case] first_faucet_occurs_first: bool,
+) -> anyhow::Result<()> {
+    let first = (21, Word::from([1, 1, 1, 1u32]));
+    let second = (22, Word::from([2, 2, 2, 2u32]));
+    let first_attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(first.0)?, first.1);
+    let second_attachment =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(second.0)?, second.1);
+    let first_callback_masm = note_sealed_callback_masm(Some(first));
+    let second_callback_masm = note_sealed_callback_masm(Some(second));
+
+    let first_faucet = ([42; 32], first_callback_masm.as_str());
+    let second_faucet = ([43; 32], second_callback_masm.as_str());
+    let (faucets, expected_attachments) = if first_faucet_occurs_first {
+        ([first_faucet, second_faucet], vec![first_attachment, second_attachment])
+    } else {
+        ([second_faucet, first_faucet], vec![second_attachment, first_attachment])
+    };
+
+    let (_, result) = execute_note_sealing_tx(&faucets, Vec::new()).await?;
+    let executed_tx = result?;
+
+    assert_eq!(
+        executed_tx.output_notes().get_note(0).attachments(),
+        &NoteAttachments::new(expected_attachments)?
+    );
+
+    Ok(())
+}
+
 /// Tests that the attachment returned by an `on_before_note_sealed` callback is validated like any
-/// other attachment and counts toward the note's limit of attachments.
+/// other attachment and counts toward the note's limit of attachments, and that a callback cannot
+/// return an attachment commitment with attachment scheme 0.
 #[rstest::rstest]
 #[case::too_many_attachments(NoteAttachments::MAX_COUNT, 20, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
 #[case::invalid_scheme(1, u16::MAX, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
+#[case::commitment_without_scheme(
+    1,
+    0,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME
+)]
 #[tokio::test]
 async fn test_note_sealed_callback_attachment_is_validated(
     #[case] num_creator_attachments: usize,
@@ -1101,9 +1148,42 @@ async fn test_note_sealed_callback_attachment_is_validated(
     let note_callback_masm =
         note_sealed_callback_masm(Some((callback_attachment_scheme, Word::from([5, 6, 7, 8u32]))));
 
-    let (_, result) = execute_note_sealing_tx(&note_callback_masm, creator_attachments).await?;
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], creator_attachments).await?;
 
     assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that sealing fails if an `on_before_note_sealed` callback returns an attachment
+/// commitment whose elements are not in the advice map.
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_without_advice_map_entry_fails() -> anyhow::Result<()>
+{
+    let note_callback_masm = format!(
+        "
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    @account_procedure
+    pub proc on_before_note_sealed
+        drop push.{attachment_commitment} push.20
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
+
+        exec.::miden::core::sys::truncate_stack
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    end
+    ",
+        attachment_commitment = Word::from([9, 9, 9, 9u32]),
+    );
+
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { .. }, .. }
+    );
 
     Ok(())
 }
@@ -1396,29 +1476,57 @@ fn note_sealed_callback_masm(attachment: Option<(u16, Word)>) -> String {
     )
 }
 
-/// Executes a transaction in which the native account creates a private output note holding an
-/// asset of a faucet whose `on_before_note_sealed` callback is `note_callback_masm`, adds the
-/// single-word `creator_attachments` to the note and seals it.
+/// Executes a transaction in which the native account creates a private output note, adds the
+/// single-word `creator_attachments` to it, moves one asset of each of the `faucets` into it and
+/// seals it.
 ///
-/// Returns the note as the transaction script creates it, i.e. without an attachment returned by
-/// the callback, and the execution result.
+/// Each entry of `faucets` is the seed of a faucet and the MASM source of its
+/// `on_before_note_sealed` callback. The note holds the faucets' assets in the order of `faucets`.
+///
+/// Returns the note as the transaction script creates it, i.e. without the attachments returned by
+/// the callbacks, and the execution result.
 async fn execute_note_sealing_tx(
-    note_callback_masm: &str,
+    faucets: &[([u8; 32], &str)],
     creator_attachments: Vec<NoteAttachment>,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     let mut builder = MockChain::builder();
-    let faucet = add_faucet_with_callbacks(&mut builder, [42; 32], None, Some(note_callback_masm))?;
-    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
-    let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
+    let faucets = faucets
+        .iter()
+        .map(|(seed, note_callback_masm)| {
+            add_faucet_with_callbacks(&mut builder, *seed, None, Some(note_callback_masm))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let assets = faucets
+        .iter()
+        .map(|faucet| Ok(Asset::from(FungibleAsset::new(faucet.id(), 100)?)))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, assets.clone())?;
     let mock_chain = builder.build()?;
 
     let mut note_builder = NoteBuilder::new(sender.id(), EidosRandomCoin::new(Word::empty()))
         .note_type(NoteType::Private)
-        .add_assets([asset]);
+        .add_assets(assets);
     for attachment in creator_attachments {
         note_builder = note_builder.attachment(attachment);
     }
     let note = note_builder.build()?;
+
+    let move_assets_code = note
+        .assets()
+        .iter()
+        .map(|asset| {
+            format!(
+                "push.{asset_value} push.{asset_id} dup.8 movdn.8
+                # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+
+                exec.util::move_asset_to_note
+                # => [note_idx]",
+                asset_value = asset.to_value_word(),
+                asset_id = asset.to_id_word(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let add_attachments_code = note
         .attachments()
@@ -1448,11 +1556,7 @@ async fn execute_note_sealing_tx(
             call.::mock::account::create_note
             # => [note_idx, pad(15)]
 
-            push.{asset_value} push.{asset_id} dup.8 movdn.8
-            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
-
-            exec.util::move_asset_to_note
-            # => [note_idx, pad(15)]
+            {move_assets_code}
 
             {add_attachments_code}
 
@@ -1465,14 +1569,17 @@ async fn execute_note_sealing_tx(
         recipient = note.recipient().digest(),
         note_type = note.metadata().note_type() as u8,
         tag = note.metadata().tag(),
-        asset_value = asset.to_value_word(),
-        asset_id = asset.to_id_word(),
     ))?;
+
+    let foreign_accounts = faucets
+        .iter()
+        .map(|faucet| mock_chain.get_foreign_account_inputs(faucet.id()))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let result = mock_chain
         .build_transaction(sender.id())
         .tx_script(tx_script)
-        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .foreign_accounts(foreign_accounts)
         .expected_output_note(RawOutputNote::Full(note.clone()))
         .build()?
         .execute()
