@@ -176,6 +176,7 @@ impl LocalTransactionProver {
         );
 
         let block_commitments = tx_inputs.collect_block_commitments();
+        let ies_seal_secrets = tx_inputs.ies_seal_secrets().to_vec();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
@@ -185,6 +186,7 @@ impl LocalTransactionProver {
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
+            ies_seal_secrets,
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 

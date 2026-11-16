@@ -1,6 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::{format, vec};
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
@@ -10,7 +11,14 @@ use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
+use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
+use miden_protocol::transaction::{
+    IesSealSecret,
+    InputNote,
+    InputNotes,
+    RawOutputNote,
+    TransactionLogs,
+};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
 
@@ -31,6 +39,10 @@ where
 {
     /// The underlying base transaction host.
     base_host: TransactionBaseHost<'store, STORE>,
+
+    /// The ephemeral secrets that answer the IES `seal` requests of the transaction, in request
+    /// order.
+    ies_seal_secrets: vec::IntoIter<IesSealSecret>,
 }
 
 impl<'store, STORE> TransactionProverHost<'store, STORE>
@@ -42,6 +54,9 @@ where
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
     ///
+    /// The host answers the IES `seal` requests of the transaction with the recorded
+    /// `ies_seal_secrets`, so that it reproduces the envelopes of the executed transaction.
+    ///
     /// # Errors
     ///
     /// Returns an error if the host cannot be created.
@@ -52,6 +67,7 @@ where
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
+        ies_seal_secrets: Vec<IesSealSecret>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -62,7 +78,10 @@ where
             acct_procedure_index_map,
         )?;
 
-        Ok(Self { base_host })
+        Ok(Self {
+            base_host,
+            ies_seal_secrets: ies_seal_secrets.into_iter(),
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -115,6 +134,28 @@ impl<STORE> TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
+    /// Answers an IES `seal` request with the next recorded ephemeral secret.
+    fn on_ies_seal_requested(
+        &mut self,
+        recipient: PublicKey,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let secret = self.ies_seal_secrets.next().ok_or_else(|| {
+            TransactionKernelError::other(
+                "ephemeral secrets of IES seal requests should be in the transaction inputs at proving time",
+            )
+        })?;
+
+        if secret.recipient() != recipient {
+            return Err(TransactionKernelError::other(format!(
+                "IES seal secret was drawn for the public key with commitment {} but the request is for the public key with commitment {}",
+                secret.recipient().to_commitment(),
+                recipient.to_commitment(),
+            )));
+        }
+
+        Ok(self.base_host.on_ies_seal_requested(&secret))
+    }
+
     fn on_event_sync(
         &mut self,
         process: &ProcessorState,
@@ -232,6 +273,8 @@ where
                     tx_summary.to_commitment()
                 )))
             },
+
+            TransactionEvent::IesSeal { recipient } => self.on_ies_seal_requested(recipient),
 
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
             TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),

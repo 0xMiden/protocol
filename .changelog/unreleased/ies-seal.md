@@ -1,0 +1,1 @@
+[BREAKING] Added `miden::protocol::ies::seal` to encrypt to an EcGFp5 public key inside a transaction, with the executor host drawing the ephemeral secret and recording it in `TransactionInputs` so that proving replays it.

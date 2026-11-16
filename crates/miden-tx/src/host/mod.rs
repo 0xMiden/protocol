@@ -12,6 +12,7 @@ mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
+use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::{
     TransactionEventId,
@@ -59,6 +60,7 @@ use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
+    IesSealSecret,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -368,6 +370,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             return Some(name);
         }
 
+        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
+            static IES_SEAL_EVENT_NAME: EventName = ECGFP5_EIDOS_SEAL_EVENT_NAME;
+            return Some(&IES_SEAL_EVENT_NAME);
+        }
+
         TransactionEventId::try_from(event_id)
             .ok()
             .map(|event_id| event_id.event_name())
@@ -377,6 +384,16 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
         vec![AdviceMutation::extend_advice_stack_with(signature)]
+    }
+
+    /// Converts the key agreement advice for the provided ephemeral secret into advice mutations
+    /// that answer an IES `seal` request.
+    pub fn on_ies_seal_requested(&self, secret: &IesSealSecret) -> Vec<AdviceMutation> {
+        let advice = secret.advise();
+        vec![
+            AdviceMutation::extend_merkle_store(advice.merkle_nodes().iter().cloned()),
+            AdviceMutation::extend_advice_stack_with(advice.elements()),
+        ]
     }
 
     /// Adds an asset to the output note identified by the note index.

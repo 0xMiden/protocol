@@ -3001,10 +3001,12 @@ version = "1.0.0-rc.1"
 dependencies = [
  "bon",
  "miden-agglayer",
+ "miden-core-lib",
  "miden-processor",
  "miden-protocol",
  "miden-prover",
  "miden-standards",
+ "rand 0.10.3",
  "rand_chacha 0.10.0",
  "thiserror",
 ]

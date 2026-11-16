@@ -19,6 +19,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
@@ -30,6 +31,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::{
     AccountInputs,
+    IesSealSecret,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -40,6 +42,9 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use miden_standards::note::StandardNote;
+use rand::rngs::SysRng;
+use rand_chacha::ChaCha20Rng;
+use rand_chacha::rand_core::SeedableRng;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
@@ -224,6 +229,25 @@ where
         self.lazy_loaded_data.signatures.push(signature);
 
         Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
+    }
+
+    /// Answers an IES `seal` request with the key agreement advice for a fresh ephemeral secret.
+    ///
+    /// The secret is drawn from a ChaCha20 generator seeded by the operating system's random
+    /// number generator. It is recorded in the transaction inputs, so that proving the transaction
+    /// reproduces the same envelope.
+    fn on_ies_seal_requested(
+        &mut self,
+        recipient: PublicKey,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let mut rng = ChaCha20Rng::try_from_rng(&mut SysRng)
+            .map_err(TransactionKernelError::IesSealRandomnessUnavailable)?;
+        let secret = IesSealSecret::new(recipient, SecretKey::with_rng(&mut rng));
+
+        let advice_mutations = self.base_host.on_ies_seal_requested(&secret);
+        self.lazy_loaded_data.ies_seal_secrets.push(secret);
+
+        Ok(advice_mutations)
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -452,6 +476,9 @@ pub(crate) struct LazyLoadedData {
     /// The signatures the authenticator generated.
     signatures: Vec<BoundSignature>,
 
+    /// The ephemeral secrets drawn for IES `seal` requests, in request order.
+    ies_seal_secrets: Vec<IesSealSecret>,
+
     /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
     ///
     /// They are fetched against the initial vault roots, so they fit the initial partial accounts.
@@ -481,6 +508,9 @@ impl LazyLoadedData {
         }
         for signature in self.signatures {
             tx_inputs.add_signature(signature)?;
+        }
+        for secret in self.ies_seal_secrets {
+            tx_inputs.add_ies_seal_secret(secret);
         }
         // Witnesses can belong to foreign accounts, so add witnesses after foreign accounts.
         for (account_id, witness) in self.asset_witnesses {
@@ -708,6 +738,8 @@ where
                 TransactionEvent::Unauthorized { tx_summary } => {
                     Err(TransactionKernelError::Unauthorized(Box::new(tx_summary)))
                 },
+
+                TransactionEvent::IesSeal { recipient } => self.on_ies_seal_requested(recipient),
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
                 TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),

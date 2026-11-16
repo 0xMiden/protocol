@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
@@ -17,6 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{InvalidPublicKey, PublicKey};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -179,6 +181,12 @@ pub(crate) enum TransactionEvent {
         tx_summary: TransactionSummary,
     },
 
+    /// The data necessary to answer an IES `seal` request of the core library.
+    IesSeal {
+        /// The recipient public key, looked up in the advice map under the requested commitment.
+        recipient: PublicKey,
+    },
+
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
     },
@@ -200,6 +208,14 @@ impl TransactionEvent {
         process: &ProcessorState,
     ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
+
+        // The core library's IES `seal` emits its own event, so it has no transaction event ID.
+        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
+            return Ok(Some(TransactionEvent::IesSeal {
+                recipient: extract_ies_recipient(process)?,
+            }));
+        }
+
         let tx_event_id = TransactionEventId::try_from(event_id).map_err(|err| {
             TransactionKernelError::other_with_source(
                 "failed to convert event ID into transaction event ID",
@@ -715,6 +731,35 @@ pub(crate) enum RecipientData {
         script_root: Word,
         note_storage: NoteStorage,
     },
+}
+
+/// Looks up the recipient public key of an IES `seal` request in the advice map, under the key
+/// commitment the request carries.
+///
+/// The `seal` procedure also checks the key it receives against the commitment. Checking it here
+/// reports an invalid advice map entry as a host error before any advice is generated for it.
+fn extract_ies_recipient(process: &ProcessorState) -> Result<PublicKey, TransactionKernelError> {
+    // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
+    let commitment = process.get_stack_word(1);
+
+    let elements = process
+        .advice_provider()
+        .get_mapped_values(&commitment)
+        .ok_or(TransactionKernelError::IesPublicKeyMissing(commitment))?;
+    let recipient = <[Felt; 5]>::try_from(elements)
+        .map_err(|_| InvalidPublicKey)
+        .and_then(PublicKey::from_elements)
+        .map_err(|source| TransactionKernelError::IesPublicKeyInvalid { commitment, source })?;
+
+    let actual = recipient.to_commitment();
+    if actual != commitment {
+        return Err(TransactionKernelError::IesPublicKeyCommitmentMismatch {
+            expected: commitment,
+            actual,
+        });
+    }
+
+    Ok(recipient)
 }
 
 /// Extracts a transaction log after the kernel has authenticated its emitter and content.

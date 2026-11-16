@@ -10,6 +10,7 @@ use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::InvalidPublicKey;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
@@ -25,6 +26,7 @@ use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use miden_prover::ProverError;
+use rand::rngs::SysError;
 use thiserror::Error;
 
 // NOTE EXECUTION ERROR
@@ -284,6 +286,23 @@ pub enum TransactionKernelError {
         max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
     )]
     InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
+    #[error(
+        "advice map does not provide the EcGFp5 public key with commitment {0} for an IES seal request"
+    )]
+    IesPublicKeyMissing(Word),
+    #[error(
+        "advice map provides an invalid EcGFp5 public key for commitment {commitment} of an IES seal request"
+    )]
+    IesPublicKeyInvalid {
+        commitment: Word,
+        source: InvalidPublicKey,
+    },
+    #[error(
+        "advice map provides an EcGFp5 public key with commitment {actual} for commitment {expected} of an IES seal request"
+    )]
+    IesPublicKeyCommitmentMismatch { expected: Word, actual: Word },
+    #[error("failed to draw randomness for an IES seal request")]
+    IesSealRandomnessUnavailable(#[source] SysError),
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]
