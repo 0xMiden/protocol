@@ -68,16 +68,16 @@ impl GuardianConfig {
         self.approver.auth_scheme()
     }
 
-    fn public_key_slot() -> &'static StorageSlotName {
+    pub(super) fn public_key_slot() -> &'static StorageSlotName {
         &GUARDIAN_PUBKEY_SLOT_NAME
     }
 
-    fn scheme_id_slot() -> &'static StorageSlotName {
+    pub(super) fn scheme_id_slot() -> &'static StorageSlotName {
         &GUARDIAN_SCHEME_ID_SLOT_NAME
     }
 
     /// Returns the storage slots holding the guardian's public key and signature scheme.
-    fn into_slots(self) -> Vec<StorageSlot> {
+    pub(super) fn into_slots(self) -> Vec<StorageSlot> {
         let mut storage_slots = Vec::with_capacity(2);
 
         // Guardian public key slot (map: [0, 0, 0, 0] -> pubkey)
