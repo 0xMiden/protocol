@@ -11,6 +11,12 @@ pub use link_map::{LinkMap, MemoryViewer};
 mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the transaction kernel does not load the code patch yet")
+)]
+mod code_patch;
+
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::{

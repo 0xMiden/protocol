@@ -4,17 +4,21 @@ use alloc::vec::Vec;
 use core::error::Error;
 
 use miden_processor::ExecutionError;
+use miden_processor::mast::MastForestError;
 use miden_processor::serde::DeserializationError;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
     AssetError,
     BoundSignatureError,
+    CodePatchError,
+    CodeTreeError,
     NoteError,
     OutputNoteError,
     ProvenTransactionError,
@@ -337,6 +341,19 @@ pub enum TransactionKernelError {
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },
+    #[error("code witness is not available")]
+    MissingCodeWitness {
+        procedure_root: ProcedureRoot,
+        source: CodeTreeError,
+    },
+    #[error("MAST of procedure root {0} is not available")]
+    MissingProcedureMast(ProcedureRoot),
+    #[error("code to register must not have advice map entries")]
+    CodePatchAdvice,
+    #[error("failed to build the MAST forest of the code patch")]
+    CodePatchMastForest(#[source] MastForestError),
+    #[error("code patch is invalid")]
+    InvalidCodePatch(#[source] CodePatchError),
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]
