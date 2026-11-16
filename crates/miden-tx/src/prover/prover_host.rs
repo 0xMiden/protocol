@@ -11,6 +11,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
+use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
@@ -47,11 +48,13 @@ where
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
     ///
-    /// The code patch is the patch of the executed transaction.
+    /// The code patch is the patch of the executed transaction. The expected output note recipients
+    /// are the ones of the transaction arguments.
     ///
     /// # Errors
     ///
     /// Returns an error if the host cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
@@ -61,6 +64,7 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
         code_patch: CodePatch,
+        expected_output_note_recipients: Vec<NoteRecipient>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -70,6 +74,7 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             code_tree,
+            expected_output_note_recipients,
         )?;
 
         Ok(Self { base_host, code_patch })
@@ -211,9 +216,6 @@ where
                     RecipientData::Recipient(note_recipient) => self
                         .base_host
                         .output_note_from_recipient(note_idx, metadata, note_recipient),
-                    RecipientData::ScriptMissing { .. } => Err(TransactionKernelError::other(
-                        "note script should be in the advice provider at proving time",
-                    )),
                 }
             },
 

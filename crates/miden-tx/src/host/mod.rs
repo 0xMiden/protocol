@@ -70,6 +70,7 @@ use miden_protocol::note::{
     NoteId,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::{
@@ -139,6 +140,12 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The code tree of the reference block that tracks the available code witnesses.
     code_tree: PartialCodeTree,
 
+    /// The recipients of the output notes the transaction is expected to create.
+    ///
+    /// Their scripts provide the full scripts of private output notes and the code of public
+    /// output notes for the code patch.
+    expected_output_note_recipients: Vec<NoteRecipient>,
+
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
 }
@@ -160,6 +167,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
+        expected_output_note_recipients: Vec<NoteRecipient>,
     ) -> Result<Self, TransactionKernelError> {
         let new_public_account_code =
             (account.is_new() && account.id().is_public()).then(|| account.code().clone());
@@ -188,6 +196,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             block_commitments,
             new_public_account_code,
             code_tree,
+            expected_output_note_recipients,
             core_lib_handlers,
         })
     }
@@ -198,6 +207,17 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns the ID of the native account.
     pub fn native_account_id(&self) -> AccountId {
         self.initial_account_header().id()
+    }
+
+    /// Returns the script with the provided root from the expected output note recipients, if any.
+    pub(crate) fn expected_output_note_script(
+        &self,
+        script_root: NoteScriptRoot,
+    ) -> Option<&NoteScript> {
+        self.expected_output_note_recipients
+            .iter()
+            .map(NoteRecipient::script)
+            .find(|script| script.root() == script_root)
     }
 
     /// Returns a reference to the initial account header of the native account, which represents
@@ -730,9 +750,12 @@ where
         Ok(absent_roots)
     }
 
-    /// Returns the source of the code patch: the code of the top-level procedure roots and the
-    /// provided code to register (see
+    /// Returns the source of the code patch: the code of the new public account, the scripts of the
+    /// expected recipients of the public output notes and the provided code to register (see
     /// [`DataStore::get_code_to_register`](crate::DataStore::get_code_to_register)).
+    ///
+    /// The scripts of public output notes are references to their roots, so their code comes from
+    /// the expected recipients or the code to register.
     ///
     /// # Errors
     ///
@@ -741,7 +764,17 @@ where
         &self,
         code_to_register: &[Arc<MastForest>],
     ) -> Result<CodePatchSource, TransactionKernelError> {
-        let note_script_forests = self.public_output_note_scripts().map(NoteScript::mast);
+        // Only merge public note scripts that were created.
+        let note_script_forests = self
+            .expected_output_note_recipients
+            .iter()
+            .filter(|recipient| {
+                self.output_notes.values().any(|builder| {
+                    builder.recipient_digest() == recipient.digest()
+                        && builder.metadata().is_public()
+                })
+            })
+            .map(|recipient| recipient.script().mast());
         let mast_forests = self
             .new_public_account_code
             .iter()

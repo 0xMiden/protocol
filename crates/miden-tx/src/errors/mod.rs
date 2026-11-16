@@ -278,13 +278,6 @@ pub enum TransactionKernelError {
     )]
     MalformedNoteStorage(#[source] NoteError),
     #[error(
-        "note script elements `{script_elements:?}` extracted from the advice map by the event handler are not well formed"
-    )]
-    MalformedNoteScript {
-        script_elements: Vec<Felt>,
-        source: DeserializationError,
-    },
-    #[error(
         "encoded signature under advice map key {signature_key} has {actual} elements, but a valid encoded signature has between 1 and {max} elements",
         max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
     )]

@@ -351,7 +351,10 @@ async fn test_send_note_script_non_fungible_faucet() -> anyhow::Result<()> {
         .await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    assert_eq!(executed_transaction.output_notes().get_note(0), &RawOutputNote::Full(note));
+    assert_eq!(
+        executed_transaction.output_notes().get_note(0),
+        &RawOutputNote::Full(note.with_minimal_script())
+    );
 
     Ok(())
 }
@@ -497,7 +500,10 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    assert_eq!(executed_transaction.output_notes().get_note(0), &RawOutputNote::Full(note));
+    assert_eq!(
+        executed_transaction.output_notes().get_note(0),
+        &RawOutputNote::Full(note.with_minimal_script())
+    );
 
     assert_eq!(
         executed_transaction.expiration_block_num(),
@@ -574,9 +580,18 @@ async fn test_send_note_script_multiple_notes_basic_wallet() -> anyhow::Result<(
         .await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 3);
-    assert_eq!(executed_transaction.output_notes().get_note(0), &RawOutputNote::Full(note_a));
-    assert_eq!(executed_transaction.output_notes().get_note(1), &RawOutputNote::Full(note_b));
-    assert_eq!(executed_transaction.output_notes().get_note(2), &RawOutputNote::Full(note_c));
+    assert_eq!(
+        executed_transaction.output_notes().get_note(0),
+        &RawOutputNote::Full(note_a.with_minimal_script())
+    );
+    assert_eq!(
+        executed_transaction.output_notes().get_note(1),
+        &RawOutputNote::Full(note_b.with_minimal_script())
+    );
+    assert_eq!(
+        executed_transaction.output_notes().get_note(2),
+        &RawOutputNote::Full(note_c.with_minimal_script())
+    );
 
     // Both of note A's assets must have left the vault: the non-fungible one entirely, and the
     // fungible one decremented by note A's and note B's amounts.

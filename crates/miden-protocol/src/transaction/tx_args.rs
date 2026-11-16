@@ -205,7 +205,9 @@ impl TransactionArgs {
     /// Adds the recipient of an output note the transaction is expected to create.
     ///
     /// The recipient details let the host build the full output note when the transaction creates
-    /// a note with the recipient's commitment.
+    /// a note with the recipient's commitment. The script of the recipient of a public note also
+    /// provides its code for the code patch, so an absent script does not need to be part of the
+    /// code to register.
     pub fn add_output_note_recipient(&mut self, note_recipient: NoteRecipient) {
         self.output_note_recipients.push(note_recipient);
     }
