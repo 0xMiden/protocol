@@ -1,6 +1,7 @@
 use super::{ExecutedTransaction, TransactionInputs};
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
+use crate::block::code_tree::CodePatch;
 
 // TRANSACTION WITNESS
 // ================================================================================================
@@ -15,6 +16,7 @@ pub struct TransactionWitness {
     tx_inputs: TransactionInputs,
     final_account: AccountHeader,
     expiration_block_num: BlockNumber,
+    code_patch: CodePatch,
 }
 
 impl TransactionWitness {
@@ -23,17 +25,19 @@ impl TransactionWitness {
 
     /// Returns a new [`TransactionWitness`] instantiated from the provided parts.
     ///
-    /// This does not check that the final account and expiration block number are the result of
-    /// executing the inputs. A prover must check this before it uses them.
+    /// This does not check that the final account, expiration block number and code patch are the
+    /// result of executing the inputs. A prover must check this before it uses them.
     pub fn new_unchecked(
         tx_inputs: TransactionInputs,
         final_account: AccountHeader,
         expiration_block_num: BlockNumber,
+        code_patch: CodePatch,
     ) -> Self {
         Self {
             tx_inputs,
             final_account,
             expiration_block_num,
+            code_patch,
         }
     }
 
@@ -55,13 +59,18 @@ impl TransactionWitness {
         self.expiration_block_num
     }
 
+    /// Returns the code patch of the transaction.
+    pub fn code_patch(&self) -> &CodePatch {
+        &self.code_patch
+    }
+
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes self and returns the transaction inputs, the final account header and the
-    /// expiration block number.
-    pub fn into_parts(self) -> (TransactionInputs, AccountHeader, BlockNumber) {
-        (self.tx_inputs, self.final_account, self.expiration_block_num)
+    /// Consumes self and returns the transaction inputs, the final account header, the expiration
+    /// block number and the code patch.
+    pub fn into_parts(self) -> (TransactionInputs, AccountHeader, BlockNumber, CodePatch) {
+        (self.tx_inputs, self.final_account, self.expiration_block_num, self.code_patch)
     }
 }
 
@@ -69,7 +78,7 @@ impl From<ExecutedTransaction> for TransactionWitness {
     fn from(tx: ExecutedTransaction) -> Self {
         let (tx_inputs, tx_outputs, ..) = tx.into_parts();
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (final_account, ..) = tx_outputs.into_parts();
-        Self::new_unchecked(tx_inputs, final_account, expiration_block_num)
+        let (final_account, _, _, code_patch) = tx_outputs.into_parts();
+        Self::new_unchecked(tx_inputs, final_account, expiration_block_num, code_patch)
     }
 }

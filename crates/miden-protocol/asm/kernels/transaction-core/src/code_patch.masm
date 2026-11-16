@@ -1,5 +1,5 @@
 use {Bool} from miden::protocol_utils::types
-use {ProcedureRoot} from miden::tx_kernel_core::types
+use {Commitment, ProcedureRoot} from miden::tx_kernel_core::types
 use miden::protocol_utils::account_id
 use miden::protocol_utils::mem
 use miden::tx_kernel_core::memory
@@ -9,6 +9,7 @@ use {NOTE_TYPE_PUBLIC} from miden::tx_kernel_core::note
 use {MAX_CODE_PATCH_ROOTS, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 
 # ERRORS
@@ -26,12 +27,18 @@ const ERR_CODE_PATCH_TOP_LEVEL_ROOT_MISSING =
 const ERR_CODE_PATCH_AUTH_NOTE_SCRIPT_ABSENT =
     "script of a note created by the auth procedure must be registered or known to the host before the auth procedure"
 
+const ERR_CODE_PATCH_DEPENDENCIES_WITHOUT_CREATED_PROCS =
+    "code patch without created procedures must not have dependencies"
+
 # CONSTANTS
 # =================================================================================================
 
 # The expected presence in the code tree of the procedure roots of a code patch list.
 const PRESENT = 1
 const ABSENT = 0
+
+# Eidos domain tag.
+const CODE_PATCH_DOMAIN = 0x02000501
 
 # EVENTS
 # =================================================================================================
@@ -59,8 +66,8 @@ const CODE_PATCH_BEFORE_WITNESS_VERIFIED_EVENT = event("miden::protocol::code_pa
 #! `verify_auth_output_note` for the notes that are created later.
 #!
 #! The kernel cannot read MAST, so it cannot check that the host provides all referenced
-#! procedures. Instead, the node will check that the code patch is complete, when the kernel
-#! outputs the code patch commitment (see TODO(#4006) below).
+#! procedures. Instead, the node checks that the code patch is complete, because the transaction
+#! commits to the code patch commitment that this procedure computes.
 #!
 #! The code witnesses are provided through the merkle store and the advice map.
 #!
@@ -81,15 +88,34 @@ const CODE_PATCH_BEFORE_WITNESS_VERIFIED_EVENT = event("miden::protocol::code_pa
 #!
 #! Panics if:
 #! - a list is invalid (see `load_code_patch_list`).
+#! - DEPENDENCIES is not empty, but CREATED_PROCS is empty.
 #! - a top-level procedure root of the code that the transaction created so far is neither created
 #!   nor present.
 pub proc load()
     emit.CODE_PATCH_BEFORE_LOADED_EVENT
 
     push.ABSENT push.CREATED_PROCS_LIST_PTR exec.load_code_patch_list
-    # => []
+    # => [CREATED_PROCS_COMMITMENT]
 
     push.PRESENT push.DEPENDENCIES_LIST_PTR exec.load_code_patch_list
+    # => [DEPENDENCIES_COMMITMENT, CREATED_PROCS_COMMITMENT]
+
+    # each node of a code patch is reachable from a created procedure, so a code patch without
+    # created procedures must have no dependencies
+    exec.memory::get_code_patch_num_created_procs neq.0
+    # => [creates_procedures, DEPENDENCIES_COMMITMENT, CREATED_PROCS_COMMITMENT]
+
+    exec.memory::get_code_patch_num_dependencies eq.0
+    # => [has_no_dependencies, creates_procedures, DEPENDENCIES_COMMITMENT, CREATED_PROCS_COMMITMENT]
+
+    # assert (creates_procedures || has_no_dependencies)
+    or assert.err=ERR_CODE_PATCH_DEPENDENCIES_WITHOUT_CREATED_PROCS
+    # => [DEPENDENCIES_COMMITMENT, CREATED_PROCS_COMMITMENT]
+
+    swapw push.CODE_PATCH_DOMAIN exec.eidos::hash_double_word_in_domain
+    # => [CODE_PATCH_COMMITMENT]
+
+    exec.memory::set_code_patch_commitment
     # => []
 
     exec.assert_new_account_code_in_code_patch
@@ -161,19 +187,20 @@ end
 #!   Operand stack: [list_ptr, is_present]
 #!   Advice stack: [num_procedure_roots, [PROC_ROOT*]]
 #! Outputs:
-#!   Operand stack: []
+#!   Operand stack: [LIST_COMMITMENT]
 #!
 #! Where:
 #! - list_ptr is the memory address at which the code patch list begins.
 #! - is_present is 1 if the procedure roots in the list must be present in the code tree, 0 if they
 #!   must be absent.
 #! - num_procedure_roots is the number of procedure roots in the list.
+#! - LIST_COMMITMENT is the commitment to the list (see `mem::pipe_strictly_sorted_words_to_memory`).
 #!
 #! Panics if:
 #! - num_procedure_roots exceeds MAX_CODE_PATCH_ROOTS.
 #! - the procedure roots are not unique and sorted.
 #! - a code witness is invalid or the presence of a procedure root does not match is_present.
-proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool)
+proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool) -> Commitment
     adv_push u32assert.err=ERR_CODE_PATCH_MAX_ROOTS_EXCEEDED
     # => [num_procedure_roots, list_ptr, is_present]
 
@@ -187,41 +214,36 @@ proc load_code_patch_list(list_ptr: ptr<ProcedureRoot>, is_present: Bool)
     # => [num_procedure_roots, roots_ptr, list_ptr, is_present]
 
     exec.mem::pipe_strictly_sorted_words_to_memory
-    # => [COMMITMENT, roots_end_ptr, list_ptr, is_present]
+    # => [LIST_COMMITMENT, roots_end_ptr, list_ptr, is_present]
 
-    # TODO(#4006): use the commitments of CREATED_PROCS and DEPENDENCIES for the code patch
-    # commitment.
-    dropw
-    # => [roots_end_ptr, list_ptr, is_present]
-
-    swap exec.memory::get_code_patch_roots_ptr
-    # => [root_ptr, roots_end_ptr, is_present]
+    movup.6 movup.6 movup.6 swap exec.memory::get_code_patch_roots_ptr
+    # => [root_ptr, roots_end_ptr, is_present, LIST_COMMITMENT]
 
     dup.1 dup.1 neq
-    # => [should_loop, root_ptr, roots_end_ptr, is_present]
+    # => [should_loop, root_ptr, roots_end_ptr, is_present, LIST_COMMITMENT]
 
     # verify the code witness for every procedure root and assert its status matches the expected
     # is_present
     while.true
         padw dup.4 mem_loadw_le
-        # => [PROC_ROOT, root_ptr, roots_end_ptr, is_present]
+        # => [PROC_ROOT, root_ptr, roots_end_ptr, is_present, LIST_COMMITMENT]
 
         exec.verify_witness
-        # => [is_root_present, root_ptr, roots_end_ptr, is_present]
+        # => [is_root_present, root_ptr, roots_end_ptr, is_present, LIST_COMMITMENT]
 
         # assert is_root_present == is_present
         dup.3 assert_eq.err=ERR_CODE_PATCH_PROC_ROOT_PRESENCE_MISMATCH
-        # => [root_ptr, roots_end_ptr, is_present]
+        # => [root_ptr, roots_end_ptr, is_present, LIST_COMMITMENT]
 
         add.WORD_NUM_ELEMENTS
-        # => [root_ptr', roots_end_ptr, is_present]
+        # => [root_ptr', roots_end_ptr, is_present, LIST_COMMITMENT]
 
         dup.1 dup.1 neq
-        # => [should_loop, root_ptr', roots_end_ptr, is_present]
+        # => [should_loop, root_ptr', roots_end_ptr, is_present, LIST_COMMITMENT]
     end
 
     drop drop drop
-    # => []
+    # => [LIST_COMMITMENT]
 end
 
 #! Asserts that the procedure roots of the native account code are in the code patch if the
@@ -387,7 +409,7 @@ end
 #! - PROC_ROOT is the procedure root to search for.
 #! - is_created is 1 if CREATED_PROCS contains PROC_ROOT, 0 otherwise.
 proc is_created_procedure(proc_root: ProcedureRoot) -> Bool
-    push.CREATED_PROCS_LIST_PTR exec.memory::get_code_patch_num_procedure_roots
+    exec.memory::get_code_patch_num_created_procs
     mul.WORD_NUM_ELEMENTS
     # => [roots_length, PROC_ROOT]
 
