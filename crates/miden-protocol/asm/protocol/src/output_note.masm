@@ -67,8 +67,9 @@ end
 #! Call this once the note's assets and attachments are final. Every output note must be sealed
 #! before the transaction ends, otherwise the transaction epilogue panics. The callbacks are invoked
 #! once per faucet, in the order in which each faucet first occurs among the note's assets, and the
-#! attachment each callback returns is appended to the note. Sealing is idempotent: sealing an
-#! already sealed note returns without invoking any callback.
+#! attachment each callback returns is appended to the note, so the note's attachments and ID are
+#! final only once `seal` returns. Sealing is idempotent: sealing an already sealed note returns
+#! without invoking any callback.
 #!
 #! Inputs:  [note_index]
 #! Outputs: []

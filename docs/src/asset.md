@@ -174,7 +174,7 @@ Account components that need to add callbacks to an account's storage should use
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback either completes successfully or aborts the transaction.
+The transaction kernel invokes the callback on the issuing faucet. The callback either completes successfully or aborts the transaction, and the note callback can also return an attachment for the note.
 
 The callback cannot modify account or note state. The kernel aborts the transaction if the callback calls a state-changing kernel procedure, for example `native_account::set_item` or `output_note::add_asset`. Setting the expiration delta and emitting transaction logs is allowed.
 
@@ -192,9 +192,16 @@ Inputs:  [note_idx, pad(15)]
 Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
 ```
 
-The kernel seals the note after its callbacks have run. Since a callback cannot modify the note, it reads the note's final assets, metadata and recipient itself (e.g. via `output_note::get_assets`, `output_note::get_metadata` and `output_note::get_recipient`). The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
+The kernel seals the note after its callbacks have run. Since a callback cannot modify the note, it reads the note's final assets and recipient itself (e.g. via `output_note::get_assets` and `output_note::get_recipient`). The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
 
-The note callback can return one attachment for the note. It puts the attachment elements into the advice map under `ATTACHMENT_COMMITMENT` (e.g. via `adv.insert_mem`) and returns the attachment's scheme and commitment. The kernel appends the attachment to the note right after the callback returns, so the attachments of several callbacks follow the callback order. A returned attachment counts toward the note's [attachment limits](note#attachments). An `attachment_scheme` of `0` means the callback returns no attachment.
+The note callback can return one attachment for the note. It puts the attachment elements into the advice map under `ATTACHMENT_COMMITMENT` (e.g. via `adv.insert_mem`) and returns the attachment's scheme and commitment. The kernel appends the attachment to the note right after the callback returns, so the attachments of several callbacks follow the callback order. An `attachment_scheme` of `0` means the callback returns no attachment, and then `ATTACHMENT_COMMITMENT` must be the empty word. The kernel reads `attachment_scheme` from the stack position where the callback receives `note_idx`, so the callback must clear that position: a callback that leaves its inputs on the stack works for note 0 only and makes sealing any other note panic.
+
+Returned attachments have these consequences:
+
+- While a note's callbacks run, its attachments, the attachment schemes in its metadata and its ID are not final: later callbacks can still append attachments, and the note's creator controls the order of the callbacks through the order of the note's assets.
+- Returned attachments count toward the note's [attachment limits](note#attachments) of 4 attachments and 512 words, so the note's creator must leave room for them.
+- An attachment cannot be attributed to a faucet by its scheme or its index: any callback can return any scheme, and the index depends on the attachments the creator added and on the order of the note's assets.
+- A callback can read a private note's assets and recipient and publish them in its attachment, which is stored on-chain with the note.
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 
