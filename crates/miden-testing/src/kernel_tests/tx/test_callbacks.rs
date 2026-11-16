@@ -538,11 +538,12 @@ async fn test_blocked_account_cannot_add_asset_to_note(
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::miden::standards::note::note_creator::create_note
+            call.::miden::standards::note::note_creator::create_note dup
 
             push.{asset_value}
             push.{asset_id}
             exec.output_note::add_asset
+            exec.output_note::seal
         end
         "#,
         recipient = recipient,

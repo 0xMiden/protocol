@@ -1370,8 +1370,11 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
             # => [note_idx]
 
             # add attachment 5 (should fail)
-            push.17.18.19.20 push.5
+            dup push.17.18.19.20 push.5
             exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
         end
         ";
