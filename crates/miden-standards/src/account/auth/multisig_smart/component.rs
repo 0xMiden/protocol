@@ -289,10 +289,12 @@ fn validate_proc_policies(
 /// transaction's summary commitment, which includes its max fee, so the proposer fixes the max fee
 /// when it obtains the commitment (see
 /// [`MultisigAuthArgs::with_estimated_max_fee`](crate::account::auth::MultisigAuthArgs::with_estimated_max_fee))
-/// and the execution passes it back. A propose or cancel transaction pays its own fee the same way;
-/// since it verifies signatures over the proposed commitment rather than its own summary, its max
-/// fee is not covered by any signature and the fee it pays is bounded by the kernel's fee formula
-/// alone.
+/// and the execution passes it back.
+///
+/// A propose or cancel transaction pays a fee too, after its own authorization and within the max
+/// fee its own summary binds. Such a transaction verifies signatures over the proposed commitment
+/// rather than over its own summary, so no signature covers that max fee: the fee it pays is
+/// bounded by the kernel's fee formula alone.
 ///
 /// # Security
 ///
