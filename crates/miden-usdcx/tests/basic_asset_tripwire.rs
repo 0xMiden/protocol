@@ -115,7 +115,7 @@ fn production_build_wires_the_transfer_blocklist() -> Result<()> {
     // dispatch on transfer/consume). Un-wiring the policy drops these slots.
     for (slot, wrapper_root) in [
         (
-            AssetCallbacks::on_before_asset_added_to_note_slot(),
+            AssetCallbacks::on_before_note_sealed_slot(),
             TokenPolicyManager::invoke_send_policy_root().as_word(),
         ),
         (

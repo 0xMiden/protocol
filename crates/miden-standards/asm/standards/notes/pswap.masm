@@ -238,13 +238,10 @@ end
 # OUTPUT NOTE VALIDATION AND SEALING
 # =================================================================================================
 
-#! Checks the completed output's asset, then seals it. Call after all asset callbacks finish.
-#! Callbacks cannot replace the asset argument today, but a native issuer's
-#! callback can add to the output's balance without changing its asset count, so the full asset
-#! commitment must still be checked.
+#! Checks the completed output's asset, then seals it. Sealing invokes the asset callbacks of the
+#! output's faucets, which run on the sealed output and cannot alter it.
 #!
-#! The PSWAP attachment is added before callbacks and cannot be replaced or removed.
-#! Additional public attachments are allowed before sealing.
+#! The PSWAP attachment is added first and cannot be replaced or removed.
 #!
 #! Inputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 #! Outputs: []

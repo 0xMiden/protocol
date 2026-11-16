@@ -6,9 +6,10 @@
 //! `execute_*_policy` wrappers from the faucet flow. Send and receive are dispatched by
 //! `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in the
 //! protocol-reserved callback slots
-//! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and `..._to_note`); the
-//! kernel `dyncall`s the wrapper, which limits the transaction's expiration, applies the
-//! account-wide pause check and then dispatches to the active policy root.
+//! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and
+//! `miden::protocol::faucet::callback::on_before_note_sealed`); the kernel `dyncall`s the wrapper,
+//! which limits the transaction's expiration, applies the account-wide pause check and then
+//! dispatches to the active policy root.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -193,10 +194,10 @@ struct PolicyConfig {
 ///
 /// The component exposes `set_*_policy` and `get_*_policy` for each kind, `execute_*_policy` for
 /// mint / burn, and `invoke_send_policy` / `invoke_receive_policy` for the transfer kinds. The
-/// transfer wrappers double as the protocol-level `on_before_asset_added_to_*` asset callbacks:
-/// the kernel `dyncall`s the wrapper, which limits the transaction's expiration to the standards
-/// default delta, applies the account-wide pause check and then dispatches to the active send /
-/// receive policy.
+/// transfer wrappers double as the protocol-level `on_before_note_sealed` /
+/// `on_before_asset_added_to_account` asset callbacks: the kernel `dyncall`s the wrapper, which
+/// limits the transaction's expiration to the standards default delta, applies the account-wide
+/// pause check and then dispatches to the active send / receive policy.
 /// Authorization for switching the active policies is delegated to the account-wide
 /// [`Authority`][crate::account::access::Authority] component, which must be installed alongside
 /// this manager.
@@ -494,7 +495,7 @@ impl TokenPolicyManager {
     }
 
     /// Returns the procedure root of the `invoke_send_policy` wrapper stored in the
-    /// `on_before_asset_added_to_note` callback slot.
+    /// `on_before_note_sealed` callback slot.
     pub fn invoke_send_policy_root() -> AccountProcedureRoot {
         *POLICY_MANAGER_INVOKE_SEND_POLICY
     }
@@ -544,7 +545,7 @@ impl TokenPolicyManager {
                 metadata,
                 &[
                     AssetCallbacks::on_before_asset_added_to_account_slot(),
-                    AssetCallbacks::on_before_asset_added_to_note_slot(),
+                    AssetCallbacks::on_before_note_sealed_slot(),
                 ],
             );
         }
@@ -554,10 +555,7 @@ impl TokenPolicyManager {
                 AssetCallbacks::on_before_asset_added_to_account_slot(),
                 Self::invoke_receive_policy_root(),
             ),
-            (
-                AssetCallbacks::on_before_asset_added_to_note_slot(),
-                Self::invoke_send_policy_root(),
-            ),
+            (AssetCallbacks::on_before_note_sealed_slot(), Self::invoke_send_policy_root()),
         ];
         let slots = metadata.storage_schema().iter().map(|(slot_name, schema)| {
             let schema = match callback_defaults.iter().find(|(name, _)| *name == slot_name) {
@@ -648,7 +646,7 @@ impl TokenPolicyManager {
         if self.has_transfer_policy() {
             let callback_slots = AssetCallbacks::new()
                 .on_before_asset_added_to_account(Self::invoke_receive_policy_root().as_word())
-                .on_before_asset_added_to_note(Self::invoke_send_policy_root().as_word())
+                .on_before_note_sealed(Self::invoke_send_policy_root().as_word())
                 .into_storage_slots();
             slots.extend(callback_slots);
         }
@@ -779,11 +777,10 @@ mod tests {
              protocol callback slot",
                 );
         let on_note_slot =
-            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_note_slot())
-                .expect(
-                    "AllowAll send policy must register the on_before_asset_added_to_note protocol \
+            find_slot(&manager_component, AssetCallbacks::on_before_note_sealed_slot()).expect(
+                "AllowAll send policy must register the on_before_note_sealed protocol \
              callback slot",
-                );
+            );
 
         // The callback slots must hold the wrapper roots, not the active policy root.
         assert_eq!(
@@ -828,11 +825,10 @@ mod tests {
                      protocol callback slot",
                 );
         let on_note_slot =
-            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_note_slot())
-                .expect(
-                    "reserved send policy must register the on_before_asset_added_to_note protocol \
+            find_slot(&manager_component, AssetCallbacks::on_before_note_sealed_slot()).expect(
+                "reserved send policy must register the on_before_note_sealed protocol \
                      callback slot",
-                );
+            );
 
         // They hold the fixed wrapper roots, identical to the active-policy case.
         assert_eq!(
@@ -876,9 +872,8 @@ mod tests {
              slot to a separate component",
         );
         assert!(
-            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_note_slot())
-                .is_none(),
-            "without a send policy, the manager must leave the on_before_asset_added_to_note slot \
+            find_slot(&manager_component, AssetCallbacks::on_before_note_sealed_slot()).is_none(),
+            "without a send policy, the manager must leave the on_before_note_sealed slot \
              to a separate component",
         );
 
@@ -951,7 +946,7 @@ mod tests {
             TokenPolicyManager::invoke_receive_policy_root().as_word(),
         );
         assert_eq!(
-            find_schema_slot(AssetCallbacks::on_before_asset_added_to_note_slot()),
+            find_schema_slot(AssetCallbacks::on_before_note_sealed_slot()),
             TokenPolicyManager::invoke_send_policy_root().as_word(),
         );
         assert_eq!(find_schema_slot(TokenPolicyManager::active_send_policy_slot()), allow_all_root);

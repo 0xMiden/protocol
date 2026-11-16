@@ -1,5 +1,7 @@
 use {
+    AccountId,
     Asset,
+    Bool,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
     NoteAttachmentsCommitment,
@@ -16,6 +18,7 @@ use miden::tx_kernel_core::callbacks
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
+use miden::protocol_utils::account_id
 use {MAX_OUTPUT_NOTES_PER_TX, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 use {MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PUBLIC}
     from miden::tx_kernel_core::note
@@ -262,16 +265,6 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    # retain the original asset and note index while the callback validates a copy
-    repeat.9
-        dup.8
-    end
-    # => [ASSET_ID, ASSET_VALUE, note_idx, ASSET_ID, ASSET_VALUE, note_idx]
-
-    # invoke the callback
-    exec.callbacks::on_before_asset_added_to_note
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
-
     movup.8 exec.memory::get_output_note_ptr
     dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
     dup
@@ -394,6 +387,45 @@ pub proc add_attachment(
     # => [num_attachments, note_ptr, attachment_scheme]
 
     exec.set_attachment_schemes
+    # => []
+end
+
+#! Seals the note specified by the index and invokes the `on_before_note_sealed` callback of each
+#! distinct faucet with the asset callback flag enabled among the note's assets.
+#!
+#! If the note is already sealed, the procedure returns without invoking any callback. Otherwise,
+#! the note is sealed before the first callback is invoked, so from then on its assets and
+#! attachments cannot be modified and sealing it again, including from within a callback, returns
+#! immediately. The callbacks are invoked in the order in which each faucet first occurs among the
+#! note's assets.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - note_idx is the index of the note to seal.
+#!
+#! Panics if:
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+pub proc seal(note_idx: u16)
+    dup exec.memory::get_output_note_ptr
+    # => [note_ptr, note_idx]
+
+    dup exec.memory::is_output_note_sealed
+    # => [is_sealed, note_ptr, note_idx]
+
+    if.true
+        drop drop
+        # => []
+    else
+        # seal the note before invoking the callbacks
+        dup exec.memory::seal_output_note
+        # => [note_ptr, note_idx]
+
+        exec.invoke_on_before_note_sealed_callbacks
+        # => []
+    end
     # => []
 end
 
@@ -721,4 +753,138 @@ proc add_asset_raw(asset: Asset, note_ptr: ptr<OutputNoteData>)
         movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
         # => []
     end
+end
+
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the assets of the specified note, in the order in which each faucet first occurs
+#! among the note's assets.
+#!
+#! Inputs:  [note_ptr, note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - note_idx is the index of the note whose callbacks are invoked.
+#!
+#! Panics if:
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_idx: u16)
+    dup exec.memory::get_output_note_asset_data_ptr
+    # => [assets_start_ptr, note_ptr, note_idx]
+
+    swap exec.memory::get_output_note_num_assets
+    # => [num_assets, assets_start_ptr, note_idx]
+
+    # compute the pointer at which we should stop iterating
+    mul.ASSET_SIZE dup.1 add
+    # => [assets_end_ptr, assets_start_ptr, note_idx]
+
+    dup.1
+    # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+    # enter the loop if the note has assets
+    dup dup.2 neq
+    # => [has_assets, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [ASSET_ID, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        exec.asset::id_to_has_callbacks
+        # => [has_callbacks, ASSET_ID, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        if.true
+            exec.asset::id_into_faucet_id
+            # => [faucet_id_suffix, faucet_id_prefix, asset_ptr, assets_end_ptr, assets_start_ptr,
+            #     note_idx]
+
+            # check whether the faucet already occurs among the preceding assets
+            dup.1 dup.1 dup.4 dup.7
+            # => [assets_start_ptr, asset_ptr, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix,
+            #     faucet_id_prefix, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+            exec.has_asset_from_faucet
+            # => [is_preceding_faucet, faucet_id_suffix, faucet_id_prefix, asset_ptr, assets_end_ptr,
+            #     assets_start_ptr, note_idx]
+
+            if.true
+                # the callback of this faucet was already invoked
+                drop drop
+                # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+            else
+                dup.5 movdn.2
+                # => [faucet_id_suffix, faucet_id_prefix, note_idx, asset_ptr, assets_end_ptr,
+                #     assets_start_ptr, note_idx]
+
+                exec.callbacks::on_before_note_sealed
+                # => [callback_outputs(16), asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+                dropw dropw dropw dropw
+                # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+            end
+        else
+            dropw
+            # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+        end
+        # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        add.ASSET_SIZE
+        # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        # continue looping while asset_ptr != assets_end_ptr
+        dup dup.2 neq
+        # => [should_loop, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+    end
+    # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+    dropw
+    # => []
+end
+
+#! Returns whether any of the assets in the provided memory range was issued by the provided faucet.
+#!
+#! Inputs:  [start_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [is_found]
+#!
+#! Where:
+#! - start_ptr is the memory address of the first asset in the range.
+#! - end_ptr is the memory address right after the last asset in the range.
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet ID to look for.
+#! - is_found is 1 if an asset in the range was issued by the faucet, 0 otherwise.
+proc has_asset_from_faucet(start_ptr: ptr<Asset>, end_ptr: ptr<Asset>, faucet_id: AccountId) -> Bool
+    # initialize the loop variable is_found to false
+    push.0 movdn.4
+    # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+    # enter the loop if the range is non-empty
+    dup dup.2 neq
+    # => [should_loop, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [ASSET_ID, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        exec.asset::id_into_faucet_id
+        # => [asset_faucet_id_suffix, asset_faucet_id_prefix, asset_ptr, end_ptr, faucet_id_suffix,
+        #     faucet_id_prefix, is_found]
+
+        dup.5 dup.5 exec.account_id::eq
+        # => [is_matching_faucet, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        # set is_found = is_matching_faucet
+        swap.5 drop
+        # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        add.ASSET_SIZE
+        # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        # continue looping while (!is_found) && asset_ptr != end_ptr
+        dup dup.2 neq dup.5 not and
+        # => [should_loop, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+    end
+    # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+    dropw
+    # => [is_found]
 end

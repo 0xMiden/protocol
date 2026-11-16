@@ -155,42 +155,44 @@ Assets in Miden can be burned through various methods, such as rendering them un
 
 ### Callbacks
 
-Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or to an output note. This gives asset issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
+Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or an output note holding its assets is sealed. This gives asset issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
 
 #### How callbacks work
 
 Callbacks involve two parts: a **faucet-level capability flag** and **faucet-level callback procedures**.
 
-**Faucet callback flag.** Whether a faucet's assets trigger callbacks is an immutable single-bit flag of the faucet's account ID, fixed at account creation. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever one of its assets is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely and no foreign-account read is performed. Because the flag lives in the account ID (which is carried in every asset ID) rather than in each asset, all assets issued by a faucet share the same callback behavior and cannot be fragmented.
+**Faucet callback flag.** Whether a faucet's assets trigger callbacks is an immutable single-bit flag of the faucet's account ID, fixed at account creation. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever one of its assets is added to a vault or an output note holding one of its assets is sealed. When the flag is `Disabled`, callbacks are skipped entirely and no foreign-account read is performed. Because the flag lives in the account ID (which is carried in every asset ID) rather than in each asset, all assets issued by a faucet share the same callback behavior and cannot be fragmented.
 
 **Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
 
 | Callback | Storage slot name | Triggered when |
 |---|---|---|
 | `on_before_asset_added_to_account` | `miden::protocol::faucet::callback::on_before_asset_added_to_account` | The asset is added to an account's vault (via `native_account::add_asset`). |
-| `on_before_asset_added_to_note` | `miden::protocol::faucet::callback::on_before_asset_added_to_note` | The asset is added to an output note (via `output_note::add_asset`). |
+| `on_before_note_sealed` | `miden::protocol::faucet::callback::on_before_note_sealed` | An output note holding at least one of the faucet's assets is sealed (via `output_note::seal`). |
 
 Account components that need to add callbacks to an account's storage should use the `AssetCallbacks` type, which provides an easy-to-use abstraction over these details.
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value for inspection. The callback either completes successfully or aborts the transaction.
+The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback either completes successfully or aborts the transaction.
 
 The callback cannot modify account or note state. The kernel aborts the transaction if the callback calls a state-changing kernel procedure, for example `native_account::set_item` or `output_note::add_asset`. Setting the expiration delta and emitting transaction logs is allowed.
 
-The **account callback** receives:
+The **account callback** receives the asset ID and value of the asset being added:
 
 ```
 Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 Outputs: [pad(16)]
 ```
 
-The **note callback** receives the additional `note_idx` identifying which output note the asset is being added to:
+The **note callback** receives the index of the output note being sealed:
 
 ```
-Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+Inputs:  [note_idx, pad(15)]
 Outputs: [pad(16)]
 ```
+
+The note is sealed before the callback runs, so the callback reads the note's final assets, metadata and recipient itself (e.g. via `output_note::get_assets`, `output_note::get_metadata` and `output_note::get_recipient`). It cannot add assets or attachments to the note, and sealing the note again returns immediately. The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 
