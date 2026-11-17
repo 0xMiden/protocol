@@ -158,6 +158,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - the note index is greater or equal to the total number of input notes.
@@ -207,6 +208,7 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - the note index is greater or equal to the total number of input notes.
