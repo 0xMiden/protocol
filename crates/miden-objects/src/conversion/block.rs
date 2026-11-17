@@ -7,6 +7,7 @@ use miden_protocol::block::{
     OutputNoteBatch,
     SignedBlock,
     ValidatorConfig,
+    ValidatorSignature,
 };
 use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{OutputNote, PartialBlockchain};
@@ -124,12 +125,21 @@ impl From<&OutputNoteBatch> for proto::blockchain::OutputNoteBatch {
 // SIGNED BLOCK
 // ================================================================================================
 
+impl From<&ValidatorSignature> for proto::blockchain::ValidatorSignature {
+    fn from(value: &ValidatorSignature) -> Self {
+        Self {
+            public_key: Some(value.public_key().into()),
+            signature: Some(value.signature().into()),
+        }
+    }
+}
+
 impl From<&SignedBlock> for proto::blockchain::SignedBlock {
     fn from(block: &SignedBlock) -> Self {
         Self {
             header: Some(block.header().into()),
             body: Some(block.body().into()),
-            signatures: block.signatures().as_signatures().iter().map(Into::into).collect(),
+            signatures: block.signatures().as_slice().iter().map(Into::into).collect(),
         }
     }
 }
