@@ -29,7 +29,7 @@ use crate::transaction::{
     TransactionHeader,
     TransactionLogError,
 };
-use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
+use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, MAX_BLOCK_TIMESTAMP_DELTA_SECS, Word};
 
 // PROPOSED BLOCK
 // =================================================================================================
@@ -151,6 +151,8 @@ impl ProposedBlock {
     ///
     /// - The given `timestamp` does not increase monotonically compared to the previous block
     ///   header' timestamp.
+    /// - The difference between the given `timestamp` and the previous block header's timestamp is
+    ///   greater than or equal to [`MAX_BLOCK_TIMESTAMP_DELTA_SECS`].
     pub fn new_at(
         block_inputs: BlockInputs,
         batches: Vec<ProvenBatch>,
@@ -171,6 +173,7 @@ impl ProposedBlock {
         // --------------------------------------------------------------------------------------------
 
         check_timestamp_increases_monotonically(timestamp, block_inputs.prev_block_header())?;
+        check_timestamp_delta(timestamp, block_inputs.prev_block_header())?;
 
         // Check for batch expiration.
         // --------------------------------------------------------------------------------------------
@@ -269,8 +272,8 @@ impl ProposedBlock {
     /// Creates a new proposed block from the provided [`BlockInputs`] and transaction batches.
     ///
     /// Equivalent to [`ProposedBlock::new_at`] except that the timestamp of the proposed block is
-    /// set to the current system time or the previous block header's timestamp + 1, whichever
-    /// is greater. This guarantees that the timestamp increases monotonically.
+    /// set as close as possible to the current system time while remaining within the valid range
+    /// after the previous block header's timestamp.
     ///
     /// See the [`ProposedBlock::new_at`] for details on errors and other constraints.
     #[cfg(feature = "std")]
@@ -285,7 +288,8 @@ impl ProposedBlock {
             .try_into()
             .expect("timestamp should fit in a u32 before the year 2106");
 
-        let timestamp = timestamp_now.max(block_inputs.prev_block_header().timestamp() + 1);
+        let previous_timestamp = block_inputs.prev_block_header().timestamp();
+        let timestamp = select_block_timestamp(timestamp_now, previous_timestamp)?;
 
         Self::new_at(block_inputs, batches, timestamp)
     }
@@ -656,6 +660,41 @@ fn check_timestamp_increases_monotonically(
     }
 }
 
+fn check_timestamp_delta(
+    provided_timestamp: u32,
+    prev_block_header: &BlockHeader,
+) -> Result<(), ProposedBlockError> {
+    let previous_timestamp = prev_block_header.timestamp();
+    let timestamp_delta = provided_timestamp - previous_timestamp;
+
+    if timestamp_delta >= MAX_BLOCK_TIMESTAMP_DELTA_SECS {
+        Err(ProposedBlockError::TimestampDeltaTooLarge {
+            provided_timestamp,
+            previous_timestamp,
+            timestamp_delta,
+            max_delta: MAX_BLOCK_TIMESTAMP_DELTA_SECS,
+        })
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
+fn select_block_timestamp(
+    timestamp_now: u32,
+    previous_timestamp: u32,
+) -> Result<u32, ProposedBlockError> {
+    let min_timestamp = previous_timestamp.checked_add(1).ok_or(
+        ProposedBlockError::TimestampDoesNotIncreaseMonotonically {
+            provided_timestamp: previous_timestamp,
+            previous_timestamp,
+        },
+    )?;
+    let max_timestamp = previous_timestamp.saturating_add(MAX_BLOCK_TIMESTAMP_DELTA_SECS - 1);
+
+    Ok(timestamp_now.clamp(min_timestamp, max_timestamp))
+}
+
 /// Checks whether any of the batches is expired and can no longer be included in this block.
 ///
 /// To illustrate, a batch which expired at block 4 cannot be included in block 5, but if it
@@ -1014,6 +1053,41 @@ mod tests {
 
     use super::*;
     use crate::block::nullifier_tree::NullifierTree;
+
+    #[cfg(feature = "std")]
+    #[rstest]
+    #[case::before_valid_range(50, 100, 101)]
+    #[case::inside_valid_range(150, 100, 150)]
+    #[case::after_valid_range(
+        100 + MAX_BLOCK_TIMESTAMP_DELTA_SECS,
+        100,
+        100 + MAX_BLOCK_TIMESTAMP_DELTA_SECS - 1
+    )]
+    #[case::near_u32_max(u32::MAX, u32::MAX - 100, u32::MAX)]
+    fn block_timestamp_is_clamped_to_valid_range(
+        #[case] timestamp_now: u32,
+        #[case] previous_timestamp: u32,
+        #[case] expected_timestamp: u32,
+    ) {
+        assert_eq!(
+            select_block_timestamp(timestamp_now, previous_timestamp).unwrap(),
+            expected_timestamp
+        );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn block_timestamp_is_rejected_when_no_later_timestamp_exists() {
+        let error = select_block_timestamp(u32::MAX, u32::MAX).unwrap_err();
+
+        assert_matches!(
+            error,
+            ProposedBlockError::TimestampDoesNotIncreaseMonotonically {
+                provided_timestamp: u32::MAX,
+                previous_timestamp: u32::MAX,
+            }
+        );
+    }
 
     #[rstest]
     #[case::before_inputs(1)]

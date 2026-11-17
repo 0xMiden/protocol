@@ -244,7 +244,11 @@ end
 #! ratios, and `assert_proc_policies_lte_num_approvers` only enforces the reachability bound
 #! (`threshold <= num_approvers`). Growing the signer set silently lowers the effective signing ratio
 #! of every policy; operators must re-evaluate and, where appropriate, raise the affected policies in
-#! the same transaction that grows the signer set.
+#! the same transaction that grows the signer set. The bound is checked for the procedures of the
+#! current code only: a policy keyed by a root the code no longer contains is neither validated nor
+#! clearable (`set_procedure_policy` rejects such roots), so shrinking the signer set can leave it
+#! unreachable, and it applies again if a later upgrade restores the root. Lower such policies
+#! before shrinking the signer set, or re-check them after an upgrade that restores old roots.
 #!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_COMMITMENT, pad(12)]
@@ -443,8 +447,10 @@ end
 #!   `miden::standards::auth::multisig::auth_tx`.
 #!
 #! A propose/cancel transaction (delayed-execution timelock action) verifies its own signatures
-#! inside the called procedure, so this procedure only asserts that nothing else was bundled with
-#! it. Every other transaction is treated as an execution: the called procedures' policies yield one
+#! inside the called procedure, over the proposed commitment rather than this transaction's summary,
+#! so this procedure only asserts that nothing else was bundled with it: no other non-auth
+#! procedure and no input notes. Every other transaction is treated as an execution: the
+#! called procedures' policies yield one
 #! threshold per execution path, the signatures are verified, and the path is selected from their
 #! count. Signatures reaching the immediate threshold execute at once; otherwise signatures reaching
 #! the delayed threshold execute through the timelock, which requires an unlocked proposal for this
@@ -501,6 +507,13 @@ pub proc auth_tx(
         # A delay action must be the only non-auth procedure called, otherwise it could be bundled
         # with a state-mutating procedure to bypass the timelock.
         exec.tx_policy::assert_only_one_non_auth_procedure_called
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # The action's signatures cover the proposed commitment, not this transaction's summary, so
+        # an input note bundled with it would be nullified without any approver consenting to it.
+        # Output notes need no check: creating one takes the account context, i.e. a second account
+        # procedure, which the check above already rejects.
+        exec.tx_policy::assert_no_input_notes
         # => [TX_SUMMARY_COMMITMENT]
     else
         # ------ Execution path ------
@@ -900,7 +913,10 @@ proc compute_policy_thresholds(default_threshold: u32) -> (SignatureThreshold, S
     # => [immediate_threshold, delayed_threshold]
 end
 
-#! Asserts that all configured smart per-procedure policies are valid for num_approvers.
+#! Asserts that the smart policies of the account's current procedures are valid for num_approvers.
+#!
+#! The policy map cannot be enumerated, so policies keyed by roots the current code does not
+#! contain are not visited; see the note on `update_signers_and_threshold`.
 #!
 #! Inputs:  [num_approvers]
 #! Outputs: []

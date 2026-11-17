@@ -326,6 +326,22 @@ fn validate_proc_policies(
 ///   commitment, never force a fully signed transaction through the timelock or make an
 ///   immediate-only procedure unexecutable.
 ///
+/// - A delay action approves nothing but itself. `propose_transaction` and
+///   `cancel_transaction_proposal` verify signatures over the proposed commitment (or its cancel
+///   message), never over the summary of the transaction that calls them, so the auth procedure
+///   requires such a transaction to call no other procedure and to consume no notes, so that notes
+///   can only be consumed in transactions that do not change delay proposals. Creating a note takes
+///   an account procedure, which the first requirement already rules out.
+///
+/// - The first proposal fixes a commitment's record: its reference block sets the unlock block, its
+///   signatures set the cancellation quorum, and a later proposal of the same commitment is
+///   rejected. Anyone holding an approver signature over the commitment, a signer or the
+///   coordinator who collected the signatures, can therefore propose it from a late reference block
+///   or with a single signature, pushing the unlock block out or leaving the quorum at the floor.
+///   Approvers who care about either submit the proposal themselves, with every signature they
+///   collected and a current reference block, and re-sign a badly proposed commitment with a new
+///   salt.
+///
 /// A policy protects a procedure only while the procedures that can weaken it are protected at
 /// least as strongly. `update_delayed_execution_policy` shortens the timelock,
 /// `set_procedure_policy` rewrites any policy, and `update_signers_and_threshold` replaces the
@@ -338,6 +354,14 @@ fn validate_proc_policies(
 /// strongest policy they can weaken, so that lowering a protection with fewer keys has to go
 /// through a proposal and wait out the current timelock, during which the other approvers can
 /// cancel it.
+///
+/// Policies are keyed by procedure root and outlive the code they were set for. A code upgrade
+/// neither validates nor clears the policies of the roots it removes, `set_procedure_policy`
+/// cannot clear a policy whose root the current code lacks, and `update_signers_and_threshold`
+/// checks only the policies of the current procedures when the signer set shrinks. A policy left
+/// behind by an upgrade can thus end up with a threshold above the approver count, and it applies
+/// again, unreachable, if a later upgrade restores its root. Lower such policies before shrinking
+/// the signer set, or re-check the policies of every restored root after an upgrade.
 ///
 /// The spending limit configured through [`SpendingLimitsPolicy`] is only as strong as the
 /// policies on the procedures that can weaken it. `update_spending_limits_policy` shortens the
