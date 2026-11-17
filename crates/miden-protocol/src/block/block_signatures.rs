@@ -52,10 +52,10 @@ pub enum BlockSignaturesError {
 /// validator key at index `i`. Every validator in the set must sign; there is no partial-signing
 /// support.
 ///
-/// TODO(validator_quorum): [`ValidatorConfig`] requires the quorum to be equal to the validator
-/// count, which is why every validator must sign. A smaller quorum needs signatures that identify
-/// the validator they belong to, so that a partial set can still be matched against the validator
-/// keys.
+/// TODO(validator_quorum): [`ValidatorConfig`] accepts a quorum below the validator count, but
+/// verification does not read it and still requires every validator to sign. Honoring a smaller
+/// quorum needs signatures that identify the validator they belong to, so that a partial set can
+/// still be matched against the validator keys.
 ///
 /// This is a plain, unchecked container: neither [`BlockSignatures::new`] nor deserialization
 /// verify anything about the signatures they hold. The only way to establish that a
