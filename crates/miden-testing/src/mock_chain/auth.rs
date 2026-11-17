@@ -188,8 +188,7 @@ impl Auth {
                     *delay_config,
                 )
                 .expect("invalid hot/cold/guardian config")
-                .with_proc_policies(proc_policy_map.clone())
-                .expect("invalid hot/cold/guardian procedure policies");
+                .with_proc_policies(proc_policy_map.clone());
                 let component = AuthHotColdGuardian::new(config).into();
 
                 (vec![component], None)
