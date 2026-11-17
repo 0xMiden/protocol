@@ -329,9 +329,9 @@ fn validate_proc_policies(
 /// - A delay action approves nothing but itself. `propose_transaction` and
 ///   `cancel_transaction_proposal` verify signatures over the proposed commitment (or its cancel
 ///   message), never over the summary of the transaction that calls them, so the auth procedure
-///   requires such a transaction to call no other procedure and to consume no notes, so that
-///   notes can only be consumed in transactions that do not change delay proposals. Creating
-///   a note takes an account procedure, which the first requirement already rules out.
+///   requires such a transaction to call no other procedure and to consume no notes, so that notes
+///   can only be consumed in transactions that do not change delay proposals. Creating a note takes
+///   an account procedure, which the first requirement already rules out.
 ///
 /// - The first proposal fixes a commitment's record: its reference block sets the unlock block, its
 ///   signatures set the cancellation quorum, and a later proposal of the same commitment is
