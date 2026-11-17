@@ -7,7 +7,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
-    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
@@ -72,12 +71,6 @@ impl GuardianConfig {
 
     pub(super) fn scheme_id_slot() -> &'static StorageSlotName {
         &GUARDIAN_SCHEME_ID_SLOT_NAME
-    }
-
-    /// Returns the storage slots holding the guardian's public key and signature scheme: a
-    /// single-entry key set at index 0.
-    pub(super) fn into_slots(self) -> [StorageSlot; 2] {
-        key_set_slots(Self::public_key_slot(), Self::scheme_id_slot(), &[self.approver])
     }
 }
 
@@ -245,7 +238,13 @@ impl From<AuthGuardedMultisig> for AccountComponent {
         let multisig_component = AccountComponent::from(multisig);
 
         let mut storage_slots = multisig_component.storage_slots().to_vec();
-        storage_slots.extend(guardian_config.into_slots());
+
+        // Guardian slots: a single-entry key set at index 0
+        storage_slots.extend(key_set_slots(
+            GuardianConfig::public_key_slot(),
+            GuardianConfig::scheme_id_slot(),
+            &[guardian_config.approver()],
+        ));
 
         let metadata = AuthGuardedMultisig::component_metadata();
 

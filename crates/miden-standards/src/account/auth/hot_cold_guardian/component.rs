@@ -371,8 +371,12 @@ impl From<AuthHotColdGuardian> for AccountComponent {
             ]),
         ));
 
-        // Guardian slots
-        storage_slots.extend(config.guardian_config().into_slots());
+        // Guardian slots: a single-entry key set at index 0
+        storage_slots.extend(key_set_slots(
+            AuthHotColdGuardian::guardian_public_key_slot(),
+            AuthHotColdGuardian::guardian_scheme_id_slot(),
+            &[config.guardian_config().approver()],
+        ));
 
         let metadata = AuthHotColdGuardian::component_metadata();
 
