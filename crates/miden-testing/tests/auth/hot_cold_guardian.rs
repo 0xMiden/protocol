@@ -639,8 +639,8 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     Ok(())
 }
 
-/// A pending code upgrade takes both categories plus the guardian, even though `upgrade` has no
-/// policy, since the new code replaces the code that enforces the policies.
+/// The `UpgradeManager` upgrade takes both categories plus the guardian through its preset, since
+/// the new code replaces the code that enforces the policies.
 #[tokio::test]
 async fn test_hot_cold_guardian_code_upgrade_requires_both_categories() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
