@@ -26,7 +26,7 @@ use super::{
     create_singlesig_user_non_fungible_faucet,
 };
 use crate::account::access::AccessControl;
-use crate::account::auth::{Approver, AuthSingleSig, GuardianConfig};
+use crate::account::auth::{Approver, AuthSingleSig, GuardianConfig, NetworkAccount};
 use crate::account::faucets::test_utils::{
     allow_all_policy_manager,
     min_burn_amount_policy_manager,
@@ -37,6 +37,7 @@ use crate::account::faucets::test_utils::{
 use crate::account::faucets::{NonFungibleFaucetError, TokenName};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
+use crate::note::config::AuthorityConfigNote;
 use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 use crate::utils::FixedWidthStringError;
 
@@ -254,6 +255,30 @@ fn compute_asset_commitment_is_salt_sensitive() {
 
     assert_eq!(c_a, NonFungibleFaucet::compute_asset_commitment(data, salt_a));
     assert_ne!(c_a, c_b);
+}
+
+/// The network faucet allowlists the `AuthorityConfigNote` script, so the emergency authority can
+/// freeze and unfreeze it without first extending the allowlist.
+#[test]
+fn network_non_fungible_faucet_allowlists_authority_config_note() -> anyhow::Result<()> {
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE)?;
+    let account = create_network_non_fungible_faucet(
+        [35u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        mint_burn_only_policy_manager(),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )?;
+
+    let network_account = NetworkAccount::new(account)?;
+    assert!(
+        network_account
+            .allowed_notes()
+            .allowed_script_roots()
+            .contains(&AuthorityConfigNote::script_root())
+    );
+
+    Ok(())
 }
 
 /// A user faucet installs no `Ownable2Step` component, so an owner-gated mint policy would have no

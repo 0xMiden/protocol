@@ -37,6 +37,7 @@ use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::{MinBurnAmount, TokenPolicyManager};
 use crate::account::wallets::BasicWallet;
+use crate::note::config::AuthorityConfigNote;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -703,17 +704,12 @@ pub fn create_guarded_user_non_fungible_faucet(
 /// installed via `access_control` ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
 /// The factory builds the account via [`NetworkAccount::builder`] with a note allowlist covering
-/// the faucet's own [`MintNote`] and [`BurnNote`] scripts. The auth component installs
-/// [`BasicWallet`](crate::account::wallets::BasicWallet) and allowlists the P2ID script root, so
-/// the faucet can be funded by a P2ID note; the builder also allowlists the canonical expiration
-/// setter ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
-/// network can bound its own transactions' expiry.
-///
-/// The note allowlist does not cover the config notes of the installed components, so none of
-/// them can be consumed by a newly created faucet. Before relying on one, for example on an
-/// [`AuthorityConfigNote`](crate::note::config::AuthorityConfigNote) for the emergency freeze, an
-/// administrator must allowlist its script root through a
-/// [`NetworkAccountConfigNote`](crate::note::config::NetworkAccountConfigNote).
+/// the faucet's own [`MintNote`] and [`BurnNote`] scripts and the [`AuthorityConfigNote`] script.
+/// The auth component installs [`BasicWallet`](crate::account::wallets::BasicWallet) and
+/// allowlists the P2ID script root, so the faucet can be funded by a P2ID note; the builder also
+/// allowlists the canonical expiration setter
+/// ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the network
+/// can bound its own transactions' expiry.
 ///
 /// # Errors
 ///
@@ -742,7 +738,13 @@ pub fn create_network_non_fungible_faucet(
         return Err(NonFungibleFaucetError::MinBurnAmountPolicyNotSupported);
     }
 
-    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+    let note_allowlist = [
+        MintNote::script_root(),
+        BurnNote::script_root(),
+        AuthorityConfigNote::script_root(),
+    ]
+    .into_iter()
+    .collect();
 
     NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
