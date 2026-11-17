@@ -552,7 +552,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let lock_timestamp = 2_000_000_000;
+    let lock_timestamp = MockChain::TIMESTAMP_START_SECS + 1_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
     let timelock_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .note_storage([Felt::from(lock_timestamp)])?

@@ -16,9 +16,9 @@
 //! - the serialized note's length and digest (everything above plus the metadata and the assets),
 //! - the attachment scheme list with per-attachment word counts, in order.
 //!
-//! Every anchor is a string-exact `Debug`/`Display` rendering, following
-//! `typing_builder_byte_identity.rs`. A single felt of drift — a reordered attachment section, a
-//! dropped pad felt, a different serial derivation — flips one of them RED and names which.
+//! Every anchor is a string-exact `Debug`/`Display` rendering. A single felt of drift — a reordered
+//! attachment section, a dropped pad felt, a different serial derivation — flips one of them RED
+//! and names which.
 //!
 //! These anchors include Eidos-derived script roots and commitments. When updating them, check
 //! changes to the hash construction separately from changes to the encoded payload and layout.
