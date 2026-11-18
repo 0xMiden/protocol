@@ -12,12 +12,9 @@ use miden::core::word
 # The index of the local memory slot that contains the procedure root of the callback.
 const CALLBACK_PROC_ROOT_LOC = 0
 
-# The indices of the local memory words that hold the callback outputs while the foreign context is
-# ended.
-const CALLBACK_OUTPUTS_WORD_0_LOC = 4
-const CALLBACK_OUTPUTS_WORD_1_LOC = 8
-const CALLBACK_OUTPUTS_WORD_2_LOC = 12
-const CALLBACK_OUTPUTS_WORD_3_LOC = 16
+# The index of the local memory slot that holds the top callback output while the foreign context
+# is ended.
+const CALLBACK_TOP_OUTPUT_LOC = 4
 
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
@@ -137,7 +134,7 @@ end
 #!
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
-@locals(20)
+@locals(5)
 proc invoke_callback(
     slot_id: StorageSlotId,
     faucet_id: AccountId,
@@ -175,20 +172,14 @@ proc invoke_callback(
         push.0 exec.memory::set_asset_callback_in_progress_flag
         # => [callback_outputs(16), was_foreign_context_started]
 
-        # store the callback outputs to reach the flag below them
-        loc_storew_le.CALLBACK_OUTPUTS_WORD_0_LOC dropw
-        loc_storew_le.CALLBACK_OUTPUTS_WORD_1_LOC dropw
-        loc_storew_le.CALLBACK_OUTPUTS_WORD_2_LOC dropw
-        loc_storew_le.CALLBACK_OUTPUTS_WORD_3_LOC dropw
-        # => [was_foreign_context_started]
+        # store the top callback output so the flag comes within reach of movup.15
+        loc_store.CALLBACK_TOP_OUTPUT_LOC
+        # => [remaining_callback_outputs(15), was_foreign_context_started]
 
-        exec.maybe_end_faucet_callback_context
-        # => []
+        movup.15 exec.maybe_end_faucet_callback_context
+        # => [remaining_callback_outputs(15)]
 
-        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_3_LOC
-        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_2_LOC
-        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_1_LOC
-        padw loc_loadw_le.CALLBACK_OUTPUTS_WORD_0_LOC
+        loc_load.CALLBACK_TOP_OUTPUT_LOC
         # => [callback_outputs(16)]
     else
         # drop proc root and callback inputs
