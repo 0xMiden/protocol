@@ -58,6 +58,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
@@ -172,6 +173,7 @@ end
 #! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the account context.
 #! - STORAGE_UPGRADE_COMMITMENT is not empty.
@@ -365,6 +367,7 @@ end
 #! - OLD_VALUE is the previous value of the item.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
@@ -400,6 +403,7 @@ end
 #! - OLD_VALUE is the old value at KEY.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 #! - the invocation of this procedure does not originate from the account context.
@@ -515,6 +519,7 @@ end
 #!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the asset is not valid.
 #! - the total value of two fungible assets is greater than or equal to 2^63.
 #! - the vault already contains the same non-fungible asset.
@@ -548,6 +553,7 @@ end
 #!   be the empty word if nothing remains (e.g. if a non-fungible asset is removed).
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the fungible asset is not found in the vault.
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
