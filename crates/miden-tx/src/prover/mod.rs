@@ -5,7 +5,6 @@ use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::PROTOCOL_PROOF_HASH;
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     InputNote,
@@ -176,6 +175,7 @@ impl LocalTransactionProver {
         );
 
         let block_commitments = tx_inputs.collect_block_commitments();
+        let code_tree = tx_inputs.code_tree().clone();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
@@ -185,6 +185,7 @@ impl LocalTransactionProver {
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
+            code_tree,
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 
@@ -200,7 +201,7 @@ impl LocalTransactionProver {
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
-        let (account_patch, input_notes, output_notes, logs) = host.into_parts();
+        let (account_patch, input_notes, output_notes, logs, code_patch) = host.into_parts();
         let output_notes = RawOutputNotes::new(output_notes)
             .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
         let tx_outputs = TransactionOutputs::new(
@@ -209,9 +210,7 @@ impl LocalTransactionProver {
             output_notes,
             expiration_block_num,
             logs,
-            // TODO(#4006): take the code patch from the host once the transaction kernel builds
-            // it.
-            CodePatch::default(),
+            code_patch,
         );
 
         // The proof commits to the stack outputs, so checking them against the outputs binds the

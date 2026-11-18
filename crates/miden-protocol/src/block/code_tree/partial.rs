@@ -63,6 +63,12 @@ impl PartialCodeTree {
         CodeTreeRoot::from_raw(self.0.root())
     }
 
+    /// Returns `true` if this partial code tree can prove the presence or absence of the procedure
+    /// root, `false` otherwise.
+    pub fn is_tracked(&self, procedure_root: &ProcedureRoot) -> bool {
+        self.0.get_value(&procedure_root.as_word()).is_ok()
+    }
+
     /// Returns `true` if the procedure root is present in the tree, `false` otherwise.
     ///
     /// # Errors
@@ -209,6 +215,23 @@ mod tests {
             partial.open(&untracked),
             Err(CodeTreeError::UntrackedProcedure { procedure_root, .. }) if procedure_root == untracked
         );
+        Ok(())
+    }
+
+    #[test]
+    fn is_tracked_for_present_absent_and_untracked_procedures() -> anyhow::Result<()> {
+        let present = ProcedureRoot::mock(0);
+        let absent = ProcedureRoot::mock(1);
+        let untracked = ProcedureRoot::mock(2);
+
+        // The leaf of the untracked root must be non-empty, otherwise the partial tree can deduce
+        // it from the empty siblings of the tracked paths.
+        let tree = CodeTree::with_entries([present, untracked])?;
+        let partial = PartialCodeTree::with_witnesses([tree.open(&present), tree.open(&absent)])?;
+
+        assert!(partial.is_tracked(&present));
+        assert!(partial.is_tracked(&absent));
+        assert!(!partial.is_tracked(&untracked));
         Ok(())
     }
 
