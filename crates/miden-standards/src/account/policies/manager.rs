@@ -683,9 +683,9 @@ impl TokenPolicyManager {
 }
 
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
-/// entry's kind set. The first call wins for the companion components: a component already
-/// carried by another entry is not added again, which installs a component once even when it
-/// exports the roots of several policies (e.g. the send and receive procedures of a transfer
+/// entry's kind set. The first call wins for the companion components: a component whose code is
+/// already carried by another entry is not added again, which installs a component once even when
+/// it exports the roots of several policies (e.g. the send and receive procedures of a transfer
 /// policy) or its root is registered under several kinds.
 fn insert_policy(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
@@ -704,7 +704,7 @@ fn insert_policy(
             !policies
                 .values()
                 .flat_map(|cfg| &cfg.components)
-                .any(|installed| installed.metadata().name() == component.metadata().name())
+                .any(|installed| installed.component_code() == component.component_code())
         })
         .collect();
     policies.insert(
@@ -739,8 +739,10 @@ impl IntoIterator for TokenPolicyManager {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::AccountId;
     use miden_protocol::account::component::{InitStorageData, StorageValueName};
     use miden_protocol::asset::AssetCallbacks;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
     use super::*;
     use crate::account::policies::{
@@ -990,6 +992,58 @@ mod tests {
         let allowed = manager.allowed_burn_policies();
         assert!(allowed.contains(&BurnPolicy::owner_only().root()));
         assert!(allowed.contains(&BurnPolicy::allow_all().root()));
+    }
+
+    /// The send and receive procedures of a transfer policy belong to one component, which the
+    /// manager installs once, keeping the instance of the first registered policy.
+    #[test]
+    fn transfer_policy_component_is_installed_once() {
+        let blocked_account =
+            AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let components: Vec<AccountComponent> = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_send_policy(SendPolicy::with_basic_blocklist([blocked_account]))
+            .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+            .allowed_send_policy(SendPolicy::allow_all())
+            .allowed_receive_policy(ReceivePolicy::allow_all())
+            .build()
+            .into_iter()
+            .collect();
+
+        let installed = |name: &str| -> Vec<&AccountComponent> {
+            components
+                .iter()
+                .filter(|component| component.metadata().name() == name)
+                .collect()
+        };
+        assert_eq!(installed(TransferAllowAll::NAME).len(), 1);
+
+        let blocklists = installed(BasicBlocklist::NAME);
+        assert_eq!(blocklists.len(), 1);
+        let seeded_blocklist =
+            AccountComponent::from(BasicBlocklist::with_blocked_accounts([blocked_account]));
+        assert_eq!(blocklists[0].storage_slots(), seeded_blocklist.storage_slots());
+    }
+
+    /// Components with different code are all installed, even when their names collide.
+    #[test]
+    fn components_with_different_code_are_installed() {
+        let metadata = AccountComponentMetadata::new("tests::same_name");
+        let mint_component =
+            AccountComponent::new(MintAllowAll::code().clone(), vec![], metadata.clone()).unwrap();
+        let burn_component =
+            AccountComponent::new(BurnAllowAll::code().clone(), vec![], metadata).unwrap();
+
+        let components: Vec<AccountComponent> = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::custom(MintAllowAll::root(), [mint_component]).unwrap())
+            .active_burn_policy(BurnPolicy::custom(BurnAllowAll::root(), [burn_component]).unwrap())
+            .build()
+            .into_iter()
+            .collect();
+
+        assert!(components.iter().any(|component| component.has_procedure(MintAllowAll::root())));
+        assert!(components.iter().any(|component| component.has_procedure(BurnAllowAll::root())));
     }
 
     /// Every standard policy procedure has its own root, so the manager never merges the entries
