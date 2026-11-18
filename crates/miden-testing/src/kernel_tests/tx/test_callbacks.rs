@@ -933,8 +933,11 @@ async fn mint_and_send_with_native_note_callback(
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]
 
+            exec.::miden::protocol::output_note::seal
+            # => [pad(15)]
+
             # truncate the stack
-            dropw dropw dropw dropw
+            dropw dropw dropw drop drop drop
         end
         ",
         note_type = NoteType::Private as u8,
