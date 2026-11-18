@@ -1,0 +1,1 @@
+[BREAKING] Changed faucet send policies to run once per sealed output note with the interface of the `on_before_note_sealed` callback, and split `TransferPolicy` into `SendPolicy` and `ReceivePolicy`.
