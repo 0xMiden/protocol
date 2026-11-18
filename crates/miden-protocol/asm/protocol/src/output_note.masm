@@ -95,8 +95,6 @@ end
 
 #! Returns whether the specified output note is sealed against asset and attachment changes.
 #!
-#! The note's `on_before_note_sealed` callbacks run before it is sealed, so they observe 0.
-#!
 #! Inputs:  [note_index]
 #! Outputs: [is_sealed]
 #!
