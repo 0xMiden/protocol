@@ -4,21 +4,39 @@ use {Asset} from miden::protocol::types
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Transfer policy that accepts every transfer.
+#! Send policy that accepts every output note.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`, which limits the
-#! transaction's expiration and applies the account-wide pause check.
+#! Invoked as the active send policy via `TokenPolicyManager`, which limits the transaction's
+#! expiration and applies the account-wide pause check.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - custom_data is `0` for the receive (account) callback and the output note index for the
-#!   send (note) callback. This policy does not inspect it.
+#! - note_idx is the index of the output note being sealed.
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy(asset: Asset, custom_data: felt)
-    dropw dropw drop
+pub proc check_send_policy(note_idx: u16)
+    drop
+    # => [pad(16)]
+end
+
+#! Receive policy that accepts every asset.
+#!
+#! Invoked as the active receive policy via `TokenPolicyManager`, which limits the transaction's
+#! expiration and applies the account-wide pause check.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - ASSET_ID and ASSET_VALUE are the ID and value of the asset being added to the native
+#!   account's vault.
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_receive_policy(asset: Asset)
+    dropw dropw
     # => [pad(16)]
 end

@@ -9,7 +9,7 @@ use {Asset} from miden::protocol::types
 # transfers.
 
 use miden::protocol::account_id
-use miden::protocol::asset
+use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
 use miden::standards::expiration
@@ -17,59 +17,89 @@ use miden::standards::expiration
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Transfer policy that rejects transfers whose native account is blocked on the issuing faucet.
-#!
-#! The same procedure root is reusable as both send and receive policy because it does not depend
-#! on custom_data.
+#! Send policy that rejects output notes created by an account that is blocked on the issuing
+#! faucet.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - custom_data is `0` for the receive (account) callback and the output note index for the
-#!   send (note) callback. This policy does not inspect it.
+#! - note_idx is the index of the output note being sealed.
 #!
 #! Panics if:
 #! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy(asset: Asset, custom_data: felt)
-    exec.expiration::apply_default
-    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+pub proc check_send_policy(note_idx: u16)
+    exec.assert_native_account_not_blocked
+    # => [note_idx, pad(15)]
 
-    exec.asset::id_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+    drop
+    # => [pad(16)]
+end
+
+#! Receive policy that rejects assets added to the vault of an account that is blocked on the
+#! issuing faucet.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - ASSET_ID and ASSET_VALUE are the ID and value of the asset being added to the native
+#!   account's vault.
+#!
+#! Panics if:
+#! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_receive_policy(asset: Asset)
+    exec.assert_native_account_not_blocked
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    dropw dropw
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Asserts that the native account is not blocked on the issuing faucet, which is the active
+#! account while an asset callback runs. The issuing faucet itself is exempt.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
+#!
+#! Invocation: exec
+proc assert_native_account_not_blocked
+    exec.expiration::apply_default
+    # => []
 
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE,
-    #     custom_data, pad(7)]
+    # => [account_id_suffix, account_id_prefix]
 
-    dupw exec.account_id::eq
-    # => [is_issuer, account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix,
-    #     ASSET_VALUE, custom_data, pad(7)]
+    dup.1 dup.1 exec.active_account::get_id exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix]
 
     # the issuing faucet is exempt
-    not
-    # => [should_check_blocklist, account_id_suffix, account_id_prefix, faucet_id_suffix,
-    #     faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
-
     if.true
-        # drop the faucet ID, keeping the native account ID for the blocklist lookup
-        movup.3 drop movup.2 drop
-        # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
-
-        exec.blocklist::assert_not_blocked
-        # => [ASSET_VALUE, custom_data, pad(7)]
+        drop drop
+        # => []
     else
-        dropw
-        # => [ASSET_VALUE, custom_data, pad(7)]
+        exec.blocklist::assert_not_blocked
+        # => []
     end
-    # => [ASSET_VALUE, custom_data, pad(7)]
-
-    dropw drop
-    # => [pad(16)]
 end

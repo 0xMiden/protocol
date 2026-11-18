@@ -25,8 +25,9 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -93,8 +94,8 @@ fn build_nft_faucet_from_component(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(mint_policy)
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -695,8 +696,8 @@ fn build_nft_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_blocklist(initial_blocked))
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked))
+                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
