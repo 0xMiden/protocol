@@ -11,6 +11,7 @@ use {FAUCET_BURN_ASSET_OFFSET, FAUCET_MINT_ASSET_OFFSET} from miden::protocol::k
 #! - ASSET_VALUE is the value of the asset that was minted.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #!
@@ -41,6 +42,7 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - for fungible faucets if the amount being burned is greater than the total input to the
