@@ -192,7 +192,7 @@ Inputs:  [note_idx, pad(15)]
 Outputs: [pad(16)]
 ```
 
-The note is sealed before the callback runs, so the callback reads the note's final assets, metadata and recipient itself (e.g. via `output_note::get_assets`, `output_note::get_metadata` and `output_note::get_recipient`). It cannot add assets or attachments to the note, and sealing the note again returns immediately. The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
+The kernel seals the note after its callbacks have run. Since a callback cannot modify the note, it reads the note's final assets, metadata and recipient itself (e.g. via `output_note::get_assets`, `output_note::get_metadata` and `output_note::get_recipient`). The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 

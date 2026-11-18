@@ -1664,9 +1664,9 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [pad(16)]
 end
 
-#! Prevents further changes to the specified output note's assets and attachments and invokes the
-#! `on_before_note_sealed` callback of each distinct faucet with the asset callback flag enabled
-#! among the note's assets.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the specified output note's assets, and then prevents further changes to the
+#! note's assets and attachments.
 #!
 #! Sealing is idempotent: sealing an already sealed note invokes no callback.
 #!

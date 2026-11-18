@@ -392,14 +392,12 @@ pub proc add_attachment(
     # => []
 end
 
-#! Seals the note specified by the index and invokes the `on_before_note_sealed` callback of each
-#! distinct faucet with the asset callback flag enabled among the note's assets.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the assets of the note specified by the index, and then seals the note.
 #!
-#! If the note is already sealed, the procedure returns without invoking any callback. Otherwise,
-#! the note is sealed before the first callback is invoked, so from then on its assets and
-#! attachments cannot be modified and sealing it again, including from within a callback, returns
-#! immediately. The callbacks are invoked in the order in which each faucet first occurs among the
-#! note's assets.
+#! If the note is already sealed, the procedure returns without invoking any callback. The callbacks
+#! are invoked in the order in which each faucet first occurs among the note's assets. Once the
+#! note is sealed, its assets and attachments cannot be modified.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: []
@@ -421,11 +419,13 @@ pub proc seal(note_idx: u16)
         drop drop
         # => []
     else
-        # seal the note before invoking the callbacks
-        dup exec.memory::seal_output_note
-        # => [note_ptr, note_idx]
+        swap dup.1
+        # => [note_ptr, note_idx, note_ptr]
 
         exec.invoke_on_before_note_sealed_callbacks
+        # => [note_ptr]
+
+        exec.memory::seal_output_note
         # => []
     end
     # => []

@@ -643,8 +643,8 @@ async fn test_add_asset_to_sealed_note_does_not_invoke_callback() -> anyhow::Res
     Ok(())
 }
 
-/// Tests that the `on_before_note_sealed` callback receives the correct inputs and can read the
-/// sealed note's assets.
+/// Tests that the `on_before_note_sealed` callback receives the correct inputs, runs before the
+/// note is sealed and can read the note's assets.
 ///
 /// Creates two output notes so that the asset is added to note at index 1, verifying that
 /// `note_idx` is correctly passed to the callback (using 1 instead of the default element of 0).
@@ -681,7 +681,7 @@ async fn test_on_before_note_sealed_callback_receives_correct_inputs() -> anyhow
         # => [note_idx, pad(15)]
 
         dup exec.::miden::protocol::output_note::is_sealed
-        assert.err="callback ran before the note was sealed"
+        assertz.err="callback ran after the note was sealed"
         # => [note_idx, pad(15)]
 
         locaddr.0 exec.::miden::protocol::output_note::get_assets
@@ -776,9 +776,9 @@ async fn test_on_before_note_sealed_callback_receives_correct_inputs() -> anyhow
 /// The callbacks observe their order through the transaction's expiration delta, which starts
 /// unset (0) and can only decrease: the callback of the faucet expected to run first asserts the
 /// delta is unset and sets it to `FIRST_DELTA`, the other one asserts `FIRST_DELTA` and sets
-/// `SECOND_DELTA`. A callback that runs out of order, more than once, or before the note is
-/// sealed (i.e. from `add_asset`) fails its assertion. The note holds an asset of the first faucet
-/// after an asset of the second one, so a callback per asset would also fail.
+/// `SECOND_DELTA`. A callback that runs out of order or more than once fails its assertion. The
+/// note holds an asset of the first faucet after an asset of the second one, so a callback per
+/// asset would also fail.
 #[rstest::rstest]
 #[case::first_occurrence_order(true)]
 #[case::reversed_order(false)]
@@ -797,7 +797,7 @@ async fn test_note_sealed_callback_runs_once_per_faucet_in_first_occurrence_orde
     @account_procedure
     pub proc on_before_note_sealed
         dup exec.::miden::protocol::output_note::is_sealed
-        assert.err="callback ran before the note was sealed"
+        assertz.err="callback ran after the note was sealed"
         # => [note_idx, pad(15)]
 
         exec.::miden::protocol::tx::get_expiration_block_delta
