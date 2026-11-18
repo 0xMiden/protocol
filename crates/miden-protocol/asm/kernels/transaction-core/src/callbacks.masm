@@ -2,6 +2,7 @@ use {AccountId, AccountProcedureRoot, Asset, Bool, StorageSlotId} from miden::pr
 use miden::tx_kernel_core::tx
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
+use miden::tx_kernel_core::memory
 use miden::protocol_utils::account_id
 use miden::core::word
 
@@ -102,6 +103,9 @@ end
 #! enabled is loaded as a foreign account on every movement of its assets, even when it registers no
 #! callback procedure root.
 #!
+#! The callback cannot modify account or note state, so it affects the transaction only through
+#! its return values. See `memory::assert_not_in_asset_callback`.
+#!
 #! custom_data should be set to 0 for the account callback and to note_idx for the note callback.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
@@ -139,9 +143,15 @@ proc invoke_callback(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
         end
         # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7), was_foreign_context_started]
 
-        # invoke the callback
+        # invoke the callback while the flag rejects account and note state changes
+        push.1 exec.memory::set_asset_callback_in_progress_flag
+        # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7), was_foreign_context_started]
+
         locaddr.CALLBACK_PROC_ROOT_LOC
         dyncall
+        # => [pad(16), was_foreign_context_started]
+
+        push.0 exec.memory::set_asset_callback_in_progress_flag
         # => [pad(16), was_foreign_context_started]
 
         dropw dropw dropw dropw

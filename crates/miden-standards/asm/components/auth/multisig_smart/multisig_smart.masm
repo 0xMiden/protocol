@@ -12,7 +12,6 @@ use miden::standards::fee
 
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
 pub use {get_signer_at} from miden::standards::auth::multisig
-pub use {is_signer} from miden::standards::auth::multisig
 pub use {set_procedure_policy} from miden::standards::auth::multisig_smart
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig_smart
 pub use {update_delayed_execution_policy} from miden::standards::auth::multisig_smart::delayed_execution

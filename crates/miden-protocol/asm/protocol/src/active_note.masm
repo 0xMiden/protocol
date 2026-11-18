@@ -163,6 +163,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - no note is currently active.
 #! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
@@ -204,6 +205,7 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - no note is currently active.
 #!
 #! Invocation: exec

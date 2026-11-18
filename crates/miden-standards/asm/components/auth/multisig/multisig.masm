@@ -12,7 +12,6 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
 pub use {set_procedure_threshold} from miden::standards::auth::multisig
 pub use {get_signer_at} from miden::standards::auth::multisig
-pub use {is_signer} from miden::standards::auth::multisig
 
 #! Authenticate a transaction with multi-signature support, paying the transaction fee in the
 #! process.
