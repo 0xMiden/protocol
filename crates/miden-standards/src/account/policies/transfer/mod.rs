@@ -79,9 +79,10 @@ pub enum TransferPolicyError {
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
 ///
-/// The basic blocklist and allowlist send and receive policies share their list component. When
-/// both are registered, the [`super::TokenPolicyManager`] installs the component of the first
-/// registered one, so the two kinds always check the same list.
+/// The basic blocklist and allowlist send and receive policies share their list component, so the
+/// two kinds always check the same list. Seed both with the same initial list: the
+/// [`super::TokenPolicyManager`] then installs the component once, while different initial lists
+/// fail the account build.
 #[derive(Debug, Clone)]
 pub struct SendPolicy {
     root: AccountProcedureRoot,
@@ -142,6 +143,8 @@ impl SendPolicy {
 
     /// Returns a send policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
+    ///
+    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]`.
     ///
     /// # Errors
     ///
@@ -208,9 +211,10 @@ impl IntoIterator for SendPolicy {
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
 ///
-/// The basic blocklist and allowlist send and receive policies share their list component. When
-/// both are registered, the [`super::TokenPolicyManager`] installs the component of the first
-/// registered one, so the two kinds always check the same list.
+/// The basic blocklist and allowlist send and receive policies share their list component, so the
+/// two kinds always check the same list. Seed both with the same initial list: the
+/// [`super::TokenPolicyManager`] then installs the component once, while different initial lists
+/// fail the account build.
 #[derive(Debug, Clone)]
 pub struct ReceivePolicy {
     root: AccountProcedureRoot,
@@ -271,6 +275,9 @@ impl ReceivePolicy {
 
     /// Returns a receive policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
+    ///
+    /// The procedure at `root` is invoked with the receive policy inputs `[ASSET_ID, ASSET_VALUE,
+    /// pad(8)]`.
     ///
     /// # Errors
     ///

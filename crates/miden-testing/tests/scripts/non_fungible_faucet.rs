@@ -682,6 +682,7 @@ fn build_nft_faucet_with_blocklist(
     owner: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
+    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
@@ -696,8 +697,8 @@ fn build_nft_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked))
-                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
                 .build(),
         )
         .with_component(Pausable::unpaused())

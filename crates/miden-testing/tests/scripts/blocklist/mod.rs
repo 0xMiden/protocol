@@ -70,15 +70,14 @@ fn add_faucet_with_owner_blocklist_transfer(
 
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
 /// storage map with the given accounts at deploy time via
-/// [`SendPolicy::with_basic_blocklist`]. The receive policy uses the same component via
-/// [`ReceivePolicy::empty_basic_blocklist`]; the manager installs each companion component once,
-/// keeping the first registration, so the seeded `BasicBlocklist` from the send policy is
-/// installed exactly once.
+/// [`SendPolicy::with_basic_blocklist`] and [`ReceivePolicy::with_basic_blocklist`]. Both carry
+/// the same seeded `BasicBlocklist`, which the manager installs exactly once.
 fn add_faucet_with_owner_blocklist_transfer_initialized(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
+    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("SYM")?)
         .symbol("SYM".try_into()?)
@@ -95,8 +94,8 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked))
-                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
                 .build(),
         )
         .with_component(Pausable::unpaused())

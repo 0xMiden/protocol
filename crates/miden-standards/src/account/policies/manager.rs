@@ -683,10 +683,10 @@ impl TokenPolicyManager {
 }
 
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
-/// entry's kind set. The first call wins for the companion components: a component whose code is
-/// already carried by another entry is not added again, which installs a component once even when
-/// it exports the roots of several policies (e.g. the send and receive procedures of a transfer
-/// policy) or its root is registered under several kinds.
+/// entry's kind set. A companion component that another entry already carries with the same code
+/// and storage is not added again, which installs a component once when it exports the roots of
+/// several policies (e.g. the send and receive procedures of a transfer policy). A component with
+/// the same code but different storage is kept, so the conflict fails the account build.
 fn insert_policy(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
     root: AccountProcedureRoot,
@@ -701,10 +701,10 @@ fn insert_policy(
     let components = components
         .into_iter()
         .filter(|component| {
-            !policies
-                .values()
-                .flat_map(|cfg| &cfg.components)
-                .any(|installed| installed.component_code() == component.component_code())
+            !policies.values().flat_map(|cfg| &cfg.components).any(|installed| {
+                installed.component_code() == component.component_code()
+                    && installed.storage_slots() == component.storage_slots()
+            })
         })
         .collect();
     policies.insert(
@@ -995,35 +995,41 @@ mod tests {
     }
 
     /// The send and receive procedures of a transfer policy belong to one component, which the
-    /// manager installs once, keeping the instance of the first registered policy.
-    #[test]
-    fn transfer_policy_component_is_installed_once() {
+    /// manager installs once when both policies carry the same initial storage, and twice when
+    /// they do not, so the conflicting storage fails the account build.
+    #[rstest::rstest]
+    #[case::same_initial_list(true, 1)]
+    #[case::different_initial_lists(false, 2)]
+    fn transfer_policy_component_is_installed_once_per_storage(
+        #[case] same_initial_list: bool,
+        #[case] expected_blocklists: usize,
+    ) {
         let blocked_account =
             AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let receive_policy = if same_initial_list {
+            ReceivePolicy::with_basic_blocklist([blocked_account])
+        } else {
+            ReceivePolicy::empty_basic_blocklist()
+        };
         let components: Vec<AccountComponent> = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::with_basic_blocklist([blocked_account]))
-            .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+            .active_receive_policy(receive_policy)
             .allowed_send_policy(SendPolicy::allow_all())
             .allowed_receive_policy(ReceivePolicy::allow_all())
             .build()
             .into_iter()
             .collect();
 
-        let installed = |name: &str| -> Vec<&AccountComponent> {
+        let installed = |name: &str| {
             components
                 .iter()
                 .filter(|component| component.metadata().name() == name)
-                .collect()
+                .count()
         };
-        assert_eq!(installed(TransferAllowAll::NAME).len(), 1);
-
-        let blocklists = installed(BasicBlocklist::NAME);
-        assert_eq!(blocklists.len(), 1);
-        let seeded_blocklist =
-            AccountComponent::from(BasicBlocklist::with_blocked_accounts([blocked_account]));
-        assert_eq!(blocklists[0].storage_slots(), seeded_blocklist.storage_slots());
+        assert_eq!(installed(TransferAllowAll::NAME), 1);
+        assert_eq!(installed(BasicBlocklist::NAME), expected_blocklists);
     }
 
     /// Components with different code are all installed, even when their names collide.
