@@ -838,8 +838,8 @@ proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_
 end
 
 #! Invokes the `on_before_note_sealed` callback of the provided faucet for the specified note and
-#! appends the attachment the callback returns to the note, unless an asset of the faucet precedes
-#! the asset at asset_ptr among the note's assets, in which case the callback was already invoked.
+#! appends the attachment the callback returns to the note, unless the callback for this faucet was
+#! already invoked.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, assets_start_ptr, asset_ptr, note_idx]
 #! Outputs: []
