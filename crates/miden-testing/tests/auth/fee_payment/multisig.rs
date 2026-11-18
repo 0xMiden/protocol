@@ -443,11 +443,18 @@ async fn multisig_rejects_fee_exceeding_max_fee() -> anyhow::Result<()> {
 /// The max fee caps the transaction fee together with the sponsorships of the transaction's
 /// network output notes, which their targets' fee policies price via FPI: a cap that covers the
 /// transaction fee alone rejects a sponsoring transaction, so a target raising its price while
-/// the signatures are collected cannot drain the account's fee asset balance.
+/// the signatures are collected cannot drain the account's fee asset balance. The Falcon case
+/// leaves the estimate little signature slack, so it also checks that the estimate charges the
+/// pricing `pay_fee` repeats.
+#[rstest]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn multisig_max_fee_covers_sponsored_fees() -> anyhow::Result<()> {
+async fn multisig_max_fee_covers_sponsored_fees(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     let mut rng = EidosRandomCoin::new(Word::from([5u32, 6, 7, 8]));
-    let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let (approver_set, signers) = multisig_fixture(2, 2, auth_scheme)?;
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);
 
