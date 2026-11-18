@@ -55,7 +55,6 @@ use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
-use miden_protocol::vm::PackageExport;
 use miden_protocol::{CoreLibrary, MAX_OUTPUT_NOTES_PER_BATCH, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
@@ -980,6 +979,9 @@ impl Default for MockChainBuilder {
 
 /// Returns the code tree with the procedures of the default libraries that other code can
 /// reference.
+///
+/// Code references each procedure root of a forest that it reaches, not only the exported ones, so
+/// the tree contains all procedure roots of the libraries.
 fn default_code_tree() -> anyhow::Result<CodeTree> {
     let exec_kernel_proc = TransactionKernel::package()
         .get_procedure_root_by_path("$kernel::exec_kernel_proc")
@@ -990,16 +992,11 @@ fn default_code_tree() -> anyhow::Result<CodeTree> {
         StandardsLib::default().package(),
     ];
 
-    // Libraries can re-export procedures of other libraries, so roots must be deduplicated.
+    // Libraries can contain equal procedures, so roots must be deduplicated.
     let mut procedure_roots = BTreeSet::from([ProcedureRoot::from_raw(exec_kernel_proc)]);
     for library in libraries {
-        procedure_roots.extend(
-            library
-                .manifest
-                .exports()
-                .filter_map(PackageExport::as_procedure)
-                .map(|export| ProcedureRoot::from_raw(export.digest)),
-        );
+        procedure_roots
+            .extend(library.mast_forest().local_procedure_digests().map(ProcedureRoot::from_raw));
     }
 
     CodeTree::with_entries(procedure_roots).context("failed to create genesis code tree")
