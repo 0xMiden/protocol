@@ -20,6 +20,7 @@ use super::super::multisig::EXECUTED_TRANSACTIONS_SLOT_NAME;
 use super::{AuthHotColdGuardianConfig, HotColdDelayConfig, HotColdPolicy};
 use crate::account::account_component_package;
 use crate::account::auth::{Approver, GuardianConfig};
+use crate::account::upgrade::UpgradeManager;
 use crate::procedure_root;
 
 account_component_package!(
@@ -121,11 +122,16 @@ static DELAY_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// Procedure policies ([`HotColdPolicy`]) count signed categories. A procedure without a policy
 /// costs the default of one category plus the guardian. The component installs policies for its
-/// own procedures, see [`AuthHotColdGuardian::preset_policies`]:
+/// own procedures and for the [`UpgradeManager`] upgrade, see
+/// [`AuthHotColdGuardian::preset_policies`]:
 ///
 /// - replacing the hot keys requires the cold category (cold + guardian),
-/// - rotating the cold key, rotating the guardian and changing policies or the delay configuration
-///   require both categories (hot + cold + guardian).
+/// - rotating the cold key, rotating the guardian, changing policies or the delay configuration and
+///   upgrading the account code require both categories (hot + cold + guardian).
+///
+/// An upgrade can replace this component and drop every cold-key requirement, so a custom account
+/// procedure that calls `native_account::upgrade` needs a [`HotColdPolicy::HotAndCold`] policy as
+/// well, which the account creator has to configure.
 ///
 /// Delayed execution (proposing an action with the hot category and executing it after the
 /// configured delay unless the cold key cancels it) is not part of this component yet; its delay
@@ -188,14 +194,16 @@ impl AuthHotColdGuardian {
         Self { config }
     }
 
-    /// Returns the policies the component installs for its own procedures. A policy of the
-    /// configuration for the same procedure replaces the preset.
+    /// Returns the policies the component installs for its own procedures and for the
+    /// [`UpgradeManager`] upgrade. A policy of the configuration for the same procedure replaces
+    /// the preset.
     ///
     /// - `update_hot_keys`: cold only. Device management is immediate for the cold key and closed
     ///   to the hot keys.
     /// - `rotate_cold_key`, `update_guardian_public_key`, `set_procedure_policy`,
-    ///   `update_delay_config`: hot and cold. Rewriting any of them weakens what the other policies
-    ///   protect, so they take the strongest quorum.
+    ///   `update_delay_config` and [`UpgradeManager::upgrade_root`]: hot and cold. Rewriting any of
+    ///   them weakens what the other policies protect, so they take the strongest quorum. The
+    ///   upgrade preset has no effect on an account without the [`UpgradeManager`].
     pub fn preset_policies() -> BTreeMap<AccountProcedureRoot, HotColdPolicy> {
         BTreeMap::from([
             (Self::update_hot_keys_root(), HotColdPolicy::ColdOnly),
@@ -203,6 +211,7 @@ impl AuthHotColdGuardian {
             (Self::update_guardian_public_key_root(), HotColdPolicy::HotAndCold),
             (Self::set_procedure_policy_root(), HotColdPolicy::HotAndCold),
             (Self::update_delay_config_root(), HotColdPolicy::HotAndCold),
+            (UpgradeManager::upgrade_root(), HotColdPolicy::HotAndCold),
         ])
     }
 
@@ -506,6 +515,7 @@ mod tests {
             policy_word(AuthHotColdGuardian::rotate_cold_key_root()),
             Word::from([2u32, 0, 0, 0])
         );
+        assert_eq!(policy_word(UpgradeManager::upgrade_root()), Word::from([2u32, 0, 0, 0]));
 
         let delay = HotColdDelayConfig::default();
         assert_eq!(
