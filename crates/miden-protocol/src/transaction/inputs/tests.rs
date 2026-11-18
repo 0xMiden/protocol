@@ -27,7 +27,6 @@ use crate::block::code_tree::{CodeTree, CodeTreeRoot, PartialCodeTree};
 use crate::code::ProcedureRoot;
 use crate::crypto::merkle::smt::Smt;
 use crate::errors::TransactionInputError;
-use crate::note::NoteScript;
 use crate::protocol_config::ProtocolConfig;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -152,7 +151,6 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         None,
     );
     let foreign_account = account_inputs(&mock_account(foreign_account_id()?)?)?;
-    let note_script = NoteScript::mock();
     let code_tree = mock_code_tree()?;
     let block_header = mock_block_header(&blockchain, code_tree.root());
     let partial_code_tree =
@@ -166,7 +164,6 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         .input_notes(input_notes.clone())
         .tx_args(tx_args.clone())
         .foreign_accounts(vec![foreign_account.clone()])
-        .note_scripts(vec![note_script.clone()])
         .code_tree(partial_code_tree.clone())
         .build()?;
 
@@ -180,7 +177,6 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         tx_inputs.foreign_accounts(),
         &BTreeMap::from([(foreign_account.id(), foreign_account)])
     );
-    assert_eq!(tx_inputs.note_scripts(), &BTreeMap::from([(note_script.root(), note_script)]));
     assert_eq!(tx_inputs.code_tree(), &partial_code_tree);
 
     Ok(())

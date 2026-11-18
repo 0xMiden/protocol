@@ -20,7 +20,7 @@ use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::code::ProcedureRoot;
-use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
+use miden_protocol::note::{Note, PartialNote};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{
@@ -262,14 +262,6 @@ impl DataStore for TransactionInputsDataStore {
                 "storage map witness of account {account_id} was requested again"
             )))
         }
-    }
-
-    fn get_note_script(
-        &self,
-        script_root: NoteScriptRoot,
-    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
-        let note_script = self.tx_inputs.note_scripts().get(&script_root).cloned();
-        async move { Ok(note_script) }
     }
 
     /// Returns the requested witnesses that the inputs contain.

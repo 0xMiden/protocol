@@ -30,7 +30,6 @@ use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
@@ -773,12 +772,10 @@ pub async fn tx_consume_b2agg_note(
     mock_chain.prove_next_block()?;
 
     // TX1: BUILD B2AGG NOTE MOCK TRANSACTION (ready to execute)
-    let burn_note_script = StandardNote::BURN.script();
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let b2agg_mock_tx = mock_chain
         .build_transaction(bridge_account.id())
         .authenticated_input_note(b2agg_note.id())
-        .add_note_script(burn_note_script)
         .foreign_accounts(vec![foreign_account_inputs])
         .build()?;
 

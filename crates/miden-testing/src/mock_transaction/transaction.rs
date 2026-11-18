@@ -20,7 +20,7 @@ use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::code::ProcedureRoot;
-use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_protocol::note::Note;
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
     AccountInputs,
@@ -59,7 +59,6 @@ pub struct MockTransaction {
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
-    pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     pub(super) code_to_register: Vec<Arc<MastForest>>,
 }
 
@@ -264,6 +263,7 @@ impl MockTransaction {
             ref_block,
             block_commitments,
             tx_inputs.block_header().code_tree_root(),
+            tx_inputs.tx_args().output_note_recipients().to_vec(),
             self.source_manager(),
         )
         .expect("partial account from a full account should contain its complete storage");
@@ -444,13 +444,6 @@ impl DataStore for MockTransaction {
         }
     }
 
-    fn get_note_script(
-        &self,
-        script_root: NoteScriptRoot,
-    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
-        async move { Ok(self.note_scripts.get(&script_root).cloned()) }
-    }
-
     fn get_code_witnesses(
         &self,
         code_tree_root: CodeTreeRoot,
@@ -495,53 +488,8 @@ mod tests {
     use std::string::ToString;
 
     use miden_protocol::errors::tx_kernel::ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32;
-    use miden_standards::code_builder::CodeBuilder;
 
-    use super::*;
-    use crate::{Auth, MockChain, TestTransactionBuilder};
-
-    #[tokio::test]
-    async fn test_get_note_scripts() {
-        // Create two note scripts
-        let script1_code = "@note_script\npub proc main\n    push.1\nend";
-        let note_script1 = CodeBuilder::default()
-            .compile_note_script(script1_code)
-            .expect("failed to assemble note script 1");
-        let script_root1 = note_script1.root();
-
-        let script2_code = "@note_script\npub proc main\n    push.2 push.3 add\nend";
-        let note_script2 = CodeBuilder::default()
-            .compile_note_script(script2_code)
-            .expect("failed to assemble note script 2");
-        let script_root2 = note_script2.root();
-
-        // Build a mock transaction with both note scripts
-        let mock_tx = TestTransactionBuilder::with_existing_mock_account()
-            .add_note_script(note_script1.clone())
-            .add_note_script(note_script2.clone())
-            .build()
-            .expect("failed to build mock transaction");
-
-        // Assert that fetching both note scripts works
-        let retrieved_script1 = mock_tx
-            .get_note_script(script_root1)
-            .await
-            .expect("failed to get note script 1")
-            .expect("note script 1 should exist");
-        assert_eq!(retrieved_script1, note_script1);
-
-        let retrieved_script2 = mock_tx
-            .get_note_script(script_root2)
-            .await
-            .expect("failed to get note script 2")
-            .expect("note script 2 should exist");
-        assert_eq!(retrieved_script2, note_script2);
-
-        // Fetching a non-existent one returns None
-        let non_existent_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let result = mock_tx.get_note_script(non_existent_root).await;
-        assert!(matches!(result, Ok(None)));
-    }
+    use crate::{Auth, MockChain};
 
     /// Regression test: an error raised in a dynamically-linked library (here `compute_fee` from
     /// the protocol library) must render its human-readable message, not just an opaque error

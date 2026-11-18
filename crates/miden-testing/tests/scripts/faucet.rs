@@ -764,13 +764,14 @@ async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
 // TEST PUBLIC NOTE CREATION DURING NOTE CONSUMPTION
 // ================================================================================================
 
-/// Tests that a public note can be created during note consumption by fetching the note script
-/// from the data store. This test verifies the functionality added in issue #1972.
+/// Tests that a public note can be created during note consumption without its script in the
+/// advice provider.
 ///
-/// The test creates a note that calls the faucet's `mint` function to create a PUBLIC
-/// P2ID output note. The P2ID script is fetched from the data store during transaction execution.
+/// The test creates a note that calls the faucet's `mint` function to create a PUBLIC output note.
+/// The host builds the output note script as a reference to its root, and the code to register
+/// provides the absent script for the code patch.
 #[tokio::test]
-async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
+async fn test_public_note_creation_with_script_from_code_to_register() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
         Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
@@ -890,13 +891,12 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     builder.add_output_note(RawOutputNote::Full(trigger_note.clone()));
     let mock_chain = builder.build()?;
 
-    // Execute the transaction - this should fetch the output note script from the data store.
-    // Note: There is intentionally no call to expected_output_notes here, so the
-    // transaction host is forced to request the script from the data store during execution.
+    // There is intentionally no call to expected_output_notes here, so the host can only find the
+    // script through code_to_register.
     let executed_transaction = mock_chain
         .build_transaction(faucet.id())
         .authenticated_input_note(trigger_note.clone())
-        .add_note_script(output_note_script)
+        .register_code(output_note_script.mast())
         .with_source_manager(source_manager)
         .build()?
         .execute()
@@ -929,6 +929,11 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     // Verify the output note ID matches the expected note ID
     assert_eq!(full_note.id(), expected_note.id());
+    assert_eq!(full_note.script(), &NoteScript::from_root(output_note_script.root()));
+    assert_eq!(
+        executed_transaction.code_patch().created_procedures(),
+        BTreeSet::from([output_note_script.root().into()])
+    );
 
     // Verify nonce was incremented
     assert_eq!(
