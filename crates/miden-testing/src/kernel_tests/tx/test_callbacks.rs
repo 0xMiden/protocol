@@ -1034,7 +1034,7 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
 }
 
 /// Tests that the attachment returned by a faucet's `on_before_note_sealed` callback is appended
-/// to the sealed note after the attachment the note's creator added, and that a callback returning
+/// to the note after the attachment the note's creator added, and that a callback returning
 /// attachment scheme 0 appends no attachment.
 ///
 /// The transaction is also proven, so the prover host must build the same output note.
