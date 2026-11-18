@@ -29,7 +29,7 @@ use crate::transaction::{
     TransactionHeader,
     TransactionLogError,
 };
-use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, MAX_BLOCK_TIMESTAMP_DELTA_SECS, Word};
+use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
 // PROPOSED BLOCK
 // =================================================================================================
@@ -151,8 +151,6 @@ impl ProposedBlock {
     ///
     /// - The given `timestamp` does not increase monotonically compared to the previous block
     ///   header' timestamp.
-    /// - The difference between the given `timestamp` and the previous block header's timestamp is
-    ///   greater than or equal to [`MAX_BLOCK_TIMESTAMP_DELTA_SECS`].
     pub fn new_at(
         block_inputs: BlockInputs,
         batches: Vec<ProvenBatch>,
@@ -173,7 +171,6 @@ impl ProposedBlock {
         // --------------------------------------------------------------------------------------------
 
         check_timestamp_increases_monotonically(timestamp, block_inputs.prev_block_header())?;
-        check_timestamp_delta(timestamp, block_inputs.prev_block_header())?;
 
         // Check for batch expiration.
         // --------------------------------------------------------------------------------------------
@@ -272,8 +269,8 @@ impl ProposedBlock {
     /// Creates a new proposed block from the provided [`BlockInputs`] and transaction batches.
     ///
     /// Equivalent to [`ProposedBlock::new_at`] except that the timestamp of the proposed block is
-    /// set as close as possible to the current system time while remaining within the valid range
-    /// after the previous block header's timestamp.
+    /// set to the current system time, or to one second after the previous block header's
+    /// timestamp if the system time is not later than it.
     ///
     /// See the [`ProposedBlock::new_at`] for details on errors and other constraints.
     #[cfg(feature = "std")]
@@ -660,25 +657,6 @@ fn check_timestamp_increases_monotonically(
     }
 }
 
-fn check_timestamp_delta(
-    provided_timestamp: u32,
-    prev_block_header: &BlockHeader,
-) -> Result<(), ProposedBlockError> {
-    let previous_timestamp = prev_block_header.timestamp();
-    let timestamp_delta = provided_timestamp - previous_timestamp;
-
-    if timestamp_delta >= MAX_BLOCK_TIMESTAMP_DELTA_SECS {
-        Err(ProposedBlockError::TimestampDeltaTooLarge {
-            provided_timestamp,
-            previous_timestamp,
-            timestamp_delta,
-            max_delta: MAX_BLOCK_TIMESTAMP_DELTA_SECS,
-        })
-    } else {
-        Ok(())
-    }
-}
-
 #[cfg(feature = "std")]
 fn select_block_timestamp(
     timestamp_now: u32,
@@ -690,9 +668,8 @@ fn select_block_timestamp(
             previous_timestamp,
         },
     )?;
-    let max_timestamp = previous_timestamp.saturating_add(MAX_BLOCK_TIMESTAMP_DELTA_SECS - 1);
 
-    Ok(timestamp_now.clamp(min_timestamp, max_timestamp))
+    Ok(timestamp_now.max(min_timestamp))
 }
 
 /// Checks whether any of the batches is expired and can no longer be included in this block.
@@ -1056,15 +1033,12 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[rstest]
-    #[case::before_valid_range(50, 100, 101)]
-    #[case::inside_valid_range(150, 100, 150)]
-    #[case::after_valid_range(
-        100 + MAX_BLOCK_TIMESTAMP_DELTA_SECS,
-        100,
-        100 + MAX_BLOCK_TIMESTAMP_DELTA_SECS - 1
-    )]
+    #[case::before_previous_timestamp(50, 100, 101)]
+    #[case::equal_to_previous_timestamp(100, 100, 101)]
+    #[case::after_previous_timestamp(150, 100, 150)]
+    #[case::long_after_previous_timestamp(100 + 365 * 24 * 60 * 60, 100, 100 + 365 * 24 * 60 * 60)]
     #[case::near_u32_max(u32::MAX, u32::MAX - 100, u32::MAX)]
-    fn block_timestamp_is_clamped_to_valid_range(
+    fn block_timestamp_is_at_least_one_after_previous_timestamp(
         #[case] timestamp_now: u32,
         #[case] previous_timestamp: u32,
         #[case] expected_timestamp: u32,
