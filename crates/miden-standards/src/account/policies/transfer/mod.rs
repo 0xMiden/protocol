@@ -59,8 +59,10 @@ pub enum TransferPolicyError {
 /// Outputs: [pad(16)]
 /// ```
 ///
-/// It reads the note itself, e.g. the faucet's assets in it via `output_note::get_assets`, and
-/// the note creator via `native_account::get_id`.
+/// It reads the note itself and the note creator via `native_account::get_id`.
+/// `output_note::get_assets` returns all of the note's assets, so a policy that inspects the
+/// faucet's assets selects them by comparing `asset::id_to_faucet_id` with
+/// `active_account::get_id`.
 ///
 /// Note that minting crosses the send callback: the note created by `mint_and_send` runs
 /// `on_before_note_sealed` when it is sealed, with the issuing faucet itself as the native account,
@@ -76,6 +78,10 @@ pub enum TransferPolicyError {
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
+///
+/// The basic blocklist and allowlist send and receive policies share their list component. When
+/// both are registered, the [`super::TokenPolicyManager`] installs the component of the first
+/// registered one, so the two kinds always check the same list.
 #[derive(Debug, Clone)]
 pub struct SendPolicy {
     root: AccountProcedureRoot,
@@ -201,6 +207,10 @@ impl IntoIterator for SendPolicy {
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
+///
+/// The basic blocklist and allowlist send and receive policies share their list component. When
+/// both are registered, the [`super::TokenPolicyManager`] installs the component of the first
+/// registered one, so the two kinds always check the same list.
 #[derive(Debug, Clone)]
 pub struct ReceivePolicy {
     root: AccountProcedureRoot,

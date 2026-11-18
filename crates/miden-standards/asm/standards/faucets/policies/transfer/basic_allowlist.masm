@@ -73,7 +73,7 @@ end
 # HELPER PROCEDURES
 # ================================================================================================
 
-#! Asserts that the native account is not not allowed on the issuing faucet, which is the active
+#! Asserts that the native account is allowed on the issuing faucet, which is the active
 #! account while an asset callback runs. The issuing faucet itself is exempt.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks

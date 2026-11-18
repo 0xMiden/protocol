@@ -165,7 +165,7 @@ static ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> =
 /// Used internally by [`PolicyConfig`] to record which `allowed_*_policies` storage maps a
 /// policy procedure root should be registered in. The same procedure root may belong to more
 /// than one kind (for example a custom procedure registered as both the send and the receive
-/// policy).
+/// policy, which then must not read its inputs, since the two kinds take different inputs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum PolicyKind {
     Mint,
