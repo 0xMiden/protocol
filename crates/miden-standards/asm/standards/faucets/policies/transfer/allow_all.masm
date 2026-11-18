@@ -39,4 +39,8 @@ end
 pub proc check_receive_policy(asset: Asset)
     dropw dropw
     # => [pad(16)]
+
+    # keep the procedure root distinct from the burn allow-all policy, which has the same inputs
+    push.0 drop
+    # => [pad(16)]
 end

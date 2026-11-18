@@ -743,7 +743,16 @@ mod tests {
     use miden_protocol::asset::AssetCallbacks;
 
     use super::*;
-    use crate::account::policies::transfer::TransferAllowAll;
+    use crate::account::policies::{
+        BasicAllowlist,
+        BasicBlocklist,
+        BurnAllowAll,
+        BurnOwnerOnly,
+        MinBurnAmount,
+        MintAllowAll,
+        MintOwnerOnly,
+        TransferAllowAll,
+    };
 
     /// Returns the manager component's storage slot for the given slot name, or `None` if the
     /// component does not register a slot with that name.
@@ -981,5 +990,26 @@ mod tests {
         let allowed = manager.allowed_burn_policies();
         assert!(allowed.contains(&BurnPolicy::owner_only().root()));
         assert!(allowed.contains(&BurnPolicy::allow_all().root()));
+    }
+
+    /// Every standard policy procedure has its own root, so the manager never merges the entries
+    /// of two different policies.
+    #[test]
+    fn standard_policy_roots_are_distinct() {
+        let roots = [
+            MintAllowAll::root(),
+            MintOwnerOnly::root(),
+            BurnAllowAll::root(),
+            BurnOwnerOnly::root(),
+            MinBurnAmount::root(),
+            TransferAllowAll::send_root(),
+            TransferAllowAll::receive_root(),
+            BasicBlocklist::send_root(),
+            BasicBlocklist::receive_root(),
+            BasicAllowlist::send_root(),
+            BasicAllowlist::receive_root(),
+        ];
+        let distinct: BTreeSet<_> = roots.iter().collect();
+        assert_eq!(distinct.len(), roots.len());
     }
 }
