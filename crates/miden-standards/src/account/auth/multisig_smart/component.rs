@@ -292,10 +292,11 @@ fn validate_proc_policies(
 /// [`MultisigAuthArgs::with_estimated_max_fee`](crate::account::auth::MultisigAuthArgs::with_estimated_max_fee))
 /// and the execution passes it back.
 ///
-/// A propose or cancel transaction pays a fee too, after its own authorization and within the max
-/// fee its own summary binds. Such a transaction verifies signatures over the proposed commitment
-/// rather than over its own summary, so no signature covers that max fee: the fee it pays is
-/// bounded by the kernel's fee formula alone.
+/// A propose or cancel transaction pays a fee too, and that fee is checked against the max fee in
+/// its own summary. Its signatures are over the proposed commitment, not over its own summary, so
+/// whoever submits it picks that max fee freely and the check does not limit what the account
+/// pays. The fee of such a transaction is limited only by the kernel's fee formula, which caps it
+/// at the fee for the maximum cycle count.
 ///
 /// # Security
 ///

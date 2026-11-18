@@ -30,9 +30,10 @@ pub use {set_spending_limit} from miden::standards::auth::multisig_smart::spendi
 #! multisig flow, see `MULTISIG_SMART_AUTH_CYCLES`.
 #! A proposal for the delayed path is keyed by the target transaction's summary commitment, which
 #! includes its max fee, so the proposer fixes the max fee when it obtains the commitment and the
-#! execution passes it back. A propose or cancel transaction pays its own fee the same way; since
-#! it verifies signatures over the proposed commitment rather than its own summary, its max fee is
-#! not covered by any signature.
+#! execution passes it back.
+#! A propose or cancel transaction pays its fee through this procedure too. Its signatures are over
+#! the proposed commitment rather than its own summary, so whoever submits it picks its max fee
+#! freely, and its fee is limited only by the kernel's fee formula.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
