@@ -12,6 +12,7 @@ mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
 mod code_patch;
+pub(crate) use code_patch::code_patch_advice;
 use code_patch::{CodePatchSource, code_witness_advice};
 
 pub(crate) mod note_builder;
@@ -764,16 +765,18 @@ where
         source.build_code_patch(&self.code_patch_top_level_roots(), &self.code_tree)
     }
 
-    /// Returns the advice that the kernel reads to load the code patch.
+    /// Returns the advice that provides the code witnesses of the code patch lists to the kernel.
     ///
     /// # Errors
     ///
     /// Returns an error if a code witness that the kernel needs is not available.
-    pub fn code_patch_advice(
+    pub fn code_patch_witness_advice(
         &self,
         code_patch: &CodePatch,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        code_patch::code_patch_advice(code_patch, &self.code_tree)
+        let created_procedures = code_patch.created_procedures();
+        let dependencies = code_patch.dependencies();
+        code_witness_advice(created_procedures.iter().chain(dependencies.iter()), &self.code_tree)
     }
 
     /// Handles the verification of a top-level procedure root that the code patch does not create.
