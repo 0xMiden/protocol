@@ -35,6 +35,9 @@ use miden::standards::expiration
 #! Invocation: call
 @account_procedure
 pub proc check_send_policy(note_idx: u16)
+    exec.expiration::apply_default
+    # => [note_idx, pad(15)]
+
     exec.assert_native_account_not_blocked
     # => [note_idx, pad(15)]
 
@@ -61,6 +64,9 @@ end
 #! Invocation: call
 @account_procedure
 pub proc check_receive_policy(asset: Asset)
+    exec.expiration::apply_default
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
     exec.assert_native_account_not_blocked
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
@@ -74,9 +80,6 @@ end
 #! Asserts that the native account is not blocked on the issuing faucet, which is the active
 #! account while an asset callback runs. The issuing faucet itself is exempt.
 #!
-#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
-#! after the reference block.
-#!
 #! Inputs:  []
 #! Outputs: []
 #!
@@ -85,9 +88,6 @@ end
 #!
 #! Invocation: exec
 proc assert_native_account_not_blocked
-    exec.expiration::apply_default
-    # => []
-
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix]
 

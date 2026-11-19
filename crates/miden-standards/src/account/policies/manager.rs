@@ -746,13 +746,9 @@ mod tests {
 
     use super::*;
     use crate::account::policies::{
-        BasicAllowlist,
         BasicBlocklist,
         BurnAllowAll,
-        BurnOwnerOnly,
-        MinBurnAmount,
         MintAllowAll,
-        MintOwnerOnly,
         TransferAllowAll,
     };
 
@@ -1052,24 +1048,24 @@ mod tests {
         assert!(components.iter().any(|component| component.has_procedure(BurnAllowAll::root())));
     }
 
-    /// Every standard policy procedure has its own root, so the manager never merges the entries
-    /// of two different policies.
+    /// The allow-all burn and receive policies have the same procedure root, since both only drop
+    /// an asset. The manager registers the root under both kinds and the procedure is installed.
     #[test]
-    fn standard_policy_roots_are_distinct() {
-        let roots = [
-            MintAllowAll::root(),
-            MintOwnerOnly::root(),
-            BurnAllowAll::root(),
-            BurnOwnerOnly::root(),
-            MinBurnAmount::root(),
-            TransferAllowAll::send_root(),
-            TransferAllowAll::receive_root(),
-            BasicBlocklist::send_root(),
-            BasicBlocklist::receive_root(),
-            BasicAllowlist::send_root(),
-            BasicAllowlist::receive_root(),
-        ];
-        let distinct: BTreeSet<_> = roots.iter().collect();
-        assert_eq!(distinct.len(), roots.len());
+    fn policies_of_different_kinds_can_share_a_root() {
+        assert_eq!(BurnAllowAll::root(), TransferAllowAll::receive_root());
+
+        let manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::owner_only())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
+            .build();
+
+        assert_eq!(manager.active_burn_policy(), BurnAllowAll::root());
+        assert_eq!(manager.active_receive_policy(), Some(TransferAllowAll::receive_root()));
+        assert!(manager.allowed_burn_policies().contains(&BurnAllowAll::root()));
+        assert!(manager.allowed_receive_policies().contains(&TransferAllowAll::receive_root()));
+
+        let components: Vec<AccountComponent> = manager.into_iter().collect();
+        assert!(components.iter().any(|component| component.has_procedure(BurnAllowAll::root())));
     }
 }
