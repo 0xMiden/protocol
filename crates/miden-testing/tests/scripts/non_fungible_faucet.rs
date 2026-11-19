@@ -483,7 +483,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let recipient_digest = Word::from([5, 5, 5, 5u32]);
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -542,7 +542,7 @@ async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow
         .build_with_seed([13; 32]);
 
     // the asset names `target` as its faucet, which is what the note storage binds it to
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         Word::from([5, 5, 5, 5u32]),
         NonFungibleAsset::from_parts(target.id(), commitment),
         NoteTag::default(),
@@ -596,7 +596,7 @@ async fn nft_mint_via_note_succeeds_for_a_private_faucet() -> anyhow::Result<()>
         .account_type(AccountType::Private)
         .build_with_seed([15; 32]);
 
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -646,7 +646,7 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         .account_type(AccountType::Private)
         .build_with_seed([11; 32]);
 
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),

@@ -248,7 +248,7 @@ end
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
-#! - the output note is sealed, including by the asset callback.
+#! - the output note is sealed.
 pub proc add_asset(asset: Asset, note_idx: u16)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
@@ -273,7 +273,6 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     movup.8 exec.memory::get_output_note_ptr
-    # Check after the callback, which can itself seal the note.
     dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
     dup
     # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]

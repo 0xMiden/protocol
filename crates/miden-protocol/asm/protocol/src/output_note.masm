@@ -31,6 +31,7 @@ use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOT
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
@@ -66,6 +67,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index is greater or equal to the total number of output notes.
 #!
@@ -227,6 +229,7 @@ end
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the output note is sealed.
 #! - the note index points to a non-existent output note.
 #! - the active account is not the native account.
@@ -270,6 +273,7 @@ end
 #!   commitment.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -313,6 +317,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -373,6 +378,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
