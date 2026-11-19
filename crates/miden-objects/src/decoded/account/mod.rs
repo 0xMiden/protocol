@@ -28,6 +28,9 @@ pub use storage::{
     StorageSlotId,
 };
 
+mod delta;
+pub use delta::{AccountDelta, AccountDeltaError, AccountVaultDelta};
+
 mod patch;
 pub use patch::{
     AccountCodePatch,

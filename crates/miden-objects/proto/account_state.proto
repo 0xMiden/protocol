@@ -46,3 +46,25 @@ message Account {
   // Present only for an account that is not yet created on chain.
   optional primitives.Word seed = 7;
 }
+
+// The change of an account vault. Each asset is the amount or item by which the vault changed, not
+// its final value. An asset ID appears at most once across both lists.
+message AccountVaultDelta {
+  repeated asset.Asset added = 1;
+  repeated asset.Asset removed = 2;
+}
+
+enum AccountDeltaVersion {
+  ACCOUNT_DELTA_VERSION_UNSPECIFIED = 0;
+  ACCOUNT_DELTA_VERSION_V1 = 1;
+}
+
+// The change of an account, as committed to and signed during transaction execution.
+message AccountDelta {
+  AccountDeltaVersion version = 1;
+  AccountId account_id = 2;
+  AccountStoragePatch storage = 3;
+  AccountVaultDelta vault = 4;
+  AccountCodePatch code = 5;
+  primitives.Felt nonce_delta = 6;
+}
