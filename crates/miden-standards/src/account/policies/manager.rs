@@ -685,7 +685,8 @@ impl TokenPolicyManager {
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
 /// entry's kind set. A companion component that another entry already carries is not added again,
 /// which installs a component once when it exports the roots of several policies (e.g. the send
-/// and receive procedures of a transfer policy).
+/// and receive procedures of a transfer policy). A component that differs, e.g. in its storage, is
+/// kept, so a conflicting storage slot fails the account build.
 fn insert_policy(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
     root: AccountProcedureRoot,

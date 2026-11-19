@@ -1,8 +1,8 @@
 //! Policed-asset tripwire (F4 REVERSAL, human-ratified 2026-07-23) — locks in the decision that
 //! xUSDC ships as a POLICED fungible asset carrying the stock `BasicBlocklist` as the ACTIVE send
-//! AND receive transfer policy (one component, both kinds, empty initial blocklist). This
-//! SUPERSEDES the former basic-asset tripwire (which asserted the opposite: no transfer policy and
-//! `AssetCallbackFlag::Disabled`).
+//! AND receive transfer policy (one component, both kinds), reading the empty initial blocklist
+//! installed by the stock `BlocklistStorage` component. This SUPERSEDES the former basic-asset
+//! tripwire (which asserted the opposite: no transfer policy and `AssetCallbackFlag::Disabled`).
 //!
 //! This test is GREEN on the shipped (policed) build and flips RED the moment anyone un-wires the
 //! transfer blocklist (drops `active_send_policy`/`active_receive_policy` from `build_components`).
@@ -32,7 +32,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::AssetCallbacks;
-use miden_standards::account::policies::{BasicBlocklist, TokenPolicyManager};
+use miden_standards::account::policies::{BasicBlocklist, BlocklistStorage, TokenPolicyManager};
 use support::{production_component_set, tripwire_serial_guard_blocking};
 
 /// First storage slot named `name` across the whole composed component set, if any.
@@ -142,5 +142,10 @@ fn production_build_wires_the_transfer_blocklist() -> Result<()> {
             "the {slot} callback slot must hold the fixed invoke_*_policy wrapper root"
         );
     }
+
+    // (4) the blocklist the policies read is installed and starts empty. Without it every
+    // third-party transfer fails on the missing slot.
+    let blocklist = map_slot(&components, BlocklistStorage::blocked_accounts_slot())?;
+    assert_eq!(blocklist.num_entries(), 0, "the initial blocklist must be empty");
     Ok(())
 }

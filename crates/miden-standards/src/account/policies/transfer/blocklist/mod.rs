@@ -61,9 +61,9 @@ procedure_root!(
 ///
 /// The low-level `block_account` / `unblock_account` / `is_blocked` / `assert_not_blocked`
 /// procedures live in the standards library at
-/// `miden::standards::faucets::policies::transfer::blocklist` as `Invocation: exec` helpers —
-/// they perform no authorization and must be wrapped by an auth-checking admin component (see
-/// [`BlocklistManager`]) before being exposed on a faucet.
+/// `miden::standards::faucets::policies::transfer::blocklist` as `Invocation: exec` helpers. The
+/// `block_account` / `unblock_account` writes perform no authorization and must be wrapped by an
+/// auth-checking admin component (see [`BlocklistManager`]) before being exposed on a faucet.
 ///
 /// ## Storage
 ///
