@@ -38,8 +38,11 @@ use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED,
-    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH,
+    ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS,
     ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
@@ -54,7 +57,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
 use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
@@ -151,6 +154,13 @@ const ERR_ACCOUNT_BLOCKED: MasmError =
 /// The error raised by a note callback that observes an unexpected transaction expiration delta.
 const ERR_UNEXPECTED_EXPIRATION_DELTA: MasmError =
     MasmError::from_static_str("note callback observed an unexpected expiration delta");
+
+/// The error raised by the kernel if an attachment list does not hash to its commitment.
+const ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH: MasmError =
+    MasmError::from_static_str("pipe_double_words_preimage_to_memory: COMMITMENT does not match");
+
+/// An advice map entry put into the advice map by a test callback: the key and its words.
+type AdviceMapEntry = (Word, Vec<Word>);
 
 // Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
@@ -1033,27 +1043,26 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
     Ok(())
 }
 
-/// Tests that the attachment returned by a faucet's `on_before_note_sealed` callback is appended
-/// to the note after the attachment the note's creator added, and that a callback returning
-/// attachment scheme 0 appends no attachment.
+/// Tests that the attachments returned by a faucet's `on_before_note_sealed` callback are appended
+/// to the note in list order after the attachment the note's creator added, and that a callback
+/// returning 0 attachments appends no attachment.
 ///
 /// The transaction is also proven, so the prover host must build the same output note.
 #[rstest::rstest]
-#[case::returned_attachment(true)]
-#[case::no_returned_attachment(false)]
+#[case::no_attachment(0)]
+#[case::one_attachment(1)]
+#[case::two_attachments(2)]
 #[tokio::test]
-async fn test_note_sealed_callback_attachment_is_appended_to_note(
-    #[case] returns_attachment: bool,
+async fn test_note_sealed_callback_attachments_are_appended_to_note(
+    #[case] num_callback_attachments: usize,
 ) -> anyhow::Result<()> {
     let creator_attachment =
         NoteAttachment::with_word(NoteAttachmentScheme::new(10)?, Word::from([1, 2, 3, 4u32]));
-    let callback_attachment_scheme = NoteAttachmentScheme::new(20)?;
-    let callback_attachment_word = Word::from([5, 6, 7, 8u32]);
+    let callback_attachments =
+        [(20, Word::from([5, 6, 7, 8u32])), (21, Word::from([9, 10, 11, 12u32]))];
+    let callback_attachments = &callback_attachments[..num_callback_attachments];
 
-    let note_callback_masm = note_sealed_callback_masm(
-        returns_attachment
-            .then_some((callback_attachment_scheme.as_u16(), callback_attachment_word)),
-    );
+    let note_callback_masm = note_sealed_callback_masm(callback_attachments);
     let (note, result) = execute_note_sealing_tx(
         &[([42; 32], &note_callback_masm)],
         vec![creator_attachment.clone()],
@@ -1062,10 +1071,7 @@ async fn test_note_sealed_callback_attachment_is_appended_to_note(
     let executed_tx = result?;
 
     let mut expected_attachments = vec![creator_attachment];
-    if returns_attachment {
-        expected_attachments
-            .push(NoteAttachment::with_word(callback_attachment_scheme, callback_attachment_word));
-    }
+    expected_attachments.extend(word_attachments(callback_attachments)?);
     let expected_note = Note::with_attachments(
         note.assets().clone(),
         *note.metadata().partial_metadata(),
@@ -1084,7 +1090,8 @@ async fn test_note_sealed_callback_attachment_is_appended_to_note(
 }
 
 /// Tests that the attachments returned by the `on_before_note_sealed` callbacks of several faucets
-/// are appended in the order in which each faucet first occurs among the note's assets.
+/// are appended in the order in which each faucet first occurs among the note's assets, and the
+/// attachments of each callback in list order.
 #[rstest::rstest]
 #[case::first_faucet_occurs_first(true)]
 #[case::second_faucet_occurs_first(false)]
@@ -1092,20 +1099,17 @@ async fn test_note_sealed_callback_attachment_is_appended_to_note(
 async fn test_note_sealed_callback_attachments_follow_callback_order(
     #[case] first_faucet_occurs_first: bool,
 ) -> anyhow::Result<()> {
-    let first = (21, Word::from([1, 1, 1, 1u32]));
-    let second = (22, Word::from([2, 2, 2, 2u32]));
-    let first_attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(first.0)?, first.1);
-    let second_attachment =
-        NoteAttachment::with_word(NoteAttachmentScheme::new(second.0)?, second.1);
-    let first_callback_masm = note_sealed_callback_masm(Some(first));
-    let second_callback_masm = note_sealed_callback_masm(Some(second));
+    let first = [(21, Word::from([1, 1, 1, 1u32])), (22, Word::from([2, 2, 2, 2u32]))];
+    let second = [(23, Word::from([3, 3, 3, 3u32])), (24, Word::from([4, 4, 4, 4u32]))];
+    let first_callback_masm = note_sealed_callback_masm(&first);
+    let second_callback_masm = note_sealed_callback_masm(&second);
 
     let first_faucet = ([42; 32], first_callback_masm.as_str());
     let second_faucet = ([43; 32], second_callback_masm.as_str());
     let (faucets, expected_attachments) = if first_faucet_occurs_first {
-        ([first_faucet, second_faucet], vec![first_attachment, second_attachment])
+        ([first_faucet, second_faucet], [first, second].concat())
     } else {
-        ([second_faucet, first_faucet], vec![second_attachment, first_attachment])
+        ([second_faucet, first_faucet], [second, first].concat())
     };
 
     let (_, result) = execute_note_sealing_tx(&faucets, Vec::new()).await?;
@@ -1113,69 +1117,127 @@ async fn test_note_sealed_callback_attachments_follow_callback_order(
 
     assert_eq!(
         executed_tx.output_notes().get_note(0).attachments(),
-        &NoteAttachments::new(expected_attachments)?
+        &NoteAttachments::new(word_attachments(&expected_attachments)?)?
     );
 
     Ok(())
 }
 
-/// Tests that the attachment returned by an `on_before_note_sealed` callback is validated like any
-/// other attachment and counts toward the note's limit of attachments, and that a callback cannot
-/// return an attachment commitment with attachment scheme 0.
+/// Tests that the attachments returned by an `on_before_note_sealed` callback are validated like
+/// any other attachment and count toward the note's limit of attachments, and that a callback
+/// cannot return more attachments than a note can hold.
 #[rstest::rstest]
-#[case::too_many_attachments(NoteAttachments::MAX_COUNT, 20, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
-#[case::invalid_scheme(1, u16::MAX, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
-#[case::commitment_without_scheme(
-    1,
+#[case::too_many_attachments(3, &[20, 21], ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
+#[case::too_many_listed_attachments(
     0,
-    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME
+    &[20, 21, 22, 23, 24],
+    ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS
 )]
+#[case::invalid_scheme(0, &[20, u16::MAX], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
+#[case::zero_scheme(0, &[0], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO)]
 #[tokio::test]
-async fn test_note_sealed_callback_attachment_is_validated(
-    #[case] num_creator_attachments: usize,
-    #[case] callback_attachment_scheme: u16,
+async fn test_note_sealed_callback_attachments_are_validated(
+    #[case] num_creator_attachments: u16,
+    #[case] callback_attachment_schemes: &[u16],
     #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
-    let creator_attachments = (1u16..)
-        .take(num_creator_attachments)
-        .map(|scheme| {
-            Ok(NoteAttachment::with_word(
-                NoteAttachmentScheme::new(scheme)?,
-                Word::from([u32::from(scheme); 4]),
-            ))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let note_callback_masm =
-        note_sealed_callback_masm(Some((callback_attachment_scheme, Word::from([5, 6, 7, 8u32]))));
+    let scheme_word_attachment = |scheme: u16| (scheme, Word::from([u32::from(scheme); 4]));
+    let creator_attachments =
+        (1..=num_creator_attachments).map(scheme_word_attachment).collect::<Vec<_>>();
+    let callback_attachments = callback_attachment_schemes
+        .iter()
+        .copied()
+        .map(scheme_word_attachment)
+        .collect::<Vec<_>>();
+    let note_callback_masm = note_sealed_callback_masm(&callback_attachments);
 
-    let (_, result) =
-        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], creator_attachments).await?;
+    let (_, result) = execute_note_sealing_tx(
+        &[([42; 32], &note_callback_masm)],
+        word_attachments(&creator_attachments)?,
+    )
+    .await?;
 
     assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }
 
-/// Tests that sealing fails if an `on_before_note_sealed` callback returns an attachment
-/// commitment whose elements are not in the advice map.
+/// Tests that sealing fails if the number of attachments or the attachment list commitment returned
+/// by an `on_before_note_sealed` callback does not match the attachment list in the advice map.
+///
+/// The callback puts a list of `num_listed_attachments` attachments into the advice map under
+/// `attachment_list_commitment`, or under the list's commitment if it is `None`, and returns
+/// `num_attachments` and that commitment.
+#[rstest::rstest]
+#[case::commitment_without_attachments(
+    0,
+    1,
+    Some(Word::from([9, 9, 9, 9u32])),
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS
+)]
+#[case::list_not_matching_commitment(
+    1,
+    1,
+    Some(Word::from([9, 9, 9, 9u32])),
+    ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH
+)]
+#[case::fewer_attachments_than_listed(
+    1,
+    2,
+    None,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
+)]
+#[case::more_attachments_than_listed(
+    2,
+    1,
+    None,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
+)]
 #[tokio::test]
-async fn test_note_sealed_callback_attachment_without_advice_map_entry_fails() -> anyhow::Result<()>
-{
-    let note_callback_masm = format!(
-        "
-    #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
-    @account_procedure
-    pub proc on_before_note_sealed
-        drop push.{attachment_commitment} push.20
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
-
-        exec.::miden::core::sys::truncate_stack
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
-    end
-    ",
-        attachment_commitment = Word::from([9, 9, 9, 9u32]),
+async fn test_note_sealed_callback_attachment_list_is_verified(
+    #[case] num_attachments: u64,
+    #[case] num_listed_attachments: usize,
+    #[case] attachment_list_commitment: Option<Word>,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let listed_attachments =
+        [(20, Word::from([5, 6, 7, 8u32])), (21, Word::from([9, 10, 11, 12u32]))];
+    let (list_commitment, list, mut advice_map_entries) =
+        attachment_list(&listed_attachments[..num_listed_attachments]);
+    let attachment_list_commitment = attachment_list_commitment.unwrap_or(list_commitment);
+    advice_map_entries.push((attachment_list_commitment, list));
+    let note_callback_masm = note_sealed_callback_masm_returning(
+        num_attachments,
+        attachment_list_commitment,
+        &advice_map_entries,
     );
+
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
+
+    assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that sealing fails if the advice map lacks the attachment list returned by an
+/// `on_before_note_sealed` callback or the elements of a listed attachment.
+#[rstest::rstest]
+#[case::missing_attachment_list(true)]
+#[case::missing_attachment(false)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_without_advice_map_entry_fails(
+    #[case] omit_attachment_list: bool,
+) -> anyhow::Result<()> {
+    let (list_commitment, list, attachment_entries) =
+        attachment_list(&[(20, Word::from([5, 6, 7, 8u32]))]);
+    let advice_map_entries = if omit_attachment_list {
+        attachment_entries
+    } else {
+        vec![(list_commitment, list)]
+    };
+    let note_callback_masm =
+        note_sealed_callback_masm_returning(1, list_commitment, &advice_map_entries);
 
     let (_, result) =
         execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
@@ -1428,52 +1490,109 @@ fn add_faucet_with_callbacks(
     )
 }
 
-/// Returns the MASM source of an `on_before_note_sealed` callback that returns a single-word
-/// attachment with the provided scheme and word, or no attachment if `attachment` is `None`.
+/// Returns the MASM source of an `on_before_note_sealed` callback that returns the provided
+/// single-word attachments, given as pairs of scheme and word, or no attachment if `attachments`
+/// is empty.
 ///
-/// The callback puts the attachment word into the advice map under its commitment.
-fn note_sealed_callback_masm(attachment: Option<(u16, Word)>) -> String {
-    let Some((attachment_scheme, attachment_word)) = attachment else {
-        return String::from(
-            "
-    #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [0, EMPTY_WORD, pad(11)]
-    @account_procedure
-    pub proc on_before_note_sealed
-        drop
-        # => [0, EMPTY_WORD, pad(11)]
-    end
-    ",
-        );
-    };
+/// The callback puts the attachment list and the elements of each attachment into the advice map.
+fn note_sealed_callback_masm(attachments: &[(u16, Word)]) -> String {
+    if attachments.is_empty() {
+        return note_sealed_callback_masm_returning(0, Word::empty(), &[]);
+    }
+
+    let (list_commitment, list, mut advice_map_entries) = attachment_list(attachments);
+    advice_map_entries.push((list_commitment, list));
+    note_sealed_callback_masm_returning(
+        attachments.len() as u64,
+        list_commitment,
+        &advice_map_entries,
+    )
+}
+
+/// Returns the MASM source of an `on_before_note_sealed` callback that puts the provided entries
+/// into the advice map and returns `[num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]`.
+fn note_sealed_callback_masm_returning(
+    num_attachments: u64,
+    attachment_list_commitment: Word,
+    advice_map_entries: &[AdviceMapEntry],
+) -> String {
+    let num_locals =
+        advice_map_entries.iter().map(|(_, words)| words.len()).max().unwrap_or(1) * WORD_SIZE;
+    let insert_entries_code = advice_map_entries
+        .iter()
+        .map(|(key, words)| {
+            let store_words_code = words
+                .iter()
+                .enumerate()
+                .map(|(word_idx, word)| {
+                    format!("push.{word} loc_storew_le.{} dropw", word_idx * WORD_SIZE)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            format!(
+                "{store_words_code}
+                locaddr.0 dup add.{num_elements} swap push.{key}
+                # => [KEY, start_ptr, end_ptr, pad(16)]
+
+                adv.insert_mem dropw drop drop
+                # => [pad(16)]",
+                num_elements = words.len() * WORD_SIZE,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     format!(
         "
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
-    @locals(4)
+    #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+    @locals({num_locals})
     @account_procedure
     pub proc on_before_note_sealed
         drop
         # => [pad(16)]
 
-        push.{attachment_word} loc_storew_le.0
-        exec.::miden::core::crypto::hashes::eidos::hash
-        # => [ATTACHMENT_COMMITMENT, pad(16)]
+        {insert_entries_code}
 
-        locaddr.0 dup add.4 movdn.5 movdn.4
-        # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+        push.{attachment_list_commitment} push.{num_attachments}
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(16)]
 
-        adv.insert_mem
-        movup.4 drop movup.4 drop
-        # => [ATTACHMENT_COMMITMENT, pad(16)]
-
-        push.{attachment_scheme}
         exec.::miden::core::sys::truncate_stack
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
     end
     "
     )
+}
+
+/// Returns the commitment to and the words of the attachment list of the provided single-word
+/// attachments, given as pairs of scheme and word, and the advice map entries that hold the
+/// elements of each attachment under its commitment.
+///
+/// The list holds, for each attachment, its scheme padded to a word followed by its commitment.
+fn attachment_list(attachments: &[(u16, Word)]) -> (Word, Vec<Word>, Vec<AdviceMapEntry>) {
+    let mut list = Vec::new();
+    let mut attachment_entries = Vec::new();
+    for &(attachment_scheme, attachment_word) in attachments {
+        let attachment_commitment = Hasher::hash_elements(attachment_word.as_elements());
+        list.extend([Word::from([u32::from(attachment_scheme), 0, 0, 0]), attachment_commitment]);
+        attachment_entries.push((attachment_commitment, vec![attachment_word]));
+    }
+
+    (Hasher::hash_elements(Word::words_as_elements(&list)), list, attachment_entries)
+}
+
+/// Returns the single-word note attachments with the provided schemes and words.
+fn word_attachments(attachments: &[(u16, Word)]) -> anyhow::Result<Vec<NoteAttachment>> {
+    attachments
+        .iter()
+        .map(|&(attachment_scheme, attachment_word)| {
+            Ok(NoteAttachment::with_word(
+                NoteAttachmentScheme::new(attachment_scheme)?,
+                attachment_word,
+            ))
+        })
+        .collect()
 }
 
 /// Executes a transaction in which the native account creates a private output note, adds the
