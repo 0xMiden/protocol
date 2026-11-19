@@ -153,7 +153,7 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
             .build()?,
     );
 
-    let mint_storage = MintNoteStorage::new_public(
+    let mint_storage = MintNoteStorage::new_public_output(
         p2id_output_note.recipient().clone(),
         mint_asset,
         NoteTag::with_account_target(target_account.id()),
@@ -200,7 +200,7 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
             .build()?,
     );
 
-    let mint_storage = MintNoteStorage::new_public(
+    let mint_storage = MintNoteStorage::new_public_output(
         p2id_output_note.recipient().clone(),
         mint_asset,
         NoteTag::with_account_target(target_account.id()),

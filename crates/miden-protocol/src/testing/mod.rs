@@ -39,6 +39,7 @@ pub mod update_details;
 pub mod validator_config;
 pub mod vault_delta;
 pub mod vault_patch;
+pub mod word;
 
 /// Creates an empty, completed execution proof for tests that do not verify its STARK payload.
 ///
