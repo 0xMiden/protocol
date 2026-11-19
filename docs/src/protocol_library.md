@@ -60,9 +60,9 @@ Active account procedures can be used to read from storage, fetch or compute com
 
 Native account procedures can be used to write to storage, add or remove assets from the vault and compute the state and delta commitments of the native account. They also expose the initial (beginning-of-transaction) state of the native account.
 
-Notice that the initial-state storage and commitment getters can only be executed against the native account: invoking them against the foreign account (during FPI) panics. Foreign accounts are immutable, so in order to read their (initial) values, the corresponding getters from the `active_account` module should be used.
+Notice that the initial-state getters can only be executed against the native account: invoking them against the foreign account (during FPI) panics. Foreign accounts are immutable, so in order to read their (initial) values, the corresponding getters from the `active_account` module should be used.
 
-The vault getters (`get_asset`, `get_vault_root`, `get_initial_asset`, `has_initial_asset` and `get_initial_vault_root`) always read the native account's vault and can also be called while a foreign account is active.
+The asset getters (`get_asset`, `get_initial_asset` and `has_initial_asset`) are the exception: they always read the native account's vault, and a foreign account can call them for the assets it issued.
 
 | Procedure                      | Description                    | Context                        |
 | ------------------------------ | ------------------------------ | ------------------------------ |
@@ -81,11 +81,10 @@ The vault getters (`get_asset`, `get_vault_root`, `get_initial_asset`, `has_init
 | `get_initial_storage_commitment` | Returns the storage commitment of the native account at the beginning of the transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[INIT_STORAGE_COMMITMENT]`                                          | Native & Account |
 | `get_initial_item`             | Gets the initial item from the native account storage slot as it was at the beginning of the transaction.<br/><br/>**Inputs:** `[slot_id_suffix, slot_id_prefix]`<br/>**Outputs:** `[VALUE]`                                              | Native & Account |
 | `get_initial_map_item`         | Gets the initial VALUE from the native account storage map as it was at the beginning of the transaction.<br/><br/>**Inputs:** `[slot_id_suffix, slot_id_prefix, KEY]`<br/>**Outputs:** `[VALUE]`                                         | Native & Account |
-| `get_asset`                    | Returns the asset associated with the provided asset ID in the native account's vault.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[ASSET_VALUE]` | Account          |
-| `get_initial_asset`            | Returns the asset associated with the provided asset ID in the native account's vault at the beginning of the transaction.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[ASSET_VALUE]` | Account          |
-| `has_initial_asset`            | Returns a boolean indicating whether the native account's vault contained an asset with the provided asset ID at the beginning of the transaction.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[has_asset]` | Account          |
-| `get_initial_vault_root`       | Returns the vault root of the native account at the beginning of the transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[INIT_VAULT_ROOT]`                                                          | Account          |
-| `get_vault_root`               | Returns the vault root of the native account.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[VAULT_ROOT]`                                                                                                  | Account          |
+| `get_asset`                    | Returns the asset associated with the provided asset ID in the native account's vault. A foreign account can only read assets it issued.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[ASSET_VALUE]` | Account          |
+| `get_initial_asset`            | Returns the asset associated with the provided asset ID in the native account's vault at the beginning of the transaction. A foreign account can only read assets it issued.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[ASSET_VALUE]` | Account          |
+| `has_initial_asset`            | Returns a boolean indicating whether the native account's vault contained an asset with the provided asset ID at the beginning of the transaction. A foreign account can only check assets it issued.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[has_asset]` | Account          |
+| `get_initial_vault_root`       | Returns the vault root of the native account at the beginning of the transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[INIT_VAULT_ROOT]`                                                          | Native & Account |
 | `was_procedure_called`         | Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise. Call tracking is suppressed while the epilogue runs the authentication procedure, so procedures it invokes are not recorded as called (`was_procedure_called`-based policies must exclude the auth procedure itself).<br/><br/>**Inputs:** `[PROC_ROOT]`<br/>**Outputs:** `[was_called]`                                                     | Native & Account |
 
 ## Active Note Procedures (`miden::protocol::active_note`)

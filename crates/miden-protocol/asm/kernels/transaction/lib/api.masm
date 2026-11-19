@@ -702,9 +702,13 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_vault_root(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
@@ -718,31 +722,29 @@ pub proc account_get_initial_vault_root(padding: [felt; 16]) -> (Commitment, [fe
     # => [INIT_VAULT_ROOT, pad(12)]
 end
 
-#! Returns the vault root of the native or the active account.
+#! Returns the vault root of the active account.
 #!
-#! Inputs:  [is_native, pad(15)]
+#! Inputs:  [pad(16)]
 #! Outputs: [VAULT_ROOT, pad(12)]
 #!
 #! Where:
-#! - is_native is a boolean flag that indicates whether the vault root was requested for the native
-#!   or the active account.
-#! - VAULT_ROOT is the root of the requested account's vault.
+#! - VAULT_ROOT is the root of the account vault.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: dynexec
-pub proc account_get_vault_root(is_native: Bool, padding: [felt; 15]) -> (Commitment, [felt; 12])
+pub proc account_get_vault_root(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [is_native, pad(15)]
+    # => [pad(16)]
 
     # fetch the account vault root
-    exec.account::get_vault_root
-    # => [VAULT_ROOT, pad(15)]
+    exec.memory::get_account_vault_root
+    # => [VAULT_ROOT, pad(16)]
 
     # truncate the stack
-    movup.4 drop movup.4 drop movup.4 drop
+    swapw dropw
     # => [VAULT_ROOT, pad(12)]
 end
 
@@ -839,6 +841,8 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - is_native is 1, the active account is not the native account and it is not the issuer of the
+#!   asset.
 #!
 #! Invocation: dynexec
 pub proc account_get_asset(
@@ -869,6 +873,7 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
