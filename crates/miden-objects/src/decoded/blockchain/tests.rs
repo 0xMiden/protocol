@@ -181,10 +181,7 @@ fn block_header_protobuf_rejects_invalid_validator_quorum() {
         .unwrap_err();
     let source = error_source::<ValidatorConfigError>(&error).unwrap();
 
-    assert_matches!(
-        source,
-        ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: 0, count: 3 }
-    );
+    assert_matches!(source, ValidatorConfigError::QuorumOutOfRange { quorum: 0, count: 3 });
 }
 
 #[test]
