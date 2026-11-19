@@ -18,9 +18,11 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
+use rand::RngExt;
 
 use super::MockTransaction;
 use crate::MockChain;
@@ -231,6 +233,20 @@ impl<'chain> MockTransactionBuilder<'chain> {
     pub fn auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
         self
+    }
+
+    /// Sets the auth arguments that let an account with a standard signing auth component pay the
+    /// transaction fee in the chain's native fee asset at rate 1/1.
+    ///
+    /// The auth arguments commit to [`FeeConversionInfo::one_to_one`] under a random salt, and the
+    /// committed conversion info is added to the advice map.
+    pub fn native_fee_auth_args(self) -> Self {
+        let (auth_args, conversion_info) = commit_fee_conversion_info(
+            FeeConversionInfo::one_to_one(self.chain.fee_faucet_id()),
+            rand::rng().random(),
+        );
+
+        self.auth_args(auth_args).add_advice_map_entry(auth_args, conversion_info)
     }
 
     /// Sets the code upgrade of the native account, which the transaction must provide if it

@@ -1017,7 +1017,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let recipient = p2id_mint_output_note.recipient().digest();
 
     // Create the MINT note using the helper function
-    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_storage = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1115,7 +1115,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1300,7 +1300,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     // Create mint note from NON-OWNER
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
@@ -1430,7 +1430,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let recipient = p2id_note.recipient().digest();
 
     // Sanity Check: Prove that the initial owner can mint assets
-    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -2436,12 +2436,12 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteType::Private => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = p2id_mint_output_note.recipient().digest();
-            MintNoteStorage::new_private(recipient, mint_asset, output_note_tag)
+            MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag)
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = P2idNoteStorage::new(target_account.id()).into_recipient(serial_num);
-            MintNoteStorage::new_public(recipient, mint_asset, output_note_tag)?
+            MintNoteStorage::new_public_output(recipient, mint_asset, output_note_tag)?
         },
     };
 
@@ -2731,7 +2731,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     );
     let recipient = p2id_mint_output_note.recipient().digest();
 
-    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_storage = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
