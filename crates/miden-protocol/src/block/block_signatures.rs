@@ -139,10 +139,12 @@ impl BlockSignatures {
                 .position(|validator_key| signature.verify(block_commitment, validator_key))
                 .ok_or(SignatureVerificationError::InvalidSignatureAtPosition { position })?;
 
-            if core::mem::replace(&mut has_signed[signer], true) {
+            if has_signed[signer] {
                 return Err(SignatureVerificationError::DuplicateSigner {
                     public_key: validator_keys[signer].clone(),
                 });
+            }
+            has_signed[signer] = true;
             }
         }
 
