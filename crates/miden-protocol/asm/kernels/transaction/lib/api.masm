@@ -827,13 +827,13 @@ end
 #! Returns the asset associated with the provided asset ID in the vault of the native or the active
 #! account.
 #!
-#! Inputs:  [ASSET_ID, is_native, pad(11)]
+#! Inputs:  [is_native, ASSET_ID, pad(11)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
 #!   the native or the active account.
+#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
@@ -842,18 +842,15 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_asset(
-    asset_id: AssetId,
     is_native: Bool,
+    asset_id: AssetId,
     padding: [felt; 11]
 ) -> (AssetValue, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_ID, is_native, pad(11)]
+    # => [is_native, ASSET_ID, pad(11)]
 
-    exec.asset::validate_id
-    # => [ASSET_ID, is_native, pad(11)]
-
-    movup.4
+    movdn.4 exec.asset::validate_id movup.4
     # => [is_native, ASSET_ID, pad(11)]
 
     exec.account::get_asset
