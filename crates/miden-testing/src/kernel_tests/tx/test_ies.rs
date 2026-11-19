@@ -99,8 +99,8 @@ pub(super) enum SealingAccount {
     Foreign,
 }
 
-/// Tests that a transaction encrypts to the recipient public key, and that the host records the
-/// ephemeral secret it drew.
+/// Tests that a transaction encrypts to the recipient public key, that the host records the
+/// ephemeral secret it drew, and that proving with the recorded secret reproduces the envelope.
 #[rstest]
 #[case::protocol_procedure(RecipientKeySource::ProtocolProcedure, SealingAccount::Native)]
 #[case::transaction_arguments(RecipientKeySource::TransactionArguments, SealingAccount::Native)]
@@ -123,23 +123,6 @@ async fn ies_seal_encrypts_to_recipient_public_key(
     let secrets = executed_tx.tx_inputs().ies_seal_secrets();
     assert_eq!(secrets.len(), 1);
     assert_eq!(secrets[0].recipient(), recipient);
-
-    Ok(())
-}
-
-/// Tests that proving with the recorded ephemeral secret reproduces the executed envelope.
-#[rstest]
-#[case::protocol_procedure(RecipientKeySource::ProtocolProcedure, SealingAccount::Native)]
-#[case::transaction_arguments(RecipientKeySource::TransactionArguments, SealingAccount::Native)]
-#[case::foreign_account(RecipientKeySource::ProtocolProcedure, SealingAccount::Foreign)]
-#[tokio::test]
-async fn prove_ies_seal_reproduces_executed_envelope(
-    #[case] key_source: RecipientKeySource,
-    #[case] sealing_account: SealingAccount,
-) -> anyhow::Result<()> {
-    let recipient = secret_key(1).public_key();
-    let executed_tx =
-        execute_sealing_transaction(&[recipient], key_source, sealing_account).await?;
 
     let proven_tx = LocalTransactionProver::default().prove(executed_tx.clone())?;
 
