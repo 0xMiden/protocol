@@ -50,6 +50,8 @@ pub enum TransferPolicyError {
 /// dispatches to (via `dyncall`, after the account-wide pause check) with any companion
 /// [`AccountComponent`]s that must be installed on the account for that procedure root to work.
 ///
+/// ## Interface
+///
 /// The wrapper is the faucet's `on_before_note_sealed` callback, which the kernel invokes once
 /// when an output note holding the faucet's assets is sealed. The policy procedure receives the
 /// inputs of that callback. The wrapper drops the policy's outputs and returns no attachment for
@@ -65,17 +67,23 @@ pub enum TransferPolicyError {
 /// faucet's assets selects them by comparing `asset::id_to_faucet_id` with
 /// `active_account::get_id`.
 ///
+/// ## Minting
+///
 /// Note that minting crosses the send callback: the note created by `mint_and_send` runs
 /// `on_before_note_sealed` when it is sealed, with the issuing faucet itself as the native account,
 /// indistinguishable at that point from an ordinary send. The bundled blocklist and allowlist
 /// policies therefore exempt the issuer by comparing the active account ID (the issuing faucet)
 /// against the native account ID.
 ///
+/// ## Expiration
+///
 /// Send policies run through FPI. Policies that read mutable, security-sensitive state must set
 /// an expiration delta in the execution path that reads that state. The built-in blocklist and
 /// allowlist policies apply the standards default; custom policies should call
 /// `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta` directly
 /// with a custom expiration delta.
+///
+/// ## Companion components
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
@@ -192,6 +200,8 @@ impl IntoIterator for SendPolicy {
 /// wrapper dispatches to (via `dyncall`, after the account-wide pause check) with any companion
 /// [`AccountComponent`]s that must be installed on the account for that procedure root to work.
 ///
+/// ## Interface
+///
 /// The wrapper is the faucet's `on_before_asset_added_to_account` callback, which the kernel
 /// invokes when one of the faucet's assets is added to an account vault. The policy procedure has
 /// the interface of that callback:
@@ -203,11 +213,15 @@ impl IntoIterator for SendPolicy {
 ///
 /// It reads the receiving account via `native_account::get_id`.
 ///
+/// ## Expiration
+///
 /// Receive policies run through FPI. Policies that read mutable, security-sensitive state must
 /// set an expiration delta in the execution path that reads that state. The built-in blocklist
 /// and allowlist policies apply the standards default; custom policies should call
 /// `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta` directly
 /// with a custom expiration delta.
+///
+/// ## Companion components
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
