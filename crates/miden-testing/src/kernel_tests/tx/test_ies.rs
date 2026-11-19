@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
@@ -27,11 +28,17 @@ use miden_protocol::transaction::{
     TransactionWitness,
 };
 use miden_protocol::{Felt, Hasher, WORD_SIZE, Word, ZERO};
+use miden_standards::account::auth::{Approver, ApproverSet, MultisigAuthArgs};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
-use miden_tx::auth::UnreachableAuth;
+use miden_tx::auth::{
+    BasicAuthenticator,
+    SigningInputs,
+    TransactionAuthenticator,
+    UnreachableAuth,
+};
 use miden_tx::{
     LocalTransactionProver,
     NoteConsumptionChecker,
@@ -329,13 +336,25 @@ async fn prove_ies_seal_with_other_secret_changes_transaction_id() -> anyhow::Re
     Ok(())
 }
 
-/// Tests that the secrets an unauthorized execution returns reproduce its summary, so that the
-/// signed execution of a two-pass authentication flow matches the summary the signers approved.
+/// Tests that the secrets an unauthorized execution returns let the signed execution of a
+/// two-pass authentication flow reproduce the summary the signers approved, and that an
+/// unauthorized execution with unused supplied secrets returns no summary to sign.
 #[tokio::test]
-async fn unauthorized_execution_returns_secrets_that_reproduce_its_summary() -> anyhow::Result<()> {
+async fn signed_execution_with_returned_secrets_reproduces_unauthorized_summary()
+-> anyhow::Result<()> {
+    use miden_protocol::crypto::SequentialCommit;
+
     let recipient = secret_key(1).public_key();
+    let signer =
+        AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut ChaCha20Rng::from_seed([7; 32]));
+    let signer_commitment = signer.public_key().to_commitment();
+    let approver_set =
+        ApproverSet::new(vec![Approver::new(signer_commitment, AuthScheme::EcdsaK256Keccak)], 1)?;
     let account = AccountBuilder::new([42; 32])
-        .with_component(aborting_auth_component()?)
+        .with_components(Auth::Multisig {
+            approver_set,
+            proc_threshold_map: Vec::new(),
+        })
         .with_component(MockAccountComponent::with_empty_slots())
         .build_existing()?;
     let tx_script = compile_tx_script(
@@ -346,33 +365,62 @@ async fn unauthorized_execution_returns_secrets_that_reproduce_its_summary() -> 
     let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
     mock_chain.prove_next_block()?;
 
-    let execute_unauthorized = async |ies_seal_secrets: Vec<IesSealSecret>| {
-        let mut tx_builder =
-            mock_chain.build_transaction(account.clone()).tx_script(tx_script.clone());
+    let auth_args = MultisigAuthArgs::new(
+        mock_chain.latest_block_header().block_num(),
+        Word::from([1, 2, 3, 4u32]),
+    );
+    let tx_builder = |ies_seal_secrets: Vec<IesSealSecret>| {
+        let mut tx_builder = mock_chain
+            .build_transaction(account.clone())
+            .tx_script(tx_script.clone())
+            .auth_args(auth_args.to_commitment())
+            .add_advice_map_entry(auth_args.to_commitment(), auth_args.to_elements())
+            .required_block(auth_args.bound_block_num());
         for secret in ies_seal_secrets {
             tx_builder = tx_builder.add_ies_seal_secret(secret);
         }
-
-        match tx_builder.build()?.execute().await {
+        tx_builder
+    };
+    let execute_unauthorized = async |ies_seal_secrets: Vec<IesSealSecret>| {
+        let result = tx_builder(ies_seal_secrets).build()?.execute().await;
+        match result {
             Err(TransactionExecutorError::Unauthorized { tx_summary, ies_seal_secrets }) => {
-                Ok((tx_summary.to_commitment(), ies_seal_secrets))
+                Ok((tx_summary, ies_seal_secrets))
             },
             other => Err(anyhow::anyhow!("expected an unauthorized execution, got {other:?}")),
         }
     };
 
-    let (summary, drawn_secrets) = execute_unauthorized(Vec::new()).await?;
+    let (tx_summary, drawn_secrets) = execute_unauthorized(Vec::new()).await?;
     assert_eq!(drawn_secrets.len(), 1);
 
-    // Supplying the drawn secrets reproduces the summary and draws no further secrets.
-    let (replayed_summary, replay_drawn_secrets) =
-        execute_unauthorized(drawn_secrets.clone()).await?;
-    assert_eq!(replayed_summary, summary);
-    assert!(replay_drawn_secrets.is_empty());
+    // The signature over the summary verifies only if the signed execution reproduces it.
+    let msg = tx_summary.to_commitment();
+    let signature = BasicAuthenticator::new(&[signer])
+        .get_signature(signer_commitment, &SigningInputs::TransactionSummary(tx_summary.clone()))
+        .await?;
+    let executed_tx = tx_builder(drawn_secrets)
+        .add_signature(signer_commitment, msg, signature)
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(executed_tx.output_notes().commitment(), tx_summary.output_notes().commitment());
+    assert!(executed_tx.tx_inputs().ies_seal_secrets().is_empty());
 
-    // Without them, a fresh secret changes the envelope and thereby the summary.
+    // Without the drawn secrets, a fresh secret changes the envelope and thereby the summary.
     let (fresh_summary, _) = execute_unauthorized(Vec::new()).await?;
-    assert_ne!(fresh_summary, summary);
+    assert_ne!(fresh_summary.to_commitment(), msg);
+
+    // A surplus supplied secret fails the unsigned execution instead of yielding a summary.
+    let surplus_secrets = vec![
+        IesSealSecret::new(recipient, secret_key(9)),
+        IesSealSecret::new(recipient, secret_key(8)),
+    ];
+    let result = tx_builder(surplus_secrets).build()?.execute().await;
+    assert!(
+        matches!(result, Err(TransactionExecutorError::UnusedIesSealSecrets(1))),
+        "expected UnusedIesSealSecrets(1), got: {result:?}"
+    );
 
     Ok(())
 }
@@ -921,37 +969,6 @@ fn push_reversed(elements: &[Felt]) -> String {
         .map(|element| format!("push.{element}"))
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-/// Returns the code of an auth component that aborts every transaction as unauthorized.
-fn aborting_auth_component() -> anyhow::Result<AccountComponent> {
-    let source_code = r#"
-        use miden::standards::auth
-        use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
-
-        @auth_script
-        pub proc auth_abort_tx
-            dropw
-            # => [pad(16)]
-
-            exec.::miden::protocol::native_account::incr_nonce
-            # => [final_nonce, pad(16)]
-
-            push.0.0.0.0.0
-            # => [user_params(6), pad(16)]
-
-            exec.auth::get_default_tx_summary_commitment
-            # => [MESSAGE, pad(16)]
-
-            emit.AUTH_UNAUTHORIZED_EVENT
-        end
-    "#;
-
-    Ok(AccountComponent::new(
-        CodeBuilder::default().compile_component_code("test::auth_component", source_code)?,
-        Vec::new(),
-        AccountComponentMetadata::mock("test::auth_component"),
-    )?)
 }
 
 /// Returns the envelope attached with index `envelope_idx` to the first output note.

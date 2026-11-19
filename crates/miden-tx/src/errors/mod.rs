@@ -339,6 +339,8 @@ pub enum TransactionKernelError {
         "the next supplied IES seal secret is for the EcGFp5 public key with commitment {supplied}, but the seal request is for commitment {requested}"
     )]
     IesSealSecretRecipientMismatch { supplied: Word, requested: Word },
+    #[error("transaction arguments supply {0} IES seal secrets that no seal request used")]
+    UnusedIesSealSecrets(usize),
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]

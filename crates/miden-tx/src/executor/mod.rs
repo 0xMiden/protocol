@@ -488,6 +488,8 @@ fn validate_num_cycles(num_cycles: u32) -> Result<(), TransactionExecutorError> 
 ///
 /// - If the inner error is [`TransactionKernelError::Unauthorized`], it is remapped to
 ///   [`TransactionExecutorError::Unauthorized`].
+/// - If the inner error is [`TransactionKernelError::UnusedIesSealSecrets`], it is remapped to
+///   [`TransactionExecutorError::UnusedIesSealSecrets`].
 /// - If the inner error is [`TransactionKernelError::AuthRequestOutsideAuthProcedure`], it is
 ///   remapped to [`TransactionExecutorError::AuthRequestOutsideAuthProcedure`].
 /// - If the inner error is
@@ -504,6 +506,9 @@ fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
                         tx_summary: tx_summary.clone(),
                         ies_seal_secrets: ies_seal_secrets.clone(),
                     }
+                },
+                Some(TransactionKernelError::UnusedIesSealSecrets(num_unused)) => {
+                    TransactionExecutorError::UnusedIesSealSecrets(*num_unused)
                 },
                 Some(TransactionKernelError::MissingAuthenticator) => {
                     TransactionExecutorError::MissingAuthenticator

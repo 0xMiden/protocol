@@ -754,10 +754,19 @@ where
 
                 // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
-                    Err(TransactionKernelError::Unauthorized {
-                        tx_summary: Box::new(tx_summary),
-                        ies_seal_secrets: self.lazy_loaded_data.ies_seal_secrets.clone(),
-                    })
+                    let num_unused_ies_seal_secrets = self.num_unused_ies_seal_secrets();
+                    if num_unused_ies_seal_secrets != 0 {
+                        // The signed execution would reject the unused secrets, so the summary
+                        // is not returned for signing.
+                        Err(TransactionKernelError::UnusedIesSealSecrets(
+                            num_unused_ies_seal_secrets,
+                        ))
+                    } else {
+                        Err(TransactionKernelError::Unauthorized {
+                            tx_summary: Box::new(tx_summary),
+                            ies_seal_secrets: self.lazy_loaded_data.ies_seal_secrets.clone(),
+                        })
+                    }
                 },
 
                 TransactionEvent::IesSeal { recipient } => self.on_ies_seal_requested(recipient),
