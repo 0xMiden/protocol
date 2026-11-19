@@ -33,8 +33,8 @@ pub type ConversionInfo = word
 # fee-payment regression tests.
 const PAY_FEE_CYCLES = 8192
 
-# estimated post-auth epilogue cost: a base cost plus a per-output-note cost, including the fee note.
-# the per-note estimate is based on notes without assets and may undercount asset-heavy transactions.
+# Estimated post-auth epilogue cost: a base cost plus a per-output-note cost, including the fee note.
+# The per-note estimate is based on notes without assets and may undercount asset-heavy transactions.
 const POST_AUTH_EPILOGUE_BASE_CYCLES = 4096
 const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
 
