@@ -1,0 +1,11 @@
+[package]
+name    = "p2id-envelope"
+version = "1.0.0-rc.1"
+
+[[bin]]
+path = "main.masm"
+
+[dependencies]
+miden-core      = { linkage = "dynamic", version = "1.0.0-rc.1" }
+miden-protocol  = { linkage = "dynamic", version = "1.0.0-rc.1" }
+miden-standards = { linkage = "dynamic", version = "1.0.0-rc.1" }

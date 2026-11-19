@@ -1,14 +1,15 @@
 use std::env;
 use std::path::Path;
 
-use miden_assembly::ProjectTargetSelector;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+use miden_assembly::{ProjectTargetSelector, Report};
 use miden_core_lib::CoreLibrary;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_protocol::ProtocolLib;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::serde::Serializable;
+use miden_protocol::vm::Program;
+use miden_protocol::{ProtocolLib, Word, word};
 use miden_protocol_build_utils::{
     ErrorModule,
     PROJECT_MANIFEST,
@@ -29,16 +30,17 @@ const ASM_COMPONENTS_DIR: &str = "components";
 const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 
+include!("src/note/encryption/p2id_v1_program_identity.rs");
+
 // PRE-PROCESSING
 // ================================================================================================
 
-/// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/standards directory into a package. Note scripts and transaction
-///   scripts are included in this library.
-/// - Compiles the contents of asm/components directory into individual packages.
+/// Builds the standards library, the P2ID encryption executable, and the account component
+/// packages from `./asm`.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
+    println!("cargo::rerun-if-changed=src/note/encryption/p2id_v1_program_identity.rs");
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
@@ -74,6 +76,16 @@ fn main() -> Result<()> {
     )?;
     registry.cache_package(package).into_diagnostic()?;
 
+    // compile the P2ID encryption executable. Its verifier builds claims from the pinned program
+    // identity, so the build fails if the assembled executable differs from that identity.
+    let package = assemble_project(
+        source_dir.join("note-encryption").join(PROJECT_MANIFEST),
+        ProjectTargetSelector::Executable("p2id-envelope"),
+        &mut registry,
+        &target_dir,
+    )?;
+    check_p2id_encryption_program(&package.unwrap_program())?;
+
     // compile account components (each member of the components workspace becomes its own package)
     // and embed each component's manifest metadata into its package. Parsing the metadata here
     // makes a malformed schema fail the build instead of the first instantiation.
@@ -86,6 +98,24 @@ fn main() -> Result<()> {
 
     generate_error_constants(&source_dir, &build_dir)?;
 
+    Ok(())
+}
+
+/// Checks that the assembled program has the identity the P2ID encryption verifier accepts: the
+/// approved root and kernel procedures.
+fn check_p2id_encryption_program(program: &Program) -> Result<()> {
+    let kernel = program.kernel().proc_hashes();
+    if program.hash() != P2ID_V1_PROGRAM_ROOT || kernel != P2ID_V1_KERNEL_PROCEDURES {
+        let hex = |words: &[Word]| words.iter().map(Word::to_hex).collect::<Vec<_>>();
+        return Err(Report::msg(format!(
+            "the P2ID encryption program has root {} and kernel procedures {:?}, but its verifier \
+             accepts root {P2ID_V1_PROGRAM_ROOT} and kernel procedures {:?}; update \
+             src/note/encryption/p2id_v1_program_identity.rs only for a deliberate profile change",
+            program.hash(),
+            hex(kernel),
+            hex(&P2ID_V1_KERNEL_PROCEDURES),
+        )));
+    }
     Ok(())
 }
 

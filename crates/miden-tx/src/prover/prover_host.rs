@@ -4,7 +4,13 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::{BaseHost, LoadedMastForest, MastForestStore, ProcessorState};
+use miden_processor::{
+    BaseHost,
+    LoadedMastForest,
+    MastForestLoadError,
+    MastForestStore,
+    ProcessorState,
+};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
@@ -102,8 +108,11 @@ impl<STORE> SyncHost for TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> Option<LoadedMastForest> {
-        self.base_host.get_mast_forest(node_digest)
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> Result<Option<LoadedMastForest>, MastForestLoadError> {
+        Ok(self.base_host.get_mast_forest(node_digest))
     }
 
     fn on_event(&mut self, process: &ProcessorState) -> Result<Vec<AdviceMutation>, EventError> {
