@@ -192,7 +192,7 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
     let mint_asset = FungibleAsset::new(fee_faucet_id, 1)?;
     let mint_note: Note = MintNote::builder()
         .sender(ACCOUNT_ID_SENDER.try_into()?)
-        .mint_storage(MintNoteStorage::new_private(
+        .mint_storage(MintNoteStorage::new_private_output(
             Word::from([5, 6, 7, 8u32]),
             mint_asset,
             NoteTag::default(),

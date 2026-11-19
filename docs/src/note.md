@@ -302,16 +302,10 @@ The SWAP note script implements atomic asset swapping functionality.
 **Key characteristics:**
 
 - **Purpose:** Atomic asset exchange between two parties
-- **Storage:** Requires exactly 16 storage items, laid out as:
-  - Requested asset (8 felts)
-  - Payback recipient digest (4 felts; used for private payback, zero for public)
-  - Payback note type
-  - Payback tag
-  - Payback target account ID prefix (used for public payback, zero for private)
-  - Payback target account ID suffix (used for public payback, zero for private)
+- **Storage:** The requested asset and the payback note configuration: recipient, note type, tag and attachments. The layout is defined by `SwapNoteStorage`.
 - **Assets:** Must contain exactly 1 asset to be swapped
 - **Mechanism:**
-  1. Creates a payback P2ID note containing the requested asset for the original note issuer. For private payback, the precomputed recipient digest is loaded from storage and used directly. For public payback, the recipient is reconstructed on-chain from the payback target account ID and a serial derived as `swap_serial + 1`, which also registers the preimage in the advice map so the public note can be validated. The payback note is sealed once it holds the requested asset.
+  1. Creates a payback note that contains the requested asset. By default, it is a P2ID note for the original note issuer, but the creator can select any recipient. For a private payback, the script uses the precomputed recipient digest from storage. For a public payback, the script builds the recipient from the script root, serial number and storage embedded in the SWAP storage. This also registers the preimage in the advice map, so the consumer needs no additional advice. In both modes, the script adds the attachments from storage to the payback note. The payback note is sealed once it holds the requested asset and its attachments.
   2. Adds the note's asset to the consuming account's vault
 - **Requirements:** Account must expose both:
   - `miden::standards::wallets::basic::receive_asset` procedure

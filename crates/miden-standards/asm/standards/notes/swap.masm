@@ -1,55 +1,136 @@
 use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::asset
-use {NOTE_TYPE_PRIVATE} from miden::protocol::note
+use miden::protocol::note
 use miden::protocol::output_note
-use miden::standards::notes::p2id
+use {MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE} from miden::protocol::note
 use miden::standards::wallets::basic as wallet
 
 # CONSTANTS
 # =================================================================================================
 
-const SWAP_NOTE_NUM_STORAGE_ITEMS=16
-
-# Note storage layout (16 felts, loaded at STORAGE_PTR by get_bounded_storage):
-# - requested_asset_id       [0..3]
-# - requested_asset_value    [4..7]
-# - payback_recipient        [8..11]  (private mode only; zero in public mode)
-# - payback_note_type        [12]
-# - payback_tag              [13]
-# - payback_target_suffix    [14]     (public mode only; zero in private mode)
-# - payback_target_prefix    [15]     (public mode only; zero in private mode)
+# Note storage layout (loaded at STORAGE_PTR, so a storage offset is also its memory address):
+# - requested_asset_id         [0..4]
+# - requested_asset_value      [4..8]
+# - payback_recipient          [8..12]   (private mode)
+#   payback_script_root        [8..12]   (public mode)
+# - payback_serial_num         [12..16]  (public mode; zero in private mode)
+# - payback_note_type          [16]
+# - payback_tag                [17]
+# - num_payback_storage_items  [18]      (public mode; zero in private mode)
+# - num_payback_attachments    [19]
+# - payback_storage            [20..20+num_payback_storage_items]  (public mode)
+# - zero padding               up to the next word boundary, ATTACHMENTS_START
+# - payback_attachments        [ATTACHMENTS_START..]  (each: a [scheme, num_words, 0, 0] header
+#                                                      word, then num_words content words)
 #
-# In private mode, the recipient digest and tag are precomputed off-chain by the creator and
-# embedded as opaque values; the consumer of the SWAP cannot learn who the payback targets from
-# storage alone. In public mode, the recipient must be reconstructible by any consumer, so the
-# payback target account id is embedded in plaintext and the MASM derives the recipient at
-# consume time. The payback tag is stored explicitly in both modes; the creator is responsible
-# for picking a tag that targets the payback receiver in public mode.
+# Every region starts on a word boundary, so the payback storage and each attachment's content
+# are passed to APIs straight from the loaded storage.
 const STORAGE_PTR=0
-const REQUESTED_ASSET_PTR=0
-const PAYBACK_RECIPIENT_PTR=8
-const PAYBACK_NOTE_TYPE_PTR=12
-const PAYBACK_TAG_PTR=13
-const PAYBACK_TARGET_SUFFIX_PTR=14
-const PAYBACK_TARGET_PREFIX_PTR=15
+const REQUESTED_ASSET_PTR=STORAGE_PTR
+const PAYBACK_RECIPIENT_PTR=STORAGE_PTR + 8
+const PAYBACK_SCRIPT_ROOT_PTR=STORAGE_PTR + 8
+const PAYBACK_SERIAL_NUM_PTR=STORAGE_PTR + 12
+const PAYBACK_NOTE_TYPE_PTR=STORAGE_PTR + 16
+const PAYBACK_TAG_PTR=STORAGE_PTR + 17
+const NUM_PAYBACK_STORAGE_ITEMS_PTR=STORAGE_PTR + 18
+const NUM_PAYBACK_ATTACHMENTS_PTR=STORAGE_PTR + 19
+const PAYBACK_STORAGE_PTR=STORAGE_PTR + 20
 
-# Storage is exactly 16 felts = 4 words, so the asset region starts right after.
-const ASSET_PTR=16
+# Offsets within an attachment, relative to its header word. The scheme is at offset 0.
+const ATTACHMENT_NUM_WORDS_OFFSET=1
+const ATTACHMENT_CONTENT_OFFSET=4
+
+const WORD_SIZE=4
+# Rounding a u32 up to a multiple of WORD_SIZE adds WORD_ROUND_UP, then masks out the two least
+# significant bits with WORD_ALIGNMENT_MASK.
+const WORD_ROUND_UP=WORD_SIZE - 1
+const WORD_ALIGNMENT_MASK=0xFFFFFFFC
+
+# The note asset region starts after the largest possible storage.
+const ASSET_PTR=STORAGE_PTR + MAX_NOTE_STORAGE_ITEMS
 
 # ERRORS
 # =================================================================================================
 
-const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="SWAP script expects exactly 16 note storage items"
+const ERR_SWAP_STORAGE_LENGTH_MISMATCH="SWAP note storage length does not match the declared payback storage and attachments"
+
+const ERR_SWAP_NUM_PAYBACK_STORAGE_ITEMS_NOT_U32="SWAP number of payback storage items is not a u32"
 
 const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset"
 
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Adds the payback attachments declared in the note storage to the payback note.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: [storage_end_ptr]
+#!
+#! Where:
+#! - note_idx is the index of the payback note.
+#! - storage_end_ptr is the address right after the last attachment, i.e. the length of the note
+#!   storage as declared by the payback storage and attachments.
+#!
+#! Panics if:
+#! - the number of payback storage items is not a u32.
+#! - any attachment violates the kernel's attachment limits.
+#!
+#! Invocation: exec
+proc add_payback_attachments(note_idx: u16) -> u32
+    mem_load.NUM_PAYBACK_ATTACHMENTS_PTR
+    # => [num_attachments, note_idx]
+
+    # The attachments start after the payback storage, padded to a word boundary.
+    mem_load.NUM_PAYBACK_STORAGE_ITEMS_PTR
+    u32assert.err=ERR_SWAP_NUM_PAYBACK_STORAGE_ITEMS_NOT_U32
+    add.WORD_ROUND_UP u32and.WORD_ALIGNMENT_MASK add.PAYBACK_STORAGE_PTR
+    # => [attachment_ptr, num_attachments, note_idx]
+
+    dup.1 neq.0
+    # => [has_remaining_attachments, attachment_ptr, num_attachments, note_idx]
+
+    while.true
+        dup add.ATTACHMENT_NUM_WORDS_OFFSET mem_load
+        # => [num_words, attachment_ptr, num_attachments, note_idx]
+
+        dup.3 dup.2 add.ATTACHMENT_CONTENT_OFFSET
+        # => [content_ptr, note_idx, num_words, attachment_ptr, num_attachments, note_idx]
+
+        # The scheme is the first element of the attachment header.
+        dup.2 dup.4 mem_load
+        # => [attachment_scheme, num_words, content_ptr, note_idx,
+        #     num_words, attachment_ptr, num_attachments, note_idx]
+
+        exec.output_note::add_attachment_from_memory
+        # => [num_words, attachment_ptr, num_attachments, note_idx]
+
+        # The kernel bounds num_words, so this cannot wrap around.
+        mul.WORD_SIZE add add.ATTACHMENT_CONTENT_OFFSET
+        # => [next_attachment_ptr, num_attachments, note_idx]
+
+        swap sub.1 swap
+        # => [attachment_ptr, num_attachments, note_idx]
+
+        dup.1 neq.0
+        # => [has_remaining_attachments, attachment_ptr, num_attachments, note_idx]
+    end
+    # => [storage_end_ptr, 0, note_idx]
+
+    movdn.2 drop drop
+    # => [storage_end_ptr]
+end
+
+# NOTE SCRIPT
+# =================================================================================================
+
 #! Swap script: adds the note's remaining offered asset into the consumer's account and creates a
-#! sealed P2ID payback note addressed to the creator carrying the requested asset.
+#! sealed payback note carrying the requested asset.
 #!
 #! The payback note type (selected by the creator) determines how the payback recipient is
-#! derived: private uses an opaque precomputed digest, public derives it from the payback target
-#! account id stored in plaintext.
+#! derived: private uses an opaque precomputed digest, public builds it from the payback script
+#! root, serial number and storage embedded in the note storage. In both modes, the payback note
+#! gets the attachments embedded in the note storage.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::wallets::basic::receive_asset` procedure.
@@ -64,6 +145,8 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #!
 #! Panics if:
 #! - account does not expose the required wallet procedures.
+#! - the note storage length does not match the declared payback storage and attachments.
+#! - the payback recipient or attachments are rejected by the kernel.
 #! - the note does not hold exactly one asset at consumption time.
 #! - account vault does not contain the requested asset.
 #! - adding a fungible asset would result in amount overflow, i.e., the total amount would be
@@ -75,62 +158,62 @@ pub proc main(args: NoteArgs)
     # => []
 
     # store note storage into memory starting at STORAGE_PTR
-    push.SWAP_NOTE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    push.MAX_NOTE_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    # check number of storage items
-    eq.SWAP_NOTE_NUM_STORAGE_ITEMS assert.err=ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-    # => []
-
-    # --- create payback P2ID note
+    # --- create payback note ---
 
     # Branch on payback note type.
     mem_load.PAYBACK_NOTE_TYPE_PTR
     eq.NOTE_TYPE_PRIVATE
-    # => [is_private]
+    # => [is_private, num_storage_items]
 
     if.true
         # --- PRIVATE PAYBACK ---
-        # Load the precomputed payback recipient (4 felts, word-aligned).
+        # Load the precomputed payback recipient.
         padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
-        # => [PAYBACK_RECIPIENT]
-
-        mem_load.PAYBACK_NOTE_TYPE_PTR
-        mem_load.PAYBACK_TAG_PTR
-        # => [tag, note_type, PAYBACK_RECIPIENT]
+        # => [PAYBACK_RECIPIENT, num_storage_items]
     else
         # --- PUBLIC PAYBACK ---
-        # Derive P2ID serial = SWAP_SERIAL with the least significant element +1.
-        exec.active_note::get_serial_number
-        add.1
-        # => [s0', s1, s2, s3]
+        padw mem_loadw_le.PAYBACK_SCRIPT_ROOT_PTR
+        # => [SCRIPT_ROOT, num_storage_items]
 
-        mem_load.PAYBACK_NOTE_TYPE_PTR
-        mem_load.PAYBACK_TAG_PTR
-        # => [tag, note_type, s0', s1, s2, s3]
+        padw mem_loadw_le.PAYBACK_SERIAL_NUM_PTR
+        # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items]
 
-        # Load prefix then suffix so suffix ends on top, as `p2id::prepare_note` expects.
-        mem_load.PAYBACK_TARGET_PREFIX_PTR
-        mem_load.PAYBACK_TARGET_SUFFIX_PTR
-        # => [target_suffix, target_prefix, tag, note_type, s0', s1, s2, s3]
+        mem_load.NUM_PAYBACK_STORAGE_ITEMS_PTR push.PAYBACK_STORAGE_PTR
+        # => [storage_ptr, num_payback_storage_items, SERIAL_NUM, SCRIPT_ROOT, num_storage_items]
 
-        exec.p2id::prepare_note
-        # => [tag, note_type, PAYBACK_RECIPIENT]
+        exec.note::compute_and_store_recipient
+        # => [PAYBACK_RECIPIENT, num_storage_items]
     end
-    # => [tag, note_type, PAYBACK_RECIPIENT]
+    # => [PAYBACK_RECIPIENT, num_storage_items]
+
+    mem_load.PAYBACK_NOTE_TYPE_PTR
+    mem_load.PAYBACK_TAG_PTR
+    # => [tag, note_type, PAYBACK_RECIPIENT, num_storage_items]
 
     # Note creation must originate from the account context, so route through the account's
     # `create_note` procedure. Pad the stack for the `call` convention.
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-    # => [tag, note_type, PAYBACK_RECIPIENT, pad(10)]
+    # => [tag, note_type, PAYBACK_RECIPIENT, pad(10), num_storage_items]
 
     call.wallet::create_note
-    # => [note_idx, pad(15)]
+    # => [note_idx, pad(15), num_storage_items]
 
     movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx, num_storage_items]
+
+    # --- add the payback attachments and check that they end exactly at the storage end
+
+    dup exec.add_payback_attachments
+    # => [storage_end_ptr, note_idx, num_storage_items]
+
+    # STORAGE_PTR is 0, so we can assert storage_end_ptr == num_storage_items
+    movup.2 assert_eq.err=ERR_SWAP_STORAGE_LENGTH_MISMATCH
     # => [note_idx]
 
-    # --- move requested asset into the payback P2ID note
+    # --- move requested asset into the payback note
 
     dup padw push.0.0.0 movup.7
     # => [note_idx, pad(7), note_idx]
