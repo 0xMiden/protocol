@@ -814,17 +814,17 @@ end
 #! Returns the ASSET_VALUE associated with the provided asset ID in the vault of the native or the
 #! active account.
 #!
-#! Inputs:  [ASSET_ID, is_native]
+#! Inputs:  [is_native, ASSET_ID]
 #! Outputs: [ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
 #!   the native or the active account.
+#! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
-pub proc get_asset(asset_id: AssetId, is_native: Bool) -> AssetValue
+pub proc get_asset(is_native: Bool, asset_id: AssetId) -> AssetValue
     # get the vault root ptr
-    movup.4 exec.get_vault_root_ptr movdn.4
+    exec.get_vault_root_ptr movdn.4
     # => [ASSET_ID, vault_root_ptr]
 
     # emit event to signal that an asset is requested
