@@ -149,7 +149,7 @@ fn build_admin_note(
 // ================================================================================================
 
 /// `AllowlistStorage::is_allowed`, invoked via `call` from a transaction script on the faucet,
-/// returns whether an account is allowed and honours the 16-felt call ABI.
+/// returns whether an account is allowed, honours the 16-felt call ABI and limits the expiration.
 #[tokio::test]
 async fn is_allowed_returns_whether_an_account_is_allowed() -> anyhow::Result<()> {
     let allowed_account = test_account_id(80);
@@ -160,6 +160,7 @@ async fn is_allowed_returns_whether_an_account_is_allowed() -> anyhow::Result<()
         dummy_owner(),
         [allowed_account],
     )?;
+    assert!(faucet.code().has_procedure(AllowlistStorage::is_allowed_root().as_word()));
     let mock_chain = builder.build()?;
 
     let tx_script_code = format!(
@@ -192,12 +193,13 @@ async fn is_allowed_returns_whether_an_account_is_allowed() -> anyhow::Result<()
         .with_dynamically_linked_package(AllowlistStorage::code())?
         .compile_tx_script(tx_script_code)?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }
