@@ -1,0 +1,1 @@
+[BREAKING] Foreign accounts can read the native account's vault through the new `native_account::get_asset` and `native_account::get_vault_root` and the initial vault getters; the `account_get_asset` and `account_get_vault_root` kernel procedures take an `is_native` flag.
