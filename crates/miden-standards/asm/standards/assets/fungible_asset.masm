@@ -115,6 +115,7 @@ end
 #! Panics if:
 #! - the asset composition encoded in ASSET_ID is not fungible.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account and it is not executing an asset callback.
 #! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: exec

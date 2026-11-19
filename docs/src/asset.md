@@ -176,7 +176,7 @@ Account components that need to add callbacks to an account's storage should use
 
 The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value for inspection. The callback either completes successfully or aborts the transaction.
 
-The callback cannot modify account or note state. The kernel aborts the transaction if the callback calls a state-changing kernel procedure, for example `native_account::set_item` or `output_note::add_asset`. Setting the expiration delta and emitting transaction logs is allowed.
+The callback cannot modify account or note state. The kernel aborts the transaction if the callback calls a state-changing kernel procedure, for example `native_account::set_item` or `output_note::add_asset`. Setting the expiration delta and emitting transaction logs is allowed. The callback can also read the faucet's own assets from the native account's current and initial vault with `native_account::get_asset` and `native_account::get_initial_asset`.
 
 The **account callback** receives:
 

@@ -112,6 +112,9 @@ const ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT = "a new account cannot be
 
 const ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET = "an account code upgrade is already pending"
 
+const ERR_FOREIGN_ACCOUNT_NATIVE_VAULT_READ_OUTSIDE_ASSET_CALLBACK =
+    "a foreign account can only read the native account's vault during its own asset callback"
+
 const ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET =
     "a foreign account can only read assets it issued from the native account's vault"
 
@@ -811,6 +814,8 @@ end
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Panics if:
+#! - is_native is 1, the active account is not the native account and it is not executing an asset
+#!   callback.
 #! - is_native is 1, the active account is not the native account and it is not the issuer of the
 #!   asset.
 pub proc get_asset(is_native: Bool, asset_id: AssetId) -> AssetValue
@@ -845,6 +850,7 @@ end
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Panics if:
+#! - the active account is not the native account and it is not executing an asset callback.
 #! - the active account is not the native account and it is not the issuer of the asset.
 pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
     exec.assert_can_read_native_vault_asset
@@ -864,7 +870,8 @@ pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
 end
 
 #! Asserts that the active account can read the asset with the provided ID from the native
-#! account's vault, which is the case if it is the native account or the issuer of the asset.
+#! account's vault, which is the case if it is the native account, or the issuer of the asset
+#! executing one of its asset callbacks.
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [ASSET_ID]
@@ -873,8 +880,13 @@ end
 #! - ASSET_ID is the asset ID of the asset to read.
 #!
 #! Panics if:
+#! - the active account is not the native account and it is not executing an asset callback.
 #! - the active account is not the native account and it is not the issuer of the asset.
 proc assert_can_read_native_vault_asset(asset_id: AssetId) -> AssetId
+    exec.memory::is_active_account_in_asset_callback exec.memory::is_native_account or
+    assert.err=ERR_FOREIGN_ACCOUNT_NATIVE_VAULT_READ_OUTSIDE_ASSET_CALLBACK
+    # => [ASSET_ID]
+
     exec.asset_utils::id_to_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
 

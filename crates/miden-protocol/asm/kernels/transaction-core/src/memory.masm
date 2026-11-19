@@ -128,8 +128,9 @@ const MAX_ACCOUNT_STACK_PTR = 1284
 # Both counts exclude the fixed metadata header of the account patch or delta.
 pub const ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR = 1285
 
-# The memory address at which the flag indicating that an asset callback is executing is stored.
-const ASSET_CALLBACK_IN_PROGRESS_FLAG_PTR = 1286
+# The memory address at which the data pointer of the account whose asset callback is executing is
+# stored. It is 0 while no asset callback is executing.
+const ASSET_CALLBACK_ACCOUNT_DATA_PTR = 1286
 
 # TRANSACTION LOG STATE
 # -------------------------------------------------------------------------------------------------
@@ -1192,16 +1193,26 @@ pub proc is_epilogue_auth_in_progress() -> Bool
     # => [is_epilogue_auth_in_progress]
 end
 
-#! Sets the flag indicating whether an asset callback is currently executing.
+#! Sets the data pointer of the account whose asset callback is currently executing.
 #!
-#! Inputs:  [is_asset_callback_in_progress]
+#! Inputs:  [asset_callback_account_data_ptr]
 #! Outputs: []
 #!
 #! Where:
-#! - is_asset_callback_in_progress is 1 while an asset callback runs, 0 otherwise.
-pub proc set_asset_callback_in_progress_flag(is_asset_callback_in_progress: Bool)
-    mem_store.ASSET_CALLBACK_IN_PROGRESS_FLAG_PTR
+#! - asset_callback_account_data_ptr is the data pointer of the account whose asset callback runs,
+#!   or 0 if no asset callback runs.
+pub proc set_asset_callback_account_data_ptr(asset_callback_account_data_ptr: ptr<AccountData>)
+    mem_store.ASSET_CALLBACK_ACCOUNT_DATA_PTR
     # => []
+end
+
+#! Returns 1 if an asset callback of the active account is currently executing, 0 otherwise.
+#!
+#! Inputs:  []
+#! Outputs: [is_active_account_in_asset_callback]
+pub proc is_active_account_in_asset_callback() -> Bool
+    mem_load.ASSET_CALLBACK_ACCOUNT_DATA_PTR exec.get_active_account_data_ptr eq
+    # => [is_active_account_in_asset_callback]
 end
 
 #! Asserts that no asset callback is currently executing.
@@ -1215,7 +1226,7 @@ end
 #! Panics if:
 #! - an asset callback is currently executing.
 pub proc assert_not_in_asset_callback()
-    mem_load.ASSET_CALLBACK_IN_PROGRESS_FLAG_PTR
+    mem_load.ASSET_CALLBACK_ACCOUNT_DATA_PTR
     assertz.err=ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK
     # => []
 end

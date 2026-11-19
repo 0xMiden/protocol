@@ -1,0 +1,1 @@
+foreign-native-vault-reads

@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
@@ -26,6 +27,7 @@ use miden_protocol::asset::{
     AssetAmount,
     AssetCallbacks,
     AssetComposition,
+    AssetId,
     AssetVault,
     FungibleAsset,
     NonFungibleAsset,
@@ -34,10 +36,13 @@ use miden_protocol::asset::{
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
+    ERR_FOREIGN_ACCOUNT_NATIVE_VAULT_READ_OUTSIDE_ASSET_CALLBACK,
+    ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET,
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
 };
 use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -787,6 +792,211 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
     Ok(())
 }
 
+/// Tests that the note callback of a foreign faucet can read the faucet's asset from the current
+/// and initial vault of the native account, which holds 100 units and sends 30 of them.
+///
+/// In the first two cases the callback is the first to access the asset in the transaction. In
+/// the last case the asset is removed from the vault before the callback runs, so the callback
+/// reads the remaining balance.
+#[rstest::rstest]
+#[case::first_access_through_current_vault(&[("get_asset", 100)], false)]
+#[case::first_access_through_initial_vault(&[("get_initial_asset", 100)], false)]
+#[case::remaining_balance(&[("get_asset", 70), ("get_initial_asset", 100)], true)]
+#[tokio::test]
+async fn test_foreign_faucet_callback_can_read_issued_asset_in_native_vault(
+    #[case] expected_reads: &[(&str, u32)],
+    #[case] remove_before_callback: bool,
+) -> anyhow::Result<()> {
+    let callback_body: String = expected_reads
+        .iter()
+        .map(|(procedure, expected_amount)| {
+            format!(
+                r#"
+                dupw exec.::miden::protocol::native_account::{procedure}
+                # => [NATIVE_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+                push.{expected_value}
+                assert_eqw.err="{procedure} returned an unexpected asset value"
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+                "#,
+                expected_value = AssetAmount::from(*expected_amount).to_word(),
+            )
+        })
+        .collect();
+
+    let (asset, tx) =
+        send_with_foreign_note_callback(&callback_body, remove_before_callback, &[]).await?;
+    let tx = tx?;
+
+    // The asset witness must be in the native partial vault of the executed inputs. In the
+    // first-access cases it is loaded while the faucet is the active account.
+    assert_eq!(tx.tx_inputs().account().vault().get(asset.id())?, Some(asset));
+
+    Ok(())
+}
+
+/// Tests that the note callback of a foreign faucet cannot read an asset of another issuer from
+/// the native account's vault.
+#[rstest::rstest]
+#[case::get_asset("get_asset")]
+#[case::get_initial_asset("get_initial_asset")]
+#[tokio::test]
+async fn test_foreign_faucet_callback_cannot_read_asset_of_other_issuer(
+    #[case] procedure: &str,
+) -> anyhow::Result<()> {
+    let other_issuer_asset_id =
+        AssetId::new_fungible(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?).to_word();
+    let callback_body = format!(
+        "push.{other_issuer_asset_id} exec.::miden::protocol::native_account::{procedure} dropw"
+    );
+
+    let (_asset, result) = send_with_foreign_note_callback(&callback_body, false, &[]).await?;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+    );
+
+    Ok(())
+}
+
+/// Tests that an account invoked through FPI by the note callback of a foreign faucet cannot read
+/// the asset it issued from the native account's vault.
+#[tokio::test]
+async fn test_account_invoked_by_foreign_faucet_callback_cannot_read_issued_asset()
+-> anyhow::Result<()> {
+    let reader_code = CodeBuilder::default().compile_component_code(
+        "reader",
+        "
+        #! Inputs:  [ASSET_ID, pad(12)]
+        #! Outputs: [ASSET_VALUE, pad(12)]
+        @account_procedure
+        pub proc get_native_asset
+            exec.::miden::protocol::native_account::get_asset
+        end
+        ",
+    )?;
+    let reader_proc_root = reader_code
+        .as_package()
+        .get_procedure_root_by_path("reader::get_native_asset")
+        .expect("reader procedure should exist");
+    let reader = AccountBuilder::new([7; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(AccountComponent::new(
+            reader_code,
+            Vec::new(),
+            AccountComponentMetadata::mock("reader"),
+        )?)
+        .build_existing()?;
+
+    let callback_body = format!(
+        "
+        # invoke the reader account with an asset it issued
+        padw padw padw push.{reader_asset_id}
+        push.{reader_proc_root}
+        push.{reader_prefix} push.{reader_suffix}
+        exec.::miden::protocol::tx::execute_foreign_procedure
+        # => [NATIVE_ASSET_VALUE, pad(12), ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+        dropw dropw dropw dropw
+        ",
+        reader_asset_id = AssetId::new_fungible(reader.id()).to_word(),
+        reader_prefix = reader.id().prefix().as_felt(),
+        reader_suffix = reader.id().suffix(),
+    );
+
+    let (_asset, result) =
+        send_with_foreign_note_callback(&callback_body, false, &[reader]).await?;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_FOREIGN_ACCOUNT_NATIVE_VAULT_READ_OUTSIDE_ASSET_CALLBACK
+    );
+
+    Ok(())
+}
+
+/// Tests that a faucet cannot read its own asset from the native account's vault when its note
+/// callback procedure is invoked through FPI by a transaction script, i.e. while no asset callback
+/// is executing.
+#[rstest::rstest]
+#[case::get_asset("get_asset")]
+#[case::get_initial_asset("get_initial_asset")]
+#[tokio::test]
+async fn test_foreign_faucet_cannot_read_issued_asset_outside_asset_callback(
+    #[case] procedure: &str,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let note_callback_masm = format!(
+        "
+        #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        #! Outputs: [pad(16)]
+        @account_procedure
+        pub proc on_before_asset_added_to_note
+            exec.::miden::protocol::native_account::{procedure}
+            # => [NATIVE_ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+
+            dropw dropw drop
+            # => [pad(16)]
+        end
+        "
+    );
+    let faucet = add_faucet_with_callbacks(&mut builder, None, Some(&note_callback_masm))?;
+    let callback_root = faucet
+        .storage()
+        .get_item(AssetCallbacks::on_before_asset_added_to_note_slot())?;
+
+    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    let account = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let script_code = format!(
+        "
+        use miden::core::sys
+        use miden::protocol::tx
+
+        @transaction_script
+        pub proc main
+            # invoke the callback procedure with the faucet's own asset
+            padw padw push.{asset_value} push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE, note_idx = 0, pad(7)]
+
+            push.{callback_root}
+            push.{faucet_prefix} push.{faucet_suffix}
+            exec.tx::execute_foreign_procedure
+
+            exec.sys::truncate_stack
+        end
+        ",
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+        faucet_prefix = faucet.id().prefix().as_felt(),
+        faucet_suffix = faucet.id().suffix(),
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(&script_code)?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_FOREIGN_ACCOUNT_NATIVE_VAULT_READ_OUTSIDE_ASSET_CALLBACK
+    );
+
+    Ok(())
+}
+
 /// Tests that a new account whose storage contains an asset callback slot is rejected if its
 /// account ID has the asset callback flag disabled.
 #[tokio::test]
@@ -866,6 +1076,110 @@ fn add_faucet_with_block_list(
         account_builder,
         AccountState::Exists,
     )
+}
+
+/// Sends 30 units of a callbacks-enabled asset from a mock account that holds 100 of them, in a
+/// transaction against the mock account. Returns the asset the account holds initially and the
+/// result of the transaction.
+///
+/// Adding the asset to the note invokes the faucet's note callback in the faucet's foreign
+/// context, which runs `callback_body` on the callback inputs and then drops them. The asset is
+/// removed from the account's vault before the callback runs if `remove_before_callback` is true,
+/// and after it otherwise. The `other_foreign_accounts` are available to the callback through FPI.
+async fn send_with_foreign_note_callback(
+    callback_body: &str,
+    remove_before_callback: bool,
+    other_foreign_accounts: &[Account],
+) -> anyhow::Result<(Asset, Result<ExecutedTransaction, TransactionExecutorError>)> {
+    let mut builder = MockChain::builder();
+    for foreign_account in other_foreign_accounts {
+        builder.add_account(foreign_account.clone())?;
+    }
+
+    let note_callback_masm = format!(
+        "
+        #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        #! Outputs: [pad(16)]
+        @account_procedure
+        pub proc on_before_asset_added_to_note
+            {callback_body}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+            dropw dropw drop
+            # => [pad(16)]
+        end
+        "
+    );
+    let faucet = add_faucet_with_callbacks(&mut builder, None, Some(&note_callback_masm))?;
+
+    let initial_asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    let sent_asset = Asset::from(FungibleAsset::new(faucet.id(), 30)?);
+    let account =
+        builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [initial_asset])?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let remove_asset = format!(
+        "
+        push.{asset_value} push.{asset_id}
+        call.::mock::account::remove_asset
+        # => [FINAL_ASSET_VALUE, pad(12)]
+
+        dropw dropw dropw
+        ",
+        asset_value = sent_asset.to_value_word(),
+        asset_id = sent_asset.to_id_word(),
+    );
+    let (remove_before, remove_after) = if remove_before_callback {
+        (remove_asset.as_str(), "")
+    } else {
+        ("", remove_asset.as_str())
+    };
+
+    let script_code = format!(
+        "
+        use miden::core::sys
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            {remove_before}
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            push.{asset_value} push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+            exec.output_note::add_asset
+            # => []
+
+            {remove_after}
+
+            exec.sys::truncate_stack
+        end
+        ",
+        asset_value = sent_asset.to_value_word(),
+        asset_id = sent_asset.to_id_word(),
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
+
+    let mut foreign_account_inputs = vec![mock_chain.get_foreign_account_inputs(faucet.id())?];
+    for foreign_account in other_foreign_accounts {
+        foreign_account_inputs.push(mock_chain.get_foreign_account_inputs(foreign_account.id())?);
+    }
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .foreign_accounts(foreign_account_inputs)
+        .build()?
+        .execute()
+        .await;
+
+    Ok((initial_asset, result))
 }
 
 /// Mints a callbacks-enabled asset from a faucet and sends it in a new output note, in a

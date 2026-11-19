@@ -143,15 +143,15 @@ proc invoke_callback(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
         end
         # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7), was_foreign_context_started]
 
-        # invoke the callback while the flag rejects account and note state changes
-        push.1 exec.memory::set_asset_callback_in_progress_flag
+        # invoke the callback while the kernel rejects account and note state changes
+        exec.memory::get_active_account_data_ptr exec.memory::set_asset_callback_account_data_ptr
         # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7), was_foreign_context_started]
 
         locaddr.CALLBACK_PROC_ROOT_LOC
         dyncall
         # => [pad(16), was_foreign_context_started]
 
-        push.0 exec.memory::set_asset_callback_in_progress_flag
+        push.0 exec.memory::set_asset_callback_account_data_ptr
         # => [pad(16), was_foreign_context_started]
 
         dropw dropw dropw dropw
