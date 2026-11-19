@@ -15,7 +15,7 @@
 use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{
     Asset,
     AssetAmount,
@@ -29,15 +29,16 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
 };
+use miden_protocol::testing::word::WordMockExt;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
-use miden_standards::account::access::{AccessControl, Pausable};
-use miden_standards::account::auth::{
-    AuthNetworkAccount,
-    FeeConversionInfo,
-    SponsorshipPolicy,
-    commit_fee_conversion_info,
+use miden_standards::account::access::AccessControl;
+use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::faucets::{
+    AssetStatus,
+    NonFungibleFaucet,
+    TokenName,
+    create_network_non_fungible_faucet,
 };
-use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_standards::note::{
@@ -50,7 +51,7 @@ use miden_standards::note::{
     TxFeeNote,
 };
 use miden_standards::tx_script::SendNotesTransactionScript;
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder, MockTransactionBuilder};
+use miden_testing::{Auth, MockChain};
 use rand::RngExt;
 
 // CONSTANTS
@@ -69,8 +70,13 @@ const INITIAL_FEE_BALANCE: u64 = 1_000_000;
 // AGREED TERMS
 // ================================================================================================
 
-/// The terms of the loan the originator, borrower and creditor agree on off-chain.
+/// The terms of the loan the originator, borrower and creditor agree on off-chain, including the
+/// serial numbers of the notes.
+///
+/// The terms are the contract between the parties: each one derives the notes it creates or
+/// watches the chain for from them.
 struct CreditTerms {
+    originator_id: AccountId,
     nft_faucet_id: AccountId,
     stablecoin_faucet_id: AccountId,
     borrower_id: AccountId,
@@ -78,6 +84,11 @@ struct CreditTerms {
     principal: AssetAmount,
     interest_percent: u8,
     salt: Word,
+    mint_serial_number: Word,
+    issue_serial_number: Word,
+    loan_serial_number: Word,
+    repayment_serial_number: Word,
+    burn_serial_number: Word,
 }
 
 impl CreditTerms {
@@ -104,12 +115,98 @@ impl CreditTerms {
         Ok(FungibleAsset::new(self.stablecoin_faucet_id, self.principal.as_u64())?.into())
     }
 
+    /// Returns the amount of the principal plus interest.
+    fn repayment_amount(&self) -> anyhow::Result<AssetAmount> {
+        let interest = compute_interest(self.principal, self.interest_percent)?;
+        Ok((self.principal + interest)?)
+    }
+
     /// Returns the principal plus interest.
     fn repayment(&self) -> anyhow::Result<Asset> {
-        let interest = compute_interest(self.principal, self.interest_percent)?;
-        let repayment_amount = (self.principal + interest)?;
+        Ok(
+            FungibleAsset::new(self.stablecoin_faucet_id, self.repayment_amount()?.as_u64())?
+                .into(),
+        )
+    }
 
-        Ok(FungibleAsset::new(self.stablecoin_faucet_id, repayment_amount.as_u64())?.into())
+    /// Returns the private P2ID note paying the principal to the borrower, created as the payback
+    /// of the issue note.
+    fn loan_note(&self, issue_payback_metadata: &NoteMetadata) -> anyhow::Result<Note> {
+        Ok(Note::new(
+            NoteAssets::new(vec![self.principal()?])?,
+            *issue_payback_metadata.partial_metadata(),
+            P2idNoteStorage::new(self.borrower_id).into_recipient(self.loan_serial_number),
+        ))
+    }
+
+    /// Returns the private SWAP note the faucet mints the bond into: the creditor takes the bond
+    /// and pays the principal to the borrower in a private P2ID loan note.
+    fn issue_note(&self) -> anyhow::Result<Note> {
+        let loan_recipient =
+            P2idNoteStorage::new(self.borrower_id).into_recipient(self.loan_serial_number);
+
+        let issue_note = SwapNote::builder()
+            .sender(self.nft_faucet_id)
+            .offered_asset(self.bond())
+            .requested_asset(self.principal()?)
+            .serial_number(self.issue_serial_number)
+            .note_type(NoteType::Private)
+            .payback_note_type(NoteType::Private)
+            .payback_recipient(loan_recipient)
+            .payback_tag(NoteTag::with_account_target(self.borrower_id))
+            .build()?;
+
+        Ok(issue_note.into())
+    }
+
+    /// Returns the public MINT note the originator sends to the faucet to mint the bond into the
+    /// issue note.
+    ///
+    /// It only carries the commitment of the bond and the recipient digest of the issue note, so
+    /// neither the terms nor the borrower are revealed.
+    fn mint_note(&self, issue_note: &Note) -> anyhow::Result<Note> {
+        let mint_note = MintNote::builder()
+            .sender(self.originator_id)
+            .mint_storage(MintNoteStorage::new_private_output(
+                issue_note.recipient().digest(),
+                self.bond(),
+                issue_note.metadata().tag(),
+            ))
+            .serial_number(self.mint_serial_number)
+            .build()?;
+
+        Ok(mint_note.into())
+    }
+
+    /// Returns the public BURN note the bond holder creates when filling the repayment note.
+    fn burn_note(&self) -> anyhow::Result<Note> {
+        let burn_note = BurnNote::builder()
+            .sender(self.creditor_id)
+            .asset(self.bond())
+            .serial_number(self.burn_serial_number)
+            .build()?;
+
+        Ok(burn_note.into())
+    }
+
+    /// Returns the private SWAP note the borrower repays the loan with: the bond holder takes the
+    /// principal plus interest and sends the bond to the faucet in a public BURN payback note.
+    fn repayment_note(&self) -> anyhow::Result<Note> {
+        let burn_note = self.burn_note()?;
+
+        let repayment_note = SwapNote::builder()
+            .sender(self.borrower_id)
+            .offered_asset(self.repayment()?)
+            .requested_asset(self.bond())
+            .serial_number(self.repayment_serial_number)
+            .note_type(NoteType::Private)
+            .payback_note_type(NoteType::Public)
+            .payback_recipient(burn_note.recipient().clone())
+            .payback_tag(burn_note.metadata().tag())
+            .payback_attachments(burn_note.attachments().iter().cloned())
+            .build()?;
+
+        Ok(repayment_note.into())
     }
 }
 
@@ -124,30 +221,24 @@ fn compute_interest(principal: AssetAmount, interest_percent: u8) -> anyhow::Res
 // TEST SETUP
 // ================================================================================================
 
-/// The accounts of the flow, the agreed terms, and the serial numbers of the notes, which the
-/// parties agree on off-chain alongside the terms.
+/// The accounts of the flow and the terms the parties agreed on.
 struct TestSetup {
     originator: Account,
     creditor: Account,
     borrower: Account,
     nft_faucet: Account,
     stablecoin_asset_id: AssetId,
-    interest: AssetAmount,
     terms: CreditTerms,
-    mint_serial_number: Word,
-    issue_serial_number: Word,
-    loan_serial_number: Word,
-    repayment_serial_number: Word,
-    burn_serial_number: Word,
 }
 
 impl TestSetup {
-    /// Creates the accounts on a fee-charging mock chain and agrees on the terms.
+    /// Creates the accounts on a fee-charging mock chain, deploys the network faucet and agrees on
+    /// the terms.
     ///
     /// The creditor holds the principal and the borrower holds the interest upfront, so it can
     /// repay the full amount after receiving the principal. Every account holds the fee asset to
     /// pay for its transactions.
-    fn new() -> anyhow::Result<(MockChain, Self)> {
+    async fn new() -> anyhow::Result<(MockChain, Self)> {
         let stablecoin_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
         let principal = AssetAmount::new(PRINCIPAL)?;
         let interest = compute_interest(principal, INTEREST_PERCENT)?;
@@ -171,17 +262,38 @@ impl TestSetup {
                 FungibleAsset::new(stablecoin_faucet_id, interest.as_u64())?.into(),
             ],
         )?;
-        let nft_faucet = add_network_nft_faucet(&mut builder, originator.id())?;
-        let mock_chain = builder.build()?;
+        let nft_faucet = create_nft_faucet(builder.rng_mut().random(), originator.id())?;
+        // the faucet is funded with the fee asset by a P2ID note, consumed when it is deployed
+        let funding_note = builder.add_p2id_note(
+            originator.id(),
+            nft_faucet.id(),
+            &[fee_asset(INITIAL_FEE_BALANCE)?],
+            NoteType::Public,
+        )?;
+        let mut mock_chain = builder.build()?;
+
+        let deploy_nft_faucet_tx = mock_chain
+            .build_transaction(nft_faucet.clone())
+            .authenticated_input_note(funding_note.id())
+            .build()?
+            .execute()
+            .await?;
+        commit(&mut mock_chain, &deploy_nft_faucet_tx)?;
 
         let terms = CreditTerms {
+            originator_id: originator.id(),
             nft_faucet_id: nft_faucet.id(),
             stablecoin_faucet_id,
             borrower_id: borrower.id(),
             creditor_id: creditor.id(),
             principal,
             interest_percent: INTEREST_PERCENT,
-            salt: Word::from([1, 2, 3, 4u32]),
+            salt: Word::mock(1),
+            mint_serial_number: Word::mock(2),
+            issue_serial_number: Word::mock(3),
+            loan_serial_number: Word::mock(4),
+            repayment_serial_number: Word::mock(5),
+            burn_serial_number: Word::mock(6),
         };
 
         let setup = Self {
@@ -190,96 +302,10 @@ impl TestSetup {
             borrower,
             nft_faucet,
             stablecoin_asset_id: AssetId::new_fungible(stablecoin_faucet_id),
-            interest,
             terms,
-            mint_serial_number: Word::from([11, 12, 13, 14u32]),
-            issue_serial_number: Word::from([21, 22, 23, 24u32]),
-            loan_serial_number: Word::from([31, 32, 33, 34u32]),
-            repayment_serial_number: Word::from([41, 42, 43, 44u32]),
-            burn_serial_number: Word::from([51, 52, 53, 54u32]),
         };
 
         Ok((mock_chain, setup))
-    }
-
-    /// Returns the private P2ID note paying the principal to the borrower, created as the payback
-    /// of the issue note.
-    fn loan_note(&self, issue_payback_metadata: &NoteMetadata) -> anyhow::Result<Note> {
-        Ok(Note::new(
-            NoteAssets::new(vec![self.terms.principal()?])?,
-            *issue_payback_metadata.partial_metadata(),
-            P2idNoteStorage::new(self.terms.borrower_id).into_recipient(self.loan_serial_number),
-        ))
-    }
-
-    /// Returns the private SWAP note the faucet mints the bond into: the creditor takes the bond
-    /// and pays the principal to the borrower in a private P2ID loan note.
-    fn issue_note(&self) -> anyhow::Result<Note> {
-        let loan_recipient =
-            P2idNoteStorage::new(self.terms.borrower_id).into_recipient(self.loan_serial_number);
-
-        let issue_note = SwapNote::builder()
-            .sender(self.terms.nft_faucet_id)
-            .offered_asset(self.terms.bond())
-            .requested_asset(self.terms.principal()?)
-            .serial_number(self.issue_serial_number)
-            .note_type(NoteType::Private)
-            .payback_note_type(NoteType::Private)
-            .payback_recipient(loan_recipient)
-            .payback_tag(NoteTag::with_account_target(self.terms.borrower_id))
-            .build()?;
-
-        Ok(issue_note.into())
-    }
-
-    /// Returns the public MINT note the originator sends to the faucet to mint the bond into the
-    /// issue note.
-    ///
-    /// It only carries the commitment of the bond and the recipient digest of the issue note, so
-    /// neither the terms nor the borrower are revealed.
-    fn mint_note(&self, issue_note: &Note) -> anyhow::Result<Note> {
-        let mint_note = MintNote::builder()
-            .sender(self.originator.id())
-            .mint_storage(MintNoteStorage::new_private(
-                issue_note.recipient().digest(),
-                self.terms.bond(),
-                issue_note.metadata().tag(),
-            ))
-            .serial_number(self.mint_serial_number)
-            .build()?;
-
-        Ok(mint_note.into())
-    }
-
-    /// Returns the public BURN note the bond holder creates when filling the repayment note.
-    fn burn_note(&self) -> anyhow::Result<Note> {
-        let burn_note = BurnNote::builder()
-            .sender(self.terms.creditor_id)
-            .asset(self.terms.bond())
-            .serial_number(self.burn_serial_number)
-            .build()?;
-
-        Ok(burn_note.into())
-    }
-
-    /// Returns the private SWAP note the borrower repays the loan with: the bond holder takes the
-    /// principal plus interest and sends the bond to the faucet in a public BURN payback note.
-    fn repayment_note(&self) -> anyhow::Result<Note> {
-        let burn_note = self.burn_note()?;
-
-        let repayment_note = SwapNote::builder()
-            .sender(self.terms.borrower_id)
-            .offered_asset(self.terms.repayment()?)
-            .requested_asset(self.terms.bond())
-            .serial_number(self.repayment_serial_number)
-            .note_type(NoteType::Private)
-            .payback_note_type(NoteType::Public)
-            .payback_recipient(burn_note.recipient().clone())
-            .payback_tag(burn_note.metadata().tag())
-            .payback_attachments(burn_note.attachments().iter().cloned())
-            .build()?;
-
-        Ok(repayment_note.into())
     }
 }
 
@@ -290,23 +316,21 @@ impl TestSetup {
 /// of the principal plus interest against burning the bond.
 #[tokio::test]
 async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
-    let (mut mock_chain, setup) = TestSetup::new()?;
-    let principal = setup.terms.principal;
+    let (mut mock_chain, setup) = TestSetup::new().await?;
+    let repayment_amount = setup.terms.repayment_amount()?;
     let bond = Asset::from(setup.terms.bond());
 
     // STEP 1: the parties agree on the terms off-chain
     // --------------------------------------------------------------------------------------------
 
     // the creditor derives the ID of the issue note it will watch the chain for
-    let issue_note = setup.issue_note()?;
+    let issue_note = setup.terms.issue_note()?;
     let issue_id = issue_note.id();
 
     // STEP 2: the credit originator issues a public MINT note to the network faucet
     // --------------------------------------------------------------------------------------------
 
-    let mint_note = setup.mint_note(&issue_note)?;
-    assert_eq!(mint_note.metadata().note_type(), NoteType::Public);
-    assert!(mint_note.is_network_note());
+    let mint_note = setup.terms.mint_note(&issue_note)?;
 
     let send_mint_note_tx =
         send_note(&mock_chain, &setup.originator, &mint_note, setup.nft_faucet.id()).await?;
@@ -334,14 +358,13 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
     assert!(mock_chain.is_note_committed(&issue_id));
 
     // The chain holds no details of the private note, so the creditor provides its own copy.
-    let consume_issue_note_tx = pay_native_fee(
-        mock_chain
-            .build_transaction(setup.creditor.id())
-            .authenticated_input_note(issue_note),
-    )?
-    .build()?
-    .execute()
-    .await?;
+    let consume_issue_note_tx = mock_chain
+        .build_transaction(setup.creditor.id())
+        .authenticated_input_note(issue_note)
+        .native_fee_auth_args()
+        .build()?
+        .execute()
+        .await?;
     commit(&mut mock_chain, &consume_issue_note_tx)?;
 
     let creditor_account = mock_chain.committed_account(setup.creditor.id())?;
@@ -360,29 +383,28 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
     assert_eq!(loan_note_header.metadata().note_type(), NoteType::Private);
 
     // the borrower derives the loan note from the terms and consumes it
-    let loan_note = setup.loan_note(loan_note_header.metadata())?;
+    let loan_note = setup.terms.loan_note(loan_note_header.metadata())?;
     assert_eq!(loan_note.id(), loan_note_header.id());
 
-    let consume_loan_note_tx = pay_native_fee(
-        mock_chain
-            .build_transaction(setup.borrower.id())
-            .authenticated_input_note(loan_note),
-    )?
-    .build()?
-    .execute()
-    .await?;
+    let consume_loan_note_tx = mock_chain
+        .build_transaction(setup.borrower.id())
+        .authenticated_input_note(loan_note)
+        .native_fee_auth_args()
+        .build()?
+        .execute()
+        .await?;
     commit(&mut mock_chain, &consume_loan_note_tx)?;
 
     let borrower_account = mock_chain.committed_account(setup.borrower.id())?.clone();
     assert_eq!(
         borrower_account.vault().get_balance(setup.stablecoin_asset_id)?,
-        (principal + setup.interest)?,
+        repayment_amount,
     );
 
     // STEP 6: the borrower repays the loan with a private repayment SWAP note
     // --------------------------------------------------------------------------------------------
 
-    let repayment_note = setup.repayment_note()?;
+    let repayment_note = setup.terms.repayment_note()?;
     let repayment_id = repayment_note.id();
 
     let send_repayment_note_tx =
@@ -402,22 +424,21 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
 
     // Creating the BURN network note asks the faucet for its fee, so the faucet is a foreign
     // account of this transaction.
-    let consume_repayment_note_tx = pay_native_fee(
-        mock_chain
-            .build_transaction(setup.creditor.id())
-            .authenticated_input_note(repayment_note)
-            .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(setup.nft_faucet.id())?]),
-    )?
-    .build()?
-    .execute()
-    .await?;
+    let consume_repayment_note_tx = mock_chain
+        .build_transaction(setup.creditor.id())
+        .authenticated_input_note(repayment_note)
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(setup.nft_faucet.id())?])
+        .native_fee_auth_args()
+        .build()?
+        .execute()
+        .await?;
     commit(&mut mock_chain, &consume_repayment_note_tx)?;
 
     let creditor_account = mock_chain.committed_account(setup.creditor.id())?;
     assert_eq!(creditor_account.vault().get(bond.id()), None);
     assert_eq!(
         creditor_account.vault().get_balance(setup.stablecoin_asset_id)?,
-        (principal + setup.interest)?,
+        repayment_amount,
     );
 
     // STEP 8: the consumption created a public BURN note for the faucet carrying the bond
@@ -427,7 +448,7 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
     else {
         anyhow::bail!("filling the repayment note must create exactly the full BURN note");
     };
-    assert_eq!(burn_note, &setup.burn_note()?);
+    assert_eq!(burn_note, &setup.terms.burn_note()?);
     assert!(burn_note.is_network_note());
     assert!(mock_chain.is_note_committed(&burn_note.id()));
 
@@ -462,14 +483,9 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?, amount)?.into())
 }
 
-/// Adds a public non-fungible network faucet controlled by `owner`, which is the only account
-/// allowed to mint. Anyone can burn.
-///
-/// The faucet holds the fee asset, so it can pay for the transactions consuming its notes.
-fn add_network_nft_faucet(
-    builder: &mut MockChainBuilder,
-    owner: AccountId,
-) -> anyhow::Result<Account> {
+/// Creates a new public non-fungible network faucet controlled by `owner`, which is the only
+/// account allowed to mint. Anyone can burn.
+fn create_nft_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Account> {
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("BOND")?)
         .symbol(TokenSymbol::new("BOND")?)
@@ -482,10 +498,9 @@ fn add_network_nft_faucet(
 
     // The network auth prices the notes it consumes, as does the wallet creating a network note
     // for this faucet, so schedule a zero fee for every note the faucet accepts.
-    let allowed_script_roots = [MintNote::script_root(), BurnNote::script_root()];
     let fee_policy = AuthNetworkAccount::default_allowed_note_scripts()
         .into_iter()
-        .chain(allowed_script_roots)
+        .chain([MintNote::script_root(), BurnNote::script_root()])
         .fold(BasicConstantFeePolicy::new(), |fee_policy, script_root| {
             fee_policy.with_fee(script_root, AssetAmount::ZERO)
         });
@@ -494,34 +509,13 @@ fn add_network_nft_faucet(
         .fee_faucet_id(AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?)
         .build();
 
-    let account_builder = AccountBuilder::new(builder.rng_mut().random())
-        .account_type(AccountType::Public)
-        .with_component(faucet)
-        .with_components(AccessControl::Ownable2Step { owner })
-        .with_components(token_policy_manager)
-        .with_component(Pausable::unpaused())
-        .with_assets([fee_asset(INITIAL_FEE_BALANCE)?]);
-
-    let auth = Auth::NetworkAccount {
-        allowed_script_roots: allowed_script_roots.into_iter().collect(),
-        allowed_tx_script_roots: Default::default(),
+    Ok(create_network_non_fungible_faucet(
+        init_seed,
+        faucet,
+        AccessControl::Ownable2Step { owner },
+        token_policy_manager,
         fee_policy_manager,
-        sponsorship_policy: SponsorshipPolicy::default(),
-    };
-
-    builder.add_account_from_builder(auth, account_builder, AccountState::Exists)
-}
-
-/// Lets a signing wallet pay the transaction fee in the native fee asset.
-fn pay_native_fee(
-    tx_builder: MockTransactionBuilder<'_>,
-) -> anyhow::Result<MockTransactionBuilder<'_>> {
-    let (auth_args, conversion_info) = commit_fee_conversion_info(
-        FeeConversionInfo::one_to_one(AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?),
-        Word::from([9, 10, 11, 12u32]),
-    );
-
-    Ok(tx_builder.auth_args(auth_args).add_advice_map_entry(auth_args, conversion_info))
+    )?)
 }
 
 /// Executes a transaction against `sender` that creates `note`.
@@ -548,7 +542,7 @@ async fn send_note(
             .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(nft_faucet_id)?]);
     }
 
-    let executed_tx = pay_native_fee(tx_builder)?.build()?.execute().await?;
+    let executed_tx = tx_builder.native_fee_auth_args().build()?.execute().await?;
 
     Ok(executed_tx)
 }
@@ -562,16 +556,8 @@ fn non_fee_output_notes(executed_tx: &ExecutedTransaction) -> Vec<&RawOutputNote
         .collect()
 }
 
-/// Asserts that the executed transaction paid its fee, adds it to the chain and proves the next
-/// block, committing its effects.
+/// Adds the executed transaction to the chain and proves the next block, committing its effects.
 fn commit(mock_chain: &mut MockChain, executed_tx: &ExecutedTransaction) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        executed_tx
-            .output_notes()
-            .iter()
-            .any(|note| note.metadata().tag() == TxFeeNote::TAG),
-        "every transaction must pay its fee"
-    );
     mock_chain.add_pending_executed_transaction(executed_tx)?;
     mock_chain.prove_next_block()?;
     Ok(())
