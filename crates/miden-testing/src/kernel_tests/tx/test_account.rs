@@ -2499,12 +2499,6 @@ async fn test_has_procedure(
     let root = select_root(&roots);
     assert_eq!(roots.contains(&root), expected_available, "test root does not match the case");
 
-    let assertion = if expected_available {
-        r#"assert.err="procedure should be reported as available""#
-    } else {
-        r#"assertz.err="procedure should be reported as unavailable""#
-    };
-
     let tx_script_code = format!(
         r#"
         use miden::core::sys
@@ -2518,11 +2512,12 @@ async fn test_has_procedure(
             call.mock_account::has_procedure
             # => [is_procedure_available, pad(15)]
 
-            {assertion}
+            eq.{expected_available} assert.err="procedure should be reported as expected"
 
             exec.sys::truncate_stack
         end
-        "#
+        "#,
+        expected_available = u8::from(expected_available),
     );
 
     // Compile the transaction script using the testing assembler with mock account

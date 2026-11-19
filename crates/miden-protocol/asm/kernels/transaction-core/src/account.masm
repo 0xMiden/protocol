@@ -2305,7 +2305,7 @@ end
 #! The procedures following the authentication procedure at index 0 are sorted and unique, which
 #! `validate_procedures` enforces for new accounts and code upgrades. They are searched with
 #! `sorted_array::find_word`, whose cost does not depend on the number of procedures, and the
-#! authentication procedure is only compared against when the root is not found among them.
+#! authentication procedure is compared against directly.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [is_procedure_available]
@@ -2315,7 +2315,7 @@ end
 #! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is
 #!   available on the active account.
 pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
-    # keep a copy of the root in case it has to be compared against the auth procedure root
+    # keep a copy of the root to compare against the auth procedure root
     dupw
     # => [PROC_ROOT, PROC_ROOT]
 
@@ -2330,23 +2330,18 @@ pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     exec.sorted_array::find_word
     # => [is_found, proc_ptr, sorted_procs_start_ptr, procs_end_ptr, PROC_ROOT]
 
-    movdn.3 drop drop drop
-    # => [is_found, PROC_ROOT]
+    movdn.7 drop drop drop
+    # => [PROC_ROOT, is_found]
 
-    if.true
-        # push the flag before dropping the root: at the minimum stack depth of 16, dropw pads
-        # with zeros and a push afterwards would leave depth 17, but the enclosing syscall must
-        # return at exactly depth 16
-        push.1 movdn.4 dropw
-        # => [is_procedure_available = 1]
-    else
-        # the auth procedure is exempt from the sort order, so it is not covered by the search
-        push.0 exec.memory::get_account_procedure_ptr padw movup.4 mem_loadw_le
-        # => [AUTH_PROC_ROOT, PROC_ROOT]
+    # the auth procedure is exempt from the sort order, so compare against it directly
+    push.0 exec.memory::get_account_procedure_ptr padw movup.4 mem_loadw_le
+    # => [AUTH_PROC_ROOT, PROC_ROOT, is_found]
 
-        exec.word::eq
-        # => [is_procedure_available]
-    end
+    exec.word::eq
+    # => [is_auth_proc, is_found]
+
+    or
+    # => [is_procedure_available]
 end
 
 #! Returns the key built from the provided account ID for use in the advice map or the account
