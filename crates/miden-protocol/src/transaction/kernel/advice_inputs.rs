@@ -4,6 +4,7 @@ use miden_processor::advice::AdviceMutation;
 
 use crate::account::PartialAccount;
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
+use crate::block::code_tree::PartialCodeTree;
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::protocol_config::ProtocolConfig;
@@ -68,6 +69,7 @@ impl TransactionAdviceInputs {
         }
 
         inputs.add_foreign_accounts(tx_inputs.foreign_accounts().values());
+        inputs.add_code_tree(tx_inputs.code_tree());
 
         // NOTE_SCRIPT_ROOT |-> [NOTE_SCRIPT_ELEMENTS]
         inputs.extend_map(
@@ -293,6 +295,18 @@ impl TransactionAdviceInputs {
         self.extend_merkle_store(account.vault().inner_nodes());
         self.extend_map(
             account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
+    }
+
+    /// Populates the Merkle store and the advice map with the code witnesses that the kernel
+    /// verifies against the code tree root of the reference block.
+    fn add_code_tree(&mut self, code_tree: &PartialCodeTree) {
+        let partial_smt = code_tree.partial_smt();
+        self.extend_merkle_store(partial_smt.inner_nodes());
+        self.extend_map(
+            partial_smt
+                .leaves()
+                .map(|(_, leaf)| (leaf.hash(), leaf.to_elements().collect())),
         );
     }
 

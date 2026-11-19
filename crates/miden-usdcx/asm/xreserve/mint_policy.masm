@@ -91,8 +91,6 @@ const ERR_XRESERVE_MINT_NOTE_ATTACHMENT_COUNT = "mint note must carry exactly tw
 
 const ERR_XRESERVE_MINT_NOTE_TRANSPORT_TOO_SHORT = "mint note transport attachment is shorter than the attestation and the deposit intent header"
 
-const ERR_XRESERVE_MINT_NOTE_HOOK_LEN_LIMB = "mint note deposit intent hook data length limb is not a valid u32"
-const ERR_XRESERVE_MINT_NOTE_INTENT_WORDS = "mint note deposit intent attachment word count does not match the intent length"
 
 const ERR_XRESERVE_MINT_RECIPIENT_MISMATCH = "mint note recipient does not match the attested deposit intent"
 

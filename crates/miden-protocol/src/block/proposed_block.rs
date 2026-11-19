@@ -22,7 +22,13 @@ use crate::block::{
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::protocol_config::NextProtocolConfig;
-use crate::transaction::{OutputNote, PartialBlockchain, TransactionHeader};
+use crate::transaction::{
+    OutputNote,
+    PartialBlockchain,
+    PublicTransactionLogs,
+    TransactionHeader,
+    TransactionLogError,
+};
 use crate::{EMPTY_WORD, MAX_BATCHES_PER_BLOCK, Word};
 
 // PROPOSED BLOCK
@@ -94,6 +100,7 @@ impl ProposedBlock {
     ///
     /// - The number of batches exceeds [`MAX_BATCHES_PER_BLOCK`].
     /// - There are duplicate batches, i.e. they have the same [`BatchId`].
+    /// - A transaction appears in more than one batch.
     /// - The expiration block number of any batch is less than the block number of the currently
     ///   proposed block.
     ///
@@ -157,6 +164,8 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
+        check_duplicate_transactions(&batches)?;
+        check_public_logs(&batches)?;
 
         // Check timestamp increases monotonically.
         // --------------------------------------------------------------------------------------------
@@ -260,8 +269,8 @@ impl ProposedBlock {
     /// Creates a new proposed block from the provided [`BlockInputs`] and transaction batches.
     ///
     /// Equivalent to [`ProposedBlock::new_at`] except that the timestamp of the proposed block is
-    /// set to the current system time or the previous block header's timestamp + 1, whichever
-    /// is greater. This guarantees that the timestamp increases monotonically.
+    /// set to the current system time, or to one second after the previous block header's
+    /// timestamp if the system time is not later than it.
     ///
     /// See the [`ProposedBlock::new_at`] for details on errors and other constraints.
     #[cfg(feature = "std")]
@@ -276,7 +285,8 @@ impl ProposedBlock {
             .try_into()
             .expect("timestamp should fit in a u32 before the year 2106");
 
-        let timestamp = timestamp_now.max(block_inputs.prev_block_header().timestamp() + 1);
+        let previous_timestamp = block_inputs.prev_block_header().timestamp();
+        let timestamp = select_block_timestamp(timestamp_now, previous_timestamp)?;
 
         Self::new_at(block_inputs, batches, timestamp)
     }
@@ -615,6 +625,24 @@ fn check_duplicate_batches(batches: &[ProvenBatch]) -> Result<(), ProposedBlockE
     Ok(())
 }
 
+fn check_duplicate_transactions(batches: &[ProvenBatch]) -> Result<(), ProposedBlockError> {
+    let mut transaction_ids = BTreeSet::new();
+    for transaction in batches.iter().flat_map(|batch| batch.transactions().as_slice()) {
+        if !transaction_ids.insert(transaction.id()) {
+            return Err(ProposedBlockError::DuplicateTransaction(transaction.id()));
+        }
+    }
+    Ok(())
+}
+
+fn check_public_logs(batches: &[ProvenBatch]) -> Result<(), TransactionLogError> {
+    PublicTransactionLogs::check_num_content_words(
+        batches
+            .iter()
+            .flat_map(|batch| batch.public_logs().entries().iter().map(|(_, logs)| logs)),
+    )
+}
+
 fn check_timestamp_increases_monotonically(
     provided_timestamp: u32,
     prev_block_header: &BlockHeader,
@@ -627,6 +655,21 @@ fn check_timestamp_increases_monotonically(
     } else {
         Ok(())
     }
+}
+
+#[cfg(feature = "std")]
+fn select_block_timestamp(
+    timestamp_now: u32,
+    previous_timestamp: u32,
+) -> Result<u32, ProposedBlockError> {
+    let min_timestamp = previous_timestamp.checked_add(1).ok_or(
+        ProposedBlockError::TimestampDoesNotIncreaseMonotonically {
+            provided_timestamp: previous_timestamp,
+            previous_timestamp,
+        },
+    )?;
+
+    Ok(timestamp_now.max(min_timestamp))
 }
 
 /// Checks whether any of the batches is expired and can no longer be included in this block.
@@ -987,6 +1030,38 @@ mod tests {
 
     use super::*;
     use crate::block::nullifier_tree::NullifierTree;
+
+    #[cfg(feature = "std")]
+    #[rstest]
+    #[case::before_previous_timestamp(50, 100, 101)]
+    #[case::equal_to_previous_timestamp(100, 100, 101)]
+    #[case::after_previous_timestamp(150, 100, 150)]
+    #[case::long_after_previous_timestamp(100 + 365 * 24 * 60 * 60, 100, 100 + 365 * 24 * 60 * 60)]
+    #[case::near_u32_max(u32::MAX, u32::MAX - 100, u32::MAX)]
+    fn block_timestamp_is_at_least_one_after_previous_timestamp(
+        #[case] timestamp_now: u32,
+        #[case] previous_timestamp: u32,
+        #[case] expected_timestamp: u32,
+    ) {
+        assert_eq!(
+            select_block_timestamp(timestamp_now, previous_timestamp).unwrap(),
+            expected_timestamp
+        );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn block_timestamp_is_rejected_when_no_later_timestamp_exists() {
+        let error = select_block_timestamp(u32::MAX, u32::MAX).unwrap_err();
+
+        assert_matches!(
+            error,
+            ProposedBlockError::TimestampDoesNotIncreaseMonotonically {
+                provided_timestamp: u32::MAX,
+                previous_timestamp: u32::MAX,
+            }
+        );
+    }
 
     #[rstest]
     #[case::before_inputs(1)]

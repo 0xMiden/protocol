@@ -40,6 +40,9 @@ const PRESENT_VALUE: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::
 /// have been proven against an older tree root.
 ///
 /// Procedure roots are arbitrary hashes and so multiple of them can map to the same leaf.
+/// Eidos-derived roots have a zero high bit in the index limb and occupy the lower 2^63 leaf
+/// positions of the depth-64 tree. Leaves retain full procedure roots to distinguish index
+/// collisions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeTree<Backend = Smt> {
     smt: Backend,
@@ -74,12 +77,7 @@ where
     /// Returns an error if:
     /// - the SMT contains a value that does not mark a procedure root as present.
     pub fn new(backend: Backend) -> Result<Self, CodeTreeError> {
-        if let Some((key, value)) = backend.entries().find(|(_, value)| *value != PRESENT_VALUE) {
-            return Err(CodeTreeError::InvalidLeafValue {
-                procedure_root: ProcedureRoot::from_raw(key),
-                value,
-            });
-        }
+        validate_code_tree_entries(backend.entries())?;
 
         Ok(Self::new_unchecked(backend))
     }
@@ -282,6 +280,22 @@ impl CodeMutationSet {
     /// Consumes self and returns the underlying [`MutationSet`].
     pub fn into_mutation_set(self) -> MutationSet<SMT_DEPTH, Word, Word> {
         self.mutation_set
+    }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Validates that every value marks its procedure root as present.
+fn validate_code_tree_entries(
+    entries: impl IntoIterator<Item = (Word, Word)>,
+) -> Result<(), CodeTreeError> {
+    match entries.into_iter().find(|(_, value)| *value != PRESENT_VALUE) {
+        Some((key, value)) => Err(CodeTreeError::InvalidLeafValue {
+            procedure_root: ProcedureRoot::from_raw(key),
+            value,
+        }),
+        None => Ok(()),
     }
 }
 

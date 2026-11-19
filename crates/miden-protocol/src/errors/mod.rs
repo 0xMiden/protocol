@@ -9,7 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::utils::HexParseError;
 use miden_processor::ExecutionError;
-use miden_verifier::VerificationError;
+use miden_verifier::{HashFunction, VerificationError};
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
@@ -41,7 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::code_tree::{CodePatch, CodePatchCommitment};
+use crate::block::code_tree::{CodePatch, CodePatchCommitment, CodeTreeRoot};
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::code::ProcedureRoot;
 use crate::note::{
@@ -650,6 +650,9 @@ pub enum BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum BlockBodyError {
+    /// Public log contents or aggregate limits are invalid.
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
     TooManyAccountUpdates(usize),
     #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
@@ -1030,6 +1033,15 @@ pub enum TransactionInputError {
     },
     #[error("transaction inputs contain no account {0} to add a witness to")]
     WitnessForUnknownAccount(AccountId),
+    #[error("code witness does not fit the code tree of the reference block")]
+    InvalidCodeWitness(#[source] Box<CodeTreeError>),
+    #[error(
+        "code tree has root {actual} which does not match the block header's code tree root {expected}"
+    )]
+    InconsistentCodeTreeRoot {
+        expected: CodeTreeRoot,
+        actual: CodeTreeRoot,
+    },
     #[error("partial blockchain has length {actual} which does not match block number {expected}")]
     InconsistentChainLength {
         expected: BlockNumber,
@@ -1342,6 +1354,9 @@ impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    /// Public log contents or aggregate limits are invalid.
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("failed to verify transaction {transaction_id} in transaction batch")]
     TransactionVerificationFailed {
         transaction_id: TransactionId,
@@ -1463,6 +1478,8 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("transaction batch must contain at least one transaction")]
     EmptyTransactionBatch,
     #[error("transaction {0} appears twice in the proven batch")]
@@ -1562,6 +1579,8 @@ pub enum BlockOutputError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBlockError {
+    #[error("invalid public transaction logs")]
+    TransactionLogs(#[from] TransactionLogError),
     #[error("block must contain at least one transaction batch")]
     EmptyBlock,
 
@@ -1579,6 +1598,9 @@ pub enum ProposedBlockError {
 
     #[error("batch {batch_id} appears twice in the block inputs")]
     DuplicateBatch { batch_id: BatchId },
+
+    #[error("transaction {0} appears in more than one batch")]
+    DuplicateTransaction(TransactionId),
 
     #[error(
         "batch {second_batch_id} consumes the note with nullifier {note_nullifier} that is also consumed by another batch {first_batch_id} in the block"
@@ -1831,7 +1853,7 @@ pub enum CodeTreeError {
         source: MerkleError,
     },
 
-    #[error("new tree root after code witness insertion does not match previous tree root")]
+    #[error("code witness root does not match the partial code tree root")]
     TreeRootConflict(#[source] MerkleError),
 
     #[error("failed to compute code tree mutations")]
@@ -1843,29 +1865,29 @@ pub enum CodeTreeError {
 
 #[derive(Debug, Error)]
 pub enum CodePatchError {
+    #[error(
+        "code patch has {0} created procedures, which exceeds the maximum of {max}",
+        max = CodePatch::MAX_ROOTS
+    )]
+    TooManyCreatedProcedures(usize),
+
+    #[error(
+        "code patch has {0} dependencies, which exceeds the maximum of {max}",
+        max = CodePatch::MAX_ROOTS
+    )]
+    TooManyDependencies(usize),
+
     #[error("created procedure {0} of code patch is duplicated")]
     DuplicateCreatedProcedure(ProcedureRoot),
 
     #[error("dependency {0} of code patch is duplicated")]
     DuplicateDependency(ProcedureRoot),
 
-    #[error("created procedure {0} is not a procedure root of the code patch MAST forest")]
-    CreatedProcedureNotInMastForest(ProcedureRoot),
-
-    #[error("procedure root {0} of the code patch MAST forest is not a created procedure")]
-    MastForestRootNotCreated(ProcedureRoot),
-
     #[error("dependency {0} of code patch is also a created procedure")]
     DependencyIsCreatedProcedure(ProcedureRoot),
 
     #[error("node {0} of the code patch MAST forest is not reachable from a created procedure")]
     UnreachableMastNode(Word),
-
-    #[error("external node {0} of the code patch MAST forest is not a dependency")]
-    ExternalNodeNotDependency(ProcedureRoot),
-
-    #[error("dependency {0} is not an external node of the code patch MAST forest")]
-    DependencyNotExternalNode(ProcedureRoot),
 
     #[error(
         "code patch of size {size} bytes exceeds maximum patch size of {max_size} bytes",
@@ -1911,6 +1933,11 @@ pub enum BoundSignatureError {
 
 #[derive(Debug, Error)]
 pub enum TransactionVerifierError {
+    #[error("transaction VM proof uses {actual:?}, but the protocol requires {expected:?}")]
+    UnsupportedVmProofHash {
+        actual: HashFunction,
+        expected: HashFunction,
+    },
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
     #[error("transaction proof contains settled precompile work")]

@@ -5,8 +5,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_crypto::hash::poseidon2::Poseidon2;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -17,9 +15,10 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::access::Pausable;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
@@ -172,10 +171,10 @@ fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
     value
 }
 
-/// Compute the Poseidon2 hash of the field data (used as the advice map key).
+/// Compute the Eidos hash of the field data (used as the advice map key).
 fn compute_field_hash(data: &[Word; 7]) -> Word {
     let felts = field_advice_map_value(data);
-    Poseidon2::hash_elements(&felts)
+    Hasher::hash_elements(&felts)
 }
 
 /// Execute a tx script against the given account and assert success.
@@ -690,7 +689,7 @@ async fn test_field_setter_owner_succeeds(
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -754,7 +753,7 @@ async fn test_field_setter_non_owner_fails(
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -927,7 +926,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -979,7 +978,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())

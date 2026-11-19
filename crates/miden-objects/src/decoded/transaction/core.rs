@@ -82,14 +82,7 @@ impl Verify for CodePatch {
     type Verified = miden_protocol::block::code_tree::CodePatch;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let created_procedures =
-            self.created_procedures.map(miden_protocol::code::ProcedureRoot::from_raw);
-        let dependencies = self.dependencies.map(miden_protocol::code::ProcedureRoot::from_raw);
-        Ok(Self::Verified::new(
-            created_procedures,
-            dependencies,
-            alloc::sync::Arc::new(self.mast.verify()?),
-        )?)
+        Ok(Self::Verified::new(alloc::sync::Arc::new(self.mast.verify()?))?)
     }
 }
 

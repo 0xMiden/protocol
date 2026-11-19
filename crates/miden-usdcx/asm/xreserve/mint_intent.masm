@@ -5,7 +5,7 @@
 
 use miden::protocol::active_account
 use miden::standards::utils
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
 # CONSTANTS — storage slots
 # =================================================================================================
@@ -103,7 +103,7 @@ end
 
 #! Hashes the carried nonce into its canonical Word.
 #!
-#! Computes the Poseidon2 hash over the nonce's 8 u32-LE-packed limbs. The output is the raw
+#! Computes the Eidos hash over the nonce's 8 u32-LE-packed limbs. The output is the raw
 #! storage-map key the nonce registry is keyed by, and the serial of the note the mint emits.
 #!
 #! Inputs:  [NONCE_LOWER, NONCE_UPPER]
@@ -117,9 +117,9 @@ end
 #!
 #! Invocation: exec
 pub proc hash_nonce
-    # poseidon2::merge absorbs the top word first, so NONCE_LOWER (wire bytes 0..16) becomes the
-    # first rate word: HASHED_NONCE = Poseidon2(NONCE_LOWER || NONCE_UPPER).
-    exec.poseidon2::merge
+    # eidos::hash_double_word absorbs the top word first, so NONCE_LOWER (wire bytes 0..16) becomes the
+    # first block word: HASHED_NONCE = Eidos(NONCE_LOWER || NONCE_UPPER).
+    exec.eidos::hash_double_word
     # => [HASHED_NONCE]
 end
 

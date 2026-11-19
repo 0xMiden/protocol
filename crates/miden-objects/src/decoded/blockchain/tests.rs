@@ -140,11 +140,14 @@ fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
     let expected = BlockBody::default();
 
     assert_eq!(
-        proto::blockchain::BlockBody::default()
-            .decode_fields()
-            .unwrap()
-            .build_unchecked()
-            .unwrap(),
+        proto::blockchain::BlockBody {
+            public_logs: Some(Default::default()),
+            ..Default::default()
+        }
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .unwrap(),
         expected
     );
 }
@@ -317,5 +320,14 @@ fn partial_blockchain_verifies_nested_mmr() {
     assert_matches!(
         error_source::<PartialMmrError>(&error),
         Some(PartialMmrError::Position { position: 2, size: 2 })
+    );
+}
+
+#[test]
+fn block_body_requires_public_logs_field() {
+    let error = proto::blockchain::BlockBody::default().decode_fields().unwrap_err();
+    assert_eq!(
+        alloc::format!("{error}"),
+        "public_logs: field miden_objects::proto::blockchain::BlockBody::public_logs is missing"
     );
 }

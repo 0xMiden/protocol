@@ -79,14 +79,7 @@ impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
 
 impl From<&CodePatch> for proto::transaction::CodePatch {
     fn from(value: &CodePatch) -> Self {
-        Self {
-            created_procedures: value
-                .created_procedures()
-                .map(|root| root.as_word().into())
-                .collect(),
-            dependencies: value.dependencies().map(|root| root.as_word().into()).collect(),
-            mast: Some(value.mast().as_ref().into()),
-        }
+        Self { mast: Some(value.mast().as_ref().into()) }
     }
 }
 

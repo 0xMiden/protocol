@@ -6,7 +6,7 @@ use miden_processor::ExecutionError;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_IS_NOT_NATIVE,
@@ -70,13 +70,13 @@ fn build_victim_p2id_note(target: AccountId, asset: Asset) -> anyhow::Result<Not
         .target(target)
         .asset(asset)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([2, 2, 2, 2u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([2, 2, 2, 2u32])))
         .build()
         .map(Note::from)?)
 }
 
 fn build_attacker_output_note(sender: AccountId, asset: Asset) -> anyhow::Result<Note> {
-    Ok(NoteBuilder::new(sender, RandomCoin::new(Word::from([3, 3, 3, 3u32])))
+    Ok(NoteBuilder::new(sender, EidosRandomCoin::new(Word::from([3, 3, 3, 3u32])))
         .note_type(NoteType::Public)
         .add_assets([asset])
         .build()?)
@@ -85,7 +85,7 @@ fn build_attacker_output_note(sender: AccountId, asset: Asset) -> anyhow::Result
 fn build_malicious_note(code: String) -> anyhow::Result<Note> {
     Ok(NoteBuilder::new(
         ACCOUNT_ID_SENDER.try_into()?,
-        RandomCoin::new(Word::from([1, 1, 1, 1u32])),
+        EidosRandomCoin::new(Word::from([1, 1, 1, 1u32])),
     )
     .note_type(NoteType::Public)
     .code(code)
@@ -97,7 +97,7 @@ fn build_malicious_note(code: String) -> anyhow::Result<Note> {
 /// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
 fn two_note_tx() -> anyhow::Result<MockTransaction> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let bare_note = NoteBuilder::new(account.id(), &mut rng).build()?;
     let rich_note = NoteBuilder::new(account.id(), &mut rng)
@@ -857,7 +857,7 @@ async fn test_malicious_note_cannot_remove_assets_via_foreign_account() -> anyho
 
     let malicious_note = NoteBuilder::new(
         ACCOUNT_ID_SENDER.try_into()?,
-        RandomCoin::new(Word::from([1, 1, 1, 1u32])),
+        EidosRandomCoin::new(Word::from([1, 1, 1, 1u32])),
     )
     .note_type(NoteType::Public)
     .script(malicious_note_script)
@@ -905,7 +905,7 @@ async fn test_tx_script_cannot_remove_input_note_assets_by_index(
     // a note with a no-op script that does not touch its own assets
     let note = NoteBuilder::new(
         ACCOUNT_ID_SENDER.try_into()?,
-        RandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
     .note_type(NoteType::Public)
     .add_assets([asset])
@@ -1022,7 +1022,7 @@ async fn test_get_asset_from_active_and_input_note() -> anyhow::Result<()> {
     "#
     );
 
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let sender = ACCOUNT_ID_SENDER.try_into()?;
 
     // filler note consumed at index 0; it has no assets and a no-op script

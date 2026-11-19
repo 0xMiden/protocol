@@ -37,10 +37,10 @@ pub const EMPTY_STORAGE_MAP_ROOT: Word = *EmptySubtreeRoots::entry(StorageMap::D
 ///
 /// Because the keys of the map are user-chosen and thus not necessarily uniformly distributed, the
 /// tree could be imbalanced and made less efficient. To mitigate that, the keys used in the
-/// storage map are hashed before they are inserted into the SMT, which creates a uniform
-/// distribution. The original keys are retained in a separate map. This causes redundancy but
-/// allows for introspection of the map, e.g. by querying the set of stored (original) keys which is
-/// useful in debugging and explorer scenarios.
+/// storage map are hashed before they are inserted into the SMT. Eidos clears the index limb's
+/// high bit, so hashed keys occupy the lower 2^63 leaf positions in the depth-64 tree. Distinct
+/// hashed keys can share a leaf and are stored there in full. The original keys are retained in a
+/// separate map for introspection, such as listing them in debugging tools or explorers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMap {
     /// The SMT where each key is the hashed original key.

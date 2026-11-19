@@ -255,7 +255,7 @@ mod tests {
     fn approver(seed: u32) -> Approver {
         Approver::new(
             PublicKeyCommitment::from(Word::from([seed, seed, seed, seed])),
-            auth::AuthScheme::Falcon512Poseidon2,
+            auth::AuthScheme::Falcon512Eidos,
         )
     }
 

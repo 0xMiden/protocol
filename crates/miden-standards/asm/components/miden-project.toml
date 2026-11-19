@@ -6,6 +6,7 @@ members = [
   "access/pausable_manager",
   "access/rbac",
   "auth/guarded_multisig",
+  "auth/hot_cold_guardian",
   "auth/multisig",
   "auth/multisig_smart",
   "auth/network_account",
@@ -39,6 +40,6 @@ members = [
 version = "1.0.0-rc.1"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.36" }
+miden-core      = { linkage = "dynamic", version = "1.0.0-rc.1" }
 miden-protocol  = { linkage = "dynamic", version = "1.0.0-rc.1" }
 miden-standards = { linkage = "dynamic", version = "1.0.0-rc.1" }

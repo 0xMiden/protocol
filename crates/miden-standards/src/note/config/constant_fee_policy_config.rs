@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -20,6 +19,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
 use crate::note::NetworkAccountTarget;
@@ -234,11 +234,11 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> ConstantFeePolicyConfigNoteBuilder<
         constant_fee_policy_config_note_builder::SetSerialNumber<S>,
     > {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -278,7 +278,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
     use miden_protocol::note::NoteAttachmentScheme;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
@@ -302,7 +302,7 @@ mod tests {
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
     fn builder_builds_constant_fee_policy_config_note() {
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         let account = account_id(1);
         let sender = account_id(2);
 

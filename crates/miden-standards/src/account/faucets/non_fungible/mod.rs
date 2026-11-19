@@ -432,7 +432,7 @@ impl NonFungibleFaucet {
     /// such as `owner_only` rather than `allow_all`; the policy hook receives the full asset value.
     pub fn compute_asset_commitment(user_data: &[u8], salt: Word) -> Word {
         let data_digest = Hasher::hash(user_data);
-        Hasher::merge(&[data_digest, salt])
+        Hasher::hash_double_word(&[data_digest, salt])
     }
 
     /// Reads the issuance [`AssetStatus`] of the token ID derived from `asset_commitment` (the
@@ -708,6 +708,12 @@ pub fn create_guarded_user_non_fungible_faucet(
 /// the faucet can be funded by a P2ID note; the builder also allowlists the canonical expiration
 /// setter ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
 /// network can bound its own transactions' expiry.
+///
+/// The note allowlist does not cover the config notes of the installed components, so none of
+/// them can be consumed by a newly created faucet. Before relying on one, for example on an
+/// [`AuthorityConfigNote`](crate::note::config::AuthorityConfigNote) for the emergency freeze, an
+/// administrator must allowlist its script root through a
+/// [`NetworkAccountConfigNote`](crate::note::config::NetworkAccountConfigNote).
 ///
 /// # Errors
 ///

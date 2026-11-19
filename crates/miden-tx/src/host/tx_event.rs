@@ -89,6 +89,10 @@ pub(crate) enum TransactionEvent {
         delta: AssetDelta,
     },
 
+    AccountPushPatchCommitmentBodyBlockCount,
+
+    AccountPushDeltaCommitmentBodyBlockCount,
+
     AccountStorageAfterSetItem {
         slot_name: StorageSlotName,
         new_value: Word,
@@ -319,6 +323,12 @@ impl TransactionEvent {
                     delta: AssetDelta::new(delta_op, asset),
                 }
             }),
+            TransactionEventId::AccountPushPatchCommitmentBodyBlockCount => {
+                Some(TransactionEvent::AccountPushPatchCommitmentBodyBlockCount)
+            },
+            TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount => {
+                Some(TransactionEvent::AccountPushDeltaCommitmentBodyBlockCount)
+            },
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
                 // [event, ASSET_ID, vault_root_ptr]

@@ -4,7 +4,7 @@ use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED,
@@ -32,6 +32,7 @@ use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
+use rand::RngExt;
 use rstest::rstest;
 
 use super::StackInputs;
@@ -57,9 +58,8 @@ async fn test_active_note_accessor_fails_from_tx_script(
 ) -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let p2id_note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -210,7 +210,7 @@ async fn test_active_note_is_public_and_is_private(
     let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let mut rng = RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let input_note = create_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             note_type,
@@ -298,7 +298,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
     let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
+        let mut rng = EidosRandomCoin::new(Word::default());
         let input_note = crate::utils::create_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             note_type,
@@ -374,9 +374,8 @@ async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -519,14 +518,112 @@ async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Dispatches `input_note_remove_all_assets` through `exec_kernel_proc` with a fully specified
+/// input stack and asserts the value of every returned stack slot, on both the populated and the
+/// already-emptied scan paths.
+///
+/// This pins the kernel procedure's stack effect at the syscall boundary. A kernel procedure that
+/// pops at the operand-stack floor of the kernel context mints a zero and shifts its stack effect
+/// by one; the VM only rejects this at the syscall's END (`InvalidStackDepthOnReturn`), far from
+/// the cause and without a source span. Any leak here fails this test directly.
+#[tokio::test]
+async fn test_active_note_remove_all_assets_returns_clean_stack() -> anyhow::Result<()> {
+    let mock_tx = {
+        let mut builder = MockChain::builder();
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+        let p2id_note = builder.add_p2id_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            account.id(),
+            &[FungibleAsset::mock(150)],
+            NoteType::Public,
+        )?;
+        let mut mock_chain = builder.build()?;
+        mock_chain.prove_next_block()?;
+
+        mock_chain
+            .build_transaction(account.id())
+            .unauthenticated_input_note(p2id_note)
+            .build()?
+    };
+    assert_eq!(mock_tx.input_notes().get_note(0).note().assets().num_assets(), 1);
+
+    fn construct_removal_check(num_expected_assets: usize) -> String {
+        format!(
+            r#"
+            # => [pad(16)]
+
+            # dispatch input_note_remove_all_assets against the active note with a fully
+            # specified input stack
+            drop drop push.1 push.INPUT_NOTE_REMOVE_ALL_ASSETS_OFFSET
+            # => [offset, is_active_note = 1, note_index = 0, pad(13)]
+
+            syscall.exec_kernel_proc
+            # => [ASSETS_COMMITMENT, num_assets, pad(11)]
+
+            dropw
+            eq.{num_expected_assets} assert.err="unexpected number of removed assets"
+            # => [pad(11)]
+
+            # every remaining returned stack slot must be zero
+            repeat.11
+                eq.0 assert.err="kernel procedure returned a dirty pad slot"
+            end
+            # => [pad(16)]
+            "#
+        )
+    }
+
+    let code = format!(
+        r#"
+        use miden::core::sys
+
+        use miden::tx_kernel_core::prologue
+        use miden::tx_kernel_core::note as note_internal
+        use {{INPUT_NOTE_REMOVE_ALL_ASSETS_OFFSET}} from miden::protocol::kernel_proc_offsets
+
+        proc check_first_removal
+            {FIRST_REMOVAL_CHECK}
+        end
+
+        proc check_second_removal
+            {SECOND_REMOVAL_CHECK}
+        end
+
+        begin
+            # prepare tx
+            exec.prologue::prepare_transaction
+
+            # prepare note 0
+            exec.note_internal::prepare_note
+
+            # clean the stack
+            dropw dropw dropw dropw
+
+            # the note's asset is removed on the first call; the second call scans only cleared
+            # asset slots and must return the same stack shape with no assets
+            call.check_first_removal
+            call.check_second_removal
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        FIRST_REMOVAL_CHECK = construct_removal_check(1),
+        SECOND_REMOVAL_CHECK = construct_removal_check(0),
+    );
+
+    mock_tx.execute_code(&code).await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_active_note_get_storage() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -628,7 +725,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     )?;
 
     // prepare note data
-    let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
+    let serial_num = EidosRandomCoin::new(Word::from([4u32; 4])).random();
     let tag = NoteTag::with_account_target(target_id);
     let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
@@ -688,9 +785,8 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
 async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -730,9 +826,8 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -798,7 +893,7 @@ async fn test_note_find_attachment(
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
-        let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+        let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
         // Add a random first note so we test with note_index != 0.
         let input_note0 = NoteBuilder::new(account.id(), &mut rng).build()?;
         let input_note1 = NoteBuilder::new(account.id(), &mut rng)

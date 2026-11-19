@@ -11,7 +11,7 @@ use {Asset, AssetAmount, AssetId, Bool, NoteId} from miden::protocol::types
 # network account, creates a paired FEE_SPONSORSHIP note funded with the fee that account charges.
 
 use miden::core::word
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
 use miden::protocol::input_note
 use miden::protocol::native_account
@@ -336,6 +336,87 @@ pub proc create_network_note_sponsorships(fee_asset_id: AssetId) -> felt
 
     drop drop dropw
     # => [total_sponsored_fee_amount]
+end
+
+#! Prices every network output note in this transaction without creating sponsorship notes.
+#!
+#! Walks the output notes like create_network_note_sponsorships and asks each network note's
+#! target account what the note costs via the same FPI call, but creates nothing and does not
+#! check the fee asset: the result only estimates what create_network_note_sponsorships would
+#! move into sponsorship notes.
+#!
+#! Inputs:  []
+#! Outputs: [num_sponsored_notes, total_sponsored_fee_amount]
+#!
+#! Where:
+#! - num_sponsored_notes is the number of sponsorship notes create_network_note_sponsorships
+#!   would create, i.e. the number of network output notes priced to a non-zero fee.
+#! - total_sponsored_fee_amount is the total amount it would move into them.
+#!
+#! Panics if:
+#! - a network output note's target ID attachment does not consist of exactly one word.
+#! - the target account's fee policy requires a network output note's recipient preimage and it
+#!   is unavailable or does not hash to the recipient.
+#! - the target account's active fee policy is not set.
+#!
+#! Invocation: exec
+pub proc estimate_network_note_sponsorships() -> (u16, AssetAmount)
+    push.0.0
+    # => [num_sponsored_notes = 0, total_sponsored_fee_amount = 0]
+
+    exec.tx::get_num_output_notes push.0
+    # => [note_idx = 0, num_output_notes, num_sponsored_notes, total_sponsored_fee_amount]
+
+    dup.1 dup.1 neq
+    # => [should_loop, note_idx, num_output_notes, num_sponsored_notes, total_sponsored_fee_amount]
+
+    while.true
+        # only network output notes are sponsored
+        dup exec.is_network_note
+        # => [is_network_note, attachment_idx, note_idx, num_output_notes, num_sponsored_notes,
+        #     total_sponsored_fee_amount]
+
+        if.true
+            dup.1
+            # => [note_idx, attachment_idx, note_idx, num_output_notes, num_sponsored_notes,
+            #     total_sponsored_fee_amount]
+
+            exec.compute_sponsorship_fee
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx, num_output_notes,
+            #     num_sponsored_notes, total_sponsored_fee_amount]
+
+            exec.fungible_asset::to_amount_unchecked
+            # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx,
+            #     num_output_notes, num_sponsored_notes, total_sponsored_fee_amount]
+
+            movdn.9 dropw dropw drop
+            # => [fee_amount, note_idx, num_output_notes, num_sponsored_notes,
+            #     total_sponsored_fee_amount]
+
+            # a note priced to zero gets no sponsorship note
+            dup neq.0 movup.4 add movdn.3
+            # => [fee_amount, note_idx, num_output_notes, num_sponsored_notes',
+            #     total_sponsored_fee_amount]
+
+            movup.4 add movdn.3
+            # => [note_idx, num_output_notes, num_sponsored_notes', total_sponsored_fee_amount']
+        else
+            # do not sponsor non-network output notes
+            drop
+            # => [note_idx, num_output_notes, num_sponsored_notes, total_sponsored_fee_amount]
+        end
+
+        add.1
+        # => [note_idx+1, num_output_notes, num_sponsored_notes, total_sponsored_fee_amount]
+
+        dup.1 dup.1 neq
+        # => [should_loop, note_idx, num_output_notes, num_sponsored_notes,
+        #     total_sponsored_fee_amount]
+    end
+    # => [note_idx, num_output_notes, num_sponsored_notes, total_sponsored_fee_amount]
+
+    drop drop
+    # => [num_sponsored_notes, total_sponsored_fee_amount]
 end
 
 # HELPER PROCEDURES
@@ -794,7 +875,7 @@ proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx:
     loc_storew_le.CREATE_FEATURE_NOTE_ID_LOC
     # => [FEATURE_NOTE_ID]
 
-    exec.poseidon2::hash
+    exec.eidos::hash
     # => [SERIAL_NUM]
 
     push.NOTE_TYPE_PUBLIC

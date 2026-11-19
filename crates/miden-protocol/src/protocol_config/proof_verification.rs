@@ -209,8 +209,7 @@ mod tests {
 
     #[test]
     fn to_elements_is_pipeable() {
-        // The kernel pipes the protocol config into memory, which requires the element count of
-        // every nested preimage to be a multiple of the hasher's rate width.
+        // The kernel pipes the protocol config into memory as complete Eidos compression blocks.
         assert_eq!(config().to_elements().len(), 16);
     }
 

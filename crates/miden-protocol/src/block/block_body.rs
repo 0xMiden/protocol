@@ -13,7 +13,12 @@ use crate::block::{
 };
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote, TransactionHeader};
+use crate::transaction::{
+    OrderedTransactionHeaders,
+    OutputNote,
+    PublicTransactionLogs,
+    TransactionHeader,
+};
 use crate::{
     MAX_ACCOUNTS_PER_BLOCK,
     MAX_BATCHES_PER_BLOCK,
@@ -39,6 +44,7 @@ pub struct BlockBody {
     /// The transaction headers of each batch, in the order in which the batches appeared in the
     /// proposed block.
     transactions: Vec<OrderedTransactionHeaders>,
+    public_logs: PublicTransactionLogs,
 }
 
 impl BlockBody {
@@ -63,6 +69,7 @@ impl BlockBody {
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
         transactions: Vec<OrderedTransactionHeaders>,
+        public_logs: PublicTransactionLogs,
     ) -> Result<Self, BlockBodyError> {
         if transactions.len() > MAX_BATCHES_PER_BLOCK {
             return Err(BlockBodyError::TooManyTransactionBatches(transactions.len()));
@@ -143,11 +150,14 @@ impl BlockBody {
             }
         }
 
+        public_logs.validate(transactions.iter().flat_map(OrderedTransactionHeaders::as_slice))?;
+
         Ok(Self::new_unchecked(
             updated_accounts,
             output_note_batches,
             created_nullifiers,
             transactions,
+            public_logs,
         ))
     }
 
@@ -162,12 +172,14 @@ impl BlockBody {
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
         transactions: Vec<OrderedTransactionHeaders>,
+        public_logs: PublicTransactionLogs,
     ) -> Self {
         Self {
             updated_accounts,
             output_note_batches,
             created_nullifiers,
             transactions,
+            public_logs,
         }
     }
 
@@ -193,6 +205,11 @@ impl BlockBody {
     /// order in which the batches appear in the block.
     pub fn transactions(&self) -> &[OrderedTransactionHeaders] {
         &self.transactions
+    }
+
+    /// Returns complete public logs in transaction order.
+    pub fn public_logs(&self) -> &PublicTransactionLogs {
+        &self.public_logs
     }
 
     /// Returns an iterator over the transaction headers of all batches in this block, in block
@@ -264,19 +281,21 @@ impl BlockBody {
         Vec<OutputNoteBatch>,
         Vec<Nullifier>,
         Vec<OrderedTransactionHeaders>,
+        PublicTransactionLogs,
     ) {
         (
             self.updated_accounts,
             self.output_note_batches,
             self.created_nullifiers,
             self.transactions,
+            self.public_logs,
         )
     }
 }
 
 impl Default for BlockBody {
     fn default() -> Self {
-        BlockBody::new_unchecked(vec![], vec![], vec![], vec![])
+        BlockBody::new_unchecked(vec![], vec![], vec![], vec![], PublicTransactionLogs::default())
     }
 }
 
@@ -303,13 +322,14 @@ impl From<ProposedBlock> for BlockBody {
             })
             .collect();
         let created_nullifiers = created_nullifiers.keys().copied().collect::<Vec<_>>();
-        // Keep the verified transactions of each batch.
-        let transactions = batches.into_transactions();
+        // Preserve batch grouping while aggregating public logs in transaction order.
+        let (transactions, public_logs) = batches.into_transactions_and_logs();
         Self {
             updated_accounts,
             output_note_batches,
             created_nullifiers,
             transactions,
+            public_logs,
         }
     }
 }
@@ -339,6 +359,7 @@ mod tests {
         InputNotes,
         OrderedTransactionHeaders,
         OutputNote,
+        PublicTransactionLogs,
         RawOutputNote,
         TransactionHeader,
     };
@@ -437,7 +458,11 @@ mod tests {
         let (updated_accounts, transactions) =
             public_account_body_parts(&account, initial_state_commitment, final_state_commitment)?;
 
-        BlockBody::new(updated_accounts, vec![], vec![], transactions)?;
+        {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(updated_accounts, vec![], vec![], embedded_headers, embedded_logs)
+        }?;
 
         Ok(())
     }
@@ -450,7 +475,11 @@ mod tests {
             public_account_body_parts(&account, Word::empty(), final_state_commitment)?;
         let account_commitment = account.to_commitment();
 
-        let result = BlockBody::new(updated_accounts, vec![], vec![], transactions);
+        let result = {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(updated_accounts, vec![], vec![], embedded_headers, embedded_logs)
+        };
 
         assert_matches!(
             result,
@@ -495,7 +524,12 @@ mod tests {
             .unwrap(),
         ])];
 
-        BlockBody::new(vec![], vec![], created_nullifiers, transactions).unwrap();
+        {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(vec![], vec![], created_nullifiers, embedded_headers, embedded_logs)
+        }
+        .unwrap();
     }
 
     #[rstest]
@@ -523,7 +557,12 @@ mod tests {
             .unwrap(),
         ])];
 
-        BlockBody::new(vec![], output_notes, vec![], transactions).unwrap();
+        {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(vec![], output_notes, vec![], embedded_headers, embedded_logs)
+        }
+        .unwrap();
     }
 
     #[test]
@@ -544,12 +583,17 @@ mod tests {
             .unwrap(),
         ])];
 
-        BlockBody::new(
-            vec![],
-            vec![vec![(0, into_output_note(output_note))]],
-            vec![input_note.nullifier()],
-            transactions,
-        )
+        {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(
+                vec![],
+                vec![vec![(0, into_output_note(output_note))]],
+                vec![input_note.nullifier()],
+                embedded_headers,
+                embedded_logs,
+            )
+        }
         .unwrap();
     }
 
@@ -559,7 +603,17 @@ mod tests {
         let nullifier = note.nullifier();
         let transactions = vec![];
 
-        let result = BlockBody::new(vec![], vec![], vec![nullifier, nullifier], transactions);
+        let result = {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(
+                vec![],
+                vec![],
+                vec![nullifier, nullifier],
+                embedded_headers,
+                embedded_logs,
+            )
+        };
 
         assert_matches!(
             result,
@@ -573,12 +627,17 @@ mod tests {
         let output_note = into_output_note(note.clone());
         let transactions = vec![];
 
-        let result = BlockBody::new(
-            vec![],
-            vec![vec![(0, output_note.clone()), (1, output_note)]],
-            vec![],
-            transactions,
-        );
+        let result = {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(
+                vec![],
+                vec![vec![(0, output_note.clone()), (1, output_note)]],
+                vec![],
+                embedded_headers,
+                embedded_logs,
+            )
+        };
 
         assert_matches!(
             result,
@@ -608,12 +667,17 @@ mod tests {
             .unwrap(),
         ])];
 
-        BlockBody::new(
-            vec![],
-            vec![vec![(0, into_output_note(note.clone()))]],
-            vec![note.nullifier()],
-            transactions,
-        )
+        {
+            let (embedded_headers, embedded_logs) =
+                PublicTransactionLogs::mock_for_block(transactions);
+            BlockBody::new(
+                vec![],
+                vec![vec![(0, into_output_note(note.clone()))]],
+                vec![note.nullifier()],
+                embedded_headers,
+                embedded_logs,
+            )
+        }
         .unwrap();
     }
 
@@ -622,7 +686,7 @@ mod tests {
         let mut transactions = batches(&[&[1]]);
         transactions.push(OrderedTransactionHeaders::new_unchecked(vec![]));
 
-        let result = BlockBody::new(vec![], vec![], vec![], transactions);
+        let result = BlockBody::new(vec![], vec![], vec![], transactions, Default::default());
 
         assert_matches!(result, Err(BlockBodyError::EmptyTransactionBatch { batch_index: 1 }));
     }
@@ -632,7 +696,7 @@ mod tests {
         let transactions =
             vec![OrderedTransactionHeaders::new_unchecked(vec![]); MAX_BATCHES_PER_BLOCK + 1];
 
-        let result = BlockBody::new(vec![], vec![], vec![], transactions);
+        let result = BlockBody::new(vec![], vec![], vec![], transactions, Default::default());
 
         assert_matches!(
             result,
@@ -645,7 +709,7 @@ mod tests {
     fn rejects_duplicate_transaction_across_batches() {
         let transactions = batches(&[&[1], &[1]]);
 
-        let result = BlockBody::new(vec![], vec![], vec![], transactions);
+        let result = BlockBody::new(vec![], vec![], vec![], transactions, Default::default());
 
         assert_matches!(
             result,
@@ -654,12 +718,17 @@ mod tests {
         );
     }
 
+    fn body_with_batches(transactions: Vec<OrderedTransactionHeaders>) -> BlockBody {
+        let (transactions, logs) = PublicTransactionLogs::mock_for_block(transactions);
+        BlockBody::new(vec![], vec![], vec![], transactions, logs).unwrap()
+    }
+
     /// Regrouping the same transactions into different batches keeps the transaction commitment
     /// but changes the batches commitment.
     #[test]
     fn batch_grouping_determines_batches_commitment() {
-        let body_a = BlockBody::new(vec![], vec![], vec![], batches(&[&[1, 3], &[5]])).unwrap();
-        let body_b = BlockBody::new(vec![], vec![], vec![], batches(&[&[1], &[3, 5]])).unwrap();
+        let body_a = body_with_batches(batches(&[&[1, 3], &[5]]));
+        let body_b = body_with_batches(batches(&[&[1], &[3, 5]]));
 
         assert_eq!(
             body_a.compute_transactions_commitment(),

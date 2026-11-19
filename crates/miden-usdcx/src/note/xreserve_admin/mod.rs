@@ -29,7 +29,6 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -42,6 +41,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
+use rand::{Rng, RngExt};
 
 mod min_burn_amount;
 mod set_attester;
@@ -55,7 +55,7 @@ pub use set_attester::{XReserveSetAttesterNote, XReserveSetAttesterNoteStorage};
 /// commit; the metadata (PUBLIC, faucet-tagged), the serial draw, the empty asset set, and the
 /// routing attachment are identical. `sender` is the (kernel-forced) admin party the wrapped proc's
 /// gate reads.
-pub(super) fn build_admin_note<R: FeltRng>(
+pub(super) fn build_admin_note<R: Rng>(
     sender: AccountId,
     faucet_id: AccountId,
     script: NoteScript,
@@ -63,7 +63,7 @@ pub(super) fn build_admin_note<R: FeltRng>(
     rng: &mut R,
 ) -> Result<Note, NoteError> {
     let storage = NoteStorage::new(items)?;
-    let serial_num = rng.draw_word();
+    let serial_num = rng.random();
     let recipient = NoteRecipient::new(serial_num, script, storage);
     let metadata = PartialNoteMetadata::new(sender, NoteType::Public)
         .with_tag(NoteTag::with_account_target(faucet_id));

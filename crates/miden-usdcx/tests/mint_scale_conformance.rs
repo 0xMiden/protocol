@@ -28,8 +28,8 @@
 mod support;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId, StorageMapKey, StorageSlotName};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{NoteId, NoteType};
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
@@ -133,8 +133,8 @@ fn nonce_key_of_payload(payload: &[u8]) -> Word {
     Word::from(bytes32_to_storage_map_key(&nonce))
 }
 
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(3u32),

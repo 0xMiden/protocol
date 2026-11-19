@@ -22,13 +22,6 @@ const SCALE = 7
 const ORIGIN_NETWORK = 8
 const IS_NATIVE = 9
 const METADATA_HASH_LO_0 = 10
-const METADATA_HASH_LO_1 = 11
-const METADATA_HASH_LO_2 = 12
-const METADATA_HASH_LO_3 = 13
-const METADATA_HASH_HI_0 = 14
-const METADATA_HASH_HI_1 = 15
-const METADATA_HASH_HI_2 = 16
-const METADATA_HASH_HI_3 = 17
 
 # ERRORS
 # =================================================================================================

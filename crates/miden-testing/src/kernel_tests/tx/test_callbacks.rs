@@ -34,10 +34,11 @@ use miden_protocol::asset::{
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
-    ERR_OUTPUT_NOTE_IS_SEALED,
+    ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
 };
 use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
@@ -46,7 +47,7 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
-use miden_tx::TransactionKernelError;
+use miden_tx::{TransactionExecutorError, TransactionKernelError};
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
@@ -275,9 +276,7 @@ async fn test_faucet_without_callback_slot_skips_callback(
     }
 
     let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )?;
@@ -340,9 +339,7 @@ async fn test_faucet_with_invalid_callback_root_fails() -> anyhow::Result<()> {
         .with_component(component);
 
     let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )?;
@@ -685,98 +682,107 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     Ok(())
 }
 
-/// Tests that consuming a callbacks-enabled asset succeeds when the issuing faucet is itself the
-/// target of the callback.
+/// Tests that the note callback of a native faucet can call kernel procedures that do not modify
+/// account or note state.
 ///
-/// This is a regression test for https://github.com/0xMiden/protocol/issues/2864.
+/// The no-op case is a regression test for https://github.com/0xMiden/protocol/issues/2864.
 #[rstest::rstest]
-#[case::unsealed(false)]
-#[case::sealed_in_callback(true)]
+#[case::no_op("")]
+#[case::update_expiration_block_delta(
+    "push.10 exec.::miden::protocol::tx::update_expiration_block_delta"
+)]
+#[case::add_log("push.0.1.1.1 exec.::miden::protocol::tx::add_log_from_memory")]
 #[tokio::test]
-async fn test_faucet_with_callback_calls_itself(#[case] seal: bool) -> anyhow::Result<()> {
+async fn test_native_faucet_callback_can_call_non_mutating_kernel_procedures(
+    #[case] callback_body: &str,
+) -> anyhow::Result<()> {
+    mint_and_send_with_native_note_callback(callback_body).await??;
+
+    Ok(())
+}
+
+/// Tests that the note callback of a native faucet cannot modify account or note state.
+///
+/// Each case calls the kernel procedure with the callback inputs as its arguments, because the
+/// kernel rejects the call before it validates them.
+#[rstest::rstest]
+#[case::account_upgrade("exec.::miden::protocol::native_account::upgrade")]
+#[case::account_incr_nonce("exec.::miden::protocol::native_account::incr_nonce")]
+#[case::account_set_item("exec.::miden::protocol::native_account::set_item")]
+#[case::account_set_map_item("exec.::miden::protocol::native_account::set_map_item")]
+#[case::account_add_asset("exec.::miden::protocol::native_account::add_asset")]
+#[case::account_remove_asset("exec.::miden::protocol::native_account::remove_asset")]
+#[case::faucet_mint_asset("exec.::miden::protocol::faucet::mint")]
+#[case::faucet_burn_asset("exec.::miden::protocol::faucet::burn")]
+#[case::active_note_remove_asset("exec.::miden::protocol::active_note::remove_asset")]
+#[case::input_note_remove_asset("exec.::miden::protocol::input_note::remove_asset")]
+#[case::active_note_remove_all_assets(
+    "push.0 exec.::miden::protocol::active_note::remove_all_assets"
+)]
+#[case::input_note_remove_all_assets(
+    "push.0.0 exec.::miden::protocol::input_note::remove_all_assets"
+)]
+#[case::output_note_create("padw push.0.0 exec.::miden::protocol::output_note::create")]
+#[case::output_note_add_asset("exec.::miden::protocol::output_note::add_asset")]
+#[case::output_note_seal("dup.8 exec.::miden::protocol::output_note::seal")]
+#[case::output_note_add_attachment(
+    "dup.8 padw push.1 exec.::miden::protocol::output_note::add_word_attachment"
+)]
+#[tokio::test]
+async fn test_native_faucet_callback_cannot_modify_state(
+    #[case] callback_body: &str,
+) -> anyhow::Result<()> {
+    let result = mint_and_send_with_native_note_callback(callback_body).await?;
+
+    assert_transaction_executor_error!(result, ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK);
+
+    Ok(())
+}
+
+/// Tests that the account callback of a foreign faucet cannot remove assets from the active note.
+#[tokio::test]
+async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let account_callback_masm = r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
-        dropw dropw
+        exec.::miden::protocol::active_note::remove_asset
+        # => [REMAINING_ASSET_VALUE, pad(8)]
+
+        dropw
         # => [pad(16)]
     end
     "#;
 
-    // A native faucet callback can seal the note while add_asset is in progress.
-    let note_callback_masm = format!(
-        r#"
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [pad(16)]
-    @account_procedure
-    pub proc on_before_asset_added_to_note
-        dropw dropw
-        {finish_note}
-        # => [pad(16)]
-    end
-    "#,
-        finish_note = if seal {
-            "exec.::miden::protocol::output_note::seal"
-        } else {
-            "drop"
-        }
-    );
+    let faucet = add_faucet_with_callbacks(&mut builder, Some(account_callback_masm), None)?;
 
-    // Build an account with both callbacks.
-    let faucet = add_faucet_with_callbacks(
-        &mut builder,
-        Some(account_callback_masm),
-        Some(&note_callback_masm),
+    let fungible_asset = FungibleAsset::new(faucet.id(), 100)?;
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::from(fungible_asset)],
+        NoteType::Public,
     )?;
 
-    let recipient = Word::from([0, 1, 2, 3u32]);
-    let tag = 0u32;
-    let amount = 100u64;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
 
-    let tx_script_code = format!(
-        "
-        @transaction_script
-        pub proc main
-            push.{recipient}
-            push.{note_type}
-            push.{tag}
-            push.{amount}
-            push.{faucet_id_prefix}
-            push.{faucet_id_suffix}
-            # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
-            exec.::miden::standards::assets::fungible_asset::create
-            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
-
-            call.::miden::standards::faucets::fungible::mint_and_send
-            # => [note_idx, pad(15)]
-
-            # truncate the stack
-            dropw dropw dropw dropw
-        end
-        ",
-        note_type = NoteType::Private as u8,
-        faucet_id_suffix = faucet.id().suffix(),
-        faucet_id_prefix = faucet.id().prefix().as_felt(),
-    );
-
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
-
-    let mock_chain = builder.build()?;
     let result = mock_chain
-        .build_transaction(faucet.id())
-        .tx_script(tx_script)
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
+        .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
         .await;
-    if seal {
-        assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
-    } else {
-        result?;
-    }
+
+    assert_transaction_executor_error!(result, ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK);
 
     Ok(())
 }
@@ -856,12 +862,93 @@ fn add_faucet_with_block_list(
         .with_component(block_list);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )
+}
+
+/// Mints a callbacks-enabled asset from a faucet and sends it in a new output note, in a
+/// transaction against that faucet.
+///
+/// Adding the asset to the note invokes the faucet's note callback in the native account context,
+/// which runs `callback_body` on the callback inputs and then drops them.
+async fn mint_and_send_with_native_note_callback(
+    callback_body: &str,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+    let mut builder = MockChain::builder();
+
+    let account_callback_masm = r#"
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+    #! Outputs: [pad(16)]
+    @account_procedure
+    pub proc on_before_asset_added_to_account
+        dropw dropw
+        # => [pad(16)]
+    end
+    "#;
+
+    let note_callback_masm = format!(
+        r#"
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+    #! Outputs: [pad(16)]
+    @account_procedure
+    pub proc on_before_asset_added_to_note
+        {callback_body}
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+        dropw dropw drop
+        # => [pad(16)]
+    end
+    "#
+    );
+
+    let faucet = add_faucet_with_callbacks(
+        &mut builder,
+        Some(account_callback_masm),
+        Some(&note_callback_masm),
+    )?;
+
+    let recipient = Word::from([0, 1, 2, 3u32]);
+    let tag = 0u32;
+    let amount = 100u64;
+
+    let tx_script_code = format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            push.{amount}
+            push.{faucet_id_prefix}
+            push.{faucet_id_suffix}
+            # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
+
+            exec.::miden::standards::assets::fungible_asset::create
+            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
+
+            call.::miden::standards::faucets::fungible::mint_and_send
+            # => [note_idx, pad(15)]
+
+            # truncate the stack
+            dropw dropw dropw dropw
+        end
+        ",
+        note_type = NoteType::Private as u8,
+        faucet_id_suffix = faucet.id().suffix(),
+        faucet_id_prefix = faucet.id().prefix().as_felt(),
+    );
+
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let mock_chain = builder.build()?;
+    Ok(mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await)
 }
 
 /// Builds a fungible faucet with custom callback MASM code and adds it to the builder.
@@ -929,9 +1016,7 @@ fn add_faucet_with_callbacks(
         .with_component(callback_component);
 
     builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         account_builder,
         AccountState::Exists,
     )

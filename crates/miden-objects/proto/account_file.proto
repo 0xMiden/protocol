@@ -10,8 +10,8 @@ message AuthSecretKey {
   oneof key {
     // Canonically serialized ECDSA secp256k1 signing key.
     bytes ecdsa_k256_keccak = 1;
-    // Canonically serialized Falcon512-Poseidon2 secret key.
-    bytes falcon512_poseidon2 = 2;
+    // Canonically serialized Falcon512-Eidos secret key.
+    bytes falcon512_eidos = 2;
   }
 }
 

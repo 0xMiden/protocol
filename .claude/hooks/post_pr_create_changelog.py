@@ -91,9 +91,9 @@ def main() -> None:
             f"Changelog entry needed for PR #{pr_number}. Create "
             "`.changelog/unreleased/<name>.md`, where `<name>` is the last "
             "`/`-separated part of the branch name (e.g. `fix-foo` for "
-            "`mmagician-claude/fix-foo`). If that file already exists or the "
-            "name is all digits, pick another short name for the change. Give "
-            f"it the following content, then commit and push:\n\n{entry}"
+            "`mmagician-claude/fix-foo`). If that file already exists, pick "
+            "another short name for the change. Give it the following "
+            f"content, then commit and push:\n\n{entry}"
         )
         sys.exit(2)
 

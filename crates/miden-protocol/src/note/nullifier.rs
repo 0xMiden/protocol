@@ -80,6 +80,10 @@ impl Nullifier {
     /// Returns the prefix of this nullifier.
     ///
     /// Nullifier prefix is defined as the 16 most significant bits of the nullifier value.
+    /// Eidos clears the high bit of each digest element, so a computed nullifier's prefix has
+    /// 15 varying bits and lies in `0x0000..=0x7fff`. Under pseudorandom hashing, an occupied
+    /// prefix bucket has about twice the expected population of a bucket from a uniform 64-bit
+    /// index. The prefix remains a filter; the full nullifier identifies the note being spent.
     pub fn prefix(&self) -> u16 {
         (self.as_word()[3].as_canonical_u64() >> NULLIFIER_PREFIX_SHIFT) as u16
     }

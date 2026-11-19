@@ -64,12 +64,6 @@ const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS = "number of attachments per note can
 const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
     "total number of attachment words per note cannot exceed 512"
 
-const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED =
-    "adding a fungible asset to a note cannot exceed FUNGIBLE_ASSET_MAX_AMOUNT"
-
-const ERR_OUTPUT_NOTE_ATTACHMENT_COMMITMENT_MISMATCH =
-    "the computed hash of fetched attachment elements does not match the provided commitment"
-
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS =
     "non-fungible asset that already exists in the note cannot be added again"
 
@@ -133,6 +127,11 @@ pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> 
 
     # emit event to signal that a new note is created
     emit.NOTE_AFTER_CREATED_EVENT
+
+    # Zeroed memory does not contain the canonical commitment of an empty asset list. Mark the
+    # cache dirty so its first read computes and stores the commitment.
+    dup.4 push.1 swap exec.memory::set_output_note_dirty_flag
+    # => [NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
 
     # set the metadata for the output note
     dup.4
@@ -249,7 +248,7 @@ end
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
-#! - the output note is sealed, including by the asset callback.
+#! - the output note is sealed.
 pub proc add_asset(asset: Asset, note_idx: u16)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
@@ -274,7 +273,6 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     movup.8 exec.memory::get_output_note_ptr
-    # Check after the callback, which can itself seal the note.
     dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
     dup
     # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]

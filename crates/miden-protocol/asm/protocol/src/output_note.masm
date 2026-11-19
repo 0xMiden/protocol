@@ -11,7 +11,7 @@ use {
 } from miden::protocol::types
 use miden::protocol::note
 use miden::protocol::note_internal
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET, OUTPUT_NOTE_IS_SEALED_OFFSET, OUTPUT_NOTE_SEAL_OFFSET}
     from miden::protocol::kernel_proc_offsets
@@ -31,6 +31,7 @@ use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOT
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
@@ -66,6 +67,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index is greater or equal to the total number of output notes.
 #!
@@ -189,8 +191,8 @@ end
 #!
 #! Where:
 #! - note_index is the index of the output note whose attachments commitment should be returned.
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
-#!   the note does not have any attachments.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
+#!   attachments uses the empty hash.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -227,6 +229,7 @@ end
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the output note is sealed.
 #! - the note index points to a non-existent output note.
 #! - the active account is not the native account.
@@ -270,6 +273,7 @@ end
 #!   commitment.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -313,6 +317,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -332,7 +337,7 @@ pub proc add_word_attachment(attachment_scheme: u16, attachment: word, note_idx:
     loc_storew_le.0
     # => [ATTACHMENT, attachment_scheme, note_idx]
 
-    exec.poseidon2::hash
+    exec.eidos::hash
     # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
     locaddr.0 dup add.4
@@ -373,6 +378,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -399,7 +405,7 @@ pub proc add_attachment_from_memory(
     movdn.2 dup.1
     # => [attachment_ptr, num_elements, attachment_ptr, end_ptr, note_idx, attachment_scheme]
 
-    exec.poseidon2::hash_elements
+    exec.eidos::hash_elements
     # => [ATTACHMENT_COMMITMENT, attachment_ptr, end_ptr, note_idx, attachment_scheme]
 
     # Insert the raw attachment elements into the advice map keyed by the commitment
@@ -515,16 +521,16 @@ pub proc compute_note_id(note_idx: u16) -> NoteId
     movup.12 exec.get_metadata
     # => [METADATA, ATTACHMENTS_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [NOTE_METADATA_COMMITMENT, RECIPIENT, ASSETS_COMMITMENT]
 
     movdnw.2
     # => [RECIPIENT, ASSETS_COMMITMENT, NOTE_METADATA_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [NOTE_ID]
 end
 

@@ -163,6 +163,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - no note is currently active.
 #! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
@@ -204,6 +205,7 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - no note is currently active.
 #!
 #! Invocation: exec
@@ -543,8 +545,8 @@ end
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
-#!   the note does not have any attachments.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
+#!   attachments uses the empty hash.
 #!
 #! Panics if:
 #! - no note is currently active.

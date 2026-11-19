@@ -1,5 +1,6 @@
-use super::{CodeTreeRoot, CodeWitness, PRESENT_VALUE};
+use super::{CodeTreeRoot, CodeWitness, PRESENT_VALUE, validate_code_tree_entries};
 use crate::code::ProcedureRoot;
+use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::PartialSmt;
 use crate::errors::CodeTreeError;
 
@@ -14,6 +15,9 @@ use crate::errors::CodeTreeError;
 pub struct PartialCodeTree(PartialSmt);
 
 impl PartialCodeTree {
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a new partial code tree with the provided root that does not track any procedure
     /// roots.
     pub fn new(root: CodeTreeRoot) -> Self {
@@ -32,6 +36,26 @@ impl PartialCodeTree {
         PartialSmt::from_proofs(witnesses.into_iter().map(CodeWitness::into_proof))
             .map_err(CodeTreeError::TreeRootConflict)
             .map(Self)
+    }
+
+    /// Creates a new [`PartialCodeTree`] from its inner representation with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the SMT contains a value that does not mark a procedure root as present.
+    pub fn from_partial_smt(partial_smt: PartialSmt) -> Result<Self, CodeTreeError> {
+        validate_code_tree_entries(partial_smt.entries().copied())?;
+
+        Ok(Self(partial_smt))
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns a reference to the underlying [`PartialSmt`].
+    pub fn partial_smt(&self) -> &PartialSmt {
+        &self.0
     }
 
     /// Returns the root of the tree.
@@ -55,6 +79,21 @@ impl PartialCodeTree {
             })
     }
 
+    /// Returns a [`CodeWitness`] that proves the presence or absence of the procedure root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the procedure root is not tracked by this partial code tree.
+    pub fn open(&self, procedure_root: &ProcedureRoot) -> Result<CodeWitness, CodeTreeError> {
+        self.0.open(&procedure_root.as_word()).map(CodeWitness::new).map_err(|source| {
+            CodeTreeError::UntrackedProcedure { procedure_root: *procedure_root, source }
+        })
+    }
+
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
     /// Adds the given code witness to the partial tree and tracks it.
     ///
     /// Once a procedure root is tracked, it can be mutated using [`Self::insert`].
@@ -62,9 +101,20 @@ impl PartialCodeTree {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - after the witness' merkle path was added, the partial code tree has a different root than
-    ///   before it was added.
+    /// - the root of the witness does not match the root of the partial code tree. The tree stays
+    ///   unchanged in this case.
     pub fn track_procedure(&mut self, witness: CodeWitness) -> Result<(), CodeTreeError> {
+        // TODO: See https://github.com/0xMiden/protocol/issues/4133.
+        // Check the root before adding the proof, because a partial SMT is left in an inconsistent
+        // state if adding a proof fails.
+        let witness_root = witness.proof().compute_root();
+        if witness_root != self.0.root() {
+            return Err(CodeTreeError::TreeRootConflict(MerkleError::ConflictingRoots {
+                expected_root: self.0.root(),
+                actual_root: witness_root,
+            }));
+        }
+
         self.0.add_proof(witness.into_proof()).map_err(CodeTreeError::TreeRootConflict)
     }
 
@@ -99,8 +149,10 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
+    use crate::Word;
     use crate::block::code_tree::CodeTree;
     use crate::block::code_tree::tests::colliding_procedure_roots;
+    use crate::crypto::merkle::smt::Smt;
 
     #[test]
     fn partial_code_tree_root_mismatch() -> anyhow::Result<()> {
@@ -113,9 +165,50 @@ mod tests {
         let current_witness = tree.open(&root1);
 
         let mut partial = PartialCodeTree::with_witnesses([stale_witness])?;
+        let partial_before = partial.clone();
         let error = partial.track_procedure(current_witness).unwrap_err();
 
         assert_matches!(error, CodeTreeError::TreeRootConflict(_));
+        assert_eq!(partial, partial_before);
+        Ok(())
+    }
+
+    #[test]
+    fn partial_code_tree_rejects_invalid_leaf_value() -> anyhow::Result<()> {
+        let procedure_root = ProcedureRoot::mock(0);
+        let invalid_value = Word::from([2u32, 0, 0, 0]);
+        let smt = Smt::with_entries([(procedure_root.as_word(), invalid_value)])?;
+        let partial_smt = PartialSmt::from_proofs([smt.open(&procedure_root.as_word())])?;
+
+        let error = PartialCodeTree::from_partial_smt(partial_smt).unwrap_err();
+        assert_matches!(
+            error,
+            CodeTreeError::InvalidLeafValue { procedure_root: root, value }
+                if root == procedure_root && value == invalid_value
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn partial_code_tree_open() -> anyhow::Result<()> {
+        let proc0 = ProcedureRoot::mock(0);
+        let root1 = ProcedureRoot::mock(1);
+        let untracked = ProcedureRoot::mock(2);
+
+        let tree = CodeTree::with_entries([proc0])?;
+        let partial = PartialCodeTree::with_witnesses([tree.open(&proc0), tree.open(&root1)])?;
+
+        assert_eq!(partial.open(&proc0)?, tree.open(&proc0));
+        assert_eq!(partial.open(&root1)?, tree.open(&root1));
+
+        // The leaf of the untracked root must be non-empty, otherwise the partial tree can deduce
+        // it from the empty siblings of the tracked paths.
+        let tree = CodeTree::with_entries([proc0, untracked])?;
+        let partial = PartialCodeTree::with_witnesses([tree.open(&proc0)])?;
+        assert_matches!(
+            partial.open(&untracked),
+            Err(CodeTreeError::UntrackedProcedure { procedure_root, .. }) if procedure_root == untracked
+        );
         Ok(())
     }
 

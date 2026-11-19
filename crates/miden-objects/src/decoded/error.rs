@@ -54,6 +54,7 @@ impl_verification_error_from!(
     miden_protocol::errors::BlockBodyError,
     miden_protocol::errors::BoundSignatureError,
     miden_protocol::errors::CodePatchError,
+    miden_protocol::errors::CodeTreeError,
     miden_protocol::errors::NoteError,
     miden_protocol::errors::OutputNoteError,
     miden_protocol::errors::PartialAssetVaultError,

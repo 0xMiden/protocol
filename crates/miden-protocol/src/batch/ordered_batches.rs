@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::batch::{BatchesCommitment, ProvenBatch};
 use crate::crypto::SequentialCommit;
-use crate::transaction::OrderedTransactionHeaders;
+use crate::transaction::{OrderedTransactionHeaders, PublicTransactionLogs};
 use crate::{Felt, Word};
 
 // ORDERED BATCHES
@@ -32,10 +32,13 @@ impl OrderedBatches {
         self.0.iter().map(|batch| batch.transactions().clone()).collect()
     }
 
-    /// Consumes self and returns the ordered transaction headers of each batch, in the order of
-    /// the batches.
-    pub fn into_transactions(self) -> Vec<OrderedTransactionHeaders> {
-        self.0.into_iter().map(ProvenBatch::into_transactions).collect()
+    /// Consumes the batches, preserving header grouping and concatenating public logs in order.
+    pub fn into_transactions_and_logs(
+        self,
+    ) -> (Vec<OrderedTransactionHeaders>, PublicTransactionLogs) {
+        let (headers, logs): (Vec<_>, Vec<_>) =
+            self.0.into_iter().map(ProvenBatch::into_transactions_and_logs).unzip();
+        (headers, PublicTransactionLogs::concatenate(logs))
     }
 
     /// Returns the sum of created notes across all batches.

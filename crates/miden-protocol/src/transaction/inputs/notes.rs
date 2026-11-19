@@ -90,7 +90,7 @@ impl<T: ToInputNoteCommitments> InputNotes<T> {
     /// > hash(nullifier_0 || noteid0_or_zero || nullifier_1 || noteid1_or_zero || .. || nullifier_n
     /// > || noteidn_or_zero)
     ///
-    /// Otherwise defined as ZERO for empty lists.
+    /// An empty list commits to the canonical Eidos hash of an empty Felt sequence.
     pub fn commitment(&self) -> Word {
         self.commitment
     }
@@ -214,10 +214,6 @@ impl<T: Deserializable + ToInputNoteCommitments> Deserializable for InputNotes<T
 
 fn build_input_note_commitment<T: ToInputNoteCommitments>(notes: &[T]) -> Word {
     // Note: This implementation must be kept in sync with the kernel's `process_input_notes_data`
-    if notes.is_empty() {
-        return Word::empty();
-    }
-
     let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 2);
     for commitment_data in notes {
         let nullifier = commitment_data.nullifier();

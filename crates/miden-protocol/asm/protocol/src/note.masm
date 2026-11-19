@@ -7,12 +7,11 @@ use {
     NoteSerialNumber,
     NoteStorageCommitment,
     NoteTag,
-    NoteType,
 } from miden::protocol::types
 use miden::protocol::account_id
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 
-pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, metadata_into_note_type, get_recipient_preimage}
     from miden::protocol_utils::note
 
 # ERRORS
@@ -29,7 +28,7 @@ const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT =
 #! This procedure checks that the provided number of note storage items is within limits and then computes
 #! the commitment.
 #!
-#! If the number of note storage items is 0, procedure returns the empty word: [0, 0, 0, 0].
+#! If the number of note storage items is 0, the procedure returns the empty hash.
 #!
 #! Inputs:  [storage_ptr, num_storage_items]
 #! Outputs: [STORAGE_COMMITMENT]
@@ -53,9 +52,18 @@ pub proc compute_storage_commitment(
     u32lte assert.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     # => [storage_ptr, num_storage_items]
 
-    # compute the storage commitment (over the unpadded values)
-    exec.poseidon2::hash_elements
-    # => [STORAGE_COMMITMENT]
+    dup.1 eq.0
+    if.true
+        exec.eidos::empty_felt_sequence_digest
+        # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items]
+
+        movup.4 drop movup.4 drop
+        # => [STORAGE_COMMITMENT]
+    else
+        # compute the storage commitment (over the unpadded values)
+        exec.eidos::hash_elements
+        # => [STORAGE_COMMITMENT]
+    end
 end
 
 #! Computes the recipient hash from note storage, script root, and serial number.
@@ -123,13 +131,13 @@ pub proc compute_and_store_recipient(
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    adv.insert_hdword exec.poseidon2::merge
+    adv.insert_hdword exec.eidos::hash_double_word
     # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    adv.insert_hdword exec.poseidon2::merge
+    adv.insert_hdword exec.eidos::hash_double_word
     # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
 
-    adv.insert_hdword exec.poseidon2::merge
+    adv.insert_hdword exec.eidos::hash_double_word
     # => [RECIPIENT]
 end
 
@@ -153,13 +161,13 @@ pub proc compute_recipient(
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [SERIAL_NUM_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [MERGE_SCRIPT, STORAGE_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [RECIPIENT]
 end
 
@@ -217,36 +225,6 @@ pub proc metadata_into_attachment_schemes(metadata: NoteMetadata) -> (u16, u16, 
 
     movup.3 u32and.0xffff
     # => [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
-end
-
-#! Extracts the note type from the provided metadata.
-#!
-#! The note type is encoded as a single bit at the 6th position from the right side (LSB) of the
-#! first felt of the metadata, where 0 = Private and 1 = Public.
-#!
-#! Inputs:  [METADATA]
-#! Outputs: [note_type]
-#!
-#! Where:
-#! - METADATA is the metadata of a note, laid out on the stack as
-#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
-#!   The first felt (sender_id_suffix_type_version) has the following bit layout:
-#!   [sender_id_suffix (56 bits) | reserved (1 bit) | note_type (1 bit) | version (6 bits)]
-#! - note_type is the type of the note (0 for private, 1 for public).
-#!
-#! Invocation: exec
-pub proc metadata_into_note_type(metadata: NoteMetadata) -> NoteType
-    movdn.3 drop drop drop
-    # => [sender_id_suffix_type_version]
-
-    u32split swap drop
-    # => [lo32]
-
-    u32shr.6
-    # => [shifted]
-
-    u32and.1
-    # => [note_type]
 end
 
 #! Extracts the tag from the provided metadata.

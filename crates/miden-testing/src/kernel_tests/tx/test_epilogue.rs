@@ -2,7 +2,6 @@ use alloc::string::ToString;
 use std::borrow::ToOwned;
 
 use anyhow::Context;
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{
     Account,
@@ -12,6 +11,7 @@ use miden_protocol::account::{
     AccountVaultPatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
@@ -31,7 +31,12 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
+use miden_protocol::transaction::{
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -50,7 +55,10 @@ use crate::{
 /// Returns the logs expiration commitment of a transaction without logs that expires at the
 /// provided block number.
 fn logs_expiration_commitment(expiration_block_num: u32) -> Word {
-    Hasher::merge(&[Word::empty(), Word::from([expiration_block_num, 0, 0, 0])])
+    Hasher::hash_double_word(&[
+        TransactionLogs::default().commitment(),
+        Word::from([expiration_block_num, 0, 0, 0]),
+    ])
 }
 
 /// Tests that the return values from the tx kernel main.masm program match the expected values.
@@ -127,7 +135,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
+        Hasher::hash_double_word(&[final_account.to_commitment(), account_patch_commitment]);
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
@@ -142,11 +150,14 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         Word::empty(),
     );
 
-    let logs_commitment = Word::empty();
+    let logs_commitment = TransactionLogs::default().commitment();
     let expiration_word = Word::from([u32::MAX, 0, 0, 0]);
     let logs_expiration_commitment =
         exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX);
-    assert_eq!(logs_expiration_commitment, Hasher::merge(&[logs_commitment, expiration_word]),);
+    assert_eq!(
+        logs_expiration_commitment,
+        Hasher::hash_double_word(&[logs_commitment, expiration_word]),
+    );
 
     // The advice map must contain the logs commitment and the expiration word under the logs
     // expiration commitment.
@@ -170,7 +181,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
 async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
     let asset0 = assets.next().unwrap();

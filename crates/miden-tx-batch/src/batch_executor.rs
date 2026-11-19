@@ -40,7 +40,7 @@ impl BatchExecutor {
 
     /// Returns the [`ExecutionOptions`] this executor uses.
     pub fn execution_options(&self) -> ExecutionOptions {
-        self.execution_options
+        self.execution_options.clone()
     }
 
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
@@ -62,10 +62,13 @@ impl BatchExecutor {
 
         let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
 
-        let processor =
-            FastProcessor::new_with_options(stack_inputs, advice_inputs, self.execution_options)
-                .map_err(ExecutionError::advice_error_no_context)
-                .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
+        let processor = FastProcessor::new_with_options(
+            stack_inputs,
+            advice_inputs,
+            self.execution_options.clone(),
+        )
+        .map_err(ExecutionError::advice_error_no_context)
+        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         let witness = processor
             .execute_for_proving_sync(&BatchKernel::main(), &mut DefaultHost::default())

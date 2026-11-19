@@ -24,10 +24,10 @@ use crate::utils::serde::{
 /// and its asset class is the first two elements of that hash. The protocol itself does not enforce
 /// this interpretation, see [`Asset`].
 ///
-/// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
-/// 128-bit asset class that is unique per non-fungible asset. In other words, two non-fungible
-/// assets issued by the same faucet are very unlikely to have the same asset ID and thus should
-/// not collide when stored in the same account's vault.
+/// Each Eidos digest element contains 63 bits, so the two-element asset class has 126 bits of
+/// support. Generic birthday collision work for asset classes issued by the same faucet is
+/// therefore at most about 2^63 hash evaluations. This bound concerns finding any colliding pair,
+/// not matching a particular existing asset class.
 ///
 /// [`NonFungibleAsset`] itself does not contain the actual asset data. The container for this data
 /// is [`NonFungibleAssetDetails`].

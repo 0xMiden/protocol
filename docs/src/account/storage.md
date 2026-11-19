@@ -66,7 +66,7 @@ Key properties of `StorageMap`:
 
 - **Efficient, scalable storage:** The SMT structure enables efficient storage and proof of inclusion for a large number of entries, while only storing the root in the account's storage slot.
 - **Partial presence:** Not all entries of the map need to be present at transaction execution time to access or modify the map. It is sufficient if only the accessed or modified items are present in the advice provider.
-- **Key hashing:** Since map keys are user-chosen and may not be uniformly distributed, keys are hashed before being inserted into the SMT. This ensures a more balanced tree and mitigates efficiency issues due to key clustering. The original keys are retained in a separate map, allowing for introspection (e.g., querying the set of stored original keys for debugging or explorer scenarios). This introduces some redundancy, but enables useful features such as listing all stored keys.
+- **Key hashing:** Map keys are hashed before being inserted into the SMT to avoid clustering raw keys. Eidos clears the index limb's high bit, so hashed keys occupy the lower `2^63` leaf positions in the depth-64 tree. Distinct hashed keys may share a leaf and are stored there in full. The original keys are retained separately so they can be listed by debugging tools or explorers.
 
 This design allows for flexible, scalable, and privacy-preserving storage within accounts, supporting both large datasets and efficient proof generation.
 

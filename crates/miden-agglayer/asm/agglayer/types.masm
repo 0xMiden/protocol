@@ -1,7 +1,7 @@
 # Semantic bridge values. Stack records list the top field first; LeafData describes memory order.
 
 use {AccountId} from ::miden::protocol::types
-use {Digest as Poseidon2Commitment} from ::miden::core::crypto::hashes::poseidon2
+use {Digest} from ::miden::core::crypto::hashes::eidos
 use {EthereumAddress, EthereumBytes32} from ::miden::standards::interop::eth
 
 # Keccak digests use eight u32 limbs in byte-stream order.
@@ -12,8 +12,8 @@ pub type GlobalIndex = Keccak256Digest
 pub type EthereumAmount = struct { limbs: [u32; 8] }
 pub type NetworkId = u32
 pub type AmountScale = u8
-#! Poseidon2 commitment to the leaf or proof data stored in the advice map.
-pub type AdviceMapKey = Poseidon2Commitment
+#! Eidos commitment to the leaf or proof data stored in the advice map.
+pub type AdviceMapKey = Digest
 pub type ClaimNullifier = word
 
 pub type OriginToken = struct {

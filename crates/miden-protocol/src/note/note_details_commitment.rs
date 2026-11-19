@@ -29,10 +29,10 @@ impl NoteDetailsCommitment {
         Self::from_raw_commitments(recipient.digest(), assets.commitment())
     }
 
-    /// Returns a new [`NoteDetailsCommitment`] by merging the provided recipient and asset
-    /// commitments.
+    /// Returns a new [`NoteDetailsCommitment`] by hashing the recipient and asset commitments
+    /// in that order.
     pub fn from_raw_commitments(recipient: Word, asset_commitment: Word) -> Self {
-        Self(Hasher::merge(&[recipient, asset_commitment]))
+        Self(Hasher::hash_double_word(&[recipient, asset_commitment]))
     }
 }
 

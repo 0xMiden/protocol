@@ -14,9 +14,12 @@ use miden_protocol::account::{
     StorageSlotContent,
 };
 use miden_protocol::assembly::SourceManagerSync;
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
@@ -52,10 +55,12 @@ pub struct MockTransaction {
     pub(super) expected_output_notes: Vec<Note>,
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
     pub(super) tx_inputs: TransactionInputs,
+    pub(super) code_tree: CodeTree,
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
     pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
+    pub(super) code_to_register: Vec<Arc<MastForest>>,
 }
 
 impl MockTransaction {
@@ -136,7 +141,7 @@ impl MockTransaction {
     ///
     /// - If the provided `code` is not a valid program.
     pub(crate) async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, None).await
+        self.execute_code_inner(code, true, None, None, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], except that the host does _not_ handle lazy
@@ -145,7 +150,7 @@ impl MockTransaction {
         &self,
         code: &str,
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, false, None).await
+        self.execute_code_inner(code, false, None, None, None).await
     }
 
     /// Same as [`MockTransaction::execute_code`], but overrides the host response to an input-note
@@ -155,7 +160,18 @@ impl MockTransaction {
         code: &str,
         response: [Felt; 2],
     ) -> Result<ExecutionOutput, ExecError> {
-        self.execute_code_inner(code, true, Some(response)).await
+        self.execute_code_inner(code, true, Some(response), None, None).await
+    }
+
+    /// Same as [`MockTransaction::execute_code`], but overrides the host-advised account
+    /// patch/delta commitment body block counts.
+    pub(crate) async fn execute_code_with_account_commitment_body_block_count_response(
+        &self,
+        code: &str,
+        patch_response: Option<Felt>,
+        delta_response: Option<Felt>,
+    ) -> Result<ExecutionOutput, ExecError> {
+        self.execute_code_inner(code, true, None, patch_response, delta_response).await
     }
 
     async fn execute_code_inner(
@@ -163,6 +179,8 @@ impl MockTransaction {
         code: &str,
         is_lazy_loading_enabled: bool,
         input_note_index_response: Option<[Felt; 2]>,
+        patch_commitment_body_block_count_response: Option<Felt>,
+        delta_commitment_body_block_count_response: Option<Felt>,
     ) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
 
@@ -258,6 +276,10 @@ impl MockTransaction {
         if let Some(response) = input_note_index_response {
             mock_host.set_input_note_index_response(response);
         }
+        mock_host.set_account_commitment_body_block_count_response(
+            patch_commitment_body_block_count_response,
+            delta_commitment_body_block_count_response,
+        );
 
         CodeExecutor::new(mock_host)
             .stack_inputs(stack_inputs)
@@ -426,6 +448,35 @@ impl DataStore for MockTransaction {
         script_root: NoteScriptRoot,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         async move { Ok(self.note_scripts.get(&script_root).cloned()) }
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        procedure_roots: Vec<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        async move {
+            if self.code_tree.root() != code_tree_root {
+                return Err(DataStoreError::other(format!(
+                    "code tree has root {} but {code_tree_root} was requested",
+                    self.code_tree.root()
+                )));
+            }
+
+            Ok(procedure_roots
+                .iter()
+                .map(|procedure_root| self.code_tree.open(procedure_root))
+                .collect())
+        }
+    }
+
+    /// Returns all code to register of the mock transaction, because the host uses only the code
+    /// that the procedure roots reach.
+    fn get_code_to_register(
+        &self,
+        _procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        async move { Ok(self.code_to_register.clone()) }
     }
 }
 

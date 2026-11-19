@@ -244,8 +244,7 @@ mod tests {
 
     #[test]
     fn to_elements_is_pipeable() {
-        // The kernel pipes the preimage into memory, which requires the element count to be a
-        // multiple of the hasher's rate width.
+        // The kernel pipes the preimage into memory as complete Eidos compression blocks.
         let config = ProtocolConfig::current(fee_asset_id()).unwrap();
 
         assert_eq!(config.to_elements().len(), 24);

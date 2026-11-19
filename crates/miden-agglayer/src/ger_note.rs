@@ -9,7 +9,6 @@ use alloc::string::ToString;
 use alloc::vec;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -23,6 +22,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use rand::{Rng, RngExt};
 
 use crate::ExitRoot;
 
@@ -44,7 +44,7 @@ use crate::ExitRoot;
 ///
 /// # Errors
 /// Returns an error if note creation fails.
-pub(crate) fn create_ger_note<R: FeltRng>(
+pub(crate) fn create_ger_note<R: Rng>(
     ger: ExitRoot,
     sender_account_id: AccountId,
     target_account_id: AccountId,
@@ -56,7 +56,7 @@ pub(crate) fn create_ger_note<R: FeltRng>(
     let note_storage = NoteStorage::new(storage_values)?;
 
     // Generate a serial number for the note
-    let serial_num = rng.draw_word();
+    let serial_num = rng.random();
 
     let recipient = NoteRecipient::new(serial_num, script, note_storage);
 

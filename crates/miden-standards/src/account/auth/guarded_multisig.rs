@@ -1,21 +1,18 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
+use super::approver::key_set_slots;
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use super::{Approver, ApproverSet};
 use crate::account::account_component_package;
@@ -68,37 +65,12 @@ impl GuardianConfig {
         self.approver.auth_scheme()
     }
 
-    fn public_key_slot() -> &'static StorageSlotName {
+    pub(super) fn public_key_slot() -> &'static StorageSlotName {
         &GUARDIAN_PUBKEY_SLOT_NAME
     }
 
-    fn scheme_id_slot() -> &'static StorageSlotName {
+    pub(super) fn scheme_id_slot() -> &'static StorageSlotName {
         &GUARDIAN_SCHEME_ID_SLOT_NAME
-    }
-
-    /// Returns the storage slots holding the guardian's public key and signature scheme.
-    fn into_slots(self) -> Vec<StorageSlot> {
-        let mut storage_slots = Vec::with_capacity(2);
-
-        // Guardian public key slot (map: [0, 0, 0, 0] -> pubkey)
-        let guardian_public_key_entries =
-            [(StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])), Word::from(self.pub_key()))];
-        storage_slots.push(StorageSlot::with_map(
-            Self::public_key_slot().clone(),
-            StorageMap::with_entries(guardian_public_key_entries).unwrap(),
-        ));
-
-        // Guardian scheme IDs slot (map: [0, 0, 0, 0] -> [scheme_id, 0, 0, 0])
-        let guardian_scheme_id_entries = [(
-            StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])),
-            Word::from([self.auth_scheme() as u32, 0, 0, 0]),
-        )];
-        storage_slots.push(StorageSlot::with_map(
-            Self::scheme_id_slot().clone(),
-            StorageMap::with_entries(guardian_scheme_id_entries).unwrap(),
-        ));
-
-        storage_slots
     }
 }
 
@@ -176,8 +148,8 @@ impl AuthGuardedMultisigConfig {
 ///
 /// # Fees
 ///
-/// The transaction fee is paid as described for [`AuthMultisig`](super::AuthMultisig), so the fee
-/// note is covered by the approver and guardian signatures.
+/// The transaction fee is paid as described for [`AuthMultisig`](super::AuthMultisig), after the
+/// approver and guardian signatures are verified and within the max fee the summary binds.
 ///
 /// # Security
 ///
@@ -187,12 +159,9 @@ impl AuthGuardedMultisigConfig {
 ///
 /// # Privacy
 ///
-/// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public
-/// key and signature at proving time and therefore do not get public-key privacy; those using
-/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
-///
-/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
-/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
+/// Approvers' and the guardian's public keys and signatures are visible to the transaction prover.
+/// For ECDSA they are also visible to recipients of the transaction proof; see
+/// [`Approver`](super::Approver).
 #[derive(Debug)]
 pub struct AuthGuardedMultisig {
     multisig: AuthMultisig,
@@ -269,7 +238,13 @@ impl From<AuthGuardedMultisig> for AccountComponent {
         let multisig_component = AccountComponent::from(multisig);
 
         let mut storage_slots = multisig_component.storage_slots().to_vec();
-        storage_slots.extend(guardian_config.into_slots());
+
+        // Guardian slots: a single-entry key set at index 0
+        storage_slots.extend(key_set_slots(
+            GuardianConfig::public_key_slot(),
+            GuardianConfig::scheme_id_slot(),
+            &[guardian_config.approver()],
+        ));
 
         let metadata = AuthGuardedMultisig::component_metadata();
 
@@ -288,8 +263,8 @@ mod tests {
     use alloc::string::ToString;
 
     use miden_protocol::Word;
-    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::AuthSecretKey;
+    use miden_protocol::account::{AccountBuilder, StorageMapKey};
 
     use super::*;
     use crate::account::wallets::BasicWallet;
@@ -302,9 +277,9 @@ mod tests {
     #[test]
     fn test_guarded_multisig_component_setup() {
         // Create test secret keys
-        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_1 = AuthSecretKey::new_falcon512_eidos();
+        let sec_key_2 = AuthSecretKey::new_falcon512_eidos();
+        let sec_key_3 = AuthSecretKey::new_falcon512_eidos();
         let guardian_key = AuthSecretKey::new_ecdsa_k256_keccak();
 
         // Create approvers list for multisig config
@@ -387,7 +362,7 @@ mod tests {
     fn test_guarded_multisig_component_minimum_threshold() {
         let approver_key = AuthSecretKey::new_ecdsa_k256_keccak();
         let pub_key = approver_key.public_key().to_commitment();
-        let guardian_key = AuthSecretKey::new_falcon512_poseidon2();
+        let guardian_key = AuthSecretKey::new_falcon512_eidos();
         let approvers = vec![approver(&approver_key)];
         let threshold = 1u32;
 

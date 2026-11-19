@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_crypto::rand::RandomCoin;
+use miden_crypto::rand::EidosRandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::NonFungibleAsset;
@@ -97,7 +97,7 @@ pub async fn setup_circular_note_dependency_test()
     let chain = builder.build()?;
 
     // Create two distinct p2any notes carrying the same arbitrary asset.
-    let mut rng = RandomCoin::new(Word::from([1u32; 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
     let note_y = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
@@ -901,7 +901,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     let chain = builder.build()?;
 
     // Create two distinct p2any notes carrying the same arbitrary asset.
-    let mut rng = RandomCoin::new(Word::from([1u32; 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
     // TX 1: consume note_x to move the asset to the vault.

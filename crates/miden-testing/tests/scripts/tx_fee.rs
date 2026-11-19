@@ -20,12 +20,10 @@ async fn tx_fee_note_leaves_assets_in_the_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts; the consumer is completely unrelated to the note
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let consumer_account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let sender_account =
+        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+    let consumer_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // Create the note
     let note = builder.add_tx_fee_note(sender_account.id(), &[fee_asset])?;
@@ -59,9 +57,8 @@ async fn tx_fee_note_assets_are_collected_by_account_code() -> anyhow::Result<()
     let fee_asset = FungibleAsset::mock(123);
 
     let mut builder = MockChain::builder();
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let sender_account =
+        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // a component that moves a given asset from an input note into the account's vault
     let collector_component = AccountComponent::new(
@@ -97,9 +94,7 @@ async fn tx_fee_note_assets_are_collected_by_account_code() -> anyhow::Result<()
     )?;
 
     let mut consumer_account = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         Account::builder([9; 32])
             .account_type(AccountType::Public)
             .with_component(collector_component.clone()),
@@ -154,9 +149,7 @@ async fn test_tx_fee_create_output_note_constructor() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [FungibleAsset::mock(100)],
     )?;
 

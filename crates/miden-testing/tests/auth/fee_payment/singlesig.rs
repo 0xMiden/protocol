@@ -21,7 +21,7 @@ use rstest::rstest;
 
 use super::{
     ECDSA_K256_KECCAK_AUTH_CYCLES,
-    FALCON_512_POSEIDON2_AUTH_CYCLES,
+    FALCON_512_EIDOS_AUTH_CYCLES,
     PAY_FEE_CYCLES,
     POST_AUTH_EPILOGUE_BASE_CYCLES,
     POST_AUTH_EPILOGUE_PER_NOTE_CYCLES,
@@ -78,7 +78,7 @@ async fn execute_fee_paying_tx(
 /// the native fee asset, and the paid amount covers the fee required for the actual number of
 /// cycles the transaction took. This is the regression guard for the cycle-estimate constants.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
@@ -122,7 +122,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
 #[tokio::test]
 async fn fee_note_serial_is_derivable() -> anyhow::Result<()> {
     let (executed_transaction, initial_nonce) =
-        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2).await?;
+        execute_fee_paying_tx(AuthScheme::Falcon512Eidos).await?;
 
     let output_note = executed_transaction.output_notes().get_note(0);
     let assets = output_note.assets();
@@ -149,9 +149,8 @@ async fn execute_with_conversion_entry(
     entry: (Word, Vec<Felt>),
 ) -> anyhow::Result<Result<ExecutedTransaction, miden_tx::TransactionExecutorError>> {
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let (key, value) = entry;
@@ -212,9 +211,8 @@ async fn non_native_conversion_info_aborts(
 #[tokio::test]
 async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let executed_transaction =
@@ -232,9 +230,8 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
@@ -265,9 +262,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fee_asset],
     )?;
     let mock_chain = builder.build()?;
@@ -283,7 +278,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
 /// If this test fails, the constants in `miden::standards::auth::signature` /
 /// `miden::standards::fee` must be raised (and the mirrors above updated).
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2, FALCON_512_POSEIDON2_AUTH_CYCLES)]
+#[case::falcon(AuthScheme::Falcon512Eidos, FALCON_512_EIDOS_AUTH_CYCLES)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak, ECDSA_K256_KECCAK_AUTH_CYCLES)]
 #[tokio::test]
 async fn cycle_estimates_are_upper_bounds(
@@ -326,9 +321,7 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fee_asset],
     )?;
     let mock_chain = builder.build()?;

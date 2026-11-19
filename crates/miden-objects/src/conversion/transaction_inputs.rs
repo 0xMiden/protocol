@@ -37,8 +37,8 @@ impl From<&InputNotes<InputNote>> for proto::transaction::InputNotes {
 impl From<&Signature> for proto::transaction::AuthSignature {
     fn from(signature: &Signature) -> Self {
         let signature = match signature {
-            Signature::Falcon512Poseidon2(signature) => {
-                ProtoSignature::Falcon512Poseidon2(signature.to_bytes())
+            Signature::Falcon512Eidos(signature) => {
+                ProtoSignature::Falcon512Eidos(signature.to_bytes())
             },
             Signature::EcdsaK256Keccak(signature) => {
                 ProtoSignature::EcdsaK256Keccak(signature.to_bytes())
@@ -80,6 +80,7 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
             foreign_accounts: value.foreign_accounts().values().map(Into::into).collect(),
             note_scripts: value.note_scripts().values().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
+            code_tree: Some(value.code_tree().partial_smt().clone().into()),
         }
     }
 }

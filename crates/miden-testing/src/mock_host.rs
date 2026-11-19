@@ -40,6 +40,14 @@ pub(crate) struct MockHost<'store> {
 
     /// Overrides the input-note index response for tests that exercise host-claim validation.
     input_note_index_response: Option<[Felt; 2]>,
+
+    /// Overrides the advised patch-commitment body block count for tests that exercise kernel
+    /// validation of host advice.
+    patch_commitment_body_block_count_response: Option<Felt>,
+
+    /// Overrides the advised delta-commitment body block count for tests that exercise kernel
+    /// validation of host advice.
+    delta_commitment_body_block_count_response: Option<Felt>,
 }
 
 impl<'store> MockHost<'store> {
@@ -58,6 +66,8 @@ impl<'store> MockHost<'store> {
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
+                &TransactionEventId::AccountPushPatchCommitmentBodyBlockCount,
+                &TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount,
                 &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
@@ -69,12 +79,24 @@ impl<'store> MockHost<'store> {
             exec_host,
             handled_events,
             input_note_index_response: None,
+            patch_commitment_body_block_count_response: None,
+            delta_commitment_body_block_count_response: None,
         }
     }
 
     /// Overrides the input-note index response with `[note_idx, is_found]`.
     pub fn set_input_note_index_response(&mut self, response: [Felt; 2]) {
         self.input_note_index_response = Some(response);
+    }
+
+    /// Overrides the advised account patch/delta commitment body block counts.
+    pub fn set_account_commitment_body_block_count_response(
+        &mut self,
+        patch_response: Option<Felt>,
+        delta_response: Option<Felt>,
+    ) {
+        self.patch_commitment_body_block_count_response = patch_response;
+        self.delta_commitment_body_block_count_response = delta_response;
     }
 
     // Adds the transaction events needed for Lazy loading to the set of handled events.
@@ -88,8 +110,15 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,
                 &TransactionEventId::AccountVaultBeforeMintAsset,
                 &TransactionEventId::AccountVaultBeforeBurnAsset,
+                &TransactionEventId::AccountVaultAfterAddAsset,
+                &TransactionEventId::AccountVaultAfterRemoveAsset,
                 &TransactionEventId::AccountStorageBeforeSetMapItem,
                 &TransactionEventId::AccountStorageBeforeGetMapItem,
+                &TransactionEventId::AccountStorageAfterSetItem,
+                &TransactionEventId::AccountStorageAfterSetMapItem,
+                &TransactionEventId::AccountAfterIncrementNonce,
+                &TransactionEventId::AccountBeforeAssetDeltaComputation,
+                &TransactionEventId::AccountOnAssetDeltaComputation,
             ]
             .map(TransactionEventId::event_id),
         );
@@ -131,6 +160,22 @@ impl<'store> Host for MockHost<'store> {
                 && let Some(response) = self.input_note_index_response
             {
                 return Ok(vec![AdviceMutation::extend_advice_stack_with(response)]);
+            }
+
+            if event_id == TransactionEventId::AccountPushPatchCommitmentBodyBlockCount.event_id()
+                && let Some(response) = self.patch_commitment_body_block_count_response
+            {
+                return Ok(vec![AdviceMutation::extend_advice_stack(
+                    [response].into_iter().collect(),
+                )]);
+            }
+
+            if event_id == TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount.event_id()
+                && let Some(response) = self.delta_commitment_body_block_count_response
+            {
+                return Ok(vec![AdviceMutation::extend_advice_stack(
+                    [response].into_iter().collect(),
+                )]);
             }
 
             // If the host should handle the event, delegate to the tx executor host.

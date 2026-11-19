@@ -31,7 +31,7 @@ impl BlockExecutor {
 
     /// Returns the [`ExecutionOptions`] this executor uses.
     pub fn execution_options(&self) -> ExecutionOptions {
-        self.execution_options
+        self.execution_options.clone()
     }
 
     /// Runs the block kernel over the [`ProposedBlock`], returning an [`ExecutedBlock`] that can be
@@ -48,10 +48,13 @@ impl BlockExecutor {
     ) -> Result<ExecutedBlock, BlockProverError> {
         let (stack_inputs, advice_inputs) = BlockKernel::prepare_inputs(&proposed_block);
 
-        let processor =
-            FastProcessor::new_with_options(stack_inputs, advice_inputs, self.execution_options)
-                .map_err(ExecutionError::advice_error_no_context)
-                .map_err(BlockProverError::BlockKernelExecutionFailed)?;
+        let processor = FastProcessor::new_with_options(
+            stack_inputs,
+            advice_inputs,
+            self.execution_options.clone(),
+        )
+        .map_err(ExecutionError::advice_error_no_context)
+        .map_err(BlockProverError::BlockKernelExecutionFailed)?;
 
         let witness = processor
             .execute_for_proving_sync(&BlockKernel::main(), &mut DefaultHost::default())

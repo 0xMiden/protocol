@@ -42,10 +42,14 @@ pub proc auth_no_auth(auth_args: AuthArgs)
     push.NO_AUTH_POST_FEE_CYCLES
     # => [num_extra_cycles, CONVERSION_INFO, pad(16)]
 
-    exec.tx::get_reference_block_number movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, pad(16)]
+    # the fee note's serial number is derived from the reference block and the initial nonce
+    exec.active_account::get_nonce movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, initial_nonce, pad(16)]
 
-    exec.fee::pay_fee drop
+    exec.tx::get_reference_block_number movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, initial_nonce, pad(16)]
+
+    exec.fee::pay_fee drop drop
     # => [pad(16)]
 
     # check if the account state has changed

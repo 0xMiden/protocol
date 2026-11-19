@@ -144,8 +144,12 @@ impl AccountVaultDelta {
     }
 
     /// Appends the vault delta to the given `elements` from which the delta commitment will be
-    /// computed.
+    /// computed. A nonempty delta includes both operation trailers, even if one count is zero.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
+        if self.is_empty() {
+            return;
+        }
+
         self.append_asset_section(AssetDeltaOperation::Add, elements);
         self.append_asset_section(AssetDeltaOperation::Remove, elements);
     }
@@ -194,7 +198,7 @@ impl AccountVaultDelta {
 
     /// Appends the assets changed by the provided operation, followed by the section's trailer.
     ///
-    /// The trailer is omitted if the operation did not change any asset.
+    /// The trailer is included even if the operation did not change any asset.
     fn append_asset_section(&self, delta_op: AssetDeltaOperation, elements: &mut Vec<Felt>) {
         let mut num_changed_assets = 0;
         for asset in self.filter_by_op(delta_op) {
@@ -202,18 +206,16 @@ impl AccountVaultDelta {
             num_changed_assets += 1;
         }
 
-        if num_changed_assets != 0 {
-            let num_changed_assets = Felt::try_from(num_changed_assets as u64)
-                .expect("number of changed assets should not exceed max representable felt");
+        let num_changed_assets = Felt::try_from(num_changed_assets as u64)
+            .expect("number of changed assets should not exceed max representable felt");
 
-            elements.extend_from_slice(&[
-                Self::DOMAIN,
-                Felt::from(delta_op.as_u8()),
-                num_changed_assets,
-                Felt::ZERO,
-            ]);
-            elements.extend_from_slice(Word::empty().as_elements());
-        }
+        elements.extend_from_slice(&[
+            Self::DOMAIN,
+            Felt::from(delta_op.as_u8()),
+            num_changed_assets,
+            Felt::ZERO,
+        ]);
+        elements.extend_from_slice(Word::empty().as_elements());
     }
 }
 

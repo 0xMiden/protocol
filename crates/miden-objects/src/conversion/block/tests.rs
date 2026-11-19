@@ -35,6 +35,7 @@ fn block_body_and_transaction_header_roundtrip() {
         vec![],
         vec![],
         vec![OrderedTransactionHeaders::new_unchecked(vec![transaction])],
+        Default::default(),
     )
     .unwrap();
 

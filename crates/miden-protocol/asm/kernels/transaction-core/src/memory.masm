@@ -38,6 +38,9 @@ const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 
 
 const ERR_ACCOUNT_IS_NOT_NATIVE = "the active account is not native"
 
+const ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK =
+    "asset callback cannot modify account or note state"
+
 const ERR_ACCOUNT_STACK_OVERFLOW = "depth of the nested FPI calls exceeded 64"
 
 const ERR_ACCOUNT_STACK_UNDERFLOW =
@@ -121,6 +124,13 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
+# Contains the number of compressed body blocks minus the advised body-block count.
+# Both counts exclude the fixed metadata header of the account patch or delta.
+pub const ACCOUNT_UPDATE_BODY_BLOCK_BALANCE_PTR = 1285
+
+# The memory address at which the flag indicating that an asset callback is executing is stored.
+const ASSET_CALLBACK_IN_PROGRESS_FLAG_PTR = 1286
+
 # TRANSACTION LOG STATE
 # -------------------------------------------------------------------------------------------------
 
@@ -142,9 +152,6 @@ pub const LOGS_COMMITMENT_PTR = NUM_LOGS_PTR + WORD_NUM_ELEMENTS
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
-
-# The memory address at which the global inputs section begins.
-const GLOBAL_INPUTS_SECTION_OFFSET = 1600
 
 # The memory address at which the transaction reference block's commitment is stored.
 const BLOCK_COMMITMENT_PTR = 1600
@@ -220,7 +227,6 @@ const VALIDATOR_CONFIG_COMMITMENT_PTR = PROTOCOL_CONFIG_COMMITMENT_PTR + WORD_NU
 
 # The memory address at which the next protocol config commitment is stored
 const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR = VALIDATOR_CONFIG_COMMITMENT_PTR + WORD_NUM_ELEMENTS
-
 # The memory address at which the fee parameters are stored.
 # [verification_base_fee, 0, 0, 0]
 const FEE_PARAMETERS_PTR = NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR + WORD_NUM_ELEMENTS
@@ -243,15 +249,6 @@ const FEE_ASSET_ID_PTR = 2200
 # The memory address at which the transaction kernel config commitment is stored
 const TX_KERNEL_CONFIG_COMMITMENT_PTR = 2204
 
-# The memory address at which the batch kernel config commitment is stored
-const BATCH_KERNEL_CONFIG_COMMITMENT_PTR = 2208
-
-# The memory address at which the block kernel config commitment is stored
-const BLOCK_KERNEL_CONFIG_COMMITMENT_PTR = 2212
-
-# The memory address at which the proof verification config commitment is stored
-const PROOF_VERIFICATION_COMMITMENT_PTR = 2216
-
 # PARTIAL BLOCKCHAIN
 # -------------------------------------------------------------------------------------------------
 
@@ -260,9 +257,6 @@ pub const PARTIAL_BLOCKCHAIN_PTR = 2400
 
 # The memory address at which the total number of leaves in the partial blockchain is stored
 const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR = 2400
-
-# The memory address at which the partial blockchain peaks are stored
-const PARTIAL_BLOCKCHAIN_PEAKS_PTR = 2404
 
 # TRANSACTION LOG COMMITMENTS
 # -------------------------------------------------------------------------------------------------
@@ -354,7 +348,6 @@ const INPUT_NOTE_DATA_SECTION_OFFSET = 4259840
 const NUM_INPUT_NOTES_PTR = INPUT_NOTE_SECTION_OFFSET
 
 # The offsets at which data of an input note is stored relative to the start of its data segment
-const INPUT_NOTE_DETAILS_COMMITMENT_OFFSET = 0
 const INPUT_NOTE_CORE_DATA_OFFSET = 4
 const INPUT_NOTE_SERIAL_NUM_OFFSET = 4
 const INPUT_NOTE_SCRIPT_ROOT_OFFSET = 8
@@ -376,7 +369,6 @@ const INPUT_NOTE_ASSETS_OFFSET = 48
 pub const OUTPUT_NOTE_SECTION_OFFSET = 16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
-const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET = 0
 const OUTPUT_NOTE_METADATA_OFFSET = 4
 const OUTPUT_NOTE_RECIPIENT_OFFSET = 8
 const OUTPUT_NOTE_DIRTY_FLAG_OFFSET = 12
@@ -385,9 +377,6 @@ const OUTPUT_NOTE_NUM_ASSETS_OFFSET = 16
 const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET = 17
 const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET = 18
 const OUTPUT_NOTE_ATTACHMENT_0_OFFSET = 20
-const OUTPUT_NOTE_ATTACHMENT_1_OFFSET = 24
-const OUTPUT_NOTE_ATTACHMENT_2_OFFSET = 28
-const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 32
 const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 36
 const OUTPUT_NOTE_ASSETS_OFFSET = 40
 
@@ -1201,6 +1190,34 @@ end
 pub proc is_epilogue_auth_in_progress() -> Bool
     mem_load.EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR
     # => [is_epilogue_auth_in_progress]
+end
+
+#! Sets the flag indicating whether an asset callback is currently executing.
+#!
+#! Inputs:  [is_asset_callback_in_progress]
+#! Outputs: []
+#!
+#! Where:
+#! - is_asset_callback_in_progress is 1 while an asset callback runs, 0 otherwise.
+pub proc set_asset_callback_in_progress_flag(is_asset_callback_in_progress: Bool)
+    mem_store.ASSET_CALLBACK_IN_PROGRESS_FLAG_PTR
+    # => []
+end
+
+#! Asserts that no asset callback is currently executing.
+#!
+#! Asset callbacks must affect the transaction only through their return values, so they must not
+#! modify account or note state, even when the issuing faucet is the native account.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - an asset callback is currently executing.
+pub proc assert_not_in_asset_callback()
+    mem_load.ASSET_CALLBACK_IN_PROGRESS_FLAG_PTR
+    assertz.err=ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK
+    # => []
 end
 
 #! Returns 1 if the native account is new, i.e. its nonce is zero, 0 otherwise.

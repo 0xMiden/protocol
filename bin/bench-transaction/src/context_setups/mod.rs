@@ -22,7 +22,6 @@ use miden_agglayer::{
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
@@ -255,7 +254,7 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
 // ================================================================================================
 
 pub fn tx_create_single_p2id_note_falcon() -> Result<MockTransaction> {
-    tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+    tx_create_single_p2id_note_with_auth(AuthScheme::Falcon512Eidos)
 }
 
 pub fn tx_create_single_p2id_note_ecdsa() -> Result<MockTransaction> {
@@ -329,7 +328,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
 }
 
 pub fn tx_consume_single_p2id_note_falcon() -> Result<MockTransaction> {
-    tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Poseidon2)
+    tx_consume_single_p2id_note_with_auth(AuthScheme::Falcon512Eidos)
 }
 
 pub fn tx_consume_single_p2id_note_ecdsa() -> Result<MockTransaction> {
@@ -367,7 +366,7 @@ fn tx_consume_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<Mock
 }
 
 pub fn tx_consume_two_p2id_notes_falcon() -> Result<MockTransaction> {
-    tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Poseidon2)
+    tx_consume_two_p2id_notes_with_auth(AuthScheme::Falcon512Eidos)
 }
 
 pub fn tx_consume_two_p2id_notes_ecdsa() -> Result<MockTransaction> {
@@ -401,7 +400,7 @@ fn tx_consume_two_p2id_notes_with_auth(auth_scheme: AuthScheme) -> Result<MockTr
     // construct the mock transaction
     mock_chain
         .build_transaction(account.id())
-        .authenticated_input_notes([note_1.id(), note_2.id()])
+        .authenticated_input_notes([note_1, note_2])
         .build()
 }
 
@@ -431,24 +430,21 @@ fn setup_bridge_fixture(
     with_fee: bool,
 ) -> Result<BridgeFixture> {
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let faucet_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER INJECTOR ACCOUNT (sends the UPDATE_GER note)
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_injector =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE GER REMOVER ACCOUNT (sends the REMOVE_GER note)
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let ger_remover =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     // CREATE BRIDGE ACCOUNT
     // the dummy admin only matters for ADMIN-gated operations, which the benches do not exercise
     let mut bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
@@ -510,7 +506,7 @@ pub async fn tx_consume_claim_note(
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
-    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let agglayer_faucet_seed = builder.rng_mut().random();
 
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -715,7 +711,7 @@ pub async fn tx_consume_b2agg_note(
     let bridge_amount: u64 = vectors.amounts[0].parse().expect("valid amount decimal string");
 
     let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         8,
@@ -805,7 +801,7 @@ fn setup_faucet_registration(
     let (_proof_data, leaf_data, _ger, _cgi_chain_hash) = ClaimDataSource::L1ToMiden.get_data();
 
     let agglayer_faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         "AggLayer Token",
         "AGG",
         8,

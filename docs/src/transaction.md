@@ -203,6 +203,8 @@ proving. Empty transaction logs commit to zero, so the presence of transaction l
 Local execution data and standard signing summaries retain complete transaction logs, including in
 debug output. Remote provers and validators that decrypt execution witnesses can access this data.
 
+Public transaction logs are also included in [batch](batch.md) and [block](block.md) bodies.
+
 ### Limits
 
 A transaction allows up to 64 transaction logs, with at most 64 content words per log and 64 content
