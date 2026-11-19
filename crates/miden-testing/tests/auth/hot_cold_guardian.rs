@@ -698,7 +698,7 @@ async fn test_hot_cold_guardian_code_upgrade_requires_both_categories() -> anyho
     // A single category plus the guardian cannot upgrade the code.
     for signers in [[&hot, &guardian], [&cold, &guardian]] {
         let result = sign_and_execute(upgrade_tx(), &signers).await?;
-        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
+        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
     }
 
     // Both categories plus the guardian upgrade it.
