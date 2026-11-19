@@ -190,20 +190,10 @@ impl PartialStorageMap {
     /// Returns an error if the root of the witness does not match the root of this map. The map
     /// stays unchanged in this case.
     pub fn add(&mut self, witness: StorageMapWitness) -> Result<(), MerkleError> {
-        // Check the root before adding the proof, because a partial SMT is left in an inconsistent
-        // state if adding a proof fails.
-        let witness_root = witness.proof().compute_root();
-        if witness_root != self.root() {
-            return Err(MerkleError::ConflictingRoots {
-                expected_root: self.root(),
-                actual_root: witness_root,
-            });
-        }
-
-        // mutation safety: add_proof shouldn't fail because we've just checked root consistency, so
-        // mutating entries before is ok
-        self.entries.extend(witness.entries());
-        self.partial_smt.add_proof(SmtProof::from(witness))?;
+        let (proof, entries) = witness.into_parts();
+        // Add the proof first, since the partial SMT stays unchanged if this fails.
+        self.partial_smt.add_proof(proof)?;
+        self.entries.extend(entries);
 
         Ok(())
     }

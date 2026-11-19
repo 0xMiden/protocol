@@ -103,6 +103,14 @@ impl StorageMapWitness {
             .authenticated_nodes(self.proof.leaf().index().position(), self.proof.leaf().hash())
             .expect("leaf index is u64 and should be less than 2^SMT_DEPTH")
     }
+
+    // CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Consumes the witness and returns its [`SmtProof`] and its non-empty key-value pairs.
+    pub(super) fn into_parts(self) -> (SmtProof, BTreeMap<StorageMapKey, Word>) {
+        (self.proof, self.entries)
+    }
 }
 
 impl From<StorageMapWitness> for SmtProof {
