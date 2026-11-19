@@ -63,7 +63,8 @@ pub const BYTES_PER_PACKED_FELT: usize = 4;
 /// AccountId as two big-endian u64s, an `AssetAmount` as a big-endian u64.
 pub const BYTES32_LEN: usize = 32;
 pub const ACCOUNT_ID_BYTES: usize = 16;
-pub const ASSET_AMOUNT_BYTES: usize = AssetAmount::SERIALIZED_SIZE;
+/// The asset amount is serialized as a u64.
+pub const ASSET_AMOUNT_BYTES: usize = core::mem::size_of::<u64>();
 
 /// A whole bytes32 as packed field elements — the form the mint note's carried payload uses.
 pub const BYTES32_PACKED_LIMBS: usize = BYTES32_LEN / BYTES_PER_PACKED_FELT;

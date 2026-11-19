@@ -1,20 +1,8 @@
 use alloc::collections::BTreeMap;
-use alloc::string::ToString;
-use alloc::vec::Vec;
 
 use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
-use super::{
-    Asset,
-    AssetAmount,
-    AssetComposition,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    FungibleAsset,
-    Serializable,
-};
+use super::{Asset, AssetAmount, AssetComposition, FungibleAsset};
 use crate::Word;
 use crate::account::AccountVaultPatch;
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
@@ -370,39 +358,6 @@ impl AssetVault {
         }
 
         Ok(old_value)
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AssetVault {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let num_assets = self.asset_tree.num_entries();
-        target.write_usize(num_assets);
-        target.write_many(self.assets());
-    }
-
-    fn get_size_hint(&self) -> usize {
-        let mut size = 0;
-        let mut count: usize = 0;
-
-        for asset in self.assets() {
-            size += asset.get_size_hint();
-            count += 1;
-        }
-
-        size += count.get_size_hint();
-
-        size
-    }
-}
-
-impl Deserializable for AssetVault {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_assets = source.read_usize()?;
-        let assets = source.read_many_iter::<Asset>(num_assets)?.collect::<Result<Vec<_>, _>>()?;
-        Self::new(&assets).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

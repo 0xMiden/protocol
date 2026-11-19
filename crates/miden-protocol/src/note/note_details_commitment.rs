@@ -2,13 +2,6 @@ use miden_crypto_derive::WordWrapper;
 
 use super::{Hasher, Word};
 use crate::note::{NoteAssets, NoteRecipient};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // NOTE DETAILS COMMITMENT
 // ================================================================================================
@@ -33,25 +26,5 @@ impl NoteDetailsCommitment {
     /// in that order.
     pub fn from_raw_commitments(recipient: Word, asset_commitment: Word) -> Self {
         Self(Hasher::hash_double_word(&[recipient, asset_commitment]))
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for NoteDetailsCommitment {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_bytes(&self.0.to_bytes());
-    }
-
-    fn get_size_hint(&self) -> usize {
-        Word::SERIALIZED_SIZE
-    }
-}
-
-impl Deserializable for NoteDetailsCommitment {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let commitment = Word::read_from(source)?;
-        Ok(Self(commitment))
     }
 }
