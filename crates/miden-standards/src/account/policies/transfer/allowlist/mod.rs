@@ -21,7 +21,7 @@ mod manager;
 
 pub use manager::AllowlistManager;
 
-// BLOCKED ACCOUNTS STORAGE
+// ALLOWED ACCOUNTS STORAGE
 // ================================================================================================
 
 account_component_package!(
@@ -77,12 +77,12 @@ impl AllowlistStorage {
 
     const IS_ALLOWED_PROC_NAME: &'static str = "is_allowed";
 
-    /// Creates a [`AllowlistStorage`] with no initially allowed accounts.
+    /// Creates an [`AllowlistStorage`] with no initially allowed accounts.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a [`AllowlistStorage`] with the given allowed accounts.
+    /// Creates an [`AllowlistStorage`] with the given allowed accounts.
     ///
     /// Duplicate account IDs are deduplicated by the underlying set.
     pub fn with_allowed_accounts(allowed_accounts: impl IntoIterator<Item = AccountId>) -> Self {

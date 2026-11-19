@@ -235,7 +235,7 @@ async fn blocklist_policy_without_storage_component_fails_transfer() -> anyhow::
 }
 
 /// `BlocklistStorage::is_blocked`, invoked via `call` from a transaction script on the faucet,
-/// returns whether an account is blocked and honours the 16-felt call ABI.
+/// returns whether an account is blocked, honours the 16-felt call ABI and limits the expiration.
 #[tokio::test]
 async fn is_blocked_returns_whether_an_account_is_blocked() -> anyhow::Result<()> {
     let blocked_account = test_account_id(80);
@@ -246,6 +246,7 @@ async fn is_blocked_returns_whether_an_account_is_blocked() -> anyhow::Result<()
         dummy_owner(),
         [blocked_account],
     )?;
+    assert!(faucet.code().has_procedure(BlocklistStorage::is_blocked_root().as_word()));
     let mock_chain = builder.build()?;
 
     let tx_script_code = format!(
@@ -278,12 +279,13 @@ async fn is_blocked_returns_whether_an_account_is_blocked() -> anyhow::Result<()
         .with_dynamically_linked_package(BlocklistStorage::code())?
         .compile_tx_script(tx_script_code)?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }

@@ -5,9 +5,14 @@
 # as a call-padded accessor.
 
 use {AccountId, Bool} from miden::protocol::types
+use miden::standards::expiration
 use miden::standards::faucets::policies::transfer::allowlist
 
 #! Returns whether the given account is allowed on this faucet.
+#!
+#! Reports the list entry only, without the issuing faucet's exemption from the list policies.
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
 #! Outputs: [is_allowed, pad(15)]
@@ -15,6 +20,9 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! Invocation: call
 @account_procedure
 pub proc is_allowed(account_id: AccountId) -> Bool
+    exec.expiration::apply_default
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
     exec.allowlist::is_allowed
     # => [is_allowed, pad(15)]
 end
