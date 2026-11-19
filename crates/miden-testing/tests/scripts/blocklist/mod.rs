@@ -234,6 +234,60 @@ async fn blocklist_policy_without_storage_component_fails_transfer() -> anyhow::
     Ok(())
 }
 
+/// `BlocklistStorage::is_blocked`, invoked via `call` from a transaction script on the faucet,
+/// returns whether an account is blocked and honours the 16-felt call ABI.
+#[tokio::test]
+async fn is_blocked_returns_whether_an_account_is_blocked() -> anyhow::Result<()> {
+    let blocked_account = test_account_id(80);
+    let other_account = test_account_id(81);
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_owner_blocklist_transfer_initialized(
+        &mut builder,
+        dummy_owner(),
+        [blocked_account],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let tx_script_code = format!(
+        r#"
+        use miden::standards::components::faucets::policies::transfer::blocklist::storage
+
+        @transaction_script
+        pub proc main
+            padw padw padw push.0.0
+            push.{listed_prefix} push.{listed_suffix}
+            call.storage::is_blocked
+            # => [is_blocked, pad(15)]
+            assert.err="the listed account must be reported as blocked"
+            dropw dropw dropw drop drop drop
+
+            padw padw padw push.0.0
+            push.{other_prefix} push.{other_suffix}
+            call.storage::is_blocked
+            # => [is_blocked, pad(15)]
+            assertz.err="an unlisted account must not be reported as blocked"
+            dropw dropw dropw drop drop drop
+        end
+        "#,
+        listed_prefix = blocked_account.prefix().as_felt(),
+        listed_suffix = blocked_account.suffix(),
+        other_prefix = other_account.prefix().as_felt(),
+        other_suffix = other_account.suffix(),
+    );
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(BlocklistStorage::code())?
+        .compile_tx_script(tx_script_code)?;
+
+    mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 /// Seeds [`BlocklistStorage`] with the recipient at deploy time and confirms the asset transfer
 /// fails immediately — no `block_account` admin call is needed because the account starts in
 /// the `blocked_accounts` map.

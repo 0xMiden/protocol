@@ -148,6 +148,60 @@ fn build_admin_note(
 // TESTS
 // ================================================================================================
 
+/// `AllowlistStorage::is_allowed`, invoked via `call` from a transaction script on the faucet,
+/// returns whether an account is allowed and honours the 16-felt call ABI.
+#[tokio::test]
+async fn is_allowed_returns_whether_an_account_is_allowed() -> anyhow::Result<()> {
+    let allowed_account = test_account_id(80);
+    let other_account = test_account_id(81);
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_owner_allowlist_transfer_initialized(
+        &mut builder,
+        dummy_owner(),
+        [allowed_account],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let tx_script_code = format!(
+        r#"
+        use miden::standards::components::faucets::policies::transfer::allowlist::storage
+
+        @transaction_script
+        pub proc main
+            padw padw padw push.0.0
+            push.{listed_prefix} push.{listed_suffix}
+            call.storage::is_allowed
+            # => [is_allowed, pad(15)]
+            assert.err="the listed account must be reported as allowed"
+            dropw dropw dropw drop drop drop
+
+            padw padw padw push.0.0
+            push.{other_prefix} push.{other_suffix}
+            call.storage::is_allowed
+            # => [is_allowed, pad(15)]
+            assertz.err="an unlisted account must not be reported as allowed"
+            dropw dropw dropw drop drop drop
+        end
+        "#,
+        listed_prefix = allowed_account.prefix().as_felt(),
+        listed_suffix = allowed_account.suffix(),
+        other_prefix = other_account.prefix().as_felt(),
+        other_suffix = other_account.suffix(),
+    );
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(AllowlistStorage::code())?
+        .compile_tx_script(tx_script_code)?;
+
+    mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 /// Seeds [`AllowlistStorage`] with the recipient at deploy time and confirms the asset transfer
 /// succeeds — no `allow_account` admin call is needed because the account starts in the
 /// `allowed_accounts` map.
