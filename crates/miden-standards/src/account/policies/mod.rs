@@ -5,9 +5,8 @@
 //! policies:
 //! - **mint** — gate mint operations
 //! - **burn** — gate burn operations
-//! - **send** — fired by the protocol's `on_before_note_sealed` callback, once per issuing-faucet
-//!   asset, when an output note holding the issuing faucet's assets is sealed (transfer "from"
-//!   side)
+//! - **send** — fired by the protocol's `on_before_note_sealed` callback, once per output note
+//!   holding the issuing faucet's assets, when that note is sealed (transfer "from" side)
 //! - **receive** — fired by the protocol's `on_before_asset_added_to_account` callback when the
 //!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
@@ -57,7 +56,8 @@ pub use transfer::{
     BasicBlocklist,
     BlocklistManager,
     BlocklistStorage,
+    ReceivePolicy,
+    SendPolicy,
     TransferAllowAll,
-    TransferPolicy,
     TransferPolicyError,
 };

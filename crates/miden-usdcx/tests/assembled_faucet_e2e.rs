@@ -278,7 +278,7 @@ async fn consume_committed_note(
 /// Consumes a COMMITTED P2ID note carrying POLICED xUSDC with a NON-faucet `account` as the
 /// consumer. The receive callback (`on_before_asset_added_to_account`) fires with the consumer as
 /// the native account, so the kernel dyncalls the issuing faucet to run
-/// `basic_blocklist::check_policy` — the faucet MUST be attached as a foreign account (the
+/// `basic_blocklist::check_receive_policy` — the faucet MUST be attached as a foreign account (the
 /// policed-asset client-side coupling). This is what a real wallet consuming policed xUSDC has to
 /// do; the coupling is pinned executable by
 /// `transfer_blocklist_e2e::send_without_faucet_foreign_account_fails`.

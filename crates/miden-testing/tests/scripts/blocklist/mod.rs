@@ -1,5 +1,5 @@
 //! Tests for the [`miden_standards::account::policies::BasicBlocklist`] transfer policy
-//! component (storage + `check_policy` predicate) and the
+//! component (storage + `check_send_policy` / `check_receive_policy` predicates) and the
 //! [`miden_standards::account::policies::BlocklistManager`] authority-gated admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
@@ -30,8 +30,9 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_ACCOUNT_IS_BLOCKED, ERR_SENDER_LACKS_ROLE};
@@ -69,15 +70,14 @@ fn add_faucet_with_owner_blocklist_transfer(
 
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
 /// storage map with the given accounts at deploy time via
-/// [`TransferPolicy::with_basic_blocklist`]. The receive policy reuses the same root via
-/// [`TransferPolicy::empty_basic_blocklist`]; the manager dedups companion components by
-/// procedure root, so the seeded `BasicBlocklist` from the send policy is installed exactly
-/// once.
+/// [`SendPolicy::with_basic_blocklist`] and [`ReceivePolicy::with_basic_blocklist`]. Both carry
+/// the same seeded `BasicBlocklist`, which the manager installs exactly once.
 fn add_faucet_with_owner_blocklist_transfer_initialized(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
+    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("SYM")?)
         .symbol("SYM".try_into()?)
@@ -94,8 +94,8 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_blocklist(initial_blocked))
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
                 .build(),
         )
         .with_component(Pausable::unpaused())
@@ -471,7 +471,7 @@ async fn mint_on_blocklist_basic_faucet() -> anyhow::Result<()> {
 ///
 /// The entry is written through the regular admin path, so this covers any writer - the standard
 /// config note, a custom note, or a direct manager call - because the exemption lives in the
-/// `check_policy` read path rather than in a guard on the write path.
+/// policy read path rather than in a guard on the write path.
 #[tokio::test]
 async fn mint_succeeds_after_faucet_blocks_itself() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
@@ -573,8 +573,8 @@ fn add_rbac_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::empty_basic_blocklist())
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::empty_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
