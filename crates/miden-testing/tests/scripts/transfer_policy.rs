@@ -28,8 +28,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -75,8 +76,8 @@ pub(crate) fn add_faucet_with_wallet(builder: &mut MockChainBuilder) -> anyhow::
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
-/// Builds a fungible faucet with asset callbacks enabled and [`TransferPolicy::allow_all`] active
-/// on both send and receive.
+/// Builds a fungible faucet with asset callbacks enabled and [`SendPolicy::allow_all`] and
+/// [`ReceivePolicy::allow_all`] active.
 fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("ALL")?)
@@ -93,8 +94,8 @@ fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow:
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::allow_all())
-                .active_receive_policy(TransferPolicy::allow_all())
+                .active_send_policy(SendPolicy::allow_all())
+                .active_receive_policy(ReceivePolicy::allow_all())
                 .build(),
         );
 
@@ -123,8 +124,8 @@ fn add_faucet_with_reserved_only_transfer(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .allowed_send_policy(TransferPolicy::allow_all())
-                .allowed_receive_policy(TransferPolicy::allow_all())
+                .allowed_send_policy(SendPolicy::allow_all())
+                .allowed_receive_policy(ReceivePolicy::allow_all())
                 .build(),
         );
 
@@ -349,19 +350,18 @@ async fn receive_callback_rejects_paused_faucet_without_active_policy() -> anyho
 }
 
 /// Sealing a note invokes the issuing faucet's send callback once, which applies the pause check
-/// and expiration limit and then invokes the active send policy for each of the faucet's assets in
-/// the note, with the note index as `custom_data`. Assets of other faucets are skipped.
+/// and expiration limit and then invokes the active send policy with the note index. The policy
+/// reads the note's assets itself and inspects the ones issued by its faucet.
 ///
 /// The note holds a fungible and a non-fungible asset of the faucet, separated by an asset of
-/// another faucet. The policy asserts its inputs and, in the rejecting cases, rejects non-fungible
-/// assets, so the transaction fails only if the policy runs for the faucet's first and its last
-/// asset alike.
+/// another faucet. The policy asserts the note index and, in the rejecting cases, rejects the
+/// faucet's non-fungible assets, so the transaction fails whether that asset comes first or last.
 #[rstest::rstest]
 #[case::accepted(false, false)]
 #[case::last_asset_rejected(true, false)]
 #[case::first_asset_rejected(true, true)]
 #[tokio::test]
-async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
+async fn send_policy_inspects_the_faucet_assets_of_the_note(
     #[case] reject_non_fungible: bool,
     #[case] non_fungible_first: bool,
 ) -> anyhow::Result<()> {
@@ -377,7 +377,7 @@ async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
             ERR_NON_FUNGIBLE_ASSET_REJECTED.message()
         )
     } else {
-        String::new()
+        String::from("nop")
     };
     let policy_code = CodeBuilder::default().compile_component_code(
         component_name,
@@ -386,23 +386,44 @@ async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
             use miden::protocol::account_id
             use miden::protocol::active_account
             use miden::protocol::asset
-            use {{COMPOSITION_NONE}} from miden::protocol::asset
+            use miden::protocol::output_note
+            use {{ASSET_SIZE, COMPOSITION_NONE}} from miden::protocol::asset
 
-            #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+            #! Inputs:  [note_idx, pad(15)]
             #! Outputs: [pad(16)]
+            @locals(128)
             @account_procedure
-            pub proc check_policy
-                dup.8 push.{NOTE_IDX} assert_eq.err="send policy received an unexpected note index"
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+            pub proc check_send_policy
+                dup push.{NOTE_IDX} assert_eq.err="send policy received an unexpected note index"
+                # => [note_idx, pad(15)]
 
-                exec.asset::id_to_faucet_id exec.active_account::get_id exec.account_id::eq
-                assert.err="send policy received an asset of another faucet"
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+                locaddr.0 exec.output_note::get_assets
+                # => [num_assets, pad(15)]
 
-                {composition_check}
-                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+                mul.ASSET_SIZE locaddr.0 dup movdn.2 add swap
+                # => [asset_ptr, assets_end_ptr, pad(15)]
 
-                dropw dropw drop
+                dup dup.2 neq
+                while.true
+                    dup exec.asset::load
+                    # => [ASSET_ID, ASSET_VALUE, asset_ptr, assets_end_ptr, pad(15)]
+
+                    exec.asset::id_to_faucet_id exec.active_account::get_id exec.account_id::eq
+                    # => [is_own_asset, ASSET_ID, ASSET_VALUE, asset_ptr, assets_end_ptr, pad(15)]
+
+                    if.true
+                        {composition_check}
+                    end
+                    # => [ASSET_ID, ASSET_VALUE, asset_ptr, assets_end_ptr, pad(15)]
+
+                    dropw dropw add.ASSET_SIZE
+                    # => [asset_ptr, assets_end_ptr, pad(15)]
+
+                    dup dup.2 neq
+                end
+                # => [asset_ptr, assets_end_ptr, pad(15)]
+
+                drop drop
                 # => [pad(16)]
             end
             "#
@@ -411,9 +432,9 @@ async fn send_callback_applies_policy_to_each_asset_of_the_faucet(
     let policy_component =
         AccountComponent::new(policy_code, vec![], AccountComponentMetadata::mock(component_name))?;
     let policy_root = policy_component
-        .get_procedure_root_by_path(format!("{component_name}::check_policy").as_str())
+        .get_procedure_root_by_path(format!("{component_name}::check_send_policy").as_str())
         .expect("send policy procedure should exist");
-    let send_policy = TransferPolicy::custom(policy_root, [policy_component])?;
+    let send_policy = SendPolicy::custom(policy_root, [policy_component])?;
 
     let mut builder = MockChain::builder();
     let faucet = FungibleFaucet::builder()

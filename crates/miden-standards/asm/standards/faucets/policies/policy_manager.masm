@@ -1,11 +1,7 @@
 use {AccountProcedureRoot, Asset, AssetValue, NoteRecipient, NoteTag, NoteType, StorageSlotId} from miden::protocol::types
 use miden::core::word
-use miden::protocol::account_id
 use miden::protocol::active_account
-use miden::protocol::asset
-use {ASSET_SIZE} from miden::protocol::asset
 use miden::protocol::native_account
-use miden::protocol::output_note
 use miden::standards::access::authority
 use miden::standards::access::pausable
 use miden::standards::expiration
@@ -54,10 +50,6 @@ const MINT_NOTE_METADATA_PTR=4
 # Local memory pointer at which the caller-supplied output note RECIPIENT is held across the mint
 # policy `dyncall`, so it can be checked for tampering once the policy returns.
 const MINT_RECIPIENT_PTR=8
-
-# Local memory pointer at which `invoke_send_policy` writes the assets of the output note being
-# sealed. Layout: MAX_ASSETS_PER_NOTE * ASSET_SIZE elements.
-const SEND_NOTE_ASSETS_PTR=0
 
 # ERRORS
 # =================================================================================================
@@ -163,15 +155,15 @@ pub proc set_burn_policy(new_policy_root: AccountProcedureRoot)
     # => [pad(16)]
 end
 
-#! Invokes the active send policy for each of this faucet's assets in an output note. Stored in the
-#! protocol-reserved `on_before_note_sealed` callback slot and `dyncall`-invoked by the kernel once
-#! when an output note holding assets of this faucet is sealed.
+#! Invokes the active send policy. Stored in the protocol-reserved `on_before_note_sealed` callback
+#! slot and `dyncall`-invoked by the kernel once when an output note holding assets of this faucet
+#! is sealed.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
-#! after the reference block and applies the pause check once, so both apply even when no send
-#! policy is active. Then binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to
-#! [`execute_transfer_policy`] for each asset of the note issued by this faucet, with the note
-#! index as `custom_data`. Returns attachment scheme 0, i.e. no attachment for the note.
+#! after the reference block and applies the pause check, so both apply even when no send policy
+#! is active. Then binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to
+#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs. Returns
+#! attachment scheme 0, i.e. no attachment for the note.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [0, EMPTY_WORD, pad(11)]
@@ -184,7 +176,6 @@ end
 #! - the active send policy predicate fails.
 #!
 #! Invocation: call
-@locals(128)
 @account_procedure
 pub proc invoke_send_policy(note_idx: u16)
     exec.expiration::apply_default
@@ -193,61 +184,12 @@ pub proc invoke_send_policy(note_idx: u16)
     exec.pausable::assert_not_paused
     # => [note_idx, pad(15)]
 
-    # write the note's assets to local memory
-    # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets fit
-    dup locaddr.SEND_NOTE_ASSETS_PTR
-    # => [assets_ptr, note_idx, note_idx, pad(15)]
+    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, note_idx, pad(15)]
 
-    exec.output_note::get_assets
-    # => [num_assets, note_idx, pad(15)]
-
-    # compute the pointer at which we should stop iterating
-    mul.ASSET_SIZE locaddr.SEND_NOTE_ASSETS_PTR dup movdn.2 add swap
-    # => [asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-    # enter the loop if the note has assets
-    dup dup.2 neq
-    # => [has_assets, asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-    while.true
-        dup exec.asset::load
-        # => [ASSET_ID, ASSET_VALUE, asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-        # only this faucet's assets are subject to its send policy
-        exec.asset::id_to_faucet_id
-        # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID, ASSET_VALUE, asset_ptr, assets_end_ptr,
-        #     note_idx, pad(15)]
-
-        exec.active_account::get_id exec.account_id::eq
-        # => [is_own_asset, ASSET_ID, ASSET_VALUE, asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-        if.true
-            dup.10 movdn.8
-            # => [ASSET_ID, ASSET_VALUE, note_idx, asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-            push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
-            # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, asset_ptr,
-            #     assets_end_ptr, note_idx, pad(15)]
-
-            exec.execute_transfer_policy
-            # => [asset_ptr, assets_end_ptr, note_idx, pad(15)]
-        else
-            dropw dropw
-            # => [asset_ptr, assets_end_ptr, note_idx, pad(15)]
-        end
-        # => [asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-        add.ASSET_SIZE
-        # => [asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-        # continue looping while asset_ptr != assets_end_ptr
-        dup dup.2 neq
-        # => [should_loop, asset_ptr, assets_end_ptr, note_idx, pad(15)]
-    end
-    # => [asset_ptr, assets_end_ptr, note_idx, pad(15)]
-
-    # return no attachment for the note: attachment scheme 0 and the empty commitment
-    drop drop drop
+    # the policy's outputs are dropped, so this returns no attachment for the note: attachment
+    # scheme 0 and the empty commitment
+    exec.execute_transfer_policy
     # => [0, EMPTY_WORD, pad(11)]
 end
 
@@ -299,13 +241,13 @@ end
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block and applies the pause check, so both apply even when no receive
 #! policy is active. Then binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to
-#! [`execute_transfer_policy`].
+#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - custom_data is `0` for the receive callback.
+#! - ASSET_ID and ASSET_VALUE are the ID and value of the asset being added.
 #!
 #! Panics if:
 #! - the account is paused.
@@ -313,15 +255,15 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc invoke_receive_policy(asset: Asset, custom_data: felt)
+pub proc invoke_receive_policy(asset: Asset)
     exec.expiration::apply_default
-    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     exec.pausable::assert_not_paused
-    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
 
     exec.execute_transfer_policy
     # => [pad(16)]
@@ -690,9 +632,10 @@ proc assert_allowed_receive_policy_root(receive_policy_root: AccountProcedureRoo
     # => [RECEIVE_POLICY_ROOT]
 end
 
-#! Reads the active transfer policy root from the provided slot and invokes the policy for the
-#! provided asset via `dyncall`. Shared by `invoke_send_policy` / `invoke_receive_policy`, which
-#! differ in which slot they bind and in the `custom_data` they pass.
+#! Reads the active transfer policy root from the provided slot and invokes the policy via
+#! `dyncall` with the provided inputs. Shared by `invoke_send_policy` / `invoke_receive_policy`,
+#! which bind different slots and pass on their own callback inputs, so each policy kind has the
+#! interface of its asset callback.
 #!
 #! The callers limit the transaction's expiration to
 #! [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the reference block and assert the
@@ -702,44 +645,38 @@ end
 #! block. If the active root is the empty word (no policy configured for this kind), the transfer
 #! is accepted; otherwise the policy is invoked via `dyncall`.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, policy_inputs(16)]
 #! Outputs: []
 #!
 #! Where:
 #! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
-#! - custom_data is `0` for the receive callback and the output note index for the send callback.
+#! - policy_inputs are the 16 elements the policy is invoked with.
 #!
 #! Panics if:
 #! - the invoked policy predicate fails.
 #!
 #! Invocation: exec
 @locals(4)
-proc execute_transfer_policy(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
+proc execute_transfer_policy(slot_id: StorageSlotId, policy_inputs: [felt; 16])
     exec.active_account::get_item
-    # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
+    # => [POLICY_ROOT, policy_inputs(16)]
 
     exec.word::testz
-    # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
+    # => [is_empty, POLICY_ROOT, policy_inputs(16)]
 
     if.true
-        # No policy configured: accept the transfer and consume the callback inputs.
-        dropw dropw dropw drop
+        # No policy configured: accept the transfer and drop the policy inputs.
+        dropw dropw dropw dropw dropw
         # => []
     else
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-        # => [ASSET_ID, ASSET_VALUE, custom_data]
-
-        # pad the policy inputs to 16 elements
-        repeat.7
-            push.0 movdn.9
-        end
-        # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+        # => [policy_inputs(16)]
 
         locaddr.POLICY_PROC_ROOT_PTR
-        # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+        # => [policy_root_ptr, policy_inputs(16)]
 
         dyncall
-        # => [pad(16)]
+        # => [policy_outputs(16)]
 
         dropw dropw dropw dropw
         # => []

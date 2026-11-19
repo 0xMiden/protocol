@@ -37,8 +37,9 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
@@ -96,8 +97,8 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
         .allowed_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])
@@ -215,8 +216,8 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(100)?))
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])
@@ -279,11 +280,19 @@ enum ListKind {
 }
 
 impl ListKind {
-    /// The list's empty basic transfer policy.
-    fn transfer_policy(self) -> TransferPolicy {
+    /// The list's empty basic send policy.
+    fn send_policy(self) -> SendPolicy {
         match self {
-            ListKind::Allowlist => TransferPolicy::empty_basic_allowlist(),
-            ListKind::Blocklist => TransferPolicy::empty_basic_blocklist(),
+            ListKind::Allowlist => SendPolicy::empty_basic_allowlist(),
+            ListKind::Blocklist => SendPolicy::empty_basic_blocklist(),
+        }
+    }
+
+    /// The list's empty basic receive policy.
+    fn receive_policy(self) -> ReceivePolicy {
+        match self {
+            ListKind::Allowlist => ReceivePolicy::empty_basic_allowlist(),
+            ListKind::Blocklist => ReceivePolicy::empty_basic_blocklist(),
         }
     }
 
@@ -355,8 +364,8 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(list.transfer_policy())
-        .active_receive_policy(list.transfer_policy())
+        .active_send_policy(list.send_policy())
+        .active_receive_policy(list.receive_policy())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])

@@ -46,8 +46,9 @@ use miden_standards::account::policies::{
     BurnPolicy,
     MinBurnAmount,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::account::upgrade::UpgradeManager;
 
@@ -302,8 +303,8 @@ impl XReserveStablecoinBuilder {
                 burn_root,
                 [burn_policy_component, MinBurnAmount::new(self.min_burn_amount).into()],
             )?)
-            .active_send_policy(TransferPolicy::empty_basic_blocklist())
-            .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+            .active_send_policy(SendPolicy::empty_basic_blocklist())
+            .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
             .build();
 
         let mut components = Vec::new();

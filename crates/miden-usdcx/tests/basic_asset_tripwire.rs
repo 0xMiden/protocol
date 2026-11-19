@@ -1,7 +1,7 @@
 //! Policed-asset tripwire (F4 REVERSAL, human-ratified 2026-07-23) — locks in the decision that
 //! xUSDC ships as a POLICED fungible asset carrying the stock `BasicBlocklist` as the ACTIVE send
-//! AND receive transfer policy (one root, both kinds, empty initial blocklist). This SUPERSEDES the
-//! former basic-asset tripwire (which asserted the opposite: no transfer policy and
+//! AND receive transfer policy (one component, both kinds, empty initial blocklist). This
+//! SUPERSEDES the former basic-asset tripwire (which asserted the opposite: no transfer policy and
 //! `AssetCallbackFlag::Disabled`).
 //!
 //! This test is GREEN on the shipped (policed) build and flips RED the moment anyone un-wires the
@@ -72,15 +72,14 @@ fn value_slot(components: &[AccountComponent], name: &StorageSlotName) -> Result
 
 /// TRIPWIRE: the production faucet composition wires the stock `BasicBlocklist` as the ACTIVE send
 /// AND receive transfer policy — the `allowed_{send,receive}_policy_proc_roots` maps carry EXACTLY
-/// the one blocklist root, the active send/receive policy slots hold that same root, and BOTH
-/// protocol asset-callback slots are installed holding the `invoke_*_policy` wrapper roots.
+/// the one blocklist root of its kind, the active send/receive policy slots hold those roots, and
+/// BOTH protocol asset-callback slots are installed holding the `invoke_*_policy` wrapper roots.
 /// Un-wiring the blocklist flips this RED. Do not "fix" it by dropping the policy — read the module
 /// docs and the decision record.
 #[test]
 fn production_build_wires_the_transfer_blocklist() -> Result<()> {
     let _serial = tripwire_serial_guard_blocking();
     let components = production_component_set(0)?;
-    let blocklist_root = BasicBlocklist::root().as_word();
 
     // (1) the send + receive transfer policy is registered: each allowed-roots map carries EXACTLY
     // the one blocklist root. Un-wiring the policy empties these.
@@ -97,16 +96,24 @@ fn production_build_wires_the_transfer_blocklist() -> Result<()> {
         );
     }
 
-    // (2) the active send + receive policy slots hold the BasicBlocklist root (both kinds share the
-    // one descriptor root, so the companion installs once).
-    for (name, kind) in [
-        (TokenPolicyManager::active_send_policy_slot(), "SEND"),
-        (TokenPolicyManager::active_receive_policy_slot(), "RECEIVE"),
+    // (2) the active send + receive policy slots hold the BasicBlocklist roots of their kind (both
+    // roots belong to the one companion component, which installs once).
+    for (name, root, kind) in [
+        (
+            TokenPolicyManager::active_send_policy_slot(),
+            BasicBlocklist::send_root(),
+            "SEND",
+        ),
+        (
+            TokenPolicyManager::active_receive_policy_slot(),
+            BasicBlocklist::receive_root(),
+            "RECEIVE",
+        ),
     ] {
         assert_eq!(
             value_slot(&components, name)?,
-            blocklist_root,
-            "the active {kind} policy slot must resolve to the BasicBlocklist root"
+            root.as_word(),
+            "the active {kind} policy slot must resolve to the BasicBlocklist {kind} root"
         );
     }
 
