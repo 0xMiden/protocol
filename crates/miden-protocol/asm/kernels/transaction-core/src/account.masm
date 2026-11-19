@@ -369,6 +369,42 @@ end
 pub use {get_init_native_account_vault_root as get_initial_vault_root}
     from miden::tx_kernel_core::memory
 
+#! Returns the vault root of the native or the active account.
+#!
+#! Inputs:  [is_native]
+#! Outputs: [VAULT_ROOT]
+#!
+#! Where:
+#! - is_native is a boolean flag that indicates whether the vault root was requested for the native
+#!   or the active account.
+#! - VAULT_ROOT is the root of the requested account's vault.
+pub proc get_vault_root(is_native: Bool) -> Commitment
+    exec.get_vault_root_ptr
+    # => [vault_root_ptr]
+
+    padw movup.4 mem_loadw_le
+    # => [VAULT_ROOT]
+end
+
+#! Returns the memory pointer to the vault root of the native or the active account.
+#!
+#! Inputs:  [is_native]
+#! Outputs: [vault_root_ptr]
+#!
+#! Where:
+#! - is_native is a boolean flag that indicates whether the pointer was requested for the native or
+#!   the active account.
+#! - vault_root_ptr is the memory pointer to the requested account's vault root.
+proc get_vault_root_ptr(is_native: Bool) -> ptr<Commitment>
+    exec.memory::get_account_vault_root_ptr
+    exec.memory::get_native_account_vault_root_ptr
+    # => [native_vault_root_ptr, active_vault_root_ptr, is_native]
+
+    # keep the native pointer if is_native is 1, the active one otherwise
+    movup.2 cdrop
+    # => [vault_root_ptr]
+end
+
 # STORAGE
 # -------------------------------------------------------------------------------------------------
 
@@ -775,17 +811,20 @@ pub proc remove_asset_from_vault(asset: Asset) -> AssetValue
     # => [FINAL_ASSET_VALUE]
 end
 
-#! Returns the ASSET_VALUE associated with the provided asset ID in the active account's vault.
+#! Returns the ASSET_VALUE associated with the provided asset ID in the vault of the native or the
+#! active account.
 #!
-#! Inputs:  [ASSET_ID]
+#! Inputs:  [ASSET_ID, is_native]
 #! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to fetch.
+#! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
+#!   the native or the active account.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
-pub proc get_asset(asset_id: AssetId) -> AssetValue
+pub proc get_asset(asset_id: AssetId, is_native: Bool) -> AssetValue
     # get the vault root ptr
-    exec.memory::get_account_vault_root_ptr movdn.4
+    movup.4 exec.get_vault_root_ptr movdn.4
     # => [ASSET_ID, vault_root_ptr]
 
     # emit event to signal that an asset is requested
