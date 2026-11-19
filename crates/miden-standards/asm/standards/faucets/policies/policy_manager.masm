@@ -633,9 +633,9 @@ proc assert_allowed_receive_policy_root(receive_policy_root: AccountProcedureRoo
 end
 
 #! Reads the active transfer policy root from the provided slot and invokes the policy via
-#! `dyncall` with the provided inputs. Shared by `invoke_send_policy` / `invoke_receive_policy`,
-#! which bind different slots and pass on their own callback inputs, so each policy kind has the
-#! interface of its asset callback.
+#! `dyncall` with the provided inputs, dropping the policy's outputs. Shared by
+#! `invoke_send_policy` / `invoke_receive_policy`, which bind different slots and pass on their own
+#! callback inputs, so each policy kind receives the inputs of its asset callback.
 #!
 #! The callers limit the transaction's expiration to
 #! [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the reference block and assert the

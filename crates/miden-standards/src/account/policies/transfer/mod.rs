@@ -51,8 +51,9 @@ pub enum TransferPolicyError {
 /// [`AccountComponent`]s that must be installed on the account for that procedure root to work.
 ///
 /// The wrapper is the faucet's `on_before_note_sealed` callback, which the kernel invokes once
-/// when an output note holding the faucet's assets is sealed. The policy procedure has the
-/// interface of that callback:
+/// when an output note holding the faucet's assets is sealed. The policy procedure receives the
+/// inputs of that callback. The wrapper drops the policy's outputs and returns no attachment for
+/// the note:
 ///
 /// ```text
 /// Inputs:  [note_idx, pad(15)]
