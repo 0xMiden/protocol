@@ -115,7 +115,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     assert_matches!(
         error_source::<SignedBlockError>(&error),
         Some(SignedBlockError::InvalidSignatures(
-            SignatureVerificationError::SignerNotInValidatorSet { .. }
+            SignatureVerificationError::InvalidSignatureAtPosition { position: 0 }
         ))
     );
     assert_eq!(

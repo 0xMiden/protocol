@@ -4,7 +4,7 @@
 
 ### Changes
 
-- [BREAKING] Blocks are valid once a quorum of the parent's validators has signed: `ValidatorConfig` accepts a quorum below the validator count and `BlockSignatures` holds one `ValidatorSignature` per signing validator ([#3745](https://github.com/0xMiden/protocol/issues/3745)).
+- [BREAKING] Blocks are valid once a quorum of the parent's validators has signed: `ValidatorConfig` accepts a quorum below the validator count and `BlockSignatures::verify_against` matches each signature to a validator key instead of by position ([#4203](https://github.com/0xMiden/protocol/pull/4203)).
 
 ## v0.18.0 (2026-10-20)
 

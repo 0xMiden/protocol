@@ -400,7 +400,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ProvenBlockError::InvalidSignatures(
-                SignatureVerificationError::SignerNotInValidatorSet { .. }
+                SignatureVerificationError::InvalidSignatureAtPosition { position: 0 }
             ))
         ));
     }

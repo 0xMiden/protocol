@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::block::{BlockSignatures, ValidatorConfig, ValidatorSignature};
+use crate::block::{BlockSignatures, ValidatorConfig};
 use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use crate::testing::random_secret_key::random_secret_key;
 
@@ -26,14 +26,11 @@ impl ValidatorConfig {
 }
 
 impl BlockSignatures {
-    /// Signs `commitment` with every one of `signers`.
+    /// Signs `commitment` with every one of `signers`, in the given order.
     ///
     /// Panics if `signers` does not form a valid signature set.
     pub fn sign(signers: &[SigningKey], commitment: Word) -> Self {
-        let signatures = signers
-            .iter()
-            .map(|signer| ValidatorSignature::new(signer.public_key(), signer.sign(commitment)))
-            .collect();
+        let signatures = signers.iter().map(|signer| signer.sign(commitment)).collect();
         Self::new(signatures).expect("signers should form a valid signature set")
     }
 }

@@ -22,10 +22,10 @@ use crate::utils::serde::{
 pub enum SignatureVerificationError {
     #[error("block has {actual} signatures but the validator quorum is {quorum}")]
     QuorumNotMet { quorum: u16, actual: usize },
-    #[error("block is signed by key {public_key} which is not in the validator set")]
-    SignerNotInValidatorSet { public_key: PublicKey },
-    #[error("block signature of validator {public_key} is invalid")]
-    InvalidSignature { public_key: PublicKey },
+    #[error("block signature at position {position} does not verify against any validator key")]
+    InvalidSignatureAtPosition { position: usize },
+    #[error("block contains more than one signature of validator {public_key}")]
+    DuplicateSigner { public_key: PublicKey },
 }
 
 // BLOCK SIGNATURES ERROR
@@ -40,39 +40,6 @@ pub enum BlockSignaturesError {
         max = ValidatorConfig::MAX_VALIDATORS,
     )]
     TooManySignatures { count: usize },
-    #[error("block signature set contains more than one signature of validator {public_key}")]
-    DuplicateSigner { public_key: PublicKey },
-}
-
-// VALIDATOR SIGNATURE
-// ================================================================================================
-
-/// A validator's signature over a block header, together with the public key of the validator that
-/// produced it.
-///
-/// This is a plain container: it does not establish that the signature is valid for the key. See
-/// [`BlockSignatures::verify_against`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidatorSignature {
-    public_key: PublicKey,
-    signature: Signature,
-}
-
-impl ValidatorSignature {
-    /// Returns a new [`ValidatorSignature`] from a validator's public key and its signature.
-    pub fn new(public_key: PublicKey, signature: Signature) -> Self {
-        Self { public_key, signature }
-    }
-
-    /// Returns the public key of the validator that produced the signature.
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
-    }
-
-    /// Returns the signature.
-    pub fn signature(&self) -> &Signature {
-        &self.signature
-    }
 }
 
 // BLOCK SIGNATURES
@@ -80,18 +47,17 @@ impl ValidatorSignature {
 
 /// The set of validator signatures over a block header.
 ///
-/// Each signature identifies the validator that produced it by public key (see
-/// [`ValidatorSignature`]), so the set may cover any subset of a [`ValidatorConfig`]. The set
-/// holds at most one signature per validator, kept in a canonical order (sorted by the serialized
-/// public key).
+/// A signature does not say which validator produced it. [`BlockSignatures::verify_against`]
+/// finds the signer by checking the signature against the keys of a [`ValidatorConfig`], so the
+/// set may cover any subset of the validators, in any order.
 ///
-/// Neither [`BlockSignatures::new`] nor deserialization verify the signatures they hold. The only
-/// way to establish that a [`BlockSignatures`] value authorizes a block is to call
+/// This is a plain, unchecked container: neither [`BlockSignatures::new`] nor deserialization
+/// verify anything about the signatures they hold beyond their number. The only way to establish
+/// that a [`BlockSignatures`] value authorizes a block is to call
 /// [`BlockSignatures::verify_against`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSignatures {
-    /// Signatures of distinct validators, sorted by the validators' serialized public keys.
-    signatures: Vec<ValidatorSignature>,
+    signatures: Vec<Signature>,
 }
 
 impl BlockSignatures {
@@ -100,39 +66,24 @@ impl BlockSignatures {
 
     /// Returns a new [`BlockSignatures`] from the provided signatures.
     ///
-    /// The signatures are sorted into a canonical order by the serialized public key of their
-    /// validator. The signatures themselves are not verified, see
-    /// [`BlockSignatures::verify_against`].
+    /// The signatures are not verified, see [`BlockSignatures::verify_against`].
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - `signatures` contains more than [`ValidatorConfig::MAX_VALIDATORS`] signatures;
-    /// - `signatures` contains more than one signature of the same validator.
-    pub fn new(mut signatures: Vec<ValidatorSignature>) -> Result<Self, BlockSignaturesError> {
+    /// Returns an error if `signatures` contains more than [`ValidatorConfig::MAX_VALIDATORS`]
+    /// signatures.
+    pub fn new(signatures: Vec<Signature>) -> Result<Self, BlockSignaturesError> {
         if signatures.len() > ValidatorConfig::MAX_VALIDATORS {
             return Err(BlockSignaturesError::TooManySignatures { count: signatures.len() });
         }
-
-        signatures.sort_by_key(|signature| signature.public_key.to_bytes());
-
-        // After sorting, signatures of the same validator are adjacent.
-        if let Some(pair) =
-            signatures.windows(2).find(|pair| pair[0].public_key == pair[1].public_key)
-        {
-            return Err(BlockSignaturesError::DuplicateSigner {
-                public_key: pair[0].public_key.clone(),
-            });
-        }
-
         Ok(Self { signatures })
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the signatures in canonical order.
-    pub fn as_slice(&self) -> &[ValidatorSignature] {
+    /// Returns the signatures.
+    pub fn as_signatures(&self) -> &[Signature] {
         &self.signatures
     }
 
@@ -152,16 +103,19 @@ impl BlockSignatures {
     /// Verifies that a quorum of `validator_config` signed `block_commitment`.
     ///
     /// The set is accepted if it holds at least [`ValidatorConfig::quorum`] signatures and every
-    /// signature it holds is a valid signature of a validator in `validator_config`. Since the set
-    /// holds at most one signature per validator, this means a quorum of distinct validators
-    /// signed. Signatures beyond the quorum are allowed.
+    /// signature it holds is a valid signature of a distinct validator in `validator_config`.
+    /// Signatures beyond the quorum are allowed.
+    ///
+    /// The signer of a signature is the validator whose key the signature verifies against. The
+    /// recovery id of the signature is not used for this, because signers are not required to set
+    /// it correctly.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - the set holds fewer signatures than the quorum;
-    /// - a signature is attributed to a key that is not in `validator_config`;
-    /// - a signature does not verify against the key it is attributed to.
+    /// - a signature does not verify against any key in `validator_config`;
+    /// - two signatures were produced by the same validator.
     pub fn verify_against(
         &self,
         block_commitment: Word,
@@ -175,15 +129,19 @@ impl BlockSignatures {
             });
         }
 
-        for ValidatorSignature { public_key, signature } in &self.signatures {
-            if !validator_config.keys().contains(public_key) {
-                return Err(SignatureVerificationError::SignerNotInValidatorSet {
-                    public_key: public_key.clone(),
-                });
-            }
-            if !signature.verify(block_commitment, public_key) {
-                return Err(SignatureVerificationError::InvalidSignature {
-                    public_key: public_key.clone(),
+        // Every signature must belong to a distinct validator, so the number of signatures checked
+        // against the quorum above is the number of validators that signed.
+        let validator_keys = validator_config.keys();
+        let mut has_signed = [false; ValidatorConfig::MAX_VALIDATORS];
+        for (position, signature) in self.signatures.iter().enumerate() {
+            let signer = validator_keys
+                .iter()
+                .position(|validator_key| signature.verify(block_commitment, validator_key))
+                .ok_or(SignatureVerificationError::InvalidSignatureAtPosition { position })?;
+
+            if core::mem::replace(&mut has_signed[signer], true) {
+                return Err(SignatureVerificationError::DuplicateSigner {
+                    public_key: validator_keys[signer].clone(),
                 });
             }
         }
@@ -195,21 +153,6 @@ impl BlockSignatures {
 // SERIALIZATION
 // ================================================================================================
 
-impl Serializable for ValidatorSignature {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.public_key.write_into(target);
-        self.signature.write_into(target);
-    }
-}
-
-impl Deserializable for ValidatorSignature {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let public_key = PublicKey::read_from(source)?;
-        let signature = Signature::read_from(source)?;
-        Ok(Self { public_key, signature })
-    }
-}
-
 impl Serializable for BlockSignatures {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.signatures.write_into(target);
@@ -218,7 +161,7 @@ impl Serializable for BlockSignatures {
 
 impl Deserializable for BlockSignatures {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let signatures = Vec::<ValidatorSignature>::read_from(source)?;
+        let signatures = Vec::<Signature>::read_from(source)?;
         Self::new(signatures).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
@@ -268,6 +211,42 @@ mod tests {
         signatures.verify_against(commitment, &config).unwrap();
     }
 
+    /// Signatures are matched to validator keys by verification, so neither their order nor the
+    /// validators they skip matter.
+    #[test]
+    fn verify_against_accepts_signatures_in_any_order() {
+        let (signers, config) = signers_with_quorum(3, 2);
+        let commitment = Word::empty();
+
+        let signatures =
+            BlockSignatures::sign(&[signers[2].clone(), signers[0].clone()], commitment);
+
+        signatures.verify_against(commitment, &config).unwrap();
+    }
+
+    /// Signers such as a KMS do not report the recovery id, so a signature must be accepted
+    /// regardless of the recovery id it carries.
+    #[test]
+    fn verify_against_ignores_the_recovery_id() {
+        let (signers, config) = signers_with_quorum(2, 2);
+        let commitment = Word::empty();
+
+        let signatures = signers
+            .iter()
+            .map(|signer| {
+                let signature = signer.sign(commitment);
+                Signature::from_sec1_bytes_and_recovery_id(
+                    signature.to_sec1_bytes(),
+                    signature.v() ^ 1,
+                )
+                .unwrap()
+            })
+            .collect();
+        let signatures = BlockSignatures::new(signatures).unwrap();
+
+        signatures.verify_against(commitment, &config).unwrap();
+    }
+
     #[test]
     fn verify_against_rejects_fewer_signatures_than_quorum() {
         let (signers, config) = signers_with_quorum(3, 2);
@@ -285,37 +264,15 @@ mod tests {
     fn verify_against_rejects_signer_outside_validator_set() {
         let (mut signers, config) = signers_with_quorum(3, 2);
         let commitment = Word::empty();
-        let outsider = random_secret_key();
 
         // The validators alone meet the quorum; the valid signature of a key outside the set still
         // invalidates the block.
-        signers.push(outsider.clone());
+        signers.push(random_secret_key());
         let signatures = BlockSignatures::sign(&signers, commitment);
 
         assert_matches!(
             signatures.verify_against(commitment, &config),
-            Err(SignatureVerificationError::SignerNotInValidatorSet { public_key })
-                if public_key == outsider.public_key()
-        );
-    }
-
-    #[test]
-    fn verify_against_rejects_invalid_signature() {
-        let (signers, config) = signers_with_quorum(3, 2);
-        let commitment = Word::empty();
-        let outsider = random_secret_key();
-
-        // The first two validators meet the quorum; the third is attributed a signature produced
-        // by another key.
-        let forged = ValidatorSignature::new(signers[2].public_key(), outsider.sign(commitment));
-        let mut signatures = BlockSignatures::sign(&signers[..2], commitment).as_slice().to_vec();
-        signatures.push(forged);
-        let signatures = BlockSignatures::new(signatures).unwrap();
-
-        assert_matches!(
-            signatures.verify_against(commitment, &config),
-            Err(SignatureVerificationError::InvalidSignature { public_key })
-                if public_key == signers[2].public_key()
+            Err(SignatureVerificationError::InvalidSignatureAtPosition { position: 3 })
         );
     }
 
@@ -327,33 +284,39 @@ mod tests {
 
         assert_matches!(
             signatures.verify_against(Word::from([1u32, 2, 3, 4]), &config),
-            Err(SignatureVerificationError::InvalidSignature { .. })
+            Err(SignatureVerificationError::InvalidSignatureAtPosition { position: 0 })
         );
     }
 
     /// A validator must not be counted towards the quorum more than once.
     #[test]
-    fn new_rejects_duplicate_signer() {
-        let signer = random_secret_key();
-        let signature = ValidatorSignature::new(signer.public_key(), signer.sign(Word::empty()));
+    fn verify_against_rejects_duplicate_signer() {
+        let (signers, config) = signers_with_quorum(3, 2);
+        let commitment = Word::empty();
 
-        let result = BlockSignatures::new(alloc::vec![signature.clone(), signature]);
+        let signatures =
+            BlockSignatures::sign(&[signers[0].clone(), signers[0].clone()], commitment);
 
         assert_matches!(
-            result,
-            Err(BlockSignaturesError::DuplicateSigner { public_key })
-                if public_key == signer.public_key()
+            signatures.verify_against(commitment, &config),
+            Err(SignatureVerificationError::DuplicateSigner { public_key })
+                if public_key == signers[0].public_key()
         );
     }
 
     #[test]
-    fn deserialization_rejects_duplicate_signer() {
+    fn new_rejects_too_many_signatures() {
         let signer = random_secret_key();
-        let signature = ValidatorSignature::new(signer.public_key(), signer.sign(Word::empty()));
-        let bytes = alloc::vec![signature.clone(), signature].to_bytes();
+        let signatures =
+            alloc::vec![signer.sign(Word::empty()); ValidatorConfig::MAX_VALIDATORS + 1];
 
         assert_matches!(
-            BlockSignatures::read_from_bytes(&bytes),
+            BlockSignatures::new(signatures.clone()),
+            Err(BlockSignaturesError::TooManySignatures { count })
+                if count == ValidatorConfig::MAX_VALIDATORS + 1
+        );
+        assert_matches!(
+            BlockSignatures::read_from_bytes(&signatures.to_bytes()),
             Err(DeserializationError::InvalidValue(_))
         );
     }

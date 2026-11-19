@@ -732,7 +732,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ParentValidationError::InvalidSignatures(
-                SignatureVerificationError::SignerNotInValidatorSet { .. }
+                SignatureVerificationError::InvalidSignatureAtPosition { position: 0 }
             ))
         ));
     }

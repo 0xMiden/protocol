@@ -283,7 +283,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(SignedBlockError::InvalidSignatures(
-                SignatureVerificationError::SignerNotInValidatorSet { .. }
+                SignatureVerificationError::InvalidSignatureAtPosition { position: 0 }
             ))
         ));
     }

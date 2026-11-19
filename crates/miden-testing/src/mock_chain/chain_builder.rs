@@ -196,9 +196,8 @@ impl MockChainBuilder {
 
     /// Sets the validator signing keys for genesis and subsequent blocks, until validator rotation.
     ///
-    /// By default, three random keys are generated. Supplied keys may be in any order; the genesis
-    /// [`ValidatorConfig`] and signatures follow the config's canonical public key order. All keys
-    /// must sign each block.
+    /// By default, three random keys are generated. Supplied keys may be in any order. All keys
+    /// sign each block.
     ///
     /// [`Self::build`] returns an error if the set is empty, contains duplicate keys, or exceeds
     /// [`ValidatorConfig::MAX_VALIDATORS`].
