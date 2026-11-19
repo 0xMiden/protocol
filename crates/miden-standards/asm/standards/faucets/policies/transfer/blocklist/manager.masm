@@ -11,7 +11,7 @@ use {AccountId} from miden::protocol::types
 #
 # Companion components required on the faucet:
 # - `Authority` — provides the auth dispatch the body calls into.
-# - `BasicBlocklist` (or any other component that installs the `blocked_accounts` storage slot)
+# - `BlocklistStorage` (or any other component that installs the `blocked_accounts` storage slot)
 #   — provides the storage that `block_account` / `unblock_account` write to.
 
 use miden::standards::access::authority

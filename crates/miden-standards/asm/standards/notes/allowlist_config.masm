@@ -54,7 +54,7 @@ const ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC = "allowlist config note must be p
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::transfer::allowlist::manager::{allow_account,
 #!   disallow_account}` (the `AllowlistManager` component), backed by the `Authority` component and
-#!   a component that installs the `allowed_accounts` storage slot (typically `BasicAllowlist`).
+#!   a component that installs the `allowed_accounts` storage slot (typically `AllowlistStorage`).
 #!
 #! Consumers: target account (attachment)
 #!

@@ -1,0 +1,23 @@
+[package]
+name              = "miden-standards-faucets-policies-transfer-blocklist-storage"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::transfer::blocklist::storage"
+path      = "storage.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Per-faucet blocklist read by the basic blocklist transfer policy"
+name        = "miden::standards::faucets::policies::transfer::blocklist"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Whether an account is blocked from receiving transfers"
+name        = "miden::standards::faucets::policies::transfer::blocklist::blocked_accounts"
+type        = { key = "word", value = "bool" }

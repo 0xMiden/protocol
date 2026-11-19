@@ -1,6 +1,7 @@
 //! Tests for the [`miden_standards::account::policies::BasicBlocklist`] transfer policy
-//! component (storage + `check_send_policy` / `check_receive_policy` predicates) and the
-//! [`miden_standards::account::policies::BlocklistManager`] authority-gated admin
+//! component (`check_send_policy` / `check_receive_policy` predicates), the
+//! [`miden_standards::account::policies::BlocklistStorage`] component that installs the list and
+//! the [`miden_standards::account::policies::BlocklistManager`] authority-gated admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
 
@@ -21,6 +22,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::EidosRandomCoin;
+use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -28,6 +30,7 @@ use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, P
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistManager,
+    BlocklistStorage,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -58,9 +61,9 @@ fn dummy_owner() -> AccountId {
 }
 
 /// Builds a fungible faucet with the basic blocklist transfer policy on both send and receive,
-/// plus the [`BlocklistManager`] component. With `Authority::OwnerControlled` the admin
-/// procedures are gated by the Ownable2Step owner, so the owner can invoke `block_account` /
-/// `unblock_account` via owner-authored notes.
+/// plus the [`BlocklistStorage`] and [`BlocklistManager`] components. With
+/// `Authority::OwnerControlled` the admin procedures are gated by the Ownable2Step owner, so the
+/// owner can invoke `block_account` / `unblock_account` via owner-authored notes.
 fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -69,15 +72,12 @@ fn add_faucet_with_owner_blocklist_transfer(
 }
 
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
-/// storage map with the given accounts at deploy time via
-/// [`SendPolicy::with_basic_blocklist`] and [`ReceivePolicy::with_basic_blocklist`]. Both carry
-/// the same seeded `BasicBlocklist`, which the manager installs exactly once.
+/// storage map with the given accounts at deploy time via [`BlocklistStorage`].
 fn add_faucet_with_owner_blocklist_transfer_initialized(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
-    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("SYM")?)
         .symbol("SYM".try_into()?)
@@ -94,11 +94,12 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
-                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
+                .active_send_policy(SendPolicy::with_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
+        .with_component(BlocklistStorage::with_blocked_accounts(initial_blocked))
         .with_component(BlocklistManager);
 
     builder.add_account_from_builder(
@@ -181,7 +182,59 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Seeds [`BasicBlocklist`] with the recipient at deploy time and confirms the asset transfer
+/// A faucet whose blocklist policies are active but which lacks the [`BlocklistStorage`] component
+/// builds, but the receive policy then fails on the missing list slot.
+#[tokio::test]
+async fn blocklist_policy_without_storage_component_fails_transfer() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+    let account_builder = AccountBuilder::new([44u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(SendPolicy::with_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist())
+                .build(),
+        );
+    let faucet =
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
+    let p2id_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::from(asset)],
+        NoteType::Public,
+    )?;
+
+    let mock_chain = builder.build()?;
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(p2id_note.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME);
+
+    Ok(())
+}
+
+/// Seeds [`BlocklistStorage`] with the recipient at deploy time and confirms the asset transfer
 /// fails immediately — no `block_account` admin call is needed because the account starts in
 /// the `blocked_accounts` map.
 #[tokio::test]
@@ -573,11 +626,12 @@ fn add_rbac_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::empty_basic_blocklist())
-                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
+        .with_component(BlocklistStorage::new())
         .with_component(BlocklistManager);
 
     builder.add_account_from_builder(

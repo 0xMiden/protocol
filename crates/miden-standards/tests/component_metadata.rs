@@ -29,9 +29,11 @@ use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::account::oracle::PriceOracle;
 use miden_standards::account::policies::{
     AllowlistManager,
+    AllowlistStorage,
     BasicAllowlist,
     BasicBlocklist,
     BlocklistManager,
+    BlocklistStorage,
     BurnAllowAll,
     BurnOwnerOnly,
     BurnPolicy,
@@ -78,9 +80,11 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         ),
         (TransferAllowAll::NAME, TransferAllowAll::component_metadata()),
         (AllowlistManager::NAME, AllowlistManager::component_metadata()),
+        (AllowlistStorage::NAME, AllowlistStorage::component_metadata()),
         (BasicAllowlist::NAME, BasicAllowlist::component_metadata()),
         (BasicBlocklist::NAME, BasicBlocklist::component_metadata()),
         (BlocklistManager::NAME, BlocklistManager::component_metadata()),
+        (BlocklistStorage::NAME, BlocklistStorage::component_metadata()),
         (BasicConstantFeePolicy::NAME, BasicConstantFeePolicy::component_metadata()),
         (ConstantFeeManager::NAME, ConstantFeeManager::component_metadata()),
         (CodeInspection::NAME, CodeInspection::component_metadata()),

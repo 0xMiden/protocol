@@ -48,7 +48,7 @@ procedure_root!(
 /// Companion components required:
 /// - [`crate::account::access::Authority`] — provides the mode-aware auth dispatch.
 /// - A component that installs the `allowed_accounts` storage slot — typically
-///   [`crate::account::policies::BasicAllowlist`].
+///   [`crate::account::policies::AllowlistStorage`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AllowlistManager;
 

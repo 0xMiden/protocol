@@ -6,13 +6,13 @@
 //!   variant. Each exports a `check_send_policy` and a `check_receive_policy` procedure that the
 //!   manager's `invoke_send_policy` / `invoke_receive_policy` wrapper dispatches to via `dyncall`
 //!   (after the pause check) once the active policy is set.
-//! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
-//!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
-//!   policies by themselves; they are consumed by policy variants.
+//! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: the storage component
+//!   that installs the list + helpers + auth-gated admin component(s) that maintain the storage.
+//!   Primitives are not transfer policies by themselves; they are consumed by policy variants.
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use thiserror::Error;
 
 mod allow_all;
@@ -88,10 +88,9 @@ pub enum TransferPolicyError {
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
 ///
-/// The basic blocklist and allowlist send and receive policies share their list component, so the
-/// two kinds always check the same list. Seed both with the same initial list: the
-/// [`super::TokenPolicyManager`] then installs the component once, while different initial lists
-/// fail the account build.
+/// The basic blocklist and allowlist policies keep no list of their own: the send and receive
+/// policies of a list both read it from the [`BlocklistStorage`] or [`AllowlistStorage`]
+/// component, which is installed on the account once, next to the [`super::TokenPolicyManager`].
 #[derive(Debug, Clone)]
 pub struct SendPolicy {
     root: AccountProcedureRoot,
@@ -110,43 +109,29 @@ impl SendPolicy {
         }
     }
 
-    /// Returns a send policy that rejects output notes whose creator (the native account) is in
-    /// the `blocked_accounts` map, starting with an empty blocklist. To seed initial entries use
-    /// [`Self::with_basic_blocklist`].
-    pub fn empty_basic_blocklist() -> Self {
+    /// Returns a send policy that rejects output notes whose creator (the native account) is
+    /// blocked on the issuing faucet.
+    ///
+    /// The list lives in the [`BlocklistStorage`] component, which must be installed on the
+    /// account as well. Without it the account still builds, but the policy fails every send by an
+    /// account other than the faucet, since the list's storage slot does not exist.
+    pub fn with_basic_blocklist() -> Self {
         Self {
             root: BasicBlocklist::send_root(),
-            components: vec![BasicBlocklist::default().into()],
-        }
-    }
-
-    /// Returns a basic-blocklist send policy seeded with the given initial blocked accounts.
-    pub fn with_basic_blocklist<I>(blocked_accounts: I) -> Self
-    where
-        I: IntoIterator<Item = AccountId>,
-    {
-        Self {
-            root: BasicBlocklist::send_root(),
-            components: vec![BasicBlocklist::with_blocked_accounts(blocked_accounts).into()],
+            components: vec![BasicBlocklist.into()],
         }
     }
 
     /// Returns a send policy that rejects output notes whose creator (the native account) is not
-    /// in the `allowed_accounts` map, starting with an empty allowlist (every send rejected). To
-    /// seed initial entries use [`Self::with_basic_allowlist`].
-    pub fn empty_basic_allowlist() -> Self {
+    /// allowed on the issuing faucet.
+    ///
+    /// The list lives in the [`AllowlistStorage`] component, which must be installed on the
+    /// account as well. Without it the account still builds, but the policy fails every send by an
+    /// account other than the faucet, since the list's storage slot does not exist.
+    pub fn with_basic_allowlist() -> Self {
         Self {
             root: BasicAllowlist::send_root(),
-            components: vec![BasicAllowlist::default().into()],
-        }
-    }
-
-    /// Returns a basic-allowlist send policy. The provided [`AllowlistStorage`] seeds the initial
-    /// allowlist entries at component-construction time.
-    pub fn with_basic_allowlist(allow_list: AllowlistStorage) -> Self {
-        Self {
-            root: BasicAllowlist::send_root(),
-            components: vec![BasicAllowlist::from(allow_list).into()],
+            components: vec![BasicAllowlist.into()],
         }
     }
 
@@ -226,10 +211,9 @@ impl IntoIterator for SendPolicy {
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
 ///
-/// The basic blocklist and allowlist send and receive policies share their list component, so the
-/// two kinds always check the same list. Seed both with the same initial list: the
-/// [`super::TokenPolicyManager`] then installs the component once, while different initial lists
-/// fail the account build.
+/// The basic blocklist and allowlist policies keep no list of their own: the send and receive
+/// policies of a list both read it from the [`BlocklistStorage`] or [`AllowlistStorage`]
+/// component, which is installed on the account once, next to the [`super::TokenPolicyManager`].
 #[derive(Debug, Clone)]
 pub struct ReceivePolicy {
     root: AccountProcedureRoot,
@@ -248,43 +232,29 @@ impl ReceivePolicy {
         }
     }
 
-    /// Returns a receive policy that rejects assets added to an account (the native account) in
-    /// the `blocked_accounts` map, starting with an empty blocklist. To seed initial entries use
-    /// [`Self::with_basic_blocklist`].
-    pub fn empty_basic_blocklist() -> Self {
+    /// Returns a receive policy that rejects assets added to an account (the native account)
+    /// that is blocked on the issuing faucet.
+    ///
+    /// The list lives in the [`BlocklistStorage`] component, which must be installed on the
+    /// account as well. Without it the account still builds, but the policy fails every receive by
+    /// an account other than the faucet, since the list's storage slot does not exist.
+    pub fn with_basic_blocklist() -> Self {
         Self {
             root: BasicBlocklist::receive_root(),
-            components: vec![BasicBlocklist::default().into()],
+            components: vec![BasicBlocklist.into()],
         }
     }
 
-    /// Returns a basic-blocklist receive policy seeded with the given initial blocked accounts.
-    pub fn with_basic_blocklist<I>(blocked_accounts: I) -> Self
-    where
-        I: IntoIterator<Item = AccountId>,
-    {
-        Self {
-            root: BasicBlocklist::receive_root(),
-            components: vec![BasicBlocklist::with_blocked_accounts(blocked_accounts).into()],
-        }
-    }
-
-    /// Returns a receive policy that rejects assets added to an account (the native account) not
-    /// in the `allowed_accounts` map, starting with an empty allowlist (every receive rejected).
-    /// To seed initial entries use [`Self::with_basic_allowlist`].
-    pub fn empty_basic_allowlist() -> Self {
+    /// Returns a receive policy that rejects assets added to an account (the native account)
+    /// that is not allowed on the issuing faucet.
+    ///
+    /// The list lives in the [`AllowlistStorage`] component, which must be installed on the
+    /// account as well. Without it the account still builds, but the policy fails every receive by
+    /// an account other than the faucet, since the list's storage slot does not exist.
+    pub fn with_basic_allowlist() -> Self {
         Self {
             root: BasicAllowlist::receive_root(),
-            components: vec![BasicAllowlist::default().into()],
-        }
-    }
-
-    /// Returns a basic-allowlist receive policy. The provided [`AllowlistStorage`] seeds the
-    /// initial allowlist entries at component-construction time.
-    pub fn with_basic_allowlist(allow_list: AllowlistStorage) -> Self {
-        Self {
-            root: BasicAllowlist::receive_root(),
-            components: vec![BasicAllowlist::from(allow_list).into()],
+            components: vec![BasicAllowlist.into()],
         }
     }
 

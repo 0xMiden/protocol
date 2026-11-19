@@ -16,7 +16,7 @@
 //! [`XReserveAdminAuthority`] maps `pause` to `DOM_PAUSER`, `unpause` to `DOM_UNPAUSER`,
 //! `set_attester` to `ATTEST_ADMIN`, and block/unblock to `BLK_MANAGER`. Other authority-gated
 //! procedures, including `set_note_fee`, resolve to `ADMIN`. Pause and blocklist storage belong
-//! to the base `Pausable` and `BasicBlocklist` companions; their managers add no storage.
+//! to the base `Pausable` and `BlocklistStorage` companions; their managers add no storage.
 //!
 //! Fee administration uses a standard
 //! [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy) constructed
@@ -43,6 +43,7 @@ use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::account::policies::{
     BlocklistManager,
+    BlocklistStorage,
     BurnPolicy,
     MinBurnAmount,
     MintPolicy,
@@ -303,8 +304,8 @@ impl XReserveStablecoinBuilder {
                 burn_root,
                 [burn_policy_component, MinBurnAmount::new(self.min_burn_amount).into()],
             )?)
-            .active_send_policy(SendPolicy::empty_basic_blocklist())
-            .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+            .active_send_policy(SendPolicy::with_basic_blocklist())
+            .active_receive_policy(ReceivePolicy::with_basic_blocklist())
             .build();
 
         let mut components = Vec::new();
@@ -312,6 +313,7 @@ impl XReserveStablecoinBuilder {
         components.push(Pausable::unpaused().into());
         components.extend(manager);
         components.push(PausableManager.into());
+        components.push(BlocklistStorage::new().into());
         components.push(BlocklistManager.into());
         components.push(ConstantFeeManager::for_basic_constant_fee_policy().into());
         components.push(UpgradeManager.into());

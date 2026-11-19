@@ -1,0 +1,20 @@
+# The MASM code of the blocklist storage account component.
+#
+# Installs the `blocked_accounts` storage map (defined by the `blocklist` primitive), which the
+# basic blocklist transfer policy reads and the blocklist manager writes, and exposes `is_blocked`
+# as a call-padded accessor.
+
+use {AccountId, Bool} from miden::protocol::types
+use miden::standards::faucets::policies::transfer::blocklist
+
+#! Returns whether the given account is blocked on this faucet.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [is_blocked, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc is_blocked(account_id: AccountId) -> Bool
+    exec.blocklist::is_blocked
+    # => [is_blocked, pad(15)]
+end

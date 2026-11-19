@@ -6,7 +6,13 @@ extern crate alloc;
 use alloc::vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    AssetCallbackFlag,
+};
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::{Felt, Word};
@@ -19,6 +25,7 @@ use miden_standards::account::faucets::{
 };
 use miden_standards::account::policies::{
     AllowlistStorage,
+    BasicAllowlist,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -52,17 +59,26 @@ fn sample_approvers(n: u32) -> vec::Vec<(PublicKeyCommitment, AuthScheme)> {
 
 /// A [`TokenPolicyManager`] whose send and receive policies are an allowlist seeded with
 /// `initial_allowed`, so `has_transfer_policy` is true and the factory must enable asset callbacks.
+///
+/// The factories install only the components the manager yields, so the [`AllowlistStorage`] ships
+/// as a companion component of a custom receive policy.
 fn allowlist_policy_manager(
     initial_allowed: impl IntoIterator<Item = AccountId>,
-) -> TokenPolicyManager {
-    let allow_list = AllowlistStorage::with_allowed_accounts(initial_allowed);
+) -> anyhow::Result<TokenPolicyManager> {
+    let receive_policy = ReceivePolicy::custom(
+        BasicAllowlist::receive_root(),
+        [
+            AccountComponent::from(BasicAllowlist),
+            AllowlistStorage::with_allowed_accounts(initial_allowed).into(),
+        ],
+    )?;
 
-    TokenPolicyManager::builder()
+    Ok(TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
-        .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
-        .build()
+        .active_send_policy(SendPolicy::with_basic_allowlist())
+        .active_receive_policy(receive_policy)
+        .build())
 }
 
 fn sample_faucet() -> anyhow::Result<FungibleFaucet> {
@@ -118,7 +134,7 @@ async fn multisig_factory_faucet_enforces_receive_allowlist() -> anyhow::Result<
         [43u8; 32],
         sample_faucet()?,
         user_faucet_multisig(sample_approvers(3), 2)?,
-        allowlist_policy_manager([]),
+        allowlist_policy_manager([])?,
         AccountType::Public,
     )?;
     assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
@@ -143,7 +159,7 @@ async fn multisig_factory_faucet_allows_allowlisted_recipient() -> anyhow::Resul
         [43u8; 32],
         sample_faucet()?,
         user_faucet_multisig(sample_approvers(3), 2)?,
-        allowlist_policy_manager([target_account.id()]),
+        allowlist_policy_manager([target_account.id()])?,
         AccountType::Public,
     )?;
 
@@ -171,7 +187,7 @@ async fn guarded_factory_faucet_enforces_receive_allowlist() -> anyhow::Result<(
         [44u8; 32],
         sample_faucet()?,
         user_faucet_guarded(sample_approvers(3), 2, guardian)?,
-        allowlist_policy_manager([]),
+        allowlist_policy_manager([])?,
         AccountType::Public,
     )?;
     assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
