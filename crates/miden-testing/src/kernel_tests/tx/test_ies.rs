@@ -215,26 +215,10 @@ async fn prove_ies_seal_uses_supplied_secrets_before_drawn_ones() -> anyhow::Res
     Ok(())
 }
 
-/// How a test changes the recorded secrets of a transaction that seals to two recipients.
-enum RecordedSecretsChange {
-    /// Drops the secret of the second request.
-    Shorten,
-    /// Swaps the secrets of the two requests.
-    Reorder,
-    /// Appends a secret that no request uses.
-    Extend,
-}
-
 /// Tests that proving fails with a specific error when the recorded secrets do not match the
 /// `seal` requests of the transaction.
-#[rstest]
-#[case::shortened(RecordedSecretsChange::Shorten)]
-#[case::reordered(RecordedSecretsChange::Reorder)]
-#[case::extended(RecordedSecretsChange::Extend)]
 #[tokio::test]
-async fn prove_ies_seal_rejects_inconsistent_recorded_secrets(
-    #[case] change: RecordedSecretsChange,
-) -> anyhow::Result<()> {
+async fn prove_ies_seal_rejects_inconsistent_recorded_secrets() -> anyhow::Result<()> {
     let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
     let executed_tx = execute_sealing_transaction(
         &recipients,
@@ -242,57 +226,42 @@ async fn prove_ies_seal_rejects_inconsistent_recorded_secrets(
         SealingAccount::Native,
     )
     .await?;
+    let secrets = executed_tx.tx_inputs().ies_seal_secrets().to_vec();
 
-    let mut secrets = executed_tx.tx_inputs().ies_seal_secrets().to_vec();
-    match change {
-        RecordedSecretsChange::Shorten => {
-            secrets.pop();
-        },
-        RecordedSecretsChange::Reorder => secrets.reverse(),
-        RecordedSecretsChange::Extend => {
-            secrets.push(IesSealSecret::new(recipients[0], secret_key(9)));
-        },
-    }
-    let witness = witness_with_recorded_secrets(executed_tx, secrets)?;
-
-    let error = LocalTransactionProver::default()
-        .prove(witness)
-        .expect_err("proving should reject the changed secrets");
-    let kernel_error = match &error {
-        TransactionProverError::TransactionProgramExecutionFailed(ExecutionError::EventError {
-            error,
-            ..
-        }) => error.downcast_ref::<TransactionKernelError>(),
-        _ => None,
+    let prove_with = |secrets: Vec<IesSealSecret>| -> anyhow::Result<TransactionProverError> {
+        let witness = witness_with_recorded_secrets(executed_tx.clone(), secrets)?;
+        Ok(LocalTransactionProver::default()
+            .prove(witness)
+            .expect_err("proving should reject the changed secrets"))
     };
 
-    match change {
-        RecordedSecretsChange::Shorten => {
-            assert!(
-                matches!(kernel_error, Some(TransactionKernelError::IesSealSecretMissing)),
-                "unexpected error: {error}"
-            );
-        },
-        RecordedSecretsChange::Reorder => {
-            assert!(
-                matches!(
-                    kernel_error,
-                    Some(TransactionKernelError::IesSealSecretRecipientMismatch {
-                        supplied,
-                        requested,
-                    }) if *supplied == recipients[1].to_commitment()
-                        && *requested == recipients[0].to_commitment()
-                ),
-                "unexpected error: {error}"
-            );
-        },
-        RecordedSecretsChange::Extend => {
-            assert!(
-                matches!(error, TransactionProverError::UnusedIesSealSecrets(1)),
-                "unexpected error: {error}"
-            );
-        },
-    }
+    // Dropping the secret of the second request leaves that request without one.
+    let error = prove_with(secrets[..1].to_vec())?;
+    assert!(
+        matches!(prover_kernel_error(&error), Some(TransactionKernelError::IesSealSecretMissing)),
+        "expected IesSealSecretMissing, got: {error}"
+    );
+
+    // Swapping the secrets gives the first request the secret of the second recipient.
+    let error = prove_with(secrets.iter().rev().cloned().collect())?;
+    assert!(
+        matches!(
+            prover_kernel_error(&error),
+            Some(TransactionKernelError::IesSealSecretRecipientMismatch { supplied, requested })
+                if *supplied == recipients[1].to_commitment()
+                    && *requested == recipients[0].to_commitment()
+        ),
+        "expected IesSealSecretRecipientMismatch, got: {error}"
+    );
+
+    // Appending a secret that no request uses leaves it unused.
+    let mut extended_secrets = secrets;
+    extended_secrets.push(IesSealSecret::new(recipients[0], secret_key(9)));
+    let error = prove_with(extended_secrets)?;
+    assert!(
+        matches!(error, TransactionProverError::UnusedIesSealSecrets(1)),
+        "expected UnusedIesSealSecrets(1), got: {error}"
+    );
 
     Ok(())
 }
@@ -787,6 +756,17 @@ fn witness_with_recorded_secrets(
         final_account,
         expiration_block_num,
     ))
+}
+
+/// Returns the error a transaction event handler raised when proving failed with `error`, if any.
+fn prover_kernel_error(error: &TransactionProverError) -> Option<&TransactionKernelError> {
+    match error {
+        TransactionProverError::TransactionProgramExecutionFailed(ExecutionError::EventError {
+            error,
+            ..
+        }) => error.downcast_ref::<TransactionKernelError>(),
+        _ => None,
+    }
 }
 
 /// Compiles a transaction script that runs `sealing_code`, which leaves `num_envelopes` envelopes
