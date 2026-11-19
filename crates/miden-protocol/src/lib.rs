@@ -26,6 +26,7 @@ pub mod types;
 pub mod testing;
 
 mod constants;
+mod proof;
 
 // RE-EXPORTS
 // ================================================================================================
@@ -44,6 +45,7 @@ pub use miden_core_lib::CoreLibrary;
 pub use miden_crypto::hash::eidos::Eidos as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};
+pub use proof::verify_execution_proof;
 pub use protocol::ProtocolLib;
 pub use script::MastForestScriptError;
 pub use types::DoubleWord;
