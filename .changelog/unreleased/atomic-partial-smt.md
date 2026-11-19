@@ -1,0 +1,1 @@
+Removed the redundant witness root checks in `PartialVault::add`, `PartialStorageMap::add` and `PartialCodeTree::track_procedure`, since `PartialSmt::add_proof` now leaves the tree unchanged on error.
