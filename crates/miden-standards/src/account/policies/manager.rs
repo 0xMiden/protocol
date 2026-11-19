@@ -739,14 +739,17 @@ impl IntoIterator for TokenPolicyManager {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::AccountId;
+    use assert_matches::assert_matches;
     use miden_protocol::account::component::{InitStorageData, StorageValueName};
+    use miden_protocol::account::{AccountBuilder, AccountId};
     use miden_protocol::asset::AssetCallbacks;
+    use miden_protocol::errors::AccountError;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
     use super::*;
+    use crate::account::auth::NoAuth;
     use crate::account::policies::{
-        BasicBlocklist,
+        BlocklistStorage,
         BurnAllowAll,
         MintAllowAll,
         TransferAllowAll,
@@ -990,16 +993,14 @@ mod tests {
         assert!(allowed.contains(&BurnPolicy::allow_all().root()));
     }
 
-    /// The send and receive procedures of a transfer policy belong to one component, which the
-    /// manager installs once when both policies carry the same initial storage, and twice when
-    /// they do not, so the conflicting storage fails the account build.
+    /// The send and receive procedures of a list policy belong to one component with one list.
+    /// When both policies start from the same list, the component is installed once and the
+    /// account builds. When the lists differ, the account build fails on the duplicate list slot,
+    /// so neither list is dropped silently.
     #[rstest::rstest]
-    #[case::same_initial_list(true, 1)]
-    #[case::different_initial_lists(false, 2)]
-    fn transfer_policy_component_is_installed_once_per_storage(
-        #[case] same_initial_list: bool,
-        #[case] expected_blocklists: usize,
-    ) {
+    #[case::same_initial_list(true)]
+    #[case::different_initial_lists(false)]
+    fn send_and_receive_blocklists_must_start_from_the_same_list(#[case] same_initial_list: bool) {
         let blocked_account =
             AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let receive_policy = if same_initial_list {
@@ -1007,25 +1008,30 @@ mod tests {
         } else {
             ReceivePolicy::empty_basic_blocklist()
         };
-        let components: Vec<AccountComponent> = TokenPolicyManager::builder()
+        let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::with_basic_blocklist([blocked_account]))
             .active_receive_policy(receive_policy)
-            .allowed_send_policy(SendPolicy::allow_all())
-            .allowed_receive_policy(ReceivePolicy::allow_all())
-            .build()
-            .into_iter()
-            .collect();
+            .build();
 
-        let installed = |name: &str| {
-            components
-                .iter()
-                .filter(|component| component.metadata().name() == name)
-                .count()
-        };
-        assert_eq!(installed(TransferAllowAll::NAME), 1);
-        assert_eq!(installed(BasicBlocklist::NAME), expected_blocklists);
+        let account = manager
+            .into_iter()
+            .fold(
+                AccountBuilder::new([1; 32]).with_component(NoAuth),
+                AccountBuilder::with_component,
+            )
+            .build_existing();
+
+        if same_initial_list {
+            account.expect("account with one blocklist should build");
+        } else {
+            assert_matches!(account, Err(AccountError::BuildError(_, Some(source))) => {
+                assert_matches!(*source, AccountError::DuplicateStorageSlotName(name) => {
+                    assert_eq!(&name, BlocklistStorage::blocked_accounts_slot());
+                });
+            });
+        }
     }
 
     /// Components with different code are all installed, even when their names collide.
