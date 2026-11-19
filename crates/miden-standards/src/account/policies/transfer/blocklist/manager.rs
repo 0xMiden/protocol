@@ -48,7 +48,7 @@ procedure_root!(
 /// Companion components required:
 /// - [`crate::account::access::Authority`] — provides the mode-aware auth dispatch.
 /// - A component that installs the `blocked_accounts` storage slot — typically
-///   [`crate::account::policies::BasicBlocklist`].
+///   [`crate::account::policies::BlocklistStorage`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlocklistManager;
 

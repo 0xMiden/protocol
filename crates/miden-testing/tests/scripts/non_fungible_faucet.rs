@@ -23,6 +23,7 @@ use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{AssetStatus, NonFungibleFaucet, TokenBaseUri, TokenName};
 use miden_standards::account::policies::{
     BlocklistManager,
+    BlocklistStorage,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -675,14 +676,14 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Builds an NFT faucet with a basic-blocklist transfer policy on send and receive, seeding the
-/// blocked-accounts set, plus the authority-gated blocklist admin component.
+/// Builds an NFT faucet with a basic-blocklist transfer policy on send and receive, the blocklist
+/// storage component seeded with the blocked-accounts set, and the authority-gated blocklist admin
+/// component.
 fn build_nft_faucet_with_blocklist(
     builder: &mut MockChainBuilder,
     owner: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
-    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
@@ -697,11 +698,12 @@ fn build_nft_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
-                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
+                .active_send_policy(SendPolicy::with_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
+        .with_component(BlocklistStorage::with_blocked_accounts(initial_blocked))
         .with_component(BlocklistManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

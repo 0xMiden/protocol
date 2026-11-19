@@ -1,10 +1,7 @@
-use alloc::collections::BTreeSet;
-
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_package;
-use crate::account::policies::transfer::blocklist::BlocklistStorage;
 use crate::procedure_root;
 
 // BASIC BLOCKLIST TRANSFER POLICY
@@ -37,10 +34,9 @@ procedure_root!(
     BasicBlocklist::code()
 );
 
-/// The basic blocklist transfer policy account component.
+/// The storage-free basic blocklist transfer policy account component.
 ///
-/// Installs the per-faucet `blocked_accounts` storage map (defined by [`BlocklistStorage`])
-/// plus the `check_send_policy` and `check_receive_policy` predicate procedures. Pair with a
+/// Installs the `check_send_policy` and `check_receive_policy` predicate procedures. Pair with a
 /// [`crate::account::policies::TokenPolicyManager`] whose send and receive policy maps include
 /// [`BasicBlocklist::send_root`] and [`BasicBlocklist::receive_root`]. When active, transfers
 /// fail if the native account (asset recipient or note creator) is currently blocked on the
@@ -48,16 +44,15 @@ procedure_root!(
 ///
 /// The issuing faucet is exempt from its own blocklist.
 ///
-/// The wrapped [`BlocklistStorage`] captures the initial blocklist contents (it can be empty
-/// for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
-/// [`Self::with_blocked_accounts`] to seed the storage map at component construction time.
+/// The procedures read the `blocked_accounts` storage map installed by the
+/// [`super::BlocklistStorage`] component, which must be installed on the account as well.
 ///
 /// Block / unblock administration is intentionally not part of this component. The
 /// `block_account` / `unblock_account` procedures live in the standards library and require an
 /// auth-wrapped admin component (see [`super::BlocklistManager`]) to be safely exposed
 /// on a production faucet.
-#[derive(Debug, Clone, Default)]
-pub struct BasicBlocklist(BlocklistStorage);
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BasicBlocklist;
 
 impl BasicBlocklist {
     /// The name of the component.
@@ -65,19 +60,6 @@ impl BasicBlocklist {
 
     pub(crate) const SEND_PROC_NAME: &str = "check_send_policy";
     pub(crate) const RECEIVE_PROC_NAME: &str = "check_receive_policy";
-
-    /// Creates a basic blocklist with the given initial blocked accounts.
-    pub fn with_blocked_accounts<I>(blocked_accounts: I) -> Self
-    where
-        I: IntoIterator<Item = AccountId>,
-    {
-        Self(BlocklistStorage::with_blocked_accounts(blocked_accounts))
-    }
-
-    /// Returns the initial blocked accounts captured in this component.
-    pub fn blocked_accounts(&self) -> &BTreeSet<AccountId> {
-        self.0.blocked_accounts()
-    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -100,19 +82,12 @@ impl BasicBlocklist {
     }
 }
 
-impl From<BlocklistStorage> for BasicBlocklist {
-    fn from(storage: BlocklistStorage) -> Self {
-        Self(storage)
-    }
-}
-
 impl From<BasicBlocklist> for AccountComponent {
-    fn from(blocklist: BasicBlocklist) -> Self {
+    fn from(_: BasicBlocklist) -> Self {
         let metadata = BasicBlocklist::component_metadata();
 
-        AccountComponent::new(BasicBlocklist::code().clone(), vec![blocklist.0.into_slot()], metadata)
-            .expect(
-                "basic blocklist transfer policy component should satisfy the requirements of a valid account component",
-            )
+        AccountComponent::new(BasicBlocklist::code().clone(), vec![], metadata).expect(
+            "basic blocklist transfer policy component should satisfy the requirements of a valid account component",
+        )
     }
 }

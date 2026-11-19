@@ -2,9 +2,9 @@
 #
 # Exposes the `check_send_policy` and `check_receive_policy` procedures so their MAST roots can be
 # registered as the active (or allowed) send and receive policies on a `TokenPolicyManager`.
-# Installs the `allowed_accounts` storage map (defined by the sibling `allowlist` primitive);
-# admin updates go through a companion auth-gated component (see
-# `allowlist/manager/manager.masm`).
+# Reads the `allowed_accounts` storage map installed by the allowlist storage component (see
+# `allowlist/storage/storage.masm`); admin updates go through a companion auth-gated component
+# (see `allowlist/manager/manager.masm`).
 
 pub use {check_send_policy} from miden::standards::faucets::policies::transfer::basic_allowlist
 pub use {check_receive_policy} from miden::standards::faucets::policies::transfer::basic_allowlist
