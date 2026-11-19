@@ -9,16 +9,13 @@ use crate::{Felt, WORD_SIZE, Word, ZERO};
 // VALIDATOR CONFIG
 // ================================================================================================
 
-/// The ordered set of validator public keys authorized to sign a block, and how many of them must
-/// sign.
+/// The set of validator public keys authorized to sign a block, and how many of them must sign.
 ///
-/// The quorum is at least one and at most the number of keys, and the block header commits to it.
-/// Signature verification does not honor it yet: a block still needs a signature from every
-/// validator, see [`BlockSignatures`](crate::block::BlockSignatures).
-///
-/// A block header commits to the [`ValidatorConfig`] authorized to sign the *next* block. A block's
-/// signatures are verified positionally against the validator set committed to by its parent: the
-/// signature in slot `i` is checked against the key at index `i` in this set.
+/// A block header commits to the [`ValidatorConfig`] authorized to sign the *next* block. A block
+/// is valid once at least [`ValidatorConfig::quorum`] of the validators committed to by its parent
+/// have signed it, see
+/// [`BlockSignatures::verify_against`](crate::block::BlockSignatures::verify_against). The quorum
+/// is at least one and at most the number of keys.
 ///
 /// The number of validators is not fixed by the protocol: a chain may run with a single validator
 /// and grow its validator set over time by rotating in a larger [`ValidatorConfig`] (see
