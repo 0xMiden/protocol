@@ -1,0 +1,84 @@
+use miden::core::crypto::ecdh::ecgfp5
+use miden::core::crypto::hashes::eidos
+use miden::core::crypto::ies::ecgfp5_eidos
+
+# CONSTANTS
+# =================================================================================================
+
+# Eidos domain tag of EcGFp5 public-key commitments, shared with `ecgfp5::PublicKey::to_commitment`
+# in Rust.
+const ECGFP5_PUBLIC_KEY_DOMAIN = 0x00001001
+
+# Number of elements in an EcGFp5 public-key encoding.
+const ECGFP5_PUBLIC_KEY_LEN = 5
+
+# Local memory offsets of `seal`.
+const PUBLIC_KEY_LOC = 0
+const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
+
+# PROCEDURES
+# =================================================================================================
+
+#! Encrypts a plaintext to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme.
+#!
+#! Writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to dst_ptr.
+#! The context is authenticated but not encrypted. The recipient decrypts the envelope with its
+#! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
+#!
+#! Inserts the public key into the advice map under its commitment.
+#!
+#! Inputs:  [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - public_key is the recipient's EcGFp5 public key in increasing coefficient order.
+#! - src_ptr is the memory address of the plaintext.
+#! - plaintext_len is the number of plaintext elements.
+#! - context_ptr is the memory address of the context.
+#! - context_len is the number of context elements.
+#! - dst_ptr is the memory address to which the envelope is written.
+#!
+#! Panics if:
+#! - public_key is not a valid EcGFp5 public key.
+#! - the advice map already maps the commitment of public_key to other values.
+#! - the pointers or lengths are invalid for `miden::core::crypto::ies::ecgfp5_eidos::seal`.
+#!
+#! Invocation: exec
+@locals(8)
+pub proc seal(
+    public_key: ecgfp5::PointEncoding,
+    source: ptr<felt>,
+    plaintext_len: u32,
+    context: ptr<felt>,
+    context_len: u32,
+    destination: ptr<felt>,
+)
+    loc_storew_le.PUBLIC_KEY_LOC dropw loc_store.PUBLIC_KEY_TAIL_LOC
+    # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    push.ECGFP5_PUBLIC_KEY_LEN locaddr.PUBLIC_KEY_LOC push.ECGFP5_PUBLIC_KEY_DOMAIN
+    # => [public_key_domain, public_key_ptr, public_key_len, src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    exec.eidos::hash_elements_in_domain
+    # => [PUBLIC_KEY_COMMITMENT, src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    locaddr.PUBLIC_KEY_LOC dup add.ECGFP5_PUBLIC_KEY_LEN
+    # => [end_ptr, start_ptr, PUBLIC_KEY_COMMITMENT, src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    movdn.5 movdn.4
+    # => [PUBLIC_KEY_COMMITMENT, start_ptr, end_ptr, src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    # insert the public key into the advice map keyed by its commitment
+    adv.insert_mem
+    # => [PUBLIC_KEY_COMMITMENT, start_ptr, end_ptr, src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    movup.4 drop movup.4 drop
+    # => [PUBLIC_KEY_COMMITMENT, src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    exec.ecgfp5_eidos::seal
+    # => []
+end

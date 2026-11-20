@@ -1,0 +1,1 @@
+[BREAKING] Added `miden::protocol::ies::seal` to encrypt to an EcGFp5 public key inside a transaction, recording the ephemeral secrets in `TransactionInputs` and accepting them in `TransactionArgs`, so `TransactionArgs::from_parts`, `TransactionExecutorHost::new`, `TransactionProverHost::new` and the `Unauthorized` errors now take or carry `ies_seal_secrets`.

@@ -98,6 +98,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         BTreeMap::from([(second, dummy_word(4)), (first, dummy_word(5))]),
         vec![Note::mock_noop(dummy_word(9)).recipient().clone()],
         Vec::new(),
+        Vec::new(),
         AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
         dummy_word(8),
         account_code_upgrade,

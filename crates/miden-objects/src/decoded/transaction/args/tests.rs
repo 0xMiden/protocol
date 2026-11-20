@@ -44,6 +44,7 @@ fn transaction_args_decode_optional_script_without_verifying_it() {
         Default::default(),
         Default::default(),
         Default::default(),
+        Default::default(),
         Word::empty(),
         None,
     );
@@ -95,6 +96,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
         account_code_upgrade: None,
         output_note_recipients: vec![],
         signatures: vec![],
+        ies_seal_secrets: vec![],
     }
     .decode_fields()
     .unwrap()
@@ -136,6 +138,7 @@ fn transaction_args_reject_duplicate_note_ids() {
         account_code_upgrade: None,
         output_note_recipients: vec![],
         signatures: vec![],
+        ies_seal_secrets: vec![],
     };
     let error = duplicate
         .decode_fields()

@@ -35,14 +35,16 @@ miden-protocol  = { workspace = true }
 miden-standards = { workspace = true }
 
 # Miden dependencies
+miden-core-lib  = { workspace = true }
 miden-processor = { workspace = true }
 miden-prover    = { workspace = true }
 
 # External dependencies
-bon       = { workspace = true }
-thiserror = { workspace = true }
+bon         = { workspace = true }
+rand        = { features = ["sys_rng"], workspace = true }
+rand_chacha = { workspace = true }
+thiserror   = { workspace = true }
 
 [dev-dependencies]
 miden-protocol  = { features = ["testing"], workspace = true }
 miden-standards = { features = ["testing"], workspace = true }
-rand_chacha     = { workspace = true }

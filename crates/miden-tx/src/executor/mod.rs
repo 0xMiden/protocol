@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use miden_processor::advice::AdviceInputs;
@@ -15,6 +16,7 @@ use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
+    IesSealSecret,
     InputNote,
     InputNotes,
     TransactionArgs,
@@ -200,7 +202,9 @@ where
     ) -> Result<ExecutedTransaction, TransactionExecutorError> {
         let tx_inputs = self.prepare_tx_inputs(account_id, block_ref, notes, tx_args).await?;
 
-        let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
+        let ies_seal_secrets = tx_inputs.ies_seal_secrets_in_request_order().cloned().collect();
+        let (mut host, stack_inputs, advice_inputs) =
+            self.prepare_transaction(&tx_inputs, ies_seal_secrets).await?;
 
         // Use the package-debug execution API even when the embedded release kernel has no debug
         // sections. This enables package-owned debug info for dynamically loaded scripts.
@@ -246,7 +250,9 @@ where
         let notes = InputNotes::default();
         let tx_inputs = self.prepare_tx_inputs(account_id, block_ref, notes, tx_args).await?;
 
-        let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
+        let ies_seal_secrets = tx_inputs.ies_seal_secrets_in_request_order().cloned().collect();
+        let (mut host, stack_inputs, advice_inputs) =
+            self.prepare_transaction(&tx_inputs, ies_seal_secrets).await?;
 
         let program = TransactionKernel::tx_script_main();
         let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
@@ -325,10 +331,11 @@ where
     /// Prepares the data needed for transaction execution.
     ///
     /// Preparation includes loading transaction inputs from the data store, validating them, and
-    /// instantiating a transaction host.
+    /// instantiating a transaction host with the supplied `ies_seal_secrets`.
     async fn prepare_transaction(
         &self,
         tx_inputs: &TransactionInputs,
+        ies_seal_secrets: Vec<IesSealSecret>,
     ) -> Result<
         (TransactionExecutorHost<'store, 'auth, STORE, AUTH>, StackInputs, AdviceInputs),
         TransactionExecutorError,
@@ -361,6 +368,7 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
+            ies_seal_secrets,
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 
@@ -380,6 +388,11 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
+    let num_unused_ies_seal_secrets = host.num_unused_ies_seal_secrets();
+    if num_unused_ies_seal_secrets != 0 {
+        return Err(TransactionExecutorError::UnusedIesSealSecrets(num_unused_ies_seal_secrets));
+    }
+
     let (account_patch, _input_notes, output_notes, logs, tx_progress, lazy_loaded_data) =
         host.into_parts();
 
@@ -475,6 +488,8 @@ fn validate_num_cycles(num_cycles: u32) -> Result<(), TransactionExecutorError> 
 ///
 /// - If the inner error is [`TransactionKernelError::Unauthorized`], it is remapped to
 ///   [`TransactionExecutorError::Unauthorized`].
+/// - If the inner error is [`TransactionKernelError::UnusedIesSealSecrets`], it is remapped to
+///   [`TransactionExecutorError::UnusedIesSealSecrets`].
 /// - If the inner error is [`TransactionKernelError::AuthRequestOutsideAuthProcedure`], it is
 ///   remapped to [`TransactionExecutorError::AuthRequestOutsideAuthProcedure`].
 /// - If the inner error is
@@ -486,8 +501,14 @@ fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
     match exec_err {
         ExecutionError::EventError { ref error, .. } => {
             match error.downcast_ref::<TransactionKernelError>() {
-                Some(TransactionKernelError::Unauthorized(summary)) => {
-                    TransactionExecutorError::Unauthorized(summary.clone())
+                Some(TransactionKernelError::Unauthorized { tx_summary, ies_seal_secrets }) => {
+                    TransactionExecutorError::Unauthorized {
+                        tx_summary: tx_summary.clone(),
+                        ies_seal_secrets: ies_seal_secrets.clone(),
+                    }
+                },
+                Some(TransactionKernelError::UnusedIesSealSecrets(num_unused)) => {
+                    TransactionExecutorError::UnusedIesSealSecrets(*num_unused)
                 },
                 Some(TransactionKernelError::MissingAuthenticator) => {
                     TransactionExecutorError::MissingAuthenticator

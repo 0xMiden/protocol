@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, Felt, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
@@ -62,7 +63,7 @@ impl<'store> MockHost<'store> {
             .map(|(handler_event_name, _)| handler_event_name.to_event_id());
         let mut handled_events = BTreeSet::from_iter(core_lib_handlers);
 
-        // The default set of transaction events that are always handled.
+        // The default set of transaction events, and the IES `seal` event, that are always handled.
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
@@ -72,7 +73,9 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]
-            .map(TransactionEventId::event_id),
+            .map(TransactionEventId::event_id)
+            .into_iter()
+            .chain([ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id()]),
         );
 
         Self {

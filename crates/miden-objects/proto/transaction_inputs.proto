@@ -47,4 +47,5 @@ message TransactionInputsV1 {
   repeated note.NoteScript note_scripts = 8;
   repeated BoundSignature signatures = 9;
   primitives.PartialSmt code_tree = 10;
+  repeated IesSealSecret ies_seal_secrets = 11;
 }

@@ -265,7 +265,7 @@ async fn test_guarded_multisig_signature_required(
         .await;
     assert!(matches!(
         without_guardian_result,
-        Err(TransactionExecutorError::Unauthorized(_))
+        Err(TransactionExecutorError::Unauthorized { .. })
     ));
 
     let (guardian_eip712_key, guardian_eip712_witness) =
@@ -560,7 +560,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
         .await;
     assert!(matches!(
         with_old_guardian_result,
-        Err(TransactionExecutorError::Unauthorized(_))
+        Err(TransactionExecutorError::Unauthorized { .. })
     ));
 
     // New guardian signature must pass.

@@ -318,7 +318,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
         },
         ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoOutputNotes => {
             match result {
-                Err(TransactionExecutorError::Unauthorized(_)) => {},
+                Err(TransactionExecutorError::Unauthorized { .. }) => {},
                 other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
             }
         },
@@ -400,7 +400,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         },
         ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoInputNotes => {
             match result {
-                Err(TransactionExecutorError::Unauthorized(_)) => {},
+                Err(TransactionExecutorError::Unauthorized { .. }) => {},
                 other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
             }
         },
@@ -896,7 +896,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
         .execute()
         .await;
     match one_sig_result {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
+        Err(TransactionExecutorError::Unauthorized { .. }) => {},
         other => {
             panic!("expected Unauthorized with 1 sig (escalation would let it pass): {other:?}")
         },
@@ -3154,7 +3154,7 @@ async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution
     )
     .await?;
     match under_threshold {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
+        Err(TransactionExecutorError::Unauthorized { .. }) => {},
         other => panic!("expected Unauthorized below the delayed threshold, got: {other:?}"),
     }
 
@@ -3235,7 +3235,7 @@ async fn test_multisig_smart_policy_raises_threshold_for_signer_rotation() -> an
     )
     .await?;
     match under_threshold {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
+        Err(TransactionExecutorError::Unauthorized { .. }) => {},
         other => {
             panic!("expected Unauthorized below the procedure policy threshold, got: {other:?}")
         },
@@ -3314,7 +3314,7 @@ async fn test_multisig_smart_policy_raises_threshold_for_policy_edits() -> anyho
     )
     .await?;
     match under_threshold {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
+        Err(TransactionExecutorError::Unauthorized { .. }) => {},
         other => panic!("expected Unauthorized below the policy-edit threshold, got: {other:?}"),
     }
 

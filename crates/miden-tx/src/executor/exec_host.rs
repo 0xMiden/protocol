@@ -19,6 +19,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
@@ -30,6 +31,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::{
     AccountInputs,
+    IesSealSecret,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -40,6 +42,9 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use miden_standards::note::StandardNote;
+use rand::rngs::SysRng;
+use rand_chacha::ChaCha20Rng;
+use rand_chacha::rand_core::SeedableRng;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
@@ -113,6 +118,8 @@ where
 
     /// Creates a new [`TransactionExecutorHost`] instance from the provided inputs.
     ///
+    /// `ies_seal_secrets` are the ephemeral secrets, in request order, supplied for re-execution.
+    ///
     /// # Errors
     ///
     /// Returns an error if the host cannot be created.
@@ -127,6 +134,7 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
+        ies_seal_secrets: Vec<IesSealSecret>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -135,6 +143,7 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
+            ies_seal_secrets,
         )?;
 
         Ok(Self {
@@ -224,6 +233,33 @@ where
         self.lazy_loaded_data.signatures.push(signature);
 
         Ok(vec![AdviceMutation::extend_advice_stack_with(encoded_signature)])
+    }
+
+    /// Returns the key agreement advice for an IES `seal` request, using the next supplied
+    /// ephemeral secret or, once all supplied secrets are used, a fresh one.
+    ///
+    /// A fresh secret is drawn from a ChaCha20 generator seeded by the operating system's random
+    /// number generator. It is recorded in the transaction inputs for re-execution or proving.
+    fn on_ies_seal_requested(
+        &mut self,
+        recipient: PublicKey,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        if let Some(secret) = self.base_host.next_ies_seal_secret(recipient)? {
+            return Ok(self.base_host.on_ies_seal_requested(&secret));
+        }
+
+        let mut rng = ChaCha20Rng::try_from_rng(&mut SysRng).map_err(|err| {
+            TransactionKernelError::other_with_source(
+                "failed to draw randomness for an IES seal request",
+                err,
+            )
+        })?;
+        let secret = IesSealSecret::new(recipient, SecretKey::with_rng(&mut rng));
+
+        let advice_mutations = self.base_host.on_ies_seal_requested(&secret);
+        self.lazy_loaded_data.ies_seal_secrets.push(secret);
+
+        Ok(advice_mutations)
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -429,8 +465,14 @@ where
     ///
     /// The checker cannot call `into_parts` as it would panic when constructing the patch on an
     /// erroneous transaction.
-    pub(crate) fn into_notes_checker_parts(self) -> (TransactionProgress, LazyLoadedData) {
+    pub(crate) fn into_notes_checker_parts(mut self) -> (TransactionProgress, LazyLoadedData) {
+        self.lazy_loaded_data.ies_seal_secrets.clear();
         (self.tx_progress, self.lazy_loaded_data)
+    }
+
+    /// Returns the number of supplied IES seal secrets that no `seal` request has used.
+    pub(crate) fn num_unused_ies_seal_secrets(&self) -> usize {
+        self.base_host.num_unused_ies_seal_secrets()
     }
 }
 
@@ -451,6 +493,9 @@ pub(crate) struct LazyLoadedData {
 
     /// The signatures the authenticator generated.
     signatures: Vec<BoundSignature>,
+
+    /// The ephemeral secrets freshly drawn for the IES `seal` requests during execution.
+    ies_seal_secrets: Vec<IesSealSecret>,
 
     /// The asset witnesses, tagged with the ID of the account whose vault they belong to.
     ///
@@ -481,6 +526,9 @@ impl LazyLoadedData {
         }
         for signature in self.signatures {
             tx_inputs.add_signature(signature)?;
+        }
+        for secret in self.ies_seal_secrets {
+            tx_inputs.add_ies_seal_secret(secret);
         }
         // Witnesses can belong to foreign accounts, so add witnesses after foreign accounts.
         for (account_id, witness) in self.asset_witnesses {
@@ -706,8 +754,22 @@ where
 
                 // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
-                    Err(TransactionKernelError::Unauthorized(Box::new(tx_summary)))
+                    let num_unused_ies_seal_secrets = self.num_unused_ies_seal_secrets();
+                    if num_unused_ies_seal_secrets != 0 {
+                        // The signed execution would reject the unused secrets, so the summary
+                        // is not returned for signing.
+                        Err(TransactionKernelError::UnusedIesSealSecrets(
+                            num_unused_ies_seal_secrets,
+                        ))
+                    } else {
+                        Err(TransactionKernelError::Unauthorized {
+                            tx_summary: Box::new(tx_summary),
+                            ies_seal_secrets: self.lazy_loaded_data.ies_seal_secrets.clone(),
+                        })
+                    }
                 },
+
+                TransactionEvent::IesSeal { recipient } => self.on_ies_seal_requested(recipient),
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
                 TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),

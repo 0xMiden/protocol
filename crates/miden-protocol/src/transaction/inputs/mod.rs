@@ -21,6 +21,9 @@ mod tests;
 mod account;
 pub use account::AccountInputs;
 
+mod ies_seal_secret;
+pub use ies_seal_secret::IesSealSecret;
+
 mod notes;
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
 
@@ -47,6 +50,8 @@ pub struct TransactionInputs {
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     /// Signatures the authenticator generated during execution.
     signatures: Vec<BoundSignature>,
+    /// Ephemeral secrets the host drew during execution for the IES `seal` requests.
+    ies_seal_secrets: Vec<IesSealSecret>,
     /// See [`Self::code_tree`].
     code_tree: PartialCodeTree,
 }
@@ -83,6 +88,7 @@ impl TransactionInputs {
         #[builder(default)] foreign_accounts: Vec<AccountInputs>,
         #[builder(default)] note_scripts: Vec<NoteScript>,
         #[builder(default)] signatures: Vec<BoundSignature>,
+        #[builder(default)] ies_seal_secrets: Vec<IesSealSecret>,
     ) -> Result<Self, TransactionInputError> {
         Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
 
@@ -107,6 +113,7 @@ impl TransactionInputs {
             foreign_accounts: BTreeMap::new(),
             note_scripts,
             signatures: Vec::new(),
+            ies_seal_secrets,
             code_tree,
         };
         for foreign_account in foreign_accounts {
@@ -322,6 +329,11 @@ impl TransactionInputs {
         Ok(())
     }
 
+    /// Adds an ephemeral secret the host drew for an IES `seal` request.
+    pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
+        self.ies_seal_secrets.push(secret);
+    }
+
     /// Updates the transaction arguments of the inputs.
     #[cfg(feature = "testing")]
     pub fn set_tx_args(&mut self, tx_args: TransactionArgs) {
@@ -395,6 +407,17 @@ impl TransactionInputs {
     /// Returns the signatures generated during execution.
     pub fn signatures(&self) -> &[BoundSignature] {
         &self.signatures
+    }
+
+    /// Returns the ephemeral secrets the host drew during execution for the IES `seal` requests.
+    pub fn ies_seal_secrets(&self) -> &[IesSealSecret] {
+        &self.ies_seal_secrets
+    }
+
+    /// Returns the ephemeral secrets for the IES `seal` requests in request order: those supplied
+    /// in the transaction arguments, followed by those the host drew.
+    pub fn ies_seal_secrets_in_request_order(&self) -> impl Iterator<Item = &IesSealSecret> {
+        self.tx_args.ies_seal_secrets().iter().chain(&self.ies_seal_secrets)
     }
 
     /// Returns the code tree of the reference block, which tracks the procedure roots whose
