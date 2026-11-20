@@ -478,11 +478,12 @@ impl DataStore for MockTransaction {
     ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
         async move { Ok(self.code_to_register.clone()) }
     }
-}
 
-impl MastForestStore for MockTransaction {
-    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
-        self.mast_store.get(procedure_hash)
+    fn get_mast_forest(
+        &self,
+        procedure_root: ProcedureRoot,
+    ) -> impl FutureMaybeSend<Result<Option<LoadedMastForest>, DataStoreError>> {
+        async move { Ok(self.mast_store.get(&procedure_root.as_word())) }
     }
 }
 
