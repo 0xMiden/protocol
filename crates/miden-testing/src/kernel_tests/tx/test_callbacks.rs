@@ -1033,38 +1033,49 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
     Ok(())
 }
 
-/// Tests that the attachment returned by a faucet's `on_before_note_sealed` callback is appended
-/// to the note after the attachment the note's creator added, and that a callback returning
-/// attachment scheme 0 appends no attachment.
+/// Tests that the attachments returned by the `on_before_note_sealed` callbacks are appended to the
+/// note after the attachment the note's creator added, in the order in which each faucet first
+/// occurs among the note's assets, and that a callback returning attachment scheme 0 appends no
+/// attachment.
 ///
-/// The transaction is also proven, so the prover host must build the same output note.
+/// Each case lists the faucets in the order of their assets in the note, each as the byte its seed
+/// repeats and the attachment its callback returns. The transaction is also proven, so the prover
+/// host must build the same output note.
 #[rstest::rstest]
-#[case::returned_attachment(true)]
-#[case::no_returned_attachment(false)]
+#[case::returned_attachment(vec![(42, Some((20, Word::from([5, 6, 7, 8u32]))))])]
+#[case::no_returned_attachment(vec![(42, None)])]
+#[case::first_faucet_occurs_first(vec![
+    (42, Some((21, Word::from([1, 1, 1, 1u32])))),
+    (43, Some((22, Word::from([2, 2, 2, 2u32])))),
+])]
+#[case::second_faucet_occurs_first(vec![
+    (43, Some((22, Word::from([2, 2, 2, 2u32])))),
+    (42, Some((21, Word::from([1, 1, 1, 1u32])))),
+])]
 #[tokio::test]
-async fn test_note_sealed_callback_attachment_is_appended_to_note(
-    #[case] returns_attachment: bool,
+async fn test_note_sealed_callback_attachments_are_appended_to_note(
+    #[case] faucets: Vec<(u8, Option<(u16, Word)>)>,
 ) -> anyhow::Result<()> {
     let creator_attachment =
         NoteAttachment::with_word(NoteAttachmentScheme::new(10)?, Word::from([1, 2, 3, 4u32]));
-    let callback_attachment_scheme = NoteAttachmentScheme::new(20)?;
-    let callback_attachment_word = Word::from([5, 6, 7, 8u32]);
 
-    let note_callback_masm = note_sealed_callback_masm(
-        returns_attachment
-            .then_some((callback_attachment_scheme.as_u16(), callback_attachment_word)),
-    );
-    let (note, result) = execute_note_sealing_tx(
-        &[([42; 32], &note_callback_masm)],
-        vec![creator_attachment.clone()],
-    )
-    .await?;
+    let note_callback_masms = faucets
+        .iter()
+        .map(|(_, attachment)| note_sealed_callback_masm(*attachment))
+        .collect::<Vec<_>>();
+    let faucet_callbacks = faucets
+        .iter()
+        .zip(&note_callback_masms)
+        .map(|((seed, _), note_callback_masm)| ([*seed; 32], note_callback_masm.as_str()))
+        .collect::<Vec<_>>();
+    let (note, result) =
+        execute_note_sealing_tx(&faucet_callbacks, vec![creator_attachment.clone()]).await?;
     let executed_tx = result?;
 
     let mut expected_attachments = vec![creator_attachment];
-    if returns_attachment {
+    for (scheme, word) in faucets.iter().filter_map(|(_, attachment)| *attachment) {
         expected_attachments
-            .push(NoteAttachment::with_word(callback_attachment_scheme, callback_attachment_word));
+            .push(NoteAttachment::with_word(NoteAttachmentScheme::new(scheme)?, word));
     }
     let expected_note = Note::with_attachments(
         note.assets().clone(),
@@ -1079,42 +1090,6 @@ async fn test_note_sealed_callback_attachment_is_appended_to_note(
 
     let proven_tx = LocalTransactionProver::default().prove(executed_tx)?;
     assert_eq!(proven_tx.output_notes().get_note(0).id(), expected_note.id());
-
-    Ok(())
-}
-
-/// Tests that the attachments returned by the `on_before_note_sealed` callbacks of several faucets
-/// are appended in the order in which each faucet first occurs among the note's assets.
-#[rstest::rstest]
-#[case::first_faucet_occurs_first(true)]
-#[case::second_faucet_occurs_first(false)]
-#[tokio::test]
-async fn test_note_sealed_callback_attachments_follow_callback_order(
-    #[case] first_faucet_occurs_first: bool,
-) -> anyhow::Result<()> {
-    let first = (21, Word::from([1, 1, 1, 1u32]));
-    let second = (22, Word::from([2, 2, 2, 2u32]));
-    let first_attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(first.0)?, first.1);
-    let second_attachment =
-        NoteAttachment::with_word(NoteAttachmentScheme::new(second.0)?, second.1);
-    let first_callback_masm = note_sealed_callback_masm(Some(first));
-    let second_callback_masm = note_sealed_callback_masm(Some(second));
-
-    let first_faucet = ([42; 32], first_callback_masm.as_str());
-    let second_faucet = ([43; 32], second_callback_masm.as_str());
-    let (faucets, expected_attachments) = if first_faucet_occurs_first {
-        ([first_faucet, second_faucet], vec![first_attachment, second_attachment])
-    } else {
-        ([second_faucet, first_faucet], vec![second_attachment, first_attachment])
-    };
-
-    let (_, result) = execute_note_sealing_tx(&faucets, Vec::new()).await?;
-    let executed_tx = result?;
-
-    assert_eq!(
-        executed_tx.output_notes().get_note(0).attachments(),
-        &NoteAttachments::new(expected_attachments)?
-    );
 
     Ok(())
 }
