@@ -106,7 +106,7 @@ A faucet can attach the details of each private note that carries its asset, enc
 [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
 ```
 
-with `miden::protocol::ies::seal` to the public key in the faucet's map slot `miden::standards::attachments::encrypted_assets::issuer_key`, under the context `[8, 1]` (attachment scheme and format version). The attachment has scheme `8` and holds the envelope `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. The note cannot be sealed unless the creator puts the note's recipient preimage into the advice map. The issuer decrypts the attachment with `EncryptedAssetsAttachment` in `miden-standards` and recomputes the note's ID and nullifier from the plaintext and the note's metadata. A matching note ID shows that the attachment describes the note.
+with `miden::protocol::ies::seal` to the public key in the faucet's map slot `miden::standards::attachments::encrypted_assets::issuer_key`, under the context `[8, 1]` (attachment scheme and format version). The attachment has scheme `8` and holds the envelope `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. The note cannot be sealed unless the creator puts the note's recipient preimage into the advice map. The issuer decrypts the attachment with `EncryptedAssetsAttachment` in `miden-standards` and recomputes the note's ID and nullifier from the plaintext and the note's metadata. A matching note ID shows that the attachment describes the note. Each faucet that builds the attachment adds its own, so the issuer tries every attachment with scheme `8`.
 
 ## Note Lifecycle
 
