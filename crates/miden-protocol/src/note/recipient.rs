@@ -8,7 +8,6 @@ use super::{
     DeserializationError,
     Hasher,
     NoteScript,
-    NoteScriptRoot,
     NoteStorage,
     Serializable,
     Word,
@@ -35,19 +34,8 @@ pub struct NoteRecipient {
 
 impl NoteRecipient {
     pub fn new(serial_num: Word, script: NoteScript, storage: NoteStorage) -> Self {
-        let digest = Self::compute_digest(serial_num, script.root(), storage.commitment());
+        let (_, _, digest) = compute_recipient_chain(serial_num, &script, &storage);
         Self { serial_num, script, storage, digest }
-    }
-
-    /// Computes the digest of the recipient with the provided serial number, script root and
-    /// storage commitment.
-    pub fn compute_digest(
-        serial_num: Word,
-        script_root: NoteScriptRoot,
-        storage_commitment: Word,
-    ) -> Word {
-        let (_, _, digest) = compute_recipient_chain(serial_num, script_root, storage_commitment);
-        digest
     }
 
     // PUBLIC ACCESSORS
@@ -81,7 +69,7 @@ impl NoteRecipient {
     /// recipient alone, which is all a note is committed to on chain.
     pub fn to_advice_map_entries(&self) -> [(Word, Vec<Felt>); 5] {
         let (serial_commitment, serial_script_commitment, digest) =
-            compute_recipient_chain(self.serial_num, self.script.root(), self.storage.commitment());
+            compute_recipient_chain(self.serial_num, &self.script, &self.storage);
         let script_root = Word::from(self.script.root());
         let script_encoded = self.script.to_elements();
 
@@ -112,14 +100,14 @@ impl NoteRecipient {
 /// commitment and the recipient digest itself.
 fn compute_recipient_chain(
     serial_num: Word,
-    script_root: NoteScriptRoot,
-    storage_commitment: Word,
+    script: &NoteScript,
+    storage: &NoteStorage,
 ) -> (Word, Word, Word) {
     let serial_commitment = Hasher::hash_double_word(&[serial_num, Word::empty()]);
     let serial_script_commitment =
-        Hasher::hash_double_word(&[serial_commitment, script_root.into()]);
+        Hasher::hash_double_word(&[serial_commitment, script.root().into()]);
     let recipient_digest =
-        Hasher::hash_double_word(&[serial_script_commitment, storage_commitment]);
+        Hasher::hash_double_word(&[serial_script_commitment, storage.commitment()]);
 
     (serial_commitment, serial_script_commitment, recipient_digest)
 }
