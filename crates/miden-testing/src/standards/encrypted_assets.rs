@@ -1,0 +1,363 @@
+//! Tests for the `miden::standards::attachments::encrypted_assets` module.
+
+use alloc::vec::Vec;
+
+use anyhow::Context;
+use assert_matches::assert_matches;
+use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageSlot,
+};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset, NonFungibleAsset};
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::errors::MasmError;
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachments,
+    NoteMetadata,
+    NoteType,
+    PartialNote,
+};
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+};
+use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
+use miden_protocol::{Felt, Word};
+use miden_standards::account::access::{Authority, Pausable};
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::errors::standards::{
+    ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING,
+    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING,
+};
+use miden_standards::note::{
+    EncryptedAssetsAttachment,
+    EncryptedAssetsAttachmentError,
+    EncryptedAssetsIssuerKey,
+    P2idNote,
+};
+use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError};
+
+use crate::executor::CodeExecutor;
+use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+
+// CONSTANTS
+// ================================================================================================
+
+/// The name of the component that registers the issuing faucet's note callback.
+const ISSUER_COMPONENT_NAME: &str = "miden::testing::encrypted_assets::issuer";
+
+/// An `on_before_note_sealed` callback that returns the note's encrypted asset attachment.
+const ISSUER_CALLBACK_CODE: &str = "
+    use miden::standards::attachments::encrypted_assets
+
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    @account_procedure
+    pub proc on_before_note_sealed
+        exec.encrypted_assets::build_attachment
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
+
+        movupw.3 dropw
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    end
+";
+
+// TESTS
+// ================================================================================================
+
+/// Tests that the issuer decrypts the encrypted asset attachment of a private note and recomputes
+/// the note's ID and nullifier from it and the note's metadata.
+///
+/// The note holds the issuer's asset and, depending on the case, other faucets' assets, up to the
+/// maximum number of assets per note.
+#[rstest::rstest]
+#[case::single_asset(Vec::new())]
+#[case::several_assets(several_other_assets())]
+#[case::max_assets(
+    (0..NoteAssets::MAX_NUM_ASSETS - 1).map(|i| NonFungibleAsset::mock(&[i as u8])).collect()
+)]
+#[tokio::test]
+async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
+    #[case] other_assets: Vec<Asset>,
+) -> anyhow::Result<()> {
+    let (note, result) =
+        send_note(NoteType::Private, other_assets, issuer_key_slot(), true).await?;
+    let executed_tx = result?;
+
+    let RawOutputNote::Full(full_note) = executed_tx.output_notes().get_note(0) else {
+        anyhow::bail!("output note should be a full note");
+    };
+    let nullifier = full_note.nullifier();
+
+    let proven_tx = LocalTransactionProver::default().prove(executed_tx)?;
+    let OutputNote::Private(output_note) = proven_tx.output_notes().get_note(0) else {
+        anyhow::bail!("output note should be private");
+    };
+
+    let attachment = output_note
+        .attachments()
+        .find(EncryptedAssetsAttachment::ATTACHMENT_SCHEME)
+        .context("output note should carry the encrypted asset attachment")?;
+    assert_eq!(usize::from(attachment.num_words()), 8 + 4 * note.assets().num_assets());
+
+    let plaintext = EncryptedAssetsAttachment::decrypt(attachment, &issuer_secret_key())?;
+    assert_eq!(plaintext.assets(), note.assets());
+    assert_eq!(plaintext.note_id(output_note.metadata()), output_note.id());
+    assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
+
+    Ok(())
+}
+
+/// Tests that a public note gets no encrypted asset attachment.
+#[tokio::test]
+async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()> {
+    let (note, result) = send_note(NoteType::Public, Vec::new(), issuer_key_slot(), true).await?;
+    let executed_tx = result?;
+
+    let output_note = executed_tx.output_notes().get_note(0);
+    assert!(output_note.attachments().is_empty());
+    assert_eq!(output_note.id(), note.id());
+
+    Ok(())
+}
+
+/// Tests that a private note whose attachment cannot be built cannot be sealed, so that its
+/// creator cannot skip the attachment.
+#[rstest::rstest]
+#[case::missing_recipient_preimage(
+    issuer_key_slot(),
+    false,
+    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING
+)]
+#[case::missing_issuer_key(
+    StorageSlot::with_empty_map(EncryptedAssetsIssuerKey::slot_name().clone()),
+    true,
+    ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
+)]
+#[tokio::test]
+async fn private_note_without_attachment_cannot_be_sealed(
+    #[case] issuer_key_slot: StorageSlot,
+    #[case] provides_recipient: bool,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let (_, result) =
+        send_note(NoteType::Private, Vec::new(), issuer_key_slot, provides_recipient).await?;
+
+    assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that the attachment does not decrypt with another secret key or after tampering, and that
+/// the plaintext with other metadata yields another note ID.
+#[tokio::test]
+async fn attachment_binds_issuer_key_envelope_and_metadata() -> anyhow::Result<()> {
+    let (_, result) = send_note(NoteType::Private, Vec::new(), issuer_key_slot(), true).await?;
+    let executed_tx = result?;
+    let output_note = executed_tx.output_notes().get_note(0);
+    let attachment = output_note
+        .attachments()
+        .find(EncryptedAssetsAttachment::ATTACHMENT_SCHEME)
+        .context("output note should carry the encrypted asset attachment")?;
+
+    let other_secret_key = SecretKey::from_bytes(&[8; 40])?;
+    assert_matches!(
+        EncryptedAssetsAttachment::decrypt(attachment, &other_secret_key),
+        Err(EncryptedAssetsAttachmentError::DecryptionFailed(_))
+    );
+
+    // flip the lowest bit of the first ciphertext limb, which keeps it a valid u32 limb
+    let mut elements = attachment.to_elements();
+    elements[8] = Felt::new(elements[8].as_canonical_u64() ^ 1)?;
+    let words = elements
+        .as_chunks::<{ Word::NUM_ELEMENTS }>()
+        .0
+        .iter()
+        .map(|word| Word::new(*word))
+        .collect();
+    let tampered = NoteAttachment::with_words(attachment.attachment_scheme(), words)?;
+    assert_matches!(
+        EncryptedAssetsAttachment::decrypt(&tampered, &issuer_secret_key()),
+        Err(EncryptedAssetsAttachmentError::DecryptionFailed(_))
+    );
+
+    let plaintext = EncryptedAssetsAttachment::decrypt(attachment, &issuer_secret_key())?;
+    let other_metadata =
+        NoteMetadata::new(*output_note.metadata().partial_metadata(), &NoteAttachments::empty());
+    assert_ne!(plaintext.note_id(&other_metadata), output_note.id());
+
+    Ok(())
+}
+
+/// Tests that the MASM constants of the attachment format match their Rust counterparts.
+#[tokio::test]
+async fn encrypted_assets_masm_constants_match_rust() -> anyhow::Result<()> {
+    let source = "
+        use {
+            ENCRYPTED_ASSETS_ATTACHMENT_SCHEME,
+            ENCRYPTED_ASSETS_FORMAT_VERSION,
+            ISSUER_KEY_SLOT,
+        } from miden::standards::attachments::encrypted_assets
+
+        begin
+            push.ISSUER_KEY_SLOT[0..2]
+            push.ENCRYPTED_ASSETS_FORMAT_VERSION
+            push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
+            # => [attachment_scheme, format_version, slot_id_suffix, slot_id_prefix, pad(16)]
+
+            # truncate the stack to 16 elements
+            repeat.4 movup.4 drop end
+        end
+    ";
+
+    let exec_output = CodeExecutor::with_default_host().run(source).await?;
+
+    let slot_id = EncryptedAssetsIssuerKey::slot_name().id();
+    assert_eq!(exec_output.stack[0..2], EncryptedAssetsAttachment::CONTEXT);
+    assert_eq!(
+        exec_output.stack[0],
+        Felt::from(EncryptedAssetsAttachment::ATTACHMENT_SCHEME.as_u16())
+    );
+    assert_eq!(exec_output.stack[2], slot_id.suffix());
+    assert_eq!(exec_output.stack[3], slot_id.prefix());
+
+    Ok(())
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Returns a fungible asset of another faucet and a non-fungible asset.
+fn several_other_assets() -> Vec<Asset> {
+    let other_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
+        .expect("account ID constant should be valid");
+    let other_asset =
+        FungibleAsset::new(other_faucet_id, 50).expect("fungible asset should be valid");
+
+    vec![other_asset.into(), NonFungibleAsset::mock(&[1, 2, 3])]
+}
+
+/// Returns the issuer's secret key.
+fn issuer_secret_key() -> SecretKey {
+    SecretKey::from_bytes(&[7; 40]).expect("bytes should encode a valid secret key")
+}
+
+/// Returns the storage slot that holds the public key of [`issuer_secret_key`].
+fn issuer_key_slot() -> StorageSlot {
+    EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key()).into_storage_slot()
+}
+
+/// Executes a transaction in which a wallet sends a P2ID note of the provided type that holds an
+/// asset of a faucet whose `on_before_note_sealed` callback returns the note's encrypted asset
+/// attachment, followed by `other_assets`.
+///
+/// The faucet stores `issuer_key_slot`. If `provides_recipient` is true, the transaction expects
+/// the note, which puts the note's recipient preimage into the advice map.
+///
+/// Returns the note as the wallet creates it, i.e. without the attachment, and the execution
+/// result.
+async fn send_note(
+    note_type: NoteType,
+    other_assets: Vec<Asset>,
+    issuer_key_slot: StorageSlot,
+    provides_recipient: bool,
+) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
+    let mut builder = MockChain::builder();
+    let faucet = add_issuing_faucet(&mut builder, issuer_key_slot)?;
+    let assets = core::iter::once(FungibleAsset::new(faucet.id(), 100)?.into())
+        .chain(other_assets)
+        .collect::<Vec<Asset>>();
+    let wallet = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        assets.clone(),
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note: Note = P2idNote::builder()
+        .sender(wallet.id())
+        .target(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
+        .assets(assets)
+        .note_type(note_type)
+        .serial_number(Word::from([1, 2, 3, 4u32]))
+        .build()?
+        .into();
+    let send_script = SendNotesTransactionScript::new(
+        &wallet.code_interface(),
+        &[PartialNote::from(note.clone())],
+    )?;
+
+    let mut tx_builder = mock_chain
+        .build_transaction(wallet.id())
+        .send_notes_script(&send_script)
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?]);
+    if provides_recipient {
+        tx_builder = tx_builder.expected_output_note(RawOutputNote::Full(note.clone()));
+    }
+    let result = tx_builder.build()?.execute().await;
+
+    Ok((note, result))
+}
+
+/// Adds a faucet whose `on_before_note_sealed` callback returns the note's encrypted asset
+/// attachment, and which stores `issuer_key_slot`.
+fn add_issuing_faucet(
+    builder: &mut MockChainBuilder,
+    issuer_key_slot: StorageSlot,
+) -> anyhow::Result<Account> {
+    let callback_code = CodeBuilder::default()
+        .compile_component_code(ISSUER_COMPONENT_NAME, ISSUER_CALLBACK_CODE)?;
+    let callback_root = callback_code
+        .as_package()
+        .get_procedure_root_by_path(
+            format!("{ISSUER_COMPONENT_NAME}::on_before_note_sealed").as_str(),
+        )
+        .context("note callback procedure should exist")?;
+
+    let mut storage_slots =
+        AssetCallbacks::new().on_before_note_sealed(callback_root).into_storage_slots();
+    storage_slots.push(issuer_key_slot);
+    let issuer_component = AccountComponent::new(
+        callback_code,
+        storage_slots,
+        AccountComponentMetadata::new(ISSUER_COMPONENT_NAME)
+            .with_description("encrypted asset attachment callback for testing"),
+    )?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::from(1_000_000u32))
+        .build()?;
+
+    let account_builder = AccountBuilder::new([42; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .build(),
+        )
+        .with_component(Pausable::unpaused())
+        .with_component(issuer_component);
+
+    builder.add_account_from_builder(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        account_builder,
+        AccountState::Exists,
+    )
+}

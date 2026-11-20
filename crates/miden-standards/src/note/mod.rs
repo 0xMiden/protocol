@@ -63,6 +63,13 @@ pub use account_code_upgrade_attachment::{
     AccountCodeUpgradeAttachmentError,
 };
 
+mod encrypted_assets_attachment;
+pub use encrypted_assets_attachment::{
+    EncryptedAssetsAttachment,
+    EncryptedAssetsAttachmentError,
+    EncryptedAssetsIssuerKey,
+};
+
 mod network_note;
 pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
 

@@ -1,0 +1,334 @@
+#! miden::standards::attachments::encrypted_assets
+#!
+#! Builds the encrypted asset attachment of a private note, which lets the issuer of an asset track
+#! the notes that carry it.
+#!
+#! The attachment encrypts the note's details, from which the issuer recomputes the note's ID and
+#! nullifier, to the issuer's public key with `miden::protocol::ies::seal`. The plaintext of a note
+#! with n assets is `3 + 2n` words, with the assets in note order:
+#!
+#! [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ...,
+#!  ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
+#!
+#! The attachment content is the envelope
+#! `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, that is `8 + 4n` words, sealed
+#! under the context `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]`.
+
+use {
+    NoteAttachmentCommitment,
+    NoteRecipient,
+    NoteScriptRoot,
+    NoteSerialNumber,
+    NoteStorageCommitment,
+} from miden::protocol::types
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use miden::core::crypto::ecdh::ecgfp5
+use miden::core::crypto::hashes::eidos
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::ies
+use miden::protocol::note
+use miden::protocol::output_note
+
+# CONSTANTS
+# =================================================================================================
+
+#! The attachment scheme of encrypted asset attachments.
+pub const ENCRYPTED_ASSETS_ATTACHMENT_SCHEME = 8
+
+#! The version of the encrypted asset attachment format.
+pub const ENCRYPTED_ASSETS_FORMAT_VERSION = 1
+
+# Issuer key
+
+#! The map slot that holds the issuer's EcGFp5 public key.
+#!
+#! The map holds the following entries:
+#! - [0, 0, 0, 0] => PUBLIC_KEY_COMMITMENT
+#! - [1, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
+#! - [2, 0, 0, 0] => [public_key_4, 0, 0, 0]
+pub const ISSUER_KEY_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key")
+
+const ISSUER_KEY_COMMITMENT_MAP_KEY = [0, 0, 0, 0]
+const ISSUER_KEY_HEAD_MAP_KEY = [1, 0, 0, 0]
+const ISSUER_KEY_TAIL_MAP_KEY = [2, 0, 0, 0]
+
+# Layouts
+
+# The number of elements of SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT at the start of the
+# plaintext.
+const PLAINTEXT_HEADER_LEN = 12
+
+# The number of elements of an asset in the plaintext.
+const PLAINTEXT_ASSET_LEN = 8
+
+# The number of elements of [R(5), tag(2), plaintext_len] at the start of the envelope.
+const ENVELOPE_HEADER_LEN = 8
+
+# The number of elements of the IES context.
+const CONTEXT_LEN = 2
+
+# encrypt_note_details locals: the plaintext of up to 16 assets (12 + 16 * 8 = 140 elements), the
+# context (one word) and the envelope of that plaintext (8 + 2 * 140 = 288 elements).
+const ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC = 0
+const ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC = 0
+const ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC = 4
+const ENCRYPT_NOTE_DETAILS_STORAGE_COMMITMENT_LOC = 8
+const ENCRYPT_NOTE_DETAILS_ASSETS_LOC = 12
+const ENCRYPT_NOTE_DETAILS_CONTEXT_LOC = 140
+const ENCRYPT_NOTE_DETAILS_CONTEXT_SCHEME_LOC = 140
+const ENCRYPT_NOTE_DETAILS_CONTEXT_VERSION_LOC = 141
+const ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC = 144
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING = "advice map has no preimage for the recipient of the private note"
+
+const ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage in the advice map does not open the recipient of the private note"
+
+const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer public key for encrypted asset attachments"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Builds the encrypted asset attachment of the output note with the provided index.
+#!
+#! A public note publishes its details, so it gets no attachment and the procedure returns
+#! attachment scheme 0 and the empty word. For a private note, the procedure encrypts the note's
+#! details to the issuer public key stored in the active account's `ISSUER_KEY_SLOT`, inserts the
+#! envelope into the advice map under its commitment and returns the scheme and commitment of the
+#! attachment. Faucets call it from their `on_before_note_sealed` callback, which can return its
+#! outputs to the kernel.
+#!
+#! The note's recipient preimage must be in the advice map, as
+#! `NoteRecipient::to_advice_map_entries` writes it.
+#!
+#! Inputs:
+#!   Operand stack: [note_idx]
+#!   Advice map: {
+#!     RECIPIENT: [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT],
+#!     SERIAL_SCRIPT_COMMITMENT: [SERIAL_COMMITMENT, SCRIPT_ROOT],
+#!     SERIAL_COMMITMENT: [SERIAL_NUM, EMPTY_WORD],
+#!   }
+#! Outputs:
+#!   Operand stack: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ENVELOPE]],
+#!   }
+#!
+#! Where:
+#! - note_idx is the index of the output note.
+#! - attachment_scheme is ENCRYPTED_ASSETS_ATTACHMENT_SCHEME for a private note and 0 for a
+#!   public note.
+#! - ATTACHMENT_COMMITMENT is the commitment to the envelope for a private note and the empty word
+#!   for a public note.
+#!
+#! Panics if:
+#! - the note index does not point to an output note.
+#! - the note is private and:
+#!   - the advice map has no preimage for its recipient.
+#!   - the preimage in the advice map does not open its recipient.
+#!   - the active account has no issuer key slot or no issuer public key in it.
+#!   - the issuer public key is not a valid EcGFp5 public key.
+#!
+#! Invocation: exec
+pub proc build_attachment(note_idx: u16) -> (u16, NoteAttachmentCommitment)
+    dup exec.output_note::get_metadata
+    # => [METADATA, note_idx]
+
+    exec.note::metadata_into_note_type
+    # => [note_type, note_idx]
+
+    eq.NOTE_TYPE_PUBLIC
+    # => [is_public, note_idx]
+
+    if.true
+        # drop note_idx below the padding, so that the drop does not shift in a zero when the
+        # procedure starts at the minimum stack depth
+        padw movup.4 drop push.0
+        # => [0, EMPTY_WORD]
+    else
+        exec.encrypt_note_details
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT]
+    end
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Encrypts the details of the output note with the provided index to the issuer's public key and
+#! inserts the envelope into the advice map under its commitment.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#!
+#! Where:
+#! - note_idx is the index of the output note.
+#! - attachment_scheme is ENCRYPTED_ASSETS_ATTACHMENT_SCHEME.
+#! - ATTACHMENT_COMMITMENT is the commitment to the envelope.
+#!
+#! Panics if:
+#! - the advice map has no preimage for the note's recipient, or it does not open the recipient.
+#! - the active account has no issuer public key, or the key is not a valid EcGFp5 public key.
+#!
+#! Invocation: exec
+@locals(432)
+proc encrypt_note_details(note_idx: u16) -> (u16, NoteAttachmentCommitment)
+    # write the recipient preimage to the start of the plaintext
+    dup exec.output_note::get_recipient
+    # => [RECIPIENT, note_idx]
+
+    exec.get_recipient_preimage
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, note_idx]
+
+    loc_storew_le.ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC dropw
+    loc_storew_le.ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC dropw
+    loc_storew_le.ENCRYPT_NOTE_DETAILS_STORAGE_COMMITMENT_LOC dropw
+    # => [note_idx]
+
+    # write the note's assets after it
+    locaddr.ENCRYPT_NOTE_DETAILS_ASSETS_LOC exec.output_note::get_assets
+    # => [num_assets]
+
+    mul.PLAINTEXT_ASSET_LEN add.PLAINTEXT_HEADER_LEN
+    # => [plaintext_len]
+
+    # write the context [ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]
+    push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME loc_store.ENCRYPT_NOTE_DETAILS_CONTEXT_SCHEME_LOC
+    push.ENCRYPTED_ASSETS_FORMAT_VERSION loc_store.ENCRYPT_NOTE_DETAILS_CONTEXT_VERSION_LOC
+    # => [plaintext_len]
+
+    # encrypt the plaintext to the issuer's public key
+    dup locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
+    push.CONTEXT_LEN locaddr.ENCRYPT_NOTE_DETAILS_CONTEXT_LOC
+    # => [context_ptr, context_len, dst_ptr, plaintext_len, plaintext_len]
+
+    movup.3 locaddr.ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC
+    # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+
+    exec.get_issuer_public_key
+    # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+
+    exec.ies::seal
+    # => [plaintext_len]
+
+    # the envelope is [R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]
+    mul.2 add.ENVELOPE_HEADER_LEN locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC add
+    locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
+    # => [envelope_ptr, envelope_end_ptr]
+
+    dup.1 dup.1 exec.eidos::hash_words
+    # => [ATTACHMENT_COMMITMENT, envelope_ptr, envelope_end_ptr]
+
+    adv.insert_mem
+    # => [ATTACHMENT_COMMITMENT, envelope_ptr, envelope_end_ptr]
+
+    movup.4 drop movup.4 drop
+    # => [ATTACHMENT_COMMITMENT]
+
+    push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT]
+end
+
+#! Returns the serial number, script root and storage commitment that the provided recipient
+#! commits to, read from the advice map.
+#!
+#! Inputs:
+#!   Operand stack: [RECIPIENT]
+#!   Advice map: {
+#!     RECIPIENT: [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT],
+#!     SERIAL_SCRIPT_COMMITMENT: [SERIAL_COMMITMENT, SCRIPT_ROOT],
+#!     SERIAL_COMMITMENT: [SERIAL_NUM, EMPTY_WORD],
+#!   }
+#! Outputs:
+#!   Operand stack: [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+#!
+#! Panics if:
+#! - the advice map has no entry for RECIPIENT, SERIAL_SCRIPT_COMMITMENT or SERIAL_COMMITMENT.
+#! - the returned values do not hash to RECIPIENT.
+#!
+#! Invocation: exec
+proc get_recipient_preimage(
+    recipient: NoteRecipient
+) -> (NoteSerialNumber, NoteScriptRoot, NoteStorageCommitment)
+    dupw exec.load_recipient_preimage_entry
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
+
+    exec.load_recipient_preimage_entry
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
+
+    exec.load_recipient_preimage_entry
+    # => [SERIAL_NUM, SERIAL_NUM_PADDING, SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
+
+    swapw dropw movupw.3
+    # => [RECIPIENT, SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    # validate the values read from the advice map against the recipient
+    dupw.3 dupw.3 dupw.3 exec.note::compute_recipient
+    # => [COMPUTED_RECIPIENT, RECIPIENT, SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    assert_eqw.err=ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+end
+
+#! Pushes the two words that the advice map holds for the provided key onto the stack, without
+#! validating them.
+#!
+#! Inputs:
+#!   Operand stack: [KEY]
+#!   Advice map: {
+#!     KEY: [VALUE_0, VALUE_1],
+#!   }
+#! Outputs:
+#!   Operand stack: [VALUE_0, VALUE_1]
+#!
+#! Panics if:
+#! - the advice map has no entry for KEY.
+#!
+#! Invocation: exec
+proc load_recipient_preimage_entry(key: word) -> (word, word)
+    adv.has_mapkey adv_push assert.err=ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING
+    # => [KEY]
+
+    adv.push_mapval dropw
+    # => []
+    # AS => [VALUE_0, VALUE_1]
+
+    padw adv_loadw padw adv_loadw swapw
+    # => [VALUE_0, VALUE_1]
+end
+
+#! Returns the issuer's EcGFp5 public key from the active account's `ISSUER_KEY_SLOT`.
+#!
+#! Inputs:  []
+#! Outputs: [public_key(5)]
+#!
+#! Where:
+#! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
+#!
+#! Panics if:
+#! - the active account has no `ISSUER_KEY_SLOT`.
+#! - the slot holds no public key commitment.
+#!
+#! Invocation: exec
+proc get_issuer_public_key() -> ecgfp5::PointEncoding
+    # the public key commitment marks the key as present
+    push.ISSUER_KEY_COMMITMENT_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [PUBLIC_KEY_COMMITMENT]
+
+    exec.word::eqz assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
+    # => []
+
+    push.ISSUER_KEY_TAIL_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [public_key_4, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [public_key_4]
+
+    push.ISSUER_KEY_HEAD_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [public_key(5)]
+end
