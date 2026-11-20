@@ -102,7 +102,9 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! outputs to the kernel.
 #!
 #! The note's recipient preimage must be in the advice map, as
-#! `NoteRecipient::to_advice_map_entries` writes it.
+#! `NoteRecipient::to_advice_map_entries` or `note::compute_and_store_recipient` writes it. A
+#! private note whose creator knows only its recipient digest, such as the output note of a
+#! private MINT note, therefore cannot be sealed.
 #!
 #! Inputs:
 #!   Operand stack: [note_idx]
