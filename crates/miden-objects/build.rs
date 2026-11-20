@@ -99,6 +99,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.AccountStorage",
             ".account.StorageSlot",
             ".account.StorageMap",
+            ".account.AccountVaultDelta",
+            ".account.AccountDelta",
             ".asset.AssetVault",
             ".account.PartialAccount",
             ".account.PartialVault",
