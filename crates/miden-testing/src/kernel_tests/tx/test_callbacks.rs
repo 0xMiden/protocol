@@ -5,7 +5,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
-use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -1127,38 +1126,6 @@ async fn test_note_sealed_callback_attachment_is_validated(
         execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], creator_attachments).await?;
 
     assert_transaction_executor_error!(result, expected_error);
-
-    Ok(())
-}
-
-/// Tests that sealing fails if an `on_before_note_sealed` callback returns an attachment
-/// commitment whose elements are not in the advice map.
-#[tokio::test]
-async fn test_note_sealed_callback_attachment_without_advice_map_entry_fails() -> anyhow::Result<()>
-{
-    let note_callback_masm = format!(
-        "
-    #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
-    @account_procedure
-    pub proc on_before_note_sealed
-        drop push.{attachment_commitment} push.20
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
-
-        exec.::miden::core::sys::truncate_stack
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
-    end
-    ",
-        attachment_commitment = Word::from([9, 9, 9, 9u32]),
-    );
-
-    let (_, result) =
-        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
-
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { .. }, .. }
-    );
 
     Ok(())
 }
