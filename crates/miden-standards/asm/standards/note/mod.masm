@@ -1,4 +1,9 @@
-use {NoteScriptRoot, NoteStorageCommitment} from miden::protocol::types
+use {
+    NoteRecipient,
+    NoteScriptRoot,
+    NoteSerialNumber,
+    NoteStorageCommitment,
+} from miden::protocol::types
 # miden::standards::note
 #
 # Collects note-related helper procedures that operate on input notes and are candidates for
@@ -14,6 +19,13 @@ pub mod note_execution_hint
 pub mod note_reclaim
 pub mod note_tag
 pub mod note_target
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_RECIPIENT_PREIMAGE_MISSING = "advice map has no preimage for the note recipient"
+
+const ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage in the advice map does not hash to the note recipient"
 
 # PROCEDURES
 # =================================================================================================
@@ -76,4 +88,86 @@ pub proc output_note_get_recipient_preimage(
 
     exec.note::get_recipient_preimage
     # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
+end
+
+#! TODO: Move this to miden::protocol::note.
+#!
+#! Returns the serial number, script root and storage commitment that the provided recipient
+#! commits to.
+#!
+#! The values are read from the advice map entries that `NoteRecipient::to_advice_map_entries`
+#! and `note::compute_and_store_recipient` insert, and validated by recomputing the recipient from
+#! them.
+#!
+#! Inputs:
+#!   Operand stack: [RECIPIENT]
+#!   Advice map: {
+#!     RECIPIENT: [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT],
+#!     SERIAL_SCRIPT_COMMITMENT: [SERIAL_COMMITMENT, SCRIPT_ROOT],
+#!     SERIAL_COMMITMENT: [SERIAL_NUM, EMPTY_WORD],
+#!   }
+#! Outputs:
+#!   Operand stack: [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+#!
+#! Where:
+#! - RECIPIENT is the recipient of a note.
+#! - SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT are the serial number, script root and storage
+#!   commitment of the recipient.
+#!
+#! Panics if:
+#! - the advice map has no entry for RECIPIENT, SERIAL_SCRIPT_COMMITMENT or SERIAL_COMMITMENT.
+#! - the values read from the advice map do not hash to RECIPIENT.
+#!
+#! Invocation: exec
+pub proc get_recipient_parts(
+    recipient: NoteRecipient
+) -> (NoteSerialNumber, NoteScriptRoot, NoteStorageCommitment)
+    dupw exec.load_recipient_preimage_entry
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
+
+    exec.load_recipient_preimage_entry
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
+
+    exec.load_recipient_preimage_entry
+    # => [SERIAL_NUM, SERIAL_NUM_PADDING, SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
+
+    swapw dropw movupw.3
+    # => [RECIPIENT, SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    # validate the values read from the advice map against the recipient
+    dupw.3 dupw.3 dupw.3 exec.note::compute_recipient
+    # => [COMPUTED_RECIPIENT, RECIPIENT, SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Pushes the two words that the advice map holds for the provided key of a recipient preimage
+#! onto the stack, without validating them.
+#!
+#! Inputs:
+#!   Operand stack: [KEY]
+#!   Advice map: {
+#!     KEY: [VALUE_0, VALUE_1],
+#!   }
+#! Outputs:
+#!   Operand stack: [VALUE_0, VALUE_1]
+#!
+#! Panics if:
+#! - the advice map has no entry for KEY.
+#!
+#! Invocation: exec
+proc load_recipient_preimage_entry(key: word) -> (word, word)
+    adv.has_mapkey adv_push assert.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISSING
+    # => [KEY]
+
+    adv.push_mapval dropw
+    # => []
+    # AS => [VALUE_0, VALUE_1]
+
+    padw adv_loadw padw adv_loadw swapw
+    # => [VALUE_0, VALUE_1]
 end

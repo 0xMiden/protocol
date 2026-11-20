@@ -14,14 +14,8 @@
 #! `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, that is `8 + 4n` words, sealed
 #! under the context `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]`.
 
-use {
-    NoteAttachmentCommitment,
-    NoteRecipient,
-    NoteScriptRoot,
-    NoteSerialNumber,
-    NoteStorageCommitment,
-} from miden::protocol::types
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use {NoteAttachmentCommitment} from miden::protocol::types
 use miden::core::crypto::ecdh::ecgfp5
 use miden::core::crypto::hashes::eidos
 use miden::core::word
@@ -30,6 +24,7 @@ use miden::protocol::ies
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::expiration
+use miden::standards::note as std_note
 
 # CONSTANTS
 # =================================================================================================
@@ -82,10 +77,6 @@ const ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC = 144
 # ERRORS
 # =================================================================================================
 
-const ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING = "advice map has no preimage for the recipient of the private note"
-
-const ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage in the advice map does not open the recipient of the private note"
-
 const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer public key for encrypted asset attachments"
 
 # PUBLIC INTERFACE
@@ -125,8 +116,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! Panics if:
 #! - the note index does not point to an output note.
 #! - the note is private and:
-#!   - the advice map has no preimage for its recipient.
-#!   - the preimage in the advice map does not open its recipient.
+#!   - the advice map has no preimage for its recipient, or the preimage does not hash to it.
 #!   - the active account has no issuer key slot or no issuer public key in it.
 #!   - the issuer public key is not a valid EcGFp5 public key.
 #!
@@ -168,7 +158,7 @@ end
 #! - ATTACHMENT_COMMITMENT is the commitment to the envelope.
 #!
 #! Panics if:
-#! - the advice map has no preimage for the note's recipient, or it does not open the recipient.
+#! - the advice map has no preimage for the note's recipient, or it does not hash to the recipient.
 #! - the active account has no issuer public key, or the key is not a valid EcGFp5 public key.
 #!
 #! Invocation: exec
@@ -182,7 +172,7 @@ proc encrypt_note_details(note_idx: u16) -> (u16, NoteAttachmentCommitment)
     dup exec.output_note::get_recipient
     # => [RECIPIENT, note_idx]
 
-    exec.get_recipient_details
+    exec.std_note::get_recipient_parts
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, note_idx]
 
     loc_storew_le.ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC dropw
@@ -232,74 +222,6 @@ proc encrypt_note_details(note_idx: u16) -> (u16, NoteAttachmentCommitment)
 
     push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
     # => [attachment_scheme, ATTACHMENT_COMMITMENT]
-end
-
-#! Returns the serial number, script root and storage commitment that the provided recipient
-#! commits to, read from the advice map.
-#!
-#! Inputs:
-#!   Operand stack: [RECIPIENT]
-#!   Advice map: {
-#!     RECIPIENT: [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT],
-#!     SERIAL_SCRIPT_COMMITMENT: [SERIAL_COMMITMENT, SCRIPT_ROOT],
-#!     SERIAL_COMMITMENT: [SERIAL_NUM, EMPTY_WORD],
-#!   }
-#! Outputs:
-#!   Operand stack: [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
-#!
-#! Panics if:
-#! - the advice map has no entry for RECIPIENT, SERIAL_SCRIPT_COMMITMENT or SERIAL_COMMITMENT.
-#! - the returned values do not hash to RECIPIENT.
-#!
-#! Invocation: exec
-proc get_recipient_details(
-    recipient: NoteRecipient
-) -> (NoteSerialNumber, NoteScriptRoot, NoteStorageCommitment)
-    dupw exec.load_recipient_preimage_entry
-    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
-
-    exec.load_recipient_preimage_entry
-    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
-
-    exec.load_recipient_preimage_entry
-    # => [SERIAL_NUM, SERIAL_NUM_PADDING, SCRIPT_ROOT, STORAGE_COMMITMENT, RECIPIENT]
-
-    swapw dropw movupw.3
-    # => [RECIPIENT, SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
-
-    # validate the values read from the advice map against the recipient
-    dupw.3 dupw.3 dupw.3 exec.note::compute_recipient
-    # => [COMPUTED_RECIPIENT, RECIPIENT, SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
-
-    assert_eqw.err=ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH
-    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
-end
-
-#! Pushes the two words that the advice map holds for the provided key onto the stack, without
-#! validating them.
-#!
-#! Inputs:
-#!   Operand stack: [KEY]
-#!   Advice map: {
-#!     KEY: [VALUE_0, VALUE_1],
-#!   }
-#! Outputs:
-#!   Operand stack: [VALUE_0, VALUE_1]
-#!
-#! Panics if:
-#! - the advice map has no entry for KEY.
-#!
-#! Invocation: exec
-proc load_recipient_preimage_entry(key: word) -> (word, word)
-    adv.has_mapkey adv_push assert.err=ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING
-    # => [KEY]
-
-    adv.push_mapval dropw
-    # => []
-    # AS => [VALUE_0, VALUE_1]
-
-    padw adv_loadw padw adv_loadw swapw
-    # => [VALUE_0, VALUE_1]
 end
 
 #! Returns the issuer's EcGFp5 public key from the active account's `ISSUER_KEY_SLOT`.

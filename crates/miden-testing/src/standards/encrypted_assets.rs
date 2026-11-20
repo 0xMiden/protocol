@@ -39,8 +39,8 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING,
-    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH,
-    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING,
+    ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH,
+    ERR_NOTE_RECIPIENT_PREIMAGE_MISSING,
 };
 use miden_standards::note::{
     EncryptedAssetsAttachment,
@@ -167,12 +167,12 @@ async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()>
 #[case::missing_recipient_preimage(
     issuer_key_slot(),
     RecipientPreimage::Missing,
-    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING
+    ERR_NOTE_RECIPIENT_PREIMAGE_MISSING
 )]
 #[case::forged_recipient_preimage(
     issuer_key_slot(),
     RecipientPreimage::Forged,
-    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH
+    ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
 )]
 #[case::missing_issuer_key(
     StorageSlot::with_empty_map(EncryptedAssetsIssuerKey::slot_name().clone()),
