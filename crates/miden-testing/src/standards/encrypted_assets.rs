@@ -16,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ies::ecgfp5_eidos;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -128,9 +129,12 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
         .context("output note should carry the encrypted asset attachment")?;
     assert_eq!(usize::from(attachment.num_words()), 8 + 4 * note.assets().num_assets());
 
-    let plaintext = EncryptedAssetsAttachment::decrypt(attachment, &issuer_secret_key())?;
+    let plaintext = EncryptedAssetsAttachment::decrypt_note(
+        output_note.header(),
+        output_note.attachments(),
+        &issuer_secret_key(),
+    )?;
     assert_eq!(plaintext.assets(), note.assets());
-    assert_eq!(plaintext.note_id(output_note.metadata()), output_note.id());
     assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
 
     Ok(())
@@ -183,42 +187,84 @@ async fn private_note_without_attachment_cannot_be_sealed(
     Ok(())
 }
 
-/// Tests that the attachment does not decrypt with another secret key or after tampering, and that
-/// the plaintext with other metadata yields another note ID.
+/// Tests that the issuer keeps only the attachment that describes the note, although the note's
+/// creator added a decoy attachment of the same scheme first, that the attachment does not decrypt
+/// with another secret key or after tampering, and that the plaintext with other metadata yields
+/// another note ID.
 #[tokio::test]
-async fn attachment_binds_issuer_key_envelope_and_metadata() -> anyhow::Result<()> {
-    let (_, result) =
-        send_note(NoteType::Private, Vec::new(), issuer_key_slot(), RecipientPreimage::Expected)
-            .await?;
+async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::Result<()> {
+    // the decoy encrypts the details of another note to the issuer key
+    let decoy_plaintext = EncryptedAssetsAttachment::new(
+        Word::from([9u32; 4]),
+        P2idNote::script_root(),
+        Word::empty(),
+        NoteAssets::default(),
+    );
+    let decoy_envelope = ecgfp5_eidos::seal_with_rng(
+        &issuer_secret_key().public_key(),
+        &decoy_plaintext.to_elements(),
+        &EncryptedAssetsAttachment::CONTEXT,
+        &mut rand::rng(),
+    )?;
+    let decoy = NoteAttachment::with_words(
+        EncryptedAssetsAttachment::ATTACHMENT_SCHEME,
+        words_from_elements(&decoy_envelope.to_elements()),
+    )?;
+
+    let (note, result) = send_note_with_attachments(
+        NoteType::Private,
+        Vec::new(),
+        vec![decoy.clone()],
+        issuer_key_slot(),
+        RecipientPreimage::Expected,
+    )
+    .await?;
     let executed_tx = result?;
     let output_note = executed_tx.output_notes().get_note(0);
+    assert_eq!(output_note.attachments().get(0), Some(&decoy));
+
+    let plaintext = EncryptedAssetsAttachment::decrypt_note(
+        output_note.header(),
+        output_note.attachments(),
+        &issuer_secret_key(),
+    )?;
+    assert_eq!(plaintext.serial_num(), note.recipient().serial_num());
+    assert_eq!(
+        EncryptedAssetsAttachment::decrypt(&decoy, &issuer_secret_key())?,
+        decoy_plaintext
+    );
+
     let attachment = output_note
         .attachments()
-        .find(EncryptedAssetsAttachment::ATTACHMENT_SCHEME)
-        .context("output note should carry the encrypted asset attachment")?;
+        .get(1)
+        .context("output note should carry the encrypted asset attachment after the decoy")?;
 
     let other_secret_key = SecretKey::from_bytes(&[8; 40])?;
     assert_matches!(
         EncryptedAssetsAttachment::decrypt(attachment, &other_secret_key),
         Err(EncryptedAssetsAttachmentError::DecryptionFailed(_))
     );
+    assert_matches!(
+        EncryptedAssetsAttachment::decrypt_note(
+            output_note.header(),
+            output_note.attachments(),
+            &other_secret_key
+        ),
+        Err(EncryptedAssetsAttachmentError::NoMatchingAttachment(id)) if id == output_note.id()
+    );
 
     // flip the lowest bit of the first ciphertext limb, which keeps it a valid u32 limb
     let mut elements = attachment.to_elements();
     elements[8] = Felt::new(elements[8].as_canonical_u64() ^ 1)?;
-    let words = elements
-        .as_chunks::<{ Word::NUM_ELEMENTS }>()
-        .0
-        .iter()
-        .map(|word| Word::new(*word))
-        .collect();
-    let tampered = NoteAttachment::with_words(attachment.attachment_scheme(), words)?;
+    let tampered = NoteAttachment::with_words(
+        EncryptedAssetsAttachment::ATTACHMENT_SCHEME,
+        words_from_elements(&elements),
+    )?;
     assert_matches!(
         EncryptedAssetsAttachment::decrypt(&tampered, &issuer_secret_key()),
         Err(EncryptedAssetsAttachmentError::DecryptionFailed(_))
     );
 
-    let plaintext = EncryptedAssetsAttachment::decrypt(attachment, &issuer_secret_key())?;
     let other_metadata =
         NoteMetadata::new(*output_note.metadata().partial_metadata(), &NoteAttachments::empty());
     assert_ne!(plaintext.note_id(&other_metadata), output_note.id());
@@ -299,6 +345,25 @@ async fn send_note(
     issuer_key_slot: StorageSlot,
     recipient_preimage: RecipientPreimage,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
+    send_note_with_attachments(
+        note_type,
+        other_assets,
+        Vec::new(),
+        issuer_key_slot,
+        recipient_preimage,
+    )
+    .await
+}
+
+/// Executes the transaction of [`send_note`] for a note to which its creator adds
+/// `creator_attachments`.
+async fn send_note_with_attachments(
+    note_type: NoteType,
+    other_assets: Vec<Asset>,
+    creator_attachments: Vec<NoteAttachment>,
+    issuer_key_slot: StorageSlot,
+    recipient_preimage: RecipientPreimage,
+) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     let mut builder = MockChain::builder();
     let faucet = add_issuing_faucet(&mut builder, issuer_key_slot)?;
     let assets = core::iter::once(FungibleAsset::new(faucet.id(), 100)?.into())
@@ -314,6 +379,7 @@ async fn send_note(
         .sender(wallet.id())
         .target(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
         .assets(assets)
+        .attachments(creator_attachments)
         .note_type(note_type)
         .serial_number(Word::from([1, 2, 3, 4u32]))
         .build()?
@@ -356,6 +422,17 @@ async fn send_note(
     let result = tx_builder.build()?.execute().await;
 
     Ok((note, result))
+}
+
+/// Returns the words of the provided elements, whose number is a multiple of four.
+fn words_from_elements(elements: &[Felt]) -> Vec<Word> {
+    elements
+        .as_chunks::<{ Word::NUM_ELEMENTS }>()
+        .0
+        .iter()
+        .copied()
+        .map(Word::new)
+        .collect()
 }
 
 /// Returns the elements of the two provided words.

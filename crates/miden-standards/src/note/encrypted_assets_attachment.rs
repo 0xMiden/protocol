@@ -9,7 +9,9 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteDetailsCommitment,
+    NoteHeader,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -58,11 +60,9 @@ const ISSUER_KEY_TAIL_INDEX: u32 = 2;
 /// `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. It
 /// carries no identifier of the issuer key.
 ///
-/// The issuer decrypts the attachment with [`Self::decrypt`] and computes the note's ID and
-/// nullifier from the plaintext and the note's [`NoteMetadata`]. An ID that matches the note's ID
-/// shows that the plaintext describes the note. A note that holds the assets of several faucets
-/// that build the attachment carries one attachment per faucet, so the issuer tries each
-/// attachment with [`Self::ATTACHMENT_SCHEME`].
+/// The issuer decrypts the attachment of a note with [`Self::decrypt_note`], which keeps only a
+/// plaintext from which the note's ID is recomputed, and computes the note's nullifier with
+/// [`Self::nullifier`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedAssetsAttachment {
     serial_num: Word,
@@ -107,7 +107,35 @@ impl EncryptedAssetsAttachment {
         }
     }
 
+    /// Decrypts the encrypted asset attachment of the note with the provided header and
+    /// attachments with the issuer's secret key.
+    ///
+    /// A decrypted attachment alone does not show that it describes the note, since anyone can
+    /// encrypt to the issuer key and the note's creator can add attachments of
+    /// [`Self::ATTACHMENT_SCHEME`]. A note that holds the assets of several faucets that build the
+    /// attachment also carries one attachment per faucet. This tries every attachment of the
+    /// scheme and returns the plaintext from which [`Self::note_id`] recomputes the note's ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no attachment of the scheme decrypts to the details of the note.
+    pub fn decrypt_note(
+        header: &NoteHeader,
+        attachments: &NoteAttachments,
+        issuer_secret_key: &SecretKey,
+    ) -> Result<Self, EncryptedAssetsAttachmentError> {
+        attachments
+            .iter()
+            .filter(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME)
+            .filter_map(|attachment| Self::decrypt(attachment, issuer_secret_key).ok())
+            .find(|plaintext| plaintext.note_id(header.metadata()) == header.id())
+            .ok_or(EncryptedAssetsAttachmentError::NoMatchingAttachment(header.id()))
+    }
+
     /// Decrypts the provided encrypted asset attachment with the issuer's secret key.
+    ///
+    /// The plaintext need not describe the note that carries the attachment, see
+    /// [`Self::decrypt_note`].
     ///
     /// # Errors
     ///
@@ -247,8 +275,10 @@ impl EncryptedAssetsAttachment {
 /// ```
 ///
 /// where `PUBLIC_KEY_COMMITMENT` is [`PublicKey::to_commitment`] and `public_key_i` are the
-/// elements of [`PublicKey::to_elements`]. To rotate the key, the issuer replaces these entries
-/// and keeps its previous secret keys to decrypt the attachments built before the rotation.
+/// elements of [`PublicKey::to_elements`]. `build_attachment` encrypts to the key elements and
+/// requires only that the commitment is not empty. To rotate the key, the issuer replaces these
+/// entries and keeps its previous secret keys to decrypt the attachments built before the
+/// rotation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptedAssetsIssuerKey {
     public_key: PublicKey,
@@ -312,6 +342,8 @@ pub enum EncryptedAssetsAttachmentError {
     InvalidAsset(#[source] AssetError),
     #[error("plaintext holds invalid note assets")]
     InvalidAssets(#[source] NoteError),
+    #[error("no encrypted asset attachment decrypts to the details of note {0}")]
+    NoMatchingAttachment(NoteId),
 }
 
 // TESTS
