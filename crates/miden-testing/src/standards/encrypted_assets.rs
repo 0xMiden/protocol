@@ -57,6 +57,10 @@ use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_
 // CONSTANTS
 // ================================================================================================
 
+/// The default expiration delta of `miden::standards::expiration`, which `build_attachment`
+/// applies to a transaction that builds an attachment.
+const DEFAULT_EXPIRATION_BLOCK_DELTA: u32 = 20;
+
 /// The name of the component that registers the issuing faucet's note callback.
 const ISSUER_COMPONENT_NAME: &str = "miden::testing::encrypted_assets::issuer";
 
@@ -94,7 +98,8 @@ enum RecipientPreimage {
 // ================================================================================================
 
 /// Tests that the issuer decrypts the encrypted asset attachment of a private note and recomputes
-/// the note's ID and nullifier from it and the note's metadata.
+/// the note's ID and nullifier from it and the note's metadata, and that building the attachment
+/// applies the default expiration delta.
 ///
 /// The note holds the issuer's asset and, depending on the case, other faucets' assets, up to the
 /// maximum number of assets per note.
@@ -112,6 +117,10 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
         send_note(NoteType::Private, other_assets, issuer_key_slot(), RecipientPreimage::Expected)
             .await?;
     let executed_tx = result?;
+    assert_eq!(
+        executed_tx.expiration_block_num(),
+        executed_tx.block_header().block_num() + DEFAULT_EXPIRATION_BLOCK_DELTA
+    );
 
     let RawOutputNote::Full(full_note) = executed_tx.output_notes().get_note(0) else {
         anyhow::bail!("output note should be a full note");

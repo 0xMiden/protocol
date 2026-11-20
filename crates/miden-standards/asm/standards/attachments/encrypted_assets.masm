@@ -29,6 +29,7 @@ use miden::protocol::active_account
 use miden::protocol::ies
 use miden::protocol::note
 use miden::protocol::output_note
+use miden::standards::expiration
 
 # CONSTANTS
 # =================================================================================================
@@ -98,7 +99,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! attachment scheme 0 and the empty word. For a private note, the procedure encrypts the note's
 #! details to the issuer public key stored in the active account's `ISSUER_KEY_SLOT`, inserts the
 #! envelope into the advice map under its commitment and returns the scheme and commitment of the
-#! attachment. Faucets call it from their `on_before_note_sealed` callback, which can return its
+#! attachment. Since it reads the issuer key, it then applies the default expiration delta. Faucets call it from their `on_before_note_sealed` callback, which can return its
 #! outputs to the kernel.
 #!
 #! The note's recipient preimage must be in the advice map, as
@@ -177,6 +178,10 @@ end
 #! Invocation: exec
 @locals(432)
 proc encrypt_note_details(note_idx: u16) -> (u16, NoteAttachmentCommitment)
+    # the issuer key is mutable faucet state, which the faucet's callback reads through FPI
+    exec.expiration::apply_default
+    # => [note_idx]
+
     # write the recipient preimage to the start of the plaintext
     dup exec.output_note::get_recipient
     # => [RECIPIENT, note_idx]
