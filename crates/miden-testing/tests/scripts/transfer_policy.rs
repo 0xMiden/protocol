@@ -21,12 +21,14 @@ use miden_protocol::asset::{
 };
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteTag, NoteType};
-use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME;
+use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteTag, NoteType};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    AllowlistStorage,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -37,6 +39,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_ACCOUNT_IS_BLOCKED, ERR_PAUSABLE_IS_PAUSED};
 use miden_standards::note::{MintNote, MintNoteStorage, P2idNote};
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
     Auth,
@@ -340,6 +343,166 @@ pub(crate) fn assert_minted_note(
     assert_eq!(note.assets().iter().next(), Some(&expected_asset));
 
     Ok(())
+}
+
+// NOTE SEALING FIXTURE
+// ================================================================================================
+
+/// Builds a custom send policy that returns a single-word attachment with the provided scheme and
+/// word, or no attachment if `attachment` is `None`.
+///
+/// The policy puts the attachment word into the advice map under its commitment.
+fn custom_send_policy(attachment: Option<(u16, Word)>) -> anyhow::Result<SendPolicy> {
+    let policy_body = match attachment {
+        None => String::from(
+            "drop
+            # => [attachment_reserved_scheme, EMPTY_WORD, pad(11)]",
+        ),
+        Some((attachment_scheme, attachment_word)) => format!(
+            "drop
+            # => [pad(16)]
+
+            push.{attachment_word} loc_storew_le.0
+            exec.::miden::core::crypto::hashes::eidos::hash
+            # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+            locaddr.0 dup add.4 movdn.5 movdn.4
+            # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+            adv.insert_mem
+            movup.4 drop movup.4 drop
+            # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+            push.{attachment_scheme}
+            exec.::miden::core::sys::truncate_stack
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]"
+        ),
+    };
+
+    let component_name = "tests::attachment_send_policy";
+    let policy_code = CodeBuilder::default().compile_component_code(
+        component_name,
+        format!(
+            "
+            #! Inputs:  [note_idx, pad(15)]
+            #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+            @locals(4)
+            @account_procedure
+            pub proc check_send_policy
+                {policy_body}
+            end
+            "
+        ),
+    )?;
+    let policy_component =
+        AccountComponent::new(policy_code, vec![], AccountComponentMetadata::mock(component_name))?;
+    let policy_root = policy_component
+        .get_procedure_root_by_path(format!("{component_name}::check_send_policy").as_str())
+        .expect("send policy procedure should exist");
+
+    Ok(SendPolicy::custom(policy_root, [policy_component])?)
+}
+
+/// Executes a transaction in which an account holding an asset of a faucet creates a private
+/// note, adds a single-word attachment to it, moves the asset into it and seals it.
+///
+/// The faucet activates the send policy that `send_policy` returns for the ID of the note's
+/// creator, if any. It also registers [`SendPolicy::allow_all`] as a reserved alternative, so the
+/// send callback is installed even when no send policy is active.
+///
+/// Returns the note as the transaction script creates it and the execution result.
+async fn execute_note_sealing_tx(
+    send_policy: impl FnOnce(AccountId) -> anyhow::Result<Option<SendPolicy>>,
+) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
+    let mut builder = MockChain::builder();
+    // the sender is created before the faucet so that the send policy can name it
+    let mut sender = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let sender_id = sender.id();
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("ATT")?)
+        .symbol("ATT".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+    let faucet = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        AccountBuilder::new([48u8; 32])
+            .account_type(AccountType::Public)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_components(
+                TokenPolicyManager::builder()
+                    .active_mint_policy(MintPolicy::allow_all())
+                    .active_burn_policy(BurnPolicy::allow_all())
+                    .maybe_active_send_policy(send_policy(sender_id)?)
+                    .allowed_send_policy(SendPolicy::allow_all())
+                    .build(),
+            ),
+        AccountState::Exists,
+    )?;
+
+    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    sender.vault_mut().add_asset(asset)?;
+    builder.add_account(sender)?;
+    let mock_chain = builder.build()?;
+
+    let creator_attachment =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(10)?, Word::from([1, 2, 3, 4u32]));
+    let note = NoteBuilder::new(sender_id, EidosRandomCoin::new(Word::empty()))
+        .note_type(NoteType::Private)
+        .add_assets([asset])
+        .attachment(creator_attachment.clone())
+        .build()?;
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            push.{recipient} push.{note_type} push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            push.{asset_value} push.{asset_id} dup.8 movdn.8
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+            exec.util::move_asset_to_note
+            # => [note_idx, pad(15)]
+
+            dup push.{attachment_word} push.{attachment_scheme}
+            # => [attachment_scheme, ATTACHMENT, note_idx, note_idx, pad(15)]
+
+            exec.output_note::add_word_attachment
+            # => [note_idx, pad(15)]
+
+            exec.output_note::seal
+            # => [pad(15)]
+
+            exec.::miden::core::sys::truncate_stack
+        end
+        ",
+        recipient = note.recipient().digest(),
+        note_type = note.metadata().note_type() as u8,
+        tag = note.metadata().tag(),
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+        attachment_word = creator_attachment.content().as_words()[0],
+        attachment_scheme = creator_attachment.attachment_scheme().as_u16(),
+    ))?;
+
+    let result = mock_chain
+        .build_transaction(sender_id)
+        .tx_script(tx_script)
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute()
+        .await;
+
+    Ok((note, result))
 }
 
 // DISPATCHER TESTS
@@ -668,6 +831,47 @@ async fn send_policy_inspects_the_faucet_assets_of_the_note(
         );
         assert_default_expiration_limit(&executed);
     }
+
+    Ok(())
+}
+
+/// A send policy that returns no attachment, including each bundled send policy, and a faucet
+/// without an active send policy leave the sealed note as its creator built it.
+#[rstest::rstest]
+#[case::custom(|_| custom_send_policy(None).map(Some))]
+#[case::allow_all(|_| Ok(Some(SendPolicy::allow_all())))]
+#[case::basic_blocklist(|_| Ok(Some(SendPolicy::empty_basic_blocklist())))]
+#[case::basic_allowlist(|sender| {
+    Ok(Some(SendPolicy::with_basic_allowlist(AllowlistStorage::with_allowed_accounts([sender]))))
+})]
+#[case::no_active_policy(|_| Ok(None))]
+#[tokio::test]
+async fn send_policy_without_attachment_leaves_the_note_unchanged(
+    #[case] send_policy: fn(AccountId) -> anyhow::Result<Option<SendPolicy>>,
+) -> anyhow::Result<()> {
+    let (note, result) = execute_note_sealing_tx(send_policy).await?;
+    let executed = result?;
+
+    let output_note = executed.output_notes().get_note(0);
+    assert_eq!(output_note.attachments(), note.attachments());
+    assert_eq!(output_note.id(), note.id());
+
+    Ok(())
+}
+
+/// The kernel validates the send policy's outputs, so a send policy that returns attachment scheme
+/// 0 with a non-empty commitment fails the transaction.
+#[tokio::test]
+async fn send_policy_commitment_without_attachment_scheme_fails() -> anyhow::Result<()> {
+    let (_, result) = execute_note_sealing_tx(|_| {
+        custom_send_policy(Some((0, Word::from([5, 6, 7, 8u32])))).map(Some)
+    })
+    .await?;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME
+    );
 
     Ok(())
 }

@@ -85,19 +85,23 @@ pub enum TransferPolicyError {
 /// ## Interface
 ///
 /// The wrapper is the faucet's `on_before_note_sealed` callback, which the kernel invokes once
-/// when an output note holding the faucet's assets is sealed. The policy procedure receives the
-/// inputs of that callback. The wrapper drops the policy's outputs and returns no attachment for
-/// the note:
+/// when an output note holding the faucet's assets is sealed. The policy procedure has the
+/// interface of that callback, and the wrapper returns the policy's outputs to the kernel:
 ///
 /// ```text
 /// Inputs:  [note_idx, pad(15)]
-/// Outputs: [pad(16)]
+/// Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
 /// ```
 ///
 /// It reads the note itself and the note creator via `native_account::get_id`.
 /// `output_note::get_assets` returns all of the note's assets, so a policy that inspects the
 /// faucet's assets selects them by comparing `asset::id_to_faucet_id` with
 /// `active_account::get_id`.
+///
+/// A policy that returns an attachment for the note puts the attachment's elements into the
+/// advice map under `ATTACHMENT_COMMITMENT`, and the kernel appends it to the note. An
+/// `attachment_scheme` of `0` returns no attachment and requires `ATTACHMENT_COMMITMENT` to be
+/// the empty word. The bundled policies return no attachment.
 ///
 /// ## Minting
 ///
@@ -201,7 +205,9 @@ impl SendPolicy {
     /// Returns a send policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
-    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]`.
+    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]` and
+    /// returns the send policy outputs `[attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]` (see
+    /// [`SendPolicy`]).
     ///
     /// # Errors
     ///
