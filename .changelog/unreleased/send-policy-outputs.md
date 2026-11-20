@@ -1,1 +1,1 @@
-[BREAKING] `TokenPolicyManager`'s `invoke_send_policy` now returns the active send policy's outputs to the kernel, so a send policy can return an attachment for the sealed note.
+[BREAKING] `TokenPolicyManager`'s `invoke_send_policy` now returns the active send policy's outputs to the kernel, so a send policy can return an attachment for the sealed note and must return `[0, EMPTY_WORD, pad(11)]` to return none.
