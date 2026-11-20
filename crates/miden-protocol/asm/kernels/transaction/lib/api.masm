@@ -826,27 +826,36 @@ pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, 
     # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset ID in the active account's vault.
+#! Returns the asset associated with the provided asset ID in the vault of the native or the active
+#! account.
 #!
-#! Inputs:  [ASSET_ID, pad(12)]
+#! Inputs:  [is_native, ASSET_ID, pad(11)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
+#!   the native or the active account.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - is_native is 1, the active account is not the native account and it is not the issuer of the
+#!   asset.
 #!
 #! Invocation: dynexec
-pub proc account_get_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
+pub proc account_get_asset(
+    is_native: Bool,
+    asset_id: AssetId,
+    padding: [felt; 11]
+) -> (AssetValue, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_ID, pad(12)]
+    # => [is_native, ASSET_ID, pad(11)]
 
-    exec.asset::validate_id
-    # => [ASSET_ID, pad(12)]
+    movdn.4 exec.asset::validate_id movup.4
+    # => [is_native, ASSET_ID, pad(11)]
 
     exec.account::get_asset
     # => [ASSET_VALUE, pad(12)]
@@ -864,13 +873,10 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
-    # check that this procedure was executed against the native account
-    exec.memory::assert_native_account
-
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]

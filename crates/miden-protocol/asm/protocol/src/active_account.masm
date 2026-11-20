@@ -293,13 +293,17 @@ end
 #!
 #! Invocation: exec
 pub proc get_asset(asset_id: AssetId) -> AssetValue
+    # push the flag indicating that the asset of the active account was requested
+    push.0
+    # => [is_native = 0, ASSET_ID]
+
     push.ACCOUNT_GET_ASSET_OFFSET
-    # => [offset, ASSET_ID]
+    # => [offset, is_native = 0, ASSET_ID]
 
     # pad the stack
-    push.0 movdn.5 push.0 movdn.5 push.0 movdn.5
+    push.0 movdn.6 push.0 movdn.6
     padw padw swapdw
-    # => [offset, ASSET_ID, pad(11)]
+    # => [offset, is_native = 0, ASSET_ID, pad(10)]
 
     syscall.exec_kernel_proc
     # => [ASSET_VALUE, pad(12)]

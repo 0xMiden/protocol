@@ -11,6 +11,7 @@ use {
 use {AccountData, Commitment, StorageSlot} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account_update
 use miden::protocol_utils::account_id
+use miden::protocol_utils::asset as asset_utils
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::callbacks
 use miden::tx_kernel_core::memory
@@ -110,6 +111,9 @@ const ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED = "account storage upgrad
 const ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT = "a new account cannot be upgraded"
 
 const ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET = "an account code upgrade is already pending"
+
+const ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET =
+    "a foreign account can only read assets it issued from the native account's vault"
 
 const ERR_FOREIGN_ACCOUNT_ID_MISMATCH =
     "foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
@@ -368,6 +372,25 @@ end
 
 pub use {get_init_native_account_vault_root as get_initial_vault_root}
     from miden::tx_kernel_core::memory
+
+#! Returns the memory pointer to the vault root of the native or the active account.
+#!
+#! Inputs:  [is_native]
+#! Outputs: [vault_root_ptr]
+#!
+#! Where:
+#! - is_native is a boolean flag that indicates whether the pointer was requested for the native or
+#!   the active account.
+#! - vault_root_ptr is the memory pointer to the requested account's vault root.
+proc get_vault_root_ptr(is_native: Bool) -> ptr<Commitment>
+    exec.memory::get_account_vault_root_ptr
+    exec.memory::get_native_account_vault_root_ptr
+    # => [native_vault_root_ptr, active_vault_root_ptr, is_native]
+
+    # keep the native pointer if is_native is 1, the active one otherwise
+    movup.2 cdrop
+    # => [vault_root_ptr]
+end
 
 # STORAGE
 # -------------------------------------------------------------------------------------------------
@@ -775,17 +798,31 @@ pub proc remove_asset_from_vault(asset: Asset) -> AssetValue
     # => [FINAL_ASSET_VALUE]
 end
 
-#! Returns the ASSET_VALUE associated with the provided asset ID in the active account's vault.
+#! Returns the ASSET_VALUE associated with the provided asset ID in the vault of the native or the
+#! active account.
 #!
-#! Inputs:  [ASSET_ID]
+#! Inputs:  [is_native, ASSET_ID]
 #! Outputs: [ASSET_VALUE]
 #!
 #! Where:
+#! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
+#!   the native or the active account.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
-pub proc get_asset(asset_id: AssetId) -> AssetValue
+#!
+#! Panics if:
+#! - is_native is 1, the active account is not the native account and it is not the issuer of the
+#!   asset.
+pub proc get_asset(is_native: Bool, asset_id: AssetId) -> AssetValue
+    # a read of the native account's vault is only allowed for some active accounts
+    dup
+    if.true
+        movdn.4 exec.assert_can_read_native_vault_asset movup.4
+    end
+    # => [is_native, ASSET_ID]
+
     # get the vault root ptr
-    exec.memory::get_account_vault_root_ptr movdn.4
+    exec.get_vault_root_ptr movdn.4
     # => [ASSET_ID, vault_root_ptr]
 
     # emit event to signal that an asset is requested
@@ -806,7 +843,13 @@ end
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#!
+#! Panics if:
+#! - the active account is not the native account and it is not the issuer of the asset.
 pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
+    exec.assert_can_read_native_vault_asset
+    # => [ASSET_ID]
+
     # get the initial vault root ptr of the native account
     exec.memory::get_init_native_account_vault_root_ptr movdn.4
     # => [ASSET_ID, init_native_vault_root_ptr]
@@ -818,6 +861,32 @@ pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
     # get the asset
     exec.asset_vault::get_asset
     # => [ASSET_VALUE]
+end
+
+#! Asserts that the active account can read the asset with the provided ID from the native
+#! account's vault, which is the case if it is the native account or the issuer of the asset.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to read.
+#!
+#! Panics if:
+#! - the active account is not the native account and it is not the issuer of the asset.
+proc assert_can_read_native_vault_asset(asset_id: AssetId) -> AssetId
+    exec.asset_utils::id_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.memory::get_account_id
+    # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.account_id::eq
+    # => [is_issuer, ASSET_ID]
+
+    exec.memory::is_native_account or
+    assert.err=ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+    # => [ASSET_ID]
 end
 
 # CODE
