@@ -95,12 +95,12 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 
 #! Builds the encrypted asset attachment of the output note with the provided index.
 #!
-#! A public note publishes its details, so it gets no attachment and the procedure returns
-#! attachment scheme 0 and the empty word. For a private note, the procedure encrypts the note's
-#! details to the issuer public key stored in the active account's `ISSUER_KEY_SLOT`, inserts the
-#! envelope into the advice map under its commitment and returns the scheme and commitment of the
-#! attachment. Since it reads the issuer key, it then applies the default expiration delta. Faucets call it from their `on_before_note_sealed` callback, which can return its
-#! outputs to the kernel.
+#! A public note gets no attachment and the procedure returns attachment scheme 0 and the empty
+#! word. For a private note, the procedure encrypts the note's details to the issuer public key
+#! stored in the active account's `ISSUER_KEY_SLOT`, inserts the envelope into the advice map under
+#! its commitment and returns the scheme and commitment of the attachment. Since it reads the
+#! issuer key, it also applies the default expiration delta. Faucets call it from their
+#! `on_before_note_sealed` callback, which can return its outputs to the kernel.
 #!
 #! The note's recipient preimage must be in the advice map, as
 #! `NoteRecipient::to_advice_map_entries` or `note::compute_and_store_recipient` writes it. A
