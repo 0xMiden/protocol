@@ -145,7 +145,6 @@ impl BlockSignatures {
                 });
             }
             has_signed[signer] = true;
-            }
         }
 
         Ok(())
