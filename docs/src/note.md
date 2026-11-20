@@ -88,7 +88,7 @@ A note can have up to 4 attachments. Each attachment is a variable-size, _public
 
 The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment). The attachment schemes are encoded in the note's metadata. When the note is consumed, the actual attachment content is provided via the advice provider.
 
-When the note is sealed, the [asset callbacks](asset#callbacks) of the faucets whose assets it holds can each return an attachment, which the kernel appends to the note. These attachments count toward the same limits, so the note's creator must leave room for them.
+When the note is sealed, the [asset callbacks](asset#callbacks) of the faucets whose assets it holds can each return attachments, which the kernel appends to the note. These attachments count toward the same limits, so the note's creator must leave room for them.
 
 Schemes are not required to be unique within a note, but adding multiple attachments with the same scheme is discouraged. It provides no additional benefit and only increases the note's public on-chain data and the fees its creator pays.
 

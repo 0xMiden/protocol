@@ -1,5 +1,4 @@
-use {AccountId, AccountProcedureRoot, Asset, Bool, NoteAttachmentCommitment, StorageSlotId}
-    from miden::protocol_utils::types
+use {AccountId, AccountProcedureRoot, Asset, Bool, StorageSlotId} from miden::protocol_utils::types
 use miden::tx_kernel_core::tx
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
@@ -74,7 +73,7 @@ pub proc on_before_asset_added_to_account(asset: Asset)
 end
 
 #! Invokes the `on_before_note_sealed` callback on the provided faucet for the output note with the
-#! provided index and returns the attachment the callback returns for the note.
+#! provided index and returns the attachment list the callback returns for the note.
 #!
 #! The faucet's account ID is expected to have the asset callback flag enabled.
 #!
@@ -83,22 +82,19 @@ end
 #! - If the callback storage slot contains the empty word.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, note_idx]
-#! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT]
 #!
 #! Where:
 #! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet whose
 #!   callback is invoked.
 #! - note_idx is the index of the output note that is being sealed.
-#! - attachment_scheme is the scheme of the attachment returned by the callback, or 0 if the
-#!   callback returns no attachment or its invocation was skipped.
-#! - ATTACHMENT_COMMITMENT is the commitment to the elements of the returned attachment.
+#! - num_attachments is the number of attachments returned by the callback, or 0 if its invocation
+#!   was skipped.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the list of the returned attachments.
 #!
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
-pub proc on_before_note_sealed(
-    faucet_id: AccountId,
-    note_idx: u16
-) -> (felt, NoteAttachmentCommitment)
+pub proc on_before_note_sealed(faucet_id: AccountId, note_idx: u16) -> (felt, word)
     # pad the note index to the 8 elements of the callback inputs
     repeat.7
         push.0 movdn.3
@@ -109,14 +105,14 @@ pub proc on_before_note_sealed(
     # => [slot_id_suffix, slot_id_prefix, faucet_id_suffix, faucet_id_prefix, note_idx, pad(7)]
 
     exec.invoke_callback
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 
     # drop the padding of the callback outputs
     swapdw dropw dropw
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(3)]
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(3)]
 
     movup.5 drop movup.5 drop movup.5 drop
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT]
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT]
 end
 
 #! Invokes a callback by starting a foreign context against the faucet, reading the callback
