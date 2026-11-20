@@ -1120,7 +1120,7 @@ asset to mint for the active faucet and panics if the stored `ASSET_ID` does not
 that faucet, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_ID`
 was resolved for faucet A cannot be consumed by any other faucet B even if both share the
 bridge as owner. Once the bind passes, the minted asset is attached to the P2ID output
-note via `output_note::add_asset`.
+note via `output_note::add_asset`, and the MINT script then seals the note.
 
 #### Permissions
 

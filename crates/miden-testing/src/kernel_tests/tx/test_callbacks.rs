@@ -538,11 +538,12 @@ async fn test_blocked_account_cannot_add_asset_to_note(
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::miden::standards::note::note_creator::create_note
+            call.::miden::standards::note::note_creator::create_note dup
 
             push.{asset_value}
             push.{asset_id}
             exec.output_note::add_asset
+            exec.output_note::seal
         end
         "#,
         recipient = recipient,
@@ -642,12 +643,13 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     // note_idx.
     let script_code = format!(
         r#"
+        use miden::protocol::output_note
         use mock::util
 
         @transaction_script
         pub proc main
             # Create note 0 (just to consume index 0)
-            exec.util::create_default_note drop
+            exec.util::create_default_note exec.output_note::seal
             # => []
 
             # Create note 1
@@ -931,8 +933,11 @@ async fn mint_and_send_with_native_note_callback(
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]
 
+            exec.::miden::protocol::output_note::seal
+            # => [pad(15)]
+
             # truncate the stack
-            dropw dropw dropw dropw
+            dropw dropw dropw drop drop drop
         end
         ",
         note_type = NoteType::Private as u8,

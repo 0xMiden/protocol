@@ -305,7 +305,7 @@ The SWAP note script implements atomic asset swapping functionality.
 - **Storage:** The requested asset and the payback note configuration: recipient, note type, tag and attachments. The layout is defined by `SwapNoteStorage`.
 - **Assets:** Must contain exactly 1 asset to be swapped
 - **Mechanism:**
-  1. Creates a payback note that contains the requested asset. By default, it is a P2ID note for the original note issuer, but the creator can select any recipient. For a private payback, the script uses the precomputed recipient digest from storage. For a public payback, the script builds the recipient from the script root, serial number and storage embedded in the SWAP storage. This also registers the preimage in the advice map, so the consumer needs no additional advice. In both modes, the script adds the attachments from storage to the payback note.
+  1. Creates a payback note that contains the requested asset. By default, it is a P2ID note for the original note issuer, but the creator can select any recipient. For a private payback, the script uses the precomputed recipient digest from storage. For a public payback, the script builds the recipient from the script root, serial number and storage embedded in the SWAP storage. This also registers the preimage in the advice map, so the consumer needs no additional advice. In both modes, the script adds the attachments from storage to the payback note. The payback note is sealed once it holds the requested asset and its attachments.
   2. Adds the note's asset to the consuming account's vault
 - **Requirements:** Account must expose both:
   - `miden::standards::wallets::basic::receive_asset` procedure

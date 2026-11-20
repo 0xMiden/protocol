@@ -91,6 +91,8 @@ const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET = "FEE_SPONSORSHIP note asset does
 
 const ERR_FEE_MANAGER_SPONSORSHIP_WRONG_NUM_ASSETS = "FEE_SPONSORSHIP note must carry exactly one asset"
 
+const ERR_FEE_MANAGER_SPONSORSHIP_HAS_ATTACHMENTS = "FEE_SPONSORSHIP note must not carry attachments"
+
 const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset does not match the expected fee asset"
 
 const ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH = "expected fee asset does not match the fee asset configured in the fee manager"
@@ -252,7 +254,7 @@ end
 #! Walks the transaction's output notes as they stood when this procedure was called. For each note
 #! that carries a `NetworkAccountTarget` attachment (i.e. is targeted at a network account), it reads
 #! the target account ID, asks that account's fee policy what the note costs via an FPI call to its
-#! `estimate_note_fee` procedure, and, if the fee is non-zero, creates a FEE_SPONSORSHIP output note
+#! `estimate_note_fee` procedure, and, if the fee is non-zero, creates a sealed FEE_SPONSORSHIP note
 #! bound to the network note (as its companion) carrying exactly the estimated fee asset. The fee
 #! asset is removed from the native account's vault to fund the note. Until fee asset conversion
 #! exists, the target's fee must use the expected fee asset supplied by the caller, which typically
@@ -281,6 +283,7 @@ end
 #! - the target account's active fee policy is not set.
 #! - a target account charges a non-zero fee in an asset other than the expected fee asset.
 #! - the native account's vault does not hold enough of the fee asset.
+#! - a created sponsorship note carries attachments once sealed.
 #!
 #! Invocation: exec
 pub proc create_network_note_sponsorships(fee_asset_id: AssetId) -> felt
@@ -828,11 +831,15 @@ proc compute_sponsorship_fee(note_idx: u16, attachment_idx: u8) -> (Asset, felt)
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix]
 end
 
-#! Creates and funds the FEE_SPONSORSHIP note for a network output note priced to a non-zero fee.
+#! Creates, funds and seals the FEE_SPONSORSHIP note for a network output note priced to a non-zero
+#! fee.
 #!
 #! Removes the fee asset from the native account's vault, derives a serial number unique to the
 #! sponsored note, builds the sponsorship note tagged for the target account with the native account
-#! as reclaimer (reclaim disabled), creates it, and funds it with the fee asset.
+#! as reclaimer (reclaim disabled), creates it, funds it with the fee asset and seals it.
+#!
+#! The sealed note must carry no attachments, for the reasons given on
+#! fee::create_and_fund_fee_note.
 #!
 #! Inputs:  [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
 #! Outputs: []
@@ -845,6 +852,7 @@ end
 #!
 #! Panics if:
 #! - the native account's vault does not hold enough of the fee asset.
+#! - the sealed note carries attachments.
 #!
 #! Invocation: exec
 @locals(14)
@@ -898,14 +906,24 @@ proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx:
     exec.fee_sponsorship::prepare_note
     # => [tag, note_type, RECIPIENT]
 
-    exec.output_note::create
-    # => [sponsorship_note_idx]
+    exec.output_note::create dup
+    # => [sponsorship_note_idx, sponsorship_note_idx]
 
     # fund the freshly created sponsorship note with the fee asset
     padw loc_loadw_le.CREATE_FEE_ASSET_VALUE_LOC
     padw loc_loadw_le.CREATE_FEE_ASSET_ID_LOC
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, sponsorship_note_idx]
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, sponsorship_note_idx, sponsorship_note_idx]
 
     exec.output_note::add_asset
+    # => [sponsorship_note_idx]
+
+    dup exec.output_note::seal
+    # => [sponsorship_note_idx]
+
+    exec.output_note::get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT]
+
+    exec.eidos::empty_felt_sequence_digest
+    assert_eqw.err=ERR_FEE_MANAGER_SPONSORSHIP_HAS_ATTACHMENTS
     # => []
 end

@@ -1058,17 +1058,20 @@ fn create_network_notes_tx_script(
             call.::miden::standards::note::note_creator::create_note
             # => [note_idx, pad(21)]
 
-            movdn.15 dropw dropw dropw drop drop drop
-            # => [note_idx, pad(6)]
+            movdn.15 dropw dropw dropw drop drop drop dup
+            # => [note_idx, note_idx, pad(6)]
 
             # attach the network account target so the auth procedure sponsors the note
             push.0 push.{target_prefix} push.{target_suffix}
-            # => [target_id_suffix, target_id_prefix, exec_hint_tag = 0, note_idx, pad(6)]
+            # => [target_id_suffix, target_id_prefix, exec_hint_tag = 0, note_idx, note_idx, pad(6)]
 
             exec.network_account_target::new
-            # => [attachment_scheme, NOTE_ATTACHMENT, note_idx, pad(6)]
+            # => [attachment_scheme, NOTE_ATTACHMENT, note_idx, note_idx, pad(6)]
 
             exec.output_note::add_word_attachment
+            # => [note_idx, pad(6)]
+
+            exec.output_note::seal
             # => [pad(6)]
 "#,
                 serial_num = Word::from([21u32, 22, 23, 24 + note_idx]),

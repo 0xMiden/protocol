@@ -21,6 +21,8 @@ use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOT
 
 #! Creates a new note and returns the index of the note.
 #!
+#! The note must be sealed with `seal` before the transaction ends.
+#!
 #! Inputs:  [tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
 #!
@@ -60,8 +62,8 @@ end
 
 #! Prevents further changes to an output note's assets and attachments.
 #!
-#! Call this after fully populating an output whose final NoteId must remain fixed.
-#! Sealing is idempotent.
+#! Call this once the note's assets and attachments are final. Every output note must be sealed
+#! before the transaction ends, otherwise the transaction epilogue panics. Sealing is idempotent.
 #!
 #! Inputs:  [note_index]
 #! Outputs: []

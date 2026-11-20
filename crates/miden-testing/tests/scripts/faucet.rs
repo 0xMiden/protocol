@@ -103,8 +103,11 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
             end
             ",
         note_type = params.note_type as u8,
@@ -516,8 +519,11 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
 
             end
             ",
@@ -858,8 +864,11 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # Truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
             end
             ",
         note_type = note_type as u8,
@@ -2535,8 +2544,11 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # clean up the stack before the second call
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
 
                 # --- Second mint: mint {amount_2} tokens to recipient_2 ---
                 push.{recipient_2}
@@ -2553,8 +2565,11 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
             end
             ",
         note_type = note_type as u8,
