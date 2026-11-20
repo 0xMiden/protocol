@@ -11,11 +11,8 @@ pub use link_map::{LinkMap, MemoryViewer};
 mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the transaction kernel does not load the code patch yet")
-)]
 mod code_patch;
+use code_patch::{CodePatchSource, code_witness_advice};
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
@@ -38,11 +35,13 @@ mod tx_progress;
 
 mod tx_event;
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry};
+use miden_processor::mast::MastForest;
 use miden_processor::trace::RowIndex;
 use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
@@ -63,7 +62,15 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
+use miden_protocol::block::code_tree::{CodePatch, CodeWitness, PartialCodeTree};
+use miden_protocol::code::ProcedureRoot;
+use miden_protocol::note::{
+    NoteAttachment,
+    NoteId,
+    NoteRecipient,
+    NoteScript,
+    PartialNoteMetadata,
+};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -124,6 +131,13 @@ pub struct TransactionBaseHost<'store, STORE> {
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
     logs: Vec<TransactionLog>,
 
+    /// The code of the native account if it is new and public. Its procedures are top-level
+    /// procedure roots of the code patch.
+    new_public_account_code: Option<AccountCode>,
+
+    /// The code tree of the reference block that tracks the available code witnesses.
+    code_tree: PartialCodeTree,
+
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
 }
@@ -144,7 +158,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
+        code_tree: PartialCodeTree,
     ) -> Result<Self, TransactionKernelError> {
+        let new_public_account_code =
+            (account.is_new() && account.id().is_public()).then(|| account.code().clone());
+
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
@@ -167,6 +185,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             logs: Vec::new(),
             input_notes,
             block_commitments,
+            new_public_account_code,
+            code_tree,
             core_lib_handlers,
         })
     }
@@ -663,5 +683,136 @@ where
             Some(forest) => Some(forest),
             None => self.mast_store.get(procedure_root),
         }
+    }
+
+    // CODE WITNESSES
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the code tree of the reference block that tracks the available code witnesses.
+    pub fn code_tree(&self) -> &PartialCodeTree {
+        &self.code_tree
+    }
+
+    /// Adds the provided code witnesses to the available code witnesses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a witness does not fit the code tree of the reference block.
+    pub fn add_code_witnesses(
+        &mut self,
+        witnesses: impl IntoIterator<Item = CodeWitness>,
+    ) -> Result<(), TransactionKernelError> {
+        for witness in witnesses {
+            self.code_tree
+                .track_procedure(witness)
+                .map_err(TransactionKernelError::InvalidCodeWitness)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the top-level procedure roots that are absent from the code tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code witness of a top-level root is not available.
+    pub(crate) fn absent_top_level_roots(
+        &self,
+    ) -> Result<BTreeSet<ProcedureRoot>, TransactionKernelError> {
+        let mut absent_roots = BTreeSet::new();
+        for top_level_root in self.code_patch_top_level_roots() {
+            if !code_patch::is_present(&self.code_tree, top_level_root)? {
+                absent_roots.insert(top_level_root);
+            }
+        }
+
+        Ok(absent_roots)
+    }
+
+    /// Returns the source of the code patch: the code of the top-level procedure roots and the
+    /// provided code to register (see
+    /// [`DataStore::get_code_to_register`](crate::DataStore::get_code_to_register)).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the source cannot be built (see [`CodePatchSource::new`]).
+    pub(crate) fn code_patch_source(
+        &self,
+        code_to_register: &[Arc<MastForest>],
+    ) -> Result<CodePatchSource, TransactionKernelError> {
+        let note_script_forests = self.public_output_note_scripts().map(NoteScript::mast);
+        let mast_forests = self
+            .new_public_account_code
+            .iter()
+            .map(AccountCode::mast)
+            .chain(note_script_forests)
+            .chain(code_to_register.iter().cloned())
+            .collect::<Vec<_>>();
+
+        CodePatchSource::new(mast_forests.iter().map(Arc::as_ref))
+    }
+
+    /// Builds the code patch of the top-level procedure roots, which the kernel loads.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the patch cannot be built (see [`CodePatchSource::build_code_patch`]).
+    pub(crate) fn build_code_patch(
+        &self,
+        source: &CodePatchSource,
+    ) -> Result<CodePatch, TransactionKernelError> {
+        source.build_code_patch(&self.code_patch_top_level_roots(), &self.code_tree)
+    }
+
+    /// Returns the advice that the kernel reads to load the code patch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a code witness that the kernel needs is not available.
+    pub fn code_patch_advice(
+        &self,
+        code_patch: &CodePatch,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        code_patch::code_patch_advice(code_patch, &self.code_tree)
+    }
+
+    /// Handles the verification of a top-level procedure root that the code patch does not create.
+    ///
+    /// Returns the advice that the kernel reads to verify the code witness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code witness of the procedure root is not available.
+    pub fn on_code_patch_before_witness_verified(
+        &self,
+        procedure_root: ProcedureRoot,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        code_witness_advice([&procedure_root], &self.code_tree)
+    }
+
+    /// Returns the top-level procedure roots of the code patch.
+    ///
+    /// These are the procedures of a new public account and the script roots of the public output
+    /// notes created so far. Executor and prover call this at the same point of the execution, so
+    /// that they load equal lists.
+    pub(crate) fn code_patch_top_level_roots(&self) -> BTreeSet<ProcedureRoot> {
+        let note_script_roots = self
+            .public_output_note_scripts()
+            .map(|note_script| ProcedureRoot::from(note_script.root()));
+
+        self.new_public_account_code
+            .iter()
+            .flat_map(AccountCode::procedure_roots)
+            .map(ProcedureRoot::from_raw)
+            .chain(note_script_roots)
+            .collect()
+    }
+
+    /// Returns the scripts of the public output notes created so far.
+    fn public_output_note_scripts(&self) -> impl Iterator<Item = &NoteScript> {
+        self.output_notes
+            .values()
+            .filter(|note_builder| note_builder.metadata().is_public())
+            .filter_map(|note_builder| note_builder.recipient().map(NoteRecipient::script))
     }
 }

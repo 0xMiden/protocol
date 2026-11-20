@@ -28,6 +28,7 @@ pub mod note;
 pub mod note_script_root;
 pub mod partial_blockchain;
 pub mod protocol_config;
+pub mod protocol_lib;
 pub mod random_secret_key;
 pub mod slot_name;
 pub mod storage;
