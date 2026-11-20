@@ -770,7 +770,8 @@ fn prover_kernel_error(error: &TransactionProverError) -> Option<&TransactionKer
 }
 
 /// Compiles a transaction script that runs `sealing_code`, which leaves `num_envelopes` envelopes
-/// at [`ENVELOPES_PTR`], and adds them as attachments to a new private output note.
+/// at [`ENVELOPES_PTR`], and adds them as attachments to a new private output note, which it then
+/// seals.
 fn compile_tx_script(
     sealing_code: &str,
     num_envelopes: usize,
@@ -807,8 +808,8 @@ fn compile_tx_script(
             {attach_envelopes}
             # => [note_idx, pad(15)]
 
-            exec.output_note::seal
-            # => [pad(15)]
+            dup exec.output_note::seal
+            # => [note_idx, pad(15)]
 
             exec.sys::truncate_stack
             # => [pad(16)]
