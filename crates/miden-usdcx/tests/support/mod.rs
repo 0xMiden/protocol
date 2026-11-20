@@ -2069,9 +2069,9 @@ pub async fn try_emit_burn_note(
         // PUBLIC note's details when tx0 creates it.
         .expected_output_note(RawOutputNote::Full(burn_note.clone()));
     // A POLICED (callback-Enabled) faucet's asset fires the SEND callback when the holder
-    // emits a note moving it out of their vault (native = the holder), so the kernel dyncalls the
-    // issuing faucet to run `basic_blocklist::check_policy` — attach it as a foreign account. A
-    // basic (Disabled) faucet — e.g. the burn oracle fixtures — fires no callback, so it is
+    // seals a note it moved the asset into (native = the holder), so the kernel dyncalls the
+    // issuing faucet to run `basic_blocklist::check_send_policy` — attach it as a foreign account.
+    // A basic (Disabled) faucet — e.g. the burn oracle fixtures — fires no callback, so it is
     // skipped.
     if faucet_id.asset_callback_flag() == AssetCallbackFlag::Enabled {
         let foreign = chain

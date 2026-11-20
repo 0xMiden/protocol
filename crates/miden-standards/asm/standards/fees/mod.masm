@@ -97,6 +97,8 @@ const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset do
 
 const ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH = "expected fee asset does not match the fee asset configured in the fee manager"
 
+const ERR_FEE_MANAGER_NETWORK_NOTE_NOT_SEALED = "network output note must be sealed before it is sponsored"
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -277,6 +279,7 @@ end
 #! - total_sponsored_fee_amount is the total amount moved into the created sponsorship notes.
 #!
 #! Panics if:
+#! - a network output note is not sealed.
 #! - a network output note's target ID attachment does not consist of exactly one word.
 #! - the target account's fee policy requires a network output note's recipient preimage and it
 #!   is unavailable or does not hash to the recipient.
@@ -702,6 +705,7 @@ end
 #!   created.
 #!
 #! Panics if:
+#! - the note is not sealed.
 #! - the note's target ID attachment does not consist of exactly one word.
 #! - the target account's fee policy requires the note's recipient preimage and it is unavailable
 #!   or does not hash to the recipient.
@@ -716,6 +720,10 @@ proc create_network_note_sponsorship(
     attachment_idx: u8,
     expected_fee_asset_id: AssetId
 ) -> felt
+    # the note's fee and ID must be final, so it must be sealed
+    dup exec.output_note::is_sealed assert.err=ERR_FEE_MANAGER_NETWORK_NOTE_NOT_SEALED
+    # => [note_idx, attachment_idx, EXPECTED_FEE_ASSET_ID]
+
     # cache the expected fee asset ID for the target fee asset check
     movdn.5 movdn.5 loc_storew_le.EXPECTED_FEE_ASSET_ID_LOC dropw
     # => [note_idx, attachment_idx]

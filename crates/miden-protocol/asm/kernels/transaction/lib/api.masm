@@ -1664,8 +1664,11 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [pad(16)]
 end
 
-#! Prevents further changes to the specified output note's assets and attachments.
-#! Sealing is idempotent.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the specified output note's assets, and then prevents further changes to the
+#! note's assets and attachments.
+#!
+#! Sealing is idempotent: sealing an already sealed note invokes no callback.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]
@@ -1674,6 +1677,8 @@ end
 #! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index points to a non-existent output note.
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
 #!
 #! Invocation: dynexec
 pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
@@ -1682,10 +1687,7 @@ pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
     exec.output_note::assert_note_index_in_bounds
     # => [note_idx, pad(15)]
 
-    exec.memory::get_output_note_ptr
-    # => [note_ptr, pad(15)]
-
-    exec.memory::seal_output_note
+    exec.output_note::seal
     # => [pad(16)]
 end
 
