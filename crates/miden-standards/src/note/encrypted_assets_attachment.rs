@@ -60,7 +60,9 @@ const ISSUER_KEY_TAIL_INDEX: u32 = 2;
 ///
 /// The issuer decrypts the attachment with [`Self::decrypt`] and computes the note's ID and
 /// nullifier from the plaintext and the note's [`NoteMetadata`]. An ID that matches the note's ID
-/// shows that the plaintext describes the note.
+/// shows that the plaintext describes the note. A note that holds the assets of several faucets
+/// that build the attachment carries one attachment per faucet, so the issuer tries each
+/// attachment with [`Self::ATTACHMENT_SCHEME`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedAssetsAttachment {
     serial_num: Word,
@@ -324,7 +326,7 @@ mod tests {
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
     use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
     use miden_protocol::errors::NoteError;
-    use miden_protocol::note::{NoteAssets, NoteScriptRoot};
+    use miden_protocol::note::{NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteScriptRoot};
     use miden_protocol::{Felt, Word};
 
     use super::{
@@ -391,6 +393,28 @@ mod tests {
             Err(EncryptedAssetsAttachmentError::InvalidAssets(NoteError::TooManyAssets(n)))
                 if n == num_assets
         );
+    }
+
+    /// An attachment of another scheme, or one whose content is not an envelope, does not decrypt.
+    #[test]
+    fn decrypt_rejects_other_scheme_and_malformed_envelope() -> anyhow::Result<()> {
+        let secret_key = SecretKey::from_bytes(&[1; 40])?;
+
+        let other_scheme = NoteAttachment::with_word(NoteAttachmentScheme::new(64)?, Word::empty());
+        assert_matches!(
+            EncryptedAssetsAttachment::decrypt(&other_scheme, &secret_key),
+            Err(EncryptedAssetsAttachmentError::AttachmentSchemeMismatch(scheme))
+                if scheme == other_scheme.attachment_scheme()
+        );
+
+        let malformed =
+            NoteAttachment::with_word(EncryptedAssetsAttachment::ATTACHMENT_SCHEME, Word::empty());
+        assert_matches!(
+            EncryptedAssetsAttachment::decrypt(&malformed, &secret_key),
+            Err(EncryptedAssetsAttachmentError::InvalidEnvelope(_))
+        );
+
+        Ok(())
     }
 
     /// The issuer key slot maps index 0 to the public key commitment and indices 1 and 2 to the

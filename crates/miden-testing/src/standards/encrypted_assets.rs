@@ -38,6 +38,7 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING,
+    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH,
     ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING,
 };
 use miden_standards::note::{
@@ -74,6 +75,20 @@ const ISSUER_CALLBACK_CODE: &str = "
     end
 ";
 
+// TYPES
+// ================================================================================================
+
+/// The recipient preimage of the sent note in the transaction's advice map.
+#[derive(Debug, Clone, Copy)]
+enum RecipientPreimage {
+    /// The transaction expects the note, which puts its recipient preimage into the advice map.
+    Expected,
+    /// The advice map holds no preimage of the note's recipient.
+    Missing,
+    /// The advice map maps the note's recipient to a chain of entries that does not hash to it.
+    Forged,
+}
+
 // TESTS
 // ================================================================================================
 
@@ -93,7 +108,8 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
     #[case] other_assets: Vec<Asset>,
 ) -> anyhow::Result<()> {
     let (note, result) =
-        send_note(NoteType::Private, other_assets, issuer_key_slot(), true).await?;
+        send_note(NoteType::Private, other_assets, issuer_key_slot(), RecipientPreimage::Expected)
+            .await?;
     let executed_tx = result?;
 
     let RawOutputNote::Full(full_note) = executed_tx.output_notes().get_note(0) else {
@@ -123,7 +139,9 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
 /// Tests that a public note gets no encrypted asset attachment.
 #[tokio::test]
 async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()> {
-    let (note, result) = send_note(NoteType::Public, Vec::new(), issuer_key_slot(), true).await?;
+    let (note, result) =
+        send_note(NoteType::Public, Vec::new(), issuer_key_slot(), RecipientPreimage::Expected)
+            .await?;
     let executed_tx = result?;
 
     let output_note = executed_tx.output_notes().get_note(0);
@@ -138,22 +156,27 @@ async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()>
 #[rstest::rstest]
 #[case::missing_recipient_preimage(
     issuer_key_slot(),
-    false,
+    RecipientPreimage::Missing,
     ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISSING
+)]
+#[case::forged_recipient_preimage(
+    issuer_key_slot(),
+    RecipientPreimage::Forged,
+    ERR_ENCRYPTED_ASSETS_RECIPIENT_PREIMAGE_MISMATCH
 )]
 #[case::missing_issuer_key(
     StorageSlot::with_empty_map(EncryptedAssetsIssuerKey::slot_name().clone()),
-    true,
+    RecipientPreimage::Expected,
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
 )]
 #[tokio::test]
 async fn private_note_without_attachment_cannot_be_sealed(
     #[case] issuer_key_slot: StorageSlot,
-    #[case] provides_recipient: bool,
+    #[case] recipient_preimage: RecipientPreimage,
     #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
     let (_, result) =
-        send_note(NoteType::Private, Vec::new(), issuer_key_slot, provides_recipient).await?;
+        send_note(NoteType::Private, Vec::new(), issuer_key_slot, recipient_preimage).await?;
 
     assert_transaction_executor_error!(result, expected_error);
 
@@ -164,7 +187,9 @@ async fn private_note_without_attachment_cannot_be_sealed(
 /// the plaintext with other metadata yields another note ID.
 #[tokio::test]
 async fn attachment_binds_issuer_key_envelope_and_metadata() -> anyhow::Result<()> {
-    let (_, result) = send_note(NoteType::Private, Vec::new(), issuer_key_slot(), true).await?;
+    let (_, result) =
+        send_note(NoteType::Private, Vec::new(), issuer_key_slot(), RecipientPreimage::Expected)
+            .await?;
     let executed_tx = result?;
     let output_note = executed_tx.output_notes().get_note(0);
     let attachment = output_note
@@ -263,8 +288,8 @@ fn issuer_key_slot() -> StorageSlot {
 /// asset of a faucet whose `on_before_note_sealed` callback returns the note's encrypted asset
 /// attachment, followed by `other_assets`.
 ///
-/// The faucet stores `issuer_key_slot`. If `provides_recipient` is true, the transaction expects
-/// the note, which puts the note's recipient preimage into the advice map.
+/// The faucet stores `issuer_key_slot`, and `recipient_preimage` determines the preimage of the
+/// note's recipient in the advice map.
 ///
 /// Returns the note as the wallet creates it, i.e. without the attachment, and the execution
 /// result.
@@ -272,7 +297,7 @@ async fn send_note(
     note_type: NoteType,
     other_assets: Vec<Asset>,
     issuer_key_slot: StorageSlot,
-    provides_recipient: bool,
+    recipient_preimage: RecipientPreimage,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     let mut builder = MockChain::builder();
     let faucet = add_issuing_faucet(&mut builder, issuer_key_slot)?;
@@ -302,12 +327,40 @@ async fn send_note(
         .build_transaction(wallet.id())
         .send_notes_script(&send_script)
         .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?]);
-    if provides_recipient {
-        tx_builder = tx_builder.expected_output_note(RawOutputNote::Full(note.clone()));
+    match recipient_preimage {
+        RecipientPreimage::Expected => {
+            tx_builder = tx_builder.expected_output_note(RawOutputNote::Full(note.clone()));
+        },
+        RecipientPreimage::Missing => {},
+        RecipientPreimage::Forged => {
+            // the entries open the recipient to a serial number, script root and storage
+            // commitment of no known note, so the host keeps the note private
+            let [serial_script_commitment, serial_commitment, script_root, storage_commitment] =
+                [11, 12, 13, 14u32].map(|value| Word::from([value; 4]));
+            let forged_serial_num = Word::from([15u32; 4]);
+            tx_builder = tx_builder
+                .add_advice_map_entry(
+                    note.recipient().digest(),
+                    double_word_elements(serial_script_commitment, storage_commitment),
+                )
+                .add_advice_map_entry(
+                    serial_script_commitment,
+                    double_word_elements(serial_commitment, script_root),
+                )
+                .add_advice_map_entry(
+                    serial_commitment,
+                    double_word_elements(forged_serial_num, Word::empty()),
+                );
+        },
     }
     let result = tx_builder.build()?.execute().await;
 
     Ok((note, result))
+}
+
+/// Returns the elements of the two provided words.
+fn double_word_elements(first: Word, second: Word) -> Vec<Felt> {
+    first.into_iter().chain(second).collect()
 }
 
 /// Adds a faucet whose `on_before_note_sealed` callback returns the note's encrypted asset
