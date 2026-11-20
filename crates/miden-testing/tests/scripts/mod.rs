@@ -23,6 +23,7 @@ mod pswap;
 pub(crate) mod rbac;
 mod schema_commitment;
 mod send_note;
+mod supply_restriction;
 mod swap;
 pub(crate) mod transfer_policy;
 mod tx_fee;

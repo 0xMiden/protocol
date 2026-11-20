@@ -39,6 +39,7 @@ use miden_standards::account::policies::{
     MintPolicy,
     ReceivePolicy,
     SendPolicy,
+    SupplyRestrictionManager,
     TokenPolicyManager,
 };
 use miden_standards::account::upgrade::UpgradeManager;
@@ -65,6 +66,8 @@ use miden_standards::note::config::{
     PauseConfigNote,
     RbacConfig,
     RbacConfigNote,
+    SupplyRestrictionConfig,
+    SupplyRestrictionConfigNote,
 };
 use miden_testing::{AccountState, Auth, MockTransaction};
 use rand::Rng;
@@ -385,6 +388,66 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
     // the account added to the initially empty list by the benchmarked action
     let listed = AccountIdBuilder::new().build_with_seed([3; 32]);
     let note = list.build_note(owner.id(), account.id(), listed, builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// SUPPLY RESTRICTION CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming a SUPPLY_RESTRICTION_CONFIG
+/// note.
+///
+/// The faucet carries the `SupplyRestrictionManager` component gated by the owner wallet via
+/// `Authority::OwnerControlled` (mirrors the account fixture of the `supply_restriction` test
+/// suite). The benchmarked action is `Confiscate`, the most expensive selector: on top of the
+/// restricted amounts map write that `Freeze` and `Unfreeze` also do, it decreases the token
+/// supply.
+pub fn tx_consume_supply_restriction_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send supply restriction config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .token_supply(AssetAmount::new(1_000)?)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_component(SupplyRestrictionManager)
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([SupplyRestrictionConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    // the holder account whose balance is confiscated by the benchmarked action
+    let holder = AccountIdBuilder::new().build_with_seed([3; 32]);
+    let note: Note = SupplyRestrictionConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .config(SupplyRestrictionConfig::Confiscate {
+            account: holder,
+            amount: AssetAmount::new(100)?,
+        })
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     let mock_chain = builder.build()?;

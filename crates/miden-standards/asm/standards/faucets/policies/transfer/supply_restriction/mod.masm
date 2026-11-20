@@ -1,29 +1,11 @@
-use {AccountId, AssetAmount, StorageMapKey} from miden::protocol::types
 # miden::standards::faucets::policies::transfer::supply_restriction
 #
-# Per-faucet supply restriction primitive: storage slot plus low-level `Invocation: exec` helpers
-# to freeze, unfreeze and confiscate amounts of the faucet's fungible asset held by an account.
+# Per-faucet supply restriction primitive: freeze, unfreeze and confiscate amounts of the faucet's
+# fungible asset held by an account.
 #
-# - Storage: `restrictions` map keyed by account ID. Each entry tracks two disjoint amounts:
-#   - `frozen`: the amount that is restricted but can still be unfrozen. Freezing does not change
-#     the token supply.
-#   - `confiscated`: the amount that is restricted for good. Confiscating removes the amount from
-#     the token supply, so that the issuer can re-mint it to another account without counting it
-#     twice.
-# - Helpers (`freeze` / `unfreeze` / `confiscate` / `get_restriction`) perform NO authorization —
-#   they are low-level building blocks meant to be called by `Invocation: call` wrappers in
-#   auth-checking account components (see `manager.masm`).
-#
-# The amounts are not enforced here. A faucet must not install this component without a send
-# policy that rejects transfers (including sending the asset back to the faucet for burning) that
-# would leave an account's balance below `frozen + confiscated`. Otherwise a holder can keep
-# spending confiscated amounts that were already removed from the token supply. That policy is a
-# follow-up of https://github.com/0xMiden/protocol/issues/4202.
-#
-# The faucet cannot read a holder's vault, so it cannot verify that a holder actually owns the
-# amounts being frozen or confiscated. The issuer is trusted to not confiscate more than the
-# holder's balance; doing so and re-minting the amount inflates the circulating supply.
+# See `SupplyRestrictionManager` for more details.
 
+use {AccountId, AssetAmount, StorageMapKey} from miden::protocol::types
 use miden::protocol::active_account
 use miden::protocol::native_account
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
@@ -36,7 +18,7 @@ pub mod manager
 
 # Slot holding the per-faucet map of restricted amounts.
 # Map entries: [0, 0, account_id_suffix, account_id_prefix] => [frozen, confiscated, 0, 0]
-const RESTRICTIONS_SLOT = word("miden::standards::faucets::policies::transfer::supply_restriction::restrictions")
+const RESTRICTED_AMOUNTS_SLOT = word("miden::standards::faucets::policies::transfer::supply_restriction::restricted_amounts")
 
 # ERRORS
 # ================================================================================================
@@ -52,7 +34,6 @@ const ERR_SUPPLY_RESTRICTION_UNFREEZE_EXCEEDS_FROZEN_AMOUNT = "amount to unfreez
 
 #! Returns the frozen and confiscated amounts of the given account on this faucet.
 #!
-#! Reads [`RESTRICTIONS_SLOT`] on the active account at the key derived from the account ID.
 #! Both amounts are `0` for an account that was never restricted.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
@@ -63,11 +44,11 @@ const ERR_SUPPLY_RESTRICTION_UNFREEZE_EXCEEDS_FROZEN_AMOUNT = "amount to unfreez
 #! - confiscated is the amount of the account that is confiscated for good.
 #!
 #! Invocation: exec
-pub proc get_restriction(account_id: AccountId) -> (AssetAmount, AssetAmount)
-    exec.build_restrictions_map_key
+proc get_restricted_amounts(account_id: AccountId) -> (AssetAmount, AssetAmount)
+    exec.build_restricted_amounts_map_key
     # => [KEY]
 
-    push.RESTRICTIONS_SLOT[0..2]
+    push.RESTRICTED_AMOUNTS_SLOT[0..2]
     # => [slot_suffix, slot_prefix, KEY]
 
     exec.active_account::get_map_item
@@ -79,9 +60,6 @@ end
 
 #! Freezes the given amount of the account's balance. The token supply does not change.
 #!
-#! This procedure performs NO authorization. Wrappers running in `Invocation: call` mode add
-#! the auth check before delegating here via `exec.supply_restriction::freeze`.
-#!
 #! Inputs:  [account_id_suffix, account_id_prefix, amount]
 #! Outputs: []
 #!
@@ -92,25 +70,23 @@ end
 #!
 #! Invocation: exec
 pub proc freeze(account_id: AccountId, amount: AssetAmount)
-    # bound the amount so that adding it to the stored amounts cannot wrap around the field modulus
+    # assert the amount is less than FUNGIBLE_ASSET_MAX_AMOUNT so adding it to the stored amount
+    # cannot wrap around the field modulus
     dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_SUPPLY_RESTRICTION_AMOUNT_EXCEEDS_MAX_AMOUNT
     # => [account_id_suffix, account_id_prefix, amount]
 
-    dup.1 dup.1 exec.get_restriction
+    dup.1 dup.1 exec.get_restricted_amounts
     # => [frozen, confiscated, account_id_suffix, account_id_prefix, amount]
 
     movup.4 add
     # => [new_frozen, confiscated, account_id_suffix, account_id_prefix]
 
-    exec.set_restriction
+    exec.set_restricted_amounts
     # => []
 end
 
-#! Unfreezes the given amount of the account's frozen balance. Confiscated amounts cannot be
-#! unfrozen.
-#!
-#! This procedure performs NO authorization. See [`freeze`] for the same authorization caveats.
+#! Unfreezes the given amount of the account's frozen balance.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, amount]
 #! Outputs: []
@@ -120,19 +96,21 @@ end
 #!
 #! Invocation: exec
 pub proc unfreeze(account_id: AccountId, amount: AssetAmount)
-    dup.1 dup.1 exec.get_restriction
+    dup.1 dup.1 exec.get_restricted_amounts
     # => [frozen, confiscated, account_id_suffix, account_id_prefix, amount]
 
+    dup.4 dup.1
+    # => [frozen, amount, frozen, confiscated, account_id_suffix, account_id_prefix, amount]
+
     # assert that amount <= frozen, which also bounds amount by FUNGIBLE_ASSET_MAX_AMOUNT
-    dup.4 dup.1 lte
-    assert.err=ERR_SUPPLY_RESTRICTION_UNFREEZE_EXCEEDS_FROZEN_AMOUNT
+    lte assert.err=ERR_SUPPLY_RESTRICTION_UNFREEZE_EXCEEDS_FROZEN_AMOUNT
     # => [frozen, confiscated, account_id_suffix, account_id_prefix, amount]
 
     # compute new_frozen = frozen - amount
     movup.4 sub
     # => [new_frozen, confiscated, account_id_suffix, account_id_prefix]
 
-    exec.set_restriction
+    exec.set_restricted_amounts
     # => []
 end
 
@@ -142,8 +120,6 @@ end
 #! issuer confiscating funds that are already frozen must unfreeze them first. The issuer is
 #! expected to re-mint the confiscated amount to another account, which adds it back to the token
 #! supply.
-#!
-#! This procedure performs NO authorization. See [`freeze`] for the same authorization caveats.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, amount]
 #! Outputs: []
@@ -156,7 +132,8 @@ end
 #!
 #! Invocation: exec
 pub proc confiscate(account_id: AccountId, amount: AssetAmount)
-    # bound the amount so that adding it to the stored amounts cannot wrap around the field modulus
+    # assert the amount is less than FUNGIBLE_ASSET_MAX_AMOUNT so adding it to the stored amount
+    # cannot wrap around the field modulus
     dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_SUPPLY_RESTRICTION_AMOUNT_EXCEEDS_MAX_AMOUNT
     # => [account_id_suffix, account_id_prefix, amount]
@@ -164,13 +141,13 @@ pub proc confiscate(account_id: AccountId, amount: AssetAmount)
     dup.2 exec.fungible::decrease_token_supply
     # => [account_id_suffix, account_id_prefix, amount]
 
-    dup.1 dup.1 exec.get_restriction
+    dup.1 dup.1 exec.get_restricted_amounts
     # => [frozen, confiscated, account_id_suffix, account_id_prefix, amount]
 
     swap movup.4 add swap
     # => [frozen, new_confiscated, account_id_suffix, account_id_prefix]
 
-    exec.set_restriction
+    exec.set_restricted_amounts
     # => []
 end
 
@@ -186,7 +163,7 @@ end
 #! - frozen plus confiscated exceeds the maximum fungible asset amount.
 #!
 #! Invocation: exec
-proc set_restriction(
+proc set_restricted_amounts(
     frozen: AssetAmount,
     confiscated: AssetAmount,
     account_id: AccountId,
@@ -202,20 +179,17 @@ proc set_restriction(
     # => [frozen, confiscated, 0, 0, account_id_suffix, account_id_prefix]
     # => [VALUE, account_id_suffix, account_id_prefix]
 
-    movup.5 movup.5 exec.build_restrictions_map_key
+    movup.5 movup.5 exec.build_restricted_amounts_map_key
     # => [KEY, VALUE]
 
-    push.RESTRICTIONS_SLOT[0..2]
+    push.RESTRICTED_AMOUNTS_SLOT[0..2]
     # => [slot_suffix, slot_prefix, KEY, VALUE]
 
-    exec.native_account::set_map_item
-    # => [OLD_VALUE]
-
-    dropw
+    exec.native_account::set_map_item dropw
     # => []
 end
 
-#! Builds the restrictions map key for the given account ID.
+#! Builds the restricted amounts map key for the given account ID.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: [KEY]
@@ -224,7 +198,7 @@ end
 #! - KEY is [0, 0, account_id_suffix, account_id_prefix].
 #!
 #! Invocation: exec
-proc build_restrictions_map_key(account_id: AccountId) -> StorageMapKey
+proc build_restricted_amounts_map_key(account_id: AccountId) -> StorageMapKey
     push.0.0
     # => [0, 0, account_id_suffix, account_id_prefix]
     # => [KEY]
