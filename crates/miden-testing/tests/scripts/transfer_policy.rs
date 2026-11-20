@@ -208,6 +208,12 @@ pub(crate) fn assert_minted_note(
 // NOTE SEALING FIXTURE
 // ================================================================================================
 
+/// The index of the note that [`execute_note_sealing_tx`] seals through the send policy.
+///
+/// It is not 0, so that a send policy that returns the note index on top of its outputs returns a
+/// non-zero attachment scheme.
+const SEALED_NOTE_IDX: usize = 1;
+
 /// Builds a custom send policy that returns a single-word attachment with the provided scheme and
 /// word, or no attachment if `attachment` is `None`.
 ///
@@ -263,8 +269,9 @@ fn custom_send_policy(attachment: Option<(u16, Word)>) -> anyhow::Result<SendPol
     Ok(SendPolicy::custom(policy_root, [policy_component])?)
 }
 
-/// Executes a transaction in which an account holding an asset of a faucet creates a private
-/// note, adds a single-word attachment to it, moves the asset into it and seals it.
+/// Executes a transaction in which an account holding an asset of a faucet creates and seals an
+/// empty note, then creates a private note at [`SEALED_NOTE_IDX`], adds a single-word attachment to
+/// it, moves the asset into it and seals it.
 ///
 /// The faucet activates the send policy that `send_policy` returns for the ID of the note's
 /// creator, if any. It also registers [`SendPolicy::allow_all`] as a reserved alternative, so the
@@ -322,6 +329,10 @@ async fn execute_note_sealing_tx(
 
         @transaction_script
         pub proc main
+            # note 0 holds no assets
+            exec.util::create_default_note exec.output_note::seal
+            # => []
+
             push.{recipient} push.{note_type} push.{tag}
             call.::mock::account::create_note
             # => [note_idx, pad(15)]
@@ -712,7 +723,7 @@ async fn send_policy_without_attachment_leaves_the_note_unchanged(
     let (note, result) = execute_note_sealing_tx(send_policy).await?;
     let executed = result?;
 
-    let output_note = executed.output_notes().get_note(0);
+    let output_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
     assert_eq!(output_note.attachments(), note.attachments());
     assert_eq!(output_note.id(), note.id());
 
