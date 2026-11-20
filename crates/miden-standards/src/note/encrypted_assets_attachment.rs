@@ -59,9 +59,9 @@ const ISSUER_KEY_TAIL_INDEX: u32 = 2;
 /// `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. It
 /// carries no identifier of the issuer key.
 ///
-/// The issuer decrypts the attachment of a note with [`Self::decrypt_note`], which keeps only a
-/// plaintext from which the note's ID is recomputed, and computes the note's nullifier with
-/// [`Self::nullifier`].
+/// The issuer decrypts the attachment of a note with [`Self::decrypt_and_verify_note`], which
+/// keeps only a plaintext from which the note's ID is recomputed, and computes the note's
+/// nullifier with [`Self::nullifier`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedAssetsAttachment {
     serial_num: Word,
@@ -106,20 +106,14 @@ impl EncryptedAssetsAttachment {
         }
     }
 
-    /// Decrypts the encrypted asset attachment of the note with the provided header and
-    /// attachments with the issuer's secret key.
-    ///
-    /// A decrypted attachment alone does not show that it describes the note, since anyone can
-    /// encrypt to the issuer key and the note's creator can add attachments of
-    /// [`Self::ATTACHMENT_SCHEME`]. A note that holds the assets of several faucets that build the
-    /// attachment also carries one attachment per faucet. This tries every attachment of the
-    /// scheme and returns the plaintext from which [`Self::note_id`] recomputes the note's ID, so
-    /// `header` must be the header that the chain commits to.
+    /// Decrypts the attachments of [`Self::ATTACHMENT_SCHEME`] among the provided attachments of a
+    /// note with the issuer's secret key, and returns the plaintext from which [`Self::note_id`]
+    /// recomputes the ID of the provided note header.
     ///
     /// # Errors
     ///
     /// Returns an error if no attachment of the scheme decrypts to the details of the note.
-    pub fn decrypt_note(
+    pub fn decrypt_and_verify_note(
         header: &NoteHeader,
         attachments: &NoteAttachments,
         issuer_secret_key: &SecretKey,
@@ -135,7 +129,7 @@ impl EncryptedAssetsAttachment {
     /// Decrypts the provided encrypted asset attachment with the issuer's secret key.
     ///
     /// The plaintext need not describe the note that carries the attachment, see
-    /// [`Self::decrypt_note`].
+    /// [`Self::decrypt_and_verify_note`].
     ///
     /// # Errors
     ///

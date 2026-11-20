@@ -138,7 +138,7 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
         .context("output note should carry the encrypted asset attachment")?;
     assert_eq!(usize::from(attachment.num_words()), 8 + 4 * note.assets().num_assets());
 
-    let plaintext = EncryptedAssetsAttachment::decrypt_note(
+    let plaintext = EncryptedAssetsAttachment::decrypt_and_verify_note(
         output_note.header(),
         output_note.attachments(),
         &issuer_secret_key(),
@@ -232,7 +232,7 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
     let output_note = executed_tx.output_notes().get_note(0);
     assert_eq!(output_note.attachments().get(0), Some(&decoy));
 
-    let plaintext = EncryptedAssetsAttachment::decrypt_note(
+    let plaintext = EncryptedAssetsAttachment::decrypt_and_verify_note(
         output_note.header(),
         output_note.attachments(),
         &issuer_secret_key(),
@@ -254,7 +254,7 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
         Err(EncryptedAssetsAttachmentError::DecryptionFailed(_))
     );
     assert_matches!(
-        EncryptedAssetsAttachment::decrypt_note(
+        EncryptedAssetsAttachment::decrypt_and_verify_note(
             output_note.header(),
             output_note.attachments(),
             &other_secret_key
