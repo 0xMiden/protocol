@@ -21,8 +21,9 @@ use miden_standards::account::policies::{
     AllowlistStorage,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::ERR_ACCOUNT_IS_NOT_ALLOWED;
 use miden_standards::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
@@ -59,8 +60,8 @@ fn allowlist_policy_manager(
     TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::with_basic_allowlist(allow_list.clone()))
-        .active_receive_policy(TransferPolicy::with_basic_allowlist(allow_list))
+        .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
+        .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
         .build()
 }
 

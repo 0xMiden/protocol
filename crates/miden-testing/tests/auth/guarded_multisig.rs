@@ -123,6 +123,7 @@ fn build_update_guardian_script_source(
                     push.{tag}
                     call.::miden::standards::note::note_creator::create_note
                     movdn.15 dropw dropw dropw drop drop drop
+                    dup exec.output_note::seal
                     swapdw
                     dropw
                     dropw
@@ -678,7 +679,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
                 push.{note_type}
                 push.{tag}
                 call.::miden::standards::note::note_creator::create_note
-                drop
+                exec.::miden::protocol::output_note::seal
                 # => [pad(21)]
                 
                 push.{new_guardian_key_word}

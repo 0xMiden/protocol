@@ -919,13 +919,16 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             # => [note_idx, pad(15)]
 
             # move the asset into the new note
-            swapw dropw
+            swapw dropw dup
             push.{ASSET_VALUE} push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [pad(16)]
+            # => [note_idx, pad(15)]
+
+            exec.output_note::seal
+            # => [pad(15)]
 
             # clear the stack
-            dropw dropw dropw dropw
+            dropw dropw dropw drop drop drop
             ",
             note_type = NoteType::Private as u8,
             tag = NoteTag::default(),

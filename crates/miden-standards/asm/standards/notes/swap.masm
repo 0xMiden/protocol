@@ -125,7 +125,7 @@ end
 # =================================================================================================
 
 #! Swap script: adds the note's remaining offered asset into the consumer's account and creates a
-#! payback note carrying the requested asset.
+#! sealed payback note carrying the requested asset.
 #!
 #! The payback note type (selected by the creator) determines how the payback recipient is
 #! derived: private uses an opaque precomputed digest, public builds it from the payback script
@@ -215,17 +215,21 @@ pub proc main(args: NoteArgs)
 
     # --- move requested asset into the payback note
 
-    padw push.0.0.0 movup.7
-    # => [note_idx, pad(7)]
+    dup padw push.0.0.0 movup.7
+    # => [note_idx, pad(7), note_idx]
 
     push.REQUESTED_ASSET_PTR exec.asset::load
-    # => [REQUESTED_ASSET_ID, REQUESTED_ASSET_VALUE, note_idx, pad(7)]
+    # => [REQUESTED_ASSET_ID, REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
     # move asset to the note
     call.wallet::move_asset_to_note
-    # => [pad(16)]
+    # => [pad(16), note_idx]
 
     dropw dropw
+    # => [pad(8), note_idx]
+
+    # the payback note holds the requested asset and is final
+    movup.8 exec.output_note::seal
     # => [pad(8)]
 
     # --- move offered asset from the SWAP note into the consumer's account

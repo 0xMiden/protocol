@@ -23,8 +23,9 @@ use miden_standards::account::policies::{
     BurnPolicy,
     MinBurnAmount,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC,
@@ -57,8 +58,8 @@ fn create_faucet_with_min_burn_amount(owner: AccountId) -> anyhow::Result<Accoun
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(INITIAL_MIN_BURN_AMOUNT)?))
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account = AccountBuilder::new([43; 32])

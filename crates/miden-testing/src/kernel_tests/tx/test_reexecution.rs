@@ -30,8 +30,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -77,8 +78,8 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
                 TokenPolicyManager::builder()
                     .active_mint_policy(MintPolicy::allow_all())
                     .active_burn_policy(BurnPolicy::allow_all())
-                    .active_send_policy(TransferPolicy::empty_basic_blocklist())
-                    .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                    .active_send_policy(SendPolicy::empty_basic_blocklist())
+                    .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                     .build(),
             ),
         AccountState::Exists,
