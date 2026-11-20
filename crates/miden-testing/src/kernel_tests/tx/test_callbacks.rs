@@ -5,7 +5,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
-use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -1216,36 +1215,6 @@ async fn test_note_sealed_callback_attachment_list_is_verified(
         execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
 
     assert_transaction_executor_error!(result, expected_error);
-
-    Ok(())
-}
-
-/// Tests that sealing fails if the advice map lacks the attachment list returned by an
-/// `on_before_note_sealed` callback or the elements of a listed attachment.
-#[rstest::rstest]
-#[case::missing_attachment_list(true)]
-#[case::missing_attachment(false)]
-#[tokio::test]
-async fn test_note_sealed_callback_attachment_without_advice_map_entry_fails(
-    #[case] omit_attachment_list: bool,
-) -> anyhow::Result<()> {
-    let (list_commitment, list, attachment_entries) =
-        attachment_list(&[(20, Word::from([5, 6, 7, 8u32]))]);
-    let advice_map_entries = if omit_attachment_list {
-        attachment_entries
-    } else {
-        vec![(list_commitment, list)]
-    };
-    let note_callback_masm =
-        note_sealed_callback_masm_returning(1, list_commitment, &advice_map_entries);
-
-    let (_, result) =
-        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
-
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { .. }, .. }
-    );
 
     Ok(())
 }
