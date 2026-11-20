@@ -255,6 +255,7 @@ fn setup_singlesig_user_faucet_with_burn_note(
         auth_component,
         policy_manager,
         AccountType::Public,
+        [],
     )?;
     // The factory builds a new account (nonce 0, carrying a seed); MockChain genesis accounts
     // must be existing (nonce != 0, no seed), so re-wrap the built code/storage/vault as such.

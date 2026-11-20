@@ -16,8 +16,3 @@ miden-standards.workspace = true
 description = "Transfer policy allowing transfers only to allowlisted accounts"
 name        = "miden::standards::faucets::policies::transfer::basic_allowlist"
 version     = "1.0.0"
-
-[[package.metadata.account-component.storage.slots]]
-description = "Whether an account is allowed to receive transfers"
-name        = "miden::standards::faucets::policies::transfer::allowlist::allowed_accounts"
-type        = { key = "word", value = "bool" }

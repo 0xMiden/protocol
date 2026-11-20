@@ -36,6 +36,7 @@ use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
+    BlocklistStorage,
     BurnAllowAll,
     BurnOwnerOnly,
     BurnPolicy,
@@ -2617,9 +2618,9 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
 // NetworkFungibleFaucet + basic blocklist transfer policies (post-#2879 happy path)
 // ================================================================================================
 
-/// Builds a network faucet with [`SendPolicy::empty_basic_blocklist`] and
-/// [`ReceivePolicy::empty_basic_blocklist`], so the manager populates the asset-callback slots and
-/// callbacks dispatch to the basic blocklist predicates.
+/// Builds a network faucet with [`SendPolicy::with_basic_blocklist`] and
+/// [`ReceivePolicy::with_basic_blocklist`] plus an empty [`BlocklistStorage`], so the manager
+/// populates the asset-callback slots and callbacks dispatch to the basic blocklist predicates.
 fn build_network_faucet_with_blocklist_transfer(
     builder: &mut MockChainBuilder,
     token_symbol: &str,
@@ -2642,8 +2643,8 @@ fn build_network_faucet_with_blocklist_transfer(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(SendPolicy::empty_basic_blocklist())
-        .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+        .active_send_policy(SendPolicy::with_basic_blocklist())
+        .active_receive_policy(ReceivePolicy::with_basic_blocklist())
         .build();
 
     let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
@@ -2671,6 +2672,7 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
+        .with_component(BlocklistStorage::new())
         .with_component(Pausable::unpaused());
 
     builder.add_account_from_builder(
@@ -2686,7 +2688,7 @@ fn build_network_faucet_with_blocklist_transfer(
 }
 
 /// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
-/// asset-callback slots (here via [`SendPolicy::empty_basic_blocklist`]).
+/// asset-callback slots (here via [`SendPolicy::with_basic_blocklist`]).
 ///
 /// Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
 /// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also

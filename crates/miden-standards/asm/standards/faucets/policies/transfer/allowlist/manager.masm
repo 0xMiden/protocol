@@ -11,7 +11,7 @@ use {AccountId} from miden::protocol::types
 #
 # Companion components required on the faucet:
 # - `Authority` — provides the auth dispatch the body calls into.
-# - `BasicAllowlist` (or any other component that installs the `allowed_accounts` storage slot)
+# - `AllowlistStorage` (or any other component that installs the `allowed_accounts` storage slot)
 #   — provides the storage that `allow_account` / `disallow_account` write to.
 
 use miden::standards::access::authority

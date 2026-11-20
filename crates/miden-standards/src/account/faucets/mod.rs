@@ -46,8 +46,8 @@ pub use token_metadata::{Description, ExternalUri, LogoUri, TokenMetadata, Token
 /// and then aborts on every dispatch to the policy, disabling minting or burning for the lifetime
 /// of the account.
 ///
-/// TODO: This is a temporary, faucet-specific check covering the one configuration the factories
-/// can get wrong. Remove it once components can declare their dependencies generally
+/// TODO: This is a temporary, faucet-specific check covering the owner-only policies. Remove it
+/// once components can declare their dependencies generally
 /// ([#2621](https://github.com/0xMiden/protocol/issues/2621)): the owner-only policy components
 /// will then declare the ownership component themselves and every account is validated, not just
 /// the ones these factories build.

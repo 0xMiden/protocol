@@ -28,6 +28,7 @@ use miden_protocol::transaction::{AccountInputs, PartialBlockchain, TransactionI
 use miden_standards::account::access::Authority;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    BlocklistStorage,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -72,10 +73,11 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
                 TokenPolicyManager::builder()
                     .active_mint_policy(MintPolicy::allow_all())
                     .active_burn_policy(BurnPolicy::allow_all())
-                    .active_send_policy(SendPolicy::empty_basic_blocklist())
-                    .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+                    .active_send_policy(SendPolicy::with_basic_blocklist())
+                    .active_receive_policy(ReceivePolicy::with_basic_blocklist())
                     .build(),
-            ),
+            )
+            .with_component(BlocklistStorage::new()),
         AccountState::Exists,
     )?;
     let faucet_asset = FungibleAsset::new(faucet.id(), 100)?;
