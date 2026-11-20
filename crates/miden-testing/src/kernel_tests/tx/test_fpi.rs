@@ -965,11 +965,8 @@ async fn foreign_account_can_read_issued_assets_in_native_account_vault() -> any
         @transaction_script
         pub proc main
             # move part of the fungible asset out of the native account's vault
-            exec.util::create_default_note
-            # => [note_idx]
-
             push.{REMOVED_FUNGIBLE_ASSET_VALUE} push.{FUNGIBLE_ASSET_ID}
-            exec.util::move_asset_to_note
+            exec.util::create_default_note_with_moved_asset
             # => []
 
             {current_fungible_read}
