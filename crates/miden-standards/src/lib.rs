@@ -19,6 +19,8 @@ pub mod utils;
 pub use domain_registry::{
     MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN,
     MultisigSmartCancelProposalDomain,
+    P2ID_ENCRYPTION_BATCH,
+    P2idEncryptionBatchDomain,
     StandardsDomainRegistry,
 };
 pub use standards_lib::StandardsLib;

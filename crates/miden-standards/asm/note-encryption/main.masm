@@ -1,0 +1,197 @@
+#! Encrypts a batch of private P2ID notes after checking their IDs.
+#!
+#! For each note, recompute its ID from the supplied details and metadata commitment. After
+#! checking the ID, encrypt those same details under the supplied recipient key. The encryption
+#! context contains the note ID, format version, and profile.
+#!
+#! Public input:  [note_count], from 1 through MAX_NOTES.
+#! Public output: [BATCH_COMMITMENT(4)]
+#!
+#! BATCH_COMMITMENT hashes the ordered list of (note ID, key commitment, envelope commitment)
+#! triples. The sender reads the triples from the advice map under BATCH_COMMITMENT and retrieves
+#! each envelope under its own commitment. The verifier rebuilds the batch commitment from the
+#! expected note IDs, expected recipient keys, and received envelopes.
+#!
+#! The transport service checks note inclusion and authenticates the recipient keys. The
+#! transaction kernel validates the assets of included notes. This program validates the P2ID
+#! target because the kernel's recipient commitment can contain storage it has not checked.
+
+use miden::core::crypto::hashes::eidos
+use miden::core::crypto::ies::ecgfp5_eidos
+use miden::core::mem
+use miden::core::sys
+use miden::protocol::account_id
+use miden::protocol::note
+use {ASSET_SIZE} from miden::protocol::asset
+use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol::constants
+use {AccountId, NoteAssetsCommitment, NoteId, NoteStorageCommitment} from miden::protocol::types
+use miden::standards::notes::p2id
+
+const PLAINTEXT_VERSION = 1
+const P2ID_PROFILE = 1
+const P2ID_STORAGE_ITEMS = 2
+const ASSET_WORDS = ASSET_SIZE // WORD_NUM_ELEMENTS
+const ACCOUNT_ID_VERSION_MASK = 0x0f
+const ACCOUNT_ID_VERSION_1 = 1
+const BATCH_DOMAIN = 0x02800101
+
+# Memory ranges in Felts for the largest note and a full batch. Ends are exclusive.
+# Each note reuses the plaintext, context, and envelope buffers and appends one batch entry.
+#
+#   [  0, 138)  Plaintext: format word, serial number, assets, target account ID
+#   [140, 146)  Sealing context: note ID, version, profile
+#   [148, 432)  Envelope: ephemeral key, tag, plaintext length, ciphertext
+#   [432, 528)  Batch entries: note ID, key commitment, envelope commitment per note
+#
+# Each region starts on a word boundary. The target account ID follows the last asset.
+const PLAINTEXT_PTR = 0
+const NUM_ASSETS_ADDR = PLAINTEXT_PTR + 2
+const SERIAL_NUM_PTR = PLAINTEXT_PTR + WORD_NUM_ELEMENTS
+const ASSETS_PTR = SERIAL_NUM_PTR + WORD_NUM_ELEMENTS
+const PLAINTEXT_FIXED_LEN = ASSETS_PTR - PLAINTEXT_PTR + P2ID_STORAGE_ITEMS
+
+const CONTEXT_PTR = ASSETS_PTR + ASSET_SIZE * MAX_ASSETS_PER_NOTE + WORD_NUM_ELEMENTS
+const CONTEXT_VERSION_PTR = CONTEXT_PTR + WORD_NUM_ELEMENTS
+const CONTEXT_PROFILE_PTR = CONTEXT_VERSION_PTR + 1
+const CONTEXT_LEN = WORD_NUM_ELEMENTS + 2
+
+# The envelope header [R(5), tag(2), plaintext_len] precedes two ciphertext limbs per Felt.
+const ENVELOPE_PTR = CONTEXT_PTR + 2 * WORD_NUM_ELEMENTS
+const CIPHERTEXT_PTR = ENVELOPE_PTR + 8
+
+const MAX_NOTES = 8
+const ENTRY_LEN = 3 * WORD_NUM_ELEMENTS
+const ENTRIES_PTR = CIPHERTEXT_PTR + 2 * (PLAINTEXT_FIXED_LEN + ASSET_SIZE * MAX_ASSETS_PER_NOTE)
+
+# Writes the plaintext and returns the storage and asset commitments needed to check the note ID.
+# Advice: [num_assets, SERIAL_NUM(4), ASSETS(8 * num_assets), target_suffix, target_prefix]
+# The format word is [version, profile, num_assets, storage_count].
+proc load_plaintext() -> (NoteStorageCommitment, NoteAssetsCommitment)
+    adv_push
+    u32assert.err="number of assets must fit in a u32"
+    dup neq.0 assert.err="a P2ID note must contain at least one asset"
+    dup u32lte.MAX_ASSETS_PER_NOTE assert.err="number of assets exceeds the note limit"
+    # => [num_assets, ...]
+
+    push.P2ID_STORAGE_ITEMS dup.1 push.P2ID_PROFILE push.PLAINTEXT_VERSION
+    mem_storew_le.PLAINTEXT_PTR
+    # => [FORMAT(4), num_assets, ...]
+
+    # The format word is in memory, so the serial number can reuse its stack slots.
+    adv_loadw mem_storew_le.SERIAL_NUM_PTR dropw
+    # => [num_assets, ...]
+
+    # Copy the assets into the plaintext buffer and hash them into the assets commitment.
+    mul.ASSET_WORDS push.ASSETS_PTR swap
+    exec.mem::pipe_words_to_memory
+    # => [BLOCK_LO(4), BLOCK_HI(4), ASSETS_COMMITMENT(4), storage_ptr, ...]
+    dropw dropw
+    # => [ASSETS_COMMITMENT(4), storage_ptr, ...]
+
+    movup.4 adv_push adv_push swap
+    # => [target_suffix, target_prefix, storage_ptr, ASSETS_COMMITMENT(4), ...]
+
+    dup.1 dup.1 exec.validate_target
+    dup.2 mem_store dup.1 add.1 mem_store
+    # => [storage_ptr, ASSETS_COMMITMENT(4), ...]
+
+    push.P2ID_STORAGE_ITEMS swap exec.eidos::hash_elements
+    # => [STORAGE_COMMITMENT(4), ASSETS_COMMITMENT(4), ...]
+end
+
+# The decrypted P2ID storage must decode to an account ID. Require version 1 and check the
+# account ID structure, including the reserved bits in its suffix.
+proc validate_target(target: AccountId)
+    dup.1 u32split swap drop u32and.ACCOUNT_ID_VERSION_MASK
+    eq.ACCOUNT_ID_VERSION_1 assert.err="unknown version in account ID"
+    exec.account_id::validate_structure
+end
+
+# Recomputes the note ID from the plaintext and its public metadata commitment.
+# Advice: [METADATA_COMMITMENT(4)]
+proc compute_note_id(
+    storage_commitment: NoteStorageCommitment,
+    assets_commitment: NoteAssetsCommitment,
+) -> NoteId
+    # The recipient commitment covers the stored serial number, the P2ID script, and its storage.
+    procref.p2id::main
+    padw mem_loadw_le.SERIAL_NUM_PTR
+    # => [SERIAL_NUM(4), SCRIPT_ROOT(4), STORAGE_COMMITMENT(4), ASSETS_COMMITMENT(4), ...]
+
+    exec.note::compute_recipient
+    # => [RECIPIENT_COMMITMENT(4), ASSETS_COMMITMENT(4), ...]
+
+    exec.eidos::hash_double_word
+    # => [DETAILS_COMMITMENT(4), ...]
+
+    adv_pushw swapw
+    # => [DETAILS_COMMITMENT(4), METADATA_COMMITMENT(4), ...]
+    exec.eidos::hash_double_word
+    # => [NOTE_ID(4), ...]
+end
+
+# Encrypts the checked plaintext and exports the envelope under its commitment.
+# seal_and_commit requests the key agreement advice from the host for key_commitment.
+proc seal_plaintext(note_id: NoteId, key_commitment: eidos::Digest) -> eidos::Digest
+    mem_storew_le.CONTEXT_PTR dropw
+    push.PLAINTEXT_VERSION mem_store.CONTEXT_VERSION_PTR
+    push.P2ID_PROFILE mem_store.CONTEXT_PROFILE_PTR
+    # => [KEY_COMMITMENT(4), ...]
+
+    mem_load.NUM_ASSETS_ADDR mul.ASSET_SIZE add.PLAINTEXT_FIXED_LEN
+    dup mul.2 add.CIPHERTEXT_PTR movdn.5
+    push.ENVELOPE_PTR movdn.5
+    # => [plaintext_len, KEY_COMMITMENT(4), envelope_ptr, envelope_end, ...]
+
+    push.CONTEXT_LEN push.CONTEXT_PTR movup.2 push.PLAINTEXT_PTR swapw
+    # => [KEY_COMMITMENT(4), plaintext_ptr, plaintext_len, context_ptr, context_len,
+    #     envelope_ptr, envelope_end, ...]
+    exec.ecgfp5_eidos::seal_and_commit
+    # => [ENVELOPE_COMMITMENT(4), envelope_end, ...]
+
+    push.ENVELOPE_PTR movdn.4 adv.insert_mem
+    movup.4 drop movup.4 drop
+end
+
+# Checks a note ID, seals its details, and writes the batch entry.
+# Advice: [EXPECTED_NOTE_ID(4), KEY_COMMITMENT(4), plaintext advice, METADATA_COMMITMENT(4)]
+# load_plaintext consumes the plaintext advice in the order documented above.
+proc seal_entry(entry_ptr: ptr<felt>) -> ptr<felt>
+    adv_pushw dup.4 mem_storew_le
+    adv_pushw dup.8 add.4 mem_storew_le
+    swapw
+    # => [EXPECTED_NOTE_ID(4), KEY_COMMITMENT(4), entry_ptr, ...]
+
+    exec.load_plaintext
+    exec.compute_note_id
+    # => [COMPUTED_NOTE_ID(4), EXPECTED_NOTE_ID(4), KEY_COMMITMENT(4), entry_ptr, ...]
+
+    dupw.1 assert_eqw.err="plaintext does not open the note ID"
+    # => [EXPECTED_NOTE_ID(4), KEY_COMMITMENT(4), entry_ptr, ...]
+
+    exec.seal_plaintext
+    # => [ENVELOPE_COMMITMENT(4), entry_ptr, ...]
+    dup.4 add.8 mem_storew_le dropw
+    add.ENTRY_LEN
+end
+
+# Seal the notes and return a commitment to the ordered batch entries.
+begin
+    u32assert dup neq.0 assert.err="empty encryption batch"
+    dup u32lte.MAX_NOTES assert.err="too many notes in encryption batch"
+    dup mul.ENTRY_LEN add.ENTRIES_PTR push.ENTRIES_PTR
+    # => [entry_ptr, end_ptr, note_count]
+    do
+        exec.seal_entry
+    while
+        dup dup.2 neq
+    end
+    # The two pointers agree. Hash the entries from ENTRIES_PTR up to that common end.
+    drop swap mul.ENTRY_LEN push.ENTRIES_PTR push.BATCH_DOMAIN
+    exec.eidos::hash_elements_in_domain
+    # => [BATCH_COMMITMENT(4), end_ptr]
+    # Export the ordered entries so the sender can retrieve each envelope from the advice map.
+    push.ENTRIES_PTR movdn.4 adv.insert_mem
+    movup.4 drop movup.4 drop
+    exec.sys::truncate_stack
+end
