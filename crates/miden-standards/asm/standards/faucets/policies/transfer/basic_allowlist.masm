@@ -1,4 +1,4 @@
-use {Asset} from miden::protocol::types
+use {Asset, NoteAttachmentCommitment} from miden::protocol::types
 # miden::standards::faucets::policies::transfer::basic_allowlist
 #
 # Basic allowlist transfer policy: rejects transfers whose native account is not allowed on the
@@ -18,13 +18,13 @@ use miden::standards::expiration
 # ================================================================================================
 
 #! Send policy that rejects output notes created by an account that is not allowed on the
-#! issuing faucet.
+#! issuing faucet, and returns no attachment for the accepted ones.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block.
 #!
 #! Inputs:  [note_idx, pad(15)]
-#! Outputs: [pad(16)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
 #! Where:
 #! - note_idx is the index of the output note being sealed.
@@ -35,7 +35,7 @@ use miden::standards::expiration
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16)
+pub proc check_send_policy(note_idx: u16) -> (felt, NoteAttachmentCommitment)
     exec.expiration::apply_default
     # => [note_idx, pad(15)]
 
@@ -43,7 +43,7 @@ pub proc check_send_policy(note_idx: u16)
     # => [note_idx, pad(15)]
 
     drop
-    # => [pad(16)]
+    # => [0, EMPTY_WORD, pad(11)]
 end
 
 #! Receive policy that rejects assets added to the vault of an account that is not allowed on the
