@@ -29,6 +29,7 @@ pub type MetadataStringCommitment = word
 pub mod fungible
 pub mod non_fungible
 pub mod policies
+pub mod supply_restriction
 
 # CONSTANTS
 # =================================================================================================

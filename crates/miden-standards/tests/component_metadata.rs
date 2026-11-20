@@ -22,7 +22,11 @@ use miden_standards::account::auth::{
     AuthTxFeeCollector,
     NoAuth,
 };
-use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet};
+use miden_standards::account::faucets::{
+    FungibleFaucet,
+    NonFungibleFaucet,
+    TokenSupplyRestriction,
+};
 use miden_standards::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
 use miden_standards::account::inspection::{AccountSchemaCommitment, CodeInspection};
 use miden_standards::account::note_creator::NoteCreator;
@@ -81,6 +85,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (BasicAllowlist::NAME, BasicAllowlist::component_metadata()),
         (BasicBlocklist::NAME, BasicBlocklist::component_metadata()),
         (BlocklistManager::NAME, BlocklistManager::component_metadata()),
+        (TokenSupplyRestriction::NAME, TokenSupplyRestriction::component_metadata()),
         (BasicConstantFeePolicy::NAME, BasicConstantFeePolicy::component_metadata()),
         (ConstantFeeManager::NAME, ConstantFeeManager::component_metadata()),
         (CodeInspection::NAME, CodeInspection::component_metadata()),
