@@ -8,9 +8,9 @@ mod tests;
 
 pub use proto::transaction::DecodedTransactionWitnessV1 as TransactionWitnessV1;
 
-/// Builds the inputs under the same conditions as [`super::TransactionInputsV1`]. The final account
-/// and expiration block number are not checked to be the result of executing the inputs, which a
-/// prover checks.
+/// Builds the inputs under the same conditions as [`super::TransactionInputsV1`]. The final
+/// account, expiration block number and code patch are not checked to be the result of executing
+/// the inputs, which a prover checks.
 impl BuildUnchecked for TransactionWitnessV1 {
     type Output = miden_protocol::transaction::TransactionWitness;
     type Error = VerificationError;
@@ -19,6 +19,7 @@ impl BuildUnchecked for TransactionWitnessV1 {
             self.tx_inputs.build_unchecked()?,
             self.final_account.verify()?,
             unwrap_infallible(self.expiration_block_num.verify()),
+            self.code_patch.verify()?,
         ))
     }
 }

@@ -136,34 +136,22 @@ impl CodePatchSource {
 // CODE PATCH ADVICE
 // ================================================================================================
 
-/// Returns the advice that the kernel reads to load the code patch.
+/// Returns the advice that provides the lists of the code patch to the kernel.
 ///
 /// The lists are sorted, because the kernel asserts that they are unique and sorted. The advice
-/// stack layout is defined in `code_patch::load` in the transaction kernel.
-///
-/// # Errors
-///
-/// Returns an error if the code witness of a procedure root is not available in the code tree.
-pub(crate) fn code_patch_advice(
-    code_patch: &CodePatch,
-    code_tree: &PartialCodeTree,
-) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+/// stack layout is defined in `code_patch::load` in the transaction kernel. The kernel also needs
+/// the code witnesses of the lists (see [`code_witness_advice`]).
+pub(crate) fn code_patch_advice(code_patch: &CodePatch) -> AdviceMutation {
     let mut advice_stack = Vec::new();
     let mut patch_list = |list: &BTreeSet<ProcedureRoot>| {
         advice_stack.push(Felt::from(list.len() as u32));
         advice_stack.extend(list.iter().flat_map(|procedure_root| procedure_root.as_word()));
     };
 
-    let created_procedures = code_patch.created_procedures();
-    let dependencies = code_patch.dependencies();
-    patch_list(&created_procedures);
-    patch_list(&dependencies);
+    patch_list(&code_patch.created_procedures());
+    patch_list(&code_patch.dependencies());
 
-    let patch_lists = created_procedures.iter().chain(dependencies.iter());
-    let mut mutations = code_witness_advice(patch_lists, code_tree)?;
-    mutations.push(AdviceMutation::extend_advice_stack_with(advice_stack));
-
-    Ok(mutations)
+    AdviceMutation::extend_advice_stack_with(advice_stack)
 }
 
 /// Returns the advice that provides the code witnesses of the procedure roots through the merkle

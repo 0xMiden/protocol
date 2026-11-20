@@ -53,6 +53,7 @@ use crate::host::{
     TransactionProgress,
     TransactionProgressEvent,
     TxSummaryOrSignature,
+    code_patch_advice,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
 
@@ -259,7 +260,8 @@ where
         self.fetch_code_witnesses(source.procedure_roots()).await?;
 
         let code_patch = self.base_host.build_code_patch(&source)?;
-        let advice_mutations = self.base_host.code_patch_advice(&code_patch)?;
+        let mut advice_mutations = self.base_host.code_patch_witness_advice(&code_patch)?;
+        advice_mutations.push(code_patch_advice(&code_patch));
         self.record_code_witnesses(
             code_patch.created_procedures().into_iter().chain(code_patch.dependencies()),
         )?;
