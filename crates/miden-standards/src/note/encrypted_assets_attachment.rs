@@ -30,14 +30,11 @@ static ISSUER_KEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-/// The map key of the public key commitment in the issuer key slot.
-const ISSUER_KEY_COMMITMENT_INDEX: u32 = 0;
-
 /// The map key of the first four elements of the public key in the issuer key slot.
-const ISSUER_KEY_HEAD_INDEX: u32 = 1;
+const ISSUER_KEY_HEAD_INDEX: u32 = 0;
 
 /// The map key of the fifth element of the public key in the issuer key slot.
-const ISSUER_KEY_TAIL_INDEX: u32 = 2;
+const ISSUER_KEY_TAIL_INDEX: u32 = 1;
 
 // ENCRYPTED ASSETS ATTACHMENT
 // ================================================================================================
@@ -274,16 +271,13 @@ impl EncryptedAssetsAttachment {
 /// entries:
 ///
 /// ```text
-/// [0, 0, 0, 0] => PUBLIC_KEY_COMMITMENT
-/// [1, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
-/// [2, 0, 0, 0] => [public_key_4, 0, 0, 0]
+/// [0, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
+/// [1, 0, 0, 0] => [public_key_4, 0, 0, 0]
 /// ```
 ///
-/// where `PUBLIC_KEY_COMMITMENT` is [`PublicKey::to_commitment`] and `public_key_i` are the
-/// elements of [`PublicKey::to_elements`]. `build_attachment` encrypts to the key elements and
-/// requires only that the commitment is not empty. To rotate the key, the issuer replaces these
-/// entries and keeps its previous secret keys to decrypt the attachments built before the
-/// rotation. `build_attachment` applies the default expiration delta of
+/// where `public_key_i` are the elements of [`PublicKey::to_elements`]. To rotate the key, the
+/// issuer replaces these entries and keeps its previous secret keys to decrypt the attachments
+/// built before the rotation. `build_attachment` applies the default expiration delta of
 /// `miden::standards::expiration`, so a transaction can encrypt to the previous key only until
 /// that many blocks after the rotation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,10 +305,6 @@ impl EncryptedAssetsIssuerKey {
     pub fn into_storage_slot(self) -> StorageSlot {
         let [e0, e1, e2, e3, e4] = self.public_key.to_elements();
         let entries = [
-            (
-                StorageMapKey::from_index(ISSUER_KEY_COMMITMENT_INDEX),
-                self.public_key.to_commitment(),
-            ),
             (StorageMapKey::from_index(ISSUER_KEY_HEAD_INDEX), Word::new([e0, e1, e2, e3])),
             (
                 StorageMapKey::from_index(ISSUER_KEY_TAIL_INDEX),
@@ -456,10 +446,9 @@ mod tests {
         Ok(())
     }
 
-    /// The issuer key slot maps index 0 to the public key commitment and indices 1 and 2 to the
-    /// five public key elements.
+    /// The issuer key slot maps indices 0 and 1 to the five public key elements.
     #[test]
-    fn issuer_key_storage_slot_holds_commitment_and_public_key() -> anyhow::Result<()> {
+    fn issuer_key_storage_slot_holds_public_key_elements() -> anyhow::Result<()> {
         let public_key = SecretKey::from_bytes(&[1; 40])?.public_key();
         let [e0, e1, e2, e3, e4] = public_key.to_elements();
 
@@ -469,11 +458,10 @@ mod tests {
         let StorageSlotContent::Map(map) = slot.content() else {
             anyhow::bail!("issuer key slot should be a map slot");
         };
-        assert_eq!(map.num_entries(), 3);
-        assert_eq!(map.get(&StorageMapKey::from_index(0)), public_key.to_commitment());
-        assert_eq!(map.get(&StorageMapKey::from_index(1)), Word::new([e0, e1, e2, e3]));
+        assert_eq!(map.num_entries(), 2);
+        assert_eq!(map.get(&StorageMapKey::from_index(0)), Word::new([e0, e1, e2, e3]));
         assert_eq!(
-            map.get(&StorageMapKey::from_index(2)),
+            map.get(&StorageMapKey::from_index(1)),
             Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO])
         );
 

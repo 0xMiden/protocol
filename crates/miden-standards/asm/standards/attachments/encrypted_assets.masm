@@ -45,14 +45,12 @@ pub const ENCRYPTED_ASSETS_FORMAT_VERSION = 1
 #! The map slot that holds the issuer's EcGFp5 public key.
 #!
 #! The map holds the following entries:
-#! - [0, 0, 0, 0] => PUBLIC_KEY_COMMITMENT
-#! - [1, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
-#! - [2, 0, 0, 0] => [public_key_4, 0, 0, 0]
+#! - [0, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
+#! - [1, 0, 0, 0] => [public_key_4, 0, 0, 0]
 pub const ISSUER_KEY_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key")
 
-const ISSUER_KEY_COMMITMENT_MAP_KEY = [0, 0, 0, 0]
-const ISSUER_KEY_HEAD_MAP_KEY = [1, 0, 0, 0]
-const ISSUER_KEY_TAIL_MAP_KEY = [2, 0, 0, 0]
+const ISSUER_KEY_HEAD_MAP_KEY = [0, 0, 0, 0]
+const ISSUER_KEY_TAIL_MAP_KEY = [1, 0, 0, 0]
 
 # Layouts
 
@@ -314,18 +312,10 @@ end
 #!
 #! Panics if:
 #! - the active account has no `ISSUER_KEY_SLOT`.
-#! - the slot holds no public key commitment.
+#! - the slot holds no public key, i.e. its five elements are zero.
 #!
 #! Invocation: exec
 proc get_issuer_public_key() -> ecgfp5::PointEncoding
-    # the public key commitment marks the key as present
-    push.ISSUER_KEY_COMMITMENT_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [PUBLIC_KEY_COMMITMENT]
-
-    exec.word::eqz assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
-    # => []
-
     push.ISSUER_KEY_TAIL_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
     exec.active_account::get_map_item
     # => [public_key_4, 0, 0, 0]
@@ -335,5 +325,12 @@ proc get_issuer_public_key() -> ecgfp5::PointEncoding
 
     push.ISSUER_KEY_HEAD_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
     exec.active_account::get_map_item
+    # => [public_key(5)]
+
+    # an unset key reads as all zeros, which is not a valid public key
+    dupw exec.word::eqz dup.5 eq.0 and
+    # => [is_unset, public_key(5)]
+
+    assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
     # => [public_key(5)]
 end
