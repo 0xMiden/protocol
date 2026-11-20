@@ -147,6 +147,33 @@ pub proc build_attachment(note_idx: u16) -> (u16, NoteAttachmentCommitment)
     end
 end
 
+#! Returns the issuer's EcGFp5 public key from the active account's `ISSUER_KEY_SLOT`.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block, since the issuer key is mutable state that can be read through FPI.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [public_key(5), pad(11)]
+#!
+#! Where:
+#! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
+#!
+#! Panics if:
+#! - the active account has no `ISSUER_KEY_SLOT` or no issuer public key in it.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_issuer_key() -> ecgfp5::PointEncoding
+    exec.expiration::apply_default
+    # => [pad(16)]
+
+    exec.get_issuer_public_key
+    # => [public_key(5), pad(16)]
+
+    repeat.5 movup.5 drop end
+    # => [public_key(5), pad(11)]
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 

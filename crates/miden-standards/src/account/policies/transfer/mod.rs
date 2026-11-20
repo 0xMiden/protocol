@@ -5,7 +5,8 @@
 //! - File at the root (e.g. `allow_all`, `basic_blocklist`, `basic_allowlist`) = a transfer policy
 //!   variant. Each exports a `check_send_policy` and a `check_receive_policy` procedure that the
 //!   manager's `invoke_send_policy` / `invoke_receive_policy` wrapper dispatches to via `dyncall`
-//!   (after the pause check) once the active policy is set.
+//!   (after the pause check) once the active policy is set. `encrypted_assets` exports only a
+//!   `check_send_policy` procedure.
 //! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
 //!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!   policies by themselves; they are consumed by policy variants.
@@ -15,17 +16,21 @@ use alloc::vec::Vec;
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 use thiserror::Error;
 
+use crate::note::EncryptedAssetsIssuerKey;
+
 mod allow_all;
 mod allowlist;
 mod basic_allowlist;
 mod basic_blocklist;
 mod blocklist;
+mod encrypted_assets;
 
 pub use allow_all::TransferAllowAll;
 pub use allowlist::{AllowlistManager, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
 pub use blocklist::{BlocklistManager, BlocklistStorage};
+pub use encrypted_assets::EncryptedAssetsSendPolicy;
 
 // TRANSFER POLICY ERROR
 // ================================================================================================
@@ -67,7 +72,8 @@ pub enum TransferPolicyError {
 /// A policy that returns an attachment for the note puts the attachment's elements into the
 /// advice map under `ATTACHMENT_COMMITMENT`, and the kernel appends it to the note. An
 /// `attachment_scheme` of `0` returns no attachment and requires `ATTACHMENT_COMMITMENT` to be
-/// the empty word. The bundled policies return no attachment.
+/// the empty word. Of the bundled policies, only [`Self::with_encrypted_assets`] returns an
+/// attachment.
 ///
 /// Note that minting crosses the send callback: the note created by `mint_and_send` runs
 /// `on_before_note_sealed` when it is sealed, with the issuing faucet itself as the native account,
@@ -77,9 +83,9 @@ pub enum TransferPolicyError {
 ///
 /// Send policies run through FPI. Policies that read mutable, security-sensitive state must set
 /// an expiration delta in the execution path that reads that state. The built-in blocklist and
-/// allowlist policies apply the standards default; custom policies should call
-/// `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta` directly
-/// with a custom expiration delta.
+/// allowlist policies, and the encrypted assets policy for private notes, apply the standards
+/// default; custom policies should call `miden::standards::expiration::apply_default` or
+/// `tx::update_expiration_block_delta` directly with a custom expiration delta.
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
@@ -143,6 +149,27 @@ impl SendPolicy {
         Self {
             root: BasicAllowlist::send_root(),
             components: vec![BasicAllowlist::from(allow_list).into()],
+        }
+    }
+
+    /// Returns a send policy that attaches the
+    /// [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment), encrypted to
+    /// `issuer_key`, to every private output note holding the faucet's assets, so the issuer can
+    /// track them. Public notes get no attachment.
+    ///
+    /// Resolves to [`EncryptedAssetsSendPolicy::send_root`] and ships the companion
+    /// [`EncryptedAssetsSendPolicy`] component and `issuer_key` as the component that installs
+    /// the key. That component has no setter, so a compromised issuer key cannot be rotated yet.
+    ///
+    /// A private note seals only if the transaction's advice map holds its recipient preimage, so
+    /// a note whose creator knows only its recipient digest cannot hold the faucet's assets. A
+    /// MINT note with a private output note holds only that digest: the faucet mints it only if
+    /// the transaction supplies the preimage, so a network faucet cannot. The same holds for the
+    /// private payback note of a SWAP note that requests the faucet's asset.
+    pub fn with_encrypted_assets(issuer_key: EncryptedAssetsIssuerKey) -> Self {
+        Self {
+            root: EncryptedAssetsSendPolicy::send_root(),
+            components: vec![EncryptedAssetsSendPolicy.into(), issuer_key.into()],
         }
     }
 

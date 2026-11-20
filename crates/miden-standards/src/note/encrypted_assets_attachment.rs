@@ -1,6 +1,13 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::{StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::{
+    AccountComponent,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
@@ -20,10 +27,16 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 
+use crate::account::account_component_package;
 use crate::note::StandardNoteAttachment;
 
 // CONSTANTS
 // ================================================================================================
+
+account_component_package!(
+    ENCRYPTED_ASSETS_ISSUER_KEY_PACKAGE,
+    "miden-standards-attachments-encrypted-assets.masp"
+);
 
 static ISSUER_KEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key")
@@ -286,9 +299,28 @@ pub struct EncryptedAssetsIssuerKey {
 }
 
 impl EncryptedAssetsIssuerKey {
+    /// The name of the account component that the issuer key converts into, which installs the
+    /// key.
+    ///
+    /// The component exposes the call accessor `get_issuer_key` but no setter, so a compromised
+    /// issuer key cannot be rotated through it yet.
+    pub const NAME: &'static str = "miden::standards::attachments::encrypted_assets";
+
     /// Returns a new issuer key from the provided public key.
     pub fn new(public_key: PublicKey) -> Self {
         Self { public_key }
+    }
+
+    /// Returns the [`AccountComponentCode`] of the account component that installs the issuer
+    /// key.
+    pub fn code() -> &'static AccountComponentCode {
+        &ENCRYPTED_ASSETS_ISSUER_KEY_PACKAGE.code
+    }
+
+    /// Returns the [`AccountComponentMetadata`] of the account component that installs the issuer
+    /// key.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        ENCRYPTED_ASSETS_ISSUER_KEY_PACKAGE.metadata.clone()
     }
 
     /// Returns the [`StorageSlotName`] of the issuer key slot.
@@ -315,6 +347,21 @@ impl EncryptedAssetsIssuerKey {
             .expect("issuer key entries should have distinct keys");
 
         StorageSlot::with_map(Self::slot_name().clone(), storage_map)
+    }
+}
+
+impl From<EncryptedAssetsIssuerKey> for AccountComponent {
+    fn from(issuer_key: EncryptedAssetsIssuerKey) -> Self {
+        let metadata = EncryptedAssetsIssuerKey::component_metadata();
+
+        AccountComponent::new(
+            EncryptedAssetsIssuerKey::code().clone(),
+            vec![issuer_key.into_storage_slot()],
+            metadata,
+        )
+        .expect(
+            "encrypted assets issuer key component should satisfy the requirements of a valid account component",
+        )
     }
 }
 
