@@ -1,0 +1,28 @@
+[package]
+name              = "miden-standards-faucets-policies-transfer-supply-restriction-manager"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::transfer::supply_restriction::manager"
+path      = "manager.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Authority-gated freezing and confiscation of fungible asset amounts held by accounts"
+name        = "miden::standards::faucets::policies::transfer::supply_restriction::manager"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Frozen and confiscated amounts per account"
+name = "miden::standards::faucets::policies::transfer::supply_restriction::restrictions"
+type = { key = "word", value = [
+  { name = "frozen", type = "felt" },
+  { name = "confiscated", type = "felt" },
+  { type = "void" },
+  { type = "void" },
+] }

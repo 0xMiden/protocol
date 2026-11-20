@@ -58,6 +58,7 @@ pub use transfer::{
     BlocklistStorage,
     ReceivePolicy,
     SendPolicy,
+    SupplyRestrictionManager,
     TransferAllowAll,
     TransferPolicyError,
 };
