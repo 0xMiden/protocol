@@ -37,6 +37,7 @@ pub type Asset = struct {
 pub type Bool = i1
 pub type AssetAmount = felt
 pub type NoteTag = u32
+pub type NoteAttachmentScheme = u16
 # Discriminants match the Rust NoteType representation.
 pub enum NoteType : u8 {
     PRIVATE = 0,
