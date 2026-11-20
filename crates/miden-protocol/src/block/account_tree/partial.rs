@@ -103,10 +103,11 @@ impl PartialAccountTree {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - after the witness' merkle path was added, the partial account tree has a different root
-    ///   than before it was added (except when the first witness is added).
+    /// - the root of the witness does not match the root of the partial account tree.
     /// - there exists a leaf in the tree whose account ID prefix matches the one in the provided
     ///   witness.
+    ///
+    /// The tree stays unchanged if an error is returned.
     pub fn track_account(&mut self, witness: AccountWitness) -> Result<(), AccountTreeError> {
         let id_prefix = witness.id().prefix();
         let id_key = AccountIdKey::from(witness.id()).as_word();
