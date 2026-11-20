@@ -11,6 +11,13 @@ use miden_standards::testing::note::NoteBuilder;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
+// CONSTANTS
+// ================================================================================================
+
+/// The default expiration delta of `miden::standards::expiration`, which standard procedures that
+/// read mutable account state through FPI apply to the transaction.
+pub const DEFAULT_EXPIRATION_BLOCK_DELTA: u32 = 20;
+
 // HELPER MACROS
 // ================================================================================================
 

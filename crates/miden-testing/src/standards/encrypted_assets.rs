@@ -52,14 +52,11 @@ use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
 use crate::executor::CodeExecutor;
+use crate::utils::DEFAULT_EXPIRATION_BLOCK_DELTA;
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 // CONSTANTS
 // ================================================================================================
-
-/// The default expiration delta of `miden::standards::expiration`, which `build_attachment`
-/// applies to a transaction that builds an attachment.
-const DEFAULT_EXPIRATION_BLOCK_DELTA: u32 = 20;
 
 /// The name of the component that registers the issuing faucet's note callback.
 const ISSUER_COMPONENT_NAME: &str = "miden::testing::encrypted_assets::issuer";
