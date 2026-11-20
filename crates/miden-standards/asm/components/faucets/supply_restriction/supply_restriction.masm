@@ -1,6 +1,6 @@
 # Authority-gated supply restriction component.
 #
-# Installs the `restrictions` storage map (defined by the `supply_restriction` primitive) and
+# Installs the `restricted_amounts` storage map (defined by the `supply_restriction` primitive) and
 # re-exports `freeze`, `unfreeze` and `confiscate` from
 # `miden::standards::faucets::supply_restriction::manager`, which wrap the underlying
 # `Invocation: exec` helpers with `authority::assert_authorized`.

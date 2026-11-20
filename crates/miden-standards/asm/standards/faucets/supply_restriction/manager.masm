@@ -1,24 +1,20 @@
-use {AccountId, AssetAmount} from miden::protocol::types
 # miden::standards::faucets::supply_restriction::manager
 #
-# Authority-gated supply restriction admin: wraps the `Invocation: exec` helpers from
-# `miden::standards::faucets::supply_restriction` with the account-wide `Authority` component via
-# `exec.authority::assert_authorized` — the same pattern that `BlocklistManager` uses. Under
-# `Authority::RbacControlled`, `freeze`, `unfreeze` and `confiscate` can share one role or be
-# gated by distinct roles.
+# Authority-gated supply restriction administration. Wraps the helpers from
+# `miden::standards::faucets::supply_restriction` with the account-wide `Authority` component.
 #
 # Companion components required on the faucet:
-# - `Authority` — provides the auth dispatch the body calls into.
+# - `Authority`.
 # - The fungible faucet component — provides the token config slot that `confiscate` updates.
 
+use {AccountId, AssetAmount} from miden::protocol::types
 use miden::standards::access::authority
 use miden::standards::faucets::supply_restriction
 
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Freezes the given amount of the account's balance, gated by the account-wide `Authority`
-#! component.
+#! Freezes the given amount of the account's balance.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, amount, pad(13)]
 #! Outputs: [pad(16)]
@@ -39,8 +35,7 @@ pub proc freeze(account_id: AccountId, amount: AssetAmount)
     # => [pad(16)]
 end
 
-#! Unfreezes the given amount of the account's frozen balance, gated by the account-wide
-#! `Authority` component.
+#! Unfreezes the given amount of the account's frozen balance.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, amount, pad(13)]
 #! Outputs: [pad(16)]
@@ -59,8 +54,7 @@ pub proc unfreeze(account_id: AccountId, amount: AssetAmount)
     # => [pad(16)]
 end
 
-#! Confiscates the given amount of the account's balance and removes it from the token supply,
-#! gated by the account-wide `Authority` component.
+#! Confiscates the given amount of the account's balance and removes it from the token supply.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, amount, pad(13)]
 #! Outputs: [pad(16)]

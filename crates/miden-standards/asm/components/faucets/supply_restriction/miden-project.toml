@@ -19,7 +19,7 @@ version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
 description = "Frozen and confiscated amounts per account"
-name = "miden::standards::faucets::supply_restriction::restrictions"
+name = "miden::standards::faucets::supply_restriction::restricted_amounts"
 type = { key = "word", value = [
   { name = "frozen", type = "felt" },
   { name = "confiscated", type = "felt" },

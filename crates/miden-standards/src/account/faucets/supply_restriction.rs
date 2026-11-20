@@ -19,8 +19,8 @@ account_component_package!(
 // STORAGE
 // ================================================================================================
 
-static RESTRICTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::faucets::supply_restriction::restrictions")
+static RESTRICTED_AMOUNTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::faucets::supply_restriction::restricted_amounts")
         .expect("storage slot name should be valid")
 });
 
@@ -60,8 +60,8 @@ procedure_root!(
 /// per holder account.
 ///
 /// The component exposes `freeze`, `unfreeze` and `confiscate` admin procedures gated by the
-/// account-wide [`Authority`](crate::account::access::Authority) component via
-/// `exec.authority::assert_authorized`. The amounts are disjoint:
+/// account-wide [`Authority`](crate::account::access::Authority) component. The amounts are
+/// disjoint:
 /// - frozen: restricted but can still be unfrozen. Freezing does not change the token supply.
 /// - confiscated: restricted for good. Confiscating decreases the token supply by the confiscated
 ///   amount, so the issuer can re-mint it to another account without counting it twice.
@@ -69,31 +69,19 @@ procedure_root!(
 /// `frozen + confiscated` of an account never exceeds
 /// [`FungibleAsset::MAX_AMOUNT`](miden_protocol::asset::FungibleAsset::MAX_AMOUNT).
 ///
-/// The component only records the amounts; it does not restrict transfers by itself. A faucet
-/// must not install it without a send policy that rejects transfers (including sending the asset
-/// back to the faucet for burning) that would leave the holder's balance below
-/// `frozen + confiscated`. Otherwise a holder can keep spending confiscated amounts that were
-/// already removed from the token supply. That policy is a follow-up of
-/// [#4202](https://github.com/0xMiden/protocol/issues/4202).
-///
-/// The faucet cannot read a holder's vault, so it cannot verify that the holder actually owns the
-/// amounts being frozen or confiscated. The issuer is trusted to not confiscate more than the
-/// holder's balance; doing so and re-minting the amount inflates the circulating supply.
-///
-/// Under [`Authority::RbacControlled`](crate::account::access::Authority::RbacControlled), map
-/// [`Self::freeze_root`], [`Self::unfreeze_root`] and [`Self::confiscate_root`] to the same role
-/// symbol or to distinct ones.
+/// The issuer is trusted to not confiscate more than the holder's balance; doing so and re-minting
+/// the amount inflates the circulating supply.
 ///
 /// Companion components required:
-/// - [`crate::account::access::Authority`] — provides the mode-aware auth dispatch.
+/// - [`crate::account::access::Authority`] — provides the auth dispatch.
 /// - [`crate::account::faucets::FungibleFaucet`] — provides the token supply that `confiscate`
 ///   decreases.
 ///
 /// ## Storage
 ///
-/// - [`Self::restrictions_slot()`]: storage map keyed by account ID (word layout `[0, 0,
-///   account_id_suffix, account_id_prefix]`) with values `[frozen, confiscated, 0, 0]`. The map
-///   starts empty.
+/// - [`Self::restricted_amounts_slot()`]: storage map laid out as:
+///   - key: `[0, 0, account_id_suffix, account_id_prefix]`
+///   - value: `[frozen, confiscated, 0, 0]`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TokenSupplyRestriction;
 
@@ -111,8 +99,8 @@ impl TokenSupplyRestriction {
     }
 
     /// Storage slot name for the map of frozen and confiscated amounts.
-    pub fn restrictions_slot() -> &'static StorageSlotName {
-        &RESTRICTIONS_SLOT_NAME
+    pub fn restricted_amounts_slot() -> &'static StorageSlotName {
+        &RESTRICTED_AMOUNTS_SLOT_NAME
     }
 
     /// Returns the procedure root of the `freeze` procedure exposed by this component.
@@ -145,12 +133,12 @@ impl TokenSupplyRestriction {
 impl From<TokenSupplyRestriction> for AccountComponent {
     fn from(_: TokenSupplyRestriction) -> Self {
         let metadata = TokenSupplyRestriction::component_metadata();
-        let restrictions_slot =
-            StorageSlot::with_map(RESTRICTIONS_SLOT_NAME.clone(), StorageMap::default());
+        let restricted_amounts_slot =
+            StorageSlot::with_map(RESTRICTED_AMOUNTS_SLOT_NAME.clone(), StorageMap::default());
 
         AccountComponent::new(
             TokenSupplyRestriction::code().clone(),
-            vec![restrictions_slot],
+            vec![restricted_amounts_slot],
             metadata,
         )
         .expect("token supply restriction component should be valid")
