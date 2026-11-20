@@ -131,7 +131,7 @@ end
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
 #! Inputs:  [note_idx, pad(15)]
-#! Outputs: [0, EMPTY_WORD, pad(11)]
+#! Outputs: [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
 #!
 #! Invocation: call
 @account_procedure
@@ -679,7 +679,7 @@ async fn test_on_before_note_sealed_callback_receives_correct_inputs() -> anyhow
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    #! Outputs: [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
     @locals(8)
     @account_procedure
     pub proc on_before_note_sealed
@@ -807,7 +807,7 @@ async fn test_note_sealed_callback_runs_once_per_faucet_in_first_occurrence_orde
         format!(
             r#"
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    #! Outputs: [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
     @account_procedure
     pub proc on_before_note_sealed
         dup exec.::miden::protocol::output_note::is_sealed
@@ -1292,7 +1292,7 @@ async fn mint_and_send_with_native_note_callback(
     let note_callback_masm = format!(
         r#"
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    #! Outputs: [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
     @account_procedure
     pub proc on_before_note_sealed
         {callback_body}
@@ -1437,11 +1437,11 @@ fn note_sealed_callback_masm(attachment: Option<(u16, Word)>) -> String {
         return String::from(
             "
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    #! Outputs: [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
     @account_procedure
     pub proc on_before_note_sealed
         drop
-        # => [0, EMPTY_WORD, pad(11)]
+        # => [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
     end
     ",
         );
