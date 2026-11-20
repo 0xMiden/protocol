@@ -22,6 +22,7 @@ use miden::standards::faucets::policies::transfer::supply_restriction
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority` component.
+#! - the account ID is not structurally valid.
 #! - amount exceeds the maximum fungible asset amount.
 #! - the frozen plus confiscated amount of the account after freezing exceeds the maximum fungible
 #!   asset amount.
@@ -62,6 +63,7 @@ end
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority` component.
+#! - the account ID is not structurally valid.
 #! - amount exceeds the maximum fungible asset amount.
 #! - amount exceeds the token supply of the faucet.
 #! - the frozen plus confiscated amount of the account after confiscating exceeds the maximum

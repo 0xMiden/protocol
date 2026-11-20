@@ -6,6 +6,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::errors::protocol::ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::{Authority, Ownable2Step};
@@ -321,6 +322,36 @@ async fn amount_above_max_amount_fails(
     let result = mock_chain.consume_notes(faucet.id(), [note]).await?;
 
     assert_transaction_executor_error!(result, ERR_SUPPLY_RESTRICTION_AMOUNT_EXCEEDS_MAX_AMOUNT);
+
+    Ok(())
+}
+
+/// Freezing or confiscating for a malformed account ID fails, so a typo in the account ID cannot
+/// restrict a balance that no account holds.
+#[rstest]
+#[case::freeze(VARIANT_FREEZE)]
+#[case::confiscate(VARIANT_CONFISCATE)]
+#[tokio::test]
+async fn malformed_account_id_fails(#[case] variant: u32) -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let holder = AccountId::mock_private(3);
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_owner_supply_restriction(&mut builder, owner_id)?;
+    let mock_chain = builder.build()?;
+
+    // a valid suffix has its lower 8 bits set to zero
+    let malformed_suffix = holder.suffix() + Felt::ONE;
+    let note = malformed_supply_restriction_config_note(
+        owner_id,
+        faucet.id(),
+        vec![Felt::from(variant), malformed_suffix, holder.prefix().as_felt(), Felt::ONE],
+    )?;
+    let result = mock_chain.consume_notes(faucet.id(), [note]).await?;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
+    );
 
     Ok(())
 }

@@ -6,6 +6,7 @@
 # See `SupplyRestrictionManager` for more details.
 
 use {AccountId, AssetAmount, StorageMapKey} from miden::protocol::types
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
@@ -64,12 +65,17 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - the account ID is not structurally valid.
 #! - amount exceeds the maximum fungible asset amount.
 #! - the frozen plus confiscated amount of the account after freezing exceeds the maximum fungible
 #!   asset amount.
 #!
 #! Invocation: exec
 pub proc freeze(account_id: AccountId, amount: AssetAmount)
+    # reject malformed account IDs, e.g. from a typo in the config note
+    dup.1 dup.1 exec.account_id::validate_structure
+    # => [account_id_suffix, account_id_prefix, amount]
+
     # assert the amount is less than FUNGIBLE_ASSET_MAX_AMOUNT so adding it to the stored amount
     # cannot wrap around the field modulus
     dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
@@ -125,6 +131,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - the account ID is not structurally valid.
 #! - amount exceeds the maximum fungible asset amount.
 #! - amount exceeds the token supply of the faucet.
 #! - the frozen plus confiscated amount of the account after confiscating exceeds the maximum
@@ -132,6 +139,10 @@ end
 #!
 #! Invocation: exec
 pub proc confiscate(account_id: AccountId, amount: AssetAmount)
+    # reject malformed account IDs, e.g. from a typo in the config note
+    dup.1 dup.1 exec.account_id::validate_structure
+    # => [account_id_suffix, account_id_prefix, amount]
+
     # assert the amount is less than FUNGIBLE_ASSET_MAX_AMOUNT so adding it to the stored amount
     # cannot wrap around the field modulus
     dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
