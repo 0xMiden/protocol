@@ -13,7 +13,6 @@
 //! it expects from the agreed terms and watches the chain for their IDs.
 
 use anyhow::Context;
-use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{
@@ -31,6 +30,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::word::WordMockExt;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
+use miden_protocol::{Hasher, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{
@@ -70,8 +70,7 @@ const INITIAL_FEE_BALANCE: u64 = 1_000_000;
 // AGREED TERMS
 // ================================================================================================
 
-/// The terms of the loan the originator, borrower and creditor agree on off-chain, including the
-/// serial numbers of the notes.
+/// The terms of the loan the originator, borrower and creditor agree on off-chain.
 ///
 /// The terms are the contract between the parties: each one derives the notes it creates or
 /// watches the chain for from them.
@@ -84,11 +83,18 @@ struct CreditTerms {
     principal: AssetAmount,
     interest_percent: u8,
     salt: Word,
-    mint_serial_number: Word,
-    issue_serial_number: Word,
-    loan_serial_number: Word,
-    repayment_serial_number: Word,
-    burn_serial_number: Word,
+}
+
+/// The notes of the flow whose serial numbers are derived from the [`CreditTerms`].
+///
+/// The discriminant separates the serial numbers of the notes.
+#[derive(Clone, Copy)]
+enum CreditNote {
+    Mint = 0,
+    Issue = 1,
+    Loan = 2,
+    Repayment = 3,
+    Burn = 4,
 }
 
 impl CreditTerms {
@@ -109,6 +115,13 @@ impl CreditTerms {
         terms_data.push(self.interest_percent);
 
         NonFungibleFaucet::compute_asset_commitment(&terms_data, self.salt)
+    }
+
+    /// Returns the serial number of the given note.
+    ///
+    /// It is the hash of the salt and the note as a domain separator.
+    fn serial_number(&self, note: CreditNote) -> Word {
+        Hasher::hash_double_word(&[self.salt, Word::from([note as u32, 0, 0, 0])])
     }
 
     fn principal(&self) -> anyhow::Result<Asset> {
@@ -135,21 +148,22 @@ impl CreditTerms {
         Ok(Note::new(
             NoteAssets::new(vec![self.principal()?])?,
             *issue_payback_metadata.partial_metadata(),
-            P2idNoteStorage::new(self.borrower_id).into_recipient(self.loan_serial_number),
+            P2idNoteStorage::new(self.borrower_id)
+                .into_recipient(self.serial_number(CreditNote::Loan)),
         ))
     }
 
     /// Returns the private SWAP note the faucet mints the bond into: the creditor takes the bond
     /// and pays the principal to the borrower in a private P2ID loan note.
     fn issue_note(&self) -> anyhow::Result<Note> {
-        let loan_recipient =
-            P2idNoteStorage::new(self.borrower_id).into_recipient(self.loan_serial_number);
+        let loan_recipient = P2idNoteStorage::new(self.borrower_id)
+            .into_recipient(self.serial_number(CreditNote::Loan));
 
         let issue_note = SwapNote::builder()
             .sender(self.nft_faucet_id)
             .offered_asset(self.bond())
             .requested_asset(self.principal()?)
-            .serial_number(self.issue_serial_number)
+            .serial_number(self.serial_number(CreditNote::Issue))
             .note_type(NoteType::Private)
             .payback_note_type(NoteType::Private)
             .payback_recipient(loan_recipient)
@@ -172,7 +186,7 @@ impl CreditTerms {
                 self.bond(),
                 issue_note.metadata().tag(),
             ))
-            .serial_number(self.mint_serial_number)
+            .serial_number(self.serial_number(CreditNote::Mint))
             .build()?;
 
         Ok(mint_note.into())
@@ -183,7 +197,7 @@ impl CreditTerms {
         let burn_note = BurnNote::builder()
             .sender(self.creditor_id)
             .asset(self.bond())
-            .serial_number(self.burn_serial_number)
+            .serial_number(self.serial_number(CreditNote::Burn))
             .build()?;
 
         Ok(burn_note.into())
@@ -198,7 +212,7 @@ impl CreditTerms {
             .sender(self.borrower_id)
             .offered_asset(self.repayment()?)
             .requested_asset(self.bond())
-            .serial_number(self.repayment_serial_number)
+            .serial_number(self.serial_number(CreditNote::Repayment))
             .note_type(NoteType::Private)
             .payback_note_type(NoteType::Public)
             .payback_recipient(burn_note.recipient().clone())
@@ -289,11 +303,6 @@ impl TestSetup {
             principal,
             interest_percent: INTEREST_PERCENT,
             salt: Word::mock(1),
-            mint_serial_number: Word::mock(2),
-            issue_serial_number: Word::mock(3),
-            loan_serial_number: Word::mock(4),
-            repayment_serial_number: Word::mock(5),
-            burn_serial_number: Word::mock(6),
         };
 
         let setup = Self {
