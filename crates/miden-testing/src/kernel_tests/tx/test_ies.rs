@@ -807,6 +807,9 @@ fn compile_tx_script(
             {attach_envelopes}
             # => [note_idx, pad(15)]
 
+            exec.output_note::seal
+            # => [pad(15)]
+
             exec.sys::truncate_stack
             # => [pad(16)]
         end
