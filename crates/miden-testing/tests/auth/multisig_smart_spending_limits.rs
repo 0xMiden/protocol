@@ -1078,10 +1078,13 @@ async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow
             exec.p2id::create_output_note
             # => [note_idx]
 
-            push.{asset_value}
+            dup push.{asset_value}
             push.{asset_id}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw dropw dropw dropw
+            # => [note_idx, pad(15)]
+
+            exec.::miden::protocol::output_note::seal
+            dropw dropw dropw drop drop drop
         end
         ",
         new_limit = 1_000_000u64,

@@ -2069,12 +2069,9 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         @transaction_script
         pub proc main
             # create random note and move the asset into it
-            exec.util::create_default_note
-            # => [note_idx]
-
             push.{REMOVED_ASSET_VALUE}
             push.{REMOVED_ASSET_ID}
-            exec.util::move_asset_to_note
+            exec.util::create_default_note_with_moved_asset
             # => []
 
             # get the current asset balance
@@ -2165,12 +2162,9 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         @transaction_script
         pub proc main
             # create default note and move the asset into it
-            exec.util::create_default_note
-            # => [note_idx]
-
             push.{REMOVED_ASSET_VALUE}
             push.{ASSET_ID}
-            exec.util::move_asset_to_note
+            exec.util::create_default_note_with_moved_asset
             # => []
 
             # get the current asset

@@ -339,7 +339,10 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
             call.::miden::standards::note::note_creator::create_note
             # => [note_idx, pad(21)]
 
-            drop dropw drop
+            exec.::miden::protocol::output_note::seal
+            # => [pad(21)]
+
+            dropw drop
             # => [pad(16)]
             ",
             note_type = NoteType::Private as u8,

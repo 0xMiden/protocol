@@ -1,9 +1,11 @@
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -32,13 +34,25 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME,
+    ERR_OUTPUT_NOTE_IS_SEALED,
+    ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
 };
-use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::note::{
+    Note,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
@@ -47,7 +61,8 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
-use miden_tx::{TransactionExecutorError, TransactionKernelError};
+use miden_standards::testing::note::NoteBuilder;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError, TransactionKernelError};
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
@@ -111,20 +126,20 @@ pub proc on_before_asset_added_to_account
     # => [pad(16)]
 end
 
-#! Callback invoked when an asset with callbacks enabled is added to an output note.
+#! Callback invoked when an output note holding an asset with callbacks enabled is sealed.
 #!
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [pad(16)]
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
 #! Invocation: call
 @account_procedure
-pub proc on_before_asset_added_to_note
+pub proc on_before_note_sealed
     exec.assert_native_account_not_blocked
-    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+    # => [note_idx, pad(15)]
 
-    dropw dropw drop
+    drop
     # => [pad(16)]
 end
 "#;
@@ -132,6 +147,10 @@ end
 /// The expected error when a blocked account tries to receive an asset with callbacks.
 const ERR_ACCOUNT_BLOCKED: MasmError =
     MasmError::from_static_str("the account is blocked and cannot receive this asset");
+
+/// The error raised by a note callback that observes an unexpected transaction expiration delta.
+const ERR_UNEXPECTED_EXPIRATION_DELTA: MasmError =
+    MasmError::from_static_str("note callback observed an unexpected expiration delta");
 
 // Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
@@ -153,9 +172,9 @@ procedure_root!(
 );
 
 procedure_root!(
-    BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE,
+    BLOCK_LIST_ON_BEFORE_NOTE_SEALED,
     BlockList::NAME,
-    BlockList::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
+    BlockList::ON_BEFORE_NOTE_SEALED_PROC_NAME,
     &BLOCK_LIST_COMPONENT_CODE
 );
 
@@ -176,7 +195,7 @@ impl BlockList {
 
     const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME: &str = "on_before_asset_added_to_account";
 
-    const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME: &str = "on_before_asset_added_to_note";
+    const ON_BEFORE_NOTE_SEALED_PROC_NAME: &str = "on_before_note_sealed";
 
     /// Creates a new [`BlockList`] with the given set of blocked accounts.
     fn new(blocked_accounts: BTreeSet<AccountId>) -> Self {
@@ -188,9 +207,9 @@ impl BlockList {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
     }
 
-    /// Returns the procedure root of the `on_before_asset_added_to_note` procedure.
-    pub fn on_before_asset_added_to_note_root() -> AccountProcedureRoot {
-        *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE
+    /// Returns the procedure root of the `on_before_note_sealed` procedure.
+    pub fn on_before_note_sealed_root() -> AccountProcedureRoot {
+        *BLOCK_LIST_ON_BEFORE_NOTE_SEALED
     }
 }
 
@@ -219,9 +238,7 @@ impl From<BlockList> for AccountComponent {
                 .on_before_asset_added_to_account(
                     BlockList::on_before_asset_added_to_account_root().as_word(),
                 )
-                .on_before_asset_added_to_note(
-                    BlockList::on_before_asset_added_to_note_root().as_word(),
-                )
+                .on_before_note_sealed(BlockList::on_before_note_sealed_root().as_word())
                 .into_storage_slots(),
         );
         let metadata = AccountComponentMetadata::new(BlockList::NAME)
@@ -420,7 +437,8 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     "#
     );
 
-    let faucet = add_faucet_with_callbacks(&mut builder, Some(&account_callback_masm), None)?;
+    let faucet =
+        add_faucet_with_callbacks(&mut builder, [42; 32], Some(&account_callback_masm), None)?;
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
     let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
@@ -495,10 +513,10 @@ async fn test_blocked_account_cannot_receive_asset(
     Ok(())
 }
 
-// ON_ASSET_ADDED_TO_NOTE TESTS
+// ON_BEFORE_NOTE_SEALED TESTS
 // ================================================================================================
 
-/// Tests that a blocked account cannot add a callbacks-enabled asset to an output note.
+/// Tests that a blocked account cannot seal an output note holding a callbacks-enabled asset.
 #[rstest::rstest]
 #[case::fungible(
     |faucet_id| {
@@ -512,7 +530,7 @@ async fn test_blocked_account_cannot_receive_asset(
     }
 )]
 #[tokio::test]
-async fn test_blocked_account_cannot_add_asset_to_note(
+async fn test_blocked_account_cannot_seal_note_with_asset(
     #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -526,9 +544,9 @@ async fn test_blocked_account_cannot_add_asset_to_note(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Build a tx script that creates a private output note and adds the callbacks-enabled asset.
-    // We use a private note to avoid the public note details requirement in the advice provider.
-    let recipient = Word::from([0u32, 1, 2, 3]);
+    // Build a tx script that creates a private output note, adds the callbacks-enabled asset and
+    // seals the note. We use a private note to avoid the public note details requirement in the
+    // advice provider.
     let script_code = format!(
         r#"
         use miden::protocol::output_note
@@ -539,13 +557,21 @@ async fn test_blocked_account_cannot_add_asset_to_note(
             push.{note_type}
             push.{tag}
             call.::miden::standards::note::note_creator::create_note
+            # => [note_idx, pad(15)]
 
-            push.{asset_value}
-            push.{asset_id}
+            dup push.{asset_value} push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
             exec.output_note::add_asset
+            # => [note_idx, pad(15)]
+
+            exec.output_note::seal
+            # => [pad(15)]
+
+            exec.::miden::core::sys::truncate_stack
         end
         "#,
-        recipient = recipient,
+        recipient = Word::from([0u32, 1, 2, 3]),
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
         asset_value = asset.to_value_word(),
@@ -569,13 +595,75 @@ async fn test_blocked_account_cannot_add_asset_to_note(
     Ok(())
 }
 
-/// Tests that the `on_before_asset_added_to_note` callback receives the correct inputs.
+/// Tests that adding a callbacks-enabled asset to a sealed note fails with the sealed-note error
+/// without invoking the faucet's callback, which would reject the blocked account.
+#[tokio::test]
+async fn test_add_asset_to_sealed_note_does_not_invoke_callback() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_note_creator(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
+    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let script_code = format!(
+        r#"
+        use miden::protocol::output_note
+
+        @transaction_script
+        pub proc main
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::miden::standards::note::note_creator::create_note
+            # => [note_idx, pad(15)]
+
+            # the note holds no assets, so sealing it invokes no callback
+            dup exec.output_note::seal
+            # => [note_idx, pad(15)]
+
+            push.{asset_value} push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(15)]
+
+            exec.output_note::add_asset
+            # => [pad(16)]
+
+            exec.::miden::core::sys::truncate_stack
+        end
+        "#,
+        recipient = Word::from([0u32, 1, 2, 3]),
+        note_type = NoteType::Private as u8,
+        tag = NoteTag::default(),
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+    );
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_transaction(target_account.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+
+    Ok(())
+}
+
+/// Tests that the `on_before_note_sealed` callback receives the correct inputs, runs before the
+/// note is sealed and can read the note's assets.
 ///
 /// Creates two output notes so that the asset is added to note at index 1, verifying that
 /// `note_idx` is correctly passed to the callback (using 1 instead of the default element of 0).
 #[tokio::test]
-async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -> anyhow::Result<()>
-{
+async fn test_on_before_note_sealed_callback_receives_correct_inputs() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create the account first so we know its ID before building the faucet.
@@ -585,47 +673,59 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
     let amount: u64 = 100;
 
-    // MASM callback that asserts the inputs match expected values.
+    // MASM callback that asserts the inputs and the note's assets match expected values.
     let note_callback_masm = format!(
         r#"
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [pad(16)]
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    @locals(8)
     @account_procedure
-    pub proc on_before_asset_added_to_note
+    pub proc on_before_note_sealed
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
-        # => [native_account_suffix, native_account_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        # => [native_account_suffix, native_account_prefix, note_idx, pad(15)]
         push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
-        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        # => [note_idx, pad(15)]
 
         # Assert note_idx == 1 (we create two notes, adding the asset to the second one)
-        dup.8 push.1 assert_eq.err=ERR_WRONG_NOTE_IDX
-        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        dup push.1 assert_eq.err=ERR_WRONG_NOTE_IDX
+        # => [note_idx, pad(15)]
+
+        dup exec.::miden::protocol::output_note::is_sealed
+        assertz.err="callback ran after the note was sealed"
+        # => [note_idx, pad(15)]
+
+        locaddr.0 exec.::miden::protocol::output_note::get_assets
+        # => [num_assets, pad(15)]
+
+        push.1 assert_eq.err="callback read an unexpected number of note assets"
+        # => [pad(16)]
 
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, pad(16)]
         exec.::miden::standards::assets::fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, pad(16)]
+
+        locaddr.0 exec.::miden::protocol::asset::load
+        # => [ASSET_ID, ASSET_VALUE, EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, pad(16)]
 
         movupw.2
-        assert_eqw.err="callback received unexpected asset ID"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        assert_eqw.err="callback read an unexpected asset ID"
+        # => [ASSET_VALUE, EXPECTED_ASSET_VALUE, pad(16)]
 
-        assert_eqw.err="callback received unexpected asset value"
-        # => [note_idx, pad(7)]
-
-        drop
+        assert_eqw.err="callback read an unexpected asset value"
         # => [pad(16)]
     end
     "#
     );
 
-    let faucet = add_faucet_with_callbacks(&mut builder, None, Some(&note_callback_masm))?;
+    let faucet =
+        add_faucet_with_callbacks(&mut builder, [42; 32], None, Some(&note_callback_masm))?;
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
     // Consuming this note adds the asset to the wallet's vault.
@@ -637,17 +737,18 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Build a tx script that creates two output notes and moves the asset from vault to the
-    // second note (note_idx=1), so we can verify that the callback receives the correct
-    // note_idx.
+    // Build a tx script that creates two output notes, moves the asset from vault to the
+    // second note (note_idx=1) and seals it, so we can verify that the callback receives the
+    // correct note_idx.
     let script_code = format!(
         r#"
+        use miden::protocol::output_note
         use mock::util
 
         @transaction_script
         pub proc main
             # Create note 0 (just to consume index 0)
-            exec.util::create_default_note drop
+            exec.util::create_default_note exec.output_note::seal
             # => []
 
             # Create note 1
@@ -669,7 +770,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     // Execute the transaction: consume the P2ID note (asset enters vault), then move the asset
-    // to output note 1. Should succeed because all callback assertions pass.
+    // to output note 1 and seal it. Should succeed because all callback assertions pass.
     mock_chain
         .build_transaction(target_account.id())
         .authenticated_input_note(note.id())
@@ -678,6 +779,150 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Tests that sealing a note runs the `on_before_note_sealed` callback once per distinct faucet,
+/// in the order in which each faucet first occurs among the note's assets, and that sealing the
+/// note again runs no callback.
+///
+/// The callbacks observe their order through the transaction's expiration delta, which starts
+/// unset (0) and can only decrease: the callback of the faucet expected to run first asserts the
+/// delta is unset and sets it to `FIRST_DELTA`, the other one asserts `FIRST_DELTA` and sets
+/// `SECOND_DELTA`. A callback that runs out of order or more than once fails its assertion. The
+/// note holds an asset of the first faucet after an asset of the second one, so a callback per
+/// asset would also fail.
+#[rstest::rstest]
+#[case::first_occurrence_order(true)]
+#[case::reversed_order(false)]
+#[tokio::test]
+async fn test_note_sealed_callback_runs_once_per_faucet_in_first_occurrence_order(
+    #[case] first_faucet_occurs_first: bool,
+) -> anyhow::Result<()> {
+    const FIRST_DELTA: u16 = 200;
+    const SECOND_DELTA: u16 = 100;
+
+    let note_callback_masm = |expected_delta: u16, new_delta: u16| {
+        format!(
+            r#"
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    @account_procedure
+    pub proc on_before_note_sealed
+        dup exec.::miden::protocol::output_note::is_sealed
+        assertz.err="callback ran after the note was sealed"
+        # => [note_idx, pad(15)]
+
+        exec.::miden::protocol::tx::get_expiration_block_delta
+        push.{expected_delta} assert_eq.err="{ERR_UNEXPECTED_EXPIRATION_DELTA}"
+        # => [note_idx, pad(15)]
+
+        push.{new_delta} exec.::miden::protocol::tx::update_expiration_block_delta
+        # => [note_idx, pad(15)]
+
+        drop
+        # => [pad(16)]
+    end
+    "#,
+            ERR_UNEXPECTED_EXPIRATION_DELTA = ERR_UNEXPECTED_EXPIRATION_DELTA.message(),
+        )
+    };
+
+    let mut builder = MockChain::builder();
+    let first_faucet = add_faucet_with_callbacks(
+        &mut builder,
+        [42; 32],
+        None,
+        Some(&note_callback_masm(0, FIRST_DELTA)),
+    )?;
+    let second_faucet = add_faucet_with_callbacks(
+        &mut builder,
+        [43; 32],
+        None,
+        Some(&note_callback_masm(FIRST_DELTA, SECOND_DELTA)),
+    )?;
+
+    let first_fungible = Asset::from(FungibleAsset::new(first_faucet.id(), 10)?);
+    let second_fungible = Asset::from(FungibleAsset::new(second_faucet.id(), 20)?);
+    let first_non_fungible = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        first_faucet.id(),
+        vec![1, 2, 3],
+    )));
+    let second_non_fungible = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        second_faucet.id(),
+        vec![4, 5, 6],
+    )));
+
+    // Each faucet holds two separate assets in the note and the second faucet's asset sits
+    // between them.
+    let note_assets = if first_faucet_occurs_first {
+        [first_fungible, second_fungible, first_non_fungible, second_non_fungible]
+    } else {
+        [second_fungible, first_fungible, second_non_fungible, first_non_fungible]
+    };
+
+    let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, note_assets)?;
+    let mock_chain = builder.build()?;
+
+    let move_assets_code = note_assets
+        .iter()
+        .map(|asset| {
+            format!(
+                "push.{asset_value} push.{asset_id} dup.8
+                # => [note_idx, ASSET_ID, ASSET_VALUE, note_idx]
+                movdn.8 exec.util::move_asset_to_note
+                # => [note_idx]",
+                asset_value = asset.to_value_word(),
+                asset_id = asset.to_id_word(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        r#"
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            exec.util::create_default_note
+            # => [note_idx]
+
+            {move_assets_code}
+
+            # sealing again is a no-op that runs no callback
+            dup exec.output_note::seal
+            exec.output_note::seal
+            # => []
+        end
+        "#
+    ))?;
+
+    let foreign_accounts = vec![
+        mock_chain.get_foreign_account_inputs(first_faucet.id())?,
+        mock_chain.get_foreign_account_inputs(second_faucet.id())?,
+    ];
+
+    let result = mock_chain
+        .build_transaction(sender.id())
+        .tx_script(tx_script)
+        .foreign_accounts(foreign_accounts)
+        .build()?
+        .execute()
+        .await;
+
+    if first_faucet_occurs_first {
+        let executed_tx = result?;
+        assert_eq!(executed_tx.output_notes().get_note(0).assets().num_assets(), 4);
+        assert_eq!(
+            executed_tx.expiration_block_num(),
+            executed_tx.block_header().block_num() + u32::from(SECOND_DELTA)
+        );
+    } else {
+        assert_transaction_executor_error!(result, ERR_UNEXPECTED_EXPIRATION_DELTA);
+    }
 
     Ok(())
 }
@@ -724,9 +969,9 @@ async fn test_native_faucet_callback_can_call_non_mutating_kernel_procedures(
 )]
 #[case::output_note_create("padw push.0.0 exec.::miden::protocol::output_note::create")]
 #[case::output_note_add_asset("exec.::miden::protocol::output_note::add_asset")]
-#[case::output_note_seal("dup.8 exec.::miden::protocol::output_note::seal")]
+#[case::output_note_seal("dup exec.::miden::protocol::output_note::seal")]
 #[case::output_note_add_attachment(
-    "dup.8 padw push.1 exec.::miden::protocol::output_note::add_word_attachment"
+    "dup padw push.1 exec.::miden::protocol::output_note::add_word_attachment"
 )]
 #[tokio::test]
 async fn test_native_faucet_callback_cannot_modify_state(
@@ -759,7 +1004,8 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
     end
     "#;
 
-    let faucet = add_faucet_with_callbacks(&mut builder, Some(account_callback_masm), None)?;
+    let faucet =
+        add_faucet_with_callbacks(&mut builder, [42; 32], Some(account_callback_masm), None)?;
 
     let fungible_asset = FungibleAsset::new(faucet.id(), 100)?;
     let note = builder.add_p2id_note(
@@ -783,6 +1029,161 @@ async fn test_foreign_faucet_callback_cannot_remove_active_note_asset() -> anyho
         .await;
 
     assert_transaction_executor_error!(result, ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK);
+
+    Ok(())
+}
+
+/// Tests that the attachment returned by a faucet's `on_before_note_sealed` callback is appended
+/// to the note after the attachment the note's creator added, and that a callback returning
+/// attachment scheme 0 appends no attachment.
+///
+/// The transaction is also proven, so the prover host must build the same output note.
+#[rstest::rstest]
+#[case::returned_attachment(true)]
+#[case::no_returned_attachment(false)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_is_appended_to_note(
+    #[case] returns_attachment: bool,
+) -> anyhow::Result<()> {
+    let creator_attachment =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(10)?, Word::from([1, 2, 3, 4u32]));
+    let callback_attachment_scheme = NoteAttachmentScheme::new(20)?;
+    let callback_attachment_word = Word::from([5, 6, 7, 8u32]);
+
+    let note_callback_masm = note_sealed_callback_masm(
+        returns_attachment
+            .then_some((callback_attachment_scheme.as_u16(), callback_attachment_word)),
+    );
+    let (note, result) = execute_note_sealing_tx(
+        &[([42; 32], &note_callback_masm)],
+        vec![creator_attachment.clone()],
+    )
+    .await?;
+    let executed_tx = result?;
+
+    let mut expected_attachments = vec![creator_attachment];
+    if returns_attachment {
+        expected_attachments
+            .push(NoteAttachment::with_word(callback_attachment_scheme, callback_attachment_word));
+    }
+    let expected_note = Note::with_attachments(
+        note.assets().clone(),
+        *note.metadata().partial_metadata(),
+        note.recipient().clone(),
+        NoteAttachments::new(expected_attachments)?,
+    );
+
+    let output_note = executed_tx.output_notes().get_note(0);
+    assert_eq!(output_note.attachments(), expected_note.attachments());
+    assert_eq!(output_note.id(), expected_note.id());
+
+    let proven_tx = LocalTransactionProver::default().prove(executed_tx)?;
+    assert_eq!(proven_tx.output_notes().get_note(0).id(), expected_note.id());
+
+    Ok(())
+}
+
+/// Tests that the attachments returned by the `on_before_note_sealed` callbacks of several faucets
+/// are appended in the order in which each faucet first occurs among the note's assets.
+#[rstest::rstest]
+#[case::first_faucet_occurs_first(true)]
+#[case::second_faucet_occurs_first(false)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachments_follow_callback_order(
+    #[case] first_faucet_occurs_first: bool,
+) -> anyhow::Result<()> {
+    let first = (21, Word::from([1, 1, 1, 1u32]));
+    let second = (22, Word::from([2, 2, 2, 2u32]));
+    let first_attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(first.0)?, first.1);
+    let second_attachment =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(second.0)?, second.1);
+    let first_callback_masm = note_sealed_callback_masm(Some(first));
+    let second_callback_masm = note_sealed_callback_masm(Some(second));
+
+    let first_faucet = ([42; 32], first_callback_masm.as_str());
+    let second_faucet = ([43; 32], second_callback_masm.as_str());
+    let (faucets, expected_attachments) = if first_faucet_occurs_first {
+        ([first_faucet, second_faucet], vec![first_attachment, second_attachment])
+    } else {
+        ([second_faucet, first_faucet], vec![second_attachment, first_attachment])
+    };
+
+    let (_, result) = execute_note_sealing_tx(&faucets, Vec::new()).await?;
+    let executed_tx = result?;
+
+    assert_eq!(
+        executed_tx.output_notes().get_note(0).attachments(),
+        &NoteAttachments::new(expected_attachments)?
+    );
+
+    Ok(())
+}
+
+/// Tests that the attachment returned by an `on_before_note_sealed` callback is validated like any
+/// other attachment and counts toward the note's limit of attachments, and that a callback cannot
+/// return an attachment commitment with attachment scheme 0.
+#[rstest::rstest]
+#[case::too_many_attachments(NoteAttachments::MAX_COUNT, 20, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
+#[case::invalid_scheme(1, u16::MAX, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
+#[case::commitment_without_scheme(
+    1,
+    0,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME
+)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_is_validated(
+    #[case] num_creator_attachments: usize,
+    #[case] callback_attachment_scheme: u16,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let creator_attachments = (1u16..)
+        .take(num_creator_attachments)
+        .map(|scheme| {
+            Ok(NoteAttachment::with_word(
+                NoteAttachmentScheme::new(scheme)?,
+                Word::from([u32::from(scheme); 4]),
+            ))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let note_callback_masm =
+        note_sealed_callback_masm(Some((callback_attachment_scheme, Word::from([5, 6, 7, 8u32]))));
+
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], creator_attachments).await?;
+
+    assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that sealing fails if an `on_before_note_sealed` callback returns an attachment
+/// commitment whose elements are not in the advice map.
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_without_advice_map_entry_fails() -> anyhow::Result<()>
+{
+    let note_callback_masm = format!(
+        "
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    @account_procedure
+    pub proc on_before_note_sealed
+        drop push.{attachment_commitment} push.20
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
+
+        exec.::miden::core::sys::truncate_stack
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    end
+    ",
+        attachment_commitment = Word::from([9, 9, 9, 9u32]),
+    );
+
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { .. }, .. }
+    );
 
     Ok(())
 }
@@ -848,8 +1249,8 @@ async fn test_new_account_with_callback_slot_and_disabled_flag_fails() -> anyhow
 /// Builds a fungible faucet with the block list callback component and adds it to the builder.
 ///
 /// The block list component registers both the account and note callbacks. When a
-/// callbacks-enabled asset is added to an account or note, the callback checks whether the
-/// native account is in the block list and panics if so.
+/// callbacks-enabled asset is added to an account or an output note holding one is sealed, the
+/// callback checks whether the native account is in the block list and panics if so.
 fn add_faucet_with_block_list(
     builder: &mut MockChainBuilder,
     blocked_accounts: impl IntoIterator<Item = AccountId>,
@@ -871,8 +1272,8 @@ fn add_faucet_with_block_list(
 /// Mints a callbacks-enabled asset from a faucet and sends it in a new output note, in a
 /// transaction against that faucet.
 ///
-/// Adding the asset to the note invokes the faucet's note callback in the native account context,
-/// which runs `callback_body` on the callback inputs and then drops them.
+/// Sealing the note invokes the faucet's note callback in the native account context, which runs
+/// `callback_body` on the callback inputs and then drops the note index.
 async fn mint_and_send_with_native_note_callback(
     callback_body: &str,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
@@ -890,14 +1291,14 @@ async fn mint_and_send_with_native_note_callback(
 
     let note_callback_masm = format!(
         r#"
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [pad(16)]
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
     @account_procedure
-    pub proc on_before_asset_added_to_note
+    pub proc on_before_note_sealed
         {callback_body}
-        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        # => [note_idx, pad(15)]
 
-        dropw dropw drop
+        drop
         # => [pad(16)]
     end
     "#
@@ -905,6 +1306,7 @@ async fn mint_and_send_with_native_note_callback(
 
     let faucet = add_faucet_with_callbacks(
         &mut builder,
+        [42; 32],
         Some(account_callback_masm),
         Some(&note_callback_masm),
     )?;
@@ -931,8 +1333,11 @@ async fn mint_and_send_with_native_note_callback(
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]
 
+            exec.::miden::protocol::output_note::seal
+            # => [pad(15)]
+
             # truncate the stack
-            dropw dropw dropw dropw
+            dropw dropw dropw drop drop drop
         end
         ",
         note_type = NoteType::Private as u8,
@@ -951,13 +1356,14 @@ async fn mint_and_send_with_native_note_callback(
         .await)
 }
 
-/// Builds a fungible faucet with custom callback MASM code and adds it to the builder.
+/// Builds a fungible faucet from `seed` with custom callback MASM code and adds it to the builder.
 ///
 /// `account_callback_masm` and `note_callback_masm` are optional MASM source for the
-/// `on_before_asset_added_to_account` and `on_before_asset_added_to_note` procedures. Each
+/// `on_before_asset_added_to_account` and `on_before_note_sealed` procedures. Each
 /// string should contain a complete `pub proc ... end` block including any constants needed.
 fn add_faucet_with_callbacks(
     builder: &mut MockChainBuilder,
+    seed: [u8; 32],
     account_callback_masm: Option<&str>,
     note_callback_masm: Option<&str>,
 ) -> anyhow::Result<Account> {
@@ -981,12 +1387,12 @@ fn add_faucet_with_callbacks(
     }
 
     if note_callback_masm.is_some() {
-        let path = format!("{component_name}::on_before_asset_added_to_note");
+        let path = format!("{component_name}::on_before_note_sealed");
         let proc_root = callback_code
             .as_package()
             .get_procedure_root_by_path(path.as_str())
             .expect("note callback procedure should exist");
-        callbacks = callbacks.on_before_asset_added_to_note(proc_root);
+        callbacks = callbacks.on_before_note_sealed(proc_root);
     }
 
     let faucet = FungibleFaucet::builder()
@@ -1002,7 +1408,7 @@ fn add_faucet_with_callbacks(
     let callback_component =
         AccountComponent::new(callback_code, callback_storage_slots, callback_metadata)?;
 
-    let account_builder = AccountBuilder::new([42; 32])
+    let account_builder = AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
@@ -1020,4 +1426,164 @@ fn add_faucet_with_callbacks(
         account_builder,
         AccountState::Exists,
     )
+}
+
+/// Returns the MASM source of an `on_before_note_sealed` callback that returns a single-word
+/// attachment with the provided scheme and word, or no attachment if `attachment` is `None`.
+///
+/// The callback puts the attachment word into the advice map under its commitment.
+fn note_sealed_callback_masm(attachment: Option<(u16, Word)>) -> String {
+    let Some((attachment_scheme, attachment_word)) = attachment else {
+        return String::from(
+            "
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [0, EMPTY_WORD, pad(11)]
+    @account_procedure
+    pub proc on_before_note_sealed
+        drop
+        # => [0, EMPTY_WORD, pad(11)]
+    end
+    ",
+        );
+    };
+
+    format!(
+        "
+    #! Inputs:  [note_idx, pad(15)]
+    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    @locals(4)
+    @account_procedure
+    pub proc on_before_note_sealed
+        drop
+        # => [pad(16)]
+
+        push.{attachment_word} loc_storew_le.0
+        exec.::miden::core::crypto::hashes::eidos::hash
+        # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+        locaddr.0 dup add.4 movdn.5 movdn.4
+        # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+        adv.insert_mem
+        movup.4 drop movup.4 drop
+        # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+        push.{attachment_scheme}
+        exec.::miden::core::sys::truncate_stack
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    end
+    "
+    )
+}
+
+/// Executes a transaction in which the native account creates a private output note, adds the
+/// single-word `creator_attachments` to it, moves one asset of each of the `faucets` into it and
+/// seals it.
+///
+/// Each entry of `faucets` is the seed of a faucet and the MASM source of its
+/// `on_before_note_sealed` callback. The note holds the faucets' assets in the order of `faucets`.
+///
+/// Returns the note as the transaction script creates it, i.e. without the attachments returned by
+/// the callbacks, and the execution result.
+async fn execute_note_sealing_tx(
+    faucets: &[([u8; 32], &str)],
+    creator_attachments: Vec<NoteAttachment>,
+) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
+    let mut builder = MockChain::builder();
+    let faucets = faucets
+        .iter()
+        .map(|(seed, note_callback_masm)| {
+            add_faucet_with_callbacks(&mut builder, *seed, None, Some(note_callback_masm))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let assets = faucets
+        .iter()
+        .map(|faucet| Ok(Asset::from(FungibleAsset::new(faucet.id(), 100)?)))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let sender = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, assets.clone())?;
+    let mock_chain = builder.build()?;
+
+    let mut note_builder = NoteBuilder::new(sender.id(), EidosRandomCoin::new(Word::empty()))
+        .note_type(NoteType::Private)
+        .add_assets(assets);
+    for attachment in creator_attachments {
+        note_builder = note_builder.attachment(attachment);
+    }
+    let note = note_builder.build()?;
+
+    let move_assets_code = note
+        .assets()
+        .iter()
+        .map(|asset| {
+            format!(
+                "push.{asset_value} push.{asset_id} dup.8 movdn.8
+                # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+
+                exec.util::move_asset_to_note
+                # => [note_idx]",
+                asset_value = asset.to_value_word(),
+                asset_id = asset.to_id_word(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let add_attachments_code = note
+        .attachments()
+        .iter()
+        .map(|attachment| {
+            format!(
+                "dup push.{attachment_word} push.{attachment_scheme}
+                # => [attachment_scheme, ATTACHMENT, note_idx, note_idx]
+
+                exec.output_note::add_word_attachment
+                # => [note_idx]",
+                attachment_word = attachment.content().as_words()[0],
+                attachment_scheme = attachment.attachment_scheme().as_u16(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            push.{recipient} push.{note_type} push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            {move_assets_code}
+
+            {add_attachments_code}
+
+            exec.output_note::seal
+            # => [pad(15)]
+
+            exec.::miden::core::sys::truncate_stack
+        end
+        ",
+        recipient = note.recipient().digest(),
+        note_type = note.metadata().note_type() as u8,
+        tag = note.metadata().tag(),
+    ))?;
+
+    let foreign_accounts = faucets
+        .iter()
+        .map(|faucet| mock_chain.get_foreign_account_inputs(faucet.id()))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let result = mock_chain
+        .build_transaction(sender.id())
+        .tx_script(tx_script)
+        .foreign_accounts(foreign_accounts)
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute()
+        .await;
+
+    Ok((note, result))
 }

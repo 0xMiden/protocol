@@ -335,8 +335,8 @@ async fn production_mint_delivers_the_circle_amount_unrescaled() -> Result<()> {
 
     let p2id_id = minted.output_notes().get_note(0).id();
     let recipient = committed(&pf.mock_chain, pf.recipient_id)?;
-    // Consuming policed xUSDC fires the receive callback, so the faucet
-    // must be attached as a foreign account for the kernel to run basic_blocklist::check_policy.
+    // Consuming policed xUSDC fires the receive callback, so the faucet must be attached as a
+    // foreign account for the kernel to run basic_blocklist::check_receive_policy.
     let faucet_foreign = pf
         .mock_chain
         .get_foreign_account_inputs(pf.faucet_id)

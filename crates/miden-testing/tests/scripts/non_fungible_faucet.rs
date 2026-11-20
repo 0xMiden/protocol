@@ -25,8 +25,9 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -93,8 +94,8 @@ fn build_nft_faucet_from_component(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(mint_policy)
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -124,7 +125,10 @@ fn nft_mint_body(faucet_id: AccountId, commitment: Word, recipient: Word) -> Str
             # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT]
             call.::miden::standards::faucets::non_fungible::mint_and_send
             # => [note_idx, pad(15)]
-            dropw dropw dropw dropw
+
+            exec.::miden::protocol::output_note::seal
+            # => [pad(15)]
+            dropw dropw dropw drop drop drop
         ",
         note_type = NoteType::Private as u8,
         tag = 0u32,
@@ -678,6 +682,7 @@ fn build_nft_faucet_with_blocklist(
     owner: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
+    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
@@ -692,8 +697,8 @@ fn build_nft_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_blocklist(initial_blocked))
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
                 .build(),
         )
         .with_component(Pausable::unpaused())
