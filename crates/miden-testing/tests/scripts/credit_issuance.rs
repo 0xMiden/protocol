@@ -515,6 +515,7 @@ fn create_nft_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Ac
         AccessControl::Ownable2Step { owner },
         token_policy_manager,
         fee_policy_manager,
+        [],
     )?)
 }
 

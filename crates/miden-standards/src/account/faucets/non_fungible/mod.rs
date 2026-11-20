@@ -583,6 +583,11 @@ fn registers_min_burn_amount_policy(token_policy_manager: &TokenPolicyManager) -
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
 /// signature.
 ///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
+///
 /// # Errors
 ///
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
@@ -597,6 +602,7 @@ pub fn create_singlesig_user_non_fungible_faucet(
     auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, NonFungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -614,6 +620,7 @@ pub fn create_singlesig_user_non_fungible_faucet(
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -621,6 +628,11 @@ pub fn create_singlesig_user_non_fungible_faucet(
 }
 
 /// Creates a new **user-account** non-fungible faucet authenticated by a multisig approver set.
+///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
 ///
 /// # Errors
 ///
@@ -636,6 +648,7 @@ pub fn create_multisig_user_non_fungible_faucet(
     auth_component: AuthMultisig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, NonFungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -653,6 +666,7 @@ pub fn create_multisig_user_non_fungible_faucet(
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -660,6 +674,11 @@ pub fn create_multisig_user_non_fungible_faucet(
 }
 
 /// Creates a new **user-account** non-fungible faucet authenticated by a guardian-backed multisig.
+///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
 ///
 /// # Errors
 ///
@@ -675,6 +694,7 @@ pub fn create_guarded_user_non_fungible_faucet(
     auth_component: AuthGuardedMultisig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, NonFungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -692,6 +712,7 @@ pub fn create_guarded_user_non_fungible_faucet(
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -715,6 +736,11 @@ pub fn create_guarded_user_non_fungible_faucet(
 /// administrator must allowlist its script root through a
 /// [`NetworkAccountConfigNote`](crate::note::config::NetworkAccountConfigNote).
 ///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
+///
 /// # Errors
 ///
 /// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
@@ -730,6 +756,7 @@ pub fn create_network_non_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
     fee_policy_manager: FeePolicyManager,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, NonFungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -749,6 +776,7 @@ pub fn create_network_non_fungible_faucet(
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()

@@ -113,7 +113,9 @@ impl SendPolicy {
     /// blocked on the issuing faucet.
     ///
     /// The list lives in the [`BlocklistStorage`] component, which must be installed on the
-    /// account as well. Without it the account still builds, but the policy fails every send by an
+    /// account as well, e.g. as an extra component of a faucet factory such as
+    /// [`create_network_fungible_faucet`](crate::account::faucets::create_network_fungible_faucet).
+    /// Without it the account still builds, but the policy fails every send by an
     /// account other than the faucet, since the list's storage slot does not exist.
     pub fn with_basic_blocklist() -> Self {
         Self {
@@ -126,7 +128,9 @@ impl SendPolicy {
     /// allowed on the issuing faucet.
     ///
     /// The list lives in the [`AllowlistStorage`] component, which must be installed on the
-    /// account as well. Without it the account still builds, but the policy fails every send by an
+    /// account as well, e.g. as an extra component of a faucet factory such as
+    /// [`create_network_fungible_faucet`](crate::account::faucets::create_network_fungible_faucet).
+    /// Without it the account still builds, but the policy fails every send by an
     /// account other than the faucet, since the list's storage slot does not exist.
     pub fn with_basic_allowlist() -> Self {
         Self {
@@ -236,7 +240,9 @@ impl ReceivePolicy {
     /// that is blocked on the issuing faucet.
     ///
     /// The list lives in the [`BlocklistStorage`] component, which must be installed on the
-    /// account as well. Without it the account still builds, but the policy fails every receive by
+    /// account as well, e.g. as an extra component of a faucet factory such as
+    /// [`create_network_fungible_faucet`](crate::account::faucets::create_network_fungible_faucet).
+    /// Without it the account still builds, but the policy fails every receive by
     /// an account other than the faucet, since the list's storage slot does not exist.
     pub fn with_basic_blocklist() -> Self {
         Self {
@@ -249,7 +255,9 @@ impl ReceivePolicy {
     /// that is not allowed on the issuing faucet.
     ///
     /// The list lives in the [`AllowlistStorage`] component, which must be installed on the
-    /// account as well. Without it the account still builds, but the policy fails every receive by
+    /// account as well, e.g. as an extra component of a faucet factory such as
+    /// [`create_network_fungible_faucet`](crate::account::faucets::create_network_fungible_faucet).
+    /// Without it the account still builds, but the policy fails every receive by
     /// an account other than the faucet, since the list's storage slot does not exist.
     pub fn with_basic_allowlist() -> Self {
         Self {

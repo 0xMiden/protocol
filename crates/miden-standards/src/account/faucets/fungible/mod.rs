@@ -533,6 +533,11 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
 /// signature.
 ///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
+///
 /// # Errors
 ///
 /// Returns [`FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if `token_policy_manager`
@@ -544,6 +549,7 @@ pub fn create_singlesig_user_fungible_faucet(
     auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, FungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -558,6 +564,7 @@ pub fn create_singlesig_user_fungible_faucet(
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -565,6 +572,11 @@ pub fn create_singlesig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a multisig approver set.
+///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
 ///
 /// # Errors
 ///
@@ -577,6 +589,7 @@ pub fn create_multisig_user_fungible_faucet(
     auth_component: AuthMultisig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, FungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -591,6 +604,7 @@ pub fn create_multisig_user_fungible_faucet(
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -598,6 +612,11 @@ pub fn create_multisig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a guardian-backed multisig.
+///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
 ///
 /// # Errors
 ///
@@ -610,6 +629,7 @@ pub fn create_guarded_user_fungible_faucet(
     auth_component: AuthGuardedMultisig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, FungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -624,6 +644,7 @@ pub fn create_guarded_user_fungible_faucet(
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -640,6 +661,11 @@ pub fn create_guarded_user_fungible_faucet(
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) for the wallet and default note
 /// allowlist that come with the auth component.
 ///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
+///
 /// # Errors
 ///
 /// Returns [`FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if `token_policy_manager`
@@ -652,6 +678,7 @@ pub fn create_network_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
     fee_policy_manager: FeePolicyManager,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, FungibleFaucetError> {
     // TODO: remove with the general component dependency mechanism, see
     // `super::registers_owner_only_policy`.
@@ -668,6 +695,7 @@ pub fn create_network_fungible_faucet(
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_components(extra_components)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
@@ -682,6 +710,11 @@ pub fn create_network_fungible_faucet(
 ///
 /// The faucet is owned by `operator_id` through [`AccessControl::Ownable2Step`].
 ///
+/// `extra_components` are installed next to the components `token_policy_manager` yields. A faucet
+/// with a basic blocklist or allowlist policy passes the matching
+/// [`BlocklistStorage`](crate::account::policies::BlocklistStorage) or
+/// [`AllowlistStorage`](crate::account::policies::AllowlistStorage) here.
+///
 /// # Warning
 ///
 /// This account can only be added at genesis. It cannot be deployed in a transaction.
@@ -691,6 +724,7 @@ pub fn create_native_fungible_faucet_for_genesis(
     operator_id: AccountId,
     token_policy_manager: TokenPolicyManager,
     fee_policy: BasicConstantFeePolicy,
+    extra_components: impl IntoIterator<Item = AccountComponent>,
 ) -> Result<Account, FungibleFaucetError> {
     let fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(operator_id)
@@ -702,6 +736,7 @@ pub fn create_native_fungible_faucet_for_genesis(
         AccessControl::Ownable2Step { owner: operator_id },
         token_policy_manager,
         fee_policy_manager,
+        extra_components,
     )?;
 
     let fee_asset_id = AssetId::new_fungible(account.id());

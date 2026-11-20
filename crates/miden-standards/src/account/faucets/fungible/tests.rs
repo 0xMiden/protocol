@@ -73,6 +73,7 @@ fn user_fungible_faucet_with_single_sig() {
         auth_component,
         allow_all_policy_manager(),
         AccountType::Private,
+        [],
     )
     .unwrap();
 
@@ -132,6 +133,7 @@ fn user_fungible_faucet_with_multisig() {
         auth_component,
         allow_all_policy_manager(),
         AccountType::Private,
+        [],
     )
     .unwrap();
 
@@ -169,6 +171,7 @@ fn user_fungible_faucet_with_guarded_multisig() {
         auth_component,
         allow_all_policy_manager(),
         AccountType::Private,
+        [],
     )
     .unwrap();
 
@@ -203,6 +206,7 @@ fn network_fungible_faucet_with_ownable2step() {
         AccessControl::Ownable2Step { owner },
         allow_all_policy_manager(),
         FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        [],
     )
     .expect("Ownable2Step network faucet should be accepted");
 }
@@ -221,6 +225,7 @@ fn network_fungible_faucet_allowlists_expiration_tx_script() {
         AccessControl::Ownable2Step { owner },
         allow_all_policy_manager(),
         FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        [],
     )
     .unwrap();
 
@@ -299,6 +304,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         AuthSingleSig::new(approver),
         token_policy_manager.clone(),
         AccountType::Private,
+        [],
     )
     .unwrap();
     assert_eq!(singlesig.id().asset_callback_flag(), expected_flag);
@@ -309,6 +315,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         user_faucet_multisig(sample_approvers(3), 2).unwrap(),
         token_policy_manager.clone(),
         AccountType::Private,
+        [],
     )
     .unwrap();
     assert_eq!(multisig.id().asset_callback_flag(), expected_flag);
@@ -319,6 +326,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         user_faucet_guarded(sample_approvers(3), 2, GuardianConfig::new(approver)).unwrap(),
         token_policy_manager.clone(),
         AccountType::Private,
+        [],
     )
     .unwrap();
     assert_eq!(guarded.id().asset_callback_flag(), expected_flag);
@@ -330,6 +338,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         AccessControl::Ownable2Step { owner },
         token_policy_manager,
         FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        [],
     )
     .unwrap();
     assert_eq!(network.id().asset_callback_flag(), expected_flag);
@@ -366,6 +375,7 @@ fn user_fungible_faucet_rejects_owner_only_mint_policy() {
         auth_component,
         owner_only_mint_policy_manager(),
         AccountType::Private,
+        [],
     )
     .expect_err("owner-only mint policy without Ownable2Step should be rejected");
 
@@ -387,6 +397,7 @@ fn user_fungible_faucet_rejects_reserved_owner_only_burn_policy() {
         auth_component,
         reserved_owner_only_burn_policy_manager(),
         AccountType::Private,
+        [],
     )
     .expect_err("reserved owner-only burn policy without Ownable2Step should be rejected");
 
@@ -410,6 +421,7 @@ fn network_fungible_faucet_rejects_owner_only_policy_under_rbac() {
         },
         owner_only_mint_policy_manager(),
         FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        [],
     )
     .expect_err("owner-only mint policy under RBAC access control should be rejected");
 
@@ -429,6 +441,7 @@ fn network_fungible_faucet_accepts_owner_only_policy_under_ownable2step() {
         AccessControl::Ownable2Step { owner },
         owner_only_mint_policy_manager(),
         FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        [],
     )
     .expect("owner-only mint policy is satisfied by the Ownable2Step access control");
 
