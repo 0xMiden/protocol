@@ -1,0 +1,79 @@
+# miden::standards::faucets::supply_restriction::manager
+#
+# Authority-gated supply restriction administration. Wraps the helpers from
+# `miden::standards::faucets::supply_restriction` with the account-wide `Authority` component.
+#
+# Companion components required on the faucet:
+# - `Authority`.
+# - The fungible faucet component — provides the token config slot that `confiscate` updates.
+
+use {AccountId, AssetAmount} from miden::protocol::types
+use miden::standards::access::authority
+use miden::standards::faucets::supply_restriction
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Freezes the given amount of the account's balance.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, amount, pad(13)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - the account ID is not structurally valid.
+#! - amount exceeds the maximum fungible asset amount.
+#! - the frozen plus confiscated amount of the account after freezing exceeds the maximum fungible
+#!   asset amount.
+#!
+#! Invocation: call
+@account_procedure
+pub proc freeze(account_id: AccountId, amount: AssetAmount)
+    exec.authority::assert_authorized
+    # => [account_id_suffix, account_id_prefix, amount, pad(13)]
+
+    exec.supply_restriction::freeze
+    # => [pad(16)]
+end
+
+#! Unfreezes the given amount of the account's frozen balance.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, amount, pad(13)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - amount exceeds the frozen amount of the account.
+#!
+#! Invocation: call
+@account_procedure
+pub proc unfreeze(account_id: AccountId, amount: AssetAmount)
+    exec.authority::assert_authorized
+    # => [account_id_suffix, account_id_prefix, amount, pad(13)]
+
+    exec.supply_restriction::unfreeze
+    # => [pad(16)]
+end
+
+#! Confiscates the given amount of the account's balance and removes it from the token supply.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, amount, pad(13)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - the account ID is not structurally valid.
+#! - amount exceeds the maximum fungible asset amount.
+#! - amount exceeds the token supply of the faucet.
+#! - the frozen plus confiscated amount of the account after confiscating exceeds the maximum
+#!   fungible asset amount.
+#!
+#! Invocation: call
+@account_procedure
+pub proc confiscate(account_id: AccountId, amount: AssetAmount)
+    exec.authority::assert_authorized
+    # => [account_id_suffix, account_id_prefix, amount, pad(13)]
+
+    exec.supply_restriction::confiscate
+    # => [pad(16)]
+end

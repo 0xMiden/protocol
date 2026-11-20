@@ -19,6 +19,7 @@ use self::config::{
     OwnerConfigNote,
     PauseConfigNote,
     RbacConfigNote,
+    SupplyRestrictionConfigNote,
 };
 
 pub mod config;
@@ -91,6 +92,7 @@ pub enum StandardNote {
     PAUSE_CONFIG,
     OWNER_CONFIG,
     RBAC_CONFIG,
+    SUPPLY_RESTRICTION_CONFIG,
     AUTHORITY_CONFIG,
     NETWORK_ACCOUNT_CONFIG,
     UPGRADE,
@@ -156,6 +158,9 @@ impl StandardNote {
         if root == RbacConfigNote::script_root() {
             return Some(Self::RBAC_CONFIG);
         }
+        if root == SupplyRestrictionConfigNote::script_root() {
+            return Some(Self::SUPPLY_RESTRICTION_CONFIG);
+        }
         if root == AuthorityConfigNote::script_root() {
             return Some(Self::AUTHORITY_CONFIG);
         }
@@ -196,6 +201,7 @@ impl StandardNote {
             Self::PAUSE_CONFIG => "PAUSE_CONFIG",
             Self::OWNER_CONFIG => "OWNER_CONFIG",
             Self::RBAC_CONFIG => "RBAC_CONFIG",
+            Self::SUPPLY_RESTRICTION_CONFIG => "SUPPLY_RESTRICTION_CONFIG",
             Self::AUTHORITY_CONFIG => "AUTHORITY_CONFIG",
             Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
             Self::UPGRADE => "UPGRADE",
@@ -232,6 +238,9 @@ impl StandardNote {
             Self::PAUSE_CONFIG => NumStorageItems::Exact(PauseConfigNote::NUM_STORAGE_ITEMS),
             Self::OWNER_CONFIG => OwnerConfigNote::NUM_STORAGE_ITEMS,
             Self::RBAC_CONFIG => RbacConfigNote::NUM_STORAGE_ITEMS,
+            Self::SUPPLY_RESTRICTION_CONFIG => {
+                NumStorageItems::Exact(SupplyRestrictionConfigNote::NUM_STORAGE_ITEMS)
+            },
             Self::AUTHORITY_CONFIG => AuthorityConfigNote::NUM_STORAGE_ITEMS,
             Self::NETWORK_ACCOUNT_CONFIG => {
                 NumStorageItems::Exact(NetworkAccountConfigNote::NUM_STORAGE_ITEMS)
@@ -260,6 +269,7 @@ impl StandardNote {
             Self::PAUSE_CONFIG => PauseConfigNote::script(),
             Self::OWNER_CONFIG => OwnerConfigNote::script(),
             Self::RBAC_CONFIG => RbacConfigNote::script(),
+            Self::SUPPLY_RESTRICTION_CONFIG => SupplyRestrictionConfigNote::script(),
             Self::AUTHORITY_CONFIG => AuthorityConfigNote::script(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script(),
             Self::UPGRADE => UpgradeNote::script(),
@@ -286,6 +296,7 @@ impl StandardNote {
             Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
             Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
             Self::RBAC_CONFIG => RbacConfigNote::script_root(),
+            Self::SUPPLY_RESTRICTION_CONFIG => SupplyRestrictionConfigNote::script_root(),
             Self::AUTHORITY_CONFIG => AuthorityConfigNote::script_root(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script_root(),
             Self::UPGRADE => UpgradeNote::script_root(),

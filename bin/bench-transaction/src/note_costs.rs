@@ -50,6 +50,7 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::PAUSE_CONFIG),
             PricedNote::Standard(StandardNote::OWNER_CONFIG),
             PricedNote::Standard(StandardNote::RBAC_CONFIG),
+            PricedNote::Standard(StandardNote::SUPPLY_RESTRICTION_CONFIG),
             PricedNote::Standard(StandardNote::AUTHORITY_CONFIG),
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG),
             PricedNote::Standard(StandardNote::UPGRADE),
@@ -117,6 +118,9 @@ impl PricedNote {
             },
             PricedNote::Standard(StandardNote::RBAC_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeRbacConfigNetwork]
+            },
+            PricedNote::Standard(StandardNote::SUPPLY_RESTRICTION_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeSupplyRestrictionConfigNetwork]
             },
             PricedNote::Standard(StandardNote::AUTHORITY_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeAuthorityConfigNetwork]

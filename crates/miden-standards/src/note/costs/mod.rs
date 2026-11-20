@@ -41,6 +41,7 @@ use crate::note::config::{
     OwnerConfigNote,
     PauseConfigNote,
     RbacConfigNote,
+    SupplyRestrictionConfigNote,
 };
 use crate::note::{
     BurnNote,
@@ -139,6 +140,9 @@ impl StandardNote {
             StandardNote::PAUSE_CONFIG => Some(NoteCost::of::<PauseConfigNote>()),
             StandardNote::OWNER_CONFIG => Some(NoteCost::of::<OwnerConfigNote>()),
             StandardNote::RBAC_CONFIG => Some(NoteCost::of::<RbacConfigNote>()),
+            StandardNote::SUPPLY_RESTRICTION_CONFIG => {
+                Some(NoteCost::of::<SupplyRestrictionConfigNote>())
+            },
             StandardNote::AUTHORITY_CONFIG => Some(NoteCost::of::<AuthorityConfigNote>()),
             StandardNote::NETWORK_ACCOUNT_CONFIG => {
                 Some(NoteCost::of::<NetworkAccountConfigNote>())
@@ -188,6 +192,10 @@ mod tests {
             (PauseConfigNote::script_root(), PAUSE_CONFIG_CONSUMPTION_CYCLES),
             (OwnerConfigNote::script_root(), OWNER_CONFIG_CONSUMPTION_CYCLES),
             (RbacConfigNote::script_root(), RBAC_CONFIG_CONSUMPTION_CYCLES),
+            (
+                SupplyRestrictionConfigNote::script_root(),
+                SUPPLY_RESTRICTION_CONFIG_CONSUMPTION_CYCLES,
+            ),
             (AuthorityConfigNote::script_root(), AUTHORITY_CONFIG_CONSUMPTION_CYCLES),
             (
                 NetworkAccountConfigNote::script_root(),

@@ -50,7 +50,7 @@ use miden_standards::errors::standards::{
     ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT,
     ERR_BURN_ASSET_MISMATCH,
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
-    ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
+    ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
@@ -713,7 +713,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
         .execute()
         .await;
 
-    assert_transaction_executor_error!(tx, ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY);
+    assert_transaction_executor_error!(tx, ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY);
     Ok(())
 }
 

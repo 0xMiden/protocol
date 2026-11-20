@@ -8,6 +8,7 @@ use crate::utils::FixedWidthStringError;
 
 mod fungible;
 mod non_fungible;
+mod supply_restriction;
 #[cfg(test)]
 mod test_utils;
 mod token_metadata;
@@ -31,6 +32,7 @@ pub use non_fungible::{
     create_network_non_fungible_faucet,
     create_singlesig_user_non_fungible_faucet,
 };
+pub use supply_restriction::TokenSupplyRestriction;
 pub use token_metadata::{Description, ExternalUri, LogoUri, TokenMetadata, TokenName};
 
 // OWNER-ONLY POLICY DEPENDENCY CHECK
