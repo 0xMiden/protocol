@@ -179,7 +179,7 @@ proc encrypt_note_details(note_idx: u16) -> (u16, NoteAttachmentCommitment)
     dup exec.output_note::get_recipient
     # => [RECIPIENT, note_idx]
 
-    exec.get_recipient_preimage
+    exec.get_recipient_details
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, note_idx]
 
     loc_storew_le.ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC dropw
@@ -249,7 +249,7 @@ end
 #! - the returned values do not hash to RECIPIENT.
 #!
 #! Invocation: exec
-proc get_recipient_preimage(
+proc get_recipient_details(
     recipient: NoteRecipient
 ) -> (NoteSerialNumber, NoteScriptRoot, NoteStorageCommitment)
     dupw exec.load_recipient_preimage_entry
