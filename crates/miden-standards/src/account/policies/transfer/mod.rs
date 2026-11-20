@@ -159,7 +159,9 @@ impl SendPolicy {
     ///
     /// Resolves to [`EncryptedAssetsSendPolicy::send_root`] and ships the companion
     /// [`EncryptedAssetsSendPolicy`] component and `issuer_key` as the component that installs
-    /// the key. That component has no setter, so a compromised issuer key cannot be rotated yet.
+    /// the key. That component has no setter, so a compromised issuer key cannot be rotated yet
+    /// (see [`EncryptedAssetsIssuerKey`]). The manager installs the components of a policy root
+    /// once, so registering this policy again with another key keeps the first key.
     ///
     /// A private note seals only if the transaction's advice map holds its recipient preimage, so
     /// a note whose creator knows only its recipient digest cannot hold the faucet's assets. A

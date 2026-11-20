@@ -15,7 +15,8 @@ use miden::standards::attachments::encrypted_assets
 #! issuer key in the issuing faucet's storage (see `encrypted_assets::build_attachment`) and limits
 #! the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
 #! reference block. A send policy that combines other checks with the attachment executes its
-#! checks and then `exec`s this procedure with its own inputs.
+#! checks and then `exec`s this procedure with its own inputs, i.e. with the stack exactly
+#! `[note_idx, pad(15)]`.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
