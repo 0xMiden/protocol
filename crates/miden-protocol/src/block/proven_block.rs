@@ -4,7 +4,13 @@ use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
-use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
+use crate::block::{
+    BlockBody,
+    BlockHeader,
+    BlockNumber,
+    BlockSignatures,
+    SignatureVerificationError,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -21,14 +27,8 @@ use crate::vm::ExecutionProof;
 pub enum ProvenBlockError {
     #[error("block proof contains precompiles")]
     BlockProofContainsPrecompiles,
-    #[error(
-        "proven block has {actual} signatures but its parent's validator set has {expected} keys"
-    )]
-    SignatureCountMismatch { expected: usize, actual: usize },
-    #[error(
-        "proven block signature at position {position} does not verify against the parent's validator key at that position"
-    )]
-    InvalidSignatureAtPosition { position: usize },
+    #[error("proven block signatures do not verify against the parent's validator set")]
+    InvalidSignatures(#[source] SignatureVerificationError),
     #[error(
         "header tx commitment ({header_tx_commitment}) does not match body tx commitment ({body_tx_commitment})"
     )]
@@ -56,12 +56,7 @@ pub enum ProvenBlockError {
 impl From<ParentValidationError> for ProvenBlockError {
     fn from(err: ParentValidationError) -> Self {
         match err {
-            ParentValidationError::SignatureCountMismatch { expected, actual } => {
-                Self::SignatureCountMismatch { expected, actual }
-            },
-            ParentValidationError::InvalidSignatureAtPosition { position } => {
-                Self::InvalidSignatureAtPosition { position }
-            },
+            ParentValidationError::InvalidSignatures(source) => Self::InvalidSignatures(source),
             ParentValidationError::ParentNumberMismatch { expected, parent } => {
                 Self::ParentNumberMismatch { expected, parent }
             },
@@ -92,7 +87,7 @@ pub struct ProvenBlock {
     /// The body of the proven block.
     body: BlockBody,
 
-    /// The validators' positional signatures over the block header.
+    /// The validators' signatures over the block header.
     signatures: BlockSignatures,
 
     /// The execution proof of the block kernel over this block.
@@ -224,7 +219,7 @@ impl ProvenBlock {
         &self.body
     }
 
-    /// Returns the validators' positional signatures over the block header.
+    /// Returns the validators' signatures over the block header.
     pub fn signatures(&self) -> &BlockSignatures {
         &self.signatures
     }
@@ -331,17 +326,13 @@ mod tests {
         )
     }
 
-    /// Builds block 1 linked to `parent` and signed by `signers` over the validator set
-    /// `parent_keys` committed to by the parent. Here we only confirm `ProvenBlock::validate`
-    /// wires the signatures and parent header through to the shared check.
-    fn block_one(
-        parent: &BlockHeader,
-        parent_keys: &ValidatorConfig,
-        signers: &[SigningKey],
-    ) -> ProvenBlock {
+    /// Builds block 1 linked to `parent` and signed by `signers`. Here we only confirm
+    /// `ProvenBlock::validate` wires the signatures and parent header through to the shared
+    /// check.
+    fn block_one(parent: &BlockHeader, signers: &[SigningKey]) -> ProvenBlock {
         let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
-        let signatures = parent_keys.sign_all(signers, header.commitment());
+        let signatures = BlockSignatures::sign(signers, header.commitment());
         ProvenBlock::new_unchecked(
             header,
             empty_body(),
@@ -353,22 +344,22 @@ mod tests {
     #[test]
     fn validate_accepts_committed_signers() {
         let (signers, keys) = ValidatorConfig::random_with_signers(3);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
+        block_one(&parent, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn validate_accepts_single_validator() {
         let (signers, keys) = ValidatorConfig::random_with_signers(1);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
+        block_one(&parent, &signers).validate(Some(&parent)).unwrap();
     }
 
     #[test]
     fn rejects_proofs_with_precompiles() {
         let (signers, keys) = ValidatorConfig::random_with_signers(1);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        let block = block_one(&parent, &keys, &signers);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
+        let block = block_one(&parent, &signers);
         let (header, body, signatures, _) = block.into_parts();
 
         for proof in [
@@ -390,14 +381,14 @@ mod tests {
     #[test]
     fn validate_rejects_uncommitted_signers() {
         let (_, keys) = ValidatorConfig::random_with_signers(3);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
         let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
 
         // The block is signed by a full, valid validator set of the same size the parent never
         // committed.
-        let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
-        let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
+        let (impostor_signers, _) = ValidatorConfig::random_with_signers(3);
+        let signatures = BlockSignatures::sign(&impostor_signers, header.commitment());
         let block = ProvenBlock::new_unchecked(
             header,
             empty_body(),
@@ -406,6 +397,11 @@ mod tests {
         );
 
         let result = block.validate(Some(&parent));
-        assert!(matches!(result, Err(ProvenBlockError::InvalidSignatureAtPosition { .. })));
+        assert!(matches!(
+            result,
+            Err(ProvenBlockError::InvalidSignatures(
+                SignatureVerificationError::InvalidSignatureAtPosition { position: 0 }
+            ))
+        ));
     }
 }

@@ -196,9 +196,8 @@ impl MockChainBuilder {
 
     /// Sets the validator signing keys for genesis and subsequent blocks, until validator rotation.
     ///
-    /// By default, three random keys are generated. Supplied keys may be in any order; the genesis
-    /// [`ValidatorConfig`] and signatures follow the config's canonical public key order. All keys
-    /// must sign each block.
+    /// By default, three random keys are generated. Supplied keys may be in any order. All keys
+    /// sign each block.
     ///
     /// [`Self::build`] returns an error if the set is empty, contains duplicate keys, or exceeds
     /// [`ValidatorConfig::MAX_VALIDATORS`].
@@ -292,7 +291,7 @@ impl MockChainBuilder {
             nullifier_root,
             note_root,
             tx_commitment,
-            validator_config.clone(),
+            validator_config,
             fee_parameters,
             protocol_config.to_commitment(),
             None,
@@ -308,20 +307,7 @@ impl MockChainBuilder {
 
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
-        let signatures = BlockSignatures::new(
-            validator_config
-                .keys()
-                .iter()
-                .map(|key| {
-                    let signer = validator_secret_keys
-                        .iter()
-                        .find(|sk| &sk.public_key() == key)
-                        .expect("a signer should exist for every validator key");
-                    signer.sign(header.commitment())
-                })
-                .collect(),
-        )
-        .expect("signature count same as validator key count");
+        let signatures = BlockSignatures::sign(&validator_secret_keys, header.commitment());
         let block_proof = miden_protocol::testing::dummy_execution_proof();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 

@@ -16,16 +16,13 @@ use crate::{Felt, WORD_SIZE, Word, ZERO};
 // VALIDATOR CONFIG
 // ================================================================================================
 
-/// The ordered set of validator public keys authorized to sign a block, and how many of them must
-/// sign.
+/// The set of validator public keys authorized to sign a block, and how many of them must sign.
 ///
-/// The protocol does not support partial signing yet, so the quorum must be equal to the number of
-/// keys. The quorum stays a separate field because the block header commits to it. Thus a smaller
-/// quorum can be added later without a change to the shape of the commitment.
-///
-/// A block header commits to the [`ValidatorConfig`] authorized to sign the *next* block. A block's
-/// signatures are verified positionally against the validator set committed to by its parent: the
-/// signature in slot `i` is checked against the key at index `i` in this set.
+/// A block header commits to the [`ValidatorConfig`] authorized to sign the *next* block. A block
+/// is valid once at least [`ValidatorConfig::quorum`] of the validators committed to by its parent
+/// have signed it, see
+/// [`BlockSignatures::verify_against`](crate::block::BlockSignatures::verify_against). The quorum
+/// is at least one and at most the number of keys.
 ///
 /// The number of validators is not fixed by the protocol: a chain may run with a single validator
 /// and grow its validator set over time by rotating in a larger [`ValidatorConfig`] (see
@@ -62,7 +59,7 @@ impl ValidatorConfig {
     /// - `keys` is empty;
     /// - `keys` contains more than [`ValidatorConfig::MAX_VALIDATORS`] keys;
     /// - the set contains duplicate keys;
-    /// - `quorum` does not equal the number of keys.
+    /// - `quorum` is zero or greater than the number of keys.
     pub fn new(mut keys: Vec<PublicKey>, quorum: u16) -> Result<Self, ValidatorConfigError> {
         if keys.is_empty() {
             return Err(ValidatorConfigError::EmptySet);
@@ -70,11 +67,8 @@ impl ValidatorConfig {
         if keys.len() > Self::MAX_VALIDATORS {
             return Err(ValidatorConfigError::TooManyKeys { count: keys.len() });
         }
-        if usize::from(quorum) != keys.len() {
-            return Err(ValidatorConfigError::QuorumMustEqualValidatorCount {
-                quorum,
-                count: keys.len(),
-            });
+        if quorum == 0 || usize::from(quorum) > keys.len() {
+            return Err(ValidatorConfigError::QuorumOutOfRange { quorum, count: keys.len() });
         }
 
         // Sort into a canonical order so the commitment is independent of input order.
@@ -211,6 +205,16 @@ mod tests {
         Ok(())
     }
 
+    #[rstest::rstest]
+    #[case::single_signer(1)]
+    #[case::partial(2)]
+    #[case::all_validators(3)]
+    fn new_accepts_quorum_up_to_validator_count(#[case] quorum: u16) -> anyhow::Result<()> {
+        let config = ValidatorConfig::new(random_keys(3), quorum)?;
+        assert_eq!(config.quorum(), quorum);
+        Ok(())
+    }
+
     #[test]
     fn new_rejects_too_many_keys() {
         let result = ValidatorConfig::new(random_keys(ValidatorConfig::MAX_VALIDATORS + 1), 1);
@@ -230,13 +234,12 @@ mod tests {
 
     #[rstest::rstest]
     #[case::zero_quorum(0)]
-    #[case::quorum_below_validator_count(2)]
     #[case::quorum_above_validator_count(4)]
-    fn new_rejects_quorum_other_than_validator_count(#[case] quorum: u16) {
+    fn new_rejects_quorum_out_of_range(#[case] quorum: u16) {
         let result = ValidatorConfig::new(random_keys(3), quorum);
         assert_matches!(
             result,
-            Err(ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: actual, count: 3 })
+            Err(ValidatorConfigError::QuorumOutOfRange { quorum: actual, count: 3 })
                 if actual == quorum
         );
     }
@@ -258,9 +261,13 @@ mod tests {
 
     #[test]
     fn commitment_binds_the_quorum() -> anyhow::Result<()> {
-        let config = ValidatorConfig::new(random_keys(3), 3)?;
+        let keys = random_keys(3);
+        let partial = ValidatorConfig::new(keys.clone(), 2)?;
+        let full = ValidatorConfig::new(keys, 3)?;
 
-        assert_eq!(config.to_elements()[0], Felt::from(config.quorum()));
+        assert_eq!(partial.keys(), full.keys());
+        assert_eq!(partial.to_elements()[0], Felt::from(partial.quorum()));
+        assert_ne!(partial.to_commitment(), full.to_commitment());
         Ok(())
     }
 

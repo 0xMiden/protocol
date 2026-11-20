@@ -42,6 +42,8 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     use miden_protocol::block::{
         BlockBody,
         BlockHeader,
+        BlockSignatures,
+        SignatureVerificationError,
         SignedBlock,
         SignedBlockError,
         ValidatorConfig,
@@ -83,7 +85,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let block = SignedBlock::new(
         header.clone(),
         body.clone(),
-        parent_keys.sign_all(&parent_signers, header.commitment()),
+        BlockSignatures::sign(&parent_signers, header.commitment()),
     )
     .unwrap();
     let wire: proto::blockchain::SignedBlock = (&block).into();
@@ -100,7 +102,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let self_signed = SignedBlock::new(
         header.clone(),
         body,
-        child_keys.sign_all(&child_signers, header.commitment()),
+        BlockSignatures::sign(&child_signers, header.commitment()),
     )
     .unwrap();
     let self_signed_wire: proto::blockchain::SignedBlock = (&self_signed).into();
@@ -112,7 +114,9 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
         .unwrap_err();
     assert_matches!(
         error_source::<SignedBlockError>(&error),
-        Some(SignedBlockError::InvalidSignatureAtPosition { position: 0 })
+        Some(SignedBlockError::InvalidSignatures(
+            SignatureVerificationError::InvalidSignatureAtPosition { position: 0 }
+        ))
     );
     assert_eq!(
         self_signed_wire.decode_fields().unwrap().build_unchecked().unwrap(),
@@ -188,10 +192,7 @@ fn block_header_protobuf_rejects_invalid_validator_quorum() {
         .unwrap_err();
     let source = error_source::<ValidatorConfigError>(&error).unwrap();
 
-    assert_matches!(
-        source,
-        ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: 0, count: 3 }
-    );
+    assert_matches!(source, ValidatorConfigError::QuorumOutOfRange { quorum: 0, count: 3 });
 }
 
 #[test]

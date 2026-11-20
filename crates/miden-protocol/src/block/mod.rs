@@ -20,7 +20,7 @@ mod validator_config;
 pub use validator_config::ValidatorConfig;
 
 mod block_signatures;
-pub use block_signatures::{BlockSignatures, SignatureVerificationError};
+pub use block_signatures::{BlockSignatures, BlockSignaturesError, SignatureVerificationError};
 
 mod signed_block;
 pub use signed_block::{SignedBlock, SignedBlockError};

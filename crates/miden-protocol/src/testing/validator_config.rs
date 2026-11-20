@@ -23,23 +23,14 @@ impl ValidatorConfig {
         let config = Self::from_signers(&signers);
         (signers, config)
     }
+}
 
-    /// Signs `commitment` with every one of `signers`, ordering the resulting signatures to align
-    /// positionally with the keys of this config.
+impl BlockSignatures {
+    /// Signs `commitment` with every one of `signers`, in the given order.
     ///
-    /// Panics if `signers` does not contain a matching signer for every key in this config.
-    pub fn sign_all(&self, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
-        let signatures = self
-            .keys()
-            .iter()
-            .map(|key| {
-                let signer = signers
-                    .iter()
-                    .find(|signer| &signer.public_key() == key)
-                    .expect("a signer should exist for every validator key");
-                signer.sign(commitment)
-            })
-            .collect();
-        BlockSignatures::new(signatures).expect("signature count same as validator key count")
+    /// Panics if `signers` does not form a valid signature set.
+    pub fn sign(signers: &[SigningKey], commitment: Word) -> Self {
+        let signatures = signers.iter().map(|signer| signer.sign(commitment)).collect();
+        Self::new(signatures).expect("signers should form a valid signature set")
     }
 }
