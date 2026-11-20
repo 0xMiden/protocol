@@ -248,23 +248,25 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{note_type_1}
                 push.{tag_1}
                 call.::miden::standards::note::note_creator::create_note
-                movdn.15 dropw dropw dropw drop drop drop
+                movdn.15 dropw dropw dropw drop drop drop dup
 
                 push.{ASSET_VALUE_1}
                 push.{ASSET_ID_1}
                 call.::miden::standards::wallets::basic::move_asset_to_note
-                dropw dropw dropw dropw
+                exec.output_note::seal
+                dropw dropw dropw drop drop drop
 
                 push.{recipient_2}
                 push.{note_type_2}
                 push.{tag_2}
                 call.::miden::standards::note::note_creator::create_note
-                movdn.15 dropw dropw dropw drop drop drop
+                movdn.15 dropw dropw dropw drop drop drop dup
 
                 push.{ASSET_VALUE_2}
                 push.{ASSET_ID_2}
                 call.::miden::standards::wallets::basic::move_asset_to_note
-                dropw dropw dropw dropw
+                exec.output_note::seal
+                dropw dropw dropw drop drop drop
             end
             ",
         recipient_1 = output_note_1.recipient().digest(),
@@ -381,10 +383,13 @@ async fn test_p2id_note_constructors(
             {invoke_constructor}
             # => [note_idx]
 
-            push.{ASSET_VALUE}
+            dup push.{ASSET_VALUE}
             push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw dropw dropw dropw
+            # => [note_idx, pad(15)]
+
+            exec.::miden::protocol::output_note::seal
+            dropw dropw dropw drop drop drop
         end
         "#,
         target_prefix = target_account.id().prefix().as_felt(),

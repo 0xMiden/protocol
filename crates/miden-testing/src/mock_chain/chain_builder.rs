@@ -66,8 +66,9 @@ use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
@@ -495,8 +496,8 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -570,8 +571,8 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(mint_policy)
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
@@ -604,8 +605,8 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots

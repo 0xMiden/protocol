@@ -2,6 +2,7 @@ use {Asset, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
+use miden::protocol::output_note
 use miden::standards::faucets::non_fungible as non_fungible
 
 # CONSTANTS
@@ -106,8 +107,8 @@ proc mint_private(num_storage_items: u32) -> (Asset, NoteTag, NoteType, NoteReci
 end
 
 #! Mints the non-fungible asset stored in the active note by calling the consuming faucet's
-#! `mint_and_send` procedure. Selects the public or private output-note layout based on the number
-#! of note storage items (see `mint_public` / `mint_private`).
+#! `mint_and_send` procedure, then seals the minted note. Selects the public or private output-note
+#! layout based on the number of note storage items (see `mint_public` / `mint_private`).
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -139,7 +140,11 @@ pub proc mint()
     call.non_fungible::mint_and_send
     # => [note_idx, pad(15)]
 
+    # the minted note holds its asset and is final
+    exec.output_note::seal
+    # => [pad(15)]
+
     # truncate the called procedure's output window, restoring the base stack
-    dropw dropw dropw dropw
+    dropw dropw dropw drop drop drop
     # => []
 end

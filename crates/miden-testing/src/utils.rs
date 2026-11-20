@@ -315,6 +315,12 @@ fn note_script_that_creates_notes<'note>(
                 ASSET_VALUE = asset.to_value_word(),
             ));
         }
+
+        out.push_str(
+            "dup exec.output_note::seal
+            # => [note_idx]
+            ",
+        );
     }
 
     out.push_str("repeat.5 dropw end\nend");

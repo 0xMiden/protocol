@@ -2245,6 +2245,9 @@ async fn foreign_account_can_query_output_note_sealing() -> anyhow::Result<()> {
             procref.::foreign_account::check_output_note_sealing
             push.{foreign_prefix} push.{foreign_suffix}
             exec.tx::execute_foreign_procedure
+
+            # seal the second note once the foreign account has seen it unsealed
+            push.1 exec.output_note::seal
             exec.sys::truncate_stack
         end
         ",

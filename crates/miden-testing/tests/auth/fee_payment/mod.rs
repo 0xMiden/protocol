@@ -1,7 +1,11 @@
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountType};
+use miden_protocol::asset::{AssetCallbacks, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
+use miden_standards::account::auth::NoAuth;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::TxFeeNote;
 
 mod conversion;
@@ -40,6 +44,51 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Builds an existing faucet account whose `on_before_note_sealed` callback returns a single-word
+/// attachment for every sealed note holding its assets.
+pub(super) fn attaching_callback_faucet(seed: [u8; 32]) -> anyhow::Result<Account> {
+    const COMPONENT_NAME: &str = "tests::attaching_callback";
+
+    let code = CodeBuilder::default().compile_component_code(
+        COMPONENT_NAME,
+        "
+        @locals(4)
+        @account_procedure
+        pub proc on_before_note_sealed
+            drop
+            # => [pad(16)]
+
+            push.1.2.3.4 loc_storew_le.0
+            exec.::miden::core::crypto::hashes::eidos::hash
+            # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+            locaddr.0 dup add.4 movdn.5 movdn.4 adv.insert_mem
+            # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+            movup.4 drop movup.4 drop push.7
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
+
+            exec.::miden::core::sys::truncate_stack
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+        end",
+    )?;
+    let root = code
+        .as_package()
+        .get_procedure_root_by_path(format!("{COMPONENT_NAME}::on_before_note_sealed").as_str())
+        .expect("callback procedure should exist");
+    let callback = AccountComponent::new(
+        code,
+        AssetCallbacks::new().on_before_note_sealed(root).into_storage_slots(),
+        AccountComponentMetadata::new(COMPONENT_NAME),
+    )?;
+
+    Ok(AccountBuilder::new(seed)
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(callback)
+        .build_existing()?)
+}
 
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee
