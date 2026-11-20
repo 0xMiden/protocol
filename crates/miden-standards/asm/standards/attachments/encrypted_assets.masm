@@ -144,8 +144,9 @@ pub proc build_attachment(note_idx: u16) -> (u16, NoteAttachmentCommitment)
     # => [is_public, note_idx]
 
     if.true
-        # drop note_idx below the padding, so that the drop does not shift in a zero when the
-        # procedure starts at the minimum stack depth
+        # push the outputs before dropping note_idx: a drop at the minimum stack depth of 16 does
+        # not lower the depth, so dropping note_idx first would return one element more than the
+        # private branch when the procedure is called at that depth
         padw movup.4 drop push.0
         # => [0, EMPTY_WORD]
     else
