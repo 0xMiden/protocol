@@ -1,0 +1,43 @@
+# miden::standards::faucets::policies::transfer::encrypted_assets
+#
+# Encrypted assets send policy: returns the encrypted asset attachment of each private output note
+# holding the issuing faucet's assets, built by `miden::standards::attachments::encrypted_assets`.
+
+use {NoteAttachmentCommitment} from miden::protocol::types
+use miden::standards::attachments::encrypted_assets
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Send policy that returns the encrypted asset attachment of the output note.
+#!
+#! Returns no attachment for a public note. For a private note, encrypts the note's details to the
+#! issuer key in the issuing faucet's storage (see `encrypted_assets::build_attachment`) and limits
+#! the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
+#! reference block. A send policy that combines other checks with the attachment executes its
+#! checks and then `exec`s this procedure with its own inputs, i.e. with the stack exactly
+#! `[note_idx, pad(15)]`.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+#!
+#! Where:
+#! - note_idx is the index of the output note being sealed.
+#! - attachment_scheme is the scheme of the encrypted asset attachment for a private note and 0 for
+#!   a public note.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment for a private note and the empty
+#!   word for a public note.
+#!
+#! Panics if:
+#! - the note is private and its attachment cannot be built, e.g. because the advice map has no
+#!   preimage for its recipient or the issuing faucet has no issuer key.
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_send_policy(note_idx: u16) -> (felt, NoteAttachmentCommitment)
+    exec.encrypted_assets::build_attachment
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
+
+    movupw.3 dropw
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+end
