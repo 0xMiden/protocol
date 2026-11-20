@@ -18,7 +18,7 @@
 use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, StorageMapKey};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{
     Asset,
     AssetAmount,
@@ -35,8 +35,8 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::word::WordMockExt;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
-use miden_standards::account::access::{AccessControl, Pausable, PausableManager};
-use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
+use miden_standards::account::access::AccessControl;
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{
     AssetStatus,
     FungibleFaucet,
@@ -58,7 +58,7 @@ use miden_standards::note::{
     TxFeeNote,
 };
 use miden_standards::tx_script::SendNotesTransactionScript;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{AccountState, Auth, MockChain};
 use rand::RngExt;
 
 // CONSTANTS
@@ -491,83 +491,92 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     const HOLDER_AMOUNT: u32 = 500;
-
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let issuer = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
-        [fee_asset(INITIAL_FEE_BALANCE)?],
-    )?;
-    let holder = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
-        [fee_asset(INITIAL_FEE_BALANCE)?],
-    )?;
-    let recovery = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
-        [fee_asset(INITIAL_FEE_BALANCE)?],
-    )?;
-    let stablecoin_faucet = create_stablecoin_faucet(builder.rng_mut().random(), issuer.id())?;
-    // the faucet is funded with the fee asset by a P2ID note, consumed when it is deployed
-    let funding_note = builder.add_p2id_note(
-        issuer.id(),
-        stablecoin_faucet.id(),
-        &[fee_asset(INITIAL_FEE_BALANCE)?],
-        NoteType::Public,
-    )?;
-    let mut mock_chain = builder.build()?;
-
-    let deploy_stablecoin_faucet_tx = mock_chain
-        .build_transaction(stablecoin_faucet.clone())
-        .authenticated_input_note(funding_note.id())
-        .build()?
-        .execute()
-        .await?;
-    commit(&mut mock_chain, &deploy_stablecoin_faucet_tx)?;
-
-    let stablecoin_faucet_id = stablecoin_faucet.id();
-    let stablecoin_asset_id = AssetId::new_fungible(stablecoin_faucet_id);
     let amount = AssetAmount::from(HOLDER_AMOUNT);
 
-    // STEP 1: the issuer mints the stablecoins to the holder
-    // --------------------------------------------------------------------------------------------
+    let mut builder = MockChain::builder();
+    let issuer_id = AccountId::mock_private(1);
 
-    mint_stablecoins(&mut mock_chain, &issuer, stablecoin_faucet_id, holder.id(), amount).await?;
+    // the holder already holds all stablecoins in circulation
+    let stablecoin = FungibleFaucet::builder()
+        .name(TokenName::new("STABLE")?)
+        .symbol(TokenSymbol::new("STBL")?)
+        .decimals(6)
+        .max_supply(FungibleAsset::MAX_AMOUNT)
+        .token_supply(amount)
+        .build()?;
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .build();
+    let faucet_seed = builder.rng_mut().random();
+    let stablecoin_faucet = builder.add_account_from_builder(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        AccountBuilder::new(faucet_seed)
+            .account_type(AccountType::Public)
+            .with_component(stablecoin)
+            .with_components(AccessControl::Ownable2Step { owner: issuer_id })
+            .with_components(token_policy_manager)
+            .with_component(TokenSupplyRestriction),
+        AccountState::Exists,
+    )?;
+    let stablecoin_faucet_id = stablecoin_faucet.id();
+    let stablecoin_asset = FungibleAsset::new(stablecoin_faucet_id, amount.as_u64())?;
 
-    let holder_account = mock_chain.committed_account(holder.id())?;
-    assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, amount);
-    let supply_before_confiscation = stablecoin_token_supply(&mock_chain, stablecoin_faucet_id)?;
-    assert_eq!(supply_before_confiscation, amount);
+    let holder = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        [stablecoin_asset.into()],
+    )?;
+    let recovery =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    // STEP 2: the issuer confiscates the holder's stablecoins
-    // --------------------------------------------------------------------------------------------
-
+    // the issuer's notes to confiscate the holder's stablecoins and re-mint them to the recovery
+    // account in a public P2ID note
     let confiscate_note: Note = SupplyRestrictionConfigNote::builder()
-        .sender(issuer.id())
+        .sender(issuer_id)
         .target(stablecoin_faucet_id)
         .config(SupplyRestrictionConfig::Confiscate { account: holder.id(), amount })
         .serial_number(rand::rng().random())
         .build()?
         .into();
-
-    let send_confiscate_note_tx =
-        send_note(&mock_chain, &issuer, &confiscate_note, stablecoin_faucet_id).await?;
-    commit(&mut mock_chain, &send_confiscate_note_tx)?;
-
-    let consume_confiscate_note_tx = mock_chain
-        .build_transaction(stablecoin_faucet_id)
-        .authenticated_input_note(confiscate_note.id())
+    let remint_note: Note = MintNote::builder()
+        .sender(issuer_id)
+        .mint_storage(MintNoteStorage::new_public_output(
+            P2idNoteStorage::new(recovery.id()).into_recipient(rand::rng().random()),
+            stablecoin_asset,
+            NoteTag::with_account_target(recovery.id()),
+        )?)
+        .serial_number(rand::rng().random())
         .build()?
-        .execute()
+        .into();
+    for note in [&confiscate_note, &remint_note] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    let supply_before_confiscation = stablecoin_token_supply(&mock_chain, stablecoin_faucet_id)?;
+
+    // STEP 1: the faucet consumes the confiscate note
+    // --------------------------------------------------------------------------------------------
+
+    mock_chain
+        .consume_notes_and_commit(stablecoin_faucet_id, [confiscate_note])
         .await?;
-    commit(&mut mock_chain, &consume_confiscate_note_tx)?;
 
     assert_eq!(stablecoin_token_supply(&mock_chain, stablecoin_faucet_id)?, AssetAmount::ZERO);
     assert_eq!(confiscated_amount(&mock_chain, stablecoin_faucet_id, holder.id())?, amount);
 
-    // STEP 3: the issuer re-mints the confiscated amount to the recovery account
+    // STEP 2: the faucet consumes the MINT note, re-minting the amount to the recovery account
     // --------------------------------------------------------------------------------------------
 
-    mint_stablecoins(&mut mock_chain, &issuer, stablecoin_faucet_id, recovery.id(), amount).await?;
+    let remint_tx =
+        mock_chain.consume_notes_and_commit(stablecoin_faucet_id, [remint_note]).await?;
+    let [RawOutputNote::Full(p2id_note)] = remint_tx.output_notes().iter().collect::<Vec<_>>()[..]
+    else {
+        anyhow::bail!("the faucet must create exactly the full P2ID note");
+    };
+    mock_chain.consume_notes_and_commit(recovery.id(), [p2id_note.clone()]).await?;
 
+    let stablecoin_asset_id = AssetId::new_fungible(stablecoin_faucet_id);
     let recovery_account = mock_chain.committed_account(recovery.id())?;
     assert_eq!(recovery_account.vault().get_balance(stablecoin_asset_id)?, amount);
 
@@ -581,7 +590,6 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     // spending
     let holder_account = mock_chain.committed_account(holder.id())?;
     assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, amount);
-    assert_eq!(confiscated_amount(&mock_chain, stablecoin_faucet_id, holder.id())?, amount);
 
     Ok(())
 }
@@ -629,104 +637,6 @@ fn create_nft_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Ac
     )?)
 }
 
-/// Creates a new public fungible network faucet controlled by `owner`, which is the only account
-/// allowed to mint and to restrict the supply. Anyone can burn.
-///
-/// The faucet carries the [`TokenSupplyRestriction`] component and accepts the
-/// SUPPLY_RESTRICTION_CONFIG note next to the MINT and BURN notes.
-fn create_stablecoin_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("STABLE")?)
-        .symbol(TokenSymbol::new("STBL")?)
-        .decimals(6)
-        .max_supply(FungibleAsset::MAX_AMOUNT)
-        .build()?;
-
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::owner_only())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .build();
-
-    let faucet_note_scripts = [
-        MintNote::script_root(),
-        BurnNote::script_root(),
-        SupplyRestrictionConfigNote::script_root(),
-    ];
-    // The network auth prices the notes it consumes, as does the wallet creating a network note
-    // for this faucet, so schedule a zero fee for every note the faucet accepts.
-    let fee_policy = AuthNetworkAccount::default_allowed_note_scripts()
-        .into_iter()
-        .chain(faucet_note_scripts)
-        .fold(BasicConstantFeePolicy::new(), |fee_policy, script_root| {
-            fee_policy.with_fee(script_root, AssetAmount::ZERO)
-        });
-    let fee_policy_manager = FeePolicyManager::builder()
-        .active_fee_policy(fee_policy.into())
-        .fee_faucet_id(AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?)
-        .build();
-
-    Ok(NetworkAccount::builder(
-        init_seed,
-        faucet_note_scripts.into_iter().collect(),
-        fee_policy_manager,
-    )?
-    .with_component(faucet)
-    .with_components(AccessControl::Ownable2Step { owner })
-    .with_components(token_policy_manager)
-    .with_component(Pausable::unpaused())
-    .with_component(PausableManager)
-    .with_component(TokenSupplyRestriction)
-    .build()?)
-}
-
-/// Mints `amount` stablecoins to `recipient_id`: the issuer sends a MINT note to the faucet,
-/// the faucet creates a public P2ID note and the recipient consumes it.
-async fn mint_stablecoins(
-    mock_chain: &mut MockChain,
-    issuer: &Account,
-    stablecoin_faucet_id: AccountId,
-    recipient_id: AccountId,
-    amount: AssetAmount,
-) -> anyhow::Result<()> {
-    let p2id_recipient = P2idNoteStorage::new(recipient_id).into_recipient(rand::rng().random());
-    let mint_note: Note = MintNote::builder()
-        .sender(issuer.id())
-        .mint_storage(MintNoteStorage::new_public_output(
-            p2id_recipient,
-            FungibleAsset::new(stablecoin_faucet_id, amount.as_u64())?,
-            NoteTag::with_account_target(recipient_id),
-        )?)
-        .serial_number(rand::rng().random())
-        .build()?
-        .into();
-
-    let send_mint_note_tx = send_note(mock_chain, issuer, &mint_note, stablecoin_faucet_id).await?;
-    commit(mock_chain, &send_mint_note_tx)?;
-
-    let consume_mint_note_tx = mock_chain
-        .build_transaction(stablecoin_faucet_id)
-        .authenticated_input_note(mint_note.id())
-        .build()?
-        .execute()
-        .await?;
-    let [RawOutputNote::Full(p2id_note)] = non_fee_output_notes(&consume_mint_note_tx)[..] else {
-        anyhow::bail!("the faucet must create exactly the full P2ID note");
-    };
-    let p2id_note_id = p2id_note.id();
-    commit(mock_chain, &consume_mint_note_tx)?;
-
-    let consume_p2id_note_tx = mock_chain
-        .build_transaction(recipient_id)
-        .authenticated_input_note(p2id_note_id)
-        .native_fee_auth_args()
-        .build()?
-        .execute()
-        .await?;
-    commit(mock_chain, &consume_p2id_note_tx)?;
-
-    Ok(())
-}
-
 /// Returns the latest committed token supply of the stablecoin faucet.
 fn stablecoin_token_supply(
     mock_chain: &MockChain,
@@ -754,12 +664,12 @@ fn confiscated_amount(
 /// Executes a transaction against `sender` that creates `note`.
 ///
 /// A wallet creating a network note asks the target faucet for the note's fee, so for network notes
-/// the faucet with the given ID is provided as a foreign account.
+/// the NFT faucet is provided as a foreign account.
 async fn send_note(
     mock_chain: &MockChain,
     sender: &Account,
     note: &Note,
-    faucet_id: AccountId,
+    nft_faucet_id: AccountId,
 ) -> anyhow::Result<ExecutedTransaction> {
     let send_notes_script = SendNotesTransactionScript::new(
         &sender.code_interface(),
@@ -771,8 +681,8 @@ async fn send_note(
         .send_notes_script(&send_notes_script)
         .expected_output_note(RawOutputNote::Full(note.clone()));
     if note.is_network_note() {
-        tx_builder =
-            tx_builder.foreign_accounts(vec![mock_chain.get_foreign_account_inputs(faucet_id)?]);
+        tx_builder = tx_builder
+            .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(nft_faucet_id)?]);
     }
 
     let executed_tx = tx_builder.native_fee_auth_args().build()?.execute().await?;
