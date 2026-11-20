@@ -1,4 +1,14 @@
-use {AccountProcedureRoot, Asset, AssetValue, NoteRecipient, NoteTag, NoteType, StorageSlotId} from miden::protocol::types
+use {
+    AccountProcedureRoot,
+    Asset,
+    AssetValue,
+    NoteAttachmentCommitment,
+    NoteAttachmentScheme,
+    NoteRecipient,
+    NoteTag,
+    NoteType,
+    StorageSlotId,
+} from miden::protocol::types
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -177,7 +187,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc invoke_send_policy(note_idx: u16)
+pub proc invoke_send_policy(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
     exec.expiration::apply_default
     # => [note_idx, pad(15)]
 

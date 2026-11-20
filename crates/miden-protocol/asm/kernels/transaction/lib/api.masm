@@ -7,6 +7,7 @@ use {
     BlockNumber,
     Bool,
     NoteAssetsCommitment,
+    NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -1732,7 +1733,7 @@ end
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_attachment(attachment_scheme: u16, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
+pub proc output_note_add_attachment(attachment_scheme: NoteAttachmentScheme, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
     # assert that the provided note index is less than the total number of output notes
     dup.5 exec.output_note::assert_note_index_in_bounds drop
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
