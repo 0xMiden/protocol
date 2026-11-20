@@ -4,13 +4,6 @@ use crate::asset::{AssetWitness, PartialVault};
 use crate::block::account_tree::AccountWitness;
 use crate::crypto::merkle::smt::{SmtProof, SmtProofError};
 use crate::errors::{AccountError, PartialAssetVaultError};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // ACCOUNT INPUTS
 // ================================================================================================
@@ -101,67 +94,5 @@ impl AccountInputs {
         let root = SmtProof::new(smt_merkle_path, smt_leaf)?.compute_root();
 
         Ok(root)
-    }
-}
-
-impl Serializable for AccountInputs {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(&self.partial_account);
-        target.write(&self.witness);
-    }
-}
-
-impl Deserializable for AccountInputs {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let partial_account = source.read()?;
-        let witness = source.read()?;
-
-        Ok(AccountInputs { partial_account, witness })
-    }
-}
-
-// TESTS
-// ================================================================================================
-
-#[cfg(test)]
-mod tests {
-    use alloc::vec::Vec;
-
-    use miden_core::Felt;
-    use miden_crypto::merkle::SparseMerklePath;
-
-    use crate::account::{Account, AccountCode, AccountId, AccountStorage, PartialAccount};
-    use crate::asset::AssetVault;
-    use crate::block::account_tree::AccountWitness;
-    use crate::crypto::merkle::smt::SMT_DEPTH;
-    use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-    use crate::transaction::AccountInputs;
-    use crate::utils::serde::{Deserializable, Serializable};
-
-    #[test]
-    fn serde_roundtrip() {
-        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-        let code = AccountCode::mock();
-        let vault = AssetVault::new(&[]).unwrap();
-        let storage = AccountStorage::new(vec![]).unwrap();
-        let account = Account::new_existing(id, vault, storage, code, Felt::new_unchecked(10));
-
-        let commitment = account.to_commitment();
-
-        let mut merkle_nodes = Vec::with_capacity(SMT_DEPTH as usize);
-        for _ in 0..(SMT_DEPTH as usize) {
-            merkle_nodes.push(commitment);
-        }
-        let merkle_path = SparseMerklePath::from_sized_iter(merkle_nodes)
-            .expect("The nodes given are of SMT_DEPTH count");
-
-        let fpi_inputs = AccountInputs::new(
-            PartialAccount::from(&account),
-            AccountWitness::new(id, commitment, merkle_path).unwrap(),
-        );
-
-        let serialized = fpi_inputs.to_bytes();
-        let deserialized = AccountInputs::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, fpi_inputs);
     }
 }

@@ -4,13 +4,6 @@ use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::Word;
 use crate::block::ValidatorConfig;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // SIGNATURE VERIFICATION ERROR
 // ================================================================================================
@@ -139,22 +132,6 @@ impl BlockSignatures {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BlockSignatures {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.signatures.write_into(target);
-    }
-}
-
-impl Deserializable for BlockSignatures {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let signatures = Vec::<Signature>::read_from(source)?;
-        Ok(Self { signatures })
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -218,16 +195,5 @@ mod tests {
             signatures.verify_against(commitment, &other_keys),
             Err(SignatureVerificationError::SignatureCountMismatch { expected: 4, actual: 3 })
         ));
-    }
-
-    #[test]
-    fn serde_round_trip() {
-        let (signers, keys) = ValidatorConfig::random_with_signers(3);
-        let commitment = Word::empty();
-        let signatures = keys.sign_all(&signers, commitment);
-
-        let bytes = signatures.to_bytes();
-        let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();
-        assert_eq!(signatures, deserialized);
     }
 }

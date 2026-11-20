@@ -523,7 +523,6 @@ mod tests {
     use rand::random;
 
     use super::*;
-    use crate::utils::serde::{Deserializable, Serializable};
 
     /// Returns `header` with a protocol upgrade scheduled for block 42.
     fn with_scheduled_upgrade(header: &BlockHeader) -> BlockHeader {
@@ -620,13 +619,11 @@ mod tests {
         let child = child_of(&parent, 1, 3);
 
         // A block signed by a validator set of a different size cannot align positionally with the
-        // parent's committed set. Deserialization does not check this, so build it directly.
+        // parent's committed set.
         let (other_signers, other_keys) = ValidatorConfig::random_with_signers(4);
         let signatures = other_keys.sign_all(&other_signers, child.commitment());
-        let bytes = signatures.to_bytes();
-        let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();
 
-        let result = child.validate_against_parent(&parent, &deserialized);
+        let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(
             result,
             Err(ParentValidationError::SignatureCountMismatch { expected: 3, actual: 4 })

@@ -3,13 +3,6 @@ use miden_core::EMPTY_WORD;
 use crate::account::StorageSlotType;
 use crate::account::storage::map::EMPTY_STORAGE_MAP_ROOT;
 use crate::account::storage::{StorageMap, Word};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // STORAGE SLOT CONTENT
 // ================================================================================================
@@ -71,64 +64,5 @@ impl StorageSlotContent {
             StorageSlotContent::Value(_) => StorageSlotType::Value,
             StorageSlotContent::Map(_) => StorageSlotType::Map,
         }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for StorageSlotContent {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.slot_type());
-
-        match self {
-            Self::Value(value) => target.write(value),
-            Self::Map(map) => target.write(map),
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        let mut size = self.slot_type().get_size_hint();
-
-        size += match self {
-            StorageSlotContent::Value(word) => word.get_size_hint(),
-            StorageSlotContent::Map(storage_map) => storage_map.get_size_hint(),
-        };
-
-        size
-    }
-}
-
-impl Deserializable for StorageSlotContent {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let storage_slot_type = source.read::<StorageSlotType>()?;
-
-        match storage_slot_type {
-            StorageSlotType::Value => {
-                let word = source.read::<Word>()?;
-                Ok(StorageSlotContent::Value(word))
-            },
-            StorageSlotType::Map => {
-                let map = source.read::<StorageMap>()?;
-                Ok(StorageSlotContent::Map(map))
-            },
-        }
-    }
-}
-
-// TESTS
-// ================================================================================================
-
-#[cfg(test)]
-mod tests {
-    use crate::account::AccountStorage;
-    use crate::utils::serde::{Deserializable, Serializable};
-
-    #[test]
-    fn test_serde_storage_slot_content() {
-        let storage = AccountStorage::mock();
-        let serialized = storage.to_bytes();
-        let deserialized = AccountStorage::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage)
     }
 }

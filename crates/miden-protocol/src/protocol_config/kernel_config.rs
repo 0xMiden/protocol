@@ -1,16 +1,8 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_verifier::KernelDescriptor;
 
 use super::ProtocolConfigError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Hasher, Word};
 
 // KERNEL CONFIG
@@ -100,33 +92,6 @@ impl KernelConfig {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for KernelConfig {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let num_kernel_procs = self.num_kernel_procs();
-        let Self { main_proc, kernel_procs } = self;
-
-        main_proc.write_into(target);
-        num_kernel_procs.write_into(target);
-        target.write_many(kernel_procs);
-    }
-}
-
-impl Deserializable for KernelConfig {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let main_proc = source.read()?;
-        let num_kernel_procs: u8 = source.read()?;
-        let kernel_procs = source
-            .read_many_iter(num_kernel_procs as usize)?
-            .collect::<Result<Vec<Word>, _>>()?;
-
-        Self::new(main_proc, kernel_procs)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -135,7 +100,6 @@ mod tests {
     use alloc::vec;
 
     use assert_matches::assert_matches;
-    use rand::random;
 
     use super::*;
 
@@ -147,15 +111,5 @@ mod tests {
         assert_matches!(error, ProtocolConfigError::TooManyKernelProcedures { count } => {
             assert_eq!(count, KernelConfig::MAX_NUM_KERNEL_PROCEDURES + 1);
         });
-    }
-
-    #[test]
-    fn serde_round_trip() -> anyhow::Result<()> {
-        let config = KernelConfig::new(random::<Word>(), vec![random::<Word>(); 3])?;
-
-        let deserialized = KernelConfig::read_from_bytes(&config.to_bytes())?;
-        assert_eq!(config, deserialized);
-
-        Ok(())
     }
 }
