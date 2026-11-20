@@ -1,0 +1,23 @@
+[package]
+name              = "miden-standards-attachments-encrypted-assets"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::attachments::encrypted_assets"
+path      = "encrypted_assets.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Issuer key to which encrypted asset attachments are encrypted"
+name        = "miden::standards::attachments::encrypted_assets"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "The issuer's EcGFp5 public key"
+name        = "miden::standards::attachments::encrypted_assets::issuer_key"
+type        = { key = "word", value = "word" }

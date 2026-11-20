@@ -56,6 +56,7 @@ pub use transfer::{
     BasicBlocklist,
     BlocklistManager,
     BlocklistStorage,
+    EncryptedAssetsSendPolicy,
     ReceivePolicy,
     SendPolicy,
     TransferAllowAll,
