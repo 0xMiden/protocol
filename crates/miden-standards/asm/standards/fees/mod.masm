@@ -1,4 +1,4 @@
-use {Asset, AssetAmount, AssetId, Bool, NoteId} from miden::protocol::types
+use {Asset, AssetAmount, AssetId, AssetValue, Bool, NoteId} from miden::protocol::types
 # miden::standards::fees
 #
 # Fee collection and sponsorship-note creation for the fee manager account.
@@ -98,6 +98,8 @@ const ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH = "target account's fee asset do
 const ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH = "expected fee asset does not match the fee asset configured in the fee manager"
 
 const ERR_FEE_MANAGER_NETWORK_NOTE_NOT_SEALED = "network output note must be sealed before it is sponsored"
+
+const ERR_FEE_INSUFFICIENT_BALANCE = "native account vault holds less of the fee asset than the fee to pay"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -423,6 +425,36 @@ pub proc estimate_network_note_sponsorships() -> (u16, AssetAmount)
 
     drop drop
     # => [num_sponsored_notes, total_sponsored_fee_amount]
+end
+
+#! Removes a fee from the native account's vault, checking the balance first so that an account
+#! that cannot pay fails with ERR_FEE_INSUFFICIENT_BALANCE rather than the vault's generic
+#! withdrawal error.
+#!
+#! Inputs:  [FEE_ASSET_ID, FEE_ASSET_VALUE]
+#! Outputs: [FINAL_ASSET_VALUE]
+#!
+#! Where:
+#! - FEE_ASSET_ID is the ID of the fungible asset the fee is paid in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#! - FINAL_ASSET_VALUE is the value of the fee asset remaining in the vault after removal.
+#!
+#! Panics if:
+#! - the native account's vault holds less of the fee asset than fee_amount.
+#!
+#! Invocation: exec
+pub proc remove_fee_asset(fee_asset: Asset) -> AssetValue
+    dupw exec.fungible_asset::get_active_account_balance movdn.8
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, balance]
+
+    exec.fungible_asset::to_amount_unchecked
+    # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, balance]
+
+    movup.9 lte assert.err=ERR_FEE_INSUFFICIENT_BALANCE
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
+
+    exec.native_account::remove_asset
+    # => [FINAL_ASSET_VALUE]
 end
 
 # HELPER PROCEDURES
@@ -880,7 +912,7 @@ proc create_sponsorship_note(fee_asset: Asset, target_id_prefix: felt, note_idx:
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE]
 
     # remove the fee asset from the native account's vault before placing it into the note
-    exec.native_account::remove_asset
+    exec.remove_fee_asset
     dropw
     # => []
 

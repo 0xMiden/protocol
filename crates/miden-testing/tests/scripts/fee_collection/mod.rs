@@ -24,6 +24,7 @@ use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolic
 use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_INSUFFICIENT_BALANCE,
     ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
     ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
     ERR_FEE_MANAGER_NETWORK_NOTE_NOT_SEALED,
@@ -1129,7 +1130,8 @@ impl SponsorshipTest {
     /// Builds a [`SponsorshipTest`].
     ///
     /// The target charges [`FEE_AMOUNT`] for each network note, so the sponsor must fund each
-    /// sponsorship note with that amount. Its vault holds exactly the total it must fund.
+    /// sponsorship note with that amount. Its vault holds exactly the total it must fund, unless
+    /// `sponsor_fee_balance` says otherwise.
     ///
     /// The build order is fixed by three dependencies: the target ID goes into the transaction
     /// script, the script root and the feature note script root go into the sponsor's allowlists,
@@ -1155,6 +1157,9 @@ impl SponsorshipTest {
         /// which case the sponsor collects nothing.
         #[builder(default)]
         num_collected_notes: u32,
+        /// Amount of the native fee asset the sponsor's vault holds. Defaults to the total it must
+        /// fund.
+        sponsor_fee_balance: Option<u64>,
     ) -> anyhow::Result<Self> {
         let target_fee_faucet = target_fee_faucet.unwrap_or(native_fee_faucet_id()?);
         let sponsor_fee_faucet = sponsor_fee_faucet.unwrap_or(native_fee_faucet_id()?);
@@ -1206,7 +1211,9 @@ impl SponsorshipTest {
                     .with_sponsorship_policy(sponsorship_policy),
             )
             .with_component(NoteCreator)
-            .with_assets([native_fee_asset(u64::from(num_network_notes) * FEE_AMOUNT)?])
+            .with_assets([native_fee_asset(
+                sponsor_fee_balance.unwrap_or(u64::from(num_network_notes) * FEE_AMOUNT),
+            )?])
             .build_existing()?;
         builder.add_account(sponsor.clone())?;
 
@@ -1391,6 +1398,22 @@ async fn sponsors_and_collects_multiple_notes() -> anyhow::Result<()> {
 
 // SPONSORSHIP POLICY
 // ================================================================================================
+
+/// A sponsor whose vault holds less of the native fee asset than the target's fee fails with the
+/// fee-specific error rather than the vault's generic withdrawal error.
+#[tokio::test]
+async fn create_sponsorships_fail_with_insufficient_fee_balance() -> anyhow::Result<()> {
+    let test = SponsorshipTest::builder()
+        .sponsorship_policy(SponsorshipPolicy::Unlimited)
+        .sponsor_fee_balance(FEE_AMOUNT - 1)
+        .build()?;
+
+    let result = test.transaction()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
+
+    Ok(())
+}
 
 /// Under [`SponsorshipPolicy::AtMostCollectedFees`], a sponsorship that no collected fee backs is
 /// rejected.
