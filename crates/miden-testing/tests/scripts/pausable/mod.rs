@@ -28,6 +28,7 @@ use miden_standards::account::access::pausable::{Pausable, PausableManager, Paus
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    BlocklistStorage,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -468,10 +469,11 @@ fn add_faucet_with_pause_and_policies(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::empty_basic_blocklist())
-                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist())
                 .build(),
-        );
+        )
+        .with_component(BlocklistStorage::new());
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }

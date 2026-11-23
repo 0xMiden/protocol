@@ -2,9 +2,9 @@
 #
 # Exposes the `check_send_policy` and `check_receive_policy` procedures so their MAST roots can be
 # registered as the active (or allowed) send and receive policies on a `TokenPolicyManager`.
-# Installs the `blocked_accounts` storage map (defined by the sibling `blocklist` primitive);
-# admin updates go through a companion auth-gated component (see
-# `blocklist/manager/manager.masm`).
+# Reads the `blocked_accounts` storage map installed by the blocklist storage component (see
+# `blocklist/storage/storage.masm`); admin updates go through a companion auth-gated component
+# (see `blocklist/manager/manager.masm`).
 
 pub use {check_send_policy} from miden::standards::faucets::policies::transfer::basic_blocklist
 pub use {check_receive_policy} from miden::standards::faucets::policies::transfer::basic_blocklist

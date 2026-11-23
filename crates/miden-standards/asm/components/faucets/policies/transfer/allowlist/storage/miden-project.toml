@@ -1,0 +1,23 @@
+[package]
+name              = "miden-standards-faucets-policies-transfer-allowlist-storage"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::transfer::allowlist::storage"
+path      = "storage.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Per-faucet allowlist read by the basic allowlist transfer policy"
+name        = "miden::standards::faucets::policies::transfer::allowlist"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Whether an account is allowed to receive transfers"
+name        = "miden::standards::faucets::policies::transfer::allowlist::allowed_accounts"
+type        = { key = "word", value = "bool" }

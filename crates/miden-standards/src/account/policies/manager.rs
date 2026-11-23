@@ -683,10 +683,10 @@ impl TokenPolicyManager {
 }
 
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
-/// entry's kind set. A companion component that another entry already carries with the same code
-/// and storage is not added again, which installs a component once when it exports the roots of
-/// several policies (e.g. the send and receive procedures of a transfer policy). A component with
-/// the same code but different storage is kept, so the conflict fails the account build.
+/// entry's kind set. A companion component that another entry already carries is not added again,
+/// which installs a component once when it exports the roots of several policies (e.g. the send
+/// and receive procedures of a transfer policy). A component that differs, e.g. in its storage, is
+/// kept, so a conflicting storage slot fails the account build.
 fn insert_policy(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
     root: AccountProcedureRoot,
@@ -700,12 +700,7 @@ fn insert_policy(
 
     let components = components
         .into_iter()
-        .filter(|component| {
-            !policies.values().flat_map(|cfg| &cfg.components).any(|installed| {
-                installed.component_code() == component.component_code()
-                    && installed.storage_slots() == component.storage_slots()
-            })
-        })
+        .filter(|component| !policies.values().any(|cfg| cfg.components.contains(component)))
         .collect();
     policies.insert(
         root,
@@ -739,21 +734,11 @@ impl IntoIterator for TokenPolicyManager {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use miden_protocol::account::component::{InitStorageData, StorageValueName};
-    use miden_protocol::account::{AccountBuilder, AccountId};
     use miden_protocol::asset::AssetCallbacks;
-    use miden_protocol::errors::AccountError;
-    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
     use super::*;
-    use crate::account::auth::NoAuth;
-    use crate::account::policies::{
-        BlocklistStorage,
-        BurnAllowAll,
-        MintAllowAll,
-        TransferAllowAll,
-    };
+    use crate::account::policies::{BasicBlocklist, BurnAllowAll, MintAllowAll, TransferAllowAll};
 
     /// Returns the manager component's storage slot for the given slot name, or `None` if the
     /// component does not register a slot with that name.
@@ -993,45 +978,24 @@ mod tests {
         assert!(allowed.contains(&BurnPolicy::allow_all().root()));
     }
 
-    /// The send and receive procedures of a list policy belong to one component with one list.
-    /// When both policies start from the same list, the component is installed once and the
-    /// account builds. When the lists differ, the account build fails on the duplicate list slot,
-    /// so neither list is dropped silently.
-    #[rstest::rstest]
-    #[case::same_initial_list(true)]
-    #[case::different_initial_lists(false)]
-    fn send_and_receive_blocklists_must_start_from_the_same_list(#[case] same_initial_list: bool) {
-        let blocked_account =
-            AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-        let receive_policy = if same_initial_list {
-            ReceivePolicy::with_basic_blocklist([blocked_account])
-        } else {
-            ReceivePolicy::empty_basic_blocklist()
-        };
-        let manager = TokenPolicyManager::builder()
+    /// The send and receive procedures of a list policy belong to one component, which the manager
+    /// installs once.
+    #[test]
+    fn send_and_receive_list_policies_install_their_component_once() {
+        let components: Vec<AccountComponent> = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(SendPolicy::with_basic_blocklist([blocked_account]))
-            .active_receive_policy(receive_policy)
-            .build();
-
-        let account = manager
+            .active_send_policy(SendPolicy::with_basic_blocklist())
+            .active_receive_policy(ReceivePolicy::with_basic_blocklist())
+            .build()
             .into_iter()
-            .fold(
-                AccountBuilder::new([1; 32]).with_component(NoAuth),
-                AccountBuilder::with_component,
-            )
-            .build_existing();
+            .collect();
 
-        if same_initial_list {
-            account.expect("account with one blocklist should build");
-        } else {
-            assert_matches!(account, Err(AccountError::BuildError(_, Some(source))) => {
-                assert_matches!(*source, AccountError::DuplicateStorageSlotName(name) => {
-                    assert_eq!(&name, BlocklistStorage::blocked_accounts_slot());
-                });
-            });
-        }
+        let num_blocklist_components = components
+            .iter()
+            .filter(|component| component.has_procedure(BasicBlocklist::send_root()))
+            .count();
+        assert_eq!(num_blocklist_components, 1);
     }
 
     /// Components with different code are all installed, even when their names collide.

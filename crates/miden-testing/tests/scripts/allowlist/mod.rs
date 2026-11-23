@@ -1,6 +1,7 @@
 //! Tests for the [`miden_standards::account::policies::BasicAllowlist`] transfer policy
-//! component (storage + `check_send_policy` / `check_receive_policy` predicates) and the
-//! [`miden_standards::account::policies::AllowlistManager`] authority-gated admin
+//! component (`check_send_policy` / `check_receive_policy` predicates), the
+//! [`miden_standards::account::policies::AllowlistStorage`] component that installs the list and
+//! the [`miden_standards::account::policies::AllowlistManager`] authority-gated admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
 
@@ -59,9 +60,9 @@ fn dummy_owner() -> AccountId {
 }
 
 /// Builds a fungible faucet with [`SendPolicy::with_basic_allowlist`] and
-/// [`ReceivePolicy::with_basic_allowlist`], plus the [`AllowlistManager`] component. With
-/// `Authority::OwnerControlled` the admin procedures are gated by the Ownable2Step owner, so the
-/// owner can invoke `allow_account` / `disallow_account` via owner-authored notes.
+/// [`ReceivePolicy::with_basic_allowlist`], plus the [`AllowlistStorage`] and [`AllowlistManager`]
+/// components. With `Authority::OwnerControlled` the admin procedures are gated by the Ownable2Step
+/// owner, so the owner can invoke `allow_account` / `disallow_account` via owner-authored notes.
 fn add_faucet_with_owner_allowlist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -83,8 +84,6 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let allow_list = AllowlistStorage::with_allowed_accounts(initial_allowed);
-
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
@@ -94,11 +93,12 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
-                .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
+                .active_send_policy(SendPolicy::with_basic_allowlist())
+                .active_receive_policy(ReceivePolicy::with_basic_allowlist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
+        .with_component(AllowlistStorage::with_allowed_accounts(initial_allowed))
         .with_component(AllowlistManager);
 
     builder.add_account_from_builder(
@@ -148,7 +148,63 @@ fn build_admin_note(
 // TESTS
 // ================================================================================================
 
-/// Seeds [`BasicAllowlist`] with the recipient at deploy time and confirms the asset transfer
+/// `AllowlistStorage::is_allowed`, invoked via `call` from a transaction script on the faucet,
+/// returns whether an account is allowed, honours the 16-felt call ABI and limits the expiration.
+#[tokio::test]
+async fn is_allowed_returns_whether_an_account_is_allowed() -> anyhow::Result<()> {
+    let allowed_account = test_account_id(80);
+    let other_account = test_account_id(81);
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_owner_allowlist_transfer_initialized(
+        &mut builder,
+        dummy_owner(),
+        [allowed_account],
+    )?;
+    assert!(faucet.code().has_procedure(AllowlistStorage::is_allowed_root().as_word()));
+    let mock_chain = builder.build()?;
+
+    let tx_script_code = format!(
+        r#"
+        use miden::standards::components::faucets::policies::transfer::allowlist::storage
+
+        @transaction_script
+        pub proc main
+            padw padw padw push.0.0
+            push.{listed_prefix} push.{listed_suffix}
+            call.storage::is_allowed
+            # => [is_allowed, pad(15)]
+            assert.err="the listed account must be reported as allowed"
+            dropw dropw dropw drop drop drop
+
+            padw padw padw push.0.0
+            push.{other_prefix} push.{other_suffix}
+            call.storage::is_allowed
+            # => [is_allowed, pad(15)]
+            assertz.err="an unlisted account must not be reported as allowed"
+            dropw dropw dropw drop drop drop
+        end
+        "#,
+        listed_prefix = allowed_account.prefix().as_felt(),
+        listed_suffix = allowed_account.suffix(),
+        other_prefix = other_account.prefix().as_felt(),
+        other_suffix = other_account.suffix(),
+    );
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(AllowlistStorage::code())?
+        .compile_tx_script(tx_script_code)?;
+
+    let executed = mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+    assert_default_expiration_limit(&executed);
+
+    Ok(())
+}
+
+/// Seeds [`AllowlistStorage`] with the recipient at deploy time and confirms the asset transfer
 /// succeeds — no `allow_account` admin call is needed because the account starts in the
 /// `allowed_accounts` map.
 #[tokio::test]
@@ -561,8 +617,6 @@ fn add_rbac_faucet_with_allowlist(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let allow_list = AllowlistStorage::with_allowed_accounts(initial_allowed);
-
     let account_builder = AccountBuilder::new([71u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
@@ -574,11 +628,12 @@ fn add_rbac_faucet_with_allowlist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
-                .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
+                .active_send_policy(SendPolicy::with_basic_allowlist())
+                .active_receive_policy(ReceivePolicy::with_basic_allowlist())
                 .build(),
         )
         .with_component(Pausable::unpaused())
+        .with_component(AllowlistStorage::with_allowed_accounts(initial_allowed))
         .with_component(AllowlistManager);
 
     builder.add_account_from_builder(

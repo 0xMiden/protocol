@@ -190,6 +190,7 @@ fn faucets_from_every_factory(
             AuthSingleSig::new(approver),
             token_policy_manager.clone(),
             AccountType::Private,
+            [],
         ),
         create_multisig_user_non_fungible_faucet(
             [33u8; 32],
@@ -197,6 +198,7 @@ fn faucets_from_every_factory(
             user_faucet_multisig(approvers.clone(), 2).unwrap(),
             token_policy_manager.clone(),
             AccountType::Private,
+            [],
         ),
         create_guarded_user_non_fungible_faucet(
             [34u8; 32],
@@ -204,6 +206,7 @@ fn faucets_from_every_factory(
             user_faucet_guarded(approvers, 2, GuardianConfig::new(approver)).unwrap(),
             token_policy_manager.clone(),
             AccountType::Private,
+            [],
         ),
         create_network_non_fungible_faucet(
             [32u8; 32],
@@ -211,6 +214,7 @@ fn faucets_from_every_factory(
             AccessControl::Ownable2Step { owner },
             token_policy_manager,
             FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+            [],
         ),
     ]
 }
@@ -271,6 +275,7 @@ fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
         auth_component,
         owner_only_mint_policy_manager(),
         AccountType::Private,
+        [],
     )
     .expect_err("owner-only mint policy without Ownable2Step should be rejected");
 

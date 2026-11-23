@@ -1,0 +1,1 @@
+[BREAKING] Moved the basic blocklist and allowlist storage into the installable `BlocklistStorage` and `AllowlistStorage` components, so the `SendPolicy` and `ReceivePolicy` `with_basic_blocklist` / `with_basic_allowlist` constructors take no list, the `empty_*` constructors are removed, and the `create_*_faucet` factories take extra components to install.

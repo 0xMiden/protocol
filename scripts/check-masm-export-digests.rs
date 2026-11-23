@@ -100,9 +100,11 @@ mod current {
     use miden_standards_current::account::note_creator::NoteCreator;
     use miden_standards_current::account::policies::{
         AllowlistManager,
+        AllowlistStorage,
         BasicAllowlist,
         BasicBlocklist,
         BlocklistManager,
+        BlocklistStorage,
         BurnAllowAll,
         BurnOwnerOnly,
         MinBurnAmount,
@@ -138,9 +140,11 @@ mod current {
         MintOwnerOnly::code,
         TransferAllowAll::code,
         AllowlistManager::code,
+        AllowlistStorage::code,
         BasicAllowlist::code,
         BasicBlocklist::code,
         BlocklistManager::code,
+        BlocklistStorage::code,
         TokenPolicyManager::code,
         BasicConstantFeePolicy::code,
         ConstantFeeManager::code,

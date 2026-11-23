@@ -54,7 +54,7 @@ const ERR_BLOCKLIST_CONFIG_NOTE_IS_NOT_PUBLIC = "blocklist config note must be p
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::transfer::blocklist::manager::{block_account,
 #!   unblock_account}` (the `BlocklistManager` component), backed by the `Authority` component and
-#!   a component that installs the `blocked_accounts` storage slot (typically `BasicBlocklist`).
+#!   a component that installs the `blocked_accounts` storage slot (typically `BlocklistStorage`).
 #!
 #! Consumers: target account (attachment)
 #!

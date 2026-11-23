@@ -1,10 +1,7 @@
-use alloc::collections::BTreeSet;
-
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_package;
-use crate::account::policies::transfer::allowlist::AllowlistStorage;
 use crate::procedure_root;
 
 // BASIC ALLOWLIST TRANSFER POLICY
@@ -37,7 +34,7 @@ procedure_root!(
     BasicAllowlist::code()
 );
 
-/// The basic allowlist transfer policy account component.
+/// The storage-free basic allowlist transfer policy account component.
 ///
 /// Pair with a [`crate::account::policies::TokenPolicyManager`] whose send and receive policy
 /// maps include [`BasicAllowlist::send_root`] and [`BasicAllowlist::receive_root`]. When active,
@@ -46,12 +43,15 @@ procedure_root!(
 ///
 /// The issuing faucet is exempt from its own allowlist.
 ///
+/// The procedures read the `allowed_accounts` storage map installed by the
+/// [`super::AllowlistStorage`] component, which must be installed on the account as well.
+///
 /// Allow / disallow administration is intentionally not part of this component. The
 /// `allow_account` / `disallow_account` procedures live in the standards library and require
 /// an auth-wrapped admin component (see [`super::AllowlistManager`]) to be safely
 /// exposed on a production faucet.
-#[derive(Debug, Clone, Default)]
-pub struct BasicAllowlist(AllowlistStorage);
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BasicAllowlist;
 
 impl BasicAllowlist {
     /// The name of the component.
@@ -59,19 +59,6 @@ impl BasicAllowlist {
 
     pub(crate) const SEND_PROC_NAME: &str = "check_send_policy";
     pub(crate) const RECEIVE_PROC_NAME: &str = "check_receive_policy";
-
-    /// Creates a basic allowlist with the given initial allowed accounts.
-    pub fn with_allowed_accounts<I>(allowed_accounts: I) -> Self
-    where
-        I: IntoIterator<Item = AccountId>,
-    {
-        Self(AllowlistStorage::with_allowed_accounts(allowed_accounts))
-    }
-
-    /// Returns the initial allowed accounts captured in this component.
-    pub fn allowed_accounts(&self) -> &BTreeSet<AccountId> {
-        self.0.allowed_accounts()
-    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -94,19 +81,12 @@ impl BasicAllowlist {
     }
 }
 
-impl From<AllowlistStorage> for BasicAllowlist {
-    fn from(storage: AllowlistStorage) -> Self {
-        Self(storage)
-    }
-}
-
 impl From<BasicAllowlist> for AccountComponent {
-    fn from(allowlist: BasicAllowlist) -> Self {
+    fn from(_: BasicAllowlist) -> Self {
         let metadata = BasicAllowlist::component_metadata();
 
-        AccountComponent::new(BasicAllowlist::code().clone(), vec![allowlist.0.into_slot()], metadata)
-            .expect(
-                "basic allowlist transfer policy component should satisfy the requirements of a valid account component",
-            )
+        AccountComponent::new(BasicAllowlist::code().clone(), vec![], metadata).expect(
+            "basic allowlist transfer policy component should satisfy the requirements of a valid account component",
+        )
     }
 }

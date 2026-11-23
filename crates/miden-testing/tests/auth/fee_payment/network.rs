@@ -184,6 +184,7 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
         ACCOUNT_ID_SENDER.try_into()?,
         token_policy_manager,
         BasicConstantFeePolicy::new().with_fee(MintNote::script_root(), AssetAmount::ZERO),
+        [],
     )?;
     let fee_faucet_id = faucet_account.id();
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
@@ -277,6 +278,7 @@ async fn network_faucet_deploys_by_consuming_p2id_note() -> anyhow::Result<()> {
         AccessControl::Ownable2Step { owner: ACCOUNT_ID_SENDER.try_into()? },
         token_policy_manager,
         fee_policy_manager,
+        [],
     )?;
     assert!(faucet_account.is_new());
 

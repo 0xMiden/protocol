@@ -34,7 +34,9 @@ use miden_standards::account::faucets::{Description, FungibleFaucet, TokenName};
 use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::account::policies::{
     AllowlistManager,
+    AllowlistStorage,
     BlocklistManager,
+    BlocklistStorage,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
@@ -270,9 +272,9 @@ pub fn tx_consume_blocklist_config_note_network() -> Result<MockTransaction> {
 }
 
 /// The two transfer-list kinds. The pieces differing between the ALLOWLIST_CONFIG and
-/// BLOCKLIST_CONFIG scenarios (transfer policy, list manager component, and consumed note) are
-/// all derived from this discriminant via the methods below, keeping the per-list choices in one
-/// place.
+/// BLOCKLIST_CONFIG scenarios (transfer policy, list storage and manager components, and consumed
+/// note) are all derived from this discriminant via the methods below, keeping the per-list
+/// choices in one place.
 #[derive(Clone, Copy)]
 enum ListKind {
     Allowlist,
@@ -280,19 +282,27 @@ enum ListKind {
 }
 
 impl ListKind {
-    /// The list's empty basic send policy.
+    /// The list's basic send policy.
     fn send_policy(self) -> SendPolicy {
         match self {
-            ListKind::Allowlist => SendPolicy::empty_basic_allowlist(),
-            ListKind::Blocklist => SendPolicy::empty_basic_blocklist(),
+            ListKind::Allowlist => SendPolicy::with_basic_allowlist(),
+            ListKind::Blocklist => SendPolicy::with_basic_blocklist(),
         }
     }
 
-    /// The list's empty basic receive policy.
+    /// The list's basic receive policy.
     fn receive_policy(self) -> ReceivePolicy {
         match self {
-            ListKind::Allowlist => ReceivePolicy::empty_basic_allowlist(),
-            ListKind::Blocklist => ReceivePolicy::empty_basic_blocklist(),
+            ListKind::Allowlist => ReceivePolicy::with_basic_allowlist(),
+            ListKind::Blocklist => ReceivePolicy::with_basic_blocklist(),
+        }
+    }
+
+    /// The list's storage component, holding an empty list.
+    fn storage(self) -> AccountComponent {
+        match self {
+            ListKind::Allowlist => AllowlistStorage::new().into(),
+            ListKind::Blocklist => BlocklistStorage::new().into(),
         }
     }
 
@@ -344,8 +354,8 @@ impl ListKind {
 /// Returns the transaction context for a network faucet consuming a transfer-list config note.
 ///
 /// Shared setup of the ALLOWLIST_CONFIG and BLOCKLIST_CONFIG scenarios: the faucet carries the
-/// list's basic transfer policy on send and receive plus the list's manager admin component,
-/// gated by the owner wallet via `Authority::OwnerControlled` (mirrors the
+/// list's basic transfer policy on send and receive plus the list's storage and manager admin
+/// components, the manager gated by the owner wallet via `Authority::OwnerControlled` (mirrors the
 /// `add_faucet_with_owner_{allowlist,blocklist}_transfer` fixtures in the respective test
 /// suites). The benchmarked action adds an account to the initially empty list.
 fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction> {
@@ -374,6 +384,7 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
+        .with_component(list.storage())
         .with_component(list.manager())
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(

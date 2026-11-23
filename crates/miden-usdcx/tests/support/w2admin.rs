@@ -30,7 +30,7 @@ use miden_standards::account::access::{
     RoleBasedAccessControl,
     RoleConfig,
 };
-use miden_standards::account::policies::{BasicBlocklist, BlocklistManager, BlocklistStorage};
+use miden_standards::account::policies::{BlocklistManager, BlocklistStorage};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::config::{
     BlocklistConfig,
@@ -136,7 +136,7 @@ pub fn grounding_components() -> Vec<AccountComponent> {
     vec![
         Pausable::unpaused().into(),
         PausableManager.into(),
-        BasicBlocklist::default().into(),
+        BlocklistStorage::new().into(),
         BlocklistManager.into(),
         rbac.into(),
         XReserveAdminAuthority::new().into(),
