@@ -118,7 +118,7 @@ pub(crate) enum TransactionEvent {
     /// The data necessary to request an asset witness from the data store.
     AccountVaultBeforeAssetAccess {
         /// The account ID for whose vault a witness is requested.
-        active_account_id: AccountId,
+        account_id: AccountId,
         /// The vault root identifying the asset vault from which a witness is requested.
         vault_root: Word,
         /// The asset for which a witness is requested.
@@ -260,8 +260,15 @@ impl TransactionEvent {
                     }
                 })?;
                 let current_vault_root = process.get_vault_root(vault_root_ptr)?;
+                let account_id = process.get_active_account_id()?;
 
-                on_account_vault_asset_accessed(base_host, process, asset_id, current_vault_root)?
+                on_account_vault_asset_accessed(
+                    base_host,
+                    process,
+                    account_id,
+                    asset_id,
+                    current_vault_root,
+                )?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset
             | TransactionEventId::AccountVaultAfterAddAsset => {
@@ -342,8 +349,11 @@ impl TransactionEvent {
                     }
                 })?;
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
+                let account_id = process.get_vault_account_id(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(base_host, process, asset_id, vault_root)?
+                on_account_vault_asset_accessed(
+                    base_host, process, account_id, asset_id, vault_root,
+                )?
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,
@@ -752,16 +762,16 @@ fn extract_transaction_log(
 fn on_account_vault_asset_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
     process: &ProcessorState,
+    account_id: AccountId,
     asset_id: AssetId,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
     let leaf_index = Felt::try_from(asset_id.hash().to_leaf_index().position())
         .expect("expected key index to be a felt");
-    let active_account_id = process.get_active_account_id()?;
 
     // For the native account we need to explicitly request the initial vault root, while for
     // foreign accounts the current vault root is always the initial one.
-    let vault_root = if active_account_id == base_host.native_account_id() {
+    let vault_root = if account_id == base_host.native_account_id() {
         base_host.initial_account_header().vault_root()
     } else {
         vault_root
@@ -776,7 +786,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
         Ok(None)
     } else {
         Ok(Some(TransactionEvent::AccountVaultBeforeAssetAccess {
-            active_account_id,
+            account_id,
             vault_root,
             asset_id,
         }))
