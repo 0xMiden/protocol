@@ -174,7 +174,7 @@ Account components that need to add callbacks to an account's storage should use
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet. The callback either completes successfully or aborts the transaction, and the note callback can also return an attachment for the note.
+The transaction kernel invokes the callback on the issuing faucet. The callback either completes successfully or aborts the transaction, and the note callback can also return attachments for the note.
 
 The callback cannot modify account or note state. The kernel aborts the transaction if the callback calls a state-changing kernel procedure, for example `native_account::set_item` or `output_note::add_asset`. Setting the expiration delta and emitting transaction logs is allowed.
 
@@ -189,12 +189,12 @@ The **note callback** receives the index of the output note being sealed:
 
 ```
 Inputs:  [note_idx, pad(15)]
-Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 ```
 
 The kernel seals the note after its callbacks have run. Since a callback cannot modify the note, it reads the note's final assets and recipient itself (e.g. via `output_note::get_assets` and `output_note::get_recipient`). The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
 
-The note callback can return one attachment for the note. Returned attachments are appended to the note in the callback order. The callback must put the attachment's elements into the advice map under `ATTACHMENT_COMMITMENT`. An `attachment_scheme` of `0` means the callback returns no attachment, and then `ATTACHMENT_COMMITMENT` must be the empty word.
+The note callback can return a list of up to 4 attachments for the note. Returned attachments are appended to the note in the callback order and, within one callback, in list order. Each list entry is two words, `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`, and `ATTACHMENT_LIST_COMMITMENT` is the sequential hash of the list's elements. The callback must put the list into the advice map under `ATTACHMENT_LIST_COMMITMENT` and each attachment's elements under its `ATTACHMENT_COMMITMENT`. A `num_attachments` of `0` means the callback returns no attachment, and then `ATTACHMENT_LIST_COMMITMENT` must be the empty word.
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 
