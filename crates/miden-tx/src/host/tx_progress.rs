@@ -1,5 +1,7 @@
 pub use alloc::vec::Vec;
 
+use miden_protocol::errors::TransactionMeasurementsError;
+
 use super::{NoteId, RowIndex, TransactionMeasurements};
 
 // TRANSACTION PROGRESS
@@ -120,8 +122,10 @@ impl Default for TransactionProgress {
     }
 }
 
-impl From<TransactionProgress> for TransactionMeasurements {
-    fn from(tx_progress: TransactionProgress) -> Self {
+impl TryFrom<TransactionProgress> for TransactionMeasurements {
+    type Error = TransactionMeasurementsError;
+
+    fn try_from(tx_progress: TransactionProgress) -> Result<Self, Self::Error> {
         let prologue = tx_progress.prologue().len();
 
         let notes_processing = tx_progress.notes_processing().len();
@@ -138,14 +142,14 @@ impl From<TransactionProgress> for TransactionMeasurements {
 
         let auth_procedure = tx_progress.auth_procedure().len();
 
-        Self {
-            prologue,
-            notes_processing,
-            note_execution,
-            tx_script_processing,
-            epilogue,
-            auth_procedure,
-        }
+        Self::builder()
+            .prologue(prologue)
+            .notes_processing(notes_processing)
+            .note_execution(note_execution)
+            .tx_script_processing(tx_script_processing)
+            .epilogue(epilogue)
+            .auth_procedure(auth_procedure)
+            .build()
     }
 }
 
@@ -178,12 +182,12 @@ impl CycleInterval {
     }
 
     /// Calculate the length of the interval
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u32 {
         if let Some(start) = self.start
             && let Some(end) = self.end
             && end >= start
         {
-            return end - start;
+            return end.as_u32() - start.as_u32();
         }
 
         0

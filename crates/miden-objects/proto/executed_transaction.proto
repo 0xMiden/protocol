@@ -1,0 +1,44 @@
+syntax = "proto3";
+package transaction;
+
+import "account.proto";
+import "block_number.proto";
+import "note.proto";
+import "transaction.proto";
+import "transaction_inputs.proto";
+
+// The cycle counts of the stages of a transaction execution.
+message TransactionMeasurements {
+  message NoteExecution {
+    note.NoteId note_id = 1;
+    uint32 cycles = 2;
+  }
+
+  uint32 prologue = 1;
+  uint32 notes_processing = 2;
+  repeated NoteExecution note_execution = 3;
+  uint32 tx_script_processing = 4;
+  uint32 epilogue = 5;
+  uint32 auth_procedure = 6;
+}
+
+message ExecutedTransaction {
+  oneof version {
+    ExecutedTransactionV1 v1 = 1;
+  }
+}
+
+// An executed transaction, including the inputs required to re-execute it.
+//
+// The transaction ID and the account patch commitment are not transmitted since they are recomputed
+// from the other fields on decoding.
+message ExecutedTransactionV1 {
+  TransactionInputsV1 tx_inputs = 1;
+  account.AccountHeader final_account = 2;
+  RawOutputNotes output_notes = 3;
+  blockchain.BlockNumber expiration_block_num = 4;
+  TransactionLogs logs = 5;
+  CodePatch code_patch = 6;
+  account.AccountPatch account_patch = 7;
+  TransactionMeasurements measurements = 8;
+}

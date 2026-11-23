@@ -417,7 +417,7 @@ mod tests {
                 .with_context(|| format!("failed to execute transaction for `{bench}`"))?;
 
             let labels = NoteLabels::from_inputs(executed.tx_inputs());
-            for (measured, _) in &executed.measurements().note_execution {
+            for (measured, _) in executed.measurements().note_execution() {
                 anyhow::ensure!(
                     labels.label(*measured).is_some(),
                     "scenario `{bench}` measured note {measured}, which matches none of its \
@@ -425,8 +425,7 @@ mod tests {
                 );
             }
 
-            let cycles = u32::try_from(executed.measurements().total_cycles())
-                .context("total cycle count does not fit into u32")?;
+            let cycles = executed.measurements().total_cycles();
             max_cycles = max_cycles.max(cycles);
 
             for output_note in executed.output_notes().iter() {

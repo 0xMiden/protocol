@@ -66,6 +66,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    MAX_TX_EXECUTION_CYCLES,
     NOTE_MAX_SIZE,
 };
 
@@ -1119,6 +1120,41 @@ pub enum OutputNoteError {
         "public note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
     )]
     NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
+}
+
+// EXECUTED TRANSACTION ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum ExecutedTransactionError {
+    #[error("input account ID {input_id} does not match output account ID {output_id}")]
+    InconsistentAccountId {
+        input_id: AccountId,
+        output_id: AccountId,
+    },
+    #[error(
+        "account patch is for account {patch_id} but the transaction is for account {account_id}"
+    )]
+    InconsistentAccountPatchId {
+        patch_id: AccountId,
+        account_id: AccountId,
+    },
+    #[error(
+        "account patch commitment in the transaction outputs ({output_commitment}) does not match the commitment of the account patch ({patch_commitment})"
+    )]
+    InconsistentAccountPatchCommitment {
+        output_commitment: Word,
+        patch_commitment: Word,
+    },
+}
+
+// TRANSACTION MEASUREMENTS ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionMeasurementsError {
+    #[error("total cycle count {0} exceeds the maximum of {MAX_TX_EXECUTION_CYCLES} cycles")]
+    TotalCyclesExceedsMax(u64),
 }
 
 // TRANSACTION SUMMARY ERROR

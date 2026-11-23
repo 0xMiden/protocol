@@ -12,18 +12,12 @@ use super::{
     TransactionLogs,
     TransactionOutputs,
 };
-use crate::Word;
 use crate::account::{AccountPatch, PartialAccount};
 use crate::block::code_tree::CodePatch;
 use crate::block::{BlockHeader, BlockNumber};
+use crate::errors::{ExecutedTransactionError, TransactionMeasurementsError};
 use crate::transaction::TransactionInputs;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::{MAX_TX_EXECUTION_CYCLES, Word};
 
 // EXECUTED TRANSACTION
 // ================================================================================================
@@ -52,16 +46,41 @@ impl ExecutedTransaction {
 
     /// Returns a new [ExecutedTransaction] instantiated from the provided data.
     ///
-    /// # Panics
-    /// Panics if input and output account IDs are not the same.
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the account IDs of the transaction inputs and outputs are not the same.
+    /// - the account patch is for a different account.
+    /// - the account patch does not match the commitment in the transaction outputs.
     pub fn new(
         tx_inputs: TransactionInputs,
         tx_outputs: TransactionOutputs,
         account_patch: AccountPatch,
         tx_measurements: TransactionMeasurements,
-    ) -> Self {
-        // make sure account IDs are consistent across transaction inputs and outputs
-        assert_eq!(tx_inputs.account().id(), tx_outputs.account().id());
+    ) -> Result<Self, ExecutedTransactionError> {
+        let input_id = tx_inputs.account().id();
+        let output_id = tx_outputs.account().id();
+        if input_id != output_id {
+            return Err(ExecutedTransactionError::InconsistentAccountId { input_id, output_id });
+        }
+
+        // The commitment to an empty patch does not bind the account ID, so it is checked
+        // separately.
+        if account_patch.id() != input_id {
+            return Err(ExecutedTransactionError::InconsistentAccountPatchId {
+                patch_id: account_patch.id(),
+                account_id: input_id,
+            });
+        }
+
+        let output_commitment = tx_outputs.account_patch_commitment();
+        let patch_commitment = account_patch.to_commitment();
+        if output_commitment != patch_commitment {
+            return Err(ExecutedTransactionError::InconsistentAccountPatchCommitment {
+                output_commitment,
+                patch_commitment,
+            });
+        }
 
         // we create the id from the content, so we cannot construct the
         // `id` value after construction `Self {..}` without moving
@@ -74,13 +93,13 @@ impl ExecutedTransaction {
             tx_outputs.code_patch().commitment(),
         );
 
-        Self {
+        Ok(Self {
             id,
             tx_inputs,
             tx_outputs,
             account_patch,
             tx_measurements,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -194,40 +213,37 @@ impl From<ExecutedTransaction> for TransactionMeasurements {
 /// `TransactionProgress` struct.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransactionMeasurements {
-    pub prologue: usize,
-    pub notes_processing: usize,
-    pub note_execution: Vec<(NoteId, usize)>,
-    pub tx_script_processing: usize,
-    pub epilogue: usize,
-    pub auth_procedure: usize,
+    prologue: u32,
+    notes_processing: u32,
+    note_execution: Vec<(NoteId, u32)>,
+    tx_script_processing: u32,
+    epilogue: u32,
+    auth_procedure: u32,
 }
 
+#[bon::bon]
 impl TransactionMeasurements {
-    /// Returns the total number of cycles spent executing the transaction.
-    pub fn total_cycles(&self) -> usize {
-        self.prologue + self.notes_processing + self.tx_script_processing + self.epilogue
-    }
-}
-
-impl Serializable for TransactionMeasurements {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.prologue.write_into(target);
-        self.notes_processing.write_into(target);
-        self.note_execution.write_into(target);
-        self.tx_script_processing.write_into(target);
-        self.epilogue.write_into(target);
-        self.auth_procedure.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionMeasurements {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let prologue = usize::read_from(source)?;
-        let notes_processing = usize::read_from(source)?;
-        let note_execution = Vec::<(NoteId, usize)>::read_from(source)?;
-        let tx_script_processing = usize::read_from(source)?;
-        let epilogue = usize::read_from(source)?;
-        let auth_procedure = usize::read_from(source)?;
+    /// Returns new [`TransactionMeasurements`] instantiated from the provided cycle counts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the total number of cycles exceeds [`MAX_TX_EXECUTION_CYCLES`].
+    #[builder]
+    pub fn new(
+        prologue: u32,
+        notes_processing: u32,
+        note_execution: Vec<(NoteId, u32)>,
+        tx_script_processing: u32,
+        epilogue: u32,
+        auth_procedure: u32,
+    ) -> Result<Self, TransactionMeasurementsError> {
+        let total_cycles = [prologue, notes_processing, tx_script_processing, epilogue]
+            .into_iter()
+            .map(u64::from)
+            .sum::<u64>();
+        if total_cycles > u64::from(MAX_TX_EXECUTION_CYCLES) {
+            return Err(TransactionMeasurementsError::TotalCyclesExceedsMax(total_cycles));
+        }
 
         Ok(Self {
             prologue,
@@ -238,6 +254,42 @@ impl Deserializable for TransactionMeasurements {
             auth_procedure,
         })
     }
+
+    /// Returns the number of cycles spent in the prologue.
+    pub fn prologue(&self) -> u32 {
+        self.prologue
+    }
+
+    /// Returns the number of cycles spent processing all input notes.
+    pub fn notes_processing(&self) -> u32 {
+        self.notes_processing
+    }
+
+    /// Returns the number of cycles spent executing each input note.
+    pub fn note_execution(&self) -> &[(NoteId, u32)] {
+        &self.note_execution
+    }
+
+    /// Returns the number of cycles spent processing the transaction script.
+    pub fn tx_script_processing(&self) -> u32 {
+        self.tx_script_processing
+    }
+
+    /// Returns the number of cycles spent in the epilogue, including the authentication procedure.
+    pub fn epilogue(&self) -> u32 {
+        self.epilogue
+    }
+
+    /// Returns the number of cycles spent in the authentication procedure.
+    pub fn auth_procedure(&self) -> u32 {
+        self.auth_procedure
+    }
+
+    /// Returns the total number of cycles spent executing the transaction.
+    pub fn total_cycles(&self) -> u32 {
+        // The constructor guarantees that the sum does not overflow.
+        self.prologue + self.notes_processing + self.tx_script_processing + self.epilogue
+    }
 }
 
 // TESTS
@@ -245,9 +297,23 @@ impl Deserializable for TransactionMeasurements {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use core::marker::PhantomData;
 
-    use crate::transaction::ExecutedTransaction;
+    use assert_matches::assert_matches;
+
+    use super::*;
+    use crate::Felt;
+    use crate::account::{AccountCodePatch, AccountStoragePatch, AccountVaultPatch};
+    use crate::testing::account_id::{
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
+    };
+    use crate::transaction::inputs::tests::empty_tx_inputs;
+
+    /// The account of [`empty_tx_inputs`].
+    const NATIVE_ACCOUNT: u128 = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+    const OTHER_ACCOUNT: u128 = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2;
 
     fn ensure_send<T: Send>(_: PhantomData<T>) {}
 
@@ -255,5 +321,105 @@ mod tests {
     #[allow(dead_code)]
     fn compiletime_ensure_send_for_types() {
         ensure_send::<ExecutedTransaction>(PhantomData);
+    }
+
+    #[rstest::rstest]
+    #[case::output_account_id(
+        OTHER_ACCOUNT,
+        NATIVE_ACCOUNT,
+        None,
+        |error: &_| matches!(error, ExecutedTransactionError::InconsistentAccountId { .. })
+    )]
+    #[case::patch_account_id(
+        NATIVE_ACCOUNT,
+        OTHER_ACCOUNT,
+        None,
+        |error: &_| matches!(error, ExecutedTransactionError::InconsistentAccountPatchId { .. })
+    )]
+    #[case::patch_commitment(
+        NATIVE_ACCOUNT,
+        NATIVE_ACCOUNT,
+        Some(Word::from([1_u32, 2, 3, 4])),
+        |error: &_| matches!(error, ExecutedTransactionError::InconsistentAccountPatchCommitment { .. })
+    )]
+    fn executed_transaction_rejects_inconsistent_parts(
+        #[case] output_id: u128,
+        #[case] patch_id: u128,
+        #[case] output_patch_commitment: Option<Word>,
+        #[case] is_expected: fn(&ExecutedTransactionError) -> bool,
+    ) -> anyhow::Result<()> {
+        let account_patch = AccountPatch::new(
+            patch_id.try_into()?,
+            AccountStoragePatch::default(),
+            AccountVaultPatch::default(),
+            AccountCodePatch::default(),
+            None,
+        )?;
+        let tx_outputs = TransactionOutputs::new(
+            AccountHeader::new(
+                output_id.try_into()?,
+                Felt::ONE,
+                Word::empty(),
+                Word::empty(),
+                Word::empty(),
+            ),
+            output_patch_commitment.unwrap_or_else(|| account_patch.to_commitment()),
+            RawOutputNotes::new(vec![])?,
+            BlockNumber::from(1_u32),
+            TransactionLogs::default(),
+            CodePatch::default(),
+        );
+        let measurements = TransactionMeasurements::builder()
+            .prologue(0)
+            .notes_processing(0)
+            .note_execution(vec![])
+            .tx_script_processing(0)
+            .epilogue(0)
+            .auth_procedure(0)
+            .build()?;
+
+        let error =
+            ExecutedTransaction::new(empty_tx_inputs()?, tx_outputs, account_patch, measurements)
+                .unwrap_err();
+        assert!(is_expected(&error), "unexpected error: {error}");
+
+        Ok(())
+    }
+
+    /// Returns the total cycles of measurements with the provided prologue and epilogue cycles.
+    fn build_total_cycles(
+        prologue: u32,
+        epilogue: u32,
+    ) -> Result<u32, TransactionMeasurementsError> {
+        TransactionMeasurements::builder()
+            .prologue(prologue)
+            .notes_processing(0)
+            .note_execution(vec![])
+            .tx_script_processing(0)
+            .epilogue(epilogue)
+            .auth_procedure(0)
+            .build()
+            .map(|measurements| measurements.total_cycles())
+    }
+
+    #[test]
+    fn transaction_measurements_accept_max_total_cycles() -> anyhow::Result<()> {
+        assert_eq!(build_total_cycles(MAX_TX_EXECUTION_CYCLES - 1, 1)?, MAX_TX_EXECUTION_CYCLES);
+
+        Ok(())
+    }
+
+    #[rstest::rstest]
+    #[case::above_max(MAX_TX_EXECUTION_CYCLES, 1)]
+    #[case::above_u32(u32::MAX, u32::MAX)]
+    fn transaction_measurements_reject_total_cycles_above_max(
+        #[case] prologue: u32,
+        #[case] epilogue: u32,
+    ) {
+        assert_matches!(
+            build_total_cycles(prologue, epilogue),
+            Err(TransactionMeasurementsError::TotalCyclesExceedsMax(total_cycles))
+                if total_cycles == u64::from(prologue) + u64::from(epilogue)
+        );
     }
 }

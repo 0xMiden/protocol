@@ -2,12 +2,12 @@
 
 mod support;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
-use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
+use miden_protocol::transaction::RawOutputNote;
 use miden_testing::{Auth, MockChain};
 use miden_usdcx::note::costs::{
     XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES,
@@ -46,11 +46,6 @@ fn fee_faucet_id() -> AccountId {
 
 fn fee_funding_asset() -> Result<FungibleAsset> {
     Ok(FungibleAsset::new(fee_faucet_id(), FEE_BALANCE)?)
-}
-
-fn total_cycles(executed: &ExecutedTransaction) -> Result<u32> {
-    u32::try_from(executed.measurements().total_cycles())
-        .context("the measured cycle count must fit in u32")
 }
 
 fn assert_cost(label: &str, measured: u32, committed: u32) {
@@ -138,7 +133,7 @@ async fn mint_cycles(hook_data_len: usize, nonce_variant: u8) -> Result<u32> {
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("the benchmark mint must execute: {err}"))?;
-    total_cycles(&executed)
+    Ok(executed.measurements().total_cycles())
 }
 
 async fn set_attester_cycles(enabled: u8) -> Result<u32> {
@@ -159,7 +154,7 @@ async fn set_attester_cycles(enabled: u8) -> Result<u32> {
     let executed = consume_note(&faucet.mock_chain, faucet.faucet_id, note.id())
         .await
         .map_err(|err| anyhow::anyhow!("the benchmark set-attester note must execute: {err}"))?;
-    total_cycles(&executed)
+    Ok(executed.measurements().total_cycles())
 }
 
 async fn burn_cycles() -> Result<u32> {
@@ -190,7 +185,7 @@ async fn burn_cycles() -> Result<u32> {
     let executed = run_burn_consume(&mut chain, &note, &asset, faucet.id(), user.id())
         .await
         .map_err(|err| anyhow::anyhow!("the benchmark burn must execute: {err}"))?;
-    total_cycles(&executed)
+    Ok(executed.measurements().total_cycles())
 }
 
 #[tokio::test]

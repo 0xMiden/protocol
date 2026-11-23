@@ -222,7 +222,7 @@ async fn active_note_id_is_reported_for_every_executed_note() -> anyhow::Result<
         .execute()
         .await?;
 
-    let note_execution = &executed.measurements().note_execution;
+    let note_execution = executed.measurements().note_execution();
     assert_eq!(note_execution.len(), 2, "both input notes should have been measured");
     assert_eq!(
         note_execution[0].0,

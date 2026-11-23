@@ -410,7 +410,7 @@ where
     async fn try_execute_notes(
         &self,
         tx_inputs: &mut TransactionInputs,
-    ) -> Result<Vec<usize>, TransactionCheckerError> {
+    ) -> Result<Vec<u32>, TransactionCheckerError> {
         if tx_inputs.input_notes().is_empty() {
             return Ok(Vec::new());
         }
@@ -508,9 +508,7 @@ where
                     let failed_note_cycle_count = match &error {
                         TransactionExecutorError::TransactionProgramExecutionFailed(
                             ExecutionError::CycleLimitExceeded(max_cycles),
-                        ) => last_note_interval
-                            .start()
-                            .map(|start| *max_cycles as usize - usize::from(start)),
+                        ) => last_note_interval.start().map(|start| *max_cycles - start.as_u32()),
                         _ => None,
                     };
 
@@ -530,7 +528,7 @@ where
 // ================================================================================================
 
 /// Pairs the notes of an execution with their cycle counts, which come in execution order.
-fn successful_notes(notes: Vec<Note>, cycle_counts: Vec<usize>) -> Vec<SuccessfulNote> {
+fn successful_notes(notes: Vec<Note>, cycle_counts: Vec<u32>) -> Vec<SuccessfulNote> {
     notes
         .into_iter()
         .zip(cycle_counts)

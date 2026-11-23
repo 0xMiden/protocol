@@ -45,6 +45,14 @@ pub use inputs::{
 mod witness;
 pub use witness::{TransactionWitness, TransactionWitnessV1};
 
+mod executed;
+pub use executed::{
+    ExecutedTransaction,
+    ExecutedTransactionV1,
+    NoteExecution,
+    TransactionMeasurements,
+};
+
 mod batch;
 pub use batch::{
     BatchAccountUpdate,

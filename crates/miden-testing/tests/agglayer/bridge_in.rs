@@ -62,7 +62,7 @@ use super::test_utils::{
 
 /// Maximum allowed cycle count for CLAIM note processing.
 /// Current observed values: ~25,662 (real/simulated), ~40,485 (rollup).
-const MAX_CLAIM_NOTE_PROCESSING_CYCLES: usize = 64_000;
+const MAX_CLAIM_NOTE_PROCESSING_CYCLES: u32 = 64_000;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -365,7 +365,7 @@ async fn test_bridge_in_claim_to_p2id(
 
     assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
-    let claim_cycles = claim_executed.measurements().notes_processing;
+    let claim_cycles = claim_executed.measurements().notes_processing();
     assert!(
         claim_cycles <= MAX_CLAIM_NOTE_PROCESSING_CYCLES,
         "CLAIM note processing exceeded cycle budget: {claim_cycles} > {MAX_CLAIM_NOTE_PROCESSING_CYCLES}"

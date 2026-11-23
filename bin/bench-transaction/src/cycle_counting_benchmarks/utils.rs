@@ -18,11 +18,11 @@ use crate::note_labels::NoteLabels;
 #[derive(Debug, Clone, Serialize)]
 pub struct MeasurementsPrinter {
     provenance: &'static str,
-    prologue: usize,
-    total_cycles: usize,
-    notes_processing: usize,
+    prologue: u32,
+    total_cycles: u32,
+    notes_processing: u32,
     note_execution: Vec<NoteExecution>,
-    tx_script_processing: usize,
+    tx_script_processing: u32,
     epilogue: EpilogueMeasurements,
     trace: TraceMeasurements,
 }
@@ -34,7 +34,7 @@ impl MeasurementsPrinter {
         note_labels: &NoteLabels,
     ) -> anyhow::Result<Self> {
         let note_execution = measurements
-            .note_execution
+            .note_execution()
             .iter()
             .map(|(measured, cycles)| {
                 let note = note_labels.label(*measured).with_context(|| {
@@ -46,14 +46,14 @@ impl MeasurementsPrinter {
 
         Ok(MeasurementsPrinter {
             provenance: "producer_measured",
-            prologue: measurements.prologue,
+            prologue: measurements.prologue(),
             total_cycles: measurements.total_cycles(),
-            notes_processing: measurements.notes_processing,
+            notes_processing: measurements.notes_processing(),
             note_execution,
-            tx_script_processing: measurements.tx_script_processing,
+            tx_script_processing: measurements.tx_script_processing(),
             epilogue: EpilogueMeasurements::from_parts(
-                measurements.epilogue,
-                measurements.auth_procedure,
+                measurements.epilogue(),
+                measurements.auth_procedure(),
             ),
             trace: TraceMeasurements::from(trace),
         })
@@ -68,7 +68,7 @@ impl MeasurementsPrinter {
 #[derive(Debug, Clone, Serialize)]
 struct NoteExecution {
     note: String,
-    cycles: usize,
+    cycles: u32,
 }
 
 /// Helper structure holding the cycle count for different intervals in the epilogue, namely:
@@ -77,12 +77,12 @@ struct NoteExecution {
 ///   procedure
 #[derive(Debug, Clone, Serialize)]
 struct EpilogueMeasurements {
-    total: usize,
-    auth_procedure: usize,
+    total: u32,
+    auth_procedure: u32,
 }
 
 impl EpilogueMeasurements {
-    pub fn from_parts(total: usize, auth_procedure: usize) -> Self {
+    pub fn from_parts(total: u32, auth_procedure: u32) -> Self {
         Self { total, auth_procedure }
     }
 }

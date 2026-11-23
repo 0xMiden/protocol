@@ -33,7 +33,7 @@ use super::{
 
 /// The post-auth epilogue estimate used by `pay_fee` for a transaction with the given number of
 /// output notes (including the fee note).
-fn post_auth_epilogue_estimate(num_output_notes: usize) -> usize {
+fn post_auth_epilogue_estimate(num_output_notes: u32) -> u32 {
     POST_AUTH_EPILOGUE_BASE_CYCLES + POST_AUTH_EPILOGUE_PER_NOTE_CYCLES * num_output_notes
 }
 
@@ -283,7 +283,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
 #[tokio::test]
 async fn cycle_estimates_are_upper_bounds(
     #[case] auth_scheme: AuthScheme,
-    #[case] scheme_cycles: usize,
+    #[case] scheme_cycles: u32,
 ) -> anyhow::Result<()> {
     let (executed_transaction, _) = execute_fee_paying_tx(auth_scheme).await?;
 
@@ -292,14 +292,14 @@ async fn cycle_estimates_are_upper_bounds(
     // the whole auth procedure (fee payment + summary + signature verification) must stay below
     // the scheme estimate plus the pay_fee margin
     assert!(
-        measurements.auth_procedure <= scheme_cycles + PAY_FEE_CYCLES,
+        measurements.auth_procedure() <= scheme_cycles + PAY_FEE_CYCLES,
         "auth procedure took {} cycles, exceeding the estimate of {}",
-        measurements.auth_procedure,
+        measurements.auth_procedure(),
         scheme_cycles + PAY_FEE_CYCLES,
     );
 
     // the post-auth epilogue must stay below its margin (one output note: the fee note)
-    let post_auth_epilogue = measurements.epilogue - measurements.auth_procedure;
+    let post_auth_epilogue = measurements.epilogue() - measurements.auth_procedure();
     let epilogue_estimate = post_auth_epilogue_estimate(1);
     assert!(
         post_auth_epilogue <= epilogue_estimate,
@@ -315,7 +315,7 @@ async fn cycle_estimates_are_upper_bounds(
 /// via a transaction script and asserts the measured post-auth epilogue stays within the margin.
 #[tokio::test]
 async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()> {
-    const NUM_NOTES: usize = 64;
+    const NUM_NOTES: u32 = 64;
 
     let fee_asset: Asset = FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, 1_000_000)?.into();
 
@@ -366,10 +366,10 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
         .await?;
 
     // all script-created notes plus the fee note are present
-    assert_eq!(executed_transaction.output_notes().num_notes(), NUM_NOTES + 1);
+    assert_eq!(executed_transaction.output_notes().num_notes(), NUM_NOTES as usize + 1);
 
     let measurements = executed_transaction.measurements();
-    let post_auth_epilogue = measurements.epilogue - measurements.auth_procedure;
+    let post_auth_epilogue = measurements.epilogue() - measurements.auth_procedure();
     let epilogue_estimate = post_auth_epilogue_estimate(NUM_NOTES + 1);
     assert!(
         post_auth_epilogue <= epilogue_estimate,

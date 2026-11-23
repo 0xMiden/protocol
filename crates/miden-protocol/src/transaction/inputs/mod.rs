@@ -16,7 +16,7 @@ use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 mod account;
 pub use account::AccountInputs;

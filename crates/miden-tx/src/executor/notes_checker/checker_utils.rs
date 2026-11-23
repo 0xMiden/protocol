@@ -22,12 +22,12 @@ pub const MAX_NUM_CHECKER_NOTES: usize = 20;
 #[derive(Debug)]
 pub struct SuccessfulNote {
     note: Note,
-    num_cycles: usize,
+    num_cycles: u32,
 }
 
 impl SuccessfulNote {
     /// Constructs a new `SuccessfulNote`.
-    pub fn new(note: Note, num_cycles: usize) -> Self {
+    pub fn new(note: Note, num_cycles: u32) -> Self {
         Self { note, num_cycles }
     }
 
@@ -37,7 +37,7 @@ impl SuccessfulNote {
     }
 
     /// Returns the number of cycles consumed during execution.
-    pub fn num_cycles(&self) -> usize {
+    pub fn num_cycles(&self) -> u32 {
         self.num_cycles
     }
 }
@@ -56,7 +56,7 @@ pub enum NoteFailure {
         ///
         /// This is `Some` when the failure was due to exceeding the cycle limit, and `None` for
         /// other error types where the cycle count is not meaningful.
-        num_cycles: Option<usize>,
+        num_cycles: Option<u32>,
     },
     /// The note was rejected along with the bundle of the note it is bound to, and may well be
     /// consumable in a different set.
@@ -131,7 +131,7 @@ impl FailedNote {
     ///
     /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
     /// for other error types where the cycle count is not meaningful.
-    pub fn num_cycles(&self) -> Option<usize> {
+    pub fn num_cycles(&self) -> Option<u32> {
         match &self.failure {
             NoteFailure::Blamed { num_cycles, .. } => *num_cycles,
             NoteFailure::Collateral { .. }

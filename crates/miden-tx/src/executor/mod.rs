@@ -393,35 +393,17 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     )
     .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
-    let patch_commitment = account_patch.to_commitment();
-    if tx_outputs.account_patch_commitment() != patch_commitment {
-        return Err(TransactionExecutorError::InconsistentAccountPatchCommitment {
-            in_kernel_commitment: tx_outputs.account_patch_commitment(),
-            host_commitment: patch_commitment,
-        });
-    }
-
-    let initial_account = tx_inputs.account();
-    let final_account = tx_outputs.account();
-
-    if initial_account.id() != final_account.id() {
-        return Err(TransactionExecutorError::InconsistentAccountId {
-            input_id: initial_account.id(),
-            output_id: final_account.id(),
-        });
-    }
-
     // Add the lazy loaded data, so the transaction can be re-executed from its inputs alone.
     lazy_loaded_data
         .add_to(&mut tx_inputs)
         .map_err(TransactionExecutorError::InvalidTransactionInputs)?;
 
-    Ok(ExecutedTransaction::new(
-        tx_inputs,
-        tx_outputs,
-        account_patch,
-        tx_progress.into(),
-    ))
+    let tx_measurements = tx_progress
+        .try_into()
+        .map_err(TransactionExecutorError::InvalidTransactionMeasurements)?;
+
+    ExecutedTransaction::new(tx_inputs, tx_outputs, account_patch, tx_measurements)
+        .map_err(TransactionExecutorError::ExecutedTransactionConstructionFailed)
 }
 
 /// Validates that input notes were not created after the reference block.

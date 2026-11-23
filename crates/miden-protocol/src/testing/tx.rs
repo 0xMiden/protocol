@@ -5,13 +5,10 @@ use crate::transaction::{ExecutedTransaction, TransactionFee};
 impl ExecutedTransaction {
     /// A Rust implementation of the compute_fee procedure.
     pub fn compute_fee(&self) -> AssetAmount {
-        TransactionFee::new(
-            u32::try_from(self.measurements().total_cycles())
-                .expect("total number of cycles should fit in u32"),
-        )
-        .expect("an executed transaction's cycle count is non-zero and within the kernel bound")
-        .compute_fee(self.tx_inputs().block_header().fee_parameters())
-        .expect("a margin-free fee is far below the maximum asset amount")
+        TransactionFee::new(self.measurements().total_cycles())
+            .expect("an executed transaction's cycle count is non-zero and within the kernel bound")
+            .compute_fee(self.tx_inputs().block_header().fee_parameters())
+            .expect("a margin-free fee is far below the maximum asset amount")
     }
 
     /// Returns `true` if the transaction consumes the note with the given ID.

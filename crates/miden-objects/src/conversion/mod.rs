@@ -4,6 +4,7 @@ mod account_patch;
 mod asset;
 mod batch;
 mod block;
+mod executed_transaction;
 mod merkle;
 mod note;
 mod note_file;

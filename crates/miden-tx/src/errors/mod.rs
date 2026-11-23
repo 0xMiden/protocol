@@ -15,10 +15,12 @@ use miden_protocol::errors::{
     AccountDeltaError,
     AssetError,
     BoundSignatureError,
+    ExecutedTransactionError,
     NoteError,
     OutputNoteError,
     ProvenTransactionError,
     TransactionInputError,
+    TransactionMeasurementsError,
     TransactionOutputError,
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
@@ -61,7 +63,7 @@ pub(crate) enum TransactionCheckerError {
     EpilogueExecution {
         error: TransactionExecutorError,
         /// Cycle counts for notes that executed successfully before the epilogue failed.
-        successful_notes_cycle_counts: Vec<usize>,
+        successful_notes_cycle_counts: Vec<u32>,
     },
     /// The account's authentication requested a signature the executor could not provide, after
     /// every note and the transaction script executed.
@@ -69,19 +71,19 @@ pub(crate) enum TransactionCheckerError {
     AuthorizationRequired {
         error: TransactionExecutorError,
         /// Cycle counts of the notes, all of which executed.
-        successful_notes_cycle_counts: Vec<usize>,
+        successful_notes_cycle_counts: Vec<u32>,
     },
     #[error("transaction note execution failed on note index {failed_note_index}: {error}")]
     NoteExecution {
         failed_note_index: usize,
         error: TransactionExecutorError,
         /// Cycle counts for notes that executed successfully before the failed note.
-        successful_notes_cycle_counts: Vec<usize>,
+        successful_notes_cycle_counts: Vec<u32>,
         /// The number of cycles consumed by the failed note before it errored.
         ///
         /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
         /// for other error types where the cycle count is not meaningful.
-        failed_note_cycle_count: Option<usize>,
+        failed_note_cycle_count: Option<u32>,
     },
 }
 
@@ -125,18 +127,10 @@ pub enum TransactionExecutorError {
     TransactionHostCreationFailed(#[source] Box<TransactionKernelError>),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(&'static str),
-    #[error(
-        "account patch commitment computed in transaction kernel ({in_kernel_commitment}) does not match account patch computed via the host ({host_commitment})"
-    )]
-    InconsistentAccountPatchCommitment {
-        in_kernel_commitment: Word,
-        host_commitment: Word,
-    },
-    #[error("input account ID {input_id} does not match output account ID {output_id}")]
-    InconsistentAccountId {
-        input_id: AccountId,
-        output_id: AccountId,
-    },
+    #[error("failed to create transaction measurements")]
+    InvalidTransactionMeasurements(#[source] TransactionMeasurementsError),
+    #[error("failed to construct executed transaction")]
+    ExecutedTransactionConstructionFailed(#[source] ExecutedTransactionError),
     #[error("account witness provided for account ID {0} is invalid")]
     InvalidAccountWitness(AccountId, #[source] SmtProofError),
     #[error(

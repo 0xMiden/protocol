@@ -108,7 +108,7 @@ fn mock_code_tree() -> anyhow::Result<CodeTree> {
 }
 
 /// Returns transaction inputs for the native account without notes or lazy loaded data.
-fn empty_tx_inputs() -> anyhow::Result<TransactionInputs> {
+pub(in crate::transaction) fn empty_tx_inputs() -> anyhow::Result<TransactionInputs> {
     let blockchain = PartialBlockchain::default();
     let block_header = mock_block_header(&blockchain, mock_code_tree()?.root());
 
