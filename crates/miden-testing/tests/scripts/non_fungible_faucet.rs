@@ -96,7 +96,7 @@ fn build_nft_faucet_from_component(
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(account_type)
@@ -699,7 +699,7 @@ fn build_nft_faucet_with_blocklist(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
                 .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
-                .build(),
+                .build()?,
         )
         .with_component(Pausable::unpaused())
         .with_component(BlocklistManager);

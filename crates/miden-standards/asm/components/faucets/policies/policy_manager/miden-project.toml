@@ -28,14 +28,24 @@ name        = "miden::standards::faucets::policies::policy_manager::active_burn_
 type        = "word"
 
 [[package.metadata.account-component.storage.slots]]
-description = "Active send policy procedure root"
-name        = "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root"
-type        = "word"
+description = "Active send policy procedure roots indexed by their position in the list"
+name        = "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_roots"
+type        = { key = "word", value = "word" }
 
 [[package.metadata.account-component.storage.slots]]
-description = "Active receive policy procedure root"
-name        = "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root"
-type        = "word"
+description = "Active receive policy procedure roots indexed by their position in the list"
+name        = "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_roots"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Number of active send and receive policy procedure roots"
+name = "miden::standards::faucets::policies::policy_manager::num_active_transfer_policy_proc_roots"
+type = [
+  { name = "num_send_roots", type = "u32" },
+  { name = "num_receive_roots", type = "u32" },
+  { type = "void" },
+  { type = "void" },
+]
 
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed mint policy procedure roots"

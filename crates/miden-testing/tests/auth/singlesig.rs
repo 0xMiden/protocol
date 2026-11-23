@@ -238,7 +238,7 @@ fn setup_singlesig_user_faucet_with_burn_note(
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("polygon")?)

@@ -96,7 +96,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
                 .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
-                .build(),
+                .build()?,
         )
         .with_component(Pausable::unpaused())
         .with_component(BlocklistManager);
@@ -575,7 +575,7 @@ fn add_rbac_faucet_with_blocklist(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(SendPolicy::empty_basic_blocklist())
                 .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
-                .build(),
+                .build()?,
         )
         .with_component(Pausable::unpaused())
         .with_component(BlocklistManager);

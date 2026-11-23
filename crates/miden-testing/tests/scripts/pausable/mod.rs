@@ -470,7 +470,7 @@ fn add_faucet_with_pause_and_policies(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(SendPolicy::empty_basic_blocklist())
                 .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
-                .build(),
+                .build()?,
         );
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

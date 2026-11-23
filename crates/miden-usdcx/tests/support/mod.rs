@@ -1650,7 +1650,7 @@ fn oracle_components(
     let manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .build();
+        .build()?;
     // No PausableManager (the Domain-Pauser-only model); the base Pausable component installs the
     // is_paused slot execute_mint_policy's assert_not_paused reads (v16 — #2944 moved it out of
     // FungibleFaucet). The manager iterator yields [manager, then one companion per distinct
@@ -1772,7 +1772,7 @@ fn oracle_burn_components(
         )
         .active_burn_policy(active_burn)
         .allowed_burn_policy(reserved_burn)
-        .build();
+        .build()?;
 
     // Production build_components extends the manager iterator (the mint policy already
     // carries the seeded xreserve). This oracle keeps the custom burn policy, MinBurnAmount,

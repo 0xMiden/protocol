@@ -205,7 +205,8 @@ impl AggLayerFaucet {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::owner_only())
-            .build();
+            .build()
+            .expect("a manager without transfer policies should be valid");
 
         let rbac = RoleBasedAccessControl::builder()
             .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))

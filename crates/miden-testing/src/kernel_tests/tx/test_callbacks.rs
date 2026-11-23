@@ -1358,7 +1358,7 @@ fn add_faucet_with_callbacks(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .build(),
+                .build()?,
         )
         .with_component(Pausable::unpaused())
         .with_component(callback_component);

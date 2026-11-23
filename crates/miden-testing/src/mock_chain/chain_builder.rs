@@ -465,7 +465,7 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .build();
+            .build()?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
@@ -498,7 +498,7 @@ impl MockChainBuilder {
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)
@@ -573,7 +573,7 @@ impl MockChainBuilder {
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
             .into_iter()
@@ -607,7 +607,7 @@ impl MockChainBuilder {
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
             .into_iter()
@@ -648,7 +648,7 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .build();
+            .build()?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(AccountType::Public)

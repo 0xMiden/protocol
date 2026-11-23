@@ -1,0 +1,1 @@
+[BREAKING] Made the `TokenPolicyManager` builder accept multiple active send and receive policies and return a `Result`, and changed the send and receive policy setters, getters and storage of the `TokenPolicyManager`, and `FaucetPolicyConfig`, to operate on lists of procedure roots.

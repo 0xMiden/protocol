@@ -74,7 +74,7 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
                     .active_burn_policy(BurnPolicy::allow_all())
                     .active_send_policy(SendPolicy::empty_basic_blocklist())
                     .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
-                    .build(),
+                    .build()?,
             ),
         AccountState::Exists,
     )?;

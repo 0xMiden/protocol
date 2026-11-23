@@ -1,4 +1,10 @@
 use {AccountProcedureRoot, NoteArgs} from miden::protocol::types
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use {
+    MAX_NUM_ACTIVE_TRANSFER_POLICIES,
+    PolicyRootsCommitment,
+} from miden::standards::faucets::policies::policy_manager
+use miden::core::crypto::hashes::eidos
 use miden::protocol::active_note
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::note::note_target
@@ -9,21 +15,26 @@ use miden::standards::note::note_target
 # Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the FaucetPolicyConfig note storage. The policy root word comes first so that
-# it is word-aligned and can be loaded with a single `mem_loadw_le`; the variant follows it.
-const POLICY_ROOT_PTR = STORAGE_PTR
-const VARIANT_PTR = STORAGE_PTR + 4
+# Memory addresses of the FaucetPolicyConfig note storage. The variant is padded to a word, so the
+# policy roots are word-aligned, as `eidos::hash_elements` requires.
+const VARIANT_PTR = STORAGE_PTR
+const POLICY_ROOTS_PTR = STORAGE_PTR + WORD_NUM_ELEMENTS
 
-# Config note variants, stored in the storage item after the policy root. Keep in sync with
+# Config note variants, stored in the first storage item. Keep in sync with
 # `FaucetPolicyConfig` on the Rust side.
 const VARIANT_SET_MINT_POLICY = 0
 const VARIANT_SET_BURN_POLICY = 1
-const VARIANT_SET_SEND_POLICY = 2
-const VARIANT_SET_RECEIVE_POLICY = 3
+const VARIANT_SET_SEND_POLICY_ROOTS = 2
+const VARIANT_SET_RECEIVE_POLICY_ROOTS = 3
 
-# Expected note storage item count: a variant plus the policy root word. Identical for every
-# action.
-const NUM_ITEMS_SET_POLICY = 5
+# The number of storage items of the padded variant.
+const NUM_ITEMS_VARIANT = WORD_NUM_ELEMENTS
+
+# Expected note storage item count of the mint and burn actions, which take a single policy root.
+const NUM_ITEMS_SINGLE_POLICY_ROOT = NUM_ITEMS_VARIANT + WORD_NUM_ELEMENTS
+
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_VARIANT + MAX_NUM_ACTIVE_TRANSFER_POLICIES * WORD_NUM_ELEMENTS
 
 # ERRORS
 # =================================================================================================
@@ -40,12 +51,16 @@ const ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet policy config note m
 #! FaucetPolicyConfig script: triggers a `TokenPolicyManager` policy-switch action against the
 #! consuming faucet, dispatched on the note variant in its storage.
 #!
-#! The selected action and its policy root are read from the note storage and are fixed at note
+#! The selected action and its policy roots are read from the note storage and are fixed at note
 #! creation:
-#! - `0` SetMintPolicy:    `[POLICY_ROOT, 0]`.
-#! - `1` SetBurnPolicy:    `[POLICY_ROOT, 1]`.
-#! - `2` SetSendPolicy:    `[POLICY_ROOT, 2]`.
-#! - `3` SetReceivePolicy: `[POLICY_ROOT, 3]`.
+#! - `0` SetMintPolicy:         `[0, 0, 0, 0, POLICY_ROOT]`.
+#! - `1` SetBurnPolicy:         `[1, 0, 0, 0, POLICY_ROOT]`.
+#! - `2` SetSendPolicyRoots:    `[2, 0, 0, 0, [POLICY_ROOT]]`.
+#! - `3` SetReceivePolicyRoots: `[3, 0, 0, 0, [POLICY_ROOT]]`.
+#!
+#! The send and receive setters take the commitment to the policy roots on the operand stack and
+#! read the roots from the advice map. This script inserts the roots into the advice map, so they
+#! need no out-of-band advice inputs.
 #!
 #! Authorization is enforced by the called `TokenPolicyManager` procedures via the account-wide
 #! `Authority` component (`assert_authorized`); this script only dispatches to them. Each procedure
@@ -53,8 +68,8 @@ const ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet policy config note m
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::policy_manager::{set_mint_policy, set_burn_policy,
-#!   set_send_policy, set_receive_policy}` (the `TokenPolicyManager` component), backed by the
-#!   `Authority` companion component.
+#!   set_send_policy_roots_commitment, set_receive_policy_roots_commitment}` (the
+#!   `TokenPolicyManager` component), backed by the `Authority` companion component.
 #!
 #! Consumers: target account (attachment)
 #!
@@ -64,10 +79,10 @@ const ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet policy config note m
 #! Panics if:
 #! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
-#! - the number of storage items exceeds NUM_ITEMS_SET_POLICY.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the caller is not authorized per the installed `Authority` component, or the policy root is not
+#! - the caller is not authorized per the installed `Authority` component, or a policy root is not
 #!   an allowed alternative (per the `TokenPolicyManager` procedures).
 @note_script
 pub proc main(args: NoteArgs)
@@ -84,8 +99,8 @@ pub proc main(args: NoteArgs)
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.NUM_ITEMS_SET_POLICY push.STORAGE_PTR exec.active_note::get_bounded_storage
-    # => [num_storage_items]
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    # => [num_storage_items, pad(16)]
 
     mem_load.VARIANT_PTR
     # => [variant, num_storage_items]
@@ -109,20 +124,20 @@ pub proc main(args: NoteArgs)
 
             exec.execute_set_burn_policy
         else
-            dup eq.VARIANT_SET_SEND_POLICY
+            dup eq.VARIANT_SET_SEND_POLICY_ROOTS
             # => [is_set_send, variant, num_storage_items]
 
             if.true
                 drop
                 # => [num_storage_items]
 
-                exec.execute_set_send_policy
+                exec.execute_set_send_policy_roots
             else
-                eq.VARIANT_SET_RECEIVE_POLICY
+                eq.VARIANT_SET_RECEIVE_POLICY_ROOTS
                 assert.err=ERR_FAUCET_POLICY_CONFIG_UNKNOWN_VARIANT
                 # => [num_storage_items]
 
-                exec.execute_set_receive_policy
+                exec.execute_set_receive_policy_roots
             end
         end
     end
@@ -132,25 +147,72 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts the storage item count and builds the `set_*_policy` input window from the stored policy
-#! root.
+#! Builds the call frame of the mint and burn policy setters, which take a single policy root.
 #!
 #! Inputs:  [num_storage_items]
 #! Outputs: [NEW_POLICY_ROOT, pad(12)]
 #!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - num_storage_items is not NUM_ITEMS_SINGLE_POLICY_ROOT.
 #!
 #! Invocation: exec
-proc load_policy_root_window(num_storage_items: u32) -> (AccountProcedureRoot, [felt; 12])
-    eq.NUM_ITEMS_SET_POLICY
+proc prepare_policy_root_call_frame(num_storage_items: u16) -> (AccountProcedureRoot, [felt; 12])
+    eq.NUM_ITEMS_SINGLE_POLICY_ROOT
     assert.err=ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
-    # load the word-aligned policy root on top of a pad(12) tail, overwriting the topmost pad word
+    # load the policy root on top of a pad(12) tail, overwriting the topmost pad word
     padw padw padw padw
-    mem_loadw_le.POLICY_ROOT_PTR
+    mem_loadw_le.POLICY_ROOTS_PTR
     # => [NEW_POLICY_ROOT, pad(12)]
+end
+
+#! Builds the call frame of the send and receive policy setters, which take the commitment to the
+#! list of policy roots, and inserts the list into the advice map.
+#!
+#! Inputs:
+#!   Operand stack: [num_storage_items]
+#! Outputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[POLICY_ROOT]]
+#!   }
+#!
+#! Panics if:
+#! - the number of storage items is not the padded variant plus a non-empty list of policy roots.
+#!
+#! Invocation: exec
+proc prepare_policy_roots_call_frame(num_storage_items: u16) -> (PolicyRootsCommitment, [felt; 12])
+    dup u32gt.NUM_ITEMS_VARIANT
+    assert.err=ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [num_storage_items]
+
+    dup u32mod.WORD_NUM_ELEMENTS eq.0
+    assert.err=ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [num_storage_items]
+
+    # pad the call frame below the commitment
+    padw padw padw movup.12
+    # => [num_storage_items, pad(12)]
+
+    dup add.STORAGE_PTR
+    # => [roots_end_ptr, num_storage_items, pad(12)]
+
+    swap sub.NUM_ITEMS_VARIANT
+    # => [num_elements, roots_end_ptr, pad(12)]
+
+    push.POLICY_ROOTS_PTR dup movdn.2
+    # => [roots_ptr, num_elements, roots_ptr, roots_end_ptr, pad(12)]
+
+    exec.eidos::hash_elements
+    # => [PROC_ROOTS_COMMITMENT, roots_ptr, roots_end_ptr, pad(12)]
+
+    adv.insert_mem
+    # OS => [PROC_ROOTS_COMMITMENT, roots_ptr, roots_end_ptr, pad(12)]
+    # AM => { PROC_ROOTS_COMMITMENT: mem[roots_ptr..roots_end_ptr] }
+
+    movup.4 drop movup.4 drop
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 end
 
 #! Executes the SetMintPolicy action: switches the active mint policy to the stored root.
@@ -159,13 +221,13 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - num_storage_items is not NUM_ITEMS_SINGLE_POLICY_ROOT.
 #! - the caller is not authorized per the installed `Authority` component, or the root is not an
 #!   allowed mint policy (per `policy_manager::set_mint_policy`).
 #!
 #! Invocation: exec
-proc execute_set_mint_policy(num_storage_items: u32)
-    exec.load_policy_root_window
+proc execute_set_mint_policy(num_storage_items: u16)
+    exec.prepare_policy_root_call_frame
     # => [NEW_POLICY_ROOT, pad(12)]
 
     call.policy_manager::set_mint_policy
@@ -181,13 +243,13 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - num_storage_items is not NUM_ITEMS_SINGLE_POLICY_ROOT.
 #! - the caller is not authorized per the installed `Authority` component, or the root is not an
 #!   allowed burn policy (per `policy_manager::set_burn_policy`).
 #!
 #! Invocation: exec
-proc execute_set_burn_policy(num_storage_items: u32)
-    exec.load_policy_root_window
+proc execute_set_burn_policy(num_storage_items: u16)
+    exec.prepare_policy_root_call_frame
     # => [NEW_POLICY_ROOT, pad(12)]
 
     call.policy_manager::set_burn_policy
@@ -197,44 +259,45 @@ proc execute_set_burn_policy(num_storage_items: u32)
     # => []
 end
 
-#! Executes the SetSendPolicy action: switches the active send policy to the stored root.
+#! Executes the SetSendPolicyRoots action: switches the active send policies to the stored roots.
 #!
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
-#! - the caller is not authorized per the installed `Authority` component, or the root is not an
-#!   allowed send policy (per `policy_manager::set_send_policy`).
+#! - the number of storage items is not the padded variant plus a non-empty list of policy roots.
+#! - the caller is not authorized per the installed `Authority` component, or any root is not an
+#!   allowed send policy (per `policy_manager::set_send_policy_roots_commitment`).
 #!
 #! Invocation: exec
-proc execute_set_send_policy(num_storage_items: u32)
-    exec.load_policy_root_window
-    # => [NEW_POLICY_ROOT, pad(12)]
+proc execute_set_send_policy_roots(num_storage_items: u16)
+    exec.prepare_policy_roots_call_frame
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 
-    call.policy_manager::set_send_policy
+    call.policy_manager::set_send_policy_roots_commitment
     # => [pad(16)]
 
     dropw dropw dropw dropw
     # => []
 end
 
-#! Executes the SetReceivePolicy action: switches the active receive policy to the stored root.
+#! Executes the SetReceivePolicyRoots action: switches the active receive policies to the stored
+#! roots.
 #!
 #! Inputs:  [num_storage_items]
 #! Outputs: []
 #!
 #! Panics if:
-#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
-#! - the caller is not authorized per the installed `Authority` component, or the root is not an
-#!   allowed receive policy (per `policy_manager::set_receive_policy`).
+#! - the number of storage items is not the padded variant plus a non-empty list of policy roots.
+#! - the caller is not authorized per the installed `Authority` component, or any root is not an
+#!   allowed receive policy (per `policy_manager::set_receive_policy_roots_commitment`).
 #!
 #! Invocation: exec
-proc execute_set_receive_policy(num_storage_items: u32)
-    exec.load_policy_root_window
-    # => [NEW_POLICY_ROOT, pad(12)]
+proc execute_set_receive_policy_roots(num_storage_items: u16)
+    exec.prepare_policy_roots_call_frame
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 
-    call.policy_manager::set_receive_policy
+    call.policy_manager::set_receive_policy_roots_commitment
     # => [pad(16)]
 
     dropw dropw dropw dropw

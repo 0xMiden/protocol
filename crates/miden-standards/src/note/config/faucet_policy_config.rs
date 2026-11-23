@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::slice;
 
 use miden_protocol::account::{AccountId, AccountProcedureRoot};
 use miden_protocol::assembly::Path;
@@ -21,8 +22,9 @@ use miden_protocol::{Felt, Word};
 use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
-use crate::note::NetworkAccountTarget;
+use crate::account::policies::TokenPolicyManager;
 use crate::note::costs::{FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::{NetworkAccountTarget, NumStorageItems};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -46,70 +48,87 @@ static FAUCET_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// [`TokenPolicyManager`](crate::account::policies::TokenPolicyManager) component that a
 /// [`FaucetPolicyConfigNote`] triggers on the faucet that consumes it.
 ///
-/// Each variant switches the active policy of one kind to `policy_root`, which must be a root that
-/// the manager registered as an allowed alternative for that kind (otherwise the corresponding
-/// `set_*_policy` procedure aborts). Obtain a root from a policy type, e.g.
-/// `MintPolicy::owner_only().root()` or `MintOwnerOnly::root()`.
+/// Each variant switches the active policy of one kind to the given root or roots, which must be
+/// registered by the manager as allowed alternatives for that kind (otherwise the corresponding
+/// setter procedure aborts). Obtain the roots from a policy type, e.g.
+/// `MintPolicy::owner_only().root()` or `SendPolicy::allow_all().root()`.
 ///
 /// The action is encoded into the note's storage (see [`NoteStorage`] conversion below) and is
 /// fixed at note creation, bound into the note commitment. The consuming faucet's
 /// `TokenPolicyManager` procedures authorize the action through the account-wide
 /// [`Authority`](crate::account::access::Authority) component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FaucetPolicyConfig {
     /// Switch the active mint policy to `policy_root`.
     SetMintPolicy { policy_root: AccountProcedureRoot },
     /// Switch the active burn policy to `policy_root`.
     SetBurnPolicy { policy_root: AccountProcedureRoot },
-    /// Switch the active send (outgoing transfer) policy to `policy_root`.
-    SetSendPolicy { policy_root: AccountProcedureRoot },
-    /// Switch the active receive (incoming transfer) policy to `policy_root`.
-    SetReceivePolicy { policy_root: AccountProcedureRoot },
+    /// Switch the active send (outgoing transfer) policies to `policy_roots`.
+    SetSendPolicyRoots { policy_roots: Vec<AccountProcedureRoot> },
+    /// Switch the active receive (incoming transfer) policies to `policy_roots`.
+    SetReceivePolicyRoots { policy_roots: Vec<AccountProcedureRoot> },
 }
 
 impl FaucetPolicyConfig {
     // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note variants stored in the storage item after the policy root. Keep in sync with
+    // Config note variants stored in the first storage item. Keep in sync with
     // `faucet_policy_config.masm`.
     const VARIANT_SET_MINT_POLICY: u8 = 0;
     const VARIANT_SET_BURN_POLICY: u8 = 1;
-    const VARIANT_SET_SEND_POLICY: u8 = 2;
-    const VARIANT_SET_RECEIVE_POLICY: u8 = 3;
+    const VARIANT_SET_SEND_POLICY_ROOTS: u8 = 2;
+    const VARIANT_SET_RECEIVE_POLICY_ROOTS: u8 = 3;
 
-    /// Returns the variant and policy root of this action.
-    fn parts(self) -> (u8, AccountProcedureRoot) {
+    /// Returns the variant and policy roots of this action.
+    fn parts(&self) -> (u8, &[AccountProcedureRoot]) {
         match self {
             FaucetPolicyConfig::SetMintPolicy { policy_root } => {
-                (Self::VARIANT_SET_MINT_POLICY, policy_root)
+                (Self::VARIANT_SET_MINT_POLICY, slice::from_ref(policy_root))
             },
             FaucetPolicyConfig::SetBurnPolicy { policy_root } => {
-                (Self::VARIANT_SET_BURN_POLICY, policy_root)
+                (Self::VARIANT_SET_BURN_POLICY, slice::from_ref(policy_root))
             },
-            FaucetPolicyConfig::SetSendPolicy { policy_root } => {
-                (Self::VARIANT_SET_SEND_POLICY, policy_root)
+            FaucetPolicyConfig::SetSendPolicyRoots { policy_roots } => {
+                (Self::VARIANT_SET_SEND_POLICY_ROOTS, policy_roots)
             },
-            FaucetPolicyConfig::SetReceivePolicy { policy_root } => {
-                (Self::VARIANT_SET_RECEIVE_POLICY, policy_root)
+            FaucetPolicyConfig::SetReceivePolicyRoots { policy_roots } => {
+                (Self::VARIANT_SET_RECEIVE_POLICY_ROOTS, policy_roots)
             },
         }
     }
-
-    /// Returns the note storage values encoding this action, laid out as `[POLICY_ROOT, variant]`.
-    fn to_storage_values(self) -> Vec<Felt> {
-        let (variant, policy_root) = self.parts();
-        let mut values = Vec::with_capacity(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS);
-        values.extend_from_slice(policy_root.as_word().as_elements());
-        values.push(Felt::from(variant));
-        values
-    }
 }
 
-impl From<FaucetPolicyConfig> for NoteStorage {
-    fn from(config: FaucetPolicyConfig) -> Self {
-        NoteStorage::new(config.to_storage_values())
-            .expect("number of storage items should not exceed max storage items")
+impl TryFrom<&FaucetPolicyConfig> for NoteStorage {
+    type Error = NoteError;
+
+    /// Encodes the action as its variant, padded to a word so that the policy roots are
+    /// word-aligned, followed by its policy roots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the list of policy roots is empty.
+    /// - the list of policy roots exceeds [`TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES`].
+    fn try_from(config: &FaucetPolicyConfig) -> Result<Self, Self::Error> {
+        let (variant, policy_roots) = config.parts();
+        if policy_roots.is_empty() {
+            return Err(NoteError::other("faucet policy config must contain a policy root"));
+        }
+        if policy_roots.len() > TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES {
+            return Err(NoteError::other(format!(
+                "faucet policy config contains {} policy roots but the maximum is {}",
+                policy_roots.len(),
+                TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES
+            )));
+        }
+
+        let variant = [Felt::from(variant), Felt::ZERO, Felt::ZERO, Felt::ZERO];
+        let values = variant
+            .into_iter()
+            .chain(policy_roots.iter().flat_map(|root| root.as_word().into_elements()))
+            .collect();
+        NoteStorage::new(values)
     }
 }
 
@@ -121,9 +140,10 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 /// faucet that consumes it.
 ///
 /// A single note script dispatches on the note variant in its storage to one of the component's
-/// setters (`set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`).
-/// Authorization is enforced by those procedures through the account-wide
-/// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
+/// setters (`set_mint_policy`, `set_burn_policy`, `set_send_policy_roots_commitment`,
+/// `set_receive_policy_roots_commitment`). Authorization is enforced by those procedures through
+/// the account-wide [`Authority`](crate::account::access::Authority) component, so the note carries
+/// no assets.
 ///
 /// The note is always public (for network execution) and tagged for `account` — the faucet
 /// carrying the `TokenPolicyManager` component whose policy is being switched.
@@ -143,6 +163,7 @@ pub struct FaucetPolicyConfigNote {
     sender: AccountId,
     target: AccountId,
     config: FaucetPolicyConfig,
+    storage: NoteStorage,
     serial_number: Word,
     attachments: NoteAttachments,
 }
@@ -154,6 +175,8 @@ impl FaucetPolicyConfigNote {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - the number of policy roots in `config` is zero or exceeds
+    ///   [`TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES`].
     /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
     /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
@@ -177,11 +200,13 @@ impl FaucetPolicyConfigNote {
         })?;
 
         let attachments = NoteAttachments::new(attachments)?;
+        let storage = NoteStorage::try_from(&config)?;
 
         Ok(Self {
             sender,
             target,
             config,
+            storage,
             serial_number,
             attachments,
         })
@@ -192,8 +217,19 @@ impl FaucetPolicyConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a FaucetPolicyConfig note: a variant plus the policy root word.
-    pub const NUM_STORAGE_ITEMS: usize = 5;
+    /// The numbers of storage items the FaucetPolicyConfig note script accepts: a variant word plus
+    /// a non-empty list of policy root words.
+    pub const NUM_STORAGE_ITEMS: NumStorageItems = NumStorageItems::AnyOf(&{
+        let mut num_items =
+            [NumStorageItems::Exact(0); TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES];
+        let mut index = 0;
+        while index < num_items.len() {
+            num_items[index] =
+                NumStorageItems::Exact(Word::NUM_ELEMENTS + (index + 1) * Word::NUM_ELEMENTS);
+            index += 1;
+        }
+        num_items
+    });
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -220,8 +256,8 @@ impl FaucetPolicyConfigNote {
     }
 
     /// Returns the policy-switch action carried by the note.
-    pub fn config(&self) -> FaucetPolicyConfig {
-        self.config
+    pub fn config(&self) -> &FaucetPolicyConfig {
+        &self.config
     }
 
     /// Returns the note's serial number.
@@ -274,14 +310,11 @@ where
 impl From<FaucetPolicyConfigNote> for Note {
     fn from(note: FaucetPolicyConfigNote) -> Self {
         // FaucetPolicyConfig notes carry no assets and are always public for network execution; the
-        // action and its policy root live in the note storage.
+        // action and its policy roots live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
-        let recipient = NoteRecipient::new(
-            note.serial_number,
-            FaucetPolicyConfigNote::script(),
-            NoteStorage::from(note.config),
-        );
+        let recipient =
+            NoteRecipient::new(note.serial_number, FaucetPolicyConfigNote::script(), note.storage);
 
         Note::with_attachments(NoteAssets::default(), metadata, recipient, note.attachments)
     }
@@ -301,6 +334,7 @@ impl NoteConsumptionCost for FaucetPolicyConfigNote {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::EidosRandomCoin;
 
@@ -340,36 +374,76 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// Storage is `[POLICY_ROOT, variant]` with the variant matching the action kind.
-    #[test]
-    fn storage_layout() {
-        let root = policy_root(10);
+    /// The padded variant matching the action kind precedes the policy roots.
+    #[rstest::rstest]
+    #[case::mint(
+        FaucetPolicyConfig::SetMintPolicy { policy_root: policy_root(10) },
+        FaucetPolicyConfig::VARIANT_SET_MINT_POLICY,
+        &[policy_root(10)],
+    )]
+    #[case::burn(
+        FaucetPolicyConfig::SetBurnPolicy { policy_root: policy_root(10) },
+        FaucetPolicyConfig::VARIANT_SET_BURN_POLICY,
+        &[policy_root(10)],
+    )]
+    #[case::send_single(
+        FaucetPolicyConfig::SetSendPolicyRoots { policy_roots: vec![policy_root(10)] },
+        FaucetPolicyConfig::VARIANT_SET_SEND_POLICY_ROOTS,
+        &[policy_root(10)],
+    )]
+    #[case::send_multiple(
+        FaucetPolicyConfig::SetSendPolicyRoots {
+            policy_roots: vec![policy_root(10), policy_root(20)],
+        },
+        FaucetPolicyConfig::VARIANT_SET_SEND_POLICY_ROOTS,
+        &[policy_root(10), policy_root(20)],
+    )]
+    #[case::receive_multiple(
+        FaucetPolicyConfig::SetReceivePolicyRoots {
+            policy_roots: vec![policy_root(10), policy_root(20)],
+        },
+        FaucetPolicyConfig::VARIANT_SET_RECEIVE_POLICY_ROOTS,
+        &[policy_root(10), policy_root(20)],
+    )]
+    fn storage_layout(
+        #[case] config: FaucetPolicyConfig,
+        #[case] variant: u8,
+        #[case] policy_roots: &[AccountProcedureRoot],
+    ) -> anyhow::Result<()> {
+        let storage = NoteStorage::try_from(&config)?;
 
-        let cases = [
-            (
-                FaucetPolicyConfig::SetMintPolicy { policy_root: root },
-                FaucetPolicyConfig::VARIANT_SET_MINT_POLICY,
-            ),
-            (
-                FaucetPolicyConfig::SetBurnPolicy { policy_root: root },
-                FaucetPolicyConfig::VARIANT_SET_BURN_POLICY,
-            ),
-            (
-                FaucetPolicyConfig::SetSendPolicy { policy_root: root },
-                FaucetPolicyConfig::VARIANT_SET_SEND_POLICY,
-            ),
-            (
-                FaucetPolicyConfig::SetReceivePolicy { policy_root: root },
-                FaucetPolicyConfig::VARIANT_SET_RECEIVE_POLICY,
-            ),
-        ];
-
-        for (action, variant) in cases {
-            let storage = NoteStorage::from(action);
-            let mut expected = Vec::from(root.as_word().as_elements());
-            expected.push(Felt::from(variant));
-            assert_eq!(storage.items(), expected.as_slice());
-            assert_eq!(storage.items().len(), FaucetPolicyConfigNote::NUM_STORAGE_ITEMS);
+        let mut expected = vec![Felt::from(variant), Felt::ZERO, Felt::ZERO, Felt::ZERO];
+        for root in policy_roots {
+            expected.extend_from_slice(root.as_word().as_elements());
         }
+        assert_eq!(storage.items(), expected.as_slice());
+        assert!(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS.accepts(storage.items().len()));
+
+        Ok(())
+    }
+
+    /// The builder rejects an empty list of policy roots and one that exceeds the maximum length.
+    #[rstest::rstest]
+    #[case::empty(0, "must contain a policy root")]
+    #[case::too_many(
+        TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES + 1,
+        "contains 17 policy roots but the maximum is 16"
+    )]
+    fn builder_rejects_invalid_number_of_policy_roots(
+        #[case] num_roots: usize,
+        #[case] expected_error: &str,
+    ) {
+        let result = FaucetPolicyConfigNote::builder()
+            .sender(account_id(2))
+            .target(account_id(1))
+            .config(FaucetPolicyConfig::SetSendPolicyRoots {
+                policy_roots: vec![policy_root(10); num_roots],
+            })
+            .serial_number(Word::empty())
+            .build();
+
+        assert_matches!(result, Err(NoteError::Other { error_msg, .. }) => {
+            assert!(error_msg.contains(expected_error));
+        });
     }
 }

@@ -99,7 +99,7 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
         .allowed_burn_policy(BurnPolicy::owner_only())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new([43; 32])
         .account_type(AccountType::Public)
@@ -218,7 +218,7 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(100)?))
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new([43; 32])
         .account_type(AccountType::Public)
@@ -366,7 +366,7 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(list.send_policy())
         .active_receive_policy(list.receive_policy())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new([43; 32])
         .account_type(AccountType::Public)

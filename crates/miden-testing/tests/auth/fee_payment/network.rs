@@ -177,7 +177,7 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
     let mut faucet_account = create_native_fungible_faucet_for_genesis(
         [10; 32],
         faucet,
@@ -252,7 +252,7 @@ async fn network_faucet_deploys_by_consuming_p2id_note() -> anyhow::Result<()> {
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .build();
+        .build()?;
     // every allowlisted note the account prices needs a schedule entry, taken from the cost tables
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let pricer = NetworkNotePricer::builder()

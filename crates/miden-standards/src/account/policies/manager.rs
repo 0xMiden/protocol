@@ -1,18 +1,20 @@
 //! Unified token policy manager.
 //!
-//! [`TokenPolicyManager`] owns the policy state for fungible faucets. All four kinds use one
-//! `active_*_policy_proc_root` slot each plus an `allowed_*_policies` map slot for validating
-//! policy-switching at set time. Mint and burn are dispatched by `exec`-invoked
+//! [`TokenPolicyManager`] owns the policy state for fungible faucets. Mint and burn have a single
+//! active policy each, while send and receive have a list of active policies each. All four kinds
+//! use an `allowed_*_policies` map slot for validating policy-switching at set time. Mint and burn
+//! are dispatched by `exec`-invoked
 //! `execute_*_policy` wrappers from the faucet flow. Send and receive are dispatched by
 //! `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in the
 //! protocol-reserved callback slots
 //! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and
 //! `miden::protocol::faucet::callback::on_before_note_sealed`); the kernel `dyncall`s the wrapper,
 //! which limits the transaction's expiration, applies the account-wide pause check and then
-//! dispatches to the active policy root.
+//! dispatches to the active policy roots.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
+use core::iter;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
@@ -38,7 +40,7 @@ use miden_protocol::utils::sync::LazyLock;
 
 use super::burn::BurnPolicy;
 use super::mint::MintPolicy;
-use super::transfer::{ReceivePolicy, SendPolicy};
+use super::transfer::{ReceivePolicy, SendPolicy, TransferPolicyError};
 use crate::account::{account_component_package, metadata_without_slots};
 use crate::procedure_root;
 
@@ -70,16 +72,16 @@ procedure_root!(
 );
 
 procedure_root!(
-    POLICY_MANAGER_SET_SEND_POLICY,
+    POLICY_MANAGER_SET_SEND_POLICY_ROOTS_COMMITMENT,
     POLICY_MANAGER_LIBRARY_PATH,
-    TokenPolicyManager::SET_SEND_POLICY_PROC_NAME,
+    TokenPolicyManager::SET_SEND_POLICY_ROOTS_COMMITMENT_PROC_NAME,
     TokenPolicyManager::code()
 );
 
 procedure_root!(
-    POLICY_MANAGER_SET_RECEIVE_POLICY,
+    POLICY_MANAGER_SET_RECEIVE_POLICY_ROOTS_COMMITMENT,
     POLICY_MANAGER_LIBRARY_PATH,
-    TokenPolicyManager::SET_RECEIVE_POLICY_PROC_NAME,
+    TokenPolicyManager::SET_RECEIVE_POLICY_ROOTS_COMMITMENT_PROC_NAME,
     TokenPolicyManager::code()
 );
 
@@ -114,19 +116,29 @@ static ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyL
     .expect("storage slot name should be valid")
 });
 
-static ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new(
-        "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root",
+        "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_roots",
     )
     .expect("storage slot name should be valid")
 });
 
-static ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new(
-        "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root",
-    )
-    .expect("storage slot name should be valid")
-});
+static ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> =
+    LazyLock::new(|| {
+        StorageSlotName::new(
+            "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_roots",
+        )
+        .expect("storage slot name should be valid")
+    });
+
+static NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(
+    || {
+        StorageSlotName::new(
+            "miden::standards::faucets::policies::policy_manager::num_active_transfer_policy_proc_roots",
+        )
+        .expect("storage slot name should be valid")
+    },
+);
 
 static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new(
@@ -162,7 +174,7 @@ static ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> =
 
 /// Identifies which faucet operation a policy gates.
 ///
-/// Used internally by [`PolicyConfig`] to record which `allowed_*_policies` storage maps a
+/// Used internally by [`TokenPolicyManager`] to record which `allowed_*_policies` storage maps a
 /// policy procedure root should be registered in. The same procedure root may belong to more
 /// than one kind (for example a custom procedure registered as both the send and the receive
 /// policy, which then must not read its inputs, since the two kinds take different inputs).
@@ -174,31 +186,18 @@ enum PolicyKind {
     Receive,
 }
 
-// POLICY CONFIG
-// ================================================================================================
-
-/// Internal entry stored inside [`TokenPolicyManager::policies`] for every registered policy
-/// procedure root. Captures the companion components the policy needs installed on the
-/// account and the set of policy kinds the root is registered under (the same root may serve
-/// more than one kind, e.g. a custom procedure registered as both the send and the receive policy).
-#[derive(Debug, Clone)]
-struct PolicyConfig {
-    components: Vec<AccountComponent>,
-    kinds: BTreeSet<PolicyKind>,
-}
-
 // TOKEN POLICY MANAGER
 // ================================================================================================
 
 /// An [`AccountComponent`] that owns the policy-manager storage slots and the manager
 /// procedures for the four policy kinds (mint, burn, send, receive).
 ///
-/// The component exposes `set_*_policy` and `get_*_policy` for each kind, `execute_*_policy` for
-/// mint / burn, and `invoke_send_policy` / `invoke_receive_policy` for the transfer kinds. The
-/// transfer wrappers double as the protocol-level `on_before_note_sealed` /
-/// `on_before_asset_added_to_account` asset callbacks: the kernel `dyncall`s the wrapper, which
-/// limits the transaction's expiration to the standards default delta, applies the account-wide
-/// pause check and then dispatches to the active send / receive policy.
+/// The component exposes setters and getters for each kind, `execute_*_policy` for mint / burn, and
+/// `invoke_send_policy` / `invoke_receive_policy` for the transfer kinds. The transfer wrappers
+/// double as the protocol-level `on_before_note_sealed` / `on_before_asset_added_to_account` asset
+/// callbacks: the kernel `dyncall`s the wrapper, which limits the transaction's expiration to the
+/// standards default delta, applies the account-wide pause check and then dispatches to the active
+/// send / receive policies, all of which must accept the transfer.
 /// Authorization for switching the active policies is delegated to the account-wide
 /// [`Authority`][crate::account::access::Authority] component, which must be installed alongside
 /// this manager.
@@ -212,15 +211,15 @@ struct PolicyConfig {
 /// [`TokenPolicyManagerBuilder::allowed_receive_policy`]) for runtime switching. The
 /// protocol-reserved asset-callback slots (see the storage layout below) are installed whenever at
 /// least one send or receive policy of either kind is registered - active or reserved - even when
-/// only reserved policies exist and no active root is set yet (see [`Self::has_transfer_policy`]).
+/// only reserved policies exist and no policy is active yet (see [`Self::has_transfer_policy`]).
 /// Installing those slots is what makes the faucet's account ID carry
 /// [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled]. Because
 /// the flag is an immutable property of the account ID, it applies for the faucet's entire
-/// lifetime, so promoting a reserved policy later via `set_send_policy` / `set_receive_policy`
-/// enforces it against the whole circulating supply rather than only assets minted after the
-/// switch. The callbacks also limit every transfer's expiration and apply the pause check before
-/// reading the active root, so transfers anchored to a block before the activation are bounded
-/// too. A faucet created as
+/// lifetime, so promoting a reserved policy later via `set_send_policy_roots_commitment` /
+/// `set_receive_policy_roots_commitment` enforces it against the whole circulating supply rather
+/// than only assets minted after the switch. The callbacks also limit every transfer's expiration
+/// and apply the pause check before reading the active roots, so transfers anchored to a block
+/// before the activation are bounded too. A faucet created as
 /// [`AccountType::Private`][miden_protocol::account::AccountType::Private] publishes only its
 /// commitment, so its holders have to obtain the state each of their transactions needs out of
 /// band. The account type is immutable, so that is settled at creation.
@@ -240,109 +239,91 @@ struct PolicyConfig {
 ///
 /// - [`Self::active_mint_policy_slot`]: procedure root of the active mint policy.
 /// - [`Self::active_burn_policy_slot`]: procedure root of the active burn policy.
-/// - [`Self::active_send_policy_slot`]: procedure root of the active send policy.
-/// - [`Self::active_receive_policy_slot`]: procedure root of the active receive policy.
+/// - [`Self::active_send_policies_slot`]: list of the procedure roots of the active send policies.
+/// - [`Self::active_receive_policies_slot`]: list of the procedure roots of the active receive
+///   policies.
+/// - [`Self::num_active_transfer_policies_slot`]: lengths of the active send and receive lists. A
+///   length of zero means that no policy of that kind is active and the transfer is accepted.
 /// - [`Self::allowed_mint_policies_slot`]: map of allowed mint policy roots.
 /// - [`Self::allowed_burn_policies_slot`]: map of allowed burn policy roots.
 /// - [`Self::allowed_send_policies_slot`]: map of allowed send policy roots.
 /// - [`Self::allowed_receive_policies_slot`]: map of allowed receive policy roots.
 /// - Asset-callback storage slots (registered via [`AssetCallbacks`]) hold the fixed
 ///   `invoke_send_policy` / `invoke_receive_policy` wrapper roots, so the kernel dispatches to the
-///   wrapper (which then dispatches to the active policy in the slot above). They are installed
+///   wrapper (which then dispatches to the active policies in the slots above). They are installed
 ///   only when at least one transfer policy is configured, which is also what makes the faucet's
 ///   account ID carry
 ///   [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled], and
-///   future policy switches via `set_send_policy` / `set_receive_policy` apply to the entire
-///   circulating supply rather than only to assets minted after the switch.
+///   future policy switches via `set_send_policy_roots_commitment` /
+///   `set_receive_policy_roots_commitment` apply to the entire circulating supply rather than only
+///   to assets minted after the switch.
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManager {
     active_mint_policy_root: AccountProcedureRoot,
     active_burn_policy_root: AccountProcedureRoot,
-    active_send_policy_root: AccountProcedureRoot,
-    active_receive_policy_root: AccountProcedureRoot,
-    policies: BTreeMap<AccountProcedureRoot, PolicyConfig>,
+    active_send_policy_roots: Vec<AccountProcedureRoot>,
+    active_receive_policy_roots: Vec<AccountProcedureRoot>,
+    /// The kinds under which each policy procedure root is registered.
+    policies: BTreeMap<AccountProcedureRoot, BTreeSet<PolicyKind>>,
+    /// The deduplicated companion components of all registered policies.
+    components: Vec<AccountComponent>,
 }
 
 #[bon::bon]
 impl TokenPolicyManager {
     /// Builder constructor for [`TokenPolicyManager`].
     ///
-    /// Each `active_*_policy` setter is required and registers the policy as the active one
-    /// for its kind. Each `allowed_*_policy` setter registers an additional reserved alternative
-    /// for runtime switching via the matching `set_*_policy` procedure.
+    /// The active mint and burn policies are required. Any number of active send and receive
+    /// policies can be added, up to the limit below. Each `allowed_*_policy` setter registers an
+    /// additional reserved alternative for runtime switching via the matching setter procedure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if, for either transfer policy kind:
+    /// - the active policies contain the same procedure root more than once.
+    /// - the active policies contain more than [`Self::MAX_NUM_ACTIVE_TRANSFER_POLICIES`] procedure
+    ///   roots.
     #[builder]
     pub fn new(
         #[builder(field)] allowed_mint_policies: BTreeMap<AccountProcedureRoot, MintPolicy>,
         #[builder(field)] allowed_burn_policies: BTreeMap<AccountProcedureRoot, BurnPolicy>,
-        #[builder(field)] allowed_send_policies: BTreeMap<AccountProcedureRoot, SendPolicy>,
-        #[builder(field)] allowed_receive_policies: BTreeMap<AccountProcedureRoot, ReceivePolicy>,
+        #[builder(field)] active_send_policies: Vec<SendPolicy>,
+        #[builder(field)] active_receive_policies: Vec<ReceivePolicy>,
+        #[builder(field)] allowed_send_policies: Vec<SendPolicy>,
+        #[builder(field)] allowed_receive_policies: Vec<ReceivePolicy>,
         active_mint_policy: MintPolicy,
         active_burn_policy: BurnPolicy,
-        active_send_policy: Option<SendPolicy>,
-        active_receive_policy: Option<ReceivePolicy>,
-    ) -> Self {
+    ) -> Result<Self, TransferPolicyError> {
         let active_mint_policy_root = active_mint_policy.root();
         let active_burn_policy_root = active_burn_policy.root();
-        let active_send_policy_root = active_send_policy
-            .as_ref()
-            .map(SendPolicy::root)
-            .unwrap_or_else(|| AccountProcedureRoot::from_raw(Word::empty()));
-        let active_receive_policy_root = active_receive_policy
-            .as_ref()
-            .map(ReceivePolicy::root)
-            .unwrap_or_else(|| AccountProcedureRoot::from_raw(Word::empty()));
+        let active_send_policy_roots =
+            collect_active_transfer_roots(active_send_policies.iter().map(SendPolicy::root))?;
+        let active_receive_policy_roots =
+            collect_active_transfer_roots(active_receive_policies.iter().map(ReceivePolicy::root))?;
 
-        let mut policies: BTreeMap<AccountProcedureRoot, PolicyConfig> = BTreeMap::new();
-
-        insert_policy(
-            &mut policies,
-            active_mint_policy_root,
-            active_mint_policy.into_iter().collect(),
-            PolicyKind::Mint,
-        );
-        insert_policy(
-            &mut policies,
-            active_burn_policy_root,
-            active_burn_policy.into_iter().collect(),
-            PolicyKind::Burn,
-        );
-        if let Some(policy) = active_send_policy {
-            insert_policy(
-                &mut policies,
-                active_send_policy_root,
-                policy.into_iter().collect(),
-                PolicyKind::Send,
-            );
-        }
-        if let Some(policy) = active_receive_policy {
-            insert_policy(
-                &mut policies,
-                active_receive_policy_root,
-                policy.into_iter().collect(),
-                PolicyKind::Receive,
-            );
-        }
-
-        for (root, policy) in allowed_mint_policies {
-            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Mint);
-        }
-        for (root, policy) in allowed_burn_policies {
-            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Burn);
-        }
-        for (root, policy) in allowed_send_policies {
-            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Send);
-        }
-        for (root, policy) in allowed_receive_policies {
-            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Receive);
-        }
-
-        Self {
+        let mut manager = Self {
             active_mint_policy_root,
             active_burn_policy_root,
-            active_send_policy_root,
-            active_receive_policy_root,
-            policies,
+            active_send_policy_roots,
+            active_receive_policy_roots,
+            policies: BTreeMap::new(),
+            components: Vec::new(),
+        };
+
+        for policy in iter::once(active_mint_policy).chain(allowed_mint_policies.into_values()) {
+            manager.register_policy(PolicyKind::Mint, policy.root(), policy);
         }
+        for policy in iter::once(active_burn_policy).chain(allowed_burn_policies.into_values()) {
+            manager.register_policy(PolicyKind::Burn, policy.root(), policy);
+        }
+        for policy in active_send_policies.into_iter().chain(allowed_send_policies) {
+            manager.register_policy(PolicyKind::Send, policy.root(), policy);
+        }
+        for policy in active_receive_policies.into_iter().chain(allowed_receive_policies) {
+            manager.register_policy(PolicyKind::Receive, policy.root(), policy);
+        }
+
+        Ok(manager)
     }
 }
 
@@ -363,19 +344,33 @@ impl<S: token_policy_manager_builder::State> TokenPolicyManagerBuilder<S> {
         self
     }
 
-    /// Registers a reserved send policy in the `allowed_send_policy_proc_roots` map. May be
-    /// activated at runtime via `set_send_policy`. Allowed entries are deduplicated by
-    /// procedure root.
-    pub fn allowed_send_policy(mut self, policy: SendPolicy) -> Self {
-        self.allowed_send_policies.insert(policy.root(), policy);
+    /// Adds an active send policy. A transfer must be accepted by all active send policies, which
+    /// are invoked in the order in which they were added.
+    pub fn active_send_policy(mut self, policy: SendPolicy) -> Self {
+        self.active_send_policies.push(policy);
         self
     }
 
-    /// Registers a reserved receive policy in the `allowed_receive_policy_proc_roots` map.
-    /// May be activated at runtime via `set_receive_policy`. Allowed entries are deduplicated
-    /// by procedure root.
+    /// Adds an active receive policy. A transfer must be accepted by all active receive policies,
+    /// which are invoked in the order in which they were added.
+    pub fn active_receive_policy(mut self, policy: ReceivePolicy) -> Self {
+        self.active_receive_policies.push(policy);
+        self
+    }
+
+    /// Registers a reserved send policy in the `allowed_send_policy_proc_roots` map.
+    /// Any combination of the registered roots may be activated at runtime via
+    /// `set_send_policy_roots_commitment`.
+    pub fn allowed_send_policy(mut self, policy: SendPolicy) -> Self {
+        self.allowed_send_policies.push(policy);
+        self
+    }
+
+    /// Registers a reserved receive policy in the `allowed_receive_policy_proc_roots`
+    /// map. Any combination of the registered roots may be activated at runtime via
+    /// `set_receive_policy_roots_commitment`.
     pub fn allowed_receive_policy(mut self, policy: ReceivePolicy) -> Self {
-        self.allowed_receive_policies.insert(policy.root(), policy);
+        self.allowed_receive_policies.push(policy);
         self
     }
 }
@@ -390,10 +385,16 @@ impl TokenPolicyManager {
     /// Component description used in [`AccountComponentMetadata`].
     pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
 
+    /// The maximum number of active policies per transfer policy kind. Keep in sync with
+    /// `policy_manager.masm`.
+    pub const MAX_NUM_ACTIVE_TRANSFER_POLICIES: usize = 16;
+
     const SET_MINT_POLICY_PROC_NAME: &'static str = "set_mint_policy";
     const SET_BURN_POLICY_PROC_NAME: &'static str = "set_burn_policy";
-    const SET_SEND_POLICY_PROC_NAME: &'static str = "set_send_policy";
-    const SET_RECEIVE_POLICY_PROC_NAME: &'static str = "set_receive_policy";
+    const SET_SEND_POLICY_ROOTS_COMMITMENT_PROC_NAME: &'static str =
+        "set_send_policy_roots_commitment";
+    const SET_RECEIVE_POLICY_ROOTS_COMMITMENT_PROC_NAME: &'static str =
+        "set_receive_policy_roots_commitment";
     const INVOKE_SEND_POLICY_PROC_NAME: &'static str = "invoke_send_policy";
     const INVOKE_RECEIVE_POLICY_PROC_NAME: &'static str = "invoke_receive_policy";
 
@@ -415,16 +416,16 @@ impl TokenPolicyManager {
         self.active_burn_policy_root
     }
 
-    /// Returns the active send policy procedure root, or [`None`] if no send policy was set.
-    pub fn active_send_policy(&self) -> Option<AccountProcedureRoot> {
-        (!self.active_send_policy_root.as_word().is_empty()).then_some(self.active_send_policy_root)
+    /// Returns the active send policy procedure roots in invocation order. The list is empty if no
+    /// send policy is active.
+    pub fn active_send_policies(&self) -> &[AccountProcedureRoot] {
+        &self.active_send_policy_roots
     }
 
-    /// Returns the active receive policy procedure root, or [`None`] if no receive policy was
-    /// set.
-    pub fn active_receive_policy(&self) -> Option<AccountProcedureRoot> {
-        (!self.active_receive_policy_root.as_word().is_empty())
-            .then_some(self.active_receive_policy_root)
+    /// Returns the active receive policy procedure roots in invocation order. The list is empty if
+    /// no receive policy is active.
+    pub fn active_receive_policies(&self) -> &[AccountProcedureRoot] {
+        &self.active_receive_policy_roots
     }
 
     /// Returns all allowed mint policy procedure roots (active + reserved).
@@ -450,7 +451,7 @@ impl TokenPolicyManager {
     fn roots_of_kind(&self, kind: PolicyKind) -> Vec<AccountProcedureRoot> {
         self.policies
             .iter()
-            .filter(|(_, cfg)| cfg.kinds.contains(&kind))
+            .filter(|(_, kinds)| kinds.contains(&kind))
             .map(|(root, _)| *root)
             .collect()
     }
@@ -465,14 +466,14 @@ impl TokenPolicyManager {
         *POLICY_MANAGER_SET_BURN_POLICY
     }
 
-    /// Returns the procedure root of the `set_send_policy` account procedure.
-    pub fn set_send_policy_root() -> AccountProcedureRoot {
-        *POLICY_MANAGER_SET_SEND_POLICY
+    /// Returns the procedure root of the `set_send_policy_roots_commitment` account procedure.
+    pub fn set_send_policy_roots_commitment_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_SET_SEND_POLICY_ROOTS_COMMITMENT
     }
 
-    /// Returns the procedure root of the `set_receive_policy` account procedure.
-    pub fn set_receive_policy_root() -> AccountProcedureRoot {
-        *POLICY_MANAGER_SET_RECEIVE_POLICY
+    /// Returns the procedure root of the `set_receive_policy_roots_commitment` account procedure.
+    pub fn set_receive_policy_roots_commitment_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_SET_RECEIVE_POLICY_ROOTS_COMMITMENT
     }
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
@@ -485,14 +486,20 @@ impl TokenPolicyManager {
         &ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME
     }
 
-    /// Returns the [`StorageSlotName`] where the active send policy procedure root is stored.
-    pub fn active_send_policy_slot() -> &'static StorageSlotName {
-        &ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME
+    /// Returns the [`StorageSlotName`] where the active send policy procedure roots are stored.
+    pub fn active_send_policies_slot() -> &'static StorageSlotName {
+        &ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT_NAME
     }
 
-    /// Returns the [`StorageSlotName`] where the active receive policy procedure root is stored.
-    pub fn active_receive_policy_slot() -> &'static StorageSlotName {
-        &ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME
+    /// Returns the [`StorageSlotName`] where the active receive policy procedure roots are stored.
+    pub fn active_receive_policies_slot() -> &'static StorageSlotName {
+        &ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the numbers of active send and receive policy
+    /// procedure roots are stored.
+    pub fn num_active_transfer_policies_slot() -> &'static StorageSlotName {
+        &NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT_NAME
     }
 
     /// Returns the procedure root of the `invoke_send_policy` wrapper stored in the
@@ -587,9 +594,9 @@ impl TokenPolicyManager {
     /// faucet registers the protocol callback slots and therefore its account ID is created with
     /// [`AssetCallbackFlag::Enabled`](miden_protocol::account::AssetCallbackFlag::Enabled).
     pub fn has_transfer_policy(&self) -> bool {
-        self.policies.iter().any(|(_, cfg)| {
-            cfg.kinds.contains(&PolicyKind::Send) || cfg.kinds.contains(&PolicyKind::Receive)
-        })
+        self.policies
+            .values()
+            .any(|kinds| kinds.contains(&PolicyKind::Send) || kinds.contains(&PolicyKind::Receive))
     }
 
     fn manager_storage_slots(&self) -> Vec<StorageSlot> {
@@ -602,13 +609,20 @@ impl TokenPolicyManager {
                 ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 self.active_burn_policy_root.as_word(),
             ),
-            StorageSlot::with_value(
-                ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_send_policy_root.as_word(),
+            StorageSlot::with_map(
+                ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                build_active_map(&self.active_send_policy_roots),
+            ),
+            StorageSlot::with_map(
+                ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                build_active_map(&self.active_receive_policy_roots),
             ),
             StorageSlot::with_value(
-                ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_receive_policy_root.as_word(),
+                NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                num_active_transfer_policies(
+                    &self.active_send_policy_roots,
+                    &self.active_receive_policy_roots,
+                ),
             ),
             StorageSlot::with_map(
                 ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
@@ -632,10 +646,10 @@ impl TokenPolicyManager {
         // policy is configured, leaving them free for a separate callback component otherwise. The
         // slots hold the fixed `invoke_*_policy` procedure roots, which the kernel calls
         // dynamically: the wrapper limits the expiration, applies the pause check and then invokes
-        // the active policy from the `active_*_policy` slot above, accepting the transfer when that
-        // slot is empty. This indirection lets `set_send_policy` /
-        // `set_receive_policy` switch the active policy for the entire circulating supply without
-        // touching the callback slots.
+        // the active policies from the slots above, accepting the transfer when there are none.
+        // This indirection lets `set_send_policy_roots_commitment` /
+        // `set_receive_policy_roots_commitment` switch the active policies for the entire
+        // circulating supply without touching the callback slots.
         //
         // The slots are what make the account ID carry an enabled asset callback flag, and that
         // flag is immutable, so a faucet created without a transfer policy can never enforce one
@@ -656,17 +670,42 @@ impl TokenPolicyManager {
 
     /// Builds the `allowed_*_policies` storage map for the given kind by filtering the
     /// unified `policies` map. Each entry maps the policy procedure root to a non-zero flag,
-    /// so runtime `set_*_policy` validation can confirm the root is allowed before activating
+    /// so the runtime validation of the setters can confirm the root is allowed before activating
     /// it.
     fn build_allowed_map(&self, kind: PolicyKind) -> StorageMap {
         let allowed_flag = Word::from([1u32, 0, 0, 0]);
         let entries: Vec<_> = self
             .policies
             .iter()
-            .filter(|(_, cfg)| cfg.kinds.contains(&kind))
+            .filter(|(_, kinds)| kinds.contains(&kind))
             .map(|(root, _)| (StorageMapKey::new(root.as_word()), allowed_flag))
             .collect();
         StorageMap::with_entries(entries).expect("allowed policy roots should have unique keys")
+    }
+
+    /// Registers the policy's root under the given kind and adds its companion components.
+    ///
+    /// A companion component that was already added with the same code and storage is not added
+    /// again, which installs a component once when it exports the roots of several policies (e.g.
+    /// the send and receive procedures of a transfer policy). A component with the same code but
+    /// different storage is kept, so the conflict fails the account build.
+    fn register_policy(
+        &mut self,
+        kind: PolicyKind,
+        root: AccountProcedureRoot,
+        components: impl IntoIterator<Item = AccountComponent>,
+    ) {
+        self.policies.entry(root).or_default().insert(kind);
+
+        for component in components {
+            let is_installed = self.components.iter().any(|installed| {
+                installed.component_code() == component.component_code()
+                    && installed.storage_slots() == component.storage_slots()
+            });
+            if !is_installed {
+                self.components.push(component);
+            }
+        }
     }
 
     fn to_manager_component(&self) -> AccountComponent {
@@ -682,38 +721,50 @@ impl TokenPolicyManager {
     }
 }
 
-/// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
-/// entry's kind set. A companion component that another entry already carries with the same code
-/// and storage is not added again, which installs a component once when it exports the roots of
-/// several policies (e.g. the send and receive procedures of a transfer policy). A component with
-/// the same code but different storage is kept, so the conflict fails the account build.
-fn insert_policy(
-    policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
-    root: AccountProcedureRoot,
-    components: Vec<AccountComponent>,
-    kind: PolicyKind,
-) {
-    if let Some(cfg) = policies.get_mut(&root) {
-        cfg.kinds.insert(kind);
-        return;
+/// Collects the roots of the active transfer policies of one kind.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - the roots contain duplicates.
+/// - there are more than [`TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES`] roots.
+fn collect_active_transfer_roots(
+    policy_roots: impl Iterator<Item = AccountProcedureRoot>,
+) -> Result<Vec<AccountProcedureRoot>, TransferPolicyError> {
+    let mut roots = Vec::new();
+    for root in policy_roots {
+        if roots.contains(&root) {
+            return Err(TransferPolicyError::DuplicateRoot(root));
+        }
+        roots.push(root);
     }
 
-    let components = components
-        .into_iter()
-        .filter(|component| {
-            !policies.values().flat_map(|cfg| &cfg.components).any(|installed| {
-                installed.component_code() == component.component_code()
-                    && installed.storage_slots() == component.storage_slots()
-            })
-        })
+    if roots.len() > TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES {
+        return Err(TransferPolicyError::TooManyRoots(roots.len()));
+    }
+
+    Ok(roots)
+}
+
+/// Builds the storage map holding the active policy roots, keyed by their position in the list as
+/// expected by the MASM `array` module.
+fn build_active_map(roots: &[AccountProcedureRoot]) -> StorageMap {
+    let entries: Vec<_> = (0u32..)
+        .zip(roots)
+        .map(|(index, root)| (StorageMapKey::from_array([0, 0, 0, index]), root.as_word()))
         .collect();
-    policies.insert(
-        root,
-        PolicyConfig {
-            components,
-            kinds: BTreeSet::from([kind]),
-        },
-    );
+    StorageMap::with_entries(entries).expect("active policy root indices should be unique")
+}
+
+/// Builds the storage value holding the numbers of active send and receive policy roots.
+fn num_active_transfer_policies(
+    send_roots: &[AccountProcedureRoot],
+    receive_roots: &[AccountProcedureRoot],
+) -> Word {
+    let num_roots = |roots: &[AccountProcedureRoot]| {
+        u32::try_from(roots.len()).expect("number of policy roots should fit into a u32")
+    };
+    Word::from([num_roots(send_roots), num_roots(receive_roots), 0, 0])
 }
 
 impl IntoIterator for TokenPolicyManager {
@@ -727,9 +778,7 @@ impl IntoIterator for TokenPolicyManager {
     fn into_iter(self) -> Self::IntoIter {
         let manager_component = self.to_manager_component();
         let mut components = vec![manager_component];
-        for (_, policy) in self.policies {
-            components.extend(policy.components);
-        }
+        components.extend(self.components);
         components.into_iter()
     }
 }
@@ -741,7 +790,7 @@ impl IntoIterator for TokenPolicyManager {
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::component::{InitStorageData, StorageValueName};
-    use miden_protocol::account::{AccountBuilder, AccountId};
+    use miden_protocol::account::{AccountBuilder, AccountId, StorageSlotContent};
     use miden_protocol::asset::AssetCallbacks;
     use miden_protocol::errors::AccountError;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
@@ -749,6 +798,7 @@ mod tests {
     use super::*;
     use crate::account::auth::NoAuth;
     use crate::account::policies::{
+        BasicBlocklist,
         BlocklistStorage,
         BurnAllowAll,
         MintAllowAll,
@@ -762,6 +812,35 @@ mod tests {
         slot_name: &StorageSlotName,
     ) -> Option<&'a StorageSlot> {
         component.storage_slots().iter().find(|slot| slot.name() == slot_name)
+    }
+
+    /// Asserts that the component stores the given lists of active send and receive policy roots.
+    fn assert_active_transfer_policies(
+        component: &AccountComponent,
+        send_roots: &[AccountProcedureRoot],
+        receive_roots: &[AccountProcedureRoot],
+    ) {
+        for (slot_name, roots) in [
+            (TokenPolicyManager::active_send_policies_slot(), send_roots),
+            (TokenPolicyManager::active_receive_policies_slot(), receive_roots),
+        ] {
+            let slot = find_slot(component, slot_name).expect("active policies slot should exist");
+            assert_matches!(slot.content(), StorageSlotContent::Map(map) => {
+                assert_eq!(map.num_entries(), roots.len());
+                for (index, root) in (0u32..).zip(roots) {
+                    let key = StorageMapKey::from_array([0, 0, 0, index]);
+                    assert_eq!(map.get(&key), root.as_word());
+                }
+            });
+        }
+
+        let num_roots_slot =
+            find_slot(component, TokenPolicyManager::num_active_transfer_policies_slot())
+                .expect("number of active policies slot should exist");
+        assert_eq!(
+            num_roots_slot.value(),
+            Word::from([send_roots.len() as u32, receive_roots.len() as u32, 0, 0])
+        );
     }
 
     /// Asserts the component's metadata schema declares exactly the slots the component installs.
@@ -779,15 +858,15 @@ mod tests {
 
     /// Checks that a manager configured with a transfer policy for both kinds registers the
     /// protocol-reserved asset-callback slots populated with the fixed `invoke_*_policy` wrapper
-    /// roots (the active `TransferAllowAll` root lives in the `active_*_policy` slots instead).
+    /// roots (the active `TransferAllowAll` roots live in the active-policy slots instead).
     #[test]
-    fn allow_all_transfer_policy_registers_protocol_callback_slots() {
+    fn allow_all_transfer_policy_registers_protocol_callback_slots() -> anyhow::Result<()> {
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let manager_component = manager.to_manager_component();
 
@@ -810,17 +889,16 @@ mod tests {
         );
         assert_eq!(on_note_slot.value(), TokenPolicyManager::invoke_send_policy_root().as_word());
 
-        // The active TransferAllowAll root lives in the dedicated active-policy slots.
-        let active_send_slot =
-            find_slot(&manager_component, TokenPolicyManager::active_send_policy_slot())
-                .expect("active send policy slot must be registered");
-        let active_receive_slot =
-            find_slot(&manager_component, TokenPolicyManager::active_receive_policy_slot())
-                .expect("active receive policy slot must be registered");
-        assert_eq!(active_send_slot.value(), TransferAllowAll::send_root().as_word());
-        assert_eq!(active_receive_slot.value(), TransferAllowAll::receive_root().as_word());
+        // The active TransferAllowAll roots live in the dedicated active-policy slots.
+        assert_active_transfer_policies(
+            &manager_component,
+            &[TransferAllowAll::send_root()],
+            &[TransferAllowAll::receive_root()],
+        );
 
         assert_schema_matches_storage(&manager_component);
+
+        Ok(())
     }
 
     /// Checks that a manager whose send / receive policies are registered only as reserved
@@ -828,13 +906,13 @@ mod tests {
     /// slots with the fixed `invoke_*_policy` wrapper roots, so `has_transfer_policy` is true from
     /// creation.
     #[test]
-    fn reserved_only_transfer_policy_registers_protocol_callback_slots() {
+    fn reserved_only_transfer_policy_registers_protocol_callback_slots() -> anyhow::Result<()> {
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
             .allowed_send_policy(SendPolicy::allow_all())
             .allowed_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let manager_component = manager.to_manager_component();
 
@@ -858,31 +936,26 @@ mod tests {
         );
         assert_eq!(on_note_slot.value(), TokenPolicyManager::invoke_send_policy_root().as_word());
 
-        // No policy has been activated yet, so the active-policy slots still hold the empty word.
-        let active_send_slot =
-            find_slot(&manager_component, TokenPolicyManager::active_send_policy_slot())
-                .expect("active send policy slot must be registered");
-        let active_receive_slot =
-            find_slot(&manager_component, TokenPolicyManager::active_receive_policy_slot())
-                .expect("active receive policy slot must be registered");
-        assert_eq!(active_send_slot.value(), Word::empty());
-        assert_eq!(active_receive_slot.value(), Word::empty());
+        // No policy has been activated yet, so the active-policy lists are still empty.
+        assert_active_transfer_policies(&manager_component, &[], &[]);
 
         // The reserved roots are recorded in the allowed-roots maps so they can be promoted later.
         assert!(manager.allowed_send_policies().contains(&TransferAllowAll::send_root()));
         assert!(manager.allowed_receive_policies().contains(&TransferAllowAll::receive_root()));
 
         assert_schema_matches_storage(&manager_component);
+
+        Ok(())
     }
 
     /// A manager configured without send / receive policies must NOT register the protocol
     /// callback slots, leaving them free for a separate callback component.
     #[test]
-    fn manager_without_transfer_policies_omits_protocol_callback_slots() {
+    fn manager_without_transfer_policies_omits_protocol_callback_slots() -> anyhow::Result<()> {
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .build();
+            .build()?;
 
         let manager_component = manager.to_manager_component();
 
@@ -899,36 +972,44 @@ mod tests {
         );
 
         assert_schema_matches_storage(&manager_component);
+
+        Ok(())
     }
 
     /// The schema-driven construction path must produce the same storage layout as a manager
     /// configured with transfer policies, including the two protocol-reserved callback slots.
     #[test]
-    fn storage_schema_covers_every_slot_of_a_transfer_policy_manager() {
+    fn storage_schema_covers_every_slot_of_a_transfer_policy_manager() -> anyhow::Result<()> {
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let manager_component = manager.to_manager_component();
 
-        // The active-policy roots are the only values the schema requires; everything else either
-        // defaults (the callback roots) or starts empty (the allowed-policy maps).
+        // The active mint and burn policy roots and the numbers of active transfer policies are the
+        // only values the schema requires; everything else either defaults (the callback roots) or
+        // starts empty (the maps).
         let mut init_storage_data = InitStorageData::default();
         for (slot_name, root) in [
             (TokenPolicyManager::active_mint_policy_slot(), MintPolicy::allow_all().root()),
             (TokenPolicyManager::active_burn_policy_slot(), BurnPolicy::allow_all().root()),
-            (TokenPolicyManager::active_send_policy_slot(), TransferAllowAll::send_root()),
-            (
-                TokenPolicyManager::active_receive_policy_slot(),
-                TransferAllowAll::receive_root(),
-            ),
         ] {
             init_storage_data
                 .set_value(StorageValueName::from_slot_name(slot_name), root.as_word())
                 .expect("active policy root should be a valid init value");
+        }
+        for field in ["num_send_roots", "num_receive_roots"] {
+            let value_name = StorageValueName::from_slot_name_with_suffix(
+                TokenPolicyManager::num_active_transfer_policies_slot(),
+                field,
+            )
+            .expect("field name should be valid");
+            init_storage_data
+                .set_value(value_name, 0u32)
+                .expect("number of active policies should be a valid init value");
         }
 
         let schema_slots = manager
@@ -967,30 +1048,34 @@ mod tests {
             TokenPolicyManager::invoke_send_policy_root().as_word(),
         );
         assert_eq!(
-            find_schema_slot(TokenPolicyManager::active_send_policy_slot()),
-            TransferAllowAll::send_root().as_word()
+            find_schema_slot(TokenPolicyManager::active_mint_policy_slot()),
+            MintPolicy::allow_all().root().as_word()
         );
         assert_eq!(
-            find_schema_slot(TokenPolicyManager::active_receive_policy_slot()),
-            TransferAllowAll::receive_root().as_word()
+            find_schema_slot(TokenPolicyManager::active_burn_policy_slot()),
+            BurnPolicy::allow_all().root().as_word()
         );
+
+        Ok(())
     }
 
     /// Allowed entries registered via the builder land in the `allowed_*_policies` storage map
     /// alongside the active one.
     #[test]
-    fn allowed_burn_policy_is_registered_in_allowed_map() {
+    fn allowed_burn_policy_is_registered_in_allowed_map() -> anyhow::Result<()> {
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::owner_only())
             .allowed_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         let allowed = manager.allowed_burn_policies();
         assert!(allowed.contains(&BurnPolicy::owner_only().root()));
         assert!(allowed.contains(&BurnPolicy::allow_all().root()));
+
+        Ok(())
     }
 
     /// The send and receive procedures of a list policy belong to one component with one list.
@@ -1000,7 +1085,9 @@ mod tests {
     #[rstest::rstest]
     #[case::same_initial_list(true)]
     #[case::different_initial_lists(false)]
-    fn send_and_receive_blocklists_must_start_from_the_same_list(#[case] same_initial_list: bool) {
+    fn send_and_receive_blocklists_must_start_from_the_same_list(
+        #[case] same_initial_list: bool,
+    ) -> anyhow::Result<()> {
         let blocked_account =
             AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let receive_policy = if same_initial_list {
@@ -1013,7 +1100,7 @@ mod tests {
             .active_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(SendPolicy::with_basic_blocklist([blocked_account]))
             .active_receive_policy(receive_policy)
-            .build();
+            .build()?;
 
         let account = manager
             .into_iter()
@@ -1032,11 +1119,13 @@ mod tests {
                 });
             });
         }
+
+        Ok(())
     }
 
     /// Components with different code are all installed, even when their names collide.
     #[test]
-    fn components_with_different_code_are_installed() {
+    fn components_with_different_code_are_installed() -> anyhow::Result<()> {
         let metadata = AccountComponentMetadata::new("tests::same_name");
         let mint_component =
             AccountComponent::new(MintAllowAll::code().clone(), vec![], metadata.clone()).unwrap();
@@ -1046,32 +1135,118 @@ mod tests {
         let components: Vec<AccountComponent> = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::custom(MintAllowAll::root(), [mint_component]).unwrap())
             .active_burn_policy(BurnPolicy::custom(BurnAllowAll::root(), [burn_component]).unwrap())
-            .build()
+            .build()?
             .into_iter()
             .collect();
 
         assert!(components.iter().any(|component| component.has_procedure(MintAllowAll::root())));
         assert!(components.iter().any(|component| component.has_procedure(BurnAllowAll::root())));
+
+        Ok(())
     }
 
     /// The allow-all burn and receive policies have the same procedure root, since both only drop
     /// an asset. The manager registers the root under both kinds and the procedure is installed.
     #[test]
-    fn policies_of_different_kinds_can_share_a_root() {
+    fn policies_of_different_kinds_can_share_a_root() -> anyhow::Result<()> {
         assert_eq!(BurnAllowAll::root(), TransferAllowAll::receive_root());
 
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::allow_all())
             .active_receive_policy(ReceivePolicy::allow_all())
-            .build();
+            .build()?;
 
         assert_eq!(manager.active_burn_policy(), BurnAllowAll::root());
-        assert_eq!(manager.active_receive_policy(), Some(TransferAllowAll::receive_root()));
+        assert_eq!(manager.active_receive_policies(), &[TransferAllowAll::receive_root()]);
         assert!(manager.allowed_burn_policies().contains(&BurnAllowAll::root()));
         assert!(manager.allowed_receive_policies().contains(&TransferAllowAll::receive_root()));
 
         let components: Vec<AccountComponent> = manager.into_iter().collect();
         assert!(components.iter().any(|component| component.has_procedure(BurnAllowAll::root())));
+
+        Ok(())
+    }
+
+    /// Multiple active policies are stored as lists, each with its own length, every active root is
+    /// allowed, and a component shared by several policies is installed once.
+    #[test]
+    fn active_transfer_policies_are_stored_as_lists() -> anyhow::Result<()> {
+        let manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_send_policy(SendPolicy::empty_basic_blocklist())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+            .build()?;
+
+        let send_roots = [BasicBlocklist::send_root(), TransferAllowAll::send_root()];
+        let receive_roots = [BasicBlocklist::receive_root()];
+        assert_eq!(manager.active_send_policies(), &send_roots);
+        assert_eq!(manager.active_receive_policies(), &receive_roots);
+        for root in send_roots {
+            assert!(manager.allowed_send_policies().contains(&root));
+        }
+        assert_eq!(manager.allowed_receive_policies(), &receive_roots);
+
+        let manager_component = manager.to_manager_component();
+        assert_active_transfer_policies(&manager_component, &send_roots, &receive_roots);
+        assert_schema_matches_storage(&manager_component);
+
+        let num_blocklists = manager
+            .into_iter()
+            .filter(|component| component.has_procedure(BasicBlocklist::send_root()))
+            .count();
+        assert_eq!(num_blocklists, 1);
+
+        Ok(())
+    }
+
+    /// The builder rejects active policies of one kind that contain the same root more than once.
+    #[test]
+    fn duplicate_active_transfer_policies_are_rejected() {
+        let builder = || {
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+        };
+
+        let result = builder()
+            .active_send_policy(SendPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .build();
+        assert_matches!(result, Err(TransferPolicyError::DuplicateRoot(root)) => {
+            assert_eq!(root, TransferAllowAll::send_root());
+        });
+
+        let result = builder()
+            .active_receive_policy(ReceivePolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
+            .build();
+        assert_matches!(result, Err(TransferPolicyError::DuplicateRoot(root)) => {
+            assert_eq!(root, TransferAllowAll::receive_root());
+        });
+    }
+
+    /// The number of active policies of one kind is limited.
+    #[test]
+    fn number_of_active_transfer_policies_is_limited() -> anyhow::Result<()> {
+        let max_num_roots = TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES;
+        let roots: Vec<_> = (0u32..)
+            .take(max_num_roots + 1)
+            .map(|index| AccountProcedureRoot::from_raw(Word::from([index, 0, 0, 1])))
+            .collect();
+
+        let collected = collect_active_transfer_roots(roots.iter().copied().take(max_num_roots))?;
+        assert_eq!(collected, &roots[..max_num_roots]);
+
+        assert_matches!(
+            collect_active_transfer_roots(roots.into_iter()),
+            Err(TransferPolicyError::TooManyRoots(num_roots)) => {
+                assert_eq!(num_roots, max_num_roots + 1);
+            }
+        );
+
+        Ok(())
     }
 }

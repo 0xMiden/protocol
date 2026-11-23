@@ -15,6 +15,8 @@ use alloc::vec::Vec;
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 use thiserror::Error;
 
+use super::TokenPolicyManager;
+
 mod allow_all;
 mod allowlist;
 mod basic_allowlist;
@@ -30,7 +32,8 @@ pub use blocklist::{BlocklistManager, BlocklistStorage};
 // TRANSFER POLICY ERROR
 // ================================================================================================
 
-/// Errors returned by [`SendPolicy::custom`] and [`ReceivePolicy::custom`].
+/// Errors returned when constructing a [`SendPolicy`] or a [`ReceivePolicy`], or when adding them
+/// to a [`TokenPolicyManager`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum TransferPolicyError {
     /// The procedure root supplied to [`SendPolicy::custom`] or [`ReceivePolicy::custom`] is not
@@ -39,6 +42,18 @@ pub enum TransferPolicyError {
         "custom transfer policy root must match a procedure root in one of the provided components"
     )]
     RootNotInComponents,
+
+    /// The active policies of one kind contain the same procedure root more than once.
+    #[error("active transfer policies contain procedure root {0} more than once")]
+    DuplicateRoot(AccountProcedureRoot),
+
+    /// The active policies of one kind contain more than
+    /// [`TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES`] procedure roots.
+    #[error(
+        "active transfer policies contain {0} procedure roots but the maximum is {max}",
+        max = TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES
+    )]
+    TooManyRoots(usize),
 }
 
 // SEND POLICY

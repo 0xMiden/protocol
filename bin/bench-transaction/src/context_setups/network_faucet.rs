@@ -91,7 +91,7 @@ fn add_fee_funded_network_non_fungible_faucet(
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)

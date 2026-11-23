@@ -1,33 +1,34 @@
 //! Tests for the `FaucetPolicyConfig` note, which switches a faucet's active `TokenPolicyManager`
 //! policy (mint / burn / send / receive) to an allowed alternative.
 //!
-//! Integration coverage exercises the mint and burn dispatch branches (each switching `allow_all`
-//! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
-//! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in variant and
-//! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
-//! built-in alternative `SendPolicy` to switch to without bespoke policy setup.
+//! Integration coverage exercises the dispatch branch of every kind plus the note-level guards.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::EidosRandomCoin;
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    BasicBlocklist,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
     SendPolicy,
     TokenPolicyManager,
+    TransferAllowAll,
 };
 use miden_standards::errors::standards::{
+    ERR_ACCOUNT_IS_BLOCKED,
     ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_POLICY_CONFIG_UNKNOWN_VARIANT,
@@ -44,7 +45,14 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-use crate::into_private_note;
+use super::transfer_policy::{
+    CustomTransferPolicies,
+    ERR_CUSTOM_POLICY_REJECTED,
+    TRANSFER_AMOUNT,
+    active_transfer_policies,
+    execute_send,
+};
+use crate::{consume_note, into_private_note};
 
 // HELPERS
 // ================================================================================================
@@ -70,9 +78,45 @@ fn create_faucet_with_policies(
         .allowed_burn_policy(BurnPolicy::owner_only())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a fungible faucet whose `TokenPolicyManager` has the `allow_all` transfer policies active
+/// and the basic blocklist and a custom, rejecting policy registered as allowed alternatives.
+fn create_faucet_with_transfer_policies(
+    builder: &mut MockChainBuilder,
+    owner: AccountId,
+    blocked_accounts: Vec<AccountId>,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let custom_policies = CustomTransferPolicies::new(false)?;
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .allowed_send_policy(SendPolicy::with_basic_blocklist(blocked_accounts.clone()))
+        .allowed_send_policy(custom_policies.send)
+        .active_receive_policy(ReceivePolicy::allow_all())
+        .allowed_receive_policy(ReceivePolicy::with_basic_blocklist(blocked_accounts))
+        .allowed_receive_policy(custom_policies.receive)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([44; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
@@ -198,6 +242,94 @@ async fn set_burn_policy_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The note dispatches SetReceivePolicyRoots: the owner switches the active receive policies to a
+/// list of allowed alternatives, which leaves the active send policies unchanged.
+#[tokio::test]
+async fn set_receive_policy_roots_dispatch() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let mut builder = MockChain::builder();
+    let faucet = create_faucet_with_transfer_policies(&mut builder, owner, vec![])?;
+    let mock_chain = builder.build()?;
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
+
+    let policy_roots = [
+        BasicBlocklist::receive_root(),
+        CustomTransferPolicies::new(false)?.receive.root(),
+        TransferAllowAll::receive_root(),
+    ];
+    let note = faucet_policy_config_note(
+        owner,
+        faucet.id(),
+        FaucetPolicyConfig::SetReceivePolicyRoots { policy_roots: policy_roots.to_vec() },
+        &mut rng,
+    )?;
+    let updated = execute_note_and_apply(&mock_chain, &faucet, &note).await?;
+
+    assert_eq!(
+        active_transfer_policies(&updated)?,
+        (
+            vec![TransferAllowAll::send_root().as_word()],
+            policy_roots.map(|root| root.as_word()).to_vec()
+        )
+    );
+    Ok(())
+}
+
+/// The note dispatches SetSendPolicyRoots: the owner switches the active send policies to a list of
+/// allowed alternatives, each of which is enforced afterwards.
+#[rstest::rstest]
+#[case::first_policy_rejects(true, ERR_ACCOUNT_IS_BLOCKED)]
+#[case::second_policy_rejects(false, ERR_CUSTOM_POLICY_REJECTED)]
+#[tokio::test]
+async fn set_send_policy_roots_dispatch(
+    #[case] is_sender_blocked: bool,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let mut builder = MockChain::builder();
+    let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = create_faucet_with_transfer_policies(
+        &mut builder,
+        owner,
+        Vec::from_iter(is_sender_blocked.then_some(sender.id())),
+    )?;
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
+
+    let policy_roots =
+        [BasicBlocklist::send_root(), CustomTransferPolicies::new(false)?.send.root()];
+    let config_note = faucet_policy_config_note(
+        owner,
+        faucet.id(),
+        FaucetPolicyConfig::SetSendPolicyRoots { policy_roots: policy_roots.to_vec() },
+        &mut rng,
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+    let asset = FungibleAsset::new(faucet.id(), TRANSFER_AMOUNT)?;
+    let p2id_note =
+        builder.add_p2id_note(faucet.id(), sender.id(), &[Asset::from(asset)], NoteType::Public)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // The send is accepted before the switch.
+    execute_send(&mock_chain, sender.id(), &p2id_note, asset).await??;
+
+    consume_note(&mut mock_chain, faucet.id(), &config_note).await?;
+    assert_eq!(
+        active_transfer_policies(mock_chain.committed_account(faucet.id())?)?,
+        (
+            policy_roots.map(|root| root.as_word()).to_vec(),
+            vec![TransferAllowAll::receive_root().as_word()]
+        )
+    );
+
+    let result = execute_send(&mock_chain, sender.id(), &p2id_note, asset).await?;
+    assert_transaction_executor_error!(result, expected_error);
+    Ok(())
+}
+
 /// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
 async fn unknown_variant_fails() -> anyhow::Result<()> {
@@ -208,8 +340,9 @@ async fn unknown_variant_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
-    // a root-sized payload followed by variant 99, which is not a known action
-    let storage = vec![Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(99u32)];
+    // variant 99, which is not a known action, followed by a root-sized payload
+    let mut storage = vec![Felt::ZERO; 8];
+    storage[0] = Felt::from(99u32);
     let note = malformed_faucet_policy_config_note(owner, faucet.id(), storage, &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
@@ -221,9 +354,21 @@ async fn unknown_variant_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose storage item count does not match its variant is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guards.
+#[rstest::rstest]
+#[case::mint_without_root(0, 4)]
+#[case::mint_with_two_roots(0, 12)]
+#[case::burn_with_two_roots(1, 12)]
+#[case::send_without_padding(2, 1)]
+#[case::send_without_roots(2, 4)]
+#[case::send_with_partial_root(2, 11)]
+#[case::receive_without_roots(3, 4)]
+#[case::receive_with_partial_root(3, 9)]
 #[tokio::test]
-async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
+async fn wrong_storage_item_count_fails(
+    #[case] variant: u32,
+    #[case] num_storage_items: usize,
+) -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let mut builder = MockChain::builder();
@@ -231,10 +376,9 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
-    // a single storage item instead of the expected five; the variant position reads as an
-    // uninitialized zero, dispatching to SetMintPolicy, whose count guard then rejects the note
-    let note =
-        malformed_faucet_policy_config_note(owner, faucet.id(), vec![Felt::from(0u32)], &mut rng)?;
+    let mut storage = vec![Felt::ZERO; num_storage_items];
+    storage[0] = Felt::from(variant);
+    let note = malformed_faucet_policy_config_note(owner, faucet.id(), storage, &mut rng)?;
     let tx = mock_chain
         .build_transaction(faucet.clone())
         .unauthenticated_input_note(note)

@@ -19,6 +19,7 @@ pub(super) fn allow_all_policy_manager() -> TokenPolicyManager {
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
         .build()
+        .expect("token policy manager should be valid")
 }
 
 /// Builds a minimal policy manager with AllowAll mint and burn policies and no transfer policy, so
@@ -28,6 +29,7 @@ pub(super) fn mint_burn_only_policy_manager() -> TokenPolicyManager {
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
         .build()
+        .expect("token policy manager should be valid")
 }
 
 /// Builds a policy manager whose active mint policy is owner-gated, so the faucet needs the
@@ -37,6 +39,7 @@ pub(super) fn owner_only_mint_policy_manager() -> TokenPolicyManager {
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
         .build()
+        .expect("token policy manager should be valid")
 }
 
 /// Builds a policy manager whose owner-gated burn policy is only a reserved alternative, which
@@ -47,6 +50,7 @@ pub(super) fn reserved_owner_only_burn_policy_manager() -> TokenPolicyManager {
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
         .build()
+        .expect("token policy manager should be valid")
 }
 
 /// Builds a policy manager whose active burn policy is the fungible-only `min_burn_amount`.
@@ -55,6 +59,7 @@ pub(super) fn min_burn_amount_policy_manager() -> TokenPolicyManager {
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::from(100u32)))
         .build()
+        .expect("token policy manager should be valid")
 }
 
 /// Builds a policy manager whose `min_burn_amount` burn policy is only a reserved alternative,
@@ -65,4 +70,5 @@ pub(super) fn reserved_min_burn_amount_policy_manager() -> TokenPolicyManager {
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::from(100u32)))
         .build()
+        .expect("token policy manager should be valid")
 }

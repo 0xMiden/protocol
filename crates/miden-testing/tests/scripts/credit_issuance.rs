@@ -503,7 +503,7 @@ fn create_nft_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Ac
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
-        .build();
+        .build()?;
 
     // The network auth prices the notes it consumes, as does the wallet creating a network note
     // for this faucet, so schedule a zero fee for every note the faucet accepts.

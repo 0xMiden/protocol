@@ -71,6 +71,7 @@ use miden_testing::{
 };
 use rand::RngExt;
 
+use super::transfer_policy::policy_roots_commitment;
 use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction_complete};
 
 // Shared test utilities for faucet tests
@@ -209,18 +210,18 @@ fn create_set_burn_policy_note_script(policy_root: Word) -> String {
     )
 }
 
-/// Builds a note script that invokes every `get_*_policy` getter via `call` and asserts each one
+/// Builds a note script that invokes every policy getter via `call` and asserts each one
 /// uses the 16-felt call ABI.
 fn create_policy_getters_note_script(
     mint_root: AccountProcedureRoot,
     burn_root: AccountProcedureRoot,
-    send_root: AccountProcedureRoot,
-    receive_root: AccountProcedureRoot,
+    send_roots: &[AccountProcedureRoot],
+    receive_roots: &[AccountProcedureRoot],
 ) -> String {
     let mint_root = mint_root.as_word();
     let burn_root = burn_root.as_word();
-    let send_root = send_root.as_word();
-    let receive_root = receive_root.as_word();
+    let send_roots_commitment = policy_roots_commitment(send_roots);
+    let receive_roots_commitment = policy_roots_commitment(receive_roots);
     format!(
         r#"
         use miden::standards::faucets::policies::policy_manager
@@ -242,17 +243,17 @@ fn create_policy_getters_note_script(
             dropw dropw dropw
 
             padw padw padw padw
-            call.policy_manager::get_send_policy
-            # => [SEND_POLICY_ROOT, pad(12)]
-            push.{send_root}
-            assert_eqw.err="get_send_policy returned an unexpected root or violated the call ABI"
+            call.policy_manager::get_send_policy_roots_commitment
+            # => [SEND_POLICY_ROOTS_COMMITMENT, pad(12)]
+            push.{send_roots_commitment}
+            assert_eqw.err="get_send_policy_roots_commitment returned an unexpected commitment or violated the call ABI"
             dropw dropw dropw
 
             padw padw padw padw
-            call.policy_manager::get_receive_policy
-            # => [RECEIVE_POLICY_ROOT, pad(12)]
-            push.{receive_root}
-            assert_eqw.err="get_receive_policy returned an unexpected root or violated the call ABI"
+            call.policy_manager::get_receive_policy_roots_commitment
+            # => [RECEIVE_POLICY_ROOTS_COMMITMENT, pad(12)]
+            push.{receive_roots_commitment}
+            assert_eqw.err="get_receive_policy_roots_commitment returned an unexpected commitment or violated the call ABI"
             dropw dropw dropw
         end
         "#
@@ -291,7 +292,7 @@ fn build_network_faucet_with_burn_switching(
         .allowed_burn_policy(BurnPolicy::owner_only())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -328,7 +329,7 @@ fn build_existing_faucet_with_reserved_only_transfer_policy(
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_send_policy(SendPolicy::allow_all())
         .allowed_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -370,7 +371,7 @@ fn build_network_faucet_with_min_burn_amount(
         .active_burn_policy(BurnPolicy::min_burn_amount(min_burn_amount))
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -1235,8 +1236,8 @@ async fn test_network_faucet_policy_getters_works() -> anyhow::Result<()> {
     let getters_note_script = compile_note_script(&create_policy_getters_note_script(
         MintPolicy::allow_all().root(),
         BurnPolicy::allow_all().root(),
-        SendPolicy::allow_all().root(),
-        ReceivePolicy::allow_all().root(),
+        &[SendPolicy::allow_all().root()],
+        &[ReceivePolicy::allow_all().root()],
     ))?;
 
     let faucet = builder.add_existing_network_faucet(
@@ -2322,7 +2323,7 @@ fn build_network_faucet_mutable_max_supply(
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -2644,7 +2645,7 @@ fn build_network_faucet_with_blocklist_transfer(
         .active_burn_policy(BurnPolicy::allow_all())
         .active_send_policy(SendPolicy::empty_basic_blocklist())
         .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
-        .build();
+        .build()?;
 
     let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
 

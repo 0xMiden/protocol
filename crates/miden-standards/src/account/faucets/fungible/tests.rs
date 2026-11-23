@@ -346,8 +346,10 @@ fn get_faucet_procedures() {
     let _set_external_uri_root = FungibleFaucet::set_external_uri_root();
     let _set_mint_policy_root = TokenPolicyManager::set_mint_policy_root();
     let _set_burn_policy_root = TokenPolicyManager::set_burn_policy_root();
-    let _set_send_policy_root = TokenPolicyManager::set_send_policy_root();
-    let _set_receive_policy_root = TokenPolicyManager::set_receive_policy_root();
+    let _set_send_policy_roots_commitment_root =
+        TokenPolicyManager::set_send_policy_roots_commitment_root();
+    let _set_receive_policy_roots_commitment_root =
+        TokenPolicyManager::set_receive_policy_roots_commitment_root();
 }
 
 /// A user faucet installs no `Ownable2Step` component, so an owner-gated mint policy would have no

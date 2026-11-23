@@ -8,7 +8,7 @@ use core::fmt;
 use miden_protocol::errors::{AccountError, StorageMapError};
 use miden_standards::account::auth::NetworkAccountNoteAllowlistError;
 use miden_standards::account::faucets::FungibleFaucetError;
-use miden_standards::account::policies::{BurnPolicyError, MintPolicyError};
+use miden_standards::account::policies::{BurnPolicyError, MintPolicyError, TransferPolicyError};
 use miden_tx::NotePricingError;
 
 use super::{
@@ -65,6 +65,8 @@ pub enum XReserveStablecoinBuilderError {
     /// The burn-policy descriptor rejected its construction — the burn-slot twin of
     /// [`Self::MintPolicy`].
     BurnPolicy(BurnPolicyError),
+    /// The token policy manager rejected the active transfer policies.
+    TransferPolicy(TransferPolicyError),
 }
 
 impl fmt::Display for XReserveStablecoinBuilderError {
@@ -113,6 +115,7 @@ impl fmt::Display for XReserveStablecoinBuilderError {
             },
             Self::MintPolicy(_) => write!(f, "mint policy descriptor construction failed"),
             Self::BurnPolicy(_) => write!(f, "burn policy descriptor construction failed"),
+            Self::TransferPolicy(_) => write!(f, "active transfer policies are invalid"),
         }
     }
 }
@@ -122,6 +125,7 @@ impl core::error::Error for XReserveStablecoinBuilderError {
         match self {
             Self::MintPolicy(source) => Some(source),
             Self::BurnPolicy(source) => Some(source),
+            Self::TransferPolicy(source) => Some(source),
             Self::FaucetComposition(source) => Some(source),
             Self::NetworkAuth(source) => Some(source),
             Self::AccountComposition(source) => Some(source),
@@ -141,6 +145,12 @@ impl From<MintPolicyError> for XReserveStablecoinBuilderError {
 impl From<BurnPolicyError> for XReserveStablecoinBuilderError {
     fn from(source: BurnPolicyError) -> Self {
         Self::BurnPolicy(source)
+    }
+}
+
+impl From<TransferPolicyError> for XReserveStablecoinBuilderError {
+    fn from(source: TransferPolicyError) -> Self {
+        Self::TransferPolicy(source)
     }
 }
 

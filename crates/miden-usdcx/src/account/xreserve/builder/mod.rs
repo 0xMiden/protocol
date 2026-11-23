@@ -305,7 +305,7 @@ impl XReserveStablecoinBuilder {
             )?)
             .active_send_policy(SendPolicy::empty_basic_blocklist())
             .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
-            .build();
+            .build()?;
 
         let mut components = Vec::new();
         components.push(self.faucet.clone().into());

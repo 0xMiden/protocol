@@ -74,6 +74,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
                 .build()
+                .expect("token policy manager should be valid")
                 .component_metadata(),
         ),
         (TransferAllowAll::NAME, TransferAllowAll::component_metadata()),

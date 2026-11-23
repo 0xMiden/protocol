@@ -60,7 +60,7 @@ fn create_faucet_with_min_burn_amount(owner: AccountId) -> anyhow::Result<Accoun
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(INITIAL_MIN_BURN_AMOUNT)?))
         .active_send_policy(SendPolicy::allow_all())
         .active_receive_policy(ReceivePolicy::allow_all())
-        .build();
+        .build()?;
 
     let account = AccountBuilder::new([43; 32])
         .account_type(AccountType::Public)

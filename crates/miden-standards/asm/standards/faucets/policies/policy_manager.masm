@@ -9,18 +9,28 @@ use {
     NoteType,
     StorageSlotId,
 } from miden::protocol::types
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use miden::core::crypto::hashes::eidos
+use miden::core::mem
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
+use miden::standards::data_structures::array
 use miden::standards::expiration
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
-# `set_*_policy` procedures consult the account-wide [`Authority`] component (installed
-# separately) via `exec.authority::assert_authorized`. The manager itself is authority-agnostic
-# and stores no authority discriminator.
+# setter procedures consult the account-wide [`Authority`] component (installed separately) via
+# `exec.authority::assert_authorized`. The manager itself is authority-agnostic and stores no
+# authority discriminator.
+
+# TYPES
+# =================================================================================================
+
+# The sequential hash over the elements of a list of transfer policy procedure roots.
+pub type PolicyRootsCommitment = word
 
 # CONSTANTS
 # =================================================================================================
@@ -31,11 +41,16 @@ const ACTIVE_MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policie
 # Active burn policy root slot. Layout: [PROC_ROOT]
 const ACTIVE_BURN_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root")
 
-# Active send policy root slot. Layout: [PROC_ROOT]
-const ACTIVE_SEND_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root")
+# Active send policy roots map slot, accessed as an array. Map entries: index -> PROC_ROOT
+const ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::active_send_policy_proc_roots")
 
-# Active receive policy root slot. Layout: [PROC_ROOT]
-const ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root")
+# Active receive policy roots map slot, accessed as an array. Map entries: index -> PROC_ROOT
+const ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_roots")
+
+# Slot for the number of active send and receive policy roots. The entries of the active roots maps
+# at or past the respective number are unused.
+# Layout: [num_send_roots, num_receive_roots, 0, 0]
+const NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::num_active_transfer_policy_proc_roots")
 
 # Allowlist map slot for mint policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots")
@@ -61,6 +76,20 @@ const MINT_NOTE_METADATA_PTR=4
 # policy `dyncall`, so it can be checked for tampering once the policy returns.
 const MINT_RECIPIENT_PTR=8
 
+# Local memory pointers at which the four words of the callback inputs are held across the transfer
+# policy `dyncall`s, so every policy is invoked with a fresh copy.
+const TRANSFER_POLICY_INPUTS_0_PTR=4
+const TRANSFER_POLICY_INPUTS_1_PTR=8
+const TRANSFER_POLICY_INPUTS_2_PTR=12
+const TRANSFER_POLICY_INPUTS_3_PTR=16
+
+# Local memory pointer at which the list of transfer policy roots is held.
+const TRANSFER_POLICY_ROOTS_PTR=0
+
+# The maximum number of active policies per transfer policy kind. Keep in sync with
+# `TokenPolicyManager::MAX_NUM_ACTIVE_TRANSFER_POLICIES` on the Rust side.
+pub const MAX_NUM_ACTIVE_TRANSFER_POLICIES=16
+
 # ERRORS
 # =================================================================================================
 
@@ -76,13 +105,13 @@ const ERR_BURN_POLICY_ROOT_NOT_IN_ACCOUNT="burn policy root is not a procedure o
 const ERR_BURN_POLICY_ROOT_NOT_ALLOWED="burn policy root is not allowed"
 const ERR_ACTIVE_BURN_POLICY_NOT_SET="active burn policy is not set"
 
-const ERR_SEND_POLICY_ROOT_IS_ZERO="send policy root is zero"
-const ERR_SEND_POLICY_ROOT_NOT_IN_ACCOUNT="send policy root is not a procedure of this account"
-const ERR_SEND_POLICY_ROOT_NOT_ALLOWED="send policy root is not allowed"
-
-const ERR_RECEIVE_POLICY_ROOT_IS_ZERO="receive policy root is zero"
-const ERR_RECEIVE_POLICY_ROOT_NOT_IN_ACCOUNT="receive policy root is not a procedure of this account"
-const ERR_RECEIVE_POLICY_ROOT_NOT_ALLOWED="receive policy root is not allowed"
+const ERR_TRANSFER_POLICY_ROOT_IS_ZERO="transfer policy root is zero"
+const ERR_TRANSFER_POLICY_ROOT_NOT_IN_ACCOUNT="transfer policy root is not a procedure of this account"
+const ERR_TRANSFER_POLICY_ROOT_NOT_ALLOWED="transfer policy root is not allowed"
+const ERR_TRANSFER_POLICY_ROOTS_EMPTY="transfer policy root list must not be empty"
+const ERR_TRANSFER_POLICY_ROOTS_TOO_MANY="transfer policy root list contains more than 16 roots"
+const ERR_TRANSFER_POLICY_ROOTS_LENGTH_INVALID="transfer policy root list length advice input is not a valid u32"
+const ERR_TRANSFER_POLICY_ROOTS_NOT_WORD_ALIGNED="transfer policy root list length is not a multiple of the word size"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -165,15 +194,14 @@ pub proc set_burn_policy(new_policy_root: AccountProcedureRoot)
     # => [pad(16)]
 end
 
-#! Invokes the active send policy. Stored in the protocol-reserved `on_before_note_sealed` callback
-#! slot and `dyncall`-invoked by the kernel once when an output note holding assets of this faucet
-#! is sealed.
+#! Invokes the active send policies. Stored in the protocol-reserved `on_before_note_sealed`
+#! callback slot and `dyncall`-invoked by the kernel once when an output note holding assets of this
+#! faucet is sealed.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block and applies the pause check, so both apply even when no send policy
-#! is active. Then binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to
-#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs. Returns no
-#! attachment for the note.
+#! is active. Then delegates to [`execute_transfer_policies`], which invokes the active policies
+#! with this procedure's inputs. Returns no attachment for the note.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
@@ -185,7 +213,7 @@ end
 #!
 #! Panics if:
 #! - the account is paused.
-#! - the active send policy predicate fails.
+#! - any of the active send policy predicates fails.
 #!
 #! Invocation: call
 @account_procedure
@@ -196,64 +224,103 @@ pub proc invoke_send_policy(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachm
     exec.pausable::assert_not_paused
     # => [note_idx, pad(15)]
 
-    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, note_idx, pad(15)]
+    exec.get_num_send_policy_roots push.ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, num_roots, note_idx, pad(15)]
 
-    # the policy's outputs are dropped, so this returns no attachment for the note: the reserved
+    # the policies' outputs are dropped, so this returns no attachment for the note: the reserved
     # attachment scheme and the empty commitment
-    exec.execute_transfer_policy
+    # TODO(#4226): Once the callback returns a list of attachments, collect the attachments returned
+    # by the individual policies and return the collection.
+    exec.execute_transfer_policies
     # => [attachment_reserved_scheme, EMPTY_WORD, pad(11)]
 end
 
-#! Returns active send policy root.
+#! Returns the commitment to the list of active send policy roots and inserts the list into the
+#! advice map.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [SEND_POLICY_ROOT, pad(12)]
+#! The returned commitment can be passed to [`set_send_policy_roots_commitment`], unless the list
+#! is empty.
+#!
+#! Inputs:
+#!   Operand stack: [pad(16)]
+#! Outputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#!
+#! Where:
+#! - PROC_ROOTS_COMMITMENT is the commitment to the list of active send policy roots. The list is
+#!   empty if no send policy is active.
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_send_policy() -> AccountProcedureRoot
-    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
-    # => [SEND_POLICY_ROOT, pad(16)]
+pub proc get_send_policy_roots_commitment() -> PolicyRootsCommitment
+    exec.get_num_send_policy_roots push.ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, num_roots, pad(16)]
+
+    exec.hash_transfer_policies
+    # => [PROC_ROOTS_COMMITMENT, pad(16)]
 
     swapw dropw
-    # => [SEND_POLICY_ROOT, pad(12)]
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 end
 
-#! Sets active send policy root.
+#! Sets the list of active send policy roots. A transfer must be accepted by all policies in the
+#! list, which are invoked in list order.
 #!
-#! Writes into [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`].
+#! Inputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
 #!
-#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
-#! Outputs: [pad(16)]
+#! Where:
+#! - PROC_ROOTS_COMMITMENT is the commitment to the list of policy roots to activate.
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed [`Authority`].
-#! - NEW_POLICY_ROOT is zero.
-#! - NEW_POLICY_ROOT is not a procedure of this account.
-#! - NEW_POLICY_ROOT is not in the allowed roots map.
+#! - the list is missing from the advice map, is not a list of words, or does not match
+#!   PROC_ROOTS_COMMITMENT.
+#! - the list is empty or contains more than MAX_NUM_ACTIVE_TRANSFER_POLICIES roots.
+#! - any root in the list is zero.
+#! - any root in the list is not a procedure of this account.
+#! - any root in the list is not in the allowed send policy roots map.
 #!
 #! Invocation: call
 @account_procedure
-pub proc set_send_policy(new_policy_root: AccountProcedureRoot)
+pub proc set_send_policy_roots_commitment(proc_roots_commitment: PolicyRootsCommitment)
     exec.authority::assert_authorized
-    # => [NEW_POLICY_ROOT, pad(12)]
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 
-    exec.assert_allowed_send_policy_root
-    # => [NEW_POLICY_ROOT, pad(12)]
+    push.ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT[0..2]
+    push.ACTIVE_SEND_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [active_slot_id_suffix, active_slot_id_prefix, allowed_slot_id_suffix,
+    #     allowed_slot_id_prefix, PROC_ROOTS_COMMITMENT, pad(12)]
 
-    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    exec.set_transfer_policy_roots
+    # => [num_roots, pad(15)]
+
+    push.NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT[0..2] exec.active_account::get_item
+    # => [num_old_roots, num_receive_roots, 0, 0, num_roots, pad(12)]
+
+    drop movup.3
+    # => [num_roots, num_receive_roots, 0, 0, pad(12)]
+
+    push.NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
-#! Invokes the active receive policy. Stored in the protocol-reserved
+#! Invokes the active receive policies. Stored in the protocol-reserved
 #! `on_before_asset_added_to_account` callback slot and `dyncall`-invoked by the kernel when an
 #! asset with the callback flag is added to an account vault.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block and applies the pause check, so both apply even when no receive
-#! policy is active. Then binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to
-#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs.
+#! policy is active. Then delegates to [`execute_transfer_policies`], which invokes the active
+#! policies with this procedure's inputs.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
@@ -263,7 +330,7 @@ end
 #!
 #! Panics if:
 #! - the account is paused.
-#! - the active receive policy predicate fails.
+#! - any of the active receive policy predicates fails.
 #!
 #! Invocation: call
 @account_procedure
@@ -274,51 +341,88 @@ pub proc invoke_receive_policy(asset: Asset)
     exec.pausable::assert_not_paused
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
-    # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
+    exec.get_num_receive_policy_roots push.ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, num_roots, ASSET_ID, ASSET_VALUE, pad(8)]
 
-    exec.execute_transfer_policy
+    exec.execute_transfer_policies
     # => [pad(16)]
 end
 
-#! Returns active receive policy root.
+#! Returns the commitment to the list of active receive policy roots and inserts the list into the
+#! advice map.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [RECEIVE_POLICY_ROOT, pad(12)]
+#! The returned commitment can be passed to [`set_receive_policy_roots_commitment`], unless the list
+#! is empty.
+#!
+#! Inputs:
+#!   Operand stack: [pad(16)]
+#! Outputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#!
+#! Where:
+#! - PROC_ROOTS_COMMITMENT is the commitment to the list of active receive policy roots. The list is
+#!   empty if no receive policy is active.
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_receive_policy() -> AccountProcedureRoot
-    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
-    # => [RECEIVE_POLICY_ROOT, pad(16)]
+pub proc get_receive_policy_roots_commitment() -> PolicyRootsCommitment
+    exec.get_num_receive_policy_roots push.ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, num_roots, pad(16)]
+
+    exec.hash_transfer_policies
+    # => [PROC_ROOTS_COMMITMENT, pad(16)]
 
     swapw dropw
-    # => [RECEIVE_POLICY_ROOT, pad(12)]
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 end
 
-#! Sets active receive policy root.
+#! Sets the list of active receive policy roots. A transfer must be accepted by all policies in the
+#! list, which are invoked in list order.
 #!
-#! Writes into [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`].
+#! Inputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
 #!
-#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
-#! Outputs: [pad(16)]
+#! Where:
+#! - PROC_ROOTS_COMMITMENT is the commitment to the list of policy roots to activate.
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed [`Authority`].
-#! - NEW_POLICY_ROOT is zero.
-#! - NEW_POLICY_ROOT is not a procedure of this account.
-#! - NEW_POLICY_ROOT is not in the allowed roots map.
+#! - the list is missing from the advice map, is not a list of words, or does not match
+#!   PROC_ROOTS_COMMITMENT.
+#! - the list is empty or contains more than MAX_NUM_ACTIVE_TRANSFER_POLICIES roots.
+#! - any root in the list is zero.
+#! - any root in the list is not a procedure of this account.
+#! - any root in the list is not in the allowed receive policy roots map.
 #!
 #! Invocation: call
 @account_procedure
-pub proc set_receive_policy(new_policy_root: AccountProcedureRoot)
+pub proc set_receive_policy_roots_commitment(proc_roots_commitment: PolicyRootsCommitment)
     exec.authority::assert_authorized
-    # => [NEW_POLICY_ROOT, pad(12)]
+    # => [PROC_ROOTS_COMMITMENT, pad(12)]
 
-    exec.assert_allowed_receive_policy_root
-    # => [NEW_POLICY_ROOT, pad(12)]
+    push.ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT[0..2]
+    push.ACTIVE_RECEIVE_POLICY_PROC_ROOTS_SLOT[0..2]
+    # => [active_slot_id_suffix, active_slot_id_prefix, allowed_slot_id_suffix,
+    #     allowed_slot_id_prefix, PROC_ROOTS_COMMITMENT, pad(12)]
 
-    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    exec.set_transfer_policy_roots
+    # => [num_roots, pad(15)]
+
+    push.NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT[0..2] exec.active_account::get_item
+    # => [num_send_roots, num_old_roots, 0, 0, num_roots, pad(12)]
+
+    swap drop movup.3 swap
+    # => [num_send_roots, num_roots, 0, 0, pad(12)]
+
+    push.NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
@@ -584,113 +688,372 @@ proc assert_allowed_burn_policy_root(burn_policy_root: AccountProcedureRoot) -> 
     # => [BURN_POLICY_ROOT]
 end
 
-#! Validates a send policy root at config time.
+#! Returns the number of active send policy roots.
 #!
-#! Inputs:  [SEND_POLICY_ROOT]
-#! Outputs: [SEND_POLICY_ROOT]
-#!
-#! Panics if:
-#! - policy root is zero.
-#! - policy root is not present in this account's procedures.
-#! - policy root is not in the allowed send policy roots map.
+#! Inputs:  []
+#! Outputs: [num_roots]
 #!
 #! Invocation: exec
-proc assert_allowed_send_policy_root(send_policy_root: AccountProcedureRoot) -> AccountProcedureRoot
-    exec.word::testz
-    assertz.err=ERR_SEND_POLICY_ROOT_IS_ZERO
-    # => [SEND_POLICY_ROOT]
+proc get_num_send_policy_roots() -> u32
+    push.NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT[0..2] exec.active_account::get_item
+    # => [num_send_roots, num_receive_roots, 0, 0]
 
-    dupw exec.active_account::has_procedure
-    assert.err=ERR_SEND_POLICY_ROOT_NOT_IN_ACCOUNT
-    # => [SEND_POLICY_ROOT]
-
-    dupw
-    push.ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [ALLOWED_FLAG, SEND_POLICY_ROOT]
-
-    exec.word::eqz
-    assertz.err=ERR_SEND_POLICY_ROOT_NOT_ALLOWED
-    # => [SEND_POLICY_ROOT]
+    movdn.3 drop drop drop
+    # => [num_send_roots]
 end
 
-#! Validates a receive policy root at config time.
+#! Returns the number of active receive policy roots.
 #!
-#! Inputs:  [RECEIVE_POLICY_ROOT]
-#! Outputs: [RECEIVE_POLICY_ROOT]
-#!
-#! Panics if:
-#! - policy root is zero.
-#! - policy root is not present in this account's procedures.
-#! - policy root is not in the allowed receive policy roots map.
+#! Inputs:  []
+#! Outputs: [num_roots]
 #!
 #! Invocation: exec
-proc assert_allowed_receive_policy_root(receive_policy_root: AccountProcedureRoot) -> AccountProcedureRoot
-    exec.word::testz
-    assertz.err=ERR_RECEIVE_POLICY_ROOT_IS_ZERO
-    # => [RECEIVE_POLICY_ROOT]
+proc get_num_receive_policy_roots() -> u32
+    push.NUM_ACTIVE_TRANSFER_POLICY_PROC_ROOTS_SLOT[0..2] exec.active_account::get_item
+    # => [num_send_roots, num_receive_roots, 0, 0]
 
-    dupw exec.active_account::has_procedure
-    assert.err=ERR_RECEIVE_POLICY_ROOT_NOT_IN_ACCOUNT
-    # => [RECEIVE_POLICY_ROOT]
-
-    dupw
-    push.ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [ALLOWED_FLAG, RECEIVE_POLICY_ROOT]
-
-    exec.word::eqz
-    assertz.err=ERR_RECEIVE_POLICY_ROOT_NOT_ALLOWED
-    # => [RECEIVE_POLICY_ROOT]
+    drop movdn.2 drop drop
+    # => [num_receive_roots]
 end
 
-#! Reads the active transfer policy root from the provided slot and invokes the policy via
-#! `dyncall` with the provided inputs, dropping the policy's outputs. Shared by
-#! `invoke_send_policy` / `invoke_receive_policy`, which bind different slots and pass on their own
-#! callback inputs, so each policy kind receives the inputs of its asset callback.
+#! Loads the list of transfer policy roots from the advice map, validates it and stores it in the
+#! active roots map.
 #!
-#! The callers limit the transaction's expiration to
-#! [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the reference block and assert the
-#! account-wide pause flag (a no-op when the [`Pausable`] component is not installed) before this
-#! procedure reads the active root, so both apply whether or not a policy is configured. This keeps
-#! a later policy activation or a pause binding against transfers anchored to an earlier reference
-#! block. If the active root is the empty word (no policy configured for this kind), the transfer
-#! is accepted; otherwise the policy is invoked via `dyncall`.
+#! Inputs:
+#!   Operand stack: [active_slot_id_suffix, active_slot_id_prefix, allowed_slot_id_suffix,
+#!                   allowed_slot_id_prefix, PROC_ROOTS_COMMITMENT]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_roots]
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, policy_inputs(16)]
+#! Where:
+#! - active_slot_id_{suffix,prefix} identify the map slot holding the active policy roots.
+#! - allowed_slot_id_{suffix,prefix} identify the map slot holding the allowed policy roots.
+#! - PROC_ROOTS_COMMITMENT is the commitment to the list of policy roots.
+#! - num_roots is the number of roots in the list.
+#!
+#! Panics if:
+#! - load_transfer_policy_roots fails to verify.
+#! - store_transfer_policy_roots fails to verify.
+#!
+#! Invocation: exec
+@locals(64) # MAX_NUM_ACTIVE_TRANSFER_POLICIES words
+proc set_transfer_policy_roots(
+    active_slot_id: StorageSlotId,
+    allowed_slot_id: StorageSlotId,
+    proc_roots_commitment: PolicyRootsCommitment
+) -> u32
+    swapw locaddr.TRANSFER_POLICY_ROOTS_PTR movdn.4
+    # => [PROC_ROOTS_COMMITMENT, roots_ptr, active_slot_id_suffix, active_slot_id_prefix,
+    #     allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+    exec.load_transfer_policy_roots
+    # => [num_roots, active_slot_id_suffix, active_slot_id_prefix, allowed_slot_id_suffix,
+    #     allowed_slot_id_prefix]
+
+    dup movdn.5 locaddr.TRANSFER_POLICY_ROOTS_PTR
+    # => [roots_ptr, num_roots, active_slot_id_suffix, active_slot_id_prefix,
+    #     allowed_slot_id_suffix, allowed_slot_id_prefix, num_roots]
+
+    exec.store_transfer_policy_roots
+    # => [num_roots]
+end
+
+#! Writes the list of transfer policy roots from the advice map to memory.
+#!
+#! Inputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT, roots_ptr]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_roots]
+#!
+#! Where:
+#! - PROC_ROOTS_COMMITMENT is the commitment to the list of policy roots.
+#! - roots_ptr is the pointer to which the roots are written. The memory must have capacity for
+#!   MAX_NUM_ACTIVE_TRANSFER_POLICIES roots.
+#! - num_roots is the number of roots in the list.
+#!
+#! Panics if:
+#! - the advice map has no entry for PROC_ROOTS_COMMITMENT.
+#! - the list is not a list of words.
+#! - the list is empty or contains more than MAX_NUM_ACTIVE_TRANSFER_POLICIES roots.
+#! - the list does not match PROC_ROOTS_COMMITMENT.
+#!
+#! Invocation: exec
+proc load_transfer_policy_roots(
+    proc_roots_commitment: PolicyRootsCommitment,
+    roots_ptr: ptr<felt>
+) -> u32
+    adv.push_mapvaln
+    # OS => [PROC_ROOTS_COMMITMENT, roots_ptr]
+    # AS => [num_elements, [PROC_ROOT]]
+
+    adv_push u32assert.err=ERR_TRANSFER_POLICY_ROOTS_LENGTH_INVALID
+    # OS => [num_elements, PROC_ROOTS_COMMITMENT, roots_ptr]
+    # AS => [[PROC_ROOT]]
+
+    u32divmod.WORD_NUM_ELEMENTS
+    # => [remainder, num_roots, PROC_ROOTS_COMMITMENT, roots_ptr]
+
+    eq.0 assert.err=ERR_TRANSFER_POLICY_ROOTS_NOT_WORD_ALIGNED
+    # => [num_roots, PROC_ROOTS_COMMITMENT, roots_ptr]
+
+    dup neq.0 assert.err=ERR_TRANSFER_POLICY_ROOTS_EMPTY
+    dup u32lte.MAX_NUM_ACTIVE_TRANSFER_POLICIES assert.err=ERR_TRANSFER_POLICY_ROOTS_TOO_MANY
+    # => [num_roots, PROC_ROOTS_COMMITMENT, roots_ptr]
+
+    movup.5 dup.1 movdn.6 swap
+    # => [num_roots, roots_ptr, PROC_ROOTS_COMMITMENT, num_roots]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_roots]
+end
+
+#! Validates the transfer policy roots in memory and stores them in the active roots map.
+#!
+#! Inputs:  [roots_ptr, num_roots, active_slot_id_suffix, active_slot_id_prefix,
+#!           allowed_slot_id_suffix, allowed_slot_id_prefix]
 #! Outputs: []
 #!
 #! Where:
-#! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
-#! - policy_inputs are the 16 elements the policy is invoked with.
+#! - roots_ptr is the pointer to the roots in memory.
+#! - num_roots is the number of roots in memory. It must not be zero.
+#! - active_slot_id_{suffix,prefix} identify the map slot holding the active policy roots.
+#! - allowed_slot_id_{suffix,prefix} identify the map slot holding the allowed policy roots.
 #!
 #! Panics if:
-#! - the invoked policy predicate fails.
+#! - any root is zero.
+#! - any root is not present in this account's procedures.
+#! - any root is not in the allowed policy roots map.
 #!
 #! Invocation: exec
-@locals(4)
-proc execute_transfer_policy(slot_id: StorageSlotId, policy_inputs: [felt; 16])
-    exec.active_account::get_item
-    # => [POLICY_ROOT, policy_inputs(16)]
+proc store_transfer_policy_roots(
+    roots_ptr: ptr<felt>,
+    num_roots: u32,
+    active_slot_id: StorageSlotId,
+    allowed_slot_id: StorageSlotId
+)
+    swap push.0
+    # => [index = 0, num_roots, roots_ptr, active_slot_id_suffix, active_slot_id_prefix,
+    #     allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+    push.1
+    while.true
+        # => [index, num_roots, roots_ptr, active_slot_id_suffix, active_slot_id_prefix,
+        #     allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+        padw dup.4 mul.WORD_NUM_ELEMENTS dup.7 add mem_loadw_le
+        # => [PROC_ROOT, index, num_roots, roots_ptr, active_slot_id_suffix,
+        #     active_slot_id_prefix, allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+        dup.10 dup.10
+        # => [allowed_slot_id_suffix, allowed_slot_id_prefix, PROC_ROOT, index, num_roots,
+        #     roots_ptr, active_slot_id_suffix, active_slot_id_prefix, allowed_slot_id_suffix,
+        #     allowed_slot_id_prefix]
+
+        exec.assert_allowed_transfer_policy_root
+        # => [PROC_ROOT, index, num_roots, roots_ptr, active_slot_id_suffix,
+        #     active_slot_id_prefix, allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+        dup.4 dup.9 dup.9
+        # => [active_slot_id_suffix, active_slot_id_prefix, index, PROC_ROOT, index, num_roots,
+        #     roots_ptr, active_slot_id_suffix, active_slot_id_prefix, allowed_slot_id_suffix,
+        #     allowed_slot_id_prefix]
+
+        exec.array::set dropw
+        # => [index, num_roots, roots_ptr, active_slot_id_suffix, active_slot_id_prefix,
+        #     allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+        add.1 dup.1 dup.1 neq
+        # => [has_more_roots, index, num_roots, roots_ptr, active_slot_id_suffix,
+        #     active_slot_id_prefix, allowed_slot_id_suffix, allowed_slot_id_prefix]
+    end
+    # => [num_roots, num_roots, roots_ptr, active_slot_id_suffix, active_slot_id_prefix,
+    #     allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+    dropw drop drop drop
+    # => []
+end
+
+#! Validates a transfer policy root at config time.
+#!
+#! Inputs:  [allowed_slot_id_suffix, allowed_slot_id_prefix, PROC_ROOT]
+#! Outputs: [PROC_ROOT]
+#!
+#! Where:
+#! - allowed_slot_id_{suffix, prefix} identify the map slot holding the allowed policy roots.
+#!
+#! Panics if:
+#! - policy root is zero.
+#! - policy root is not present in this account's procedures.
+#! - policy root is not in the allowed policy roots map.
+#!
+#! Invocation: exec
+proc assert_allowed_transfer_policy_root(
+    allowed_slot_id: StorageSlotId,
+    proc_root: AccountProcedureRoot
+) -> AccountProcedureRoot
+    movdn.5 movdn.5
+    # => [PROC_ROOT, allowed_slot_id_suffix, allowed_slot_id_prefix]
 
     exec.word::testz
-    # => [is_empty, POLICY_ROOT, policy_inputs(16)]
+    assertz.err=ERR_TRANSFER_POLICY_ROOT_IS_ZERO
+    # => [PROC_ROOT, allowed_slot_id_suffix, allowed_slot_id_prefix]
 
-    if.true
-        # No policy configured: accept the transfer and drop the policy inputs.
-        dropw dropw dropw dropw dropw
-        # => []
-    else
-        loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-        # => [policy_inputs(16)]
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_TRANSFER_POLICY_ROOT_NOT_IN_ACCOUNT
+    # => [PROC_ROOT, allowed_slot_id_suffix, allowed_slot_id_prefix]
+
+    dupw movup.9 movup.9
+    # => [allowed_slot_id_suffix, allowed_slot_id_prefix, PROC_ROOT, PROC_ROOT]
+
+    exec.active_account::get_map_item
+    # => [ALLOWED_FLAG, PROC_ROOT]
+
+    exec.word::eqz
+    assertz.err=ERR_TRANSFER_POLICY_ROOT_NOT_ALLOWED
+    # => [PROC_ROOT]
+end
+
+#! Hashes the list of active transfer policy roots in the provided slot and inserts the list into
+#! the advice map.
+#!
+#! Inputs:
+#!   Operand stack: [slot_id_suffix, slot_id_prefix, num_roots]
+#! Outputs:
+#!   Operand stack: [PROC_ROOTS_COMMITMENT]
+#!   Advice map: {
+#!     PROC_ROOTS_COMMITMENT: [[PROC_ROOT]]
+#!   }
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} identify the map slot holding the active policy roots.
+#! - num_roots is the number of active policy roots. It must not exceed
+#!   MAX_NUM_ACTIVE_TRANSFER_POLICIES.
+#!
+#! Invocation: exec
+@locals(64) # MAX_NUM_ACTIVE_TRANSFER_POLICIES words
+proc hash_transfer_policies(
+    slot_id: StorageSlotId,
+    num_roots: u32
+) -> PolicyRootsCommitment
+    movup.2 push.0
+    # => [index = 0, num_roots, slot_id_suffix, slot_id_prefix]
+
+    dup.1 dup.1 neq
+    while.true
+        # => [index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        dup dup.4 dup.4
+        # => [slot_id_suffix, slot_id_prefix, index, index, num_roots, slot_id_suffix,
+        #     slot_id_prefix]
+
+        exec.array::get
+        # => [PROC_ROOT, index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        dup.4 mul.WORD_NUM_ELEMENTS locaddr.TRANSFER_POLICY_ROOTS_PTR add mem_storew_le dropw
+        # => [index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        add.1 dup.1 dup.1 neq
+        # => [has_more_roots, index, num_roots, slot_id_suffix, slot_id_prefix]
+    end
+    # => [num_roots, num_roots, slot_id_suffix, slot_id_prefix]
+
+    movdn.3 drop drop drop
+    # => [num_roots]
+
+    mul.WORD_NUM_ELEMENTS dup locaddr.TRANSFER_POLICY_ROOTS_PTR add
+    # => [roots_end_ptr, num_elements]
+
+    swap locaddr.TRANSFER_POLICY_ROOTS_PTR dup movdn.2
+    # => [roots_ptr, num_elements, roots_ptr, roots_end_ptr]
+
+    exec.eidos::hash_elements
+    # => [PROC_ROOTS_COMMITMENT, roots_ptr, roots_end_ptr]
+
+    adv.insert_mem
+    # OS => [PROC_ROOTS_COMMITMENT, roots_ptr, roots_end_ptr]
+    # AM => { PROC_ROOTS_COMMITMENT: mem[roots_ptr..roots_end_ptr] }
+
+    movup.4 drop movup.4 drop
+    # => [PROC_ROOTS_COMMITMENT]
+end
+
+#! Invokes the active transfer policies in the provided slot in list order via `dyncall`, each with
+#! the provided inputs, and drops the policies' outputs. Shared by `invoke_send_policy` /
+#! `invoke_receive_policy`, which bind different slots and pass on their own callback inputs, so
+#! each policy kind receives the inputs of its asset callback.
+#!
+#! The callers limit the transaction's expiration to
+#! [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the reference block and assert the
+#! account-wide pause flag (a no-op when the [`Pausable`] component is not installed) before the
+#! active policies are invoked, so both apply whether or not a policy is configured. This keeps
+#! a later policy activation or a pause binding against transfers anchored to an earlier reference
+#! block. If no policy is active, the transfer is accepted.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, num_roots, policy_inputs(16)]
+#! Outputs: []
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} identify the map slot holding the active policy roots.
+#! - num_roots is the number of active policy roots.
+#! - policy_inputs are the 16 elements each policy is invoked with.
+#!
+#! Panics if:
+#! - any of the invoked policy predicates fails.
+#!
+#! Invocation: exec
+@locals(20)
+proc execute_transfer_policies(slot_id: StorageSlotId, num_roots: u32, policy_inputs: [felt; 16])
+    movup.2 push.0
+    # => [index = 0, num_roots, slot_id_suffix, slot_id_prefix, policy_inputs(16)]
+
+    # move the inputs to local memory, since they are not accessible below the loop variables
+    swapw loc_storew_le.TRANSFER_POLICY_INPUTS_0_PTR dropw
+    swapw loc_storew_le.TRANSFER_POLICY_INPUTS_1_PTR dropw
+    swapw loc_storew_le.TRANSFER_POLICY_INPUTS_2_PTR dropw
+    swapw loc_storew_le.TRANSFER_POLICY_INPUTS_3_PTR dropw
+    # => [index, num_roots, slot_id_suffix, slot_id_prefix]
+
+    dup.1 dup.1 neq
+    while.true
+        # => [index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        dup dup.4 dup.4
+        # => [slot_id_suffix, slot_id_prefix, index, index, num_roots, slot_id_suffix,
+        #     slot_id_prefix]
+
+        exec.array::get
+        # => [PROC_ROOT, index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        loc_storew_le.POLICY_PROC_ROOT_PTR
+        # => [PROC_ROOT, index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        # load the inputs, overwriting the root with the last word
+        loc_loadw_le.TRANSFER_POLICY_INPUTS_3_PTR
+        padw loc_loadw_le.TRANSFER_POLICY_INPUTS_2_PTR
+        padw loc_loadw_le.TRANSFER_POLICY_INPUTS_1_PTR
+        padw loc_loadw_le.TRANSFER_POLICY_INPUTS_0_PTR
+        # => [policy_inputs(16), index, num_roots, slot_id_suffix, slot_id_prefix]
 
         locaddr.POLICY_PROC_ROOT_PTR
-        # => [policy_root_ptr, policy_inputs(16)]
+        # => [policy_root_ptr, policy_inputs(16), index, num_roots, slot_id_suffix, slot_id_prefix]
 
         dyncall
-        # => [policy_outputs(16)]
+        # => [policy_outputs(16), index, num_roots, slot_id_suffix, slot_id_prefix]
 
         dropw dropw dropw dropw
-        # => []
+        # => [index, num_roots, slot_id_suffix, slot_id_prefix]
+
+        add.1 dup.1 dup.1 neq
+        # => [has_more_roots, index, num_roots, slot_id_suffix, slot_id_prefix]
     end
+    # => [num_roots, num_roots, slot_id_suffix, slot_id_prefix]
+
+    dropw
+    # => []
 end

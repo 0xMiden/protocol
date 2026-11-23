@@ -27,6 +27,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{
     AccountComponent,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotContent,
     StorageSlotName,
@@ -96,26 +97,32 @@ fn production_build_wires_the_transfer_blocklist() -> Result<()> {
         );
     }
 
-    // (2) the active send + receive policy slots hold the BasicBlocklist roots of their kind (both
-    // roots belong to the one companion component, which installs once).
+    // (2) the active send + receive policy lists hold EXACTLY the BasicBlocklist root of their kind
+    // (both roots belong to the one companion component, which installs once).
     for (name, root, kind) in [
         (
-            TokenPolicyManager::active_send_policy_slot(),
+            TokenPolicyManager::active_send_policies_slot(),
             BasicBlocklist::send_root(),
             "SEND",
         ),
         (
-            TokenPolicyManager::active_receive_policy_slot(),
+            TokenPolicyManager::active_receive_policies_slot(),
             BasicBlocklist::receive_root(),
             "RECEIVE",
         ),
     ] {
+        let first_key = StorageMapKey::from_array([0, 0, 0, 0]);
         assert_eq!(
-            value_slot(&components, name)?,
+            map_slot(&components, name)?.get(&first_key),
             root.as_word(),
-            "the active {kind} policy slot must resolve to the BasicBlocklist {kind} root"
+            "the active {kind} policy list must start with the BasicBlocklist {kind} root"
         );
     }
+    assert_eq!(
+        value_slot(&components, TokenPolicyManager::num_active_transfer_policies_slot())?,
+        Word::from([1u32, 1, 0, 0]),
+        "the active SEND and RECEIVE policy lists must hold exactly one root each"
+    );
 
     // (3) both protocol asset-callback slots are installed, holding the fixed invoke_*_policy
     // wrapper roots → `faucet::has_callbacks` returns 1 → minted xUSDC is a POLICED asset (FPI

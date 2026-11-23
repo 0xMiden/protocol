@@ -216,9 +216,7 @@ impl StandardNote {
             Self::CONSTANT_FEE_POLICY_CONFIG => {
                 NumStorageItems::Exact(ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS)
             },
-            Self::FAUCET_POLICY_CONFIG => {
-                NumStorageItems::Exact(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS)
-            },
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::NUM_STORAGE_ITEMS,
             Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::NUM_STORAGE_ITEMS,
             Self::MIN_BURN_AMOUNT_CONFIG => {
                 NumStorageItems::Exact(MinBurnAmountConfigNote::NUM_STORAGE_ITEMS)
@@ -568,6 +566,11 @@ mod tests {
         for (note, accepted, rejected) in [
             (StandardNote::OWNER_CONFIG, [1, 3].as_slice(), [0, 2, 4].as_slice()),
             (StandardNote::RBAC_CONFIG, [2, 3, 4].as_slice(), [0, 1, 5].as_slice()),
+            (
+                StandardNote::FAUCET_POLICY_CONFIG,
+                [8, 12, 68].as_slice(),
+                [0, 1, 4, 5, 9, 72].as_slice(),
+            ),
             (
                 StandardNote::FAUCET_METADATA_CONFIG,
                 [2, 32].as_slice(),

@@ -96,7 +96,7 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
                 .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
-                .build(),
+                .build()?,
         )
         .with_component(Pausable::unpaused())
         .with_component(AllowlistManager);
@@ -576,7 +576,7 @@ fn add_rbac_faucet_with_allowlist(
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
                 .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
-                .build(),
+                .build()?,
         )
         .with_component(Pausable::unpaused())
         .with_component(AllowlistManager);
