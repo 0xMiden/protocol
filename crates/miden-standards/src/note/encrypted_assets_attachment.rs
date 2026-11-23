@@ -26,6 +26,7 @@ use miden_protocol::note::{
     Nullifier,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::utils::words_from_elements;
 use miden_protocol::{Felt, Hasher, Word};
 
 use crate::account::account_component_package;
@@ -189,7 +190,7 @@ impl EncryptedAssetsAttachment {
     pub fn try_from_elements(elements: &[Felt]) -> Result<Self, EncryptedAssetsAttachmentError> {
         let invalid_length = EncryptedAssetsAttachmentError::InvalidPlaintextLength(elements.len());
 
-        let (words, []) = elements.as_chunks::<{ Word::NUM_ELEMENTS }>() else {
+        let Some(words) = words_from_elements(elements) else {
             return Err(invalid_length);
         };
         let Some((&[serial_num, script_root, storage_commitment], asset_words)) =
@@ -203,16 +204,16 @@ impl EncryptedAssetsAttachment {
 
         let assets = asset_words
             .iter()
-            .map(|&[id, value]| Asset::from_id_and_value_words(Word::new(id), Word::new(value)))
+            .map(|&[id, value]| Asset::from_id_and_value_words(id, value))
             .collect::<Result<Vec<_>, _>>()
             .map_err(EncryptedAssetsAttachmentError::InvalidAsset)?;
         let assets =
             NoteAssets::new(assets).map_err(EncryptedAssetsAttachmentError::InvalidAssets)?;
 
         Ok(Self::new(
-            Word::new(serial_num),
-            NoteScriptRoot::from_raw(Word::new(script_root)),
-            Word::new(storage_commitment),
+            serial_num,
+            NoteScriptRoot::from_raw(script_root),
+            storage_commitment,
             assets,
         ))
     }
