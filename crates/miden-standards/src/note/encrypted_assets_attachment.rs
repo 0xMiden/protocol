@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -29,6 +30,7 @@ use miden_protocol::{Felt, Hasher, Word};
 
 use crate::account::account_component_package;
 use crate::note::StandardNoteAttachment;
+use crate::procedure_root;
 
 // CONSTANTS
 // ================================================================================================
@@ -36,6 +38,17 @@ use crate::note::StandardNoteAttachment;
 account_component_package!(
     ENCRYPTED_ASSETS_ISSUER_KEY_PACKAGE,
     "miden-standards-attachments-encrypted-assets.masp"
+);
+
+/// MASL library namespace of the issuer key component, used for procedure-root lookups.
+const ENCRYPTED_ASSETS_ISSUER_KEY_LIBRARY_PATH: &str =
+    "miden::standards::components::attachments::encrypted_assets";
+
+procedure_root!(
+    ENCRYPTED_ASSETS_SET_ISSUER_KEY_ROOT,
+    ENCRYPTED_ASSETS_ISSUER_KEY_LIBRARY_PATH,
+    EncryptedAssetsIssuerKey::SET_ISSUER_KEY_PROC_NAME,
+    EncryptedAssetsIssuerKey::code()
 );
 
 static ISSUER_KEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -291,7 +304,9 @@ impl EncryptedAssetsAttachment {
 /// where `public_key_i` are the elements of [`PublicKey::to_elements`].
 ///
 /// The key converts into an account component that installs the slot and exports the
-/// `get_issuer_key` accessor.
+/// `get_issuer_key` accessor and the authority-gated `set_issuer_key`, which rotates the key.
+/// Notes sealed before a rotation stay encrypted to the previous key, so the issuer keeps its
+/// previous secret keys and tries each of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptedAssetsIssuerKey {
     public_key: PublicKey,
@@ -300,6 +315,8 @@ pub struct EncryptedAssetsIssuerKey {
 impl EncryptedAssetsIssuerKey {
     /// The name of the account component that the issuer key converts into.
     pub const NAME: &'static str = "miden::standards::attachments::encrypted_assets";
+
+    const SET_ISSUER_KEY_PROC_NAME: &'static str = "set_issuer_key";
 
     /// Returns a new issuer key from the provided public key.
     pub fn new(public_key: PublicKey) -> Self {
@@ -316,6 +333,12 @@ impl EncryptedAssetsIssuerKey {
     /// key.
     pub fn component_metadata() -> AccountComponentMetadata {
         ENCRYPTED_ASSETS_ISSUER_KEY_PACKAGE.metadata.clone()
+    }
+
+    /// Returns the procedure root of the authority-gated `set_issuer_key` procedure, which
+    /// replaces the issuer key.
+    pub fn set_issuer_key_root() -> AccountProcedureRoot {
+        *ENCRYPTED_ASSETS_SET_ISSUER_KEY_ROOT
     }
 
     /// Returns the [`StorageSlotName`] of the issuer key slot.
