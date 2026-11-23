@@ -3,7 +3,7 @@
 # Encrypted assets send policy: returns the encrypted asset attachment of each private output note
 # holding the issuing faucet's assets, built by `miden::standards::attachments::encrypted_assets`.
 
-use {NoteAttachmentCommitment} from miden::protocol::types
+use {NoteAttachmentCommitment, NoteAttachmentScheme} from miden::protocol::types
 use miden::standards::attachments::encrypted_assets
 
 # POLICY PROCEDURES
@@ -34,7 +34,7 @@ use miden::standards::attachments::encrypted_assets
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16) -> (felt, NoteAttachmentCommitment)
+pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
     exec.encrypted_assets::build_attachment
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
 

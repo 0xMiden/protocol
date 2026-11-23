@@ -260,7 +260,6 @@ fn blocklist_with_encrypted_assets_policy(
     let code = CodeBuilder::default().compile_component_code(
         COMPONENT_NAME,
         "
-        use miden::standards::expiration
         use miden::standards::faucets::policies::transfer::basic_blocklist
         use miden::standards::faucets::policies::transfer::encrypted_assets
 
@@ -268,8 +267,7 @@ fn blocklist_with_encrypted_assets_policy(
         #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
         @account_procedure
         pub proc check_send_policy
-            exec.expiration::apply_default
-            exec.basic_blocklist::assert_native_account_not_blocked
+            exec.basic_blocklist::check_native_account
             exec.encrypted_assets::check_send_policy
         end
         ",
