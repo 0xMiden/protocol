@@ -5,11 +5,12 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::errors::standards::ERR_FEE_NOTE_HAS_ATTACHMENTS;
 use miden_standards::note::TxFeeNote;
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::MockChain;
+use miden_testing::{MockChain, assert_transaction_executor_error};
 
-use super::VERIFICATION_BASE_FEE;
+use super::{VERIFICATION_BASE_FEE, attaching_callback_faucet};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -73,6 +74,39 @@ async fn no_auth_pays_fee_note() -> anyhow::Result<()> {
     let paid_asset = asset.unwrap_fungible();
     assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
     assert!(paid_asset.amount() >= executed_transaction.compute_fee());
+
+    Ok(())
+}
+
+/// The TX_FEE note is sealed, so the `on_before_note_sealed` callback of the fee asset's faucet
+/// runs on it. A callback that returns an attachment makes the fee payment fail, because the fee
+/// note must not carry attachments.
+#[tokio::test]
+async fn no_auth_fee_note_rejects_callback_attachment() -> anyhow::Result<()> {
+    let fee_faucet = attaching_callback_faucet([12; 32])?;
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet.id(), 1_000_000)?.into();
+    let account = AccountBuilder::new([11; 32])
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_assets([fee_asset])
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder()
+        .verification_base_fee(VERIFICATION_BASE_FEE)
+        .fee_faucet_id(fee_faucet.id());
+    builder.add_account(fee_faucet.clone())?;
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(fee_faucet.id())?])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_NOTE_HAS_ATTACHMENTS);
 
     Ok(())
 }

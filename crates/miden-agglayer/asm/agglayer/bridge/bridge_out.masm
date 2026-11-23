@@ -604,7 +604,7 @@ proc compute_burn_note_serial_num(asset_id: AssetId) -> NoteSerialNumber
     # => [SERIAL_NUM]
 end
 
-#! Creates a BURN note for the specified asset with a NetworkAccountTarget attachment.
+#! Creates a sealed BURN note for the specified asset with a NetworkAccountTarget attachment.
 #!
 #! This procedure creates an output note that represents a burn operation for the given asset.
 #! The note targets the faucet account via a NetworkAccountTarget attachment.
@@ -660,25 +660,28 @@ proc create_burn_note(asset: Asset)
     exec.output_note::create
     # => [note_idx]
 
-    # duplicate note_idx: one for add_word_attachment, one for add_asset
-    dup
-    # => [note_idx, note_idx]
+    # duplicate note_idx: one each for add_word_attachment, add_asset and seal
+    dup dup
+    # => [note_idx, note_idx, note_idx]
 
     padw loc_loadw_le.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, note_idx, note_idx]
+    # => [NOTE_ATTACHMENT, note_idx, note_idx, note_idx]
 
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [scheme, NOTE_ATTACHMENT, note_idx, note_idx]
+    # => [scheme, NOTE_ATTACHMENT, note_idx, note_idx, note_idx]
 
     # network_account_target is a word-sized attachment
     exec.output_note::add_word_attachment
-    # => [note_idx]
+    # => [note_idx, note_idx]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.output_note::add_asset
+    # => [note_idx]
+
+    exec.output_note::seal
     # => []
 end
 

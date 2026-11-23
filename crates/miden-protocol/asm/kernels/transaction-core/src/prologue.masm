@@ -21,7 +21,7 @@ use {
 } from miden::tx_kernel_core::constants
 use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::tx_kernel_core::asset
 use {ACCOUNT_VERSION_1} from miden::tx_kernel_core::account
-use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT}
+use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_NOTE_SEALED_PROC_ROOT_SLOT}
     from miden::tx_kernel_core::callbacks
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
@@ -494,7 +494,7 @@ proc validate_asset_callbacks()
     push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
     # => [has_account_callback_slot]
 
-    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
+    push.ON_BEFORE_NOTE_SEALED_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
     # => [has_note_callback_slot, has_account_callback_slot]
 
     or
