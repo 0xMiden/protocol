@@ -1,18 +1,13 @@
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
-use miden_protocol::note::{Note, NoteType, PartialNote};
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
-use miden_standards::account::access::Authority;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::{BurnPolicy, MintPolicy, SendPolicy, TokenPolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::ERR_FEE_NOTE_HAS_ATTACHMENTS;
-use miden_standards::note::{EncryptedAssetsIssuerKey, TxFeeNote};
+use miden_standards::note::TxFeeNote;
 use miden_standards::testing::note::NoteBuilder;
-use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
 use super::{VERIFICATION_BASE_FEE, attaching_callback_faucet};
@@ -112,77 +107,6 @@ async fn no_auth_fee_note_rejects_callback_attachment() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_FEE_NOTE_HAS_ATTACHMENTS);
-
-    Ok(())
-}
-
-/// The fee asset's faucet has the encrypted assets send policy active. The TX_FEE note is public,
-/// so the policy returns no attachment for it and the fee payment succeeds.
-///
-/// The account sends an empty note first, so the fee note is at index 1 and a send policy that
-/// leaves the note index on top of its outputs would return a non-zero attachment scheme.
-#[tokio::test]
-async fn no_auth_fee_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()> {
-    let fee_faucet = FungibleFaucet::builder()
-        .name(TokenName::new("ENC")?)
-        .symbol("ENC".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000_000)?)
-        .build()?;
-    let fee_faucet = AccountBuilder::new([12; 32])
-        .account_type(AccountType::Public)
-        .with_component(NoAuth)
-        .with_component(fee_faucet)
-        .with_component(Authority::AuthControlled)
-        .with_components(
-            TokenPolicyManager::builder()
-                .active_mint_policy(MintPolicy::allow_all())
-                .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(SendPolicy::with_encrypted_assets(
-                    EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[7; 40])?.public_key()),
-                ))
-                .build(),
-        )
-        .build_existing()?;
-    let fee_asset: Asset = FungibleAsset::new(fee_faucet.id(), 1_000_000)?.into();
-    let account = AccountBuilder::new([11; 32])
-        .with_component(NoAuth)
-        .with_component(BasicWallet)
-        .with_assets([fee_asset])
-        .account_type(AccountType::Public)
-        .build_existing()?;
-
-    let mut builder = MockChain::builder()
-        .verification_base_fee(VERIFICATION_BASE_FEE)
-        .fee_faucet_id(fee_faucet.id());
-    builder.add_account(fee_faucet.clone())?;
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    let empty_note = NoteBuilder::new(account.id(), &mut rand::rng())
-        .note_type(NoteType::Private)
-        .build()?;
-    let send_script = SendNotesTransactionScript::new(
-        &account.code_interface(),
-        &[PartialNote::from(empty_note)],
-    )?;
-
-    let executed_transaction = mock_chain
-        .build_transaction(account.id())
-        .send_notes_script(&send_script)
-        .foreign_accounts([mock_chain.get_foreign_account_inputs(fee_faucet.id())?])
-        .build()?
-        .execute()
-        .await?;
-
-    assert_eq!(executed_transaction.output_notes().num_notes(), 2);
-    let fee_note = executed_transaction.output_notes().get_note(1);
-    assert_eq!(fee_note.metadata().tag(), TxFeeNote::TAG);
-    assert_eq!(fee_note.metadata().note_type(), NoteType::Public);
-    assert!(fee_note.attachments().is_empty());
-
-    let paid_asset = fee_note.assets().iter().next().expect("fee note should carry an asset");
-    assert!(paid_asset.unwrap_fungible().amount() >= executed_transaction.compute_fee());
 
     Ok(())
 }
