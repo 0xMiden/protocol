@@ -16,6 +16,9 @@ pub use core::{
 mod effects;
 pub use effects::{TransactionEffects, TransactionEffectsV1};
 
+mod summary;
+pub use summary::{TransactionSummary, TransactionSummaryV1};
+
 mod args;
 pub use args::{NoteArgument, TransactionArgs, TransactionArgsError, TransactionScript};
 

@@ -1130,6 +1130,10 @@ pub enum TransactionSummaryError {
         "transaction summary preimage contains {actual} elements but expected {expected} elements"
     )]
     InvalidPreimageLength { actual: usize, expected: usize },
+    #[error(
+        "transaction summary user parameters contain {actual} elements but expected {expected} elements"
+    )]
+    InvalidUserParamsLength { actual: usize, expected: usize },
     #[error("transaction summary metadata element {0} sets bits above the packed fields")]
     MetadataOutOfRange(Felt),
     #[error(
