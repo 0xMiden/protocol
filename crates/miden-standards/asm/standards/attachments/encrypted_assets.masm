@@ -23,8 +23,10 @@ use miden::core::crypto::hashes::eidos
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::ies::ecgfp5_eidos
+use miden::protocol::native_account
 use miden::protocol::note
 use miden::protocol::output_note
+use miden::standards::access::authority
 use miden::standards::expiration
 
 # CONSTANTS
@@ -75,6 +77,8 @@ const ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC = ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC +
 # =================================================================================================
 
 const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer public key for encrypted asset attachments"
+
+const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted asset attachments cannot be zero"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -140,7 +144,7 @@ pub proc build_attachment(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     end
 end
 
-#! Returns the issuer's EcGFp5 public key from the active account's `ISSUER_KEY_SLOT`.
+#! Returns the issuer's EcGFp5 public key from the active account's issuer key slots.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block, since the issuer key is mutable state that can be read through FPI.
@@ -152,7 +156,8 @@ end
 #! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
 #!
 #! Panics if:
-#! - the active account has no `ISSUER_KEY_SLOT` or no issuer public key in it.
+#! - the active account has no `ISSUER_KEY_0_SLOT` or `ISSUER_KEY_1_SLOT`, or no issuer public key
+#!   in them.
 #!
 #! Invocation: call
 @account_procedure
@@ -165,6 +170,44 @@ pub proc get_issuer_key() -> ecgfp5::PointEncoding
 
     repeat.5 movup.5 drop end
     # => [public_key(5), pad(11)]
+end
+
+#! Replaces the issuer's EcGFp5 public key in the native account's issuer key slots, gated by
+#! the account-wide `Authority` component.
+#!
+#! Attachments built before the rotation stay encrypted to the previous key. The key is checked to
+#! be a valid EcGFp5 public key only when `build_attachment` encrypts to it.
+#!
+#! Inputs:  [public_key(5), pad(11)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - public_key is the new EcGFp5 public key in increasing coefficient order.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - public_key is zero, which marks an unset key.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_issuer_key(public_key: ecgfp5::PointEncoding)
+    exec.authority::assert_authorized
+    # => [public_key(5), pad(11)]
+
+    dupw exec.word::eqz dup.5 eq.0 and
+    # => [is_zero, public_key(5), pad(11)]
+
+    assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO
+    # => [public_key(5), pad(11)]
+
+    push.ISSUER_KEY_0_SLOT[0..2] exec.native_account::set_item dropw
+    # => [public_key_4, pad(15)]
+
+    push.0.0.0 movup.3
+    # => [public_key_4, 0, 0, 0, pad(15)]
+
+    push.ISSUER_KEY_1_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
 end
 
 # HELPER PROCEDURES

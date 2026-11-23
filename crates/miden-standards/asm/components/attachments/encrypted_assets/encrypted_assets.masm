@@ -1,7 +1,8 @@
 # The MASM code of the encrypted asset attachments account component.
 #
 # Installs the issuer key slot that
-# `miden::standards::attachments::encrypted_assets::build_attachment` reads, and exposes
-# `get_issuer_key` as a call accessor.
+# `miden::standards::attachments::encrypted_assets::build_attachment` reads, and exposes the
+# `get_issuer_key` accessor and the authority-gated `set_issuer_key`.
 
 pub use {get_issuer_key} from miden::standards::attachments::encrypted_assets
+pub use {set_issuer_key} from miden::standards::attachments::encrypted_assets
