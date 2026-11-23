@@ -77,6 +77,9 @@ end
 #! after the reference block and asserts that the native account is not blocked on the issuing
 #! faucet.
 #!
+#! The send and receive policies run this check, and a send policy that combines it with other
+#! checks can `exec` it.
+#!
 #! Inputs:  []
 #! Outputs: []
 #!
@@ -84,7 +87,7 @@ end
 #! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: exec
-proc check_native_account
+pub proc check_native_account()
     exec.expiration::apply_default
     # => []
 
@@ -92,12 +95,11 @@ proc check_native_account
     # => []
 end
 
+# HELPER PROCEDURES
+# ================================================================================================
+
 #! Asserts that the native account is not blocked on the issuing faucet, which is the active
 #! account while an asset callback runs. The issuing faucet itself is exempt.
-#!
-#! The send and receive policies run this check, and a send policy that combines it with other
-#! checks can `exec` it. It does not limit the transaction's expiration, so such a policy applies
-#! [`expiration::apply_default`] first, as the send and receive policies do.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -106,7 +108,7 @@ end
 #! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: exec
-pub proc assert_native_account_not_blocked()
+proc assert_native_account_not_blocked
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix]
 
